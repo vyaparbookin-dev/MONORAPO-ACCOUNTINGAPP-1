@@ -31,7 +31,7 @@ scripts/
 scripts-all/
 
 # Local generated files & archives
-_archive_unused/
+archive_unused/
 MOBILE_APP_TREE.txt
 FULL_PROJECT_TREE.txt
 project-tree.txt
