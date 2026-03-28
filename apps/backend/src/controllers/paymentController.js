@@ -9,15 +9,24 @@ import path from "path";
 import os from "os";
 import { createWorker } from "tesseract.js";
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
+let razorpay;
+if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+  razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
+  });
+} else {
+  console.warn("⚠️ RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is missing. Payments will not work.");
+}
 
 // Create a payment order
 export const createOrder = async (req, res) => {
   try {
     const { amount, currency = "INR", receipt } = req.body;
+
+    if (!razorpay) {
+      return res.status(500).json({ success: false, error: "Razorpay is not configured on the server." });
+    }
 
     const options = { amount: amount * 100, currency, receipt }; // amount in smallest currency unit
     const order = await razorpay.orders.create(options);
@@ -143,6 +152,10 @@ export const addBulkPaymentEntry = async (req, res) => {
 export const verifyPayment = async (req, res) => {
   try {
     const { order_id, payment_id, signature, billId } = req.body;
+
+    if (!process.env.RAZORPAY_KEY_SECRET) {
+      return res.status(500).json({ success: false, message: "Razorpay is not configured on the server." });
+    }
 
     const generated_signature = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
