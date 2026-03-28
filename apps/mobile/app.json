@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "mobile-inventory-app",
+    "slug": "mobile-inventory-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "android": {
+      "package": "com.yourcompany.accountingapp",
+      "usesCleartextTraffic": true
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      "expo-secure-store",
+      "expo-camera",
+      "expo-web-browser",
+      "expo-sqlite"
+    ],
+    "web": {
+      "favicon": "./assets/icon.png",
+      "name": "Red Accounting Book",
+      "shortName": "RedBook",
+      "themeColor": "#ef4444",
+      "backgroundColor": "#ffffff",
+      "display": "standalone",
+      "startUrl": ".",
+      "bundler": "metro"
+    },
+    "extra": {
+      "RAZORPAY_KEY_ID": "rzp_test_YOUR_KEY_ID"
+    }
+  }
+}

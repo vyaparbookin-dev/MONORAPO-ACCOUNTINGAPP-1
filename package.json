@@ -1,0 +1,26 @@
+{
+  "name": "monorapo-accountingapp",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "npm run dev --workspaces --if-present",
+    "mobile": "npm run start --workspace=apps/mobile -- --offline --clear",
+    "desktop": "npm run electron:dev --workspace=apps/desktop",
+    "web": "npm run dev --workspace=apps/web",
+    "backend": "npm run dev --workspace=apps/backend",
+    "dev:all": "npx concurrently \"npm run backend\" \"npm run web\" \"npm run mobile\"",
+    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules"
+  },
+  "dependencies": {
+    "18": "^0.0.0",
+    "glob": "^13.0.6"
+  }
+}

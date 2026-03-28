@@ -1,0 +1,16 @@
+{
+  "name": "@repo/shared",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./syncqueue.native": "./src/services/syncqueue.native.js",
+    "./src/services/syncqueue.native": "./src/services/syncqueue.native.js",
+    "./syncqueue": "./src/services/syncqueue.js",
+    "./api.native": "./src/services/api.native.js"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0",
+    "axios": "^1.7.2"
+  }
+}
