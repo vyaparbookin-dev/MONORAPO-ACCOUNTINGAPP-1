@@ -117,8 +117,8 @@ app.use("/api", apiLimiter);
 
 app.get("/", (req, res) => res.send("Vyapar Backend Running ✅"));
 
-// Force using port 5001 to avoid environment conflicts causing EADDRINUSE
-const PORT = 5001;
+// Render dynamically assigns a PORT, use 5001 as fallback for local dev
+const PORT = process.env.PORT || 5001;
 
 const startServer = async () => {
   try {
