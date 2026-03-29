@@ -10,26 +10,32 @@ import os from "os";
 import { createWorker } from "tesseract.js";
 
 let razorpay;
-if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
-  razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET,
-  });
-} else {
-  console.warn("⚠️ RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is missing. Payments will not work.");
-}
+const getRazorpayInstance = () => {
+  if (!razorpay) {
+    if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+      razorpay = new Razorpay({
+        key_id: process.env.RAZORPAY_KEY_ID,
+        key_secret: process.env.RAZORPAY_KEY_SECRET,
+      });
+    } else {
+      console.warn("⚠️ RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is missing. Payments will not work.");
+    }
+  }
+  return razorpay;
+};
 
 // Create a payment order
 export const createOrder = async (req, res) => {
   try {
     const { amount, currency = "INR", receipt } = req.body;
 
-    if (!razorpay) {
+    const rzp = getRazorpayInstance();
+    if (!rzp) {
       return res.status(500).json({ success: false, error: "Razorpay is not configured on the server." });
     }
 
     const options = { amount: amount * 100, currency, receipt }; // amount in smallest currency unit
-    const order = await razorpay.orders.create(options);
+    const order = await rzp.orders.create(options);
 
     if (!order) return res.status(500).send("Error creating order");
 

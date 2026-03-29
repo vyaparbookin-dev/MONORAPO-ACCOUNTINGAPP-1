@@ -43,6 +43,14 @@ const getBaseUrl = () => {
   if (typeof window !== 'undefined' && window.location && window.location.hostname === 'localhost') {
     return "http://localhost:5001/api";
   }
+
+  // Fix for Vite: Vite requires static access to import.meta.env
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) {
+    // @ts-ignore
+    return import.meta.env.VITE_API_URL;
+  }
+  
   return getEnv("REACT_APP_API_URL") || getEnv("EXPO_PUBLIC_API_URL") || getEnv("VITE_API_URL") || "http://localhost:5001/api";
 };
 

@@ -5,6 +5,7 @@ import connectDB from "./src/config/db.js";
 import { errorHandler } from "./src/middleware/errormiddleware.js"; // Changed SRC to src
 import path from "path";
 import { fileURLToPath } from "url";
+import fs from "fs";
 import rateLimit from "express-rate-limit";
 import * as Sentry from "@sentry/node";
 
@@ -56,7 +57,17 @@ import tallyRoutes from "./src/routes/tallyRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, "./src/config/.env") }); // Changed SRC to src
+
+const envLocalPath = path.resolve(__dirname, ".env.local");
+const envExamplePath = path.resolve(__dirname, ".env.example");
+if (fs.existsSync(envLocalPath)) {
+  dotenv.config({ path: envLocalPath, override: true });
+  console.log("👉 Loaded keys from .env.local");
+} else {
+  dotenv.config({ path: envExamplePath, override: true });
+  console.log("👉 Loaded keys from .env.example");
+}
+console.log("👉 CHECK LOADED URI:", process.env.MONGO_URI);
 
 // Initialize Sentry for Error Tracking
 Sentry.init({

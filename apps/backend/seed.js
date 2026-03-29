@@ -6,7 +6,7 @@ import bcryptjs from "bcryptjs";
 
 // Load environment variables
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, "./src/config/.env") });
+dotenv.config({ path: path.resolve(__dirname, ".env") });
 
 // Import models
 import User from "./src/model/user.js";
@@ -24,10 +24,7 @@ const seedDatabase = async () => {
 
     // Connect to MongoDB
     const uri = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/vyapar_local";
-    await mongoose.connect(uri, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    await mongoose.connect(uri);
     console.log("✅ Connected to MongoDB");
 
     // Clear existing data
