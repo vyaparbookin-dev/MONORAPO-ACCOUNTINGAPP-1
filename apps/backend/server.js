@@ -61,10 +61,10 @@ const __dirname = path.dirname(__filename);
 const envLocalPath = path.resolve(__dirname, ".env.local");
 const envExamplePath = path.resolve(__dirname, ".env.example");
 if (fs.existsSync(envLocalPath)) {
-  dotenv.config({ path: envLocalPath, override: true });
+  dotenv.config({ path: envLocalPath });
   console.log("👉 Loaded keys from .env.local");
 } else {
-  dotenv.config({ path: envExamplePath, override: true });
+  dotenv.config({ path: envExamplePath });
   console.log("👉 Loaded keys from .env.example");
 }
 console.log("👉 CHECK LOADED URI:", process.env.MONGO_URI);
