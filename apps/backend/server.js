@@ -86,24 +86,33 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 const app = express();
 
-// Middleware
-// Manual CORS Middleware to fix persistent issues
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  // Allow any origin that looks like a local frontend
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-  
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-company-id');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
 
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-  next();
-});
+// --- Secure CORS Configuration ---
+const allowedOrigins = [
+  'http://localhost:5173', // Web Dev (Vite)
+  'http://localhost:3000', // Web Dev (Create React App)
+  'http://localhost:8081', // Mobile Dev
+  'https://monorapo-accountingapp-1-web.vercel.app' // Vercel URL ko permanently add kar dein
+];
+
+// Dynamically add the production frontend URL from environment variables
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
+}
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or Postman) and whitelisted origins
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.error(`CORS Blocked Origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+};
+app.use(cors(corsOptions));
 
 // Global Middleware to extract Company ID from header
 app.use((req, res, next) => {
