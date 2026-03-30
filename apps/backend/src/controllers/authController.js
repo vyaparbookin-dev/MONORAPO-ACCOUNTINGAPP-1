@@ -43,16 +43,27 @@ export const register = async (req, res) => {
 
     await user.save();
 
-    // Send OTP email
-    await sendEmail({
-      email: user.email,
-      subject: 'Welcome! Verify Your Account',
-      message: `Your One-Time Password (OTP) is: ${otp}. It is valid for 10 minutes.`,
-    });
+    // --- Enhanced Email Sending Logic with Specific Logging ---
+    try {
+      console.log(`Attempting to send OTP to ${user.email}...`);
+      await sendEmail({
+        email: user.email,
+        subject: 'Welcome! Verify Your Account',
+        message: `Your One-Time Password (OTP) is: ${otp}. It is valid for 10 minutes.`,
+      });
+      console.log(`✅ Successfully initiated email sending to ${user.email}.`);
+    } catch (emailError) {
+      console.error("🔴 EMAIL SENDING FAILED:", emailError);
+      // Return a specific error to the frontend so it knows the email failed.
+      return res.status(500).json({ 
+        success: false, 
+        message: "User registered, but failed to send verification email. Please check server logs for the exact error.",
+      });
+    }
 
     res.status(201).json({ success: true, message: "User registered. Please check your email for the OTP.", requiresVerification: true, userId: user._id });
 
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { console.error("🔴 REGISTRATION FAILED (Non-Email Error):", err); res.status(500).json({ success: false, message: err.message }); }
 };
 
 // Login
