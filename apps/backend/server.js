@@ -102,8 +102,8 @@ if (process.env.FRONTEND_URL) {
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or Postman) and whitelisted origins
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    // Allow requests with no origin, whitelisted origins, and ANY Vercel auto-generated URL
+    if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
       callback(null, true);
     } else {
       console.error(`CORS Blocked Origin: ${origin}`);
