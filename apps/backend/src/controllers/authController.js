@@ -51,10 +51,11 @@ export const register = async (req, res) => {
         subject: 'Welcome! Verify Your Account', 
         message: `Your One-Time Password (OTP) is: ${otp}. It is valid for 10 minutes.` 
       });
-      res.status(201).json({ success: true, message: "User registered. Please check your email for the OTP.", requiresVerification: true, userId: user._id });
+      // Don't send a token on registration. Force user to verify OTP.
+      return res.status(201).json({ success: true, message: "User registered. Please check your email for the OTP.", requiresVerification: true, userId: user._id });
     } catch (e) {
       console.error("🔴 INITIAL EMAIL FAILED:", e.message);
-      res.status(500).json({ success: false, message: "User registered, but failed to send OTP email. Please try again." });
+      return res.status(500).json({ success: false, message: "User registered, but failed to send OTP email. Please try again." });
     }
 
   } catch (err) { console.error("🔴 REGISTRATION FAILED (Non-Email Error):", err); res.status(500).json({ success: false, message: err.message }); }

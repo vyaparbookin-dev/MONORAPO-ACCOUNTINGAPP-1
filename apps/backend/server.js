@@ -69,6 +69,9 @@ if (fs.existsSync(envLocalPath)) {
 }
 console.log("👉 CHECK LOADED URI:", process.env.MONGO_URI);
 
+// --- DEBUGGING: Check if Brevo key is loaded correctly ---
+console.log("🔑 Checking Brevo Key:", process.env.BREVO_API_KEY ? `Loaded (${process.env.BREVO_API_KEY.substring(0, 4)}...)` : "NOT FOUND!");
+
 // Initialize Sentry for Error Tracking
 Sentry.init({
   dsn: process.env.SENTRY_DSN, // Aap ise baad me .env me dalenge
