@@ -8,6 +8,7 @@ import LoginScreen from "./screens/Auth/LoginScreen";
 import RegisterScreen from "./screens/Auth/RegisterScreen";
 import ForgotPasswordScreen from "./screens/Auth/ForgotPasswordScreen";
 import KeyreCoveryPage from "./screens/Auth/KeyreCoveryPage";
+import VerifyOtp from "./pages/setting/VerifyOtp";
 
 // Dashboard
 import Dashboard from "./screens/Dashboard/DashboardScreen";
@@ -170,6 +171,7 @@ const App = () => {
       <Route path="/register" element={<RegisterScreen />} />
       <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
       <Route path="/key-recovery" element={<KeyreCoveryPage />} />
+      <Route path="/verify-otp" element={<VerifyOtp />} />
 
       {/* Main App Routes - With Dashboard Layout */}
       <Route

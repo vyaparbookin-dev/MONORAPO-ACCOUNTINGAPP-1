@@ -11,10 +11,16 @@ export const register = async (req, res) => {
 
     // If user exists but is not verified, we'll resend OTP
     if (user && !user.isVerified) {
-      // FIX: Render Free Tier blocks emails. Automatically verify existing unverified users.
-      user.isVerified = true;
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      user.otp = otp;
+      user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes validity
       await user.save();
-      return res.status(200).json({ success: true, message: "Account verified automatically. Please log in.", requiresVerification: false });
+      try {
+        await sendEmail({ email: user.email, subject: 'Verify Your Account', message: `Your new OTP is: ${otp}. Valid for 10 mins.` });
+        return res.status(200).json({ success: true, message: "A new OTP has been sent to your email.", requiresVerification: true, userId: user._id });
+      } catch (emailError) {
+        return res.status(500).json({ success: false, message: "Failed to send verification email. Please try again." });
+      }
     }
 
     if (user && user.isVerified) {
@@ -33,19 +39,21 @@ export const register = async (req, res) => {
       role: role || 'admin',
       otp,
       otpExpires,
-      isVerified: true, // FIX: Bypass OTP because Render Free Tier blocks SMTP emails
+      isVerified: false, 
     });
 
     await user.save();
 
-    // Try to send email silently, but don't fail the registration if it gets blocked
     try {
-      await sendEmail({ email: user.email, subject: 'Welcome!', message: `Welcome to Vyapar App!` });
+      await sendEmail({ 
+        email: user.email, 
+        subject: 'Welcome! Verify Your Account', 
+        message: `Your One-Time Password (OTP) is: ${otp}. It is valid for 10 minutes.` 
+      });
+      res.status(201).json({ success: true, message: "User registered. Please check your email for the OTP.", requiresVerification: true, userId: user._id });
     } catch (e) {
-      console.log("Email blocked by Render, but registration successful.");
+      res.status(500).json({ success: false, message: "Registered, but failed to send OTP email. Please try again." });
     }
-
-    res.status(201).json({ success: true, message: "User registered successfully!", requiresVerification: false, token: generateToken(user._id) });
 
   } catch (err) { console.error("🔴 REGISTRATION FAILED (Non-Email Error):", err); res.status(500).json({ success: false, message: err.message }); }
 };

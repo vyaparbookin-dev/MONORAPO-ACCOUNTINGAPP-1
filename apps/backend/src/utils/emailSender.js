@@ -1,38 +1,39 @@
-import nodemailer from 'nodemailer';
-
 /**
- * Sends an email using nodemailer.
+ * Sends an email using Brevo (Sendinblue) HTTP API.
+ * Bypasses Render's SMTP port blocking.
  * @param {object} options - Email options.
  * @param {string} options.email - Recipient's email address.
  * @param {string} options.subject - Email subject.
  * @param {string} options.message - Plain text email body.
  */
 const sendEmail = async (options) => {
-  // 1. Create a transporter (the service that will send the email)
-  // We will use Gmail's SMTP for this example.
-  const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST, // e.g., 'smtp.gmail.com'
-    port: parseInt(process.env.EMAIL_PORT, 10) || 587,
-    secure: process.env.EMAIL_PORT === '465', // true for 465, false for other ports
-    auth: {
-      user: process.env.EMAIL_USER, // Your email address from .env
-      pass: process.env.EMAIL_PASS, // Your email password or App Password from .env
+  if (!process.env.BREVO_API_KEY) {
+    console.error("🔴 BREVO_API_KEY is missing! Showing OTP in console instead.");
+    console.log(`📧 [MOCK EMAIL to ${options.email}] Subject: ${options.subject} | Message: ${options.message}`);
+    return;
+  }
+
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'accept': 'application/json',
+      'api-key': process.env.BREVO_API_KEY,
+      'content-type': 'application/json'
     },
-    family: 4, // Force IPv4 routing (fixes ENETUNREACH IPv6 error on Render)
+    body: JSON.stringify({
+      sender: { name: 'Vyapar App', email: process.env.EMAIL_USER || 'no-reply@vyapar.com' },
+      to: [{ email: options.email }],
+      subject: options.subject,
+      htmlContent: `<div style="font-family: Arial, sans-serif; padding: 20px;"><h2>Vyapar App</h2><p>${options.message}</p></div>`
+    })
   });
 
-  // 2. Define the email options
-  const mailOptions = {
-    from: `Vyapar App <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
-    to: options.email,
-    subject: options.subject,
-    text: options.message,
-    // html: '<h1>You can also send HTML</h1>'
-  };
-
-  // 3. Actually send the email
-  await transporter.sendMail(mailOptions);
-  console.log(`✅ Email sent successfully to ${options.email}`);
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(JSON.stringify(errorData));
+  }
+  
+  console.log(`✅ HTTP Email sent successfully to ${options.email}`);
 };
 
 export default sendEmail;

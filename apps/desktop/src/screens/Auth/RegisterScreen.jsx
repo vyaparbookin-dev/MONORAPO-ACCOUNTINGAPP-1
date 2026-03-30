@@ -1,19 +1,30 @@
 import React, { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import api from "../../services/api";
 
 export default function RegisterScreen() {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [msg, setMsg] = useState("");
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
+    setMsg("");
     try {
       const res = await api.post("/api/auth/register", form);
-      setMsg(res.message || "Account created successfully!");
+      if (res.requiresVerification) {
+        navigate("/verify-otp", { state: { userId: res.userId } });
+      } else {
+        navigate("/login");
+      }
     } catch (err) {
-      setMsg("Registration failed. Try again.");
+      setMsg(err.message || "Registration failed. Try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -27,6 +38,7 @@ export default function RegisterScreen() {
           placeholder="Full Name"
           onChange={handleChange}
           className="border p-2 w-full mb-3 rounded"
+          required
         />
         <input
           type="email"
@@ -34,6 +46,7 @@ export default function RegisterScreen() {
           placeholder="Email"
           onChange={handleChange}
           className="border p-2 w-full mb-3 rounded"
+          required
         />
         <input
           type="password"
@@ -41,9 +54,16 @@ export default function RegisterScreen() {
           placeholder="Password"
           onChange={handleChange}
           className="border p-2 w-full mb-3 rounded"
+          required
         />
-        <button className="bg-green-600 text-white w-full py-2 rounded">Register</button>
-        {msg && <p className="mt-4 text-center text-sm">{msg}</p>}
+        <button disabled={loading} className="bg-green-600 hover:bg-green-700 text-white w-full py-2 rounded disabled:opacity-50 transition">
+          {loading ? "Registering..." : "Register"}
+        </button>
+        {msg && <p className={`mt-4 text-center text-sm ${msg.toLowerCase().includes('failed') ? 'text-red-500' : 'text-green-600'}`}>{msg}</p>}
+        
+        <p className="mt-4 text-center text-sm text-gray-600">
+          Already have an account? <Link to="/login" className="text-blue-600 hover:underline">Login here</Link>
+        </p>
       </form>
     </div>
   );
