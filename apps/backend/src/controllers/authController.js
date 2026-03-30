@@ -17,9 +17,14 @@ export const register = async (req, res) => {
       user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes validity
       await user.save();
       
-      await sendEmail({ email: user.email, subject: 'Verify Your Account', message: `Your new OTP is: ${otp}` });
-      
-      return res.status(200).json({ success: true, message: "User exists but is not verified. A new OTP has been sent.", requiresVerification: true, userId: user._id });
+      try {
+        console.log(`Attempting to resend OTP to ${user.email}...`);
+        await sendEmail({ email: user.email, subject: 'Verify Your Account', message: `Your new OTP is: ${otp}` });
+        return res.status(200).json({ success: true, message: "User exists but is not verified. A new OTP has been sent.", requiresVerification: true, userId: user._id });
+      } catch (emailError) {
+        console.error("🔴 EMAIL RESEND FAILED:", emailError);
+        return res.status(500).json({ success: false, message: "Failed to send verification email. Please check server logs." });
+      }
     }
 
     if (user && user.isVerified) {

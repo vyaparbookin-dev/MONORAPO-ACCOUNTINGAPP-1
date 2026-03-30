@@ -18,6 +18,7 @@ const sendEmail = async (options) => {
       user: process.env.EMAIL_USER, // Your email address from .env
       pass: process.env.EMAIL_PASS, // Your email password or App Password from .env
     },
+    family: 4, // Force IPv4 routing (fixes ENETUNREACH IPv6 error on Render)
   });
 
   // 2. Define the email options
