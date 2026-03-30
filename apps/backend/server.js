@@ -133,7 +133,8 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 500, // Limit each IP to 500 requests per 15 minutes
-  message: { success: false, message: "Too many requests from this IP, please try again after 15 minutes" }
+  message: { success: false, message: "Too many requests from this IP, please try again after 15 minutes" },
+  validate: { xForwardedForHeader: false } // FIX: Stops the 'trust proxy' error on Render
 });
 
 // Apply rate limiter specifically to all API routes
