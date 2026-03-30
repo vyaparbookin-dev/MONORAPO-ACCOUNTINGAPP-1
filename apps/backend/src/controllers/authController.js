@@ -19,7 +19,8 @@ export const register = async (req, res) => {
         await sendEmail({ email: user.email, subject: 'Verify Your Account', message: `Your new OTP is: ${otp}. Valid for 10 mins.` });
         return res.status(200).json({ success: true, message: "A new OTP has been sent to your email.", requiresVerification: true, userId: user._id });
       } catch (emailError) {
-        return res.status(500).json({ success: false, message: "Failed to send verification email. Please try again." });
+        console.error("🔴 EMAIL RESEND FAILED:", emailError.message);
+        return res.status(500).json({ success: false, message: "Failed to resend verification email. Please try again." });
       }
     }
 
@@ -52,7 +53,8 @@ export const register = async (req, res) => {
       });
       res.status(201).json({ success: true, message: "User registered. Please check your email for the OTP.", requiresVerification: true, userId: user._id });
     } catch (e) {
-      res.status(500).json({ success: false, message: "Registered, but failed to send OTP email. Please try again." });
+      console.error("🔴 INITIAL EMAIL FAILED:", e.message);
+      res.status(500).json({ success: false, message: "User registered, but failed to send OTP email. Please try again." });
     }
 
   } catch (err) { console.error("🔴 REGISTRATION FAILED (Non-Email Error):", err); res.status(500).json({ success: false, message: err.message }); }
