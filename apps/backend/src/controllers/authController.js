@@ -1,24 +1,57 @@
 import User from "../model/user.js";
-import bcrypt from "bcryptjs";
+import bcryptjs from "bcryptjs"; // Consistent naming
 import { generateToken } from "../config/jwt.js";
-import { sendEmailOtp } from "../config/otpservice.js";
+import sendEmail from "../utils/emailSender.js"; // Use the new email sender
 
 // Register
 export const register = async (req, res) => {
   try {
     const { name, email, password, phone, role } = req.body;
-    const existing = await User.findOne({ email });
-    if (existing) return res.status(400).json({ message: "User exists" });
+    let user = await User.findOne({ email });
 
-    const hashed = await bcrypt.hash(password, 10);
-    const user = await User.create({ name, email, password: hashed, role: role || 'admin' });
+    // If user exists but is not verified, we'll resend OTP
+    if (user && !user.isVerified) {
+      // Generate and send a new OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      user.otp = otp;
+      user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes validity
+      await user.save();
+      
+      await sendEmail({ email: user.email, subject: 'Verify Your Account', message: `Your new OTP is: ${otp}` });
+      
+      return res.status(200).json({ success: true, message: "User exists but is not verified. A new OTP has been sent.", requiresVerification: true, userId: user._id });
+    }
 
-    // OTP Generate aur Send karne ka logic
-    const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP banega
-    if (email) await sendEmailOtp(email, otp);
-    // if (phone) await sendSmsOtp(phone, otp); // Jab Twilio SMS chalana ho isko uncomment kar lena
+    if (user && user.isVerified) {
+      return res.status(400).json({ message: "User with this email already exists and is verified." });
+    }
 
-    res.status(201).json({ success: true, user, message: "Registered successfully! OTP has been sent.", token: generateToken(user._id) });
+    const hashedPassword = await bcryptjs.hash(password, 10);
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    user = new User({
+      name,
+      email,
+      password: hashedPassword,
+      phone,
+      role: role || 'admin',
+      otp,
+      otpExpires,
+      isVerified: false,
+    });
+
+    await user.save();
+
+    // Send OTP email
+    await sendEmail({
+      email: user.email,
+      subject: 'Welcome! Verify Your Account',
+      message: `Your One-Time Password (OTP) is: ${otp}. It is valid for 10 minutes.`,
+    });
+
+    res.status(201).json({ success: true, message: "User registered. Please check your email for the OTP.", requiresVerification: true, userId: user._id });
+
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -26,12 +59,48 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select('+password'); // Explicitly include password
     if (!user) return res.status(400).json({ message: "Invalid credentials" });
 
-    const match = await bcrypt.compare(password, user.password);
+    // Check if user is verified
+    if (!user.isVerified) {
+      return res.status(401).json({ message: "Account not verified. Please verify your OTP first.", requiresVerification: true, userId: user._id });
+    }
+
+    const match = await bcryptjs.compare(password, user.password);
     if (!match) return res.status(400).json({ message: "Invalid credentials" });
 
-    res.json({ success: true, user, token: generateToken(user._id) });
+    // Don't send password and OTP fields back to the client
+    const userResponse = user.toObject();
+    delete userResponse.password;
+    delete userResponse.otp;
+    delete userResponse.otpExpires;
+
+    res.json({ success: true, user: userResponse, token: generateToken(user._id) });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+// --- New Controller for OTP Verification ---
+export const verifyOtp = async (req, res) => {
+  try {
+    const { userId, otp } = req.body;
+    if (!userId || !otp) {
+      return res.status(400).json({ message: "User ID and OTP are required." });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found." });
+
+    if (user.otp !== otp || user.otpExpires < Date.now()) {
+      return res.status(400).json({ message: "Invalid or expired OTP." });
+    }
+
+    user.isVerified = true;
+    user.otp = undefined;
+    user.otpExpires = undefined;
+    await user.save();
+
+    res.json({ success: true, message: "Account verified successfully. You can now log in." });
+
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };

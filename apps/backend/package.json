@@ -22,7 +22,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.3.2",
     "node-cron": "^4.2.1",
-    "nodemailer": "^8.0.2",
+    "nodemailer": "^8.0.4",
     "object-assign": "^4.1.1",
     "pdfkit": "^0.18.0",
     "qrcode": "^1.5.4",

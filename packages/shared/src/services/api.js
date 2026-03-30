@@ -39,18 +39,19 @@ const getEnv = (key) => {
 
 // Helper to determine base URL dynamically
 const getBaseUrl = () => {
-  // If running in a browser environment (Web App or Expo Web), prefer localhost
-  if (typeof window !== 'undefined' && window.location && window.location.hostname === 'localhost') {
-    return "http://localhost:5001/api";
-  }
-
-  // Fix for Vite: Vite requires static access to import.meta.env
+  // 1. Vercel/Netlify/Render pe deployment ke liye sabse important
   // @ts-ignore
   if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) {
     // @ts-ignore
     return import.meta.env.VITE_API_URL;
   }
+
+  // 2. Local development (npm run dev) ke liye fallback
+  if (typeof window !== 'undefined' && window.location && window.location.hostname === 'localhost') {
+    return "http://localhost:5001/api";
+  }
   
+  // 3. Default fallback agar kuch bhi set na ho
   return getEnv("REACT_APP_API_URL") || getEnv("EXPO_PUBLIC_API_URL") || getEnv("VITE_API_URL") || "http://localhost:5001/api";
 };
 
@@ -114,7 +115,7 @@ api.interceptors.response.use(
     if (err.response?.status === 401) {
       const isAuthRequest = err.config?.url?.includes("/auth/login") || err.config?.url?.includes("/auth/register");
       if (!isAuthRequest) {
-        console.error("Auth Error: Invalid token. Clearing credentials.");
+        console.error(`Auth Error (401) on ${err.config.url}. Token is invalid or expired. Clearing credentials and redirecting to login.`);
         setStorage("authToken", null); // Clear token
         setStorage("token", null); // Clear fallback token
 
