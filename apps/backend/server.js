@@ -86,12 +86,16 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 const app = express();
 
+// Trust proxy for Render deployment (Required for express-rate-limit to work behind a proxy)
+app.set('trust proxy', 1);
+
 
 // --- Secure CORS Configuration ---
 const allowedOrigins = [
   'http://localhost:5173', // Web Dev (Vite)
   'http://localhost:3000', // Web Dev (Create React App)
-  'http://localhost:8081', // Mobile Dev
+  'http://localhost:8082', // Mobile Dev
+  'http://localhost:5174', // Desktop Dev
   'https://monorapo-accountingapp-1-web.vercel.app' // Vercel URL ko permanently add kar dein
 ];
 
@@ -102,8 +106,8 @@ if (process.env.FRONTEND_URL) {
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin, whitelisted origins, and ANY Vercel auto-generated URL
-    if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+    // Allow requests with no origin, whitelisted origins, and ANY Vercel auto-generated URL.
+    if (!origin || allowedOrigins.indexOf(origin) !== -1 || (origin && origin.endsWith('.vercel.app'))) {
       callback(null, true);
     } else {
       console.error(`CORS Blocked Origin: ${origin}`);
