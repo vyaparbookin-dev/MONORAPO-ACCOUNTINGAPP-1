@@ -17,8 +17,10 @@ export default function RegisterScreen() {
     try {
       const res = await api.post("/api/auth/register", form);
       if (res.requiresVerification) {
+        alert("Registration successful! Please check your email for the OTP.");
         navigate("/verify-otp", { state: { userId: res.userId } });
       } else {
+        alert("Registration successful! Please login.");
         navigate("/login");
       }
     } catch (err) {
