@@ -13,6 +13,11 @@ const sendEmail = async (options) => {
     return;
   }
 
+  const senderEmail = process.env.EMAIL_USER;
+  if (!senderEmail) {
+    console.warn("⚠️ EMAIL_USER is not set in environment variables! Using default, which might be rejected by Brevo.");
+  }
+
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
@@ -21,7 +26,7 @@ const sendEmail = async (options) => {
       'content-type': 'application/json'
     },
     body: JSON.stringify({
-      sender: { name: 'Vyapar App', email: process.env.EMAIL_USER || 'no-reply@vyapar.com' },
+      sender: { name: 'Vyapar App', email: senderEmail || 'no-reply@vyapar.com' },
       to: [{ email: options.email }],
       subject: options.subject,
       htmlContent: `<div style="font-family: Arial, sans-serif; padding: 20px;"><h2>Vyapar App</h2><p>${options.message}</p></div>`
