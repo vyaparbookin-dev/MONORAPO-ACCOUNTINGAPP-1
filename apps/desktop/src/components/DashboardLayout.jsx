@@ -33,14 +33,14 @@ import {
 } from "lucide-react";
 import { Trash2 } from "lucide-react"; // Import Trash icon
 import Footer from "./Footer";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, Outlet } from "react-router-dom";
 import { useCompany } from "../contexts/CompanyContext";
 import { SecurityTracker } from "./SecurityTracker";
 import CloudSyncToggel from "./CloudSyncToggel";
 import ErrorBoundary from "./ErrorBoundary";
 import { dbService } from "../services/dbService";
 
-export default function DashboardLayout({ children }) {
+export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -396,7 +396,7 @@ export default function DashboardLayout({ children }) {
         <main className="flex-1 overflow-auto">
           <div className="p-4 lg:p-6">
             <ErrorBoundary>
-              {children}
+              <Outlet />
             </ErrorBoundary>
           </div>
           <Footer />

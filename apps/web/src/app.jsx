@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { CompanyProvider } from "./contexts/CompanyContext";
+import { GoogleOAuthProvider } from "@react-oauth/google";
 import { SecurityTracker } from "./components/SecurityTracker";
 
 // Auth Screens
@@ -162,6 +163,7 @@ const App = () => {
   }, []);
 
   return (
+  <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ""}>
   <ErrorBoundary>
     <Router>
       <CompanyProvider>
@@ -304,9 +306,9 @@ const App = () => {
       />
     </Routes>
       </CompanyProvider>
-    </Router>
-  </ErrorBoundary>
-  );
+    </Router>  
+  </ErrorBoundary>  
+  </GoogleOAuthProvider>  
 };
 
 export default App;

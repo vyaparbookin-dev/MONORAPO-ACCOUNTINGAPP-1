@@ -4,6 +4,7 @@ import cors from "cors";
 import connectDB from "./src/config/db.js";
 import { errorHandler } from "./src/middleware/errormiddleware.js"; // Changed SRC to src
 import path from "path";
+import "./src/config/firebase.js"; // <-- YAHAN FIREBASE KO IMPORT KAREIN
 import { fileURLToPath } from "url";
 import fs from "fs";
 import rateLimit from "express-rate-limit";
@@ -81,11 +82,13 @@ Sentry.init({
 // Log uncaught errors for debugging
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
-  Sentry.captureException(err);
+  Sentry.captureException(err, { level: 'fatal' });
+  process.exit(1); // Force exit, so nodemon can restart cleanly
 });
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  Sentry.captureException(reason);
+  Sentry.captureException(reason, { level: 'fatal' });
+  process.exit(1); // Force exit, so nodemon can restart cleanly
 });
 const app = express();
 

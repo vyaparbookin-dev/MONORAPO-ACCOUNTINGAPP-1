@@ -32,12 +32,12 @@ import {
   Calculator
 } from "lucide-react";
 import Footer from "./Footer";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Outlet } from "react-router-dom";
 import { useCompany } from "../contexts/CompanyContext";
 import { SecurityTracker } from "@repo/shared";
 import CloudSyncToggel from "./CloudSyncToggel";
 
-export default function DashboardLayout({ children }) {
+export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -366,7 +366,7 @@ export default function DashboardLayout({ children }) {
         {/* Page Content */}
         <main className="flex-1 overflow-auto">
           <div className="p-6 lg:p-8">
-            {children}
+            <Outlet />
           </div>
           <Footer />
         </main>
