@@ -113,43 +113,48 @@ api.interceptors.response.use(
     // --- Universal 401 Handler ---
     // If token is invalid, log out on all platforms.
     if (err.response?.status === 401) {
-      const isAuthRequest = err.config?.url?.includes("/auth/login") || err.config?.url?.includes("/auth/register");
-      if (!isAuthRequest) {
-        console.error(`Auth Error (401) on ${err.config.url}. Token is invalid or expired. Clearing credentials and redirecting to login.`);
-        setStorage("authToken", null); // Clear token
-        setStorage("token", null); // Clear fallback token
+      // Only redirect if we are NOT on a public page.
+      if (typeof window !== 'undefined' && window.location) {
+        const publicPaths = ['/login', '/register', '/verify-otp', '/forgot-password', '/key-recovery'];
+        const currentPath = window.location.pathname;
+        const isPublicPage = publicPaths.includes(currentPath);
 
-        // For web/desktop, we can force a redirect.
-        // For native, the app's root navigator should detect the missing token and show the login screen.
-        if (typeof window !== 'undefined' && window.location) {
-          if (window.location.pathname !== "/login" && window.location.hash !== "#/login") {
-            // Use a small delay to allow storage to clear
-            setTimeout(() => {
+        if (!isPublicPage) {
+          console.error(`Auth Error (401) on protected route ${err.config.url}. Clearing credentials and redirecting to login.`);
+          setStorage("authToken", null); // Clear token
+          setStorage("token", null); // Clear fallback token
+
+          // Use a small delay to allow storage to clear before redirecting
+          setTimeout(() => {
+            // For web/desktop, we can force a redirect.
               if (window.location.protocol === 'file:') {
                 window.location.hash = "/login"; // Electron (Desktop) uses HashRouter
               } else {
                 window.location.href = "/login"; // Web uses BrowserRouter
               }
-            }, 100);
-          }
+          }, 100);
         }
       }
     }
 
     // --- Web/Desktop Specific Error Handlers ---
     if (typeof window !== 'undefined' && window.location) {
+      const publicPaths = ['/login', '/register', '/verify-otp', '/forgot-password', '/key-recovery'];
+      const currentPath = window.location.pathname;
+      const isPublicPage = publicPaths.includes(currentPath);
+
       // Handle "Company not found" (e.g. if company was deleted but ID is still in storage)
       if (err.response?.status === 404 && (err.response?.data?.message?.includes("Company not found"))) {
         setStorage("companyId", null); // Clear invalid company ID
         setStorage("selectedCompany", null);
-        if (!window.location.pathname.includes("/company/list") && !window.location.hash.includes("/company/list")) {
+        if (!isPublicPage && !window.location.pathname.includes("/company/list") && !window.location.hash.includes("/company/list")) {
           alert("The selected company no longer exists. Please select another company.");
         }
       }
 
       // Handle missing company ID header
       if (err.response?.status === 400 && (err.response?.data?.message?.includes("Company ID is missing"))) {
-        if (!window.location.pathname.includes("/company/list") && !window.location.hash.includes("/company/list")) {
+        if (!isPublicPage && !window.location.pathname.includes("/company/list") && !window.location.hash.includes("/company/list")) {
           alert("Please select a company to continue.");
         }
       }

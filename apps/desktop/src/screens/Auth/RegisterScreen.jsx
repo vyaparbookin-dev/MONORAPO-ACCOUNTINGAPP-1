@@ -18,12 +18,12 @@ export default function RegisterScreen() {
     console.log("🔵 1. Register Button Clicked. Sending data to API...");
     try {
       const res = await api.post("/api/auth/register", form);
-      const data = res.data || res;
+      const data = res.data || res; // Handle axios wrapping
       console.log("🟢 2. API Response Received:", data);
 
       if (data?.requiresVerification && (data?.userId || data?.id)) {
         alert("Registration successful! Please check your email for the OTP.");
-        navigate("/verify-otp", { 
+        navigate("/verify-otp", {
           state: { userId: data.userId || data.id } 
         });
       } else if (data?.success) {
@@ -38,7 +38,7 @@ export default function RegisterScreen() {
       
       if (errData?.requiresVerification && (errData?.userId || errData?.id)) {
         alert(errData.message || "Please check your email for OTP.");
-        navigate("/verify-otp", { 
+        navigate("/verify-otp", {
           state: { userId: errData.userId || errData.id } 
         });
       } else {

@@ -4,7 +4,7 @@ import cors from "cors";
 import connectDB from "./src/config/db.js";
 import { errorHandler } from "./src/middleware/errormiddleware.js"; // Changed SRC to src
 import path from "path";
-import "./src/config/firebase.js"; // <-- YAHAN FIREBASE KO IMPORT KAREIN
+import "./src/config/firebase.js"; // Initialize Firebase on start
 import { fileURLToPath } from "url";
 import fs from "fs";
 import rateLimit from "express-rate-limit";
@@ -13,14 +13,14 @@ import * as Sentry from "@sentry/node";
 // Route Imports
 import authRoutes from "./src/routes/authRoutes.js";
 import billingRoutes from "./src/routes/billingRoutes.js";
-import licensingRoutes from "./src/routes/licensingRoutes.js"; // Changed SRC to src
+import licensingRoutes from "./src/routes/licensingRoutes.js";
 import branchRoutes from "./src/routes/branchRoutes.js";
 import companyRoutes from "./src/routes/companyRoutes.js";
 import coupanRoutes from "./src/routes/coupanRoutes.js";
 import expanceRoutes from "./src/routes/expanceRoutes.js";
 import inventoryRoutes from "./src/routes/inventoryRoutes.js";
-import laterpadRoutes from "./src/routes/laterpadRoutes.js"; // Changed SRC to src
-import membershipRoutes from "./src/routes/membershipRoutes.js"; // Changed SRC to src
+import laterpadRoutes from "./src/routes/laterpadRoutes.js";
+import membershipRoutes from "./src/routes/membershipRoutes.js";
 import notificationRoutes from "./src/routes/notificationRoutes.js";
 import paymentRoutes from "./src/routes/paymentRoutes.js";
 import partyRoutes from "./src/routes/partyRoutes.js";
@@ -28,8 +28,8 @@ import reportRoutes from "./src/routes/reportRoutes.js";
 import salaryRoutes from "./src/routes/salaryRoutes.js";
 import staffRoutes from "./src/routes/staffRoutes.js";
 import schemeRoutes from "./src/routes/schemeRoutes.js";
-import securityRoutes from "./src/routes/securityRoutes.js"; // Changed SRC to src
-import warehouseRoutes from "./src/routes/warehouseRoutes.js"; // Changed SRC to src
+import securityRoutes from "./src/routes/securityRoutes.js";
+import warehouseRoutes from "./src/routes/warehouseRoutes.js";
 import syncRoutes from "./src/routes/syncRoutes.js";
 import consolidatedStatementRoutes from "./src/routes/consolidatedStatementRoutes.js";
 import purchaseRoutes from "./src/routes/purchaseRoutes.js";
@@ -159,47 +159,55 @@ const startServer = async () => {
     // Start Background Automation Jobs
     startCronJobs();
 
-    // Mount Routes
+    // --- PUBLIC ROUTES (No Auth Token Required) ---
+    // Ye routes hamesha sabke liye open rahenge
     app.use("/api/auth", authRoutes);
+
+    // --- PROTECTED ROUTES (Auth Token & Company ID Required) ---
+    // Note: The 'protect' middleware is applied inside each route file.
     app.use("/api/billing", billingRoutes);
-    app.use("/api/licensing", licensingRoutes);
     app.use("/api/branch", branchRoutes);
     app.use("/api/company", companyRoutes);
-    app.use("/api/coupon", coupanRoutes); // Fixed spelling to match frontend request
-    app.use("/api/expance", expanceRoutes); // Old spelling
-    app.use("/api/expenses", expanceRoutes); // Alias for correct spelling
-    app.use("/api/inventory", inventoryRoutes);
-    app.use("/api/laterpad", laterpadRoutes);
-    app.use("/api/membership", membershipRoutes);
-    app.use("/api/notification", notificationRoutes);
-    app.use("/api/payment", paymentRoutes);
-    app.use("/api/party", partyRoutes);
-    app.use("/api/report", reportRoutes);
-    app.use("/api/salary", salaryRoutes);
-    app.use("/api/staff", staffRoutes);
-    app.use("/api/scheme", schemeRoutes);
-    app.use("/api/security", securityRoutes);
-    app.use("/api/warehouse", warehouseRoutes);
-    app.use("/api/sync", syncRoutes);
-    app.use("/api/consolidated-statement", consolidatedStatementRoutes);
-    app.use("/api/purchase", purchaseRoutes);
-    app.use("/api/purchase-orders", purchaseOrderRoutes);
-    app.use("/api/bank-rec", bankRecRoutes);
-    app.use("/api/tds-tcs", tdsTcsRoutes);
-    app.use("/api/fixed-assets", fixedAssetRoutes);
-    app.use("/api/ewaybill", eWayBillRoutes);
-    app.use("/api/return", returnRoutes);
-    app.use("/api/daybook", daybookRoutes);
-    app.use("/api/b2b", b2bRoutes);
-    app.use("/api/gst", gstRoutes);
-    app.use("/api/stock-transfer", stockTransferRoutes);
-    app.use("/api/user", userRoutes);
-    app.use("/api/attendance", attendanceRoutes);
     app.use("/api/aging", agingRoutes);
     app.use("/api/approvals", approvalRoutes);
-    app.use("/api/reminders", reminderRoutes);
+    app.use("/api/attendance", attendanceRoutes);
+    app.use("/api/b2b", b2bRoutes);
+    app.use("/api/bank-rec", bankRecRoutes);
     app.use("/api/category", categoryRoutes);
+    app.use("/api/cloud", cloudRoutes);
+    app.use("/api/consolidated-statement", consolidatedStatementRoutes);
+    app.use("/api/coupon", coupanRoutes); // Fixed spelling to match frontend request
+    app.use("/api/daybook", daybookRoutes);
+    app.use("/api/ewaybill", eWayBillRoutes);
+    app.use("/api/expance", expanceRoutes); // Old spelling
+    app.use("/api/expenses", expanceRoutes); // Alias for correct spelling
+    app.use("/api/fixed-assets", fixedAssetRoutes);
+    app.use("/api/gst", gstRoutes);
+    app.use("/api/inventory", inventoryRoutes);
+    app.use("/api/laterpad", laterpadRoutes);
+    app.use("/api/licensing", licensingRoutes);
+    app.use("/api/membership", membershipRoutes);
+    app.use("/api/notification", notificationRoutes);
+    app.use("/api/party", partyRoutes);
+    app.use("/api/payment", paymentRoutes);
+    app.use("/api/purchase", purchaseRoutes);
+    app.use("/api/purchase-orders", purchaseOrderRoutes);
+    app.use("/api/reminders", reminderRoutes);
+    app.use("/api/report", reportRoutes);
+    app.use("/api/return", returnRoutes);
+    app.use("/api/salary", salaryRoutes);
+    app.use("/api/scheme", schemeRoutes);
+    app.use("/api/security", securityRoutes);
+    app.use("/api/settings", settingsRoutes);
+    app.use("/api/staff", staffRoutes);
+    app.use("/api/stock-transfer", stockTransferRoutes);
+    app.use("/api/sync", syncRoutes);
+    app.use("/api/tally", tallyRoutes);
+    app.use("/api/tds-tcs", tdsTcsRoutes);
     app.use("/api/unit", unitRoutes);
+    app.use("/api/user", userRoutes);
+    app.use("/api/warehouse", warehouseRoutes);
+    app.use("/api/whatsapp", whatsappRoutes);
 
     // Frontend Plural Mismatch Fixes (Aliases)
     app.use("/api/reports", reportRoutes);
@@ -210,13 +218,9 @@ const startServer = async () => {
     const stubRouter = express.Router();
     stubRouter.all('*', (req, res) => res.json({ success: true, message: "Feature coming soon / API under construction" }));
     
-    app.use("/api/cloud", cloudRoutes); // Replaced stub with actual cloud routes
-    app.use("/api/settings", settingsRoutes);
     app.use("/api/roles", stubRouter);
     app.use("/api/leaves", stubRouter);
     app.use("/api/keys", stubRouter);
-    app.use("/api/whatsapp", whatsappRoutes);
-    app.use("/api/tally", tallyRoutes);
 
     // Sentry Error Handler (Must be before custom error handler)
     Sentry.setupExpressErrorHandler(app);
