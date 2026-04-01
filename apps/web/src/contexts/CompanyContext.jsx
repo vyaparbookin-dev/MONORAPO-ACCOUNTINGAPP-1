@@ -11,7 +11,13 @@ export const CompanyProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchCompanies();
+    // FIX: Only fetch companies if a token exists. This prevents 401 errors on public pages like login/register.
+    const token = localStorage.getItem("authToken") || localStorage.getItem("token");
+    if (token && token !== "null" && token !== "undefined") {
+      fetchCompanies();
+    } else {
+      setLoading(false); // If no token, stop loading and show children (e.g., Login screen)
+    }
   }, []);
 
   const fetchCompanies = async () => {

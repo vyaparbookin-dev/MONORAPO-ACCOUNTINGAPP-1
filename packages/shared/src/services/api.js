@@ -116,8 +116,10 @@ api.interceptors.response.use(
       // Only redirect if we are NOT on a public page.
       if (typeof window !== 'undefined' && window.location) {
         const publicPaths = ['/login', '/register', '/verify-otp', '/forgot-password', '/key-recovery'];
-        const currentPath = window.location.pathname;
-        const isPublicPage = publicPaths.includes(currentPath);
+        
+        // Fix for Electron (Desktop) which uses HashRouter
+        const currentPath = window.location.protocol === 'file:' ? window.location.hash.replace('#', '').split('?')[0] : window.location.pathname;
+        const isPublicPage = publicPaths.some(p => currentPath === p || currentPath.startsWith(p + '/'));
 
         if (!isPublicPage) {
           console.error(`Auth Error (401) on protected route ${err.config.url}. Clearing credentials and redirecting to login.`);
@@ -140,8 +142,10 @@ api.interceptors.response.use(
     // --- Web/Desktop Specific Error Handlers ---
     if (typeof window !== 'undefined' && window.location) {
       const publicPaths = ['/login', '/register', '/verify-otp', '/forgot-password', '/key-recovery'];
-      const currentPath = window.location.pathname;
-      const isPublicPage = publicPaths.includes(currentPath);
+      
+      // Fix for Electron (Desktop) which uses HashRouter
+      const currentPath = window.location.protocol === 'file:' ? window.location.hash.replace('#', '').split('?')[0] : window.location.pathname;
+      const isPublicPage = publicPaths.some(p => currentPath === p || currentPath.startsWith(p + '/'));
 
       // Handle "Company not found" (e.g. if company was deleted but ID is still in storage)
       if (err.response?.status === 404 && (err.response?.data?.message?.includes("Company not found"))) {
