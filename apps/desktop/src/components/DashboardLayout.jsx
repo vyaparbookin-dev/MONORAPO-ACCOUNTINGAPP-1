@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { Trash2 } from "lucide-react"; // Import Trash icon
 import Footer from "./Footer";
-import { useNavigate, Link, Outlet } from "react-router-dom";
+import { useNavigate, Link, Outlet, useLocation } from "react-router-dom";
 import { useCompany } from "../contexts/CompanyContext";
 import { SecurityTracker } from "./SecurityTracker";
 import CloudSyncToggel from "./CloudSyncToggel";
@@ -47,7 +47,8 @@ export default function DashboardLayout() {
   const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
-  const { companies, selectedCompany, selectCompany, deleteCompany } = useCompany(); // Get deleteCompany from context
+  const location = useLocation();
+  const { companies, selectedCompany, selectCompany, deleteCompany, loading } = useCompany(); // Get deleteCompany from context
 
   useEffect(() => {
     // Get user securely via dbService
@@ -56,6 +57,13 @@ export default function DashboardLayout() {
       setUser(storedUser);
     }
   }, []);
+
+  // Auto-redirect to Add Company if no companies exist
+  useEffect(() => {
+    if (!loading && companies.length === 0 && (location.pathname === "/" || location.pathname === "/dashboard")) {
+      navigate("/company/add");
+    }
+  }, [companies, loading, location.pathname, navigate]);
 
   const handleLogout = () => {
     SecurityTracker.track('USER_LOGOUT', { userId: user?._id, email: user?.email });

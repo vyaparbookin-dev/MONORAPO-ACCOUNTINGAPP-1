@@ -32,7 +32,7 @@ import {
   Calculator
 } from "lucide-react";
 import Footer from "./Footer";
-import { useNavigate, Outlet } from "react-router-dom";
+import { useNavigate, Outlet, useLocation } from "react-router-dom";
 import { useCompany } from "../contexts/CompanyContext";
 import { SecurityTracker } from "@repo/shared";
 import CloudSyncToggel from "./CloudSyncToggel";
@@ -44,7 +44,8 @@ export default function DashboardLayout() {
   const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
-  const { companies, selectedCompany, selectCompany } = useCompany();
+  const location = useLocation();
+  const { companies, selectedCompany, selectCompany, loading } = useCompany();
 
   useEffect(() => {
     // Get user from localStorage
@@ -53,6 +54,13 @@ export default function DashboardLayout() {
       setUser(JSON.parse(storedUser));
     }
   }, []);
+
+  // Auto-redirect to Add Company if no companies exist
+  useEffect(() => {
+    if (!loading && companies.length === 0 && (location.pathname === "/" || location.pathname === "/dashboard")) {
+      navigate("/company/add");
+    }
+  }, [companies, loading, location.pathname, navigate]);
 
   const handleLogout = () => {
     SecurityTracker.track('USER_LOGOUT', { userId: user?._id, email: user?.email });

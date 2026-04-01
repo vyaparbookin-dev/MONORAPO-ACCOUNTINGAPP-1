@@ -6,7 +6,7 @@ export default function RegisterScreen() {
   const [step, setStep] = useState(1); // 1: Register, 2: OTP
   const [userId, setUserId] = useState(null);
   const [otp, setOtp] = useState("");
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "" });
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [timer, setTimer] = useState(0);
@@ -111,6 +111,7 @@ export default function RegisterScreen() {
             <h2 className="text-2xl font-bold mb-4 text-gray-800">1. Create Account</h2>
             <input type="text" name="name" placeholder="Full Name" onChange={handleChange} className="border p-3 w-full mb-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" required />
             <input type="email" name="email" placeholder="Email Address" onChange={handleChange} className="border p-3 w-full mb-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" required />
+            <input type="tel" name="phone" placeholder="WhatsApp Mobile Number" onChange={handleChange} className="border p-3 w-full mb-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" required />
             <input type="password" name="password" placeholder="Password" onChange={handleChange} className="border p-3 w-full mb-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" required />
             <button disabled={loading || step === 2} className="bg-blue-600 hover:bg-blue-700 text-white w-full py-3 rounded-lg transition font-bold shadow-sm">
               {loading && step === 1 ? "Sending OTP..." : "Register & Get OTP"}
