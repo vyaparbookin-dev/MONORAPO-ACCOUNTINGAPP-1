@@ -1,3 +1,5 @@
+import React from "react";
+
 const SerialBatchPage = () => {
   return (
     <div className="p-6">

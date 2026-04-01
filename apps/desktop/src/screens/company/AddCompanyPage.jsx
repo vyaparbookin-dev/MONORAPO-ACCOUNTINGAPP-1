@@ -3,8 +3,12 @@ import api from "../../services/api";
 import { dbService } from "../../services/dbService";
 import { auditService } from "../../services/auditService";
 import { syncQueue } from "@repo/shared";
+import { useNavigate } from "react-router-dom";
+import { useCompany } from "../../contexts/CompanyContext";
 
 export default function AddCompanyPage({ onAdded }) {
+  const navigate = useNavigate();
+  const { selectCompany, refetchCompanies } = useCompany();
   const [form, setForm] = useState({
     name: "",
     gst: "",
@@ -31,9 +35,16 @@ export default function AddCompanyPage({ onAdded }) {
       // 3. Queue Sync
       await syncQueue.enqueue({ entityId: newId, entity: 'company', method: 'POST', url: '/api/company', data: payload });
 
+      // Update context and select the newly created company
+      if (refetchCompanies) await refetchCompanies();
+      if (selectCompany) selectCompany(payload);
+
       alert("Company added offline successfully!");
       setForm({ name: "", gst: "", address: "", phone: "", email: "" });
       onAdded && onAdded();
+      
+      // Redirect to Dashboard
+      navigate("/dashboard");
     } catch (err) {
       console.error(err);
       alert("Error adding company!");

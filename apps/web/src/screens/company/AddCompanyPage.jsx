@@ -1,7 +1,11 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
+import { useCompany } from "../../contexts/CompanyContext";
 
 export default function AddCompanyPage({ onAdded }) {
+  const navigate = useNavigate();
+  const { selectCompany, refetchCompanies } = useCompany();
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -41,15 +45,18 @@ export default function AddCompanyPage({ onAdded }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/api/company", form);
+      const res = await api.post("/api/company", form);
+      const newCompany = res.company || res.data || res;
+      
+      // तुरंत नई कंपनी को बैकग्राउंड में अपडेट और सेलेक्ट करें
+      if (refetchCompanies) await refetchCompanies();
+      if (selectCompany && newCompany?._id) selectCompany(newCompany);
+      
       alert("Company added successfully!");
-      setForm({ 
-        name: "", email: "", phone: "", address: "", gstNumber: "", gstType: "regular", 
-        website: "", panNumber: "", businessType: ["retail"], ownershipType: "Proprietorship", industryType: "", 
-        businessDescription: "", bankName: "", accountName: "", accountNumber: "", 
-        ifscCode: "", upiId: "", caName: "", caPhone: "" 
-      });
       onAdded && onAdded();
+      
+      // सीधे डैशबोर्ड पर भेजें
+      navigate("/dashboard");
     } catch (err) {
       console.error(err);
       alert("Error adding company!");
