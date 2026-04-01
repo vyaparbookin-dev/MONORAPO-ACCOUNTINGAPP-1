@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
-import api from '../../services/api';
+import { api } from '@repo/shared';
 
 const GoogleDriveBackup = () => {
   const [loading, setLoading] = useState(false);
