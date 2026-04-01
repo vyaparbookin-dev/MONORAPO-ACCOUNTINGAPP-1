@@ -4,6 +4,10 @@ import { syncQueue } from '@repo/shared';
 export const SecurityTracker = {
     track: async (event, details) => {
         console.log(`[Security Event]: ${event}`, details);
+        
+        const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+        if (!token) return Promise.resolve(); // Don't enqueue if not logged in
+
         // Push to Sync Queue for offline-first support
         await syncQueue.enqueue({ entityId: `sec-${Date.now()}`, entity: 'security', method: 'POST', url: '/api/security/log', data: { action: event, details } });
     }
