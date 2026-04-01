@@ -28,14 +28,21 @@ export default function VerifyOtp() {
 
   const autoVerify = async (uid, o) => {
     setLoading(true);
+    console.log("🔵 Auto-verifying from Magic Link...");
     try {
-      const response = await api.post('/api/auth/verify-otp', { userId: uid, otp: o });
-      if (response.success || response.message === "Account verified successfully. You can now log in.") {
+      const res = await api.post('/api/auth/verify-otp', { userId: uid, otp: o });
+      const data = res.data ? res.data : res;
+      console.log("🟢 Auto-Verify Response:", data);
+      if (data?.success || (data?.message && data.message.includes("verified successfully"))) {
         alert("Account Verified Successfully from Link! 🎉 Please login.");
         navigate('/login');
+      } else {
+        setError(data?.message || "Verification failed");
       }
     } catch (err) {
-      setError(err.message || "Invalid or expired Magic Link. Please try manually.");
+      const errData = err.response?.data || err;
+      console.error("🔴 Auto-Verify Error:", errData);
+      setError(errData?.message || err.message || "Invalid or expired Magic Link. Please try manually.");
     } finally {
       setLoading(false);
     }
@@ -50,15 +57,20 @@ export default function VerifyOtp() {
 
     setLoading(true);
     setError('');
+    console.log("🔵 Manual Verification Started...");
 
     try {
-      const response = await api.post('/api/auth/verify-otp', { userId, otp });
-      if (response.success || response.message === "Account verified successfully. You can now log in.") {
+      const res = await api.post('/api/auth/verify-otp', { userId, otp });
+      const data = res.data ? res.data : res;
+      console.log("🟢 Manual Verify Response:", data);
+      if (data?.success || (data?.message && data.message.includes("verified successfully"))) {
         alert("Account Verified Successfully! 🎉 Please login.");
         navigate('/login'); // वेरीफाई होने के बाद सीधे लॉगिन पेज पर भेजें
       }
     } catch (err) {
-      setError(err.message || "Invalid or expired OTP. Please try again.");
+      const errData = err.response?.data || err;
+      console.error("🔴 Manual Verify Error:", errData);
+      setError(errData?.message || err.message || "Invalid or expired OTP. Please try again.");
     } finally {
       setLoading(false);
     }

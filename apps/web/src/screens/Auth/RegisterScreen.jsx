@@ -6,11 +6,6 @@ export default function RegisterScreen() {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
-  
-  // New states for inline OTP verification
-  const [step, setStep] = useState(1); // 1: Register, 2: OTP
-  const [userId, setUserId] = useState(null);
-  const [otp, setOtp] = useState("");
 
   const navigate = useNavigate();
 
@@ -20,25 +15,32 @@ export default function RegisterScreen() {
     e.preventDefault();
     setLoading(true);
     setMsg("");
+    console.log("🔵 1. Register Button Clicked. Sending data to API...");
     try {
       const res = await api.post("/api/auth/register", form);
       const data = res.data ? res.data : res; 
+      console.log("🟢 2. API Response Received:", data);
 
       // Condition को बहुत आसान कर दिया गया है ताकि ये कभी फेल ना हो
       if (data && (data.requiresVerification || (data.message && data.message.includes('OTP')))) {
+        console.log("🟢 3. Triggering OTP Box step!");
         alert("Registration successful! Please check your email for the OTP.");
         setUserId(data.userId || data.id);
         setStep(2); // Move to inline OTP step
       } else if (data && data.success) {
+        console.log("🟢 3. Direct Login Triggered!");
         alert("Registration successful! Please login.");
         navigate("/login");
       } else {
+        console.log("🟠 3. Success is false or condition failed.");
         setMsg(data?.message || "Registration failed. Try again.");
       }
     } catch (err) {
       const errData = err.response?.data || err;
+      console.log("🔴 2. API Catch Error:", errData);
       // अगर पहले से अकाउंट है और वेरीफाई नहीं है, तो वो catch में भी आ सकता है
       if (errData && (errData.requiresVerification || (errData.message && errData.message.includes('OTP')))) {
+        console.log("🟢 3. Triggering OTP Box from Error Block!");
         setUserId(errData.userId || errData.id);
         setStep(2);
         setMsg(errData.message || "Please check your email for OTP.");
