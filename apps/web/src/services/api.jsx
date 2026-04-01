@@ -1,70 +1,70 @@
-import { api, API_ROUTES } from "@repo/shared";
+import api from "@repo/shared/src/services/api";
 
 export const auth = {
-  login: (data) => api.post(API_ROUTES.AUTH.LOGIN, data),
-  register: (data) => api.post(API_ROUTES.AUTH.REGISTER, data),
+  login: (data) => api.post("/api/auth/login", data),
+  register: (data) => api.post("/api/auth/register", data),
 };
 
 export const billing = {
-  create: (data) => api.post(API_ROUTES.BILLING.BASE, data),
-  list: (params) => api.get(API_ROUTES.BILLING.BASE, { params }),
-  getById: (id) => api.get(API_ROUTES.BILLING.GET_BY_ID(id)),
-  update: (id, data) => api.put(API_ROUTES.BILLING.GET_BY_ID(id), data),
-  delete: (id) => api.delete(API_ROUTES.BILLING.GET_BY_ID(id)),
-  parseImage: (data) => api.post(API_ROUTES.BILLING.PARSE, data),
+  create: (data) => api.post("/api/billing", data),
+  list: (params) => api.get("/api/billing", { params }),
+  getById: (id) => api.get(`/api/billing/${id}`),
+  update: (id, data) => api.put(`/api/billing/${id}`, data),
+  delete: (id) => api.delete(`/api/billing/${id}`),
+  parseImage: (data) => api.post("/api/billing/parse", data),
 };
 
 export const inventory = {
-  list: () => api.get(API_ROUTES.INVENTORY.BASE),
-  add: (data) => api.post(API_ROUTES.INVENTORY.BASE, data),
-  getById: (id) => api.get(API_ROUTES.INVENTORY.GET_BY_ID(id)),
-  update: (id, data) => api.put(API_ROUTES.INVENTORY.GET_BY_ID(id), data),
-  delete: (id) => api.delete(API_ROUTES.INVENTORY.GET_BY_ID(id)),
-  updateStock: (id, quantity) => api.put(API_ROUTES.INVENTORY.STOCK_ADJUST(id), { quantity }),
+  list: () => api.get("/api/inventory"),
+  add: (data) => api.post("/api/inventory", data),
+  getById: (id) => api.get(`/api/inventory/${id}`),
+  update: (id, data) => api.put(`/api/inventory/${id}`, data),
+  delete: (id) => api.delete(`/api/inventory/${id}`),
+  updateStock: (id, quantity) => api.put(`/api/inventory/${id}/stock`, { quantity }),
 };
 
 export const party = {
-  create: (data) => api.post(API_ROUTES.PARTY.BASE, data),
-  list: (type) => api.get(API_ROUTES.PARTY.BASE, { params: { type } }),
-  getById: (id) => api.get(API_ROUTES.PARTY.GET_BY_ID(id)),
-  update: (id, data) => api.put(API_ROUTES.PARTY.GET_BY_ID(id), data),
-  delete: (id) => api.delete(API_ROUTES.PARTY.GET_BY_ID(id)),
+  create: (data) => api.post("/api/party", data),
+  list: (type) => api.get("/api/party", { params: { type } }),
+  getById: (id) => api.get(`/api/party/${id}`),
+  update: (id, data) => api.put(`/api/party/${id}`, data),
+  delete: (id) => api.delete(`/api/party/${id}`),
 };
 
 export const reports = {
-  generate: (type, filter) => api.post(API_ROUTES.REPORTS.GENERATE, { type, filter }),
-  download: (id) => api.get(API_ROUTES.REPORTS.DOWNLOAD(id), { responseType: "blob" }),
+  generate: (type, filter) => api.post("/api/reports/generate", { type, filter }),
+  download: (id) => api.get(`/api/reports/download/${id}`, { responseType: "blob" }),
 };
 
 export const staff = {
-  create: (data) => api.post(API_ROUTES.STAFF.BASE, data),
-  list: (type) => api.get(API_ROUTES.STAFF.BASE),
-  getById: (id) => api.get(`${API_ROUTES.STAFF.BASE}/${id}`),
-  update: (id, data) => api.put(`${API_ROUTES.STAFF.BASE}/${id}`, data),
-  delete: (id) => api.delete(`${API_ROUTES.STAFF.BASE}/${id}`),
+  create: (data) => api.post("/api/staff", data),
+  list: (type) => api.get("/api/staff"),
+  getById: (id) => api.get(`/api/staff/${id}`),
+  update: (id, data) => api.put(`/api/staff/${id}`, data),
+  delete: (id) => api.delete(`/api/staff/${id}`),
 };
 
 export const attendance = {
-  mark: (data) => api.post(API_ROUTES.STAFF.ATTENDANCE, data),
-  get: (params) => api.get(API_ROUTES.STAFF.ATTENDANCE, { params }),
-  monthlyReport: (month, year) => api.get(`${API_ROUTES.STAFF.ATTENDANCE}/report`, { params: { month, year } }),
+  mark: (data) => api.post("/api/attendance", data),
+  get: (params) => api.get("/api/attendance", { params }),
+  monthlyReport: (month, year) => api.get(`/api/attendance/report`, { params: { month, year } }),
 };
 
 export const expenses = {
-  add: (data) => api.post(API_ROUTES.EXPENSE.BASE, data),
-  list: (type) => api.get(API_ROUTES.EXPENSE.BASE),
+  add: (data) => api.post("/api/expenses", data),
+  list: (type) => api.get("/api/expenses"),
 };
 
 export const company = {
-  add: (data) => api.post(API_ROUTES.COMPANY.BASE, data),
-  list: () => api.get(API_ROUTES.COMPANY.BASE),
-  getById: (id) => api.get(API_ROUTES.COMPANY.GET_BY_ID(id)),
+  add: (data) => api.post("/api/company", data),
+  list: () => api.get("/api/company"),
+  getById: (id) => api.get(`/api/company/${id}`),
 };
 
 export const sync = {
-  push: (data) => api.post(API_ROUTES.SYNC.PUSH, data),
-  pull: (dataType) => api.get(API_ROUTES.SYNC.PULL(dataType)),
-  status: () => api.get(API_ROUTES.SYNC.STATUS),
+  push: (data) => api.post("/api/sync/push", data),
+  pull: (dataType) => api.get(`/api/sync/pull/${dataType}`),
+  status: () => api.get("/api/sync/status"),
 };
 
 // Attach services to api instance for convenience
