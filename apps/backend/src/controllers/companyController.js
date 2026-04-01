@@ -33,8 +33,8 @@ export const getCompany = async (req, res) => {
 export const updateCompany = async (req, res) => {
   try {
     // Explicitly define which fields can be updated for security and clarity.
-    const { name, gstNumber, address, upiId, businessType, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType } = req.body;
-    const updateData = { name, gstNumber, address, upiId, businessType, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType };
+    const { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, businessType, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications } = req.body;
+    const updateData = { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, businessType, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications };
     const company = await Company.findOneAndUpdate(
       { _id: req.params.id, user: req.user.id }, // Security ke liye user ID check
       { $set: updateData }, // Frontend se bheji gayi naye details (website, bank, etc.)

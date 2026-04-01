@@ -16,7 +16,8 @@ export const register = async (req, res) => {
       user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes validity
       await user.save();
       try {
-        await sendEmail({ email: user.email, subject: 'Verify Your Account', message: `Your new OTP is: ${otp}. Valid for 10 mins.` });
+        const verifyLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-otp?userId=${user._id}&otp=${otp}`;
+        await sendEmail({ email: user.email, subject: 'Verify Your Account', message: `Your new OTP is: ${otp}.\n\nOr click here to verify your account: ${verifyLink}\n\nValid for 10 mins.` });
         return res.status(200).json({ success: true, message: "A new OTP has been sent to your email.", requiresVerification: true, userId: user._id });
       } catch (emailError) {
         console.error("🔴 EMAIL RESEND FAILED:", emailError.message);
@@ -46,10 +47,11 @@ export const register = async (req, res) => {
     await user.save();
 
     try {
+      const verifyLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-otp?userId=${user._id}&otp=${otp}`;
       await sendEmail({ 
         email: user.email, 
         subject: 'Welcome! Verify Your Account', 
-        message: `Your One-Time Password (OTP) is: ${otp}. It is valid for 10 minutes.` 
+        message: `Your One-Time Password (OTP) is: ${otp}.\n\nOr click this link to auto-verify your account: ${verifyLink}\n\nIt is valid for 10 minutes.` 
       });
       // Don't send a token on registration. Force user to verify OTP.
       return res.status(201).json({ success: true, message: "User registered. Please check your email for the OTP.", requiresVerification: true, userId: user._id });

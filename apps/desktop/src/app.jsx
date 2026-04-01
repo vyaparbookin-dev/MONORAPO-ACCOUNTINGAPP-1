@@ -304,9 +304,10 @@ const App = () => {
       </Route>
     </Routes>
       </CompanyProvider>
-    </Router>  
-  </ErrorBoundary>  
-  </GoogleOAuthProvider>  
+    </Router>
+  </ErrorBoundary>
+  </GoogleOAuthProvider>
+  );
 };
 
 export default App;

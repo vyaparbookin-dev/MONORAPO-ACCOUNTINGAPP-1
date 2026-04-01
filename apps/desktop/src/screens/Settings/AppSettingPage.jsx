@@ -21,6 +21,10 @@ const AppSettingPage = () => {
     sms: false,
     push: true,
   });
+  
+  // WhatsApp States
+  const [waStatus, setWaStatus] = useState('disconnected');
+  const [waQrCode, setWaQrCode] = useState('');
 
   useEffect(() => {
     if (selectedCompany?.logo) {
@@ -32,6 +36,15 @@ const AppSettingPage = () => {
     setFreeBillCount(selectedCompany?.freeBillCount || 0);
     setMaxFreeBills(selectedCompany?.maxFreeBills || 50);
     setSubscriptionExpiresAt(selectedCompany?.subscriptionExpiresAt ? new Date(selectedCompany.subscriptionExpiresAt) : null);
+
+    // WhatsApp Status Setup (Listens to Electron Main Process)
+    if (window.electron && window.electron.whatsapp) {
+      window.electron.whatsapp.getStatus().then(setWaStatus);
+      window.electron.whatsapp.onStatusChange((status, data) => {
+        setWaStatus(status);
+        if (status === 'qr') setWaQrCode(data); // data will be base64 image URL of QR
+      });
+    }
   }, [selectedCompany]);
 
   const handleLogoUpload = (e) => {
@@ -88,6 +101,21 @@ const AppSettingPage = () => {
     }
   };
 
+  const handleLinkWhatsapp = () => {
+    if (!window.electron?.whatsapp) {
+      alert("WhatsApp background integration requires the Electron Main Process to be configured.");
+      return;
+    }
+    setWaStatus('initializing');
+    window.electron.whatsapp.link();
+  };
+
+  const handleUnlinkWhatsapp = () => {
+    if (window.electron?.whatsapp) {
+      window.electron.whatsapp.unlink();
+    }
+  };
+
   return (
     <div className="p-6 bg-white rounded-xl shadow-md">
       <h2 className="text-2xl font-bold mb-6">App Settings</h2>
@@ -108,6 +136,44 @@ const AppSettingPage = () => {
             <input type="file" accept="image/*" onChange={handleLogoUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
             <p className="text-xs text-gray-500 mt-2">Recommended: Square image, max 2MB.</p>
           </div>
+        </div>
+      </div>
+
+      {/* WhatsApp Auto-Send Integration */}
+      <div className="mb-6 border-b pb-6">
+        <h3 className="text-lg font-semibold mb-2">WhatsApp Auto-Send (Vyapar Style)</h3>
+        <p className="text-gray-600 mb-4 text-sm">Link your WhatsApp to send bills automatically in the background without opening the app.</p>
+        
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+          <div className="flex justify-between items-center mb-4">
+            <span className="text-sm font-medium text-gray-700">Status: 
+              <span className={`ml-2 px-2 py-1 rounded text-xs font-bold ${
+                waStatus === 'connected' ? 'bg-green-100 text-green-700' :
+                waStatus === 'qr' ? 'bg-yellow-100 text-yellow-700' :
+                waStatus === 'initializing' ? 'bg-blue-100 text-blue-700' :
+                'bg-gray-200 text-gray-700'
+              }`}>
+                {waStatus.toUpperCase()}
+              </span>
+            </span>
+            
+            {waStatus === 'connected' ? (
+              <button onClick={handleUnlinkWhatsapp} className="px-4 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 text-sm font-medium border border-red-200">
+                Unlink WhatsApp
+              </button>
+            ) : (
+              <button onClick={handleLinkWhatsapp} disabled={waStatus === 'initializing'} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50">
+                {waStatus === 'initializing' ? 'Loading QR...' : 'Link WhatsApp'}
+              </button>
+            )}
+          </div>
+          
+          {waStatus === 'qr' && waQrCode && (
+            <div className="mt-4 p-4 bg-white border rounded-lg flex flex-col items-center">
+              <p className="text-sm text-gray-600 mb-3 font-semibold">Scan this QR code using your WhatsApp (Linked Devices)</p>
+              <img src={waQrCode} alt="WhatsApp QR Code" className="w-48 h-48 border p-2 rounded-lg shadow-sm" />
+            </div>
+          )}
         </div>
       </div>
 

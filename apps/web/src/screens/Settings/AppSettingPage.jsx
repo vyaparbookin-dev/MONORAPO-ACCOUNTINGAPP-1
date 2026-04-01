@@ -64,11 +64,13 @@ const AppSettingPage = () => {
     if (!selectedCompany) return alert("No company selected.");
     setSaving(true);
     try {
-      await api.put(`/api/company/${selectedCompany._id}`, { 
+      await api.put(`/api/company/${selectedCompany._id}`, {
         logo: logoPreview, 
         invoiceThemeColor, 
         invoiceTemplateType,
-        // Note: plan, freeBillCount, maxFreeBills, subscriptionExpiresAt are updated via payment flow, not directly here.
+        theme,
+        notifications,
+        // Note: plan, freeBillCount, etc. are updated via payment flow, not directly here.
       });
       alert("Settings saved successfully!");
       refetchCompanies();

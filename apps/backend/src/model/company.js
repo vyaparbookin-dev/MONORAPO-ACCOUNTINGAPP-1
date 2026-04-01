@@ -2,10 +2,15 @@ import mongoose from "mongoose";
 
 const companySchema = new mongoose.Schema({
   name: { type: String, required: true },
+  email: String,
+  phone: String,
   gstNumber: String,
+  gstType: { type: String, enum: ['regular', 'composition', 'unregistered'], default: 'regular' },
   address: String,
   upiId: String, // Merchant UPI ID for QR Code Payments
   businessType: { type: String, enum: ['retail', 'wholesale', 'service', 'manufacturing', 'jewellery', 'clothes', 'hardware', 'electronic', 'restaurant', 'hotel', 'science', 'sports'], default: 'retail' },
+  industryType: String,
+  ownershipType: { type: String, enum: ['Proprietorship', 'Partnership', 'Private Limited', 'LLC / LLP', 'HUF', 'Other'], default: 'Proprietorship' },
   website: String,
   businessDescription: String,
   panNumber: String,
@@ -21,6 +26,14 @@ const companySchema = new mongoose.Schema({
   // Invoice Customization
   invoiceThemeColor: { type: String, default: '#007bff' }, // Default blue color
   invoiceTemplateType: { type: String, enum: ['classic', 'modern', 'minimal'], default: 'classic' },
+  logo: String, // Base64 string for the logo
+
+  // App Preferences (can be company-specific)
+  theme: { type: String, enum: ['light', 'dark'], default: 'light' },
+  notifications: {
+    email: { type: Boolean, default: true },
+    sms: { type: Boolean, default: false },
+  },
 
   // Licensing and Subscription
   plan: { type: String, enum: ['free', 'premium'], default: 'free' },

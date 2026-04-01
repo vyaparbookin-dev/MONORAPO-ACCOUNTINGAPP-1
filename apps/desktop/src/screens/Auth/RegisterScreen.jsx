@@ -16,12 +16,14 @@ export default function RegisterScreen() {
     setMsg("");
     try {
       const res = await api.post("/api/auth/register", form);
-      if (res.requiresVerification) {
+      if (res?.success && res?.requiresVerification) {
         alert("Registration successful! Please check your email for the OTP.");
         navigate("/verify-otp", { state: { userId: res.userId } });
-      } else {
+      } else if (res?.success) {
         alert("Registration successful! Please login.");
         navigate("/login");
+      } else {
+        setMsg(res?.message || "Registration failed. Try again.");
       }
     } catch (err) {
       setMsg(err.message || "Registration failed. Try again.");

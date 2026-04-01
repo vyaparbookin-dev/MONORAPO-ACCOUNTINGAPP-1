@@ -12,6 +12,7 @@ export default function AddCompanyPage({ onAdded }) {
     website: "",
     panNumber: "",
     businessType: "retail",
+    ownershipType: "Proprietorship",
     industryType: "",
     businessDescription: "",
     bankName: "",
@@ -33,7 +34,7 @@ export default function AddCompanyPage({ onAdded }) {
       alert("Company added successfully!");
       setForm({ 
         name: "", email: "", phone: "", address: "", gstNumber: "", gstType: "regular", 
-        website: "", panNumber: "", businessType: "retail", industryType: "", 
+        website: "", panNumber: "", businessType: "retail", ownershipType: "Proprietorship", industryType: "", 
         businessDescription: "", bankName: "", accountName: "", accountNumber: "", 
         ifscCode: "", upiId: "", caName: "", caPhone: "" 
       });
@@ -77,6 +78,14 @@ export default function AddCompanyPage({ onAdded }) {
               <option value="hotel">Hotel / Resort</option>
               <option value="science">Science Equipment</option>
               <option value="sports">Sports & Fitness</option>
+            </select>
+            <select name="ownershipType" value={form.ownershipType} onChange={handleChange} className="border p-2.5 rounded-lg w-full bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+              <option value="Proprietorship">Proprietorship (एकल स्वामित्व)</option>
+              <option value="Partnership">Partnership</option>
+              <option value="Private Limited">Private Limited (Pvt Ltd)</option>
+              <option value="LLC / LLP">LLC / LLP</option>
+              <option value="HUF">HUF</option>
+              <option value="Other">Other</option>
             </select>
             <input name="industryType" placeholder="Industry (e.g. Hardware)" value={form.industryType} onChange={handleChange} className="border p-2.5 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none" />
             <input name="businessDescription" placeholder="What does your firm do?" value={form.businessDescription} onChange={handleChange} className="border p-2.5 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none" />
