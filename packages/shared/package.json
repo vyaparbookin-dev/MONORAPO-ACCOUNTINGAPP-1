@@ -4,6 +4,8 @@
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
+    "./api": "./src/services/api.js",
+    "./src/services/api": "./src/services/api.js",
     "./syncqueue.native": "./src/services/syncqueue.native.js",
     "./src/services/syncqueue.native": "./src/services/syncqueue.native.js",
     "./syncqueue": "./src/services/syncqueue.js",

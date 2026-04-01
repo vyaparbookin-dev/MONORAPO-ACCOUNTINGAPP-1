@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { api } from '@repo/shared/src/services/api';
+import { api } from '@repo/shared';
 
 export default function VerifyOtp() {
   const [otp, setOtp] = useState('');
