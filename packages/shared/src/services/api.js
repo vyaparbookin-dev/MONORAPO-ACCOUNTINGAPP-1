@@ -1,33 +1,19 @@
 import axios from "axios";
 
 // --- Platform-Aware Storage ---
-let getStorage, setStorage;
+let getStorage, setStorage; // These will be defined for the web environment.
 
-// A common way to check for React Native environment
-const isReactNative = typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
-
-if (isReactNative) {
-  // Use AsyncStorage for React Native
-  // FIX: Typo in package name and using a variable to prevent Vite's static analysis error.
-  // Vite build ke time par isko resolve karne ki koshish nahi karega.
-  const asyncStoragePackageName = '@react-native-async-storage/async-storage';
-  const AsyncStorage = require(asyncStoragePackageName).default;
-  getStorage = async (key) => AsyncStorage.getItem(key);
-  setStorage = async (key, value) => {
-    if (value === "" || value === null || value === undefined) {
-      return AsyncStorage.removeItem(key);
-    }
-    return AsyncStorage.setItem(key, String(value));
-  };
-} else {
-  // Use localStorage for Web/Desktop
-  getStorage = async (key) => (typeof localStorage !== "undefined" ? localStorage.getItem(key) : null);
-  setStorage = async (key, value) => {
-    if (typeof localStorage === "undefined") return;
-    if (value === "" || value === null || value === undefined) localStorage.removeItem(key);
-    else localStorage.setItem(key, value);
-  };
-}
+// This file is for WEB/DESKTOP only. The React Native bundler will use `api.native.js` instead.
+// We remove the React Native specific code (`require`) which was breaking the Vercel (Vite) build.
+getStorage = async (key) => (typeof localStorage !== "undefined" ? localStorage.getItem(key) : null);
+setStorage = async (key, value) => {
+  if (typeof localStorage === "undefined") return;
+  if (value === "" || value === null || value === undefined) {
+    localStorage.removeItem(key);
+  } else {
+    localStorage.setItem(key, value);
+  }
+};
 
 // Helper to safely get env vars across Vite, Next.js, React Native, Node
 const getEnv = (key) => {

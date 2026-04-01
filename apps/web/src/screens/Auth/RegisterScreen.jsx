@@ -72,33 +72,43 @@ export default function RegisterScreen() {
   };
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-gray-100">
-      <div className="bg-white p-6 rounded-xl shadow w-96">
-        {step === 1 ? (
+    <div className="flex justify-center items-center min-h-screen bg-gray-100 py-10 px-4">
+      <div className="w-full max-w-md space-y-6">
+        
+        {/* Step 1: Register Box */}
+        <div className={`bg-white p-6 rounded-xl shadow-md transition-all duration-300 ${step === 2 ? 'opacity-50 pointer-events-none grayscale border-l-4 border-gray-400' : 'border-l-4 border-blue-600 scale-100'}`}>
           <form onSubmit={handleRegister}>
-            <h2 className="text-2xl font-semibold mb-4 text-center">Create Account</h2>
-            <input type="text" name="name" placeholder="Full Name" onChange={handleChange} className="border p-2 w-full mb-3 rounded focus:outline-none focus:border-blue-500" required />
-            <input type="email" name="email" placeholder="Email" onChange={handleChange} className="border p-2 w-full mb-3 rounded focus:outline-none focus:border-blue-500" required />
-            <input type="password" name="password" placeholder="Password" onChange={handleChange} className="border p-2 w-full mb-3 rounded focus:outline-none focus:border-blue-500" required />
-            <button disabled={loading} className="bg-green-600 hover:bg-green-700 text-white w-full py-2 rounded disabled:opacity-50 transition font-medium">
-              {loading ? "Registering..." : "Register"}
+            <h2 className="text-2xl font-bold mb-4 text-gray-800">1. Create Account</h2>
+            <input type="text" name="name" placeholder="Full Name" onChange={handleChange} className="border p-3 w-full mb-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" required />
+            <input type="email" name="email" placeholder="Email Address" onChange={handleChange} className="border p-3 w-full mb-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" required />
+            <input type="password" name="password" placeholder="Password" onChange={handleChange} className="border p-3 w-full mb-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" required />
+            <button disabled={loading || step === 2} className="bg-blue-600 hover:bg-blue-700 text-white w-full py-3 rounded-lg transition font-bold shadow-sm">
+              {loading && step === 1 ? "Sending OTP..." : "Register & Get OTP"}
             </button>
-            {msg && <p className={`mt-4 text-center text-sm ${msg.toLowerCase().includes('failed') ? 'text-red-500' : 'text-green-600'}`}>{msg}</p>}
+            {step === 1 && msg && <p className={`mt-3 text-center text-sm font-medium ${msg.toLowerCase().includes('failed') ? 'text-red-500' : 'text-green-600'}`}>{msg}</p>}
+            
             <p className="mt-4 text-center text-sm text-gray-600">
-              Already have an account? <Link to="/login" className="text-blue-600 hover:underline">Login here</Link>
+              Already have an account? <Link to="/login" className="text-blue-600 hover:underline font-bold">Login here</Link>
             </p>
           </form>
-        ) : (
+        </div>
+
+        {/* Step 2: OTP Box (Permanent on screen) */}
+        <div className={`bg-white p-6 rounded-xl shadow-md transition-all duration-300 ${step === 1 ? 'opacity-40 pointer-events-none grayscale border-l-4 border-gray-300' : 'border-l-4 border-green-500 shadow-xl scale-[1.02]'}`}>
           <form onSubmit={handleVerifyOtp}>
-            <h2 className="text-2xl font-bold mb-2 text-center text-indigo-600">Verify Email</h2>
-            <p className="text-sm text-center text-gray-600 mb-4">We sent a 6-digit OTP to your email. Enter it below.</p>
-            <input type="text" maxLength="6" placeholder="Enter 6-digit OTP" value={otp} onChange={(e) => setOtp(e.target.value)} className="border border-gray-300 p-3 w-full mb-4 rounded text-center tracking-[0.5em] text-xl font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500" required />
-            <button disabled={loading} className="bg-indigo-600 hover:bg-indigo-700 text-white w-full py-2 rounded disabled:opacity-50 transition font-bold">
-              {loading ? "Verifying..." : "Verify OTP"}
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold text-gray-800">2. Verify OTP</h2>
+              {step === 2 && <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded animate-pulse">OTP Sent!</span>}
+            </div>
+            <p className="text-sm text-gray-600 mb-4 font-medium">Enter the 6-digit code sent to your email.</p>
+            <input type="text" maxLength="6" placeholder="Enter 6-digit OTP" value={otp} onChange={(e) => setOtp(e.target.value)} className="border border-gray-300 p-4 w-full mb-4 rounded-lg text-center tracking-[0.7em] text-2xl font-black focus:outline-none focus:ring-2 focus:ring-green-500 bg-gray-50" required disabled={step === 1} />
+            <button disabled={loading || step === 1} className="bg-green-600 hover:bg-green-700 text-white w-full py-3 rounded-lg transition font-bold shadow-sm">
+              {loading && step === 2 ? "Verifying..." : "Verify & Login"}
             </button>
-            {msg && <p className="mt-4 text-center text-sm text-red-500">{msg}</p>}
+            {step === 2 && msg && <p className="mt-3 text-center text-sm font-medium text-red-500">{msg}</p>}
           </form>
-        )}
+        </div>
+
       </div>
     </div>
   );
