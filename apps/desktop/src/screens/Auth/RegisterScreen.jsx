@@ -22,20 +22,29 @@ export default function RegisterScreen() {
     setMsg("");
     try {
       const res = await api.post("/api/auth/register", form);
-      const data = res.data || res; // Handle both nested axios data and direct responses
+      const data = res.data ? res.data : res; 
 
-      if (data?.success && data?.requiresVerification) {
+      // Condition को बहुत आसान कर दिया गया है ताकि ये कभी फेल ना हो
+      if (data && (data.requiresVerification || (data.message && data.message.includes('OTP')))) {
         alert("Registration successful! Please check your email for the OTP.");
-        setUserId(data.userId);
+        setUserId(data.userId || data.id);
         setStep(2); // Move to inline OTP step
-      } else if (data?.success) {
+      } else if (data && data.success) {
         alert("Registration successful! Please login.");
         navigate("/login");
       } else {
         setMsg(data?.message || "Registration failed. Try again.");
       }
     } catch (err) {
-      setMsg(err.response?.data?.message || err.message || "Registration failed. Try again.");
+      const errData = err.response?.data || err;
+      // अगर पहले से अकाउंट है और वेरीफाई नहीं है, तो वो catch में भी आ सकता है
+      if (errData && (errData.requiresVerification || (errData.message && errData.message.includes('OTP')))) {
+        setUserId(errData.userId || errData.id);
+        setStep(2);
+        setMsg(errData.message || "Please check your email for OTP.");
+      } else {
+        setMsg(errData.message || err.message || "Registration failed. Try again.");
+      }
     } finally {
       setLoading(false);
     }

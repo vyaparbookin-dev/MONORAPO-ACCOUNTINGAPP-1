@@ -18,10 +18,28 @@ export default function VerifyOtp() {
   const userId = location.state?.userId || queryUserId;
 
   useEffect(() => {
-    if (queryOtp) {
-      setOtp(queryOtp); // ईमेल के लिंक से आने पर OTP अपने आप भर जायेगा
+    if (queryOtp && queryUserId) {
+      setOtp(queryOtp);
+      autoVerify(queryUserId, queryOtp); // लिंक से आने पर बिना बटन दबाये वेरीफाई
+    } else if (queryOtp) {
+      setOtp(queryOtp);
     }
-  }, [queryOtp]);
+  }, [queryOtp, queryUserId]);
+
+  const autoVerify = async (uid, o) => {
+    setLoading(true);
+    try {
+      const response = await api.post('/api/auth/verify-otp', { userId: uid, otp: o });
+      if (response.success || response.message === "Account verified successfully. You can now log in.") {
+        alert("Account Verified Successfully from Link! 🎉 Please login.");
+        navigate('/login');
+      }
+    } catch (err) {
+      setError(err.message || "Invalid or expired Magic Link. Please try manually.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleVerify = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -34,7 +52,7 @@ export default function VerifyOtp() {
     setError('');
 
     try {
-      const response = await api.post('/auth/verify-otp', { userId, otp });
+      const response = await api.post('/api/auth/verify-otp', { userId, otp });
       if (response.success || response.message === "Account verified successfully. You can now log in.") {
         alert("Account Verified Successfully! 🎉 Please login.");
         navigate('/login'); // वेरीफाई होने के बाद सीधे लॉगिन पेज पर भेजें

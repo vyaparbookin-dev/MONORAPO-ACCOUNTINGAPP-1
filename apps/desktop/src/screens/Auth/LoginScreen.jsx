@@ -46,7 +46,13 @@ export default function LoginScreen() {
           navigate("/");
         }
       } else {
-        setError(err.response?.data?.message || err.message || "Invalid email or password");
+        const errData = err.response?.data?.message || err.response?.data || err;
+        if (errData.requiresVerification && errData.userId) {
+          alert("Account not verified. Redirecting to OTP verification page...");
+          navigate("/verify-otp", { state: { userId: errData.userId } });
+        } else {
+          setError(errData.message || err.message || "Invalid email or password");
+        }
       }
     } finally {
       setLoading(false);

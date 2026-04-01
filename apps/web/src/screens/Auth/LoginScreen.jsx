@@ -30,7 +30,13 @@ export default function LoginScreen() {
         navigate("/");
       }
     } catch (err) {
-      setError(err.message || "Invalid email or password");
+      const errData = err.response?.data || err;
+      if (errData.requiresVerification && errData.userId) {
+        alert("Account not verified. Redirecting to OTP verification page...");
+        navigate("/verify-otp", { state: { userId: errData.userId } });
+        return;
+      }
+      setError(errData.message || "Invalid email or password");
       console.error("Login error:", err);
     } finally {
       setLoading(false);

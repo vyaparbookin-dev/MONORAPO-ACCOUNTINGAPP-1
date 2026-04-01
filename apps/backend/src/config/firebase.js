@@ -1,21 +1,22 @@
 import admin from 'firebase-admin';
 
 try {
-  const serviceAccountBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+  if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+    // Render me \n ko sahi se read karne ke liye replace karna padta hai
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
 
-  if (serviceAccountBase64) {
-    // Decode the Base64 string back to a JSON string
-    const serviceAccountJson = Buffer.from(serviceAccountBase64, 'base64').toString('utf-8');
-    const serviceAccount = JSON.parse(serviceAccountJson);
-
-    // Initialize Firebase with the decoded credentials
+    // Initialize Firebase with individual keys
     admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: privateKey,
+      }),
       storageBucket: process.env.FIREBASE_STORAGE_BUCKET // Ye .env se aayega
     });
-    console.log("✅ Firebase initialized successfully!");
+    console.log("✅ Firebase initialized successfully with individual keys!");
   } else {
-    console.warn("⚠️ FIREBASE_SERVICE_ACCOUNT_BASE64 is not set. Firebase features will be disabled.");
+    console.warn("⚠️ Firebase keys (PROJECT_ID, PRIVATE_KEY, CLIENT_EMAIL) are not set. Firebase features disabled.");
   }
 } catch (error) {
   // Ye ab aapko behtar error dega agar koi problem hui toh
