@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import api from "../../services/api";
 
@@ -9,6 +9,7 @@ export default function RegisterScreen() {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [timer, setTimer] = useState(0);
 
   const navigate = useNavigate();
 
@@ -27,6 +28,7 @@ export default function RegisterScreen() {
       if (data?.requiresVerification && (data?.userId || data?.id)) {
         setUserId(data.userId || data.id);
         setStep(2); // Switch directly to OTP Box
+        setTimer(60); // Start 60 second countdown
         alert("OTP sent to your email!");
       } else if (data?.success) {
         alert("Registration successful! Please login.");
@@ -41,6 +43,7 @@ export default function RegisterScreen() {
       if (errData?.requiresVerification && (errData?.userId || errData?.id)) {
         setUserId(errData.userId || errData.id);
         setStep(2); // Switch directly to OTP Box
+        setTimer(60); // Start countdown
         setMsg(errData.message || "Please check your email for OTP.");
       } else {
         setMsg(errData?.message || err.message || "Registration failed. Try again.");
@@ -66,6 +69,33 @@ export default function RegisterScreen() {
     } catch (err) {
       const errData = err.response?.data || err;
       setMsg(errData?.message || err.message || "Invalid or expired OTP.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let interval;
+    if (timer > 0) {
+      interval = setInterval(() => setTimer((prev) => prev - 1), 1000);
+    }
+    return () => clearInterval(interval);
+  }, [timer]);
+
+  const handleResendOtp = async () => {
+    if (timer > 0) return;
+    setLoading(true);
+    setMsg("");
+    try {
+      // Hum wapas register API call kar rahe hain kyunki backend already handle karta hai "Resend OTP if user exists but unverified"
+      const res = await api.post("/api/auth/register", form);
+      const data = res.data || res;
+      if (data?.requiresVerification) {
+        setTimer(60);
+        alert("A new OTP has been sent to your email!");
+      }
+    } catch (err) {
+      setMsg("Failed to resend OTP. Try again later.");
     } finally {
       setLoading(false);
     }
@@ -105,6 +135,19 @@ export default function RegisterScreen() {
             <button disabled={loading || step === 1} className="bg-green-600 hover:bg-green-700 text-white w-full py-3 rounded-lg transition font-bold shadow-sm">
               {loading && step === 2 ? "Verifying..." : "Verify & Login"}
             </button>
+            
+            {step === 2 && (
+              <div className="mt-4 text-center">
+                <button
+                  type="button"
+                  disabled={timer > 0 || loading}
+                  onClick={handleResendOtp}
+                  className="text-blue-600 hover:underline font-semibold disabled:text-gray-400 disabled:no-underline text-sm transition"
+                >
+                  {timer > 0 ? `Resend OTP in ${timer}s` : "Didn't receive OTP? Resend"}
+                </button>
+              </div>
+            )}
             {step === 2 && msg && <p className="mt-3 text-center text-sm font-medium text-red-500">{msg}</p>}
           </form>
         </div>

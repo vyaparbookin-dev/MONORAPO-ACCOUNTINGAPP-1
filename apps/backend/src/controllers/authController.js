@@ -13,13 +13,13 @@ export const register = async (req, res) => {
     if (user && !user.isVerified) {
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       user.otp = otp;
-      user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes validity
+      user.otpExpires = Date.now() + 30 * 60 * 1000; // 30 minutes validity
       await user.save();
       try {
         // Fix: Use actual live frontend URL instead of localhost so mobile link works!
         const frontendUrl = process.env.FRONTEND_URL || 'https://monorapo-accountingapp-1.onrender.com';
         const verifyLink = `${frontendUrl}/verify-otp?userId=${user._id}&otp=${otp}`;
-        await sendEmail({ email: user.email, subject: 'Verify Your Account', message: `Your new OTP is: ${otp}.\n\nOr click here to verify your account: ${verifyLink}\n\nValid for 10 mins.` });
+        await sendEmail({ email: user.email, subject: 'Verify Your Account', message: `Your new OTP is: ${otp}.\n\nOr click here to verify your account: ${verifyLink}\n\nValid for 30 mins.` });
         return res.status(200).json({ success: true, message: "A new OTP has been sent to your email.", requiresVerification: true, userId: user._id });
       } catch (emailError) {
         console.error("🔴 EMAIL RESEND FAILED:", emailError.message);
@@ -33,7 +33,7 @@ export const register = async (req, res) => {
 
     const hashedPassword = await bcryptjs.hash(password, 10);
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+    const otpExpires = Date.now() + 30 * 60 * 1000; // 30 minutes
 
     user = new User({
       name,
@@ -55,7 +55,7 @@ export const register = async (req, res) => {
       await sendEmail({ 
         email: user.email, 
         subject: 'Welcome! Verify Your Account', 
-        message: `Your One-Time Password (OTP) is: ${otp}.\n\nOr click this link to auto-verify your account: ${verifyLink}\n\nIt is valid for 10 minutes.` 
+        message: `Your One-Time Password (OTP) is: ${otp}.\n\nOr click this link to auto-verify your account: ${verifyLink}\n\nIt is valid for 30 minutes.` 
       });
       // Don't send a token on registration. Force user to verify OTP.
       return res.status(201).json({ success: true, message: "User registered. Please check your email for the OTP.", requiresVerification: true, userId: user._id });
