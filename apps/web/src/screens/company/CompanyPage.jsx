@@ -18,7 +18,11 @@ const CompanyPage = () => {
     gstNumber: company?.gstNumber || "",
     gstType: company?.gstType || "regular",
     panNumber: company?.panNumber || "",
-    businessType: company?.businessType || "retail",
+    businessType: Array.isArray(company?.businessType) 
+      ? company.businessType 
+      : company?.businessType 
+        ? [company.businessType] 
+        : ["retail"],
     industryType: company?.industryType || "",
     businessDescription: company?.businessDescription || "",
     bankName: company?.bankName || "",
@@ -41,6 +45,17 @@ const CompanyPage = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleBusinessTypeChange = (type) => {
+    setFormData((prev) => {
+      const currentTypes = Array.isArray(prev.businessType) ? prev.businessType : [];
+      if (currentTypes.includes(type)) {
+        return { ...prev, businessType: currentTypes.filter((t) => t !== type) };
+      } else {
+        return { ...prev, businessType: [...currentTypes, type] };
+      }
+    });
   };
 
   const handleSave = async () => {
@@ -129,7 +144,7 @@ const CompanyPage = () => {
               <Trash2 size={18} />
             </button>
             <h3 className="font-semibold text-lg pr-8">{company.name}</h3>
-            <p className="text-sm text-gray-600">{company.businessType}</p>
+            <p className="text-sm text-gray-600 capitalize">{Array.isArray(company.businessType) ? company.businessType.join(', ') : company.businessType}</p>
             <p className="text-sm text-gray-500">{company.address}</p>
           </div>
         ))}
@@ -178,18 +193,24 @@ const CompanyPage = () => {
               {/* Business & Tax */}
               <div>
                 <h3 className="text-lg font-medium border-b pb-2 mb-3 text-gray-800">Business & Tax Details</h3>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Trade Type (Select multiple)</label>
+                <div className="flex flex-wrap gap-3">
+                  {[
+                    { id: "retail", label: "Retail" },
+                    { id: "wholesale", label: "Wholesale" },
+                    { id: "manufacturing", label: "Manufacturing" },
+                    { id: "service", label: "Services" },
+                    { id: "trading", label: "Trading" }
+                  ].map((type) => (
+                    <label key={type.id} className="flex items-center gap-2 bg-gray-50 border px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100">
+                      <input type="checkbox" checked={Array.isArray(formData.businessType) && formData.businessType.includes(type.id)} onChange={() => handleBusinessTypeChange(type.id)} className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm font-medium text-gray-700">{type.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Trade Type</label>
-                    <select name="businessType" value={formData.businessType} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                      <option value="retail">Retail</option>
-                      <option value="wholesale">Wholesale</option>
-                      <option value="retail_wholesale">Retail & Wholesale (Both)</option>
-                      <option value="manufacturing">Manufacturing</option>
-                      <option value="service">Services</option>
-                      <option value="trading">Trading</option>
-                    </select>
-                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Industry / Sector</label>
                     <input type="text" name="industryType" list="industry-options" placeholder="e.g. Hardware, Paints or Custom" value={formData.industryType} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
@@ -300,7 +321,7 @@ const CompanyPage = () => {
                     <Briefcase className="text-gray-400" size={20} />
                     <div>
                       <p className="text-sm text-gray-500">Business Type</p>
-                      <p className="font-medium text-gray-800 capitalize">{selectedCompany.businessType?.replace('_', ' & ')} {selectedCompany.industryType && `- ${selectedCompany.industryType}`}</p>
+                    <p className="font-medium text-gray-800 capitalize">{(Array.isArray(selectedCompany.businessType) ? selectedCompany.businessType.join(' & ') : selectedCompany.businessType)} {selectedCompany.industryType && `- ${selectedCompany.industryType}`}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -434,18 +455,24 @@ const CompanyPage = () => {
               {/* Business & Tax */}
               <div>
                 <h3 className="text-lg font-medium border-b pb-2 mb-3 text-gray-800">Business & Tax Details</h3>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Trade Type (Select multiple)</label>
+                <div className="flex flex-wrap gap-3">
+                  {[
+                    { id: "retail", label: "Retail" },
+                    { id: "wholesale", label: "Wholesale" },
+                    { id: "manufacturing", label: "Manufacturing" },
+                    { id: "service", label: "Services" },
+                    { id: "trading", label: "Trading" }
+                  ].map((type) => (
+                    <label key={type.id} className="flex items-center gap-2 bg-gray-50 border px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100">
+                      <input type="checkbox" checked={Array.isArray(formData.businessType) && formData.businessType.includes(type.id)} onChange={() => handleBusinessTypeChange(type.id)} className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm font-medium text-gray-700">{type.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Trade Type</label>
-                    <select name="businessType" value={formData.businessType} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                      <option value="retail">Retail</option>
-                      <option value="wholesale">Wholesale</option>
-                      <option value="retail_wholesale">Retail & Wholesale (Both)</option>
-                      <option value="manufacturing">Manufacturing</option>
-                      <option value="service">Services</option>
-                      <option value="trading">Trading</option>
-                    </select>
-                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Industry / Sector</label>
                     <input type="text" name="industryType" list="industry-options" placeholder="e.g. Hardware, Paints or Custom" value={formData.industryType} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />

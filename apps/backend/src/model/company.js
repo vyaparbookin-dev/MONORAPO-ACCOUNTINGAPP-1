@@ -8,7 +8,7 @@ const companySchema = new mongoose.Schema({
   gstType: { type: String, enum: ['regular', 'composition', 'unregistered'], default: 'regular' },
   address: String,
   upiId: String, // Merchant UPI ID for QR Code Payments
-  businessType: { type: String, enum: ['retail', 'wholesale', 'service', 'manufacturing', 'jewellery', 'clothes', 'hardware', 'electronic', 'restaurant', 'hotel', 'science', 'sports'], default: 'retail' },
+  businessType: [{ type: String }],
   industryType: String,
   ownershipType: { type: String, enum: ['Proprietorship', 'Partnership', 'Private Limited', 'LLC / LLP', 'HUF', 'Other'], default: 'Proprietorship' },
   website: String,

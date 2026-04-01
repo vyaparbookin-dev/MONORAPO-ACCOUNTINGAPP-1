@@ -113,7 +113,7 @@ export default function DashboardLayout() {
 
     { icon: CheckCircle, label: "Approvals", href: "/approvals", color: "text-emerald-500", roles: ['admin', 'manager'] },
     { icon: Users, label: "Parties", href: "/parties", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
-    ...(selectedCompany?.businessType !== 'service' ? [{ icon: Package, label: "Inventory", href: "/inventory", color: "text-purple-600", roles: ['admin', 'manager'] }] : []),
+    ...(!Array.isArray(selectedCompany?.businessType) || selectedCompany?.businessType.length === 0 || selectedCompany?.businessType.some(t => t !== 'service') ? [{ icon: Package, label: "Inventory", href: "/inventory", color: "text-purple-600", roles: ['admin', 'manager'] }] : []),
     { icon: DollarSign, label: "Expenses", href: "/expenses", color: "text-orange-600", roles: ['admin', 'manager'] },
     { icon: Building2, label: "Company", href: "/company", color: "text-indigo-600", roles: ['admin'] },
     { icon: Gift, label: "Coupons", href: "/coupons", color: "text-pink-600", roles: ['admin', 'manager'] },
@@ -130,7 +130,7 @@ export default function DashboardLayout() {
     { icon: BookOpen, label: "Day Book", href: "/reports/daybook", color: "text-rose-500", roles: ['admin'] },
     { icon: Receipt, label: "Salary", href: "/salary", color: "text-cyan-600", roles: ['admin'] },
     { icon: Clock, label: "Laterpad", href: "/laterpad", color: "text-lime-600", roles: ['admin', 'manager', 'cashier'] },
-    ...(selectedCompany?.businessType === 'manufacturing' ? [{ icon: Warehouse, label: "Warehouse", href: "/warehouse", color: "text-amber-600", roles: ['admin', 'manager'] }] : []),
+    ...(Array.isArray(selectedCompany?.businessType) && selectedCompany?.businessType.includes('manufacturing') ? [{ icon: Warehouse, label: "Warehouse", href: "/warehouse", color: "text-amber-600", roles: ['admin', 'manager'] }] : []),
   ];
 
   const userRole = user?.role || 'admin'; // Default to admin if no role found
@@ -270,7 +270,7 @@ export default function DashboardLayout() {
                               }`}
                             >
                               <div className="font-medium">{company.name}</div>
-                              <div className="text-xs text-gray-500">{company.businessType}</div>
+                            <div className="text-xs text-gray-500 capitalize">{Array.isArray(company.businessType) ? company.businessType.join(', ') : company.businessType}</div>
                             </button>
                             <button
                               onClick={(e) => {

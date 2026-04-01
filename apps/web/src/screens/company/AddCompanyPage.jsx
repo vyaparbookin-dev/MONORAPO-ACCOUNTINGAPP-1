@@ -11,7 +11,7 @@ export default function AddCompanyPage({ onAdded }) {
     gstType: "regular",
     website: "",
     panNumber: "",
-    businessType: "retail",
+    businessType: ["retail"],
     ownershipType: "Proprietorship",
     industryType: "",
     businessDescription: "",
@@ -27,6 +27,17 @@ export default function AddCompanyPage({ onAdded }) {
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
 
+  const handleBusinessTypeChange = (type) => {
+    setForm((prev) => {
+      const currentTypes = Array.isArray(prev.businessType) ? prev.businessType : [];
+      if (currentTypes.includes(type)) {
+        return { ...prev, businessType: currentTypes.filter((t) => t !== type) };
+      } else {
+        return { ...prev, businessType: [...currentTypes, type] };
+      }
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -34,7 +45,7 @@ export default function AddCompanyPage({ onAdded }) {
       alert("Company added successfully!");
       setForm({ 
         name: "", email: "", phone: "", address: "", gstNumber: "", gstType: "regular", 
-        website: "", panNumber: "", businessType: "retail", ownershipType: "Proprietorship", industryType: "", 
+        website: "", panNumber: "", businessType: ["retail"], ownershipType: "Proprietorship", industryType: "", 
         businessDescription: "", bankName: "", accountName: "", accountNumber: "", 
         ifscCode: "", upiId: "", caName: "", caPhone: "" 
       });
@@ -64,21 +75,24 @@ export default function AddCompanyPage({ onAdded }) {
         {/* Business & Tax */}
         <div>
           <h3 className="text-lg font-medium border-b pb-2 mb-4 text-gray-700">Business & Tax Details</h3>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Trade Type (Select multiple if applicable)</label>
+            <div className="flex flex-wrap gap-3">
+              {[
+                { id: "retail", label: "Retail" },
+                { id: "wholesale", label: "Wholesale" },
+                { id: "manufacturing", label: "Manufacturing" },
+                { id: "service", label: "Services" },
+                { id: "trading", label: "Trading" }
+              ].map((type) => (
+                <label key={type.id} className="flex items-center gap-2 bg-gray-50 border px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100">
+                  <input type="checkbox" checked={Array.isArray(form.businessType) && form.businessType.includes(type.id)} onChange={() => handleBusinessTypeChange(type.id)} className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium text-gray-700">{type.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <select name="businessType" value={form.businessType} onChange={handleChange} className="border p-2.5 rounded-lg w-full bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-              <option value="retail">Retail</option>
-              <option value="wholesale">Wholesale</option>
-              <option value="manufacturing">Manufacturing</option>
-              <option value="service">Services</option>
-              <option value="jewellery">Jewellery</option>
-              <option value="clothes">Clothes / Garments</option>
-              <option value="hardware">Hardware & Builder</option>
-              <option value="electronic">Electronics</option>
-              <option value="restaurant">Restaurant / Cafe</option>
-              <option value="hotel">Hotel / Resort</option>
-              <option value="science">Science Equipment</option>
-              <option value="sports">Sports & Fitness</option>
-            </select>
             <select name="ownershipType" value={form.ownershipType} onChange={handleChange} className="border p-2.5 rounded-lg w-full bg-white focus:ring-2 focus:ring-blue-500 outline-none">
               <option value="Proprietorship">Proprietorship (एकल स्वामित्व)</option>
               <option value="Partnership">Partnership</option>
