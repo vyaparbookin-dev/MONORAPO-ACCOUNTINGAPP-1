@@ -39,6 +39,7 @@ const InventoryPage = () => {
     gstRate: 0,
     unit: "pcs",
     minimumStock: 10,
+    maximumStock: "",
     currentStock: 0,
     supplier: "",
     // Business Specific Fields
@@ -55,7 +56,7 @@ const InventoryPage = () => {
     warrantyPeriod: "",
   });
 
-  const [units, setUnits] = useState(["pcs", "kg", "ltr", "ft", "mtr", "dz", "box", "roll", "sheet"]);
+  const [units, setUnits] = useState(["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"]);
   const [categories, setCategories] = useState([]);
   const [subCategories, setSubCategories] = useState([]);
   const [industry, setIndustry] = useState("general");
@@ -95,9 +96,10 @@ const InventoryPage = () => {
       dealerPriceWithTax: dp ? (dp + (dp * gst) / 100).toFixed(2) : "",
       dealerMargin: cp > 0 && dp > 0 ? (((dp - cp) / cp) * 100).toFixed(2) : "",
       mrp: item.mrp,
-      gstRate: gst,
+      gstRate: item.gstRate,
       unit: item.unit,
       minimumStock: item.minimumStock,
+      maximumStock: item.maximumStock || "",
       currentStock: item.currentStock,
       supplier: item.supplier,
       isRawMaterial: item.isRawMaterial || false,
@@ -131,7 +133,7 @@ const InventoryPage = () => {
       setCategories([...new Set(cats)]);
       setSubCategories([...new Set(subCats)]);
 
-      // Fetch company industry type for conditional logic
+      // Fetch company industry type
       const settingsRes = await api.get('/api/settings').catch(() => null);
       if (settingsRes?.data?.data) {
         setIndustry((settingsRes.data.data.industryType || settingsRes.data.data.businessType || "general").toLowerCase());
@@ -256,6 +258,7 @@ const InventoryPage = () => {
       gstRate: 0,
       unit: "pcs",
       minimumStock: 10,
+      maximumStock: "",
       currentStock: 0,
       supplier: "",
       isRawMaterial: false,
@@ -683,27 +686,16 @@ const InventoryPage = () => {
             {/* Units & Stock */}
             <div className="border-t pt-6">
               <h3 className="text-lg font-semibold mb-3 text-gray-800">Units & Stock</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Select Unit *</label>
-                  <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} required>
-                    <option value="">Select Unit *</option>
-                    {units.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Current / Opening Stock</label>
-                  <input type="number" placeholder="Opening Stock" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.currentStock} onChange={(e) => setFormData({ ...formData, currentStock: parseFloat(e.target.value) })} step="0.01" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Minimum Stock Level</label>
-                  <input type="number" placeholder="Min Stock Alert" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.minimumStock} onChange={(e) => setFormData({ ...formData, minimumStock: parseFloat(e.target.value) })} />
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <input type="text" placeholder="Unit (e.g. PCS, KG)" className="px-4 py-2 border border-gray-300 rounded-lg" value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} required />
+                <input type="number" placeholder="Current Stock" className="px-4 py-2 border border-gray-300 rounded-lg" value={formData.currentStock} onChange={(e) => setFormData({ ...formData, currentStock: parseFloat(e.target.value) })} step="0.01" />
+                <input type="number" placeholder="Minimum Stock" className="px-4 py-2 border border-gray-300 rounded-lg" value={formData.minimumStock} onChange={(e) => setFormData({ ...formData, minimumStock: parseFloat(e.target.value) })} />
+                <input type="number" placeholder="Maximum Stock" className="px-4 py-2 border border-gray-300 rounded-lg" value={formData.maximumStock} onChange={(e) => setFormData({ ...formData, maximumStock: parseFloat(e.target.value) })} />
               </div>
             </div>
 
             {/* Industry Specific Fields */}
-            {showAnySpecific && (
+            {showAnySpecific && editingId && (
               <div className="border-t pt-6">
                 <h3 className="text-lg font-semibold mb-3 text-gray-800">Business Specific Details</h3>
                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">

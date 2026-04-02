@@ -13,6 +13,7 @@ const AppSettingPage = () => {
   const [freeBillCount, setFreeBillCount] = useState(0);
   const [maxFreeBills, setMaxFreeBills] = useState(50);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState(null);
+  const [enableGst, setEnableGst] = useState(true);
   const [notifications, setNotifications] = useState({
     email: true,
     sms: false,
@@ -29,6 +30,7 @@ const AppSettingPage = () => {
     setFreeBillCount(selectedCompany?.freeBillCount || 0);
     setMaxFreeBills(selectedCompany?.maxFreeBills || 50);
     setSubscriptionExpiresAt(selectedCompany?.subscriptionExpiresAt ? new Date(selectedCompany.subscriptionExpiresAt) : null);
+    setEnableGst(selectedCompany?.enableGst !== false); // Default to true
   }, [selectedCompany]);
 
   const handleLogoUpload = (e) => {
@@ -70,6 +72,7 @@ const AppSettingPage = () => {
         invoiceTemplateType,
         theme,
         notifications,
+        enableGst,
         // Note: plan, freeBillCount, etc. are updated via payment flow, not directly here.
       });
       alert("Settings saved successfully!");
@@ -157,6 +160,20 @@ const AppSettingPage = () => {
             <p className="text-xs text-gray-500 mt-2">Recommended: Square image, max 2MB.</p>
           </div>
         </div>
+      </div>
+
+      {/* Tax & Compliance Settings */}
+      <div className="mb-6 border-b pb-6">
+        <h3 className="text-lg font-semibold mb-2">Tax & Compliance</h3>
+        <p className="text-gray-600 mb-4 text-sm">Turn off GST if your business issues non-taxable (kacha) bills or estimates.</p>
+        <label className="flex items-center cursor-pointer p-4 bg-gray-50 border rounded-lg hover:bg-gray-100 transition">
+          <div className="relative">
+            <input type="checkbox" className="sr-only" checked={enableGst} onChange={(e) => setEnableGst(e.target.checked)} />
+            <div className={`block w-10 h-6 rounded-full transition ${enableGst ? 'bg-blue-600' : 'bg-gray-300'}`}></div>
+            <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform ${enableGst ? 'translate-x-4' : ''}`}></div>
+          </div>
+          <span className="ml-3 font-medium text-gray-700">{enableGst ? 'GST Enabled (Pakka Bill)' : 'GST Disabled (Estimate / Kacha Bill)'}</span>
+        </label>
       </div>
 
       {/* Invoice Customization Settings */}

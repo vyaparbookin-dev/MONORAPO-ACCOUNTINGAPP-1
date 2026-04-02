@@ -51,6 +51,7 @@ const AddProductPage = () => {
   // Make dropdowns dynamic
   const [units, setUnits] = useState(["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"]);
   const [categories, setCategories] = useState([]);
+  const [subCategories, setSubCategories] = useState([]);
   const [industry, setIndustry] = useState("general");
 
   const videoRef = useRef(null);
@@ -60,18 +61,21 @@ const AddProductPage = () => {
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        // Fetch categories from both master list and existing products for robustness
-        const [catRes, invRes] = await Promise.all([
-          api.get('/api/category').catch(() => ({ data: [] })),
-          api.get('/api/inventory').catch(() => ({ data: { products: [] } }))
-        ]);
+        const invRes = await api.get('/api/inventory').catch(() => ({ data: { products: [] } }));
+        const inventoryList = invRes.data?.products || invRes.data || [];
 
-        const masterCats = catRes.data?.categories || catRes.data || [];
-        const productCats = (invRes.data?.products || invRes.data || []).map(p => p.category).filter(Boolean);
+        const productCats = inventoryList.map(p => p.category).filter(Boolean);
+        const productSubCats = inventoryList.map(p => p.subCategory).filter(Boolean);
         
-        const allCats = [...masterCats.map(c => c.name), ...productCats];
+        const catRes = await api.get('/api/category').catch(() => ({ data: [] }));
+        const masterCats = (catRes.data?.categories || catRes.data || []).map(c => c.name);
+        
+        const allCats = [...masterCats, ...productCats];
         if (allCats.length > 0) {
           setCategories(prev => [...new Set([...prev, ...allCats])]);
+        }
+        if (productSubCats.length > 0) {
+          setSubCategories([...new Set(productSubCats)]);
         }
 
         const unitRes = await api.get('/api/unit').catch(() => null);
@@ -336,11 +340,15 @@ const AddProductPage = () => {
           <div>
             <label className="block text-sm font-medium text-gray-700">Sub Category</label>
             <input
+              list="subcategory-list"
               className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
               value={form.subCategory}
               onChange={(e) => setForm({ ...form, subCategory: e.target.value })}
               placeholder="Type a sub-category"
             />
+            <datalist id="subcategory-list">
+              {subCategories.map(sc => <option key={sc} value={sc} />)}
+            </datalist>
           </div>
 
           <div>

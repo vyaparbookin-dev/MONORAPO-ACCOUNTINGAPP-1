@@ -60,7 +60,7 @@ const InventoryPage = () => {
     warrantyPeriod: "",
   });
 
-  const [units, setUnits] = useState(["pcs", "kg", "ltr", "ft", "mtr", "dz", "box", "roll", "sheet"]);
+  const [units, setUnits] = useState(["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"]);
   const [categories, setCategories] = useState([]);
   const [subCategories, setSubCategories] = useState([]);
   const [industry, setIndustry] = useState("general");
@@ -103,7 +103,7 @@ const InventoryPage = () => {
       dealerPriceWithTax: dp ? (dp + (dp * gst) / 100).toFixed(2) : "",
       dealerMargin: dMargin,
       mrp: item.mrp,
-      gstRate: gst,
+      gstRate: item.gstRate,
       unit: item.unit,
       minimumStock: item.minimumStock,
       maximumStock: item.maximumStock || "",
@@ -136,14 +136,14 @@ const InventoryPage = () => {
         const inventoryList = response.inventory || response.data?.products || response.data || (Array.isArray(response) ? response : []);
         setInventory(inventoryList);
 
-        // Extract unique categories and subcategories from existing products
+        // Extract unique categories and subcategories
         const cats = inventoryList.map(p => p.category).filter(Boolean);
         const subCats = inventoryList.map(p => p.subCategory).filter(Boolean);
         setCategories([...new Set(cats)]);
         setSubCategories([...new Set(subCats)]);
       }
 
-      // Fetch company industry type for conditional logic
+      // Fetch company industry type
       const settingsRes = await api.get('/api/settings').catch(() => null);
       if (settingsRes?.data?.data) {
         setIndustry((settingsRes.data.data.industryType || settingsRes.data.data.businessType || "general").toLowerCase());
@@ -210,41 +210,27 @@ const InventoryPage = () => {
         return;
       }
 
-      // Sanitization: Convert to proper numbers to avoid NaN errors on backend
-      const sanitizedData = {
-        ...formData,
-        costPrice: parseFloat(formData.costPrice) || 0,
-        sellingPrice: parseFloat(formData.sellingPrice) || 0,
-        wholesalePrice: parseFloat(formData.wholesalePrice) || 0,
-        dealerPrice: parseFloat(formData.dealerPrice) || 0,
-        mrp: parseFloat(formData.mrp) || 0,
-        gstRate: parseFloat(formData.gstRate) || 0,
-        minimumStock: parseFloat(formData.minimumStock) || 0,
-        maximumStock: parseFloat(formData.maximumStock) || 0,
-        currentStock: parseFloat(formData.currentStock) || 0,
-      };
-
       if (editingId) {
-        const response = await api.put(`/api/inventory/${editingId}`, sanitizedData);
+        const response = await api.put(`/api/inventory/${editingId}`, formData);
         alert(`Product updated! SKU: ${response.data.product.sku}`);
       } else {
         // Desktop: लोकल SQLite में तुरंत सेव करें (Offline Guarantee)
         if (window.electron && window.electron.db) {
           await window.electron.db.saveProduct({
-            name: sanitizedData.name,
-            sku: sanitizedData.hsnCode || "SKU-" + Date.now(),
-            price: sanitizedData.sellingPrice,
-            quantity: sanitizedData.currentStock,
-            category: sanitizedData.category
+            name: formData.name,
+            sku: formData.hsnCode || "SKU-" + Date.now(),
+            price: formData.sellingPrice,
+            quantity: formData.currentStock,
+            category: formData.category
           });
         }
 
         try {
-          const response = await api.post("/api/inventory", sanitizedData);
+          const response = await api.post("/api/inventory", formData);
           alert(`Product created! SKU: ${response?.data?.product?.sku || ''}`);
         } catch (apiErr) {
           if (!navigator.onLine || apiErr.message === "Network Error") {
-            syncQueue.enqueue({ method: "POST", url: "/api/inventory", data: sanitizedData });
+            syncQueue.enqueue({ method: "POST", url: "/api/inventory", data: formData });
             alert("You are offline. Product saved safely locally and will sync automatically!");
           } else throw apiErr;
         }
@@ -381,18 +367,13 @@ const InventoryPage = () => {
       },
     },
     {
-      header: "CP/SP (Inc. GST)",
-      cell: (row) => {
-        const gst = parseFloat(row.gstRate) || 0;
-        const cpWithGst = (parseFloat(row.costPrice) || 0) * (1 + gst / 100);
-        const spWithGst = (parseFloat(row.sellingPrice) || 0) * (1 + gst / 100);
-        return (
-          <div className="text-xs">
-            <p className="text-gray-600">CP: {formatCurrency(cpWithGst)}</p>
-            <p className="font-bold text-green-600">SP: {formatCurrency(spWithGst)}</p>
-          </div>
-        );
-      },
+      header: "CP/SP",
+      cell: (row) => (
+        <div className="text-xs">
+          <p className="text-gray-600">{formatCurrency(row.costPrice)}</p>
+          <p className="font-bold text-green-600">{formatCurrency(row.sellingPrice)}</p>
+        </div>
+      ),
     },
     {
       header: "GST",
@@ -699,30 +680,15 @@ const InventoryPage = () => {
             <div className="border-t pt-6">
               <h3 className="text-lg font-semibold mb-3 text-gray-800">Units & Stock</h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Select Unit *</label>
-                  <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} required>
-                    <option value="">Select Unit *</option>
-                    {units.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Current / Opening Stock</label>
-                  <input type="number" placeholder="Opening Stock" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.currentStock} onChange={(e) => setFormData({ ...formData, currentStock: parseFloat(e.target.value) })} step="0.01" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Minimum Stock Level</label>
-                  <input type="number" placeholder="Min Stock Alert" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.minimumStock} onChange={(e) => setFormData({ ...formData, minimumStock: parseFloat(e.target.value) })} />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Maximum Stock Level</label>
-                  <input type="number" placeholder="Max Limit" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.maximumStock} onChange={(e) => setFormData({ ...formData, maximumStock: parseFloat(e.target.value) })} />
-                </div>
+                <input type="text" placeholder="Unit (e.g. PCS, KG)" className="px-4 py-2 border border-gray-300 rounded-lg" value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} required />
+                <input type="number" placeholder="Current Stock" className="px-4 py-2 border border-gray-300 rounded-lg" value={formData.currentStock} onChange={(e) => setFormData({ ...formData, currentStock: parseFloat(e.target.value) })} step="0.01" />
+                <input type="number" placeholder="Minimum Stock" className="px-4 py-2 border border-gray-300 rounded-lg" value={formData.minimumStock} onChange={(e) => setFormData({ ...formData, minimumStock: parseFloat(e.target.value) })} />
+                <input type="number" placeholder="Maximum Stock" className="px-4 py-2 border border-gray-300 rounded-lg" value={formData.maximumStock} onChange={(e) => setFormData({ ...formData, maximumStock: parseFloat(e.target.value) })} />
               </div>
             </div>
 
             {/* Industry Specific Fields */}
-            {showAnySpecific && (
+            {showAnySpecific && editingId && (
               <div className="border-t pt-6">
                 <h3 className="text-lg font-semibold mb-3 text-gray-800">Business Specific Details</h3>
                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">
