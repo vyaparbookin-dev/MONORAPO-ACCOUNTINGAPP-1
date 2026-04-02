@@ -73,7 +73,8 @@ const InventoryPage = () => {
     const cp = parseFloat(item.costPrice) || 0;
     const sp = parseFloat(item.sellingPrice) || 0;
     const gst = parseFloat(item.gstRate) || 0;
-    const margin = cp > 0 ? (((sp - cp) / cp) * 100).toFixed(2) : 0;
+    const wp = parseFloat(item.wholesalePrice) || 0;
+    const dp = parseFloat(item.dealerPrice) || 0;
 
     setEditingId(item._id);
     setFormData({
@@ -82,13 +83,19 @@ const InventoryPage = () => {
       category: item.category,
       subCategory: item.subCategory,
       hsnCode: item.hsnCode,
-      costPrice: cp,
-      costPriceWithTax: (cp + (cp * gst) / 100).toFixed(2),
-      profitMargin: margin,
-      sellingPrice: sp,
-      sellingPriceWithTax: (sp + (sp * gst) / 100).toFixed(2),
+      costPrice: cp || "",
+      costPriceWithTax: cp ? (cp + (cp * gst) / 100).toFixed(2) : "",
+      profitMargin: cp > 0 ? (((sp - cp) / cp) * 100).toFixed(2) : "",
+      sellingPrice: sp || "",
+      sellingPriceWithTax: sp ? (sp + (sp * gst) / 100).toFixed(2) : "",
+      wholesalePrice: wp || "",
+      wholesalePriceWithTax: wp ? (wp + (wp * gst) / 100).toFixed(2) : "",
+      wholesaleMargin: cp > 0 && wp > 0 ? (((wp - cp) / cp) * 100).toFixed(2) : "",
+      dealerPrice: dp || "",
+      dealerPriceWithTax: dp ? (dp + (dp * gst) / 100).toFixed(2) : "",
+      dealerMargin: cp > 0 && dp > 0 ? (((dp - cp) / cp) * 100).toFixed(2) : "",
       mrp: item.mrp,
-      gstRate: item.gstRate,
+      gstRate: gst,
       unit: item.unit,
       minimumStock: item.minimumStock,
       currentStock: item.currentStock,
@@ -191,18 +198,31 @@ const InventoryPage = () => {
         return;
       }
 
+      // Sanitization: Ensure all number fields are valid numbers before saving to DB
+      const sanitizedData = {
+        ...formData,
+        costPrice: parseFloat(formData.costPrice) || 0,
+        sellingPrice: parseFloat(formData.sellingPrice) || 0,
+        wholesalePrice: parseFloat(formData.wholesalePrice) || 0,
+        dealerPrice: parseFloat(formData.dealerPrice) || 0,
+        mrp: parseFloat(formData.mrp) || 0,
+        gstRate: parseFloat(formData.gstRate) || 0,
+        minimumStock: parseFloat(formData.minimumStock) || 0,
+        currentStock: parseFloat(formData.currentStock) || 0,
+      };
+
       if (editingId) {
         const oldProduct = inventory.find(p => p._id === editingId);
         
         // Update Locally
-        await dbService.updateProduct(editingId, formData);
-        await auditService.logAction('UPDATE', 'inventory', oldProduct, formData);
-        await syncQueue.enqueue({ entityId: editingId, entity: 'inventory', method: "PUT", url: `/api/inventory/${editingId}`, data: formData });
+        await dbService.updateProduct(editingId, sanitizedData);
+        await auditService.logAction('UPDATE', 'inventory', oldProduct, sanitizedData);
+        await syncQueue.enqueue({ entityId: editingId, entity: 'inventory', method: "PUT", url: `/api/inventory/${editingId}`, data: sanitizedData });
         
         alert(`Product updated offline successfully!`);
       } else {
         const newId = crypto.randomUUID ? crypto.randomUUID() : `PROD-${Date.now()}`;
-        const payload = { ...formData, _id: newId, uuid: newId };
+        const payload = { ...sanitizedData, _id: newId, uuid: newId };
         
         // Save Locally
         await dbService.saveProduct(payload);
@@ -346,13 +366,18 @@ const InventoryPage = () => {
       },
     },
     {
-      header: "CP/SP",
-      cell: (row) => (
-        <div className="text-xs">
-          <p className="text-gray-600">{formatCurrency(row.costPrice)}</p>
-          <p className="font-bold text-green-600">{formatCurrency(row.sellingPrice)}</p>
-        </div>
-      ),
+      header: "CP/SP (Inc. GST)",
+      cell: (row) => {
+        const gst = parseFloat(row.gstRate) || 0;
+        const cpWithGst = (parseFloat(row.costPrice) || 0) * (1 + gst / 100);
+        const spWithGst = (parseFloat(row.sellingPrice) || 0) * (1 + gst / 100);
+        return (
+          <div className="text-xs">
+            <p className="text-gray-600">CP: {formatCurrency(cpWithGst)}</p>
+            <p className="font-bold text-green-600">SP: {formatCurrency(spWithGst)}</p>
+          </div>
+        );
+      },
     },
     {
       header: "GST",

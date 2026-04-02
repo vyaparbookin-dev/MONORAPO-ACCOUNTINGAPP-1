@@ -11,7 +11,6 @@ const productSchema = new mongoose.Schema({
   category: { type: String, required: true }, // Electronics, Textiles, etc.
   subCategory: String,
   hsnCode: { type: String, required: true }, // HSN Code for GST
-  image: { type: String }, // Base64 compressed image
   
   // Codes & Identifiers
   sku: { type: String }, // Auto-generated
@@ -29,6 +28,7 @@ const productSchema = new mongoose.Schema({
   // Units & Quantity
   unit: { type: String, required: true }, // kg, ltr, pcs, ft, mtr, etc.
   minimumStock: { type: Number, default: 10 },
+  maximumStock: { type: Number, default: 0 },
   currentStock: { type: Number, default: 0 },
   stockLocations: [{
     branchId: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },

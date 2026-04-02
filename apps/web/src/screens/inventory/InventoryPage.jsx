@@ -43,6 +43,7 @@ const InventoryPage = () => {
     gstRate: 0,
     unit: "pcs",
     minimumStock: 10,
+    maximumStock: "",
     currentStock: 0,
     supplier: "",
     // Business Specific Fields
@@ -102,9 +103,10 @@ const InventoryPage = () => {
       dealerPriceWithTax: dp ? (dp + (dp * gst) / 100).toFixed(2) : "",
       dealerMargin: dMargin,
       mrp: item.mrp,
-      gstRate: item.gstRate,
+      gstRate: gst,
       unit: item.unit,
       minimumStock: item.minimumStock,
+      maximumStock: item.maximumStock || "",
       currentStock: item.currentStock,
       supplier: item.supplier,
       isRawMaterial: item.isRawMaterial || false,
@@ -208,27 +210,41 @@ const InventoryPage = () => {
         return;
       }
 
+      // Sanitization: Convert to proper numbers to avoid NaN errors on backend
+      const sanitizedData = {
+        ...formData,
+        costPrice: parseFloat(formData.costPrice) || 0,
+        sellingPrice: parseFloat(formData.sellingPrice) || 0,
+        wholesalePrice: parseFloat(formData.wholesalePrice) || 0,
+        dealerPrice: parseFloat(formData.dealerPrice) || 0,
+        mrp: parseFloat(formData.mrp) || 0,
+        gstRate: parseFloat(formData.gstRate) || 0,
+        minimumStock: parseFloat(formData.minimumStock) || 0,
+        maximumStock: parseFloat(formData.maximumStock) || 0,
+        currentStock: parseFloat(formData.currentStock) || 0,
+      };
+
       if (editingId) {
-        const response = await api.put(`/api/inventory/${editingId}`, formData);
+        const response = await api.put(`/api/inventory/${editingId}`, sanitizedData);
         alert(`Product updated! SKU: ${response.data.product.sku}`);
       } else {
         // Desktop: लोकल SQLite में तुरंत सेव करें (Offline Guarantee)
         if (window.electron && window.electron.db) {
           await window.electron.db.saveProduct({
-            name: formData.name,
-            sku: formData.hsnCode || "SKU-" + Date.now(),
-            price: formData.sellingPrice,
-            quantity: formData.currentStock,
-            category: formData.category
+            name: sanitizedData.name,
+            sku: sanitizedData.hsnCode || "SKU-" + Date.now(),
+            price: sanitizedData.sellingPrice,
+            quantity: sanitizedData.currentStock,
+            category: sanitizedData.category
           });
         }
 
         try {
-          const response = await api.post("/api/inventory", formData);
+          const response = await api.post("/api/inventory", sanitizedData);
           alert(`Product created! SKU: ${response?.data?.product?.sku || ''}`);
         } catch (apiErr) {
           if (!navigator.onLine || apiErr.message === "Network Error") {
-            syncQueue.enqueue({ method: "POST", url: "/api/inventory", data: formData });
+            syncQueue.enqueue({ method: "POST", url: "/api/inventory", data: sanitizedData });
             alert("You are offline. Product saved safely locally and will sync automatically!");
           } else throw apiErr;
         }
@@ -258,6 +274,7 @@ const InventoryPage = () => {
       gstRate: 0,
       unit: "pcs",
       minimumStock: 10,
+      maximumStock: "",
       currentStock: 0,
       supplier: "",
       isRawMaterial: false,
@@ -364,13 +381,18 @@ const InventoryPage = () => {
       },
     },
     {
-      header: "CP/SP",
-      cell: (row) => (
-        <div className="text-xs">
-          <p className="text-gray-600">{formatCurrency(row.costPrice)}</p>
-          <p className="font-bold text-green-600">{formatCurrency(row.sellingPrice)}</p>
-        </div>
-      ),
+      header: "CP/SP (Inc. GST)",
+      cell: (row) => {
+        const gst = parseFloat(row.gstRate) || 0;
+        const cpWithGst = (parseFloat(row.costPrice) || 0) * (1 + gst / 100);
+        const spWithGst = (parseFloat(row.sellingPrice) || 0) * (1 + gst / 100);
+        return (
+          <div className="text-xs">
+            <p className="text-gray-600">CP: {formatCurrency(cpWithGst)}</p>
+            <p className="font-bold text-green-600">SP: {formatCurrency(spWithGst)}</p>
+          </div>
+        );
+      },
     },
     {
       header: "GST",
@@ -676,7 +698,7 @@ const InventoryPage = () => {
             {/* Units & Stock */}
             <div className="border-t pt-6">
               <h3 className="text-lg font-semibold mb-3 text-gray-800">Units & Stock</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Select Unit *</label>
                   <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} required>
@@ -691,6 +713,10 @@ const InventoryPage = () => {
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Minimum Stock Level</label>
                   <input type="number" placeholder="Min Stock Alert" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.minimumStock} onChange={(e) => setFormData({ ...formData, minimumStock: parseFloat(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Maximum Stock Level</label>
+                  <input type="number" placeholder="Max Limit" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.maximumStock} onChange={(e) => setFormData({ ...formData, maximumStock: parseFloat(e.target.value) })} />
                 </div>
               </div>
             </div>

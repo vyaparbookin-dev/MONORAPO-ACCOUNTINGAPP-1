@@ -10,7 +10,7 @@ const AddProductPage = () => {
   const [form, setForm] = useState({
     name: "",
     sku: "",
-    barcode: "",
+    barcode: `ITM${Date.now().toString().slice(-6)}`,
     description: "",
     category: "",
     subCategory: "",
@@ -32,6 +32,7 @@ const AddProductPage = () => {
     unit: "pcs",
     stock: "",
     minimumStock: 10,
+    maximumStock: "",
     supplier: "",
     // Business Specific Fields
     isRawMaterial: false,
@@ -160,12 +161,6 @@ const AddProductPage = () => {
     setForm(updatedForm);
   };
 
-  const generateInternalCode = () => {
-    // Generates a simple unique code for internal products
-    const timestamp = Date.now();
-    setForm({ ...form, barcode: `ITEM${timestamp.toString().slice(-6)}` });
-  };
-
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, facingMode: 'environment' });
@@ -211,12 +206,12 @@ const AddProductPage = () => {
 
   const resetForm = () => {
     setForm({
-      name: "", sku: "", barcode: "", description: "", category: "", subCategory: "", image: "",
+      name: "", sku: "", barcode: `ITM${Date.now().toString().slice(-6)}`, description: "", category: "", subCategory: "", image: "",
       hsnCode: "", costPrice: "", costPriceWithTax: "", profitMargin: "", sellingPrice: "",
       sellingPriceWithTax: "", mrp: "", gstRate: "", unit: "pcs", stock: "",
       wholesalePrice: "", wholesalePriceWithTax: "", wholesaleMargin: "",
       dealerPrice: "", dealerPriceWithTax: "", dealerMargin: "",
-      minimumStock: 10, supplier: "", isRawMaterial: false, weight: "", purity: "",
+      minimumStock: 10, maximumStock: "", supplier: "", isRawMaterial: false, weight: "", purity: "",
       makingChargeType: "fixed", makingCharge: 0, brand: "", dimensions: "",
       materialType: "", ageGroup: "", certification: "", warrantyPeriod: "",
     });
@@ -338,23 +333,13 @@ const AddProductPage = () => {
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700">Barcode (Scan or Generate)</label>
-            <div className="flex gap-2 mt-1">
-              <input
-                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                value={form.barcode}
-                onChange={(e) => setForm({ ...form, barcode: e.target.value })}
-                placeholder="Scan product's barcode"
-              />
-              <button
-                type="button"
-                onClick={generateInternalCode}
-                className="px-3 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm font-medium"
-                title="Generate code for products without a barcode"
-              >
-                Generate
-              </button>
-            </div>
+            <label className="block text-sm font-medium text-gray-700">Barcode (Auto or Scan)</label>
+            <input
+              className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
+              value={form.barcode}
+              onChange={(e) => setForm({ ...form, barcode: e.target.value })}
+              placeholder="Scan barcode"
+            />
           </div>
 
           <div>
@@ -510,7 +495,7 @@ const AddProductPage = () => {
         {/* Stock */}
         <div className="border-t pt-4">
           <h3 className="font-semibold mb-2">Inventory</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Opening Stock</label>
               <input
@@ -537,6 +522,15 @@ const AddProductPage = () => {
                 className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
                 value={form.minimumStock}
                 onChange={(e) => setForm({ ...form, minimumStock: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Max Stock Limit</label>
+              <input
+                type="number"
+                className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
+                value={form.maximumStock}
+                onChange={(e) => setForm({ ...form, maximumStock: e.target.value })}
               />
             </div>
           </div>
