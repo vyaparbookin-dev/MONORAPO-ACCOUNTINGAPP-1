@@ -7,8 +7,10 @@ const ProductListPage = () => {
   const [products, setProducts] = useState([]);
 
   useEffect(() => {
-    // Assuming GET /inventory returns list of products
-    api.get("/inventory").then((res) => setProducts(res.data || []));
+    api.get("/api/inventory").then((res) => {
+      const data = res.data?.products || res.data || [];
+      setProducts(Array.isArray(data) ? data : []);
+    }).catch(err => console.error("Failed to load products", err));
   }, []);
 
   return (

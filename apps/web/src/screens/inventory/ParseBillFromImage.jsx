@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Upload, FileText, Check, Loader2, ArrowRight } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Upload, FileText, Check, Loader2, ArrowRight, AlertTriangle, CheckCircle, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import Button from "../../components/Button";
@@ -10,6 +10,27 @@ const ParseBillFromImage = () => {
   const [preview, setPreview] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [parsedData, setParsedData] = useState(null);
+  const [localProducts, setLocalProducts] = useState([]);
+
+  useEffect(() => {
+    const loadProducts = async () => {
+      const res = await api.get('/api/inventory').catch(() => ({ data: { products: [] } }));
+      setLocalProducts(res.data?.products || res.data || []);
+    };
+    loadProducts();
+  }, []);
+
+  // Smart Word Matching Algorithm
+  const calculateSimilarity = (str1, str2) => {
+    const s1 = str1.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
+    const s2 = str2.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
+    if (s1.length === 0 || s2.length === 0) return 0;
+    const set1 = new Set(s1);
+    const set2 = new Set(s2);
+    const intersection = new Set([...set1].filter(x => set2.has(x)));
+    const union = new Set([...set1, ...set2]);
+    return intersection.size / union.size;
+  };
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
@@ -125,6 +146,33 @@ const ParseBillFromImage = () => {
                 <p className="text-xl font-bold text-green-700">₹{parsedData.totalAmount}</p>
               </div>
               
+              <div className="mt-4">
+                <h4 className="font-semibold text-sm mb-2 text-gray-700">Items Scanned</h4>
+                <div className="space-y-3">
+                  {parsedData.items.map((item, idx) => (
+                    <div key={idx} className={`p-3 rounded border text-sm ${item.matchStatus === 'exact' ? 'bg-green-50 border-green-200' : item.matchStatus === 'partial' ? 'bg-yellow-50 border-yellow-300' : 'bg-blue-50 border-blue-200'}`}>
+                      <div className="flex justify-between mb-1">
+                        <span className="font-medium text-gray-800">{item.name}</span>
+                        <span className="font-bold text-gray-700">x{item.quantity}</span>
+                      </div>
+                      
+                      {item.matchStatus === 'exact' && <p className="text-xs text-green-600 flex items-center gap-1"><CheckCircle size={14}/> Matched with inventory</p>}
+                      {item.matchStatus === 'new' && <p className="text-xs text-blue-600 flex items-center gap-1"><Plus size={14}/> Will be added as NEW</p>}
+
+                      {item.matchStatus === 'partial' && (
+                        <div className="mt-2 pt-2 border-t border-yellow-200">
+                          <p className="text-xs text-yellow-800 mb-2"><AlertTriangle size={14} className="inline mr-1"/> {item.similarity}% Match: <strong>{item.suggestedProduct.name}</strong></p>
+                          <div className="flex gap-2">
+                            <button onClick={() => resolveItemConflict(idx, 'merge')} className="px-3 py-1 bg-yellow-600 text-white rounded text-xs">Merge</button>
+                            <button onClick={() => resolveItemConflict(idx, 'keep_new')} className="px-3 py-1 border border-yellow-600 text-yellow-700 rounded text-xs">Add as New</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <Button onClick={handleConfirm} type="success" className="w-full mt-4">
                 <Check size={20} /> Confirm & Save
               </Button>

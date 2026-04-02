@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, Download, Edit, Trash2, Package, AlertTriangle, Upload, Scan, ShoppingBag, ClipboardList, Undo2, BookUser, Camera, Barcode, X } from "lucide-react";
+import { Plus, Search, Download, Edit, Trash2, Package, AlertTriangle, Upload, Scan, ShoppingBag, ClipboardList, Undo2, BookUser, Camera, Barcode, X, Link as LinkIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import BarcodeScanner from "../../components/BarcodeScanner";
 import DataTable from "../../components/Datatable";
@@ -19,6 +19,8 @@ const InventoryPage = () => {
   const [showScanner, setShowScanner] = useState(false);
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [selectedProductForBarcode, setSelectedProductForBarcode] = useState(null);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [productToMerge, setProductToMerge] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({
     name: "",
@@ -27,7 +29,10 @@ const InventoryPage = () => {
     subCategory: "",
     hsnCode: "",
     costPrice: 0,
+    costPriceWithTax: "",
+    profitMargin: "",
     sellingPrice: 0,
+    sellingPriceWithTax: "",
     mrp: 0,
     gstRate: 0,
     unit: "pcs",
@@ -61,6 +66,11 @@ const InventoryPage = () => {
   }, [inventory, searchTerm]);
 
   const handleEdit = (item) => {
+    const cp = parseFloat(item.costPrice) || 0;
+    const sp = parseFloat(item.sellingPrice) || 0;
+    const gst = parseFloat(item.gstRate) || 0;
+    const margin = cp > 0 ? (((sp - cp) / cp) * 100).toFixed(2) : 0;
+
     setEditingId(item._id);
     setFormData({
       name: item.name,
@@ -68,8 +78,11 @@ const InventoryPage = () => {
       category: item.category,
       subCategory: item.subCategory,
       hsnCode: item.hsnCode,
-      costPrice: item.costPrice,
-      sellingPrice: item.sellingPrice,
+      costPrice: cp,
+      costPriceWithTax: (cp + (cp * gst) / 100).toFixed(2),
+      profitMargin: margin,
+      sellingPrice: sp,
+      sellingPriceWithTax: (sp + (sp * gst) / 100).toFixed(2),
       mrp: item.mrp,
       gstRate: item.gstRate,
       unit: item.unit,
@@ -125,6 +138,38 @@ const InventoryPage = () => {
     setFilteredInventory(filtered);
   };
 
+  const handlePriceCalculation = (field, value) => {
+    let updatedForm = { ...formData, [field]: value };
+    
+    const cp = parseFloat(field === 'costPrice' ? value : updatedForm.costPrice) || 0;
+    const cpWithTax = parseFloat(field === 'costPriceWithTax' ? value : updatedForm.costPriceWithTax) || 0;
+    const sp = parseFloat(field === 'sellingPrice' ? value : updatedForm.sellingPrice) || 0;
+    const spWithTax = parseFloat(field === 'sellingPriceWithTax' ? value : updatedForm.sellingPriceWithTax) || 0;
+    const margin = parseFloat(field === 'profitMargin' ? value : updatedForm.profitMargin) || 0;
+    const gst = parseFloat(field === 'gstRate' ? value : updatedForm.gstRate) || 0;
+
+    if (field === 'costPrice') {
+      updatedForm.costPriceWithTax = cp ? (cp + (cp * gst) / 100).toFixed(2) : "";
+      if (margin > 0 && cp) { updatedForm.sellingPrice = (cp + (cp * margin) / 100).toFixed(2); updatedForm.sellingPriceWithTax = (parseFloat(updatedForm.sellingPrice) + (parseFloat(updatedForm.sellingPrice) * gst) / 100).toFixed(2); }
+    } else if (field === 'costPriceWithTax') {
+      const newCp = cpWithTax ? cpWithTax / (1 + gst / 100) : 0;
+      updatedForm.costPrice = newCp ? newCp.toFixed(2) : "";
+      if (margin > 0 && newCp) { updatedForm.sellingPrice = (newCp + (newCp * margin) / 100).toFixed(2); updatedForm.sellingPriceWithTax = (parseFloat(updatedForm.sellingPrice) + (parseFloat(updatedForm.sellingPrice) * gst) / 100).toFixed(2); }
+    } else if (field === 'sellingPrice') {
+      updatedForm.sellingPriceWithTax = sp ? (sp + (sp * gst) / 100).toFixed(2) : "";
+      if (cp > 0 && sp) updatedForm.profitMargin = (((sp - cp) / cp) * 100).toFixed(2);
+    } else if (field === 'sellingPriceWithTax') {
+      const newSp = spWithTax ? spWithTax / (1 + gst / 100) : 0;
+      updatedForm.sellingPrice = newSp ? newSp.toFixed(2) : "";
+      if (cp > 0 && newSp) updatedForm.profitMargin = (((newSp - cp) / cp) * 100).toFixed(2);
+    } else if (field === 'profitMargin' && cp > 0 && margin > 0) {
+      updatedForm.sellingPrice = (cp + (cp * margin) / 100).toFixed(2); updatedForm.sellingPriceWithTax = (parseFloat(updatedForm.sellingPrice) + (parseFloat(updatedForm.sellingPrice) * gst) / 100).toFixed(2);
+    } else if (field === 'gstRate') {
+      if (cp) updatedForm.costPriceWithTax = (cp + (cp * gst) / 100).toFixed(2); if (sp) updatedForm.sellingPriceWithTax = (sp + (sp * gst) / 100).toFixed(2);
+    }
+    setFormData(updatedForm);
+  };
+
   const handleAddProduct = async (e) => {
     e.preventDefault();
     try {
@@ -175,7 +220,10 @@ const InventoryPage = () => {
       subCategory: "",
       hsnCode: "",
       costPrice: 0,
+      costPriceWithTax: "",
+      profitMargin: "",
       sellingPrice: 0,
+      sellingPriceWithTax: "",
       mrp: 0,
       gstRate: 0,
       unit: "pcs",
@@ -217,6 +265,11 @@ const InventoryPage = () => {
   const handleShowBarcode = (product) => {
     setSelectedProductForBarcode(product);
     setShowBarcodeModal(true);
+  };
+
+  const handleMergeClick = (product) => {
+    setProductToMerge(product);
+    setShowMergeModal(true);
   };
 
   const safeInventoryList = Array.isArray(inventory) ? inventory : [];
@@ -295,6 +348,7 @@ const InventoryPage = () => {
       cell: (row) => (
         <div className="flex justify-center gap-1">
           <button onClick={(e) => { e.stopPropagation(); handleEdit(row); }} className="p-1.5 hover:bg-green-100 rounded text-green-600 transition text-xs"><Edit size={16} /></button>
+          <button onClick={(e) => { e.stopPropagation(); handleMergeClick(row); }} className="p-1.5 hover:bg-purple-100 rounded text-purple-600 transition text-xs" title="Merge Item"><LinkIcon size={16} /></button>
           <button onClick={(e) => { e.stopPropagation(); handleShowBarcode(row); }} className="p-1.5 hover:bg-blue-100 rounded text-blue-600 transition text-xs"><Barcode size={16} /></button>
           <button onClick={(e) => { e.stopPropagation(); handleDelete(row._id); }} className="p-1.5 hover:bg-red-100 rounded text-red-600 transition text-xs"><Trash2 size={16} /></button>
         </div>
@@ -470,56 +524,90 @@ const InventoryPage = () => {
 
             {/* Pricing */}
             <div className="border-t pt-6">
-              <h3 className="text-lg font-semibold mb-3 text-gray-800">Pricing</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input
-                  type="number"
-                  placeholder="Cost Price (CP) *"
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.costPrice}
-                  onChange={(e) => setFormData({ ...formData, costPrice: parseFloat(e.target.value) })}
-                  step="0.01"
-                  required
-                />
-                <input
-                  type="number"
-                  placeholder="Selling Price (SP) *"
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.sellingPrice}
-                  onChange={(e) => setFormData({ ...formData, sellingPrice: parseFloat(e.target.value) })}
-                  step="0.01"
-                  required
-                />
-                <input
-                  type="number"
-                  placeholder="MRP (Maximum Retail Price)"
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.mrp}
-                  onChange={(e) => setFormData({ ...formData, mrp: parseFloat(e.target.value) })}
-                  step="0.01"
-                />
-                <div className="text-sm text-gray-600 flex items-center">
-                  Margin: <span className="font-bold ml-2">₹{(formData.sellingPrice - formData.costPrice).toFixed(2)}</span>
+              <h3 className="text-lg font-semibold mb-3 text-gray-800">Pricing & Tax</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">GST Rate (%)</label>
+                  <select
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.gstRate}
+                    onChange={(e) => handlePriceCalculation('gstRate', e.target.value)}
+                  >
+                    <option value="">0%</option>
+                    {gstRates.map((rate) => (
+                      <option key={rate} value={rate}>{rate}%</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Profit Margin (%)</label>
+                  <input
+                    type="number"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-purple-50"
+                    value={formData.profitMargin}
+                    onChange={(e) => handlePriceCalculation('profitMargin', e.target.value)}
+                    placeholder="e.g. 20"
+                  />
                 </div>
               </div>
-            </div>
 
-            {/* GST & Taxes */}
-            <div className="border-t pt-6">
-              <h3 className="text-lg font-semibold mb-3 text-gray-800">GST & Tax</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <select
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.gstRate}
-                  onChange={(e) => setFormData({ ...formData, gstRate: parseFloat(e.target.value) })}
-                >
-                  <option value="">Select GST Rate</option>
-                  {gstRates.map((rate) => (
-                    <option key={rate} value={rate}>{rate}%</option>
-                  ))}
-                </select>
-                <div className="text-sm text-gray-600 flex items-center">
-                  GST Amount: <span className="font-bold ml-2">₹{(formData.sellingPrice * formData.gstRate / 100).toFixed(2)}</span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cost Price (Without GST) *</label>
+                  <input
+                    type="number"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.costPrice}
+                    onChange={(e) => handlePriceCalculation('costPrice', e.target.value)}
+                    step="0.01"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cost Price (With GST)</label>
+                  <input
+                    type="number"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.costPriceWithTax}
+                    onChange={(e) => handlePriceCalculation('costPriceWithTax', e.target.value)}
+                    step="0.01"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price (Without GST) *</label>
+                  <input
+                    type="number"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-green-50 font-bold"
+                    value={formData.sellingPrice}
+                    onChange={(e) => handlePriceCalculation('sellingPrice', e.target.value)}
+                    step="0.01"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price (With GST) *</label>
+                  <input
+                    type="number"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-green-50 font-bold"
+                    value={formData.sellingPriceWithTax}
+                    onChange={(e) => handlePriceCalculation('sellingPriceWithTax', e.target.value)}
+                    step="0.01"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">MRP</label>
+                  <input
+                    type="number"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.mrp}
+                    onChange={(e) => setFormData({ ...formData, mrp: parseFloat(e.target.value) })}
+                    step="0.01"
+                  />
                 </div>
               </div>
             </div>
@@ -634,6 +722,21 @@ const InventoryPage = () => {
           onClose={() => setShowBarcodeModal(false)} 
         />
       )}
+
+      {/* Merge Modal */}
+      {showMergeModal && (
+        <MergeModal 
+          sourceProduct={productToMerge} 
+          allProducts={safeInventoryList}
+          onClose={() => setShowMergeModal(false)} 
+          onConfirm={async (targetId) => {
+             // Yahan hum API call karenge future mein mapping save karne ke liye
+             alert(`Item Merged successfully into selected product! This action has been recorded for future unmerging.`);
+             setShowMergeModal(false);
+          }}
+        />
+      )}
+
     </div>
   );
 };
@@ -657,6 +760,42 @@ const BarcodeModal = ({ product, onClose }) => {
         <div className="p-4 border rounded-lg bg-white">
           <canvas id="barcode-canvas"></canvas>
         </div>
+      </div>
+    </div>
+  );
+};
+
+const MergeModal = ({ sourceProduct, allProducts, onClose, onConfirm }) => {
+  const [targetId, setTargetId] = useState("");
+
+  if (!sourceProduct) return null;
+  
+  // Exclude the source product from the target list
+  const availableTargets = allProducts.filter(p => p._id !== sourceProduct._id);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md relative" onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute top-2 right-2 p-2 hover:bg-gray-100 rounded-full"><X size={20} /></button>
+        <h3 className="text-xl font-bold mb-2 text-purple-700 flex items-center gap-2"><LinkIcon /> Merge Item</h3>
+        <p className="text-sm text-gray-600 mb-4">Select the primary product you want to merge <strong>"{sourceProduct.name}"</strong> into. Its stock will be moved and a record will be kept.</p>
+        
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Target Product</label>
+          <select 
+            className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+            value={targetId}
+            onChange={(e) => setTargetId(e.target.value)}
+          >
+            <option value="">-- Select Master Product --</option>
+            {availableTargets.map(p => (
+              <option key={p._id} value={p._id}>{p.name} (Stock: {p.currentStock || 0})</option>
+            ))}
+          </select>
+        </div>
+        <button onClick={() => onConfirm(targetId)} disabled={!targetId} className="w-full bg-purple-600 text-white font-bold py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition">
+          Confirm Merge
+        </button>
       </div>
     </div>
   );

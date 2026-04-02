@@ -18,7 +18,10 @@ const SalesReturnPage = () => {
   const [newItem, setNewItem] = useState({ productId: "", quantity: 1, price: 0 });
 
   useEffect(() => {
-    api.get("/inventory").then((res) => setProducts(res.data || []));
+    api.get("/api/inventory").then((res) => {
+      const data = res.data?.products || res.data || [];
+      setProducts(Array.isArray(data) ? data : []);
+    }).catch(err => console.error(err));
   }, []);
 
   const handleAddItem = () => {
