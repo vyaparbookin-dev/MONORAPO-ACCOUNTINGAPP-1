@@ -11,6 +11,7 @@ const productSchema = new mongoose.Schema({
   category: { type: String, required: true }, // Electronics, Textiles, etc.
   subCategory: String,
   hsnCode: { type: String, required: true }, // HSN Code for GST
+  image: { type: String }, // Base64 compressed image
   
   // Codes & Identifiers
   sku: { type: String }, // Auto-generated
@@ -19,8 +20,6 @@ const productSchema = new mongoose.Schema({
   // Pricing
   costPrice: { type: Number, required: true }, // Cost to you
   sellingPrice: { type: Number, required: true }, // Sell price
-  wholesalePrice: { type: Number }, // Wholesale Rate
-  dealerPrice: { type: Number }, // Dealer Rate
   mrp: Number, // Maximum Retail Price
   
   // Tax & GST

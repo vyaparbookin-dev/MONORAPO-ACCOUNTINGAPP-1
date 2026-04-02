@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
 import { syncQueue } from "@repo/shared";
 import { dbService } from "../../services/dbService";
+import { Camera as CameraIcon, UploadCloud, X } from "lucide-react";
 
 const AddProductPage = () => {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ const AddProductPage = () => {
     category: "",
     subCategory: "",
     hsnCode: "",
+    image: "", // Added Image Field
     costPrice: "",
     costPriceWithTax: "",
     profitMargin: "",
@@ -51,6 +53,10 @@ const AddProductPage = () => {
   const [units, setUnits] = useState(["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"]);
   const [categories, setCategories] = useState([]);
   const [industry, setIndustry] = useState("general");
+
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
 
   useEffect(() => {
     const fetchDropdowns = async () => {
@@ -153,9 +159,52 @@ const AddProductPage = () => {
     setForm({ ...form, barcode: `ITEM${timestamp.toString().slice(-6)}` });
   };
 
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, facingMode: 'environment' });
+      if (videoRef.current) videoRef.current.srcObject = stream;
+      setIsCameraOpen(true);
+    } catch (err) {
+      alert("Camera access denied.");
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+    }
+    setIsCameraOpen(false);
+  };
+
+  const captureImage = () => {
+    if (videoRef.current && canvasRef.current) {
+      const context = canvasRef.current.getContext("2d");
+      canvasRef.current.width = videoRef.current.videoWidth;
+      canvasRef.current.height = videoRef.current.videoHeight;
+      context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+      const dataUrl = canvasRef.current.toDataURL("image/jpeg", 0.7); // compression
+      setForm({ ...form, image: dataUrl });
+      stopCamera();
+    }
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) return alert("Image must be less than 2MB");
+      const reader = new FileReader();
+      reader.onloadend = () => setForm({ ...form, image: reader.result });
+      reader.readAsDataURL(file);
+    }
+  };
+
+  useEffect(() => {
+    return () => { if (isCameraOpen) stopCamera(); };
+  }, [isCameraOpen]);
+
   const resetForm = () => {
     setForm({
-      name: "", sku: "", barcode: "", description: "", category: "", subCategory: "",
+      name: "", sku: "", barcode: "", description: "", category: "", subCategory: "", image: "",
       hsnCode: "", costPrice: "", costPriceWithTax: "", profitMargin: "", sellingPrice: "",
       sellingPriceWithTax: "", mrp: "", gstRate: "", unit: "pcs", stock: "",
       wholesalePrice: "", wholesalePriceWithTax: "", wholesaleMargin: "",
@@ -227,6 +276,39 @@ const AddProductPage = () => {
       <h2 className="text-2xl font-bold mb-4">Add New Product</h2>
       <form onSubmit={handleSubmit} className="space-y-4">
         
+        {/* Product Image Section */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Product Image (Optional)</label>
+          {isCameraOpen ? (
+            <div className="relative w-full max-w-sm bg-black rounded-lg overflow-hidden flex flex-col items-center">
+              <video ref={videoRef} autoPlay playsInline className="h-48 w-full object-contain" />
+              <canvas ref={canvasRef} className="hidden" />
+              <div className="absolute bottom-2 flex gap-2">
+                <button type="button" onClick={captureImage} className="bg-blue-600 text-white px-3 py-1 rounded-full text-sm font-bold hover:bg-blue-700">Capture</button>
+                <button type="button" onClick={stopCamera} className="bg-red-600 text-white p-1 rounded-full hover:bg-red-700"><X size={20} /></button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-4">
+              <div className="w-24 h-24 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden border border-gray-300">
+                {form.image ? <img src={form.image} alt="Product" className="w-full h-full object-cover" /> : <UploadCloud className="text-gray-400" size={32} />}
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="flex w-fit items-center justify-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded cursor-pointer hover:bg-gray-50 transition text-sm font-medium shadow-sm">
+                  <UploadCloud size={16} /> Upload File
+                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                </label>
+                <button type="button" onClick={startCamera} className="flex w-fit items-center justify-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition text-sm font-medium shadow-sm">
+                  <CameraIcon size={16} /> Open Camera
+                </button>
+                {form.image && (
+                  <button type="button" onClick={() => setForm({...form, image: ""})} className="text-xs text-red-600 hover:underline text-left">Remove Image</button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Basic Info */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">

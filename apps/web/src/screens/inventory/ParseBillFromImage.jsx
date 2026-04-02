@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Upload, FileText, Check, Loader2, ArrowRight, AlertTriangle, CheckCircle, Plus } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Upload, FileText, Check, Loader2, ArrowRight, AlertTriangle, CheckCircle, Plus, Camera as CameraIcon, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import Button from "../../components/Button";
@@ -11,6 +11,10 @@ const ParseBillFromImage = () => {
   const [scanning, setScanning] = useState(false);
   const [parsedData, setParsedData] = useState(null);
   const [localProducts, setLocalProducts] = useState([]);
+  
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
 
   useEffect(() => {
     const loadProducts = async () => {
@@ -40,6 +44,42 @@ const ParseBillFromImage = () => {
       setParsedData(null);
     }
   };
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, facingMode: 'environment' });
+      if (videoRef.current) videoRef.current.srcObject = stream;
+      setIsCameraOpen(true);
+    } catch (err) {
+      alert("Camera access denied or no camera found on this device.");
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+    }
+    setIsCameraOpen(false);
+  };
+
+  const captureImage = () => {
+    if (videoRef.current && canvasRef.current) {
+      const context = canvasRef.current.getContext("2d");
+      canvasRef.current.width = videoRef.current.videoWidth;
+      canvasRef.current.height = videoRef.current.videoHeight;
+      context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+      
+      const dataUrl = canvasRef.current.toDataURL("image/jpeg", 0.7);
+      setPreview(dataUrl);
+      setImage(dataUrl);
+      setParsedData(null);
+      stopCamera();
+    }
+  };
+
+  useEffect(() => {
+    return () => { if (isCameraOpen) stopCamera(); };
+  }, [isCameraOpen]);
 
   const handleScan = () => {
     if (!image) return;
@@ -84,13 +124,40 @@ const ParseBillFromImage = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Left: Image Upload */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center bg-gray-50">
-            {preview ? (
-              <img src={preview} alt="Bill Preview" className="max-h-64 mx-auto rounded shadow-sm" />
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50 flex flex-col items-center justify-center min-h-[300px]">
+            {isCameraOpen ? (
+              <div className="relative w-full bg-black rounded-lg overflow-hidden flex flex-col items-center">
+                <video ref={videoRef} autoPlay playsInline className="max-h-64 w-full object-contain" />
+                <canvas ref={canvasRef} className="hidden" />
+                <div className="absolute bottom-4 flex gap-4">
+                  <button onClick={captureImage} className="bg-blue-600 text-white px-4 py-2 rounded-full font-bold shadow-lg hover:bg-blue-700">Capture Bill</button>
+                  <button onClick={stopCamera} className="bg-red-600 text-white p-2 rounded-full shadow-lg hover:bg-red-700"><X size={20} /></button>
+                </div>
+              </div>
+            ) : preview ? (
+              <div className="w-full">
+                <img src={preview} alt="Bill Preview" className="max-h-64 mx-auto rounded shadow-sm mb-4" />
+                <div className="flex justify-center gap-2">
+                  <label htmlFor="bill-upload" className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 font-medium text-sm shadow-sm">
+                    Change File
+                  </label>
+                  <button onClick={startCamera} className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex items-center gap-2 font-medium text-sm shadow-sm">
+                    <CameraIcon size={16} /> Retake
+                  </button>
+                </div>
+              </div>
             ) : (
-              <div className="py-10 text-gray-400">
-                <Upload size={48} className="mx-auto mb-2" />
-                <p>Upload Bill Image</p>
+              <div className="py-4 text-gray-500 flex flex-col items-center">
+                <Upload size={48} className="mx-auto mb-4 text-gray-400" />
+                <p className="mb-4 font-medium">Upload or Capture Bill Image</p>
+                <div className="flex flex-wrap justify-center gap-3">
+                  <label htmlFor="bill-upload" className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 flex items-center gap-2 font-medium text-sm shadow-sm">
+                    <Upload size={16} /> Browse File
+                  </label>
+                  <button onClick={startCamera} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 font-medium text-sm shadow-sm">
+                    <CameraIcon size={16} /> Open Camera
+                  </button>
+                </div>
               </div>
             )}
             <input
@@ -100,12 +167,6 @@ const ParseBillFromImage = () => {
               className="hidden"
               id="bill-upload"
             />
-            <label
-              htmlFor="bill-upload"
-              className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700"
-            >
-              {preview ? "Change Image" : "Select Image"}
-            </label>
           </div>
 
           <Button
