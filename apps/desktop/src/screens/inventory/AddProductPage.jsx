@@ -61,12 +61,19 @@ const AddProductPage = () => {
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        let localCats = await dbService.getCategories?.() || [];
-        if (!localCats.length) {
-          const catRes = await api.get('/api/category').catch(() => null);
-          if (catRes) localCats = catRes.data?.categories || catRes.data || [];
+        // Fetch categories from both master list and existing products for robustness
+        const [localCats, localProducts] = await Promise.all([
+          dbService.getCategories?.() || Promise.resolve([]),
+          dbService.getInventory?.() || Promise.resolve([])
+        ]);
+
+        const masterCats = (Array.isArray(localCats) ? localCats : []).map(c => c.name);
+        const productCats = (Array.isArray(localProducts) ? localProducts : []).map(p => p.category).filter(Boolean);
+
+        const allCats = [...masterCats, ...productCats];
+        if (allCats.length > 0) {
+          setCategories(prev => [...new Set([...prev, ...allCats])]);
         }
-        if (localCats.length > 0) setCategories(prev => [...new Set([...prev, ...localCats.map(c => c.name)])]);
 
         let localUnits = await dbService.getUnits?.() || [];
         if (!localUnits.length) {

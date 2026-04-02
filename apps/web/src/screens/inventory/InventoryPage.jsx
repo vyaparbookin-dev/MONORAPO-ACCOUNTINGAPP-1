@@ -59,8 +59,10 @@ const InventoryPage = () => {
     warrantyPeriod: "",
   });
 
-  const units = ["pcs", "kg", "ltr", "ft", "mtr", "dz", "box", "roll", "sheet"];
-  const categories = ["Electronics", "Textiles", "Groceries", "Hardware", "Chemicals", "Others"];
+  const [units, setUnits] = useState(["pcs", "kg", "ltr", "ft", "mtr", "dz", "box", "roll", "sheet"]);
+  const [categories, setCategories] = useState([]);
+  const [subCategories, setSubCategories] = useState([]);
+  const [industry, setIndustry] = useState("general");
   const gstRates = [0, 5, 12, 18, 28];
 
   useEffect(() => {
@@ -131,6 +133,18 @@ const InventoryPage = () => {
         const response = await api.get("/api/inventory");
         const inventoryList = response.inventory || response.data?.products || response.data || (Array.isArray(response) ? response : []);
         setInventory(inventoryList);
+
+        // Extract unique categories and subcategories from existing products
+        const cats = inventoryList.map(p => p.category).filter(Boolean);
+        const subCats = inventoryList.map(p => p.subCategory).filter(Boolean);
+        setCategories([...new Set(cats)]);
+        setSubCategories([...new Set(subCats)]);
+      }
+
+      // Fetch company industry type for conditional logic
+      const settingsRes = await api.get('/api/settings').catch(() => null);
+      if (settingsRes?.data?.data) {
+        setIndustry((settingsRes.data.data.industryType || settingsRes.data.data.businessType || "general").toLowerCase());
       }
     } catch (err) {
       console.error("Failed to fetch inventory:", err);
@@ -261,6 +275,13 @@ const InventoryPage = () => {
     setShowForm(false);
     setEditingId(null);
   };
+
+  // Industry conditional logic
+  const showRawMaterial = ['restaurant', 'food', 'cafe', 'bakery', 'manufacturing'].some(i => industry.includes(i));
+  const showJewellery = ['jewellery', 'jewelry', 'goldsmith'].some(i => industry.includes(i));
+  const showHardware = ['hardware', 'builder', 'construction', 'real estate', 'paint'].some(i => industry.includes(i));
+  const showScienceSports = ['sports', 'science', 'medical', 'pharma', 'gym'].some(i => industry.includes(i));
+  const showAnySpecific = showRawMaterial || showJewellery || showHardware || showScienceSports;
 
   const handleDelete = async (id) => {
     if (window.confirm("Delete this product?")) {
@@ -502,24 +523,27 @@ const InventoryPage = () => {
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows="2"
                 />
-                <select
+                <input
+                  list="category-list-edit"
+                  placeholder="Type or Select Category *"
                   className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={formData.category}
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                   required
-                >
-                  <option value="">Select Category *</option>
-                  {categories.map((cat) => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
+                />
+                <datalist id="category-list-edit">
+                  {categories.map((cat, idx) => <option key={idx} value={cat} />)}
+                </datalist>
                 <input
-                  type="text"
+                  list="subcategory-list-edit"
                   placeholder="Sub Category"
                   className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={formData.subCategory}
                   onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
                 />
+                <datalist id="subcategory-list-edit">
+                  {subCategories.map((scat, idx) => <option key={idx} value={scat} />)}
+                </datalist>
                 <input
                   type="text"
                   placeholder="HSN Code *"
@@ -652,73 +676,72 @@ const InventoryPage = () => {
             {/* Units & Stock */}
             <div className="border-t pt-6">
               <h3 className="text-lg font-semibold mb-3 text-gray-800">Units & Stock</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <select
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.unit}
-                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                  required
-                >
-                  <option value="">Select Unit *</option>
-                  {units.map((unit) => (
-                    <option key={unit} value={unit}>{unit}</option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  placeholder="Current Stock"
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.currentStock}
-                  onChange={(e) => setFormData({ ...formData, currentStock: parseFloat(e.target.value) })}
-                  step="0.01"
-                />
-                <input
-                  type="number"
-                  placeholder="Minimum Stock Level"
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.minimumStock}
-                  onChange={(e) => setFormData({ ...formData, minimumStock: parseFloat(e.target.value) })}
-                />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Select Unit *</label>
+                  <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} required>
+                    <option value="">Select Unit *</option>
+                    {units.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Current / Opening Stock</label>
+                  <input type="number" placeholder="Opening Stock" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.currentStock} onChange={(e) => setFormData({ ...formData, currentStock: parseFloat(e.target.value) })} step="0.01" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Minimum Stock Level</label>
+                  <input type="number" placeholder="Min Stock Alert" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.minimumStock} onChange={(e) => setFormData({ ...formData, minimumStock: parseFloat(e.target.value) })} />
+                </div>
               </div>
             </div>
 
             {/* Industry Specific Fields */}
-            <div className="border-t pt-6">
-              <h3 className="text-lg font-semibold mb-3 text-gray-800">Business Specific Details (Optional)</h3>
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">
-                {/* Restaurant / Manufacturing */}
-                <div className="flex items-center gap-2 mb-2">
-                  <input type="checkbox" id="isRawMaterialForm" checked={formData.isRawMaterial} onChange={(e) => setFormData({...formData, isRawMaterial: e.target.checked})} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
-                  <label htmlFor="isRawMaterialForm" className="text-sm font-medium text-gray-700">Is this a Raw Material? (For Recipes/Manufacturing)</label>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Jewellery */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Jewellery</label>
-                    <input type="number" placeholder="Weight (Grams)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.weight} onChange={(e) => setFormData({...formData, weight: e.target.value})} step="0.01" />
-                    <input type="text" placeholder="Purity (e.g. 22K, 925)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.purity} onChange={(e) => setFormData({...formData, purity: e.target.value})} />
-                  </div>
-
-                  {/* Hardware */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Hardware & Builder</label>
-                    <input type="text" placeholder="Brand Name" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.brand} onChange={(e) => setFormData({...formData, brand: e.target.value})} />
-                    <input type="text" placeholder="Dimensions (e.g. 8x4 ft)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.dimensions} onChange={(e) => setFormData({...formData, dimensions: e.target.value})} />
-                  </div>
-
-                  {/* Science & Sports */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Science & Sports</label>
-                    <input type="text" placeholder="Material (e.g. Leather, Glass)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.materialType} onChange={(e) => setFormData({...formData, materialType: e.target.value})} />
-                    <div className="flex gap-2">
-                      <input type="text" placeholder="Warranty" className="w-1/2 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.warrantyPeriod} onChange={(e) => setFormData({...formData, warrantyPeriod: e.target.value})} />
-                      <input type="text" placeholder="Age Grp" className="w-1/2 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.ageGroup} onChange={(e) => setFormData({...formData, ageGroup: e.target.value})} />
+            {showAnySpecific && (
+              <div className="border-t pt-6">
+                <h3 className="text-lg font-semibold mb-3 text-gray-800">Business Specific Details</h3>
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">
+                  {/* Restaurant / Manufacturing */}
+                  {showRawMaterial && (
+                    <div className="flex items-center gap-2 mb-2">
+                      <input type="checkbox" id="isRawMaterialForm" checked={formData.isRawMaterial} onChange={(e) => setFormData({...formData, isRawMaterial: e.target.checked})} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+                      <label htmlFor="isRawMaterialForm" className="text-sm font-medium text-gray-700">Is this a Raw Material? (For Recipes/Manufacturing)</label>
                     </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Jewellery */}
+                    {showJewellery && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Jewellery</label>
+                        <input type="number" placeholder="Weight (Grams)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.weight} onChange={(e) => setFormData({...formData, weight: e.target.value})} step="0.01" />
+                        <input type="text" placeholder="Purity (e.g. 22K, 925)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.purity} onChange={(e) => setFormData({...formData, purity: e.target.value})} />
+                      </div>
+                    )}
+
+                    {/* Hardware */}
+                    {showHardware && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Hardware & Builder</label>
+                        <input type="text" placeholder="Brand Name" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.brand} onChange={(e) => setFormData({...formData, brand: e.target.value})} />
+                        <input type="text" placeholder="Dimensions (e.g. 8x4 ft)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.dimensions} onChange={(e) => setFormData({...formData, dimensions: e.target.value})} />
+                      </div>
+                    )}
+
+                    {/* Science & Sports */}
+                    {showScienceSports && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Science & Sports</label>
+                        <input type="text" placeholder="Material (e.g. Leather, Glass)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.materialType} onChange={(e) => setFormData({...formData, materialType: e.target.value})} />
+                        <div className="flex gap-2">
+                          <input type="text" placeholder="Warranty" className="w-1/2 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.warrantyPeriod} onChange={(e) => setFormData({...formData, warrantyPeriod: e.target.value})} />
+                          <input type="text" placeholder="Age Grp" className="w-1/2 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.ageGroup} onChange={(e) => setFormData({...formData, ageGroup: e.target.value})} />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Form Actions */}
             <div className="flex gap-2 pt-4 border-t">

@@ -59,10 +59,18 @@ const AddProductPage = () => {
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        const catRes = await api.get('/api/category').catch(() => null);
-        if (catRes) {
-          const fetchedCats = catRes.data?.categories || catRes.data || [];
-          if (fetchedCats.length > 0) setCategories(prev => [...new Set([...prev, ...fetchedCats.map(c => c.name)])]);
+        // Fetch categories from both master list and existing products for robustness
+        const [catRes, invRes] = await Promise.all([
+          api.get('/api/category').catch(() => ({ data: [] })),
+          api.get('/api/inventory').catch(() => ({ data: { products: [] } }))
+        ]);
+
+        const masterCats = catRes.data?.categories || catRes.data || [];
+        const productCats = (invRes.data?.products || invRes.data || []).map(p => p.category).filter(Boolean);
+        
+        const allCats = [...masterCats.map(c => c.name), ...productCats];
+        if (allCats.length > 0) {
+          setCategories(prev => [...new Set([...prev, ...allCats])]);
         }
 
         const unitRes = await api.get('/api/unit').catch(() => null);
