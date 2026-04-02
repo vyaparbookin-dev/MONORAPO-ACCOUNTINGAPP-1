@@ -33,6 +33,12 @@ const InventoryPage = () => {
     profitMargin: "",
     sellingPrice: 0,
     sellingPriceWithTax: "",
+    wholesalePrice: "",
+    wholesalePriceWithTax: "",
+    wholesaleMargin: "",
+    dealerPrice: "",
+    dealerPriceWithTax: "",
+    dealerMargin: "",
     mrp: 0,
     gstRate: 0,
     unit: "pcs",
@@ -70,6 +76,10 @@ const InventoryPage = () => {
     const sp = parseFloat(item.sellingPrice) || 0;
     const gst = parseFloat(item.gstRate) || 0;
     const margin = cp > 0 ? (((sp - cp) / cp) * 100).toFixed(2) : 0;
+    const wp = parseFloat(item.wholesalePrice) || 0;
+    const dp = parseFloat(item.dealerPrice) || 0;
+    const wMargin = cp > 0 && wp > 0 ? (((wp - cp) / cp) * 100).toFixed(2) : "";
+    const dMargin = cp > 0 && dp > 0 ? (((dp - cp) / cp) * 100).toFixed(2) : "";
 
     setEditingId(item._id);
     setFormData({
@@ -83,6 +93,12 @@ const InventoryPage = () => {
       profitMargin: margin,
       sellingPrice: sp,
       sellingPriceWithTax: (sp + (sp * gst) / 100).toFixed(2),
+      wholesalePrice: wp,
+      wholesalePriceWithTax: wp ? (wp + (wp * gst) / 100).toFixed(2) : "",
+      wholesaleMargin: wMargin,
+      dealerPrice: dp,
+      dealerPriceWithTax: dp ? (dp + (dp * gst) / 100).toFixed(2) : "",
+      dealerMargin: dMargin,
       mrp: item.mrp,
       gstRate: item.gstRate,
       unit: item.unit,
@@ -465,7 +481,7 @@ const InventoryPage = () => {
       {/* Add Product Form */}
       {showForm && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Add New Product</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">{editingId ? "Edit Product" : "Add New Product"}</h2>
           <form onSubmit={handleAddProduct} className="space-y-6">
             {/* Basic Information */}
             <div>
@@ -524,13 +540,13 @@ const InventoryPage = () => {
 
             {/* Pricing */}
             <div className="border-t pt-6">
-              <h3 className="text-lg font-semibold mb-3 text-gray-800">Pricing & Tax</h3>
+              <h3 className="text-lg font-semibold mb-3 text-gray-800">Pricing & Margins</h3>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">GST Rate (%)</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">GST Rate (%)</label>
                   <select
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                     value={formData.gstRate}
                     onChange={(e) => handlePriceCalculation('gstRate', e.target.value)}
                   >
@@ -541,23 +557,10 @@ const InventoryPage = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Profit Margin (%)</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cost Price (W/O GST) *</label>
                   <input
                     type="number"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-purple-50"
-                    value={formData.profitMargin}
-                    onChange={(e) => handlePriceCalculation('profitMargin', e.target.value)}
-                    placeholder="e.g. 20"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cost Price (Without GST) *</label>
-                  <input
-                    type="number"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                     value={formData.costPrice}
                     onChange={(e) => handlePriceCalculation('costPrice', e.target.value)}
                     step="0.01"
@@ -565,10 +568,10 @@ const InventoryPage = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cost Price (With GST)</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cost Price (With GST)</label>
                   <input
                     type="number"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                     value={formData.costPriceWithTax}
                     onChange={(e) => handlePriceCalculation('costPriceWithTax', e.target.value)}
                     step="0.01"
@@ -576,9 +579,13 @@ const InventoryPage = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 items-end">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price (Without GST) *</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Retail Margin (%)</label>
+                  <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-green-50" value={formData.profitMargin} onChange={(e) => handlePriceCalculation('profitMargin', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Retail Price (W/O GST) *</label>
                   <input
                     type="number"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-green-50 font-bold"
@@ -589,7 +596,7 @@ const InventoryPage = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price (With GST) *</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Retail Price (With GST) *</label>
                   <input
                     type="number"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-green-50 font-bold"
@@ -600,7 +607,7 @@ const InventoryPage = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">MRP</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">MRP</label>
                   <input
                     type="number"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -608,6 +615,36 @@ const InventoryPage = () => {
                     onChange={(e) => setFormData({ ...formData, mrp: parseFloat(e.target.value) })}
                     step="0.01"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 items-end">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Wholesale Margin (%)</label>
+                  <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-purple-50" value={formData.wholesaleMargin} onChange={(e) => handlePriceCalculation('wholesaleMargin', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Wholesale Price (W/O GST)</label>
+                  <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500" value={formData.wholesalePrice} onChange={(e) => handlePriceCalculation('wholesalePrice', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Wholesale Price (With GST)</label>
+                  <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500" value={formData.wholesalePriceWithTax} onChange={(e) => handlePriceCalculation('wholesalePriceWithTax', e.target.value)} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Dealer Margin (%)</label>
+                  <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-orange-50" value={formData.dealerMargin} onChange={(e) => handlePriceCalculation('dealerMargin', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Dealer Price (W/O GST)</label>
+                  <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500" value={formData.dealerPrice} onChange={(e) => handlePriceCalculation('dealerPrice', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Dealer Price (With GST)</label>
+                  <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500" value={formData.dealerPriceWithTax} onChange={(e) => handlePriceCalculation('dealerPriceWithTax', e.target.value)} />
                 </div>
               </div>
             </div>
@@ -689,7 +726,7 @@ const InventoryPage = () => {
                 type="submit"
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
               >
-                Add Product
+                {editingId ? "Update Product" : "Add Product"}
               </button>
               <button
                 type="button"

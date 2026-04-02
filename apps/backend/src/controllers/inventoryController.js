@@ -29,17 +29,11 @@ export const addProduct = async (req, res) => {
     }
 
     const {
-      name, category, hsnCode, costPrice, sellingPrice,
-      gstRate, unit, minimumStock, supplier, description, mrp
+      name, category, costPrice, sellingPrice, unit, stock, currentStock
     } = req.body;
 
     // Validation
-    if (!name || !category || !hsnCode || !costPrice || !sellingPrice || !unit) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing required fields: name, category, hsnCode, costPrice, sellingPrice, unit"
-      });
-    }
+    if (!name || !category || !costPrice || !sellingPrice || !unit) { return res.status(400).json({ success: false, message: "Missing required fields: name, category, costPrice, sellingPrice, unit" }); }
 
     // Check if product already exists
     const existingProduct = await Product.findOne({ name, companyId: req.companyId });
@@ -51,19 +45,9 @@ export const addProduct = async (req, res) => {
     }
 
     const product = await Product.create({
+      ...req.body,
       companyId: req.companyId,
-      name,
-      category,
-      hsnCode,
-      costPrice,
-      sellingPrice,
-      gstRate: gstRate || 0,
-      unit,
-      minimumStock: minimumStock || 10,
-      supplier,
-      description,
-      mrp,
-      currentStock: 0,
+      currentStock: Number(currentStock) || Number(stock) || 0,
     });
 
     res.status(201).json({ 
@@ -72,6 +56,9 @@ export const addProduct = async (req, res) => {
       message: `Product created! SKU: ${product.sku}, Barcode: ${product.barcode}`
     });
   } catch (err) {
+    if (err.code === 11000) {
+        return res.status(400).json({ success: false, message: "A product with this SKU or Barcode already exists." });
+    }
     res.status(500).json({ success: false, message: err.message });
   }
 };

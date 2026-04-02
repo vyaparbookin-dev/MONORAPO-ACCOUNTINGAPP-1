@@ -19,6 +19,12 @@ const AddProductPage = () => {
     profitMargin: "",
     sellingPrice: "",
     sellingPriceWithTax: "",
+    wholesalePrice: "",
+    wholesalePriceWithTax: "",
+    wholesaleMargin: "",
+    dealerPrice: "",
+    dealerPriceWithTax: "",
+    dealerMargin: "",
     mrp: "",
     gstRate: "",
     unit: "pcs",
@@ -78,29 +84,65 @@ const AddProductPage = () => {
     
     const cp = parseFloat(field === 'costPrice' ? value : updatedForm.costPrice) || 0;
     const cpWithTax = parseFloat(field === 'costPriceWithTax' ? value : updatedForm.costPriceWithTax) || 0;
+    const gst = parseFloat(field === 'gstRate' ? value : updatedForm.gstRate) || 0;
+
+    // Retail
     const sp = parseFloat(field === 'sellingPrice' ? value : updatedForm.sellingPrice) || 0;
     const spWithTax = parseFloat(field === 'sellingPriceWithTax' ? value : updatedForm.sellingPriceWithTax) || 0;
     const margin = parseFloat(field === 'profitMargin' ? value : updatedForm.profitMargin) || 0;
-    const gst = parseFloat(field === 'gstRate' ? value : updatedForm.gstRate) || 0;
+
+    // Wholesale
+    const wp = parseFloat(field === 'wholesalePrice' ? value : updatedForm.wholesalePrice) || 0;
+    const wpWithTax = parseFloat(field === 'wholesalePriceWithTax' ? value : updatedForm.wholesalePriceWithTax) || 0;
+    const wMargin = parseFloat(field === 'wholesaleMargin' ? value : updatedForm.wholesaleMargin) || 0;
+
+    // Dealer
+    const dp = parseFloat(field === 'dealerPrice' ? value : updatedForm.dealerPrice) || 0;
+    const dpWithTax = parseFloat(field === 'dealerPriceWithTax' ? value : updatedForm.dealerPriceWithTax) || 0;
+    const dMargin = parseFloat(field === 'dealerMargin' ? value : updatedForm.dealerMargin) || 0;
+
+    const calcSpFromMargin = (cost, m) => cost + (cost * m / 100);
+    const calcTax = (val, g) => val + (val * g / 100);
+    const calcMargin = (sell, cost) => cost > 0 ? ((sell - cost) / cost) * 100 : 0;
+    const calcBaseFromTax = (val, g) => val / (1 + g / 100);
 
     if (field === 'costPrice') {
-      updatedForm.costPriceWithTax = cp ? (cp + (cp * gst) / 100).toFixed(2) : "";
-      if (margin > 0 && cp) { updatedForm.sellingPrice = (cp + (cp * margin) / 100).toFixed(2); updatedForm.sellingPriceWithTax = (parseFloat(updatedForm.sellingPrice) + (parseFloat(updatedForm.sellingPrice) * gst) / 100).toFixed(2); }
+      updatedForm.costPriceWithTax = cp ? calcTax(cp, gst).toFixed(2) : "";
+      if (margin > 0 && cp) { updatedForm.sellingPrice = calcSpFromMargin(cp, margin).toFixed(2); updatedForm.sellingPriceWithTax = calcTax(parseFloat(updatedForm.sellingPrice), gst).toFixed(2); }
+      if (wMargin > 0 && cp) { updatedForm.wholesalePrice = calcSpFromMargin(cp, wMargin).toFixed(2); updatedForm.wholesalePriceWithTax = calcTax(parseFloat(updatedForm.wholesalePrice), gst).toFixed(2); }
+      if (dMargin > 0 && cp) { updatedForm.dealerPrice = calcSpFromMargin(cp, dMargin).toFixed(2); updatedForm.dealerPriceWithTax = calcTax(parseFloat(updatedForm.dealerPrice), gst).toFixed(2); }
     } else if (field === 'costPriceWithTax') {
-      const newCp = cpWithTax ? cpWithTax / (1 + gst / 100) : 0;
+      const newCp = cpWithTax ? calcBaseFromTax(cpWithTax, gst) : 0;
       updatedForm.costPrice = newCp ? newCp.toFixed(2) : "";
-      if (margin > 0 && newCp) { updatedForm.sellingPrice = (newCp + (newCp * margin) / 100).toFixed(2); updatedForm.sellingPriceWithTax = (parseFloat(updatedForm.sellingPrice) + (parseFloat(updatedForm.sellingPrice) * gst) / 100).toFixed(2); }
-    } else if (field === 'sellingPrice') {
-      updatedForm.sellingPriceWithTax = sp ? (sp + (sp * gst) / 100).toFixed(2) : "";
-      if (cp > 0 && sp) updatedForm.profitMargin = (((sp - cp) / cp) * 100).toFixed(2);
-    } else if (field === 'sellingPriceWithTax') {
-      const newSp = spWithTax ? spWithTax / (1 + gst / 100) : 0;
-      updatedForm.sellingPrice = newSp ? newSp.toFixed(2) : "";
-      if (cp > 0 && newSp) updatedForm.profitMargin = (((newSp - cp) / cp) * 100).toFixed(2);
-    } else if (field === 'profitMargin' && cp > 0 && margin > 0) {
-      updatedForm.sellingPrice = (cp + (cp * margin) / 100).toFixed(2); updatedForm.sellingPriceWithTax = (parseFloat(updatedForm.sellingPrice) + (parseFloat(updatedForm.sellingPrice) * gst) / 100).toFixed(2);
+      if (margin > 0 && newCp) { updatedForm.sellingPrice = calcSpFromMargin(newCp, margin).toFixed(2); updatedForm.sellingPriceWithTax = calcTax(parseFloat(updatedForm.sellingPrice), gst).toFixed(2); }
+      if (wMargin > 0 && newCp) { updatedForm.wholesalePrice = calcSpFromMargin(newCp, wMargin).toFixed(2); updatedForm.wholesalePriceWithTax = calcTax(parseFloat(updatedForm.wholesalePrice), gst).toFixed(2); }
+      if (dMargin > 0 && newCp) { updatedForm.dealerPrice = calcSpFromMargin(newCp, dMargin).toFixed(2); updatedForm.dealerPriceWithTax = calcTax(parseFloat(updatedForm.dealerPrice), gst).toFixed(2); }
     } else if (field === 'gstRate') {
-      if (cp) updatedForm.costPriceWithTax = (cp + (cp * gst) / 100).toFixed(2); if (sp) updatedForm.sellingPriceWithTax = (sp + (sp * gst) / 100).toFixed(2);
+      if (cp) updatedForm.costPriceWithTax = calcTax(cp, gst).toFixed(2);
+      if (sp) updatedForm.sellingPriceWithTax = calcTax(sp, gst).toFixed(2);
+      if (wp) updatedForm.wholesalePriceWithTax = calcTax(wp, gst).toFixed(2);
+      if (dp) updatedForm.dealerPriceWithTax = calcTax(dp, gst).toFixed(2);
+    } else if (field === 'sellingPrice') {
+      updatedForm.sellingPriceWithTax = sp ? calcTax(sp, gst).toFixed(2) : "";
+      if (cp > 0 && sp) updatedForm.profitMargin = calcMargin(sp, cp).toFixed(2);
+    } else if (field === 'sellingPriceWithTax') {
+      const newSp = spWithTax ? calcBaseFromTax(spWithTax, gst) : 0;
+      updatedForm.sellingPrice = newSp ? newSp.toFixed(2) : "";
+      if (cp > 0 && newSp) updatedForm.profitMargin = calcMargin(newSp, cp).toFixed(2);
+    } else if (field === 'profitMargin' && cp > 0 && margin > 0) {
+      updatedForm.sellingPrice = calcSpFromMargin(cp, margin).toFixed(2); updatedForm.sellingPriceWithTax = calcTax(parseFloat(updatedForm.sellingPrice), gst).toFixed(2);
+    } else if (field === 'wholesalePrice') {
+      updatedForm.wholesalePriceWithTax = wp ? calcTax(wp, gst).toFixed(2) : ""; if (cp > 0 && wp) updatedForm.wholesaleMargin = calcMargin(wp, cp).toFixed(2);
+    } else if (field === 'wholesalePriceWithTax') {
+      const newWp = wpWithTax ? calcBaseFromTax(wpWithTax, gst) : 0; updatedForm.wholesalePrice = newWp ? newWp.toFixed(2) : ""; if (cp > 0 && newWp) updatedForm.wholesaleMargin = calcMargin(newWp, cp).toFixed(2);
+    } else if (field === 'wholesaleMargin' && cp > 0 && wMargin > 0) {
+      updatedForm.wholesalePrice = calcSpFromMargin(cp, wMargin).toFixed(2); updatedForm.wholesalePriceWithTax = calcTax(parseFloat(updatedForm.wholesalePrice), gst).toFixed(2);
+    } else if (field === 'dealerPrice') {
+      updatedForm.dealerPriceWithTax = dp ? calcTax(dp, gst).toFixed(2) : ""; if (cp > 0 && dp) updatedForm.dealerMargin = calcMargin(dp, cp).toFixed(2);
+    } else if (field === 'dealerPriceWithTax') {
+      const newDp = dpWithTax ? calcBaseFromTax(dpWithTax, gst) : 0; updatedForm.dealerPrice = newDp ? newDp.toFixed(2) : ""; if (cp > 0 && newDp) updatedForm.dealerMargin = calcMargin(newDp, cp).toFixed(2);
+    } else if (field === 'dealerMargin' && cp > 0 && dMargin > 0) {
+      updatedForm.dealerPrice = calcSpFromMargin(cp, dMargin).toFixed(2); updatedForm.dealerPriceWithTax = calcTax(parseFloat(updatedForm.dealerPrice), gst).toFixed(2);
     }
     setForm(updatedForm);
   };
@@ -111,34 +153,62 @@ const AddProductPage = () => {
     setForm({ ...form, barcode: `ITEM${timestamp.toString().slice(-6)}` });
   };
 
+  const resetForm = () => {
+    setForm({
+      name: "", sku: "", barcode: "", description: "", category: "", subCategory: "",
+      hsnCode: "", costPrice: "", costPriceWithTax: "", profitMargin: "", sellingPrice: "",
+      sellingPriceWithTax: "", mrp: "", gstRate: "", unit: "pcs", stock: "",
+      wholesalePrice: "", wholesalePriceWithTax: "", wholesaleMargin: "",
+      dealerPrice: "", dealerPriceWithTax: "", dealerMargin: "",
+      minimumStock: 10, supplier: "", isRawMaterial: false, weight: "", purity: "",
+      makingChargeType: "fixed", makingCharge: 0, brand: "", dimensions: "",
+      materialType: "", ageGroup: "", certification: "", warrantyPeriod: "",
+    });
+  };
+
+  const saveProductLogic = async () => {
+    // 1. Offline First: Local SQLite me turant save karein
+    await dbService.saveProduct({
+        ...form,
+        name: form.name,
+        sku: form.sku || form.barcode || `SKU-${Date.now()}`,
+        price: parseFloat(form.sellingPrice) || 0,
+        quantity: parseFloat(form.stock) || 0,
+        category: form.category
+      });
+
+    // 2. Cloud Sync: Backend par bhejein
+    try {
+      await api.post("/api/inventory", form);
+    } catch (apiErr) {
+      // Agar Internet nahi hai ya server down hai, toh queue me daal do
+      if (!navigator.onLine || apiErr.message === "Network Error") {
+        syncQueue.enqueue({ method: "POST", url: "/api/inventory", data: form });
+        console.log("Offline mode: Product queued for sync.");
+      } else {
+        throw apiErr;
+      }
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      // 1. Offline First: Local SQLite me turant save karein
-      await dbService.saveProduct({
-          ...form,
-          name: form.name,
-          sku: form.sku || form.barcode || `SKU-${Date.now()}`,
-          price: parseFloat(form.sellingPrice) || 0,
-          quantity: parseFloat(form.stock) || 0,
-          category: form.category
-        });
-
-      // 2. Cloud Sync: Backend par bhejein
-      try {
-        await api.post("/api/inventory", form);
-      } catch (apiErr) {
-        // Agar Internet nahi hai ya server down hai, toh queue me daal do
-        if (!navigator.onLine || apiErr.message === "Network Error") {
-          syncQueue.enqueue({ method: "POST", url: "/api/inventory", data: form });
-          console.log("Offline mode: Product queued for sync.");
-        } else {
-          throw apiErr;
-        }
-      }
-
+      await saveProductLogic();
       alert("Product added successfully!");
       navigate("/inventory"); // Using correct path based on common routing
+    } catch (err) {
+      console.error(err);
+      alert("Error adding product: " + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const handleSaveAndAddAnother = async (e) => {
+    e.preventDefault();
+    try {
+      await saveProductLogic();
+      alert("Product saved! You can now add another one.");
+      resetForm();
     } catch (err) {
       console.error(err);
       alert("Error adding product: " + (err.response?.data?.message || err.message));
@@ -235,13 +305,14 @@ const AddProductPage = () => {
 
         {/* Pricing */}
         <div className="border-t pt-4">
-          <h3 className="font-semibold mb-2">Pricing & Tax</h3>
+          <h3 className="text-lg font-semibold mb-3 text-gray-800">Pricing & Margins</h3>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          {/* Base Costs & GST */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">GST Rate (%)</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">GST Rate (%)</label>
               <select
-                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
                 value={form.gstRate}
                 onChange={(e) => handlePriceCalculation('gstRate', e.target.value)}
               >
@@ -250,41 +321,40 @@ const AddProductPage = () => {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Profit Margin (%)</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cost Price (W/O GST) *</label>
               <input
                 type="number"
-                className="w-full border p-2 rounded focus:ring-2 focus:ring-purple-500 outline-none bg-purple-50"
-                value={form.profitMargin}
-                onChange={(e) => handlePriceCalculation('profitMargin', e.target.value)}
-                placeholder="e.g. 20"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Cost Price (Without GST)</label>
-              <input
-                type="number"
-                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
                 value={form.costPrice}
                 onChange={(e) => handlePriceCalculation('costPrice', e.target.value)}
+                required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Cost Price (With GST)</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cost Price (With GST)</label>
               <input
                 type="number"
-                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
                 value={form.costPriceWithTax}
                 onChange={(e) => handlePriceCalculation('costPriceWithTax', e.target.value)}
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Retail Price */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 items-end">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price (Without GST) *</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Retail Margin (%)</label>
+              <input
+                type="number"
+                className="w-full border p-2 rounded focus:ring-2 focus:ring-green-500 outline-none bg-green-50"
+                value={form.profitMargin}
+                onChange={(e) => handlePriceCalculation('profitMargin', e.target.value)}
+                placeholder="e.g. 20"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Retail Price (W/O GST) *</label>
               <input
                 type="number"
                 className="w-full border p-2 rounded focus:ring-2 focus:ring-green-500 outline-none bg-green-50 font-bold"
@@ -294,7 +364,7 @@ const AddProductPage = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price (With GST) *</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Retail Price (With GST) *</label>
               <input
                 type="number"
                 className="w-full border p-2 rounded focus:ring-2 focus:ring-green-500 outline-none bg-green-50 font-bold"
@@ -304,13 +374,46 @@ const AddProductPage = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">MRP</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">MRP</label>
               <input
                 type="number"
                 className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
                 value={form.mrp}
                 onChange={(e) => setForm({ ...form, mrp: e.target.value })}
               />
+            </div>
+          </div>
+
+          {/* Wholesale Price */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 items-end">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Wholesale Margin (%)</label>
+              <input type="number" className="w-full border p-2 rounded focus:ring-2 focus:ring-purple-500 outline-none bg-purple-50" value={form.wholesaleMargin} onChange={(e) => handlePriceCalculation('wholesaleMargin', e.target.value)} placeholder="Optional" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Wholesale Price (W/O GST)</label>
+              <input type="number" className="w-full border p-2 rounded focus:ring-2 focus:ring-purple-500 outline-none" value={form.wholesalePrice} onChange={(e) => handlePriceCalculation('wholesalePrice', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Wholesale Price (With GST)</label>
+              <input type="number" className="w-full border p-2 rounded focus:ring-2 focus:ring-purple-500 outline-none" value={form.wholesalePriceWithTax} onChange={(e) => handlePriceCalculation('wholesalePriceWithTax', e.target.value)} />
+            </div>
+            <div className="hidden md:block"></div> {/* Spacer */}
+          </div>
+
+          {/* Dealer Price */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Dealer Margin (%)</label>
+              <input type="number" className="w-full border p-2 rounded focus:ring-2 focus:ring-orange-500 outline-none bg-orange-50" value={form.dealerMargin} onChange={(e) => handlePriceCalculation('dealerMargin', e.target.value)} placeholder="Optional" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Dealer Price (W/O GST)</label>
+              <input type="number" className="w-full border p-2 rounded focus:ring-2 focus:ring-orange-500 outline-none" value={form.dealerPrice} onChange={(e) => handlePriceCalculation('dealerPrice', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Dealer Price (With GST)</label>
+              <input type="number" className="w-full border p-2 rounded focus:ring-2 focus:ring-orange-500 outline-none" value={form.dealerPriceWithTax} onChange={(e) => handlePriceCalculation('dealerPriceWithTax', e.target.value)} />
             </div>
           </div>
         </div>
@@ -402,7 +505,10 @@ const AddProductPage = () => {
           <button type="button" onClick={() => navigate(-1)} className="flex-1 bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200">
             Cancel
           </button>
-          <button type="submit" className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+          <button type="button" onClick={handleSaveAndAddAnother} className="flex-1 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-medium">
+            Save & Add Another
+          </button>
+          <button type="submit" className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-medium">
           Save Product
         </button>
         </div>
