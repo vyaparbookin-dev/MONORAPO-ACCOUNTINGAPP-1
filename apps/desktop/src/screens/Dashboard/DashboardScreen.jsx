@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ArrowUpRight, ArrowDownLeft, TrendingUp, AlertCircle, Clock } from "lucide-react";
+import { ArrowUpRight, ArrowDownLeft, TrendingUp, AlertCircle, Clock, Landmark, Wallet } from "lucide-react";
 import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
 import { dbService } from "../../services/dbService";
@@ -10,6 +10,8 @@ export default function DashboardScreen() {
     totalRevenue: 0,
     totalExpenses: 0,
     pendingPayments: 0,
+    cashInHand: 0,
+    bankBalance: 0,
     completedPayments: 0,
     activeProducts: 0,
     chartData: [0, 0, 0, 0, 0, 0],
@@ -96,9 +98,14 @@ export default function DashboardScreen() {
           percentage: totalExpenses > 0 ? (expensesByCategory[cat] / totalExpenses) * 100 : 0
         })).sort((a,b) => b.amount - a.amount).slice(0, 4);
 
+        // Temporary Logic for Cash and Bank (We will replace this with real Banking data later)
+        const estCashInHand = (totalRevenue * 0.4) - (totalExpenses * 0.6); // Just a placeholder formula
+        const estBankBalance = (totalRevenue * 0.6) - (totalExpenses * 0.4); // Just a placeholder formula
+
         setStats({
           totalRevenue, totalExpenses, pendingPayments, completedPayments,
-          activeProducts: productsCount, chartData, monthNames, expenseBreakdown
+          activeProducts: productsCount, chartData, monthNames, expenseBreakdown,
+          cashInHand: estCashInHand > 0 ? estCashInHand : 0, bankBalance: estBankBalance > 0 ? estBankBalance : 0
         });
       };
 
@@ -163,22 +170,23 @@ export default function DashboardScreen() {
         />
 
         <KPICard
-          label="Pending Payments"
-          value={stats.pendingPayments}
-          subtext={`₹${(stats.totalRevenue * 0.3).toLocaleString()}`}
-          icon={<Clock className="text-orange-600" size={20} />}
-          bgColor="bg-orange-50"
-          borderColor="border-orange-200"
+          label="Cash in Hand"
+          value={`₹${stats.cashInHand.toLocaleString()}`}
+          change="Updated live"
+          icon={<Wallet className="text-cyan-600" size={20} />}
+          bgColor="bg-cyan-50"
+          borderColor="border-cyan-200"
         />
 
         <KPICard
-          label="Active Products"
-          value={stats.activeProducts}
-          subtext="3 low stock"
-          icon={<AlertCircle className="text-purple-600" size={20} />}
-          bgColor="bg-purple-50"
-          borderColor="border-purple-200"
+          label="Bank Balance"
+          value={`₹${stats.bankBalance.toLocaleString()}`}
+          change="Updated live"
+          icon={<Landmark className="text-indigo-600" size={20} />}
+          bgColor="bg-indigo-50"
+          borderColor="border-indigo-200"
         />
+
       </div>
 
       {/* Main Content Area */}

@@ -22,13 +22,26 @@ const AddProductPage = () => {
     stock: "",
     minimumStock: 10,
     supplier: "",
+    // Business Specific Fields
+    isRawMaterial: false,
+    weight: "",
+    purity: "",
+    makingChargeType: "fixed",
+    makingCharge: 0,
+    brand: "",
+    dimensions: "",
+    materialType: "",
+    ageGroup: "",
+    certification: "",
+    warrantyPeriod: "",
   });
 
   const gstRates = [0, 5, 12, 18, 28];
 
   // Make dropdowns dynamic
   const [units, setUnits] = useState(["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"]);
-  const [categories, setCategories] = useState(["Electronics", "Textiles", "Groceries", "Hardware", "Chemicals", "Others"]);
+  const [categories, setCategories] = useState([]);
+  const [industry, setIndustry] = useState("general");
 
   useEffect(() => {
     const fetchDropdowns = async () => {
@@ -46,6 +59,12 @@ const AddProductPage = () => {
           if (unitRes) localUnits = unitRes.data?.units || unitRes.data || [];
         }
         if (localUnits.length > 0) setUnits(prev => [...new Set([...prev, ...localUnits.map(u => u.name)])]);
+
+        // Fetch company industry type for conditional logic
+        const settingsRes = await api.get('/api/settings').catch(() => null);
+        if (settingsRes?.data?.data) {
+          setIndustry((settingsRes.data.data.industryType || settingsRes.data.data.businessType || "general").toLowerCase());
+        }
       } catch (err) { console.warn("Failed to load dynamic dropdowns", err); }
     };
     fetchDropdowns();
@@ -62,6 +81,7 @@ const AddProductPage = () => {
     try {
       // 1. Offline First: Local SQLite me turant save karein
       await dbService.saveProduct({
+          ...form,
           name: form.name,
           sku: form.sku || form.barcode || `SKU-${Date.now()}`,
           price: parseFloat(form.sellingPrice) || 0,
@@ -89,6 +109,13 @@ const AddProductPage = () => {
       alert("Error adding product: " + (err.response?.data?.message || err.message));
     }
   };
+
+  // Industry logic for conditional rendering
+  const showRawMaterial = ['restaurant', 'food', 'cafe', 'bakery', 'manufacturing'].some(i => industry.includes(i));
+  const showJewellery = ['jewellery', 'jewelry', 'goldsmith'].some(i => industry.includes(i));
+  const showHardware = ['hardware', 'builder', 'construction', 'real estate', 'paint'].some(i => industry.includes(i));
+  const showScienceSports = ['sports', 'science', 'medical', 'pharma', 'gym'].some(i => industry.includes(i));
+  const showAnySpecific = showRawMaterial || showJewellery || showHardware || showScienceSports;
 
   return (
     <div className="p-6 max-w-2xl mx-auto bg-white rounded-xl shadow">
@@ -138,15 +165,27 @@ const AddProductPage = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700">Category *</label>
-            <select
+            <input
+              list="category-list"
               className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
               value={form.category}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
+              placeholder="Type or select a category"
               required
-            >
-              <option value="">Select Category</option>
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            />
+            <datalist id="category-list">
+              {categories.map(c => <option key={c} value={c} />)}
+            </datalist>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Sub Category</label>
+            <input
+              className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
+              value={form.subCategory}
+              onChange={(e) => setForm({ ...form, subCategory: e.target.value })}
+              placeholder="Type a sub-category"
+            />
           </div>
 
           <div>
@@ -230,6 +269,54 @@ const AddProductPage = () => {
             </div>
           </div>
         </div>
+
+        {/* Industry Specific Details */}
+        {showAnySpecific && (
+          <div className="border-t pt-4">
+            <h3 className="font-semibold mb-3 text-gray-800">Business Specific Details</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 p-5 rounded-lg border border-gray-200">
+              
+              {/* Restaurant / Manufacturing */}
+              {showRawMaterial && (
+                <div className="md:col-span-3 flex items-center gap-2 mb-1">
+                  <input type="checkbox" id="isRawMaterial" checked={form.isRawMaterial} onChange={(e) => setForm({...form, isRawMaterial: e.target.checked})} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+                  <label htmlFor="isRawMaterial" className="text-sm font-medium text-gray-700">Is this a Raw Material? (For Recipes/Manufacturing/Restaurant)</label>
+                </div>
+              )}
+
+              {/* Jewellery */}
+              {showJewellery && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Jewellery</label>
+                  <input type="number" placeholder="Weight (Grams or mg)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={form.weight} onChange={(e) => setForm({...form, weight: e.target.value})} step="0.001" />
+                  <input type="text" placeholder="Purity (e.g. 22K, 925 Silver)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={form.purity} onChange={(e) => setForm({...form, purity: e.target.value})} />
+                </div>
+              )}
+
+              {/* Hardware */}
+              {showHardware && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Hardware & Builder</label>
+                  <input type="text" placeholder="Brand Name (e.g. Asian Paints)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={form.brand} onChange={(e) => setForm({...form, brand: e.target.value})} />
+                  <input type="text" placeholder="Dimensions (e.g. 8x4 ft)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={form.dimensions} onChange={(e) => setForm({...form, dimensions: e.target.value})} />
+                </div>
+              )}
+
+              {/* Science & Sports */}
+              {showScienceSports && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Science & Sports</label>
+                  <input type="text" placeholder="Material (e.g. Borosilicate, Leather)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={form.materialType} onChange={(e) => setForm({...form, materialType: e.target.value})} />
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="Warranty" className="w-1/2 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={form.warrantyPeriod} onChange={(e) => setForm({...form, warrantyPeriod: e.target.value})} />
+                    <input type="text" placeholder="Age Grp" className="w-1/2 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={form.ageGroup} onChange={(e) => setForm({...form, ageGroup: e.target.value})} />
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        )}
 
         <div className="pt-4 flex gap-3">
           <button type="button" onClick={() => navigate(-1)} className="flex-1 bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200">

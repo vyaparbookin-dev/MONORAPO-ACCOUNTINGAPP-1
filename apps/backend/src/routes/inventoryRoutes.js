@@ -1,10 +1,11 @@
 import express from "express";
-import { addProduct, listProducts, getProductById, updateProduct, deleteProduct, adjustStock, getStockAdjustments, updateStock, getProductByBarcode, getInventorySummary, addPurchaseEntry } from "../controllers/inventoryController.js";
+import { addProduct, listProducts, getProductById, updateProduct, deleteProduct, adjustStock, getStockAdjustments, updateStock, getProductByBarcode, getInventorySummary, addPurchaseEntry, bulkImportProducts } from "../controllers/inventoryController.js";
 import { protect } from "../middleware/authmiddleware.js";
 
 const router = express.Router();
 
 // Custom inventory actions
+router.post("/import", protect, bulkImportProducts);
 router.post("/purchase", protect, addPurchaseEntry);
 router.post("/adjust", protect, adjustStock);
 router.get("/adjustments", protect, getStockAdjustments);

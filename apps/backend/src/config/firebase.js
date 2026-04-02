@@ -3,7 +3,8 @@ import admin from 'firebase-admin';
 try {
   if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
     // Render me \n ko sahi se read karne ke liye replace karna padta hai
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
+    // Local .env me extra quotes ko remove karne ka logic
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^["']|["']$/g, '');
 
     // Initialize Firebase with individual keys
     admin.initializeApp({

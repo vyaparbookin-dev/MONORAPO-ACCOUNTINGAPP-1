@@ -76,6 +76,61 @@ export const addProduct = async (req, res) => {
   }
 };
 
+// Excel Bulk Import Controller
+export const bulkImportProducts = async (req, res) => {
+  try {
+    const { companyId } = req;
+    const { products } = req.body; // Excel se mapped data yaha aayega array format me
+
+    if (!companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
+    if (!products || !Array.isArray(products) || products.length === 0) {
+      return res.status(400).json({ success: false, message: "No products provided for import" });
+    }
+
+    const formattedProducts = [];
+    
+    // Loop through each product from the Excel sheet
+    for (let i = 0; i < products.length; i++) {
+      const item = products[i];
+
+      // Agar user ne Excel me SKU ya Barcode nahi diya, toh automatic generate karo
+      const baseSku = item.sku || `SKU-${Date.now()}-${i}`;
+      const baseBarcode = item.barcode || `BAR-${baseSku}`;
+
+      // Mapping Logic (Backend me safely store karne ke liye format)
+      formattedProducts.push({
+        name: item.name || item.productName || "Unknown Product",
+        companyId: companyId,
+        category: item.category || "General",      // Excel column mapped to Category
+        subCategory: item.subCategory || "",       // Excel column mapped to SubCategory
+        hsnCode: item.hsnCode || "0000",
+        sku: baseSku,
+        barcode: baseBarcode,
+        costPrice: Number(item.purchaseRate) || Number(item.costPrice) || 0,
+        sellingPrice: Number(item.sellingPrice) || Number(item.mrp) || 0,
+        mrp: Number(item.mrp) || 0,
+        gstRate: Number(item.gstRate) || 0,
+        unit: item.unit || "pcs",
+        currentStock: Number(item.stock) || Number(item.quantity) || 0,
+        minimumStock: Number(item.minimumStock) || 10,
+        isActive: true
+      });
+    }
+
+    // Ek baar me saare products Insert karna (Speed ke liye)
+    // ordered: false lagane se agar 1 product duplicate (SKU error) hoga, tab bhi baaki upload ho jayenge
+    const insertedProducts = await Product.insertMany(formattedProducts, { ordered: false });
+
+    res.status(201).json({ success: true, message: `${insertedProducts.length} products imported successfully!`, data: insertedProducts });
+  } catch (error) {
+    console.error("🔴 Bulk Import Error:", error);
+    if (error.name === 'BulkWriteError') {
+       return res.status(207).json({ success: true, message: `Partial import successful. ${error.insertedDocs.length} products added. Some were skipped due to duplicate SKU/Barcode.`, errors: error.writeErrors });
+    }
+    res.status(500).json({ success: false, message: "Failed to import products", error: error.message });
+  }
+};
+
 // --- Stock Adjustment Logic ---
 export const adjustStock = async (req, res) => {
   try {
