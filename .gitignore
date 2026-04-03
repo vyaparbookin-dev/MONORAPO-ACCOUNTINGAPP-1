@@ -8,6 +8,8 @@ node_modules/
 .env.development
 .env.test
 .env.production
+.env.example
+
 
 # OS generated files
 .DS_Store
@@ -25,10 +27,15 @@ dist_electron/
 *.log
 npm-debug.log*
 yarn-debug.log*
+*debug.log
 
 # User Scripts & Logs (Local only)
 scripts/
 scripts-all/
+scripts-all-copy/
+script-all-copy/
+script-*/
+scripts-*/
 
 # Local generated files & archives
 archive_unused/

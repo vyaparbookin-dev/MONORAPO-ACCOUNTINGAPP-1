@@ -27,6 +27,7 @@ const ProductListPage = () => {
         if (safeProducts.length > 0) {
           for (const prod of safeProducts) {
             await dbService.saveProduct({
+              ...prod,
               uuid: prod._id,
               name: prod.name,
               sku: prod.sku || `SKU-${Date.now()}`,
