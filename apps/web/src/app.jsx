@@ -44,6 +44,7 @@ import InventorySalesReturnPage from "./screens/inventory/SalesReturnPage";
 import InventorySupplierLedgerPage from "./screens/inventory/SupplierLedgerPage";
 import StockTransferPage from "./screens/inventory/StockTransferPage";
 import ParsePurchaseBillPage from "./screens/inventory/ParseBillFromImage";
+import CategoryManagementPage from "./screens/inventory/CategoryManagementPage";
 
 // Expenses
 import ExpensesPage from "./screens/expanses/ExpensesPage";
@@ -215,6 +216,7 @@ const App = () => {
             <Route path="/inventory/supplier-ledger" element={<InventorySupplierLedgerPage />} />
             <Route path="/inventory/transfer" element={<StockTransferPage />} />
             <Route path="/inventory/parse-purchase-bill" element={<ParsePurchaseBillPage />} />
+            <Route path="/inventory/categories" element={<CategoryManagementPage />} />
 
             {/* Expenses */}
             <Route path="/expenses" element={<ExpensesPage />} />

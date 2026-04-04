@@ -502,11 +502,10 @@ const InventoryPage = () => {
       },
     },
     {
-      header: "CP/SP",
+      header: "Retail Price",
       cell: (row) => (
         <div className="text-xs">
-          <p className="text-gray-600">{formatCurrency(row.costPrice)}</p>
-          <p className="font-bold text-green-600">{formatCurrency(row.sellingPrice)}</p>
+          <p className="font-bold text-green-700 text-sm">{formatCurrency(row.sellingPrice)}</p>
         </div>
       ),
     },
