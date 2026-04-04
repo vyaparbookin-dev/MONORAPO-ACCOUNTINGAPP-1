@@ -9,11 +9,15 @@ export default function SettingsPage() {
   const [parties, setParties] = useState([]);
   const [units, setUnits] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [subCategories, setSubCategories] = useState([]);
+  const [brands, setBrands] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // Form states
   const [showPartyForm, setShowPartyForm] = useState(false);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
+  const [showSubCategoryForm, setShowSubCategoryForm] = useState(false);
+  const [showBrandForm, setShowBrandForm] = useState(false);
 
   const [partyForm, setPartyForm] = useState({
     name: "",
@@ -29,9 +33,21 @@ export default function SettingsPage() {
     description: "",
   });
 
+  const [subCategoryForm, setSubCategoryForm] = useState({
+    name: "",
+    description: "",
+  });
+
+  const [brandForm, setBrandForm] = useState({
+    name: "",
+    description: "",
+  });
+
   useEffect(() => {
     if (activeTab === "parties") loadParties();
     if (activeTab === "categories") loadCategories();
+    if (activeTab === "subCategories") loadSubCategories();
+    if (activeTab === "brands") loadBrands();
   }, [activeTab]);
 
   const loadParties = async () => {
@@ -53,6 +69,30 @@ export default function SettingsPage() {
       setCategories(response.categories || []);
     } catch (err) {
       console.error("Error loading categories:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadSubCategories = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get("/api/subcategory");
+      setSubCategories(response.subCategories || response.data || []);
+    } catch (err) {
+      console.error("Error loading sub-categories:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadBrands = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get("/api/brand");
+      setBrands(response.brands || response.data || []);
+    } catch (err) {
+      console.error("Error loading brands:", err);
     } finally {
       setLoading(false);
     }
@@ -91,6 +131,32 @@ export default function SettingsPage() {
     }
   };
 
+  const handleAddSubCategory = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post("/api/subcategory", subCategoryForm);
+      setSubCategoryForm({ name: "", description: "" });
+      setShowSubCategoryForm(false);
+      loadSubCategories();
+      alert("Sub-Category added successfully!");
+    } catch (err) {
+      alert(err.error || err.response?.data?.message || "Error adding sub-category");
+    }
+  };
+
+  const handleAddBrand = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post("/api/brand", brandForm);
+      setBrandForm({ name: "", description: "" });
+      setShowBrandForm(false);
+      loadBrands();
+      alert("Brand added successfully!");
+    } catch (err) {
+      alert(err.error || err.response?.data?.message || "Error adding brand");
+    }
+  };
+
   const handleDeleteParty = async (id) => {
     if (window.confirm("Delete this party?")) {
       try {
@@ -109,6 +175,28 @@ export default function SettingsPage() {
         loadCategories();
       } catch (err) {
         alert("Error deleting category");
+      }
+    }
+  };
+
+  const handleDeleteSubCategory = async (id) => {
+    if (window.confirm("Delete this sub-category?")) {
+      try {
+        await api.delete(`/api/subcategory/${id}`);
+        loadSubCategories();
+      } catch (err) {
+        alert("Error deleting sub-category");
+      }
+    }
+  };
+
+  const handleDeleteBrand = async (id) => {
+    if (window.confirm("Delete this brand?")) {
+      try {
+        await api.delete(`/api/brand/${id}`);
+        loadBrands();
+      } catch (err) {
+        alert("Error deleting brand");
       }
     }
   };
@@ -150,18 +238,23 @@ export default function SettingsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-gray-200">
-        {["parties", "categories"].map((tab) => (
+      <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
+        {[
+          { id: "parties", label: "Parties" },
+          { id: "categories", label: "Categories" },
+          { id: "subCategories", label: "Sub-Categories" },
+          { id: "brands", label: "Brands / Companies" }
+        ].map((tab) => (
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 font-medium border-b-2 transition ${
-              activeTab === tab
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 font-medium border-b-2 transition whitespace-nowrap ${
+              activeTab === tab.id
                 ? "border-blue-600 text-blue-600"
                 : "border-transparent text-gray-600 hover:text-gray-900"
             }`}
           >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab.label}
           </button>
         ))}
       </div>
@@ -381,6 +474,143 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+      {/* SUB-CATEGORIES TAB */}
+      {activeTab === "subCategories" && (
+        <div className="space-y-4">
+          <button
+            onClick={() => setShowSubCategoryForm(!showSubCategoryForm)}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+          >
+            <Plus size={20} /> Add Sub-Category
+          </button>
+
+          {showSubCategoryForm && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h2 className="text-xl font-bold mb-4">Add New Sub-Category</h2>
+              <form onSubmit={handleAddSubCategory} className="space-y-4">
+                <input
+                  type="text"
+                  placeholder="Sub-Category Name *"
+                  value={subCategoryForm.name}
+                  onChange={(e) => setSubCategoryForm({ ...subCategoryForm, name: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+                <textarea
+                  placeholder="Description"
+                  value={subCategoryForm.description}
+                  onChange={(e) => setSubCategoryForm({ ...subCategoryForm, description: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows="2"
+                />
+                <div className="flex gap-2">
+                  <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Sub-Category</button>
+                  <button type="button" onClick={() => setShowSubCategoryForm(false)} className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50 border-b">
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Sub-Category Name</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Description</th>
+                  <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {subCategories.length > 0 ? (
+                  subCategories.map((sub) => (
+                    <tr key={sub._id} className="border-b hover:bg-gray-50">
+                      <td className="px-6 py-3 font-medium">{sub.name}</td>
+                      <td className="px-6 py-3 text-sm text-gray-600">{sub.description || "-"}</td>
+                      <td className="px-6 py-3 text-center">
+                        <button onClick={() => handleDeleteSubCategory(sub._id)} className="p-2 text-red-600 hover:bg-red-50 rounded">
+                          <Trash2 size={18} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr><td colSpan="3" className="px-6 py-8 text-center text-gray-500">No sub-categories added yet</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* BRANDS TAB */}
+      {activeTab === "brands" && (
+        <div className="space-y-4">
+          <button
+            onClick={() => setShowBrandForm(!showBrandForm)}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+          >
+            <Plus size={20} /> Add Brand
+          </button>
+
+          {showBrandForm && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h2 className="text-xl font-bold mb-4">Add New Brand / Company</h2>
+              <form onSubmit={handleAddBrand} className="space-y-4">
+                <input
+                  type="text"
+                  placeholder="Brand Name (e.g., Samsung) *"
+                  value={brandForm.name}
+                  onChange={(e) => setBrandForm({ ...brandForm, name: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+                <textarea
+                  placeholder="Description"
+                  value={brandForm.description}
+                  onChange={(e) => setBrandForm({ ...brandForm, description: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows="2"
+                />
+                <div className="flex gap-2">
+                  <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Brand</button>
+                  <button type="button" onClick={() => setShowBrandForm(false)} className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50 border-b">
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Brand Name</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Description</th>
+                  <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {brands.length > 0 ? (
+                  brands.map((brand) => (
+                    <tr key={brand._id} className="border-b hover:bg-gray-50">
+                      <td className="px-6 py-3 font-medium">{brand.name}</td>
+                      <td className="px-6 py-3 text-sm text-gray-600">{brand.description || "-"}</td>
+                      <td className="px-6 py-3 text-center">
+                        <button onClick={() => handleDeleteBrand(brand._id)} className="p-2 text-red-600 hover:bg-red-50 rounded">
+                          <Trash2 size={18} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr><td colSpan="3" className="px-6 py-8 text-center text-gray-500">No brands added yet</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
