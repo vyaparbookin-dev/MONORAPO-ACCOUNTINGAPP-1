@@ -1,11 +1,12 @@
 import express from "express";
 import Bill from "../model/bill.js";
 import Company from "../model/company.js";
+import { protect } from "../middleware/authmiddleware.js";
 
 const router = express.Router();
 
 // Generate Tally XML for a specific date
-router.get("/export", async (req, res) => {
+router.get("/export", protect, async (req, res) => {
   try {
     const { date } = req.query;
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID missing" });

@@ -24,6 +24,7 @@ export default function AddCompanyPage({ onAdded }) {
     accountNumber: "",
     ifscCode: "",
     upiId: "",
+    customQrCode: "",
     caName: "",
     caPhone: ""
   });
@@ -40,6 +41,16 @@ export default function AddCompanyPage({ onAdded }) {
         return { ...prev, businessType: [...currentTypes, type] };
       }
     });
+  };
+
+  const handleQrUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) return alert("File size should be less than 2MB");
+      const reader = new FileReader();
+      reader.onloadend = () => setForm({ ...form, customQrCode: reader.result });
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -129,6 +140,24 @@ export default function AddCompanyPage({ onAdded }) {
             <input name="accountNumber" placeholder="Account Number" value={form.accountNumber} onChange={handleChange} className="border p-2.5 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none" />
             <input name="ifscCode" placeholder="IFSC Code" value={form.ifscCode} onChange={handleChange} className="border p-2.5 rounded-lg w-full uppercase focus:ring-2 focus:ring-blue-500 outline-none" />
             <input name="upiId" placeholder="UPI ID (For Bill QR)" value={form.upiId} onChange={handleChange} className="border p-2.5 rounded-lg w-full md:col-span-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+            
+            <div className="md:col-span-2 mt-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Custom Payment QR Code (GPay/PhonePe) *Optional</label>
+              <div className="flex items-center gap-4">
+                <div className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-gray-50 overflow-hidden">
+                  {form.customQrCode ? (
+                    <img src={form.customQrCode} alt="QR Code" className="w-full h-full object-contain" />
+                  ) : (
+                    <span className="text-xs text-gray-400 text-center px-1">No QR</span>
+                  )}
+                </div>
+                <div>
+                  <input type="file" accept="image/*" onChange={handleQrUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                  <p className="text-xs text-gray-500 mt-1">Upload your shop's fixed QR code (Max 2MB)</p>
+                  {form.customQrCode && <button type="button" onClick={() => setForm({ ...form, customQrCode: "" })} className="text-xs text-red-600 mt-1 hover:underline">Remove QR</button>}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

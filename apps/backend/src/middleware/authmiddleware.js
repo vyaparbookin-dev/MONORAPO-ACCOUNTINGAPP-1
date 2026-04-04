@@ -59,3 +59,11 @@ export const authorize = (...roles) => {
     next();
   };
 };
+
+// Strict SaaS Middleware: Enforce Company Selection
+export const requireCompany = (req, res, next) => {
+  if (!req.companyId) {
+    return res.status(400).json({ success: false, message: "Company ID is strictly required for this operation. Please select a company." });
+  }
+  next();
+};

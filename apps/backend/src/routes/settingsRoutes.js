@@ -1,10 +1,11 @@
 import express from "express";
 import Company from "../model/company.js";
+import { protect } from "../middleware/authmiddleware.js";
 
 const router = express.Router();
 
 // Get company settings (Including UPI ID)
-router.get("/", async (req, res) => {
+router.get("/", protect, async (req, res) => {
   try {
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
     const company = await Company.findById(req.companyId);
@@ -16,7 +17,7 @@ router.get("/", async (req, res) => {
 });
 
 // Update company settings
-router.post("/update", async (req, res) => {
+router.post("/update", protect, async (req, res) => {
   try {
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
     const { upiId, name, gstNumber } = req.body;

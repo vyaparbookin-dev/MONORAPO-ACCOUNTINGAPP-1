@@ -1,7 +1,12 @@
 import express from "express";
 import { createStaff, listStaff, getStaffById, updateStaff, deleteStaff, addPayment, markAttendance, getStaffStatement } from "../controllers/staffController.js";
+import { protect, requireCompany } from "../middleware/authmiddleware.js";
 
 const router = express.Router();
+
+// 🚀 SAAS LOCK
+router.use(protect);
+router.use(requireCompany);
 
 router.post("/", createStaff);
 router.get("/", listStaff);

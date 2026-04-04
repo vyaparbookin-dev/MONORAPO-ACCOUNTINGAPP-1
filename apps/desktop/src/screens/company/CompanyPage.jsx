@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Edit, Save, X, Building2, Mail, Phone, MapPin, FileText, Plus, Trash2, Briefcase, CreditCard, UserCheck, Share2, Globe } from "lucide-react";
+import { Edit, Save, X, Building2, Mail, Phone, MapPin, FileText, Plus, Trash2, Briefcase, CreditCard, UserCheck, Share2, Globe, QrCode } from "lucide-react";
 import api from "../../services/api";
 import { dbService } from "../../services/dbService";
 import { auditService } from "../../services/auditService";
@@ -30,6 +30,7 @@ const CompanyPage = () => {
     accountNumber: company?.accountNumber || "",
     ifscCode: company?.ifscCode || "",
     upiId: company?.upiId || "",
+    customQrCode: company?.customQrCode || "",
     caName: company?.caName || "",
     caPhone: company?.caPhone || ""
   });
@@ -45,6 +46,16 @@ const CompanyPage = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleQrUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) return alert("File size should be less than 2MB");
+      const reader = new FileReader();
+      reader.onloadend = () => setFormData((prev) => ({ ...prev, customQrCode: reader.result }));
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSave = async () => {
@@ -129,7 +140,17 @@ const CompanyPage = () => {
           companies.map((company) => (
             <div
               key={company._id}
-              onClick={() => selectCompany(company)}
+              onClick={() => {
+                selectCompany(company);
+                if (dbService.setCompanyId) dbService.setCompanyId(company._id);
+                // Flush stale cache and hard reload to prevent ghost data
+                localStorage.setItem("companyId", company._id);
+                localStorage.setItem("companyName", company.name);
+                localStorage.removeItem("categories");
+                localStorage.removeItem("subCategories");
+                window.location.href = "#/dashboard";
+                window.location.reload();
+              }}
               className={`p-4 border rounded-lg cursor-pointer transition relative group ${
                 selectedCompany && selectedCompany._id === company._id
                   ? "border-blue-500 bg-blue-50"
@@ -290,6 +311,24 @@ const CompanyPage = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">UPI ID (For Bill QR Code)</label>
                     <input type="text" name="upiId" value={formData.upiId} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. yourbusiness@upi" />
                   </div>
+                  
+                  <div className="md:col-span-2 mt-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Custom Payment QR Code (GPay/PhonePe) *Optional</label>
+                    <div className="flex items-center gap-4">
+                      <div className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-gray-50 overflow-hidden">
+                        {formData.customQrCode ? (
+                          <img src={formData.customQrCode} alt="QR Code" className="w-full h-full object-contain" />
+                        ) : (
+                          <span className="text-xs text-gray-400 text-center px-1">No QR</span>
+                        )}
+                      </div>
+                      <div>
+                        <input type="file" accept="image/*" onChange={handleQrUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                        <p className="text-xs text-gray-500 mt-1">Upload your shop's fixed QR code (Max 2MB)</p>
+                        {formData.customQrCode && <button type="button" onClick={() => setFormData({ ...formData, customQrCode: "" })} className="text-xs text-red-600 mt-1 hover:underline">Remove QR</button>}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -393,6 +432,15 @@ const CompanyPage = () => {
                       {selectedCompany.ifscCode && <p className="text-xs text-gray-500">IFSC: {selectedCompany.ifscCode.toUpperCase()}</p>}
                     </div>
                   </div>
+                  {selectedCompany.customQrCode && (
+                    <div className="flex items-start gap-3 mt-4 pt-4 border-t border-gray-100">
+                      <QrCode className="text-gray-400" size={20} />
+                      <div>
+                        <p className="text-sm text-gray-500 mb-2">Payment QR Code</p>
+                        <img src={selectedCompany.customQrCode} alt="Payment QR" className="w-32 h-32 border rounded-lg shadow-sm" />
+                      </div>
+                    </div>
+                  )}
                   <div className="flex items-center gap-3">
                     <UserCheck className="text-gray-400" size={20} />
                     <div>
@@ -576,6 +624,24 @@ const CompanyPage = () => {
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">UPI ID (For Bill QR Code)</label>
                     <input type="text" name="upiId" value={formData.upiId} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. yourbusiness@upi" />
+                  </div>
+                  
+                  <div className="md:col-span-2 mt-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Custom Payment QR Code (GPay/PhonePe) *Optional</label>
+                    <div className="flex items-center gap-4">
+                      <div className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-gray-50 overflow-hidden">
+                        {formData.customQrCode ? (
+                          <img src={formData.customQrCode} alt="QR Code" className="w-full h-full object-contain" />
+                        ) : (
+                          <span className="text-xs text-gray-400 text-center px-1">No QR</span>
+                        )}
+                      </div>
+                      <div>
+                        <input type="file" accept="image/*" onChange={handleQrUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                        <p className="text-xs text-gray-500 mt-1">Upload your shop's fixed QR code (Max 2MB)</p>
+                        {formData.customQrCode && <button type="button" onClick={() => setFormData({ ...formData, customQrCode: "" })} className="text-xs text-red-600 mt-1 hover:underline">Remove QR</button>}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
