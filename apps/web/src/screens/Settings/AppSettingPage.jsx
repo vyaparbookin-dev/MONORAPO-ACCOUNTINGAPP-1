@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useCompany } from "../../contexts/CompanyContext";
 import api from "../../services/api";
+import { useNavigate } from "react-router-dom";
 
 const AppSettingPage = () => {
   const { selectedCompany, refetchCompanies } = useCompany();
+  const navigate = useNavigate();
   const [theme, setTheme] = useState('light');
   const [logoPreview, setLogoPreview] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -173,6 +175,18 @@ const AppSettingPage = () => {
             <p className="text-xs text-gray-500 mt-2">Recommended: Square image, max 2MB.</p>
           </div>
         </div>
+      </div>
+
+      {/* Inventory Management Settings */}
+      <div className="mb-6 border-b pb-6">
+        <h3 className="text-lg font-semibold mb-2">Inventory Fields (Categories & Brands)</h3>
+        <p className="text-gray-600 mb-4 text-sm">Manage your product Categories, Sub-Categories, Brands (Companies), and Units.</p>
+        <button 
+          onClick={() => navigate('/inventory/categories')}
+          className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold transition shadow-sm"
+        >
+          Manage Categories, Brands & Units
+        </button>
       </div>
 
       {/* Tax & Compliance Settings */}
