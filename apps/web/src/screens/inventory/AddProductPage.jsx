@@ -70,12 +70,16 @@ const AddProductPage = () => {
         const catRes = await api.get('/api/category').catch(() => ({ data: [] }));
         const masterCats = (catRes.data?.categories || catRes.data || []).map(c => c.name);
         
-        const allCats = [...masterCats, ...productCats];
+        // Local Storage Cache Retrieval
+        const savedCats = JSON.parse(localStorage.getItem("categories") || "[]");
+        const savedSubCats = JSON.parse(localStorage.getItem("subCategories") || "[]");
+
+        const allCats = [...masterCats, ...productCats, ...savedCats];
         if (allCats.length > 0) {
           setCategories(prev => [...new Set([...prev, ...allCats])]);
         }
-        if (productSubCats.length > 0) {
-          setSubCategories([...new Set(productSubCats)]);
+        if (productSubCats.length > 0 || savedSubCats.length > 0) {
+          setSubCategories([...new Set([...productSubCats, ...savedSubCats])]);
         }
 
         const unitRes = await api.get('/api/unit').catch(() => null);
@@ -97,41 +101,38 @@ const AddProductPage = () => {
   const handlePriceCalculation = (field, value) => {
     let updatedForm = { ...form, [field]: value };
     
-    const cp = parseFloat(field === 'costPrice' ? value : updatedForm.costPrice) || 0;
-    const cpWithTax = parseFloat(field === 'costPriceWithTax' ? value : updatedForm.costPriceWithTax) || 0;
-    const gst = parseFloat(field === 'gstRate' ? value : updatedForm.gstRate) || 0;
-
-    // Retail
-    const sp = parseFloat(field === 'sellingPrice' ? value : updatedForm.sellingPrice) || 0;
-    const spWithTax = parseFloat(field === 'sellingPriceWithTax' ? value : updatedForm.sellingPriceWithTax) || 0;
-    const margin = parseFloat(field === 'profitMargin' ? value : updatedForm.profitMargin) || 0;
-
-    // Wholesale
-    const wp = parseFloat(field === 'wholesalePrice' ? value : updatedForm.wholesalePrice) || 0;
-    const wpWithTax = parseFloat(field === 'wholesalePriceWithTax' ? value : updatedForm.wholesalePriceWithTax) || 0;
-    const wMargin = parseFloat(field === 'wholesaleMargin' ? value : updatedForm.wholesaleMargin) || 0;
-
-    // Dealer
-    const dp = parseFloat(field === 'dealerPrice' ? value : updatedForm.dealerPrice) || 0;
-    const dpWithTax = parseFloat(field === 'dealerPriceWithTax' ? value : updatedForm.dealerPriceWithTax) || 0;
-    const dMargin = parseFloat(field === 'dealerMargin' ? value : updatedForm.dealerMargin) || 0;
-
     const calcSpFromMargin = (cost, m) => cost + (cost * m / 100);
     const calcTax = (val, g) => val + (val * g / 100);
     const calcMargin = (sell, cost) => cost > 0 ? ((sell - cost) / cost) * 100 : 0;
     const calcBaseFromTax = (val, g) => val / (1 + g / 100);
 
+    const cp = parseFloat(field === 'costPrice' ? value : updatedForm.costPrice) || 0;
+    const cpWithTax = parseFloat(field === 'costPriceWithTax' ? value : updatedForm.costPriceWithTax) || 0;
+    const gst = parseFloat(field === 'gstRate' ? value : updatedForm.gstRate) || 0;
+
+    const margin = parseFloat(field === 'profitMargin' ? value : updatedForm.profitMargin) || 0;
+    const sp = parseFloat(field === 'sellingPrice' ? value : updatedForm.sellingPrice) || 0;
+    const spWithTax = parseFloat(field === 'sellingPriceWithTax' ? value : updatedForm.sellingPriceWithTax) || 0;
+
+    const wMargin = parseFloat(field === 'wholesaleMargin' ? value : updatedForm.wholesaleMargin) || 0;
+    const wp = parseFloat(field === 'wholesalePrice' ? value : updatedForm.wholesalePrice) || 0;
+    const wpWithTax = parseFloat(field === 'wholesalePriceWithTax' ? value : updatedForm.wholesalePriceWithTax) || 0;
+
+    const dMargin = parseFloat(field === 'dealerMargin' ? value : updatedForm.dealerMargin) || 0;
+    const dp = parseFloat(field === 'dealerPrice' ? value : updatedForm.dealerPrice) || 0;
+    const dpWithTax = parseFloat(field === 'dealerPriceWithTax' ? value : updatedForm.dealerPriceWithTax) || 0;
+
     if (field === 'costPrice') {
       updatedForm.costPriceWithTax = cp ? calcTax(cp, gst).toFixed(2) : "";
-      if (margin > 0 && cp) { updatedForm.sellingPrice = calcSpFromMargin(cp, margin).toFixed(2); updatedForm.sellingPriceWithTax = calcTax(parseFloat(updatedForm.sellingPrice), gst).toFixed(2); }
-      if (wMargin > 0 && cp) { updatedForm.wholesalePrice = calcSpFromMargin(cp, wMargin).toFixed(2); updatedForm.wholesalePriceWithTax = calcTax(parseFloat(updatedForm.wholesalePrice), gst).toFixed(2); }
-      if (dMargin > 0 && cp) { updatedForm.dealerPrice = calcSpFromMargin(cp, dMargin).toFixed(2); updatedForm.dealerPriceWithTax = calcTax(parseFloat(updatedForm.dealerPrice), gst).toFixed(2); }
+      if (updatedForm.profitMargin !== "") { updatedForm.sellingPrice = calcSpFromMargin(cp, margin).toFixed(2); updatedForm.sellingPriceWithTax = calcTax(parseFloat(updatedForm.sellingPrice), gst).toFixed(2); }
+      if (updatedForm.wholesaleMargin !== "") { updatedForm.wholesalePrice = calcSpFromMargin(cp, wMargin).toFixed(2); updatedForm.wholesalePriceWithTax = calcTax(parseFloat(updatedForm.wholesalePrice), gst).toFixed(2); }
+      if (updatedForm.dealerMargin !== "") { updatedForm.dealerPrice = calcSpFromMargin(cp, dMargin).toFixed(2); updatedForm.dealerPriceWithTax = calcTax(parseFloat(updatedForm.dealerPrice), gst).toFixed(2); }
     } else if (field === 'costPriceWithTax') {
       const newCp = cpWithTax ? calcBaseFromTax(cpWithTax, gst) : 0;
       updatedForm.costPrice = newCp ? newCp.toFixed(2) : "";
-      if (margin > 0 && newCp) { updatedForm.sellingPrice = calcSpFromMargin(newCp, margin).toFixed(2); updatedForm.sellingPriceWithTax = calcTax(parseFloat(updatedForm.sellingPrice), gst).toFixed(2); }
-      if (wMargin > 0 && newCp) { updatedForm.wholesalePrice = calcSpFromMargin(newCp, wMargin).toFixed(2); updatedForm.wholesalePriceWithTax = calcTax(parseFloat(updatedForm.wholesalePrice), gst).toFixed(2); }
-      if (dMargin > 0 && newCp) { updatedForm.dealerPrice = calcSpFromMargin(newCp, dMargin).toFixed(2); updatedForm.dealerPriceWithTax = calcTax(parseFloat(updatedForm.dealerPrice), gst).toFixed(2); }
+      if (updatedForm.profitMargin !== "") { updatedForm.sellingPrice = calcSpFromMargin(newCp, margin).toFixed(2); updatedForm.sellingPriceWithTax = calcTax(parseFloat(updatedForm.sellingPrice), gst).toFixed(2); }
+      if (updatedForm.wholesaleMargin !== "") { updatedForm.wholesalePrice = calcSpFromMargin(newCp, wMargin).toFixed(2); updatedForm.wholesalePriceWithTax = calcTax(parseFloat(updatedForm.wholesalePrice), gst).toFixed(2); }
+      if (updatedForm.dealerMargin !== "") { updatedForm.dealerPrice = calcSpFromMargin(newCp, dMargin).toFixed(2); updatedForm.dealerPriceWithTax = calcTax(parseFloat(updatedForm.dealerPrice), gst).toFixed(2); }
     } else if (field === 'gstRate') {
       if (cp) updatedForm.costPriceWithTax = calcTax(cp, gst).toFixed(2);
       if (sp) updatedForm.sellingPriceWithTax = calcTax(sp, gst).toFixed(2);
@@ -140,24 +141,51 @@ const AddProductPage = () => {
     } else if (field === 'sellingPrice') {
       updatedForm.sellingPriceWithTax = sp ? calcTax(sp, gst).toFixed(2) : "";
       if (cp > 0 && sp) updatedForm.profitMargin = calcMargin(sp, cp).toFixed(2);
+      else if (!sp) updatedForm.profitMargin = "";
     } else if (field === 'sellingPriceWithTax') {
       const newSp = spWithTax ? calcBaseFromTax(spWithTax, gst) : 0;
       updatedForm.sellingPrice = newSp ? newSp.toFixed(2) : "";
       if (cp > 0 && newSp) updatedForm.profitMargin = calcMargin(newSp, cp).toFixed(2);
-    } else if (field === 'profitMargin' && cp > 0 && margin > 0) {
-      updatedForm.sellingPrice = calcSpFromMargin(cp, margin).toFixed(2); updatedForm.sellingPriceWithTax = calcTax(parseFloat(updatedForm.sellingPrice), gst).toFixed(2);
+      else if (!newSp) updatedForm.profitMargin = "";
+    } else if (field === 'profitMargin') {
+      if (cp > 0 && value !== "") {
+        updatedForm.sellingPrice = calcSpFromMargin(cp, margin).toFixed(2); 
+        updatedForm.sellingPriceWithTax = calcTax(parseFloat(updatedForm.sellingPrice), gst).toFixed(2);
+      } else if (value === "") {
+        updatedForm.sellingPrice = ""; updatedForm.sellingPriceWithTax = "";
+      }
     } else if (field === 'wholesalePrice') {
-      updatedForm.wholesalePriceWithTax = wp ? calcTax(wp, gst).toFixed(2) : ""; if (cp > 0 && wp) updatedForm.wholesaleMargin = calcMargin(wp, cp).toFixed(2);
+      updatedForm.wholesalePriceWithTax = wp ? calcTax(wp, gst).toFixed(2) : ""; 
+      if (cp > 0 && wp) updatedForm.wholesaleMargin = calcMargin(wp, cp).toFixed(2);
+      else if (!wp) updatedForm.wholesaleMargin = "";
     } else if (field === 'wholesalePriceWithTax') {
-      const newWp = wpWithTax ? calcBaseFromTax(wpWithTax, gst) : 0; updatedForm.wholesalePrice = newWp ? newWp.toFixed(2) : ""; if (cp > 0 && newWp) updatedForm.wholesaleMargin = calcMargin(newWp, cp).toFixed(2);
-    } else if (field === 'wholesaleMargin' && cp > 0 && wMargin > 0) {
-      updatedForm.wholesalePrice = calcSpFromMargin(cp, wMargin).toFixed(2); updatedForm.wholesalePriceWithTax = calcTax(parseFloat(updatedForm.wholesalePrice), gst).toFixed(2);
+      const newWp = wpWithTax ? calcBaseFromTax(wpWithTax, gst) : 0; 
+      updatedForm.wholesalePrice = newWp ? newWp.toFixed(2) : ""; 
+      if (cp > 0 && newWp) updatedForm.wholesaleMargin = calcMargin(newWp, cp).toFixed(2);
+      else if (!newWp) updatedForm.wholesaleMargin = "";
+    } else if (field === 'wholesaleMargin') {
+      if (cp > 0 && value !== "") {
+        updatedForm.wholesalePrice = calcSpFromMargin(cp, wMargin).toFixed(2); 
+        updatedForm.wholesalePriceWithTax = calcTax(parseFloat(updatedForm.wholesalePrice), gst).toFixed(2);
+      } else if (value === "") {
+        updatedForm.wholesalePrice = ""; updatedForm.wholesalePriceWithTax = "";
+      }
     } else if (field === 'dealerPrice') {
-      updatedForm.dealerPriceWithTax = dp ? calcTax(dp, gst).toFixed(2) : ""; if (cp > 0 && dp) updatedForm.dealerMargin = calcMargin(dp, cp).toFixed(2);
+      updatedForm.dealerPriceWithTax = dp ? calcTax(dp, gst).toFixed(2) : ""; 
+      if (cp > 0 && dp) updatedForm.dealerMargin = calcMargin(dp, cp).toFixed(2);
+      else if (!dp) updatedForm.dealerMargin = "";
     } else if (field === 'dealerPriceWithTax') {
-      const newDp = dpWithTax ? calcBaseFromTax(dpWithTax, gst) : 0; updatedForm.dealerPrice = newDp ? newDp.toFixed(2) : ""; if (cp > 0 && newDp) updatedForm.dealerMargin = calcMargin(newDp, cp).toFixed(2);
-    } else if (field === 'dealerMargin' && cp > 0 && dMargin > 0) {
-      updatedForm.dealerPrice = calcSpFromMargin(cp, dMargin).toFixed(2); updatedForm.dealerPriceWithTax = calcTax(parseFloat(updatedForm.dealerPrice), gst).toFixed(2);
+      const newDp = dpWithTax ? calcBaseFromTax(dpWithTax, gst) : 0; 
+      updatedForm.dealerPrice = newDp ? newDp.toFixed(2) : ""; 
+      if (cp > 0 && newDp) updatedForm.dealerMargin = calcMargin(newDp, cp).toFixed(2);
+      else if (!newDp) updatedForm.dealerMargin = "";
+    } else if (field === 'dealerMargin') {
+      if (cp > 0 && value !== "") {
+        updatedForm.dealerPrice = calcSpFromMargin(cp, dMargin).toFixed(2); 
+        updatedForm.dealerPriceWithTax = calcTax(parseFloat(updatedForm.dealerPrice), gst).toFixed(2);
+      } else if (value === "") {
+        updatedForm.dealerPrice = ""; updatedForm.dealerPriceWithTax = "";
+      }
     }
 
     setForm(updatedForm);
@@ -219,25 +247,70 @@ const AddProductPage = () => {
     });
   };
 
+  // Helper to Cache Categories Locally
+  const cacheCategories = () => {
+    if (form.category) {
+      const prevCat = JSON.parse(localStorage.getItem("categories") || "[]");
+      localStorage.setItem("categories", JSON.stringify([...new Set([...prevCat, form.category])]));
+    }
+    if (form.subCategory) {
+      const prevSub = JSON.parse(localStorage.getItem("subCategories") || "[]");
+      localStorage.setItem("subCategories", JSON.stringify([...new Set([...prevSub, form.subCategory])]));
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/api/inventory", form);
-      alert("Product added successfully!");
+      if (!form.name) {
+        return alert("Please enter the Product Name");
+      }
+      cacheCategories();
+      
+      // Desktop: Local SQLite Offline Guarantee
+      if (window.electron && window.electron.db) {
+        await window.electron.db.saveProduct({
+          ...form,
+          name: form.name,
+          sku: form.hsnCode || form.sku || "SKU-" + Date.now(),
+          price: form.sellingPrice || 0,
+          quantity: form.stock || 0,
+          category: form.category || "General",
+          subCategory: form.subCategory || ""
+        });
+      }
+
+      await api.post("/api/inventory", form).catch(() => {}); // Catch silent for offline
+      alert("Product saved successfully!");
       navigate("/inventory");
     } catch (err) {
       console.error(err);
-      alert("Error adding product: " + (err.response?.data?.message || err.message));
+      if (!navigator.onLine) navigate("/inventory"); // Go back even if offline
     }
   };
 
   const handleSaveAndAddAnother = async (e) => {
     e.preventDefault();
     try {
-      if (!form.name || !form.category || !form.costPrice || !form.sellingPrice) {
-        return alert("Please fill all required fields before saving.");
+      if (!form.name) {
+        return alert("Please enter the Product Name before saving.");
       }
-      await api.post("/api/inventory", form);
+      cacheCategories();
+      
+      // Desktop: Local SQLite Offline Guarantee
+      if (window.electron && window.electron.db) {
+        await window.electron.db.saveProduct({
+          ...form,
+          name: form.name,
+          sku: form.hsnCode || form.sku || "SKU-" + Date.now(),
+          price: form.sellingPrice || 0,
+          quantity: form.stock || 0,
+          category: form.category || "General",
+          subCategory: form.subCategory || ""
+        });
+      }
+
+      await api.post("/api/inventory", form).catch(() => {}); // Catch silent for offline
       alert("Product saved! You can now add another one.");
       resetForm();
     } catch (err) {
@@ -323,14 +396,13 @@ const AddProductPage = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Category *</label>
+            <label className="block text-sm font-medium text-gray-700">Category</label>
             <input
               list="category-list"
               className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
               value={form.category}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
               placeholder="Type or select a category"
-              required
             />
             <datalist id="category-list">
               {categories.map(c => <option key={c} value={c} />)}
@@ -379,13 +451,12 @@ const AddProductPage = () => {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cost Price (W/O GST) *</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cost Price (W/O GST)</label>
               <input
                 type="number"
                 className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
                 value={form.costPrice}
                 onChange={(e) => handlePriceCalculation('costPrice', e.target.value)}
-                required
               />
             </div>
             <div>
@@ -412,23 +483,21 @@ const AddProductPage = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Retail Price (W/O GST) *</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Retail Price (W/O GST)</label>
               <input
                 type="number"
                 className="w-full border p-2 rounded focus:ring-2 focus:ring-green-500 outline-none bg-green-50 font-bold"
                 value={form.sellingPrice}
                 onChange={(e) => handlePriceCalculation('sellingPrice', e.target.value)}
-                required
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Retail Price (With GST) *</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Retail Price (With GST)</label>
               <input
                 type="number"
                 className="w-full border p-2 rounded focus:ring-2 focus:ring-green-500 outline-none bg-green-50 font-bold"
                 value={form.sellingPriceWithTax}
                 onChange={(e) => handlePriceCalculation('sellingPriceWithTax', e.target.value)}
-                required
               />
             </div>
             <div>

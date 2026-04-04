@@ -33,7 +33,9 @@ const ProductListPage = () => {
               sku: prod.sku || `SKU-${Date.now()}`,
               price: prod.sellingPrice || prod.price || 0,
               quantity: prod.currentStock || prod.stock || 0,
-              category: prod.category || 'General'
+              category: prod.category || 'General',
+              subCategory: prod.subCategory || '',
+              costPrice: prod.costPrice || 0
             });
           }
           productList = await dbService.getInventory();

@@ -29,14 +29,19 @@ export const addProduct = async (req, res) => {
     }
 
     const {
-      name, category, costPrice, sellingPrice, unit, stock, currentStock
+      name, category, subCategory, costPrice, sellingPrice, unit, stock, currentStock
     } = req.body;
 
     // Validation
-    if (!name || !category || !costPrice || !sellingPrice || !unit) { return res.status(400).json({ success: false, message: "Missing required fields: name, category, costPrice, sellingPrice, unit" }); }
+    if (!name) { return res.status(400).json({ success: false, message: "Product name is required" }); }
 
-    // Check if product already exists
-    const existingProduct = await Product.findOne({ name, companyId: req.companyId });
+    // Check if product already exists (Smart detection based on Name + Category + SubCategory)
+    const existingProduct = await Product.findOne({ 
+      name, 
+      category: category || "General", 
+      subCategory: subCategory || "", 
+      companyId: req.companyId 
+    });
     if (existingProduct) {
       return res.status(400).json({
         success: false,
@@ -46,6 +51,10 @@ export const addProduct = async (req, res) => {
 
     const product = await Product.create({
       ...req.body,
+      category: category || "General",
+      costPrice: Number(costPrice) || 0,
+      sellingPrice: Number(sellingPrice) || 0,
+      unit: unit || "pcs",
       companyId: req.companyId,
       currentStock: Number(currentStock) || Number(stock) || 0,
     });
@@ -165,8 +174,8 @@ export const listProducts = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const products = await Product.find({ isActive: true, companyId: req.companyId })
-      .select('name category unit sellingPrice gstRate sku barcode currentStock hsnCode');
+    // Removed .select() so the frontend receives all fields (subCategory, costPrice, margins, etc.) for Editing
+    const products = await Product.find({ isActive: true, companyId: req.companyId }).sort({ createdAt: -1 });
     res.json({ success: true, products });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

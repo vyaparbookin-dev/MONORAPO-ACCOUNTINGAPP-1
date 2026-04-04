@@ -73,7 +73,7 @@ const InventoryPage = () => {
 
   const handleEdit = (item) => {
     const cp = parseFloat(item.costPrice) || 0;
-    const sp = parseFloat(item.sellingPrice) || 0;
+    const sp = parseFloat(item.sellingPrice) || parseFloat(item.price) || 0;
     const gst = parseFloat(item.gstRate) || 0;
     const wp = parseFloat(item.wholesalePrice) || 0;
     const dp = parseFloat(item.dealerPrice) || 0;
@@ -123,16 +123,36 @@ const InventoryPage = () => {
       setLoading(true);
       setError(null);
 
+      // 1. Get Local Data
       let localInventory = await dbService.getInventory();
       if (localInventory && localInventory.products) localInventory = localInventory.products;
-      const list = (Array.isArray(localInventory) ? localInventory : []).map(p => ({ ...p, _id: p._id || p.uuid }));
+      let list = (Array.isArray(localInventory) ? localInventory : []).map(p => ({ ...p, _id: p._id || p.uuid }));
+
+      // 2. Fetch from Cloud to get FULL details (Missing fields like subCategory)
+      try {
+        const cloudRes = await api.get('/api/inventory');
+        const cloudProducts = cloudRes.data?.products || cloudRes.data || [];
+        
+        // Merge Cloud Data with Local Data to restore missing fields in UI
+        if (cloudProducts.length > 0) {
+          list = list.length > 0 ? list.map(localItem => {
+            const cloudItem = cloudProducts.find(c => c._id === localItem._id || c.uuid === localItem._id);
+            return cloudItem ? { ...localItem, ...cloudItem } : localItem;
+          }) : cloudProducts;
+        }
+      } catch(e) { console.warn("Cloud fetch failed, using local only"); }
+
       setInventory(list);
 
       // Extract unique categories and subcategories
       const cats = list.map(p => p.category).filter(Boolean);
       const subCats = list.map(p => p.subCategory).filter(Boolean);
-      setCategories([...new Set(cats)]);
-      setSubCategories([...new Set(subCats)]);
+      
+      // Merge with cache
+      const savedCats = JSON.parse(localStorage.getItem("categories") || "[]");
+      const savedSubCats = JSON.parse(localStorage.getItem("subCategories") || "[]");
+      setCategories([...new Set([...cats, ...savedCats])]);
+      setSubCategories([...new Set([...subCats, ...savedSubCats])]);
 
       // Fetch company industry type
       const settingsRes = await api.get('/api/settings').catch(() => null);
@@ -288,6 +308,8 @@ const InventoryPage = () => {
         await auditService.logAction('UPDATE', 'inventory', oldProduct, sanitizedData);
         await syncQueue.enqueue({ entityId: editingId, entity: 'inventory', method: "PUT", url: `/api/inventory/${editingId}`, data: sanitizedData });
         
+        // Optimistic UI update (Instantly show new fields without waiting for sync)
+        setInventory(prev => prev.map(p => p._id === editingId ? { ...p, ...sanitizedData } : p));
         alert(`Product updated offline successfully!`);
       } else {
         const newId = crypto.randomUUID ? crypto.randomUUID() : `PROD-${Date.now()}`;
@@ -298,10 +320,21 @@ const InventoryPage = () => {
         await auditService.logAction('CREATE', 'inventory', null, payload);
         await syncQueue.enqueue({ entityId: newId, entity: 'inventory', method: "POST", url: "/api/inventory", data: payload });
         
+        setInventory(prev => [payload, ...prev]);
         alert(`Product created offline successfully!`);
       }
 
-      fetchInventory();
+      // Cache Categories Locally
+      if (sanitizedData.category) {
+        const prevCat = JSON.parse(localStorage.getItem("categories") || "[]");
+        localStorage.setItem("categories", JSON.stringify([...new Set([...prevCat, sanitizedData.category])]));
+      }
+      if (sanitizedData.subCategory) {
+        const prevSub = JSON.parse(localStorage.getItem("subCategories") || "[]");
+        localStorage.setItem("subCategories", JSON.stringify([...new Set([...prevSub, sanitizedData.subCategory])]));
+      }
+
+      filterInventory(); // Refresh the visible list
       resetForm();
     } catch (err) {
       console.error("Error saving product:", err);

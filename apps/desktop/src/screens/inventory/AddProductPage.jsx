@@ -74,12 +74,16 @@ const AddProductPage = () => {
         const productCats = (Array.isArray(localProducts) ? localProducts : []).map(p => p.category).filter(Boolean);
         const productSubCats = (Array.isArray(localProducts) ? localProducts : []).map(p => p.subCategory).filter(Boolean);
 
-        const allCats = [...masterCats, ...productCats];
+        // Local Storage Cache Retrieval
+        const savedCats = JSON.parse(localStorage.getItem("categories") || "[]");
+        const savedSubCats = JSON.parse(localStorage.getItem("subCategories") || "[]");
+
+        const allCats = [...masterCats, ...productCats, ...savedCats];
         if (allCats.length > 0) {
           setCategories(prev => [...new Set([...prev, ...allCats])]);
         }
-        if (productSubCats.length > 0) {
-          setSubCategories([...new Set(productSubCats)]);
+        if (productSubCats.length > 0 || savedSubCats.length > 0) {
+          setSubCategories([...new Set([...productSubCats, ...savedSubCats])]);
         }
 
         if (!localUnits.length) {
@@ -239,6 +243,18 @@ const AddProductPage = () => {
     return () => { if (isCameraOpen) stopCamera(); };
   }, [isCameraOpen]);
 
+  // Helper to Cache Categories Locally
+  const cacheCategories = () => {
+    if (form.category) {
+      const prevCat = JSON.parse(localStorage.getItem("categories") || "[]");
+      localStorage.setItem("categories", JSON.stringify([...new Set([...prevCat, form.category])]));
+    }
+    if (form.subCategory) {
+      const prevSub = JSON.parse(localStorage.getItem("subCategories") || "[]");
+      localStorage.setItem("subCategories", JSON.stringify([...new Set([...prevSub, form.subCategory])]));
+    }
+  };
+
   const resetForm = () => {
     setForm({
       name: "", sku: "", barcode: `ITM${Date.now().toString().slice(-6)}`, description: "", category: "", subCategory: "", image: "",
@@ -280,6 +296,7 @@ const AddProductPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      cacheCategories();
       await saveProductLogic();
       alert("Product added successfully!");
       navigate("/inventory"); // Using correct path based on common routing
@@ -292,6 +309,7 @@ const AddProductPage = () => {
   const handleSaveAndAddAnother = async (e) => {
     e.preventDefault();
     try {
+      cacheCategories();
       await saveProductLogic();
       alert("Product saved! You can now add another one.");
       resetForm();
