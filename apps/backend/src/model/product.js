@@ -8,9 +8,9 @@ const productSchema = new mongoose.Schema({
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
   
   // Category & Classification
-  category: { type: String, default: "General" }, // Electronics, Textiles, etc.
+  category: { type: String, required: true }, // Electronics, Textiles, etc.
   subCategory: String,
-  hsnCode: { type: String, default: "" }, // HSN Code for GST
+  hsnCode: { type: String, required: true }, // HSN Code for GST
   image: { type: String }, // Base64 compressed image
   
   // Codes & Identifiers
@@ -18,8 +18,8 @@ const productSchema = new mongoose.Schema({
   barcode: { type: String }, // Auto-generated
   
   // Pricing
-  costPrice: { type: Number, default: 0 }, // Cost to you
-  sellingPrice: { type: Number, default: 0 }, // Sell price
+  costPrice: { type: Number, required: true }, // Cost to you
+  sellingPrice: { type: Number, required: true }, // Sell price
   wholesalePrice: { type: Number, default: 0 }, // Wholesale Rate
   dealerPrice: { type: Number, default: 0 },
   mrp: Number, // Maximum Retail Price
@@ -29,7 +29,7 @@ const productSchema = new mongoose.Schema({
   gstType: { type: String, enum: ["CGST", "SGST", "IGST"], default: "CGST" },
   
   // Units & Quantity
-  unit: { type: String, default: "pcs" }, // kg, ltr, pcs, ft, mtr, etc.
+  unit: { type: String, required: true }, // kg, ltr, pcs, ft, mtr, etc.
   minimumStock: { type: Number, default: 10 },
   maximumStock: { type: Number, default: 0 },
   currentStock: { type: Number, default: 0 },
@@ -77,7 +77,7 @@ const productSchema = new mongoose.Schema({
 
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
-});
+}, { strict: false }); // 🚀 strict: false makes the schema 100% dynamic! Any new field from frontend will auto-save.
 
 // Compound indexes to ensure uniqueness per company
 productSchema.index({ companyId: 1, name: 1 }, { unique: true });
