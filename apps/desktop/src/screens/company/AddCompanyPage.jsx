@@ -60,10 +60,6 @@ export default function AddCompanyPage({ onAdded }) {
       // 3. Queue Sync
       await syncQueue.enqueue({ entityId: newId, entity: 'company', method: 'POST', url: '/api/company', data: payload });
 
-      // Update context and select the newly created company
-      if (refetchCompanies) await refetchCompanies();
-      if (selectCompany) selectCompany(payload);
-
       alert("Company added offline successfully!");
       setForm({ 
         name: "", email: "", phone: "", address: "", gstNumber: "", gstType: "regular", 
@@ -73,8 +69,10 @@ export default function AddCompanyPage({ onAdded }) {
       });
       onAdded && onAdded();
       
-      // Redirect to Dashboard
+      // Set local DB company and hard reload to completely clear previous cache
+      if (dbService.setCompanyId) dbService.setCompanyId(newId);
       navigate("/dashboard");
+      window.location.reload();
     } catch (err) {
       console.error(err);
       alert("Error adding company!");

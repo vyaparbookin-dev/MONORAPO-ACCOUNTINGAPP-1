@@ -48,15 +48,15 @@ export default function AddCompanyPage({ onAdded }) {
       const res = await api.post("/api/company", form);
       const newCompany = res.company || res.data || res;
       
-      // तुरंत नई कंपनी को बैकग्राउंड में अपडेट और सेलेक्ट करें
-      if (refetchCompanies) await refetchCompanies();
-      if (selectCompany && newCompany?._id) selectCompany(newCompany);
-      
       alert("Company added successfully!");
       onAdded && onAdded();
       
-      // सीधे डैशबोर्ड पर भेजें
-      navigate("/dashboard");
+      // Update LocalStorage and hard reload to completely prevent ghost inventory data
+      if (newCompany?._id) {
+        localStorage.setItem("companyId", newCompany._id);
+        localStorage.setItem("companyName", newCompany.name);
+      }
+      window.location.href = "/dashboard";
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || "Error adding company!");
