@@ -17,6 +17,8 @@ const AppSettingPage = () => {
   const [maxFreeBills, setMaxFreeBills] = useState(50);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState(null);
   const [enableGst, setEnableGst] = useState(true);
+  const [showGstModal, setShowGstModal] = useState(false);
+  const [gstActionPreference, setGstActionPreference] = useState(null);
   const [notifications, setNotifications] = useState({
     email: true,
     sms: false,
@@ -70,6 +72,16 @@ const AppSettingPage = () => {
     setNotifications((prev) => ({ ...prev, [name]: checked }));
   };
 
+  const handleGstToggleChange = (e) => {
+    const isChecked = e.target.checked;
+    if (!isChecked) {
+      setShowGstModal(true);
+    } else {
+      setEnableGst(true);
+      setGstActionPreference(null);
+    }
+  };
+
   const handleInvoiceThemeColorChange = (e) => {
     setInvoiceThemeColor(e.target.value);
   };
@@ -83,8 +95,8 @@ const AppSettingPage = () => {
     setSaving(true);
     try {
       // Payload for local DB and sync queue
-      const payload = { logo: logoPreview, theme, notifications, invoiceThemeColor, invoiceTemplateType, enableGst };
-      const syncPayload = { logo: logoPreview, invoiceThemeColor, invoiceTemplateType, enableGst };
+      const payload = { logo: logoPreview, theme, notifications, invoiceThemeColor, invoiceTemplateType, enableGst, gstActionPreference };
+      const syncPayload = { logo: logoPreview, invoiceThemeColor, invoiceTemplateType, enableGst, gstActionPreference };
       
       // 1. Save Locally
       if (dbService.updateCompany) await dbService.updateCompany(selectedCompany._id, payload);
@@ -185,7 +197,7 @@ const AppSettingPage = () => {
         <p className="text-gray-600 mb-4 text-sm">Turn off GST if your business issues non-taxable (kacha) bills or estimates.</p>
         <label className="flex items-center cursor-pointer p-4 bg-gray-50 border rounded-lg hover:bg-gray-100 transition">
           <div className="relative">
-            <input type="checkbox" className="sr-only" checked={enableGst} onChange={(e) => setEnableGst(e.target.checked)} />
+            <input type="checkbox" className="sr-only" checked={enableGst} onChange={handleGstToggleChange} />
             <div className={`block w-10 h-6 rounded-full transition ${enableGst ? 'bg-blue-600' : 'bg-gray-300'}`}></div>
             <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform ${enableGst ? 'translate-x-4' : ''}`}></div>
           </div>
@@ -333,6 +345,37 @@ const AppSettingPage = () => {
       <button onClick={handleSaveChanges} disabled={saving} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50">
         {saving ? "Saving..." : "Save Settings"}
       </button>
+
+      {/* GST Disable Preference Modal */}
+      {showGstModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 relative">
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Disable GST Settings</h3>
+            <p className="text-gray-600 mb-6 text-sm">
+              Aap GST band kar rahe hain. Aapke sabhi products ke existing rates ka kya karna hai?
+            </p>
+            <div className="space-y-4">
+              <button
+                onClick={() => { setGstActionPreference('keep_final'); setEnableGst(false); setShowGstModal(false); }}
+                className="w-full text-left p-4 border rounded-lg hover:bg-blue-50 hover:border-blue-300 transition"
+              >
+                <p className="font-bold text-gray-800 text-sm">1. Keep Final Rate (Recommended)</p>
+                <p className="text-xs text-gray-500 mt-1 mb-2">Aapka final selling price (With GST) ab naya base price ban jayega.</p>
+                <p className="text-xs font-mono bg-blue-100 text-blue-800 px-2 py-1 rounded inline-block">Example: GST ke sath ₹100 ka tha, toh GST hatne ke baad rate ₹100 hi rahega.</p>
+              </button>
+              <button
+                onClick={() => { setGstActionPreference('keep_base'); setEnableGst(false); setShowGstModal(false); }}
+                className="w-full text-left p-4 border rounded-lg hover:bg-blue-50 hover:border-blue-300 transition"
+              >
+                <p className="font-bold text-gray-800 text-sm">2. Keep Base Rate</p>
+                <p className="text-xs text-gray-500 mt-1 mb-2">GST hat jayega aur purana base price hi naya rate ban jayega.</p>
+                <p className="text-xs font-mono bg-gray-200 text-gray-800 px-2 py-1 rounded inline-block">Example: Base ₹82 + 18% GST = ₹100 tha, toh ab rate ₹82 ho jayega.</p>
+              </button>
+            </div>
+            <button onClick={() => setShowGstModal(false)} className="mt-6 w-full py-2 text-gray-500 hover:bg-gray-100 font-medium rounded-lg transition">Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
