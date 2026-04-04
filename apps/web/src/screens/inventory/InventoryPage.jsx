@@ -502,12 +502,16 @@ const InventoryPage = () => {
       },
     },
     {
-      header: "Retail Price",
-      cell: (row) => (
-        <div className="text-xs">
-          <p className="font-bold text-green-700 text-sm">{formatCurrency(row.sellingPrice)}</p>
-        </div>
-      ),
+      header: "Retail Price (Inc. GST)",
+      cell: (row) => {
+        const gst = parseFloat(row.gstRate) || 0;
+        const spWithGst = (parseFloat(row.sellingPrice) || 0) * (1 + gst / 100);
+        return (
+          <div className="text-xs">
+            <p className="font-bold text-green-700 text-sm">{formatCurrency(spWithGst)}</p>
+          </div>
+        );
+      },
     },
     {
       header: "GST",

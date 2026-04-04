@@ -27,7 +27,7 @@ const ProductListPage = () => {
             <tr>
               <th className="p-4 font-semibold text-gray-600">Name</th>
               <th className="p-4 font-semibold text-gray-600">SKU</th>
-              <th className="p-4 font-semibold text-gray-600">Price</th>
+              <th className="p-4 font-semibold text-gray-600">Price (Inc. GST)</th>
               <th className="p-4 font-semibold text-gray-600">Stock</th>
             </tr>
           </thead>
@@ -41,7 +41,7 @@ const ProductListPage = () => {
               <tr key={p._id} className="border-b hover:bg-gray-50">
                 <td className="p-4 font-medium">{p.name}</td>
                 <td className="p-4 text-gray-600">{p.sku || "-"}</td>
-                <td className="p-4">₹{p.sellingPrice || p.price || 0}</td>
+                <td className="p-4">₹{((p.sellingPrice || p.price || 0) * (1 + (p.gstRate || 0) / 100)).toFixed(2)}</td>
                 <td className="p-4">
                   <span className={`px-2 py-1 rounded text-xs font-semibold ${(p.currentStock || p.stock || 0) > 10 ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
                     {p.currentStock || p.stock || 0}
