@@ -148,11 +148,13 @@ const InventoryPage = () => {
       const cats = list.map(p => p.category).filter(Boolean);
       const subCats = list.map(p => p.subCategory).filter(Boolean);
       
-      // Merge with cache
-      const savedCats = JSON.parse(localStorage.getItem("categories") || "[]");
-      const savedSubCats = JSON.parse(localStorage.getItem("subCategories") || "[]");
-      setCategories([...new Set([...cats, ...savedCats])]);
-      setSubCategories([...new Set([...subCats, ...savedSubCats])]);
+      // Strictly use categories from existing products to prevent "Ghost" categories
+      setCategories([...new Set(cats)]);
+      setSubCategories([...new Set(subCats)]);
+      
+      // Clear the old stubborn cache that was causing deleted items to reappear
+      localStorage.removeItem("categories");
+      localStorage.removeItem("subCategories");
 
       // Fetch company industry type
       const settingsRes = await api.get('/api/settings').catch(() => null);
@@ -327,16 +329,6 @@ const InventoryPage = () => {
         
         setInventory(prev => [payload, ...prev]);
         alert(`Product created offline successfully!`);
-      }
-
-      // Cache Categories Locally
-      if (sanitizedData.category) {
-        const prevCat = JSON.parse(localStorage.getItem("categories") || "[]");
-        localStorage.setItem("categories", JSON.stringify([...new Set([...prevCat, sanitizedData.category])]));
-      }
-      if (sanitizedData.subCategory) {
-        const prevSub = JSON.parse(localStorage.getItem("subCategories") || "[]");
-        localStorage.setItem("subCategories", JSON.stringify([...new Set([...prevSub, sanitizedData.subCategory])]));
       }
 
       filterInventory(); // Refresh the visible list
@@ -637,6 +629,13 @@ const InventoryPage = () => {
                   rows="2"
                 />
                 <input
+                  type="text"
+                  placeholder="Brand / Company (e.g. Samsung)"
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={formData.brand}
+                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                />
+                <input
                   list="category-list-edit"
                   placeholder="Type or Select Category *"
                   className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -834,7 +833,6 @@ const InventoryPage = () => {
                     {showHardware && (
                       <div className="space-y-2">
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Hardware & Builder</label>
-                        <input type="text" placeholder="Brand Name" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.brand} onChange={(e) => setFormData({...formData, brand: e.target.value})} />
                         <input type="text" placeholder="Dimensions (e.g. 8x4 ft)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.dimensions} onChange={(e) => setFormData({...formData, dimensions: e.target.value})} />
                       </div>
                     )}

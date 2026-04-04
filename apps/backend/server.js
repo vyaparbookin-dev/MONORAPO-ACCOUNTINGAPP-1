@@ -53,6 +53,8 @@ import agingRoutes from "./src/routes/agingRoutes.js";
 import approvalRoutes from "./src/routes/approvalRoutes.js";
 import whatsappRoutes from "./src/routes/whatsappRoutes.js";
 import reminderRoutes from "./src/routes/reminderRoutes.js";
+import brandRoutes from "./src/routes/brandRoutes.js";
+import subCategoryRoutes from "./src/routes/subCategoryRoutes.js";
 import { startCronJobs } from "./src/utils/cronJobs.js";
 import tallyRoutes from "./src/routes/tallyRoutes.js";
 
@@ -166,6 +168,8 @@ const startServer = async () => {
     app.use("/api/b2b", b2bRoutes);
     app.use("/api/bank-rec", bankRecRoutes);
     app.use("/api/category", categoryRoutes);
+    app.use("/api/subcategory", subCategoryRoutes);
+    app.use("/api/brand", brandRoutes);
     app.use("/api/cloud", cloudRoutes);
     app.use("/api/consolidated-statement", consolidatedStatementRoutes);
     app.use("/api/coupon", coupanRoutes); // Fixed spelling to match frontend request

@@ -193,12 +193,13 @@ const InventoryPage = () => {
         const cats = inventoryList.map(p => p.category).filter(Boolean);
         const subCats = inventoryList.map(p => p.subCategory).filter(Boolean);
         
-        // Cache se load karke unko combine karna
-        const savedCats = JSON.parse(localStorage.getItem("categories") || "[]");
-        const savedSubCats = JSON.parse(localStorage.getItem("subCategories") || "[]");
+        // Strictly use from existing products to prevent ghost categories
+        setCategories([...new Set(cats)]);
+        setSubCategories([...new Set(subCats)]);
         
-        setCategories([...new Set([...cats, ...savedCats])]);
-        setSubCategories([...new Set([...subCats, ...savedSubCats])]);
+        // Clear old cache
+        localStorage.removeItem("categories");
+        localStorage.removeItem("subCategories");
       }
 
       // Fetch company industry type
@@ -345,16 +346,6 @@ const InventoryPage = () => {
             category: formData.category,
             subCategory: formData.subCategory || ""
           });
-        }
-
-        // Cache newly added categories 
-        if (formData.category) {
-          const prevCat = JSON.parse(localStorage.getItem("categories") || "[]");
-          localStorage.setItem("categories", JSON.stringify([...new Set([...prevCat, formData.category])]));
-        }
-        if (formData.subCategory) {
-          const prevSub = JSON.parse(localStorage.getItem("subCategories") || "[]");
-          localStorage.setItem("subCategories", JSON.stringify([...new Set([...prevSub, formData.subCategory])]));
         }
 
         try {
@@ -700,6 +691,16 @@ const InventoryPage = () => {
               </div>
               
               <div>
+                <label className="block text-sm font-medium text-gray-700">Brand / Company</label>
+                <input
+                  className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={formData.brand}
+                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                  placeholder="e.g. Samsung, Nike, Asian Paints"
+                />
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700">Barcode (Auto or Scan)</label>
                 <input
                   className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
@@ -939,7 +940,6 @@ const InventoryPage = () => {
                   {showHardware && (
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Hardware & Builder</label>
-                      <input type="text" placeholder="Brand Name (e.g. Asian Paints)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.brand} onChange={(e) => setFormData({...formData, brand: e.target.value})} />
                       <input type="text" placeholder="Dimensions (e.g. 8x4 ft)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.dimensions} onChange={(e) => setFormData({...formData, dimensions: e.target.value})} />
                     </div>
                   )}

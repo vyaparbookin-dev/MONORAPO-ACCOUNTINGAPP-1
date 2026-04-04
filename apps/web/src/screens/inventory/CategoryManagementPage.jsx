@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Edit, Trash2, X, ListTree, Scale } from "lucide-react";
+import { Plus, Edit, Trash2, X, ListTree, Scale, ListMinus, Tag } from "lucide-react";
 import api from "../../services/api";
 
 const CategoryManagementPage = () => {
   const [activeTab, setActiveTab] = useState("categories");
   const [categories, setCategories] = useState([]);
+  const [subCategories, setSubCategories] = useState([]);
+  const [brands, setBrands] = useState([]);
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -23,6 +25,12 @@ const CategoryManagementPage = () => {
       if (activeTab === "categories") {
         const res = await api.get("/api/category");
         setCategories(res.data.categories || res.data || []);
+      } else if (activeTab === "subCategories") {
+        const res = await api.get("/api/subcategory");
+        setSubCategories(res.data.subCategories || res.data || []);
+      } else if (activeTab === "brands") {
+        const res = await api.get("/api/brand");
+        setBrands(res.data.brands || res.data || []);
       } else {
         const res = await api.get("/api/unit");
         setUnits(res.data.units || res.data || []);
@@ -54,19 +62,18 @@ const CategoryManagementPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      if (activeTab === "categories") {
-        if (editingItem) {
-          await api.put(`/api/category/${editingItem._id}`, formData);
-        } else {
-          await api.post("/api/category", formData);
-        }
+      let endpoint = "";
+      if (activeTab === "categories") endpoint = "/api/category";
+      else if (activeTab === "subCategories") endpoint = "/api/subcategory";
+      else if (activeTab === "brands") endpoint = "/api/brand";
+      else endpoint = "/api/unit";
+
+      if (editingItem) {
+        await api.put(`${endpoint}/${editingItem._id}`, formData);
       } else {
-        if (editingItem) {
-          await api.put(`/api/unit/${editingItem._id}`, formData);
-        } else {
-          await api.post("/api/unit", formData);
-        }
+        await api.post(endpoint, formData);
       }
+      
       fetchData();
       closeModal();
     } catch (error) {
@@ -77,11 +84,14 @@ const CategoryManagementPage = () => {
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure you want to delete this item?")) return;
     try {
-      if (activeTab === "categories") {
-        await api.delete(`/api/category/${id}`);
-      } else {
-        await api.delete(`/api/unit/${id}`);
-      }
+      let endpoint = "";
+      if (activeTab === "categories") endpoint = "/api/category";
+      else if (activeTab === "subCategories") endpoint = "/api/subcategory";
+      else if (activeTab === "brands") endpoint = "/api/brand";
+      else endpoint = "/api/unit";
+
+      await api.delete(`${endpoint}/${id}`);
+      
       fetchData();
     } catch (error) {
       alert("Failed to delete. It might be in use.");
@@ -92,15 +102,19 @@ const CategoryManagementPage = () => {
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex justify-between items-end mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Manage Product Fields</h1>
-          <p className="text-gray-600 mt-1">Add, edit, or delete Categories and Units</p>
+          <h1 className="text-3xl font-bold text-gray-900">Manage Inventory Fields</h1>
+          <p className="text-gray-600 mt-1">Organize Categories, Brands, and Units for your products</p>
         </div>
         <button
           onClick={() => openModal()}
           className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
         >
           <Plus size={20} />
-          Add {activeTab === "categories" ? "Category" : "Unit"}
+          Add {
+            activeTab === "categories" ? "Category" : 
+            activeTab === "subCategories" ? "Sub-Category" : 
+            activeTab === "brands" ? "Brand" : "Unit"
+          }
         </button>
       </div>
 
@@ -116,6 +130,28 @@ const CategoryManagementPage = () => {
         >
           <ListTree size={18} />
           Categories
+        </button>
+        <button
+          className={`flex items-center gap-2 py-3 px-6 font-medium text-sm border-b-2 transition-colors ${
+            activeTab === "subCategories"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+          }`}
+          onClick={() => setActiveTab("subCategories")}
+        >
+          <ListMinus size={18} />
+          Sub Categories
+        </button>
+        <button
+          className={`flex items-center gap-2 py-3 px-6 font-medium text-sm border-b-2 transition-colors ${
+            activeTab === "brands"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+          }`}
+          onClick={() => setActiveTab("brands")}
+        >
+          <Tag size={18} />
+          Brands / Companies
         </button>
         <button
           className={`flex items-center gap-2 py-3 px-6 font-medium text-sm border-b-2 transition-colors ${
@@ -145,14 +181,14 @@ const CategoryManagementPage = () => {
               </tr>
             </thead>
             <tbody>
-              {(activeTab === "categories" ? categories : units).length === 0 ? (
+              {(activeTab === "categories" ? categories : activeTab === "subCategories" ? subCategories : activeTab === "brands" ? brands : units).length === 0 ? (
                 <tr>
                   <td colSpan="4" className="p-8 text-center text-gray-500">
                     No {activeTab} found. Click 'Add' to create one.
                   </td>
                 </tr>
               ) : (
-                (activeTab === "categories" ? categories : units).map((item) => (
+                (activeTab === "categories" ? categories : activeTab === "subCategories" ? subCategories : activeTab === "brands" ? brands : units).map((item) => (
                   <tr key={item._id} className="border-b hover:bg-gray-50">
                     <td className="p-4 font-medium text-gray-900">{item.name}</td>
                     {activeTab === "units" && (
@@ -199,7 +235,11 @@ const CategoryManagementPage = () => {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
             <div className="flex justify-between items-center p-4 border-b">
               <h3 className="font-bold text-lg text-gray-900">
-                {editingItem ? "Edit" : "Add"} {activeTab === "categories" ? "Category" : "Unit"}
+                {editingItem ? "Edit" : "Add"} {
+                  activeTab === "categories" ? "Category" : 
+                  activeTab === "subCategories" ? "Sub-Category" : 
+                  activeTab === "brands" ? "Brand" : "Unit"
+                }
               </h3>
               <button onClick={closeModal} className="text-gray-400 hover:bg-gray-100 p-1 rounded-full">
                 <X size={20} />
@@ -216,7 +256,7 @@ const CategoryManagementPage = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder={`e.g., ${activeTab === "categories" ? "Electronics" : "Kilogram"}`}
+                  placeholder={`e.g., ${activeTab === "categories" ? "Electronics" : activeTab === "subCategories" ? "Mobile Phones" : activeTab === "brands" ? "Samsung" : "Kilogram"}`}
                 />
               </div>
               {activeTab === "units" && (
