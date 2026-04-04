@@ -287,9 +287,14 @@ const InventoryPage = () => {
         return;
       }
 
+      const finalSku = formData.sku || formData.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
+      const finalBarcode = formData.barcode || `BAR-${finalSku}`;
+
       // Sanitization: Ensure all number fields are valid numbers before saving to DB
       const sanitizedData = {
         ...formData,
+        sku: finalSku,
+        barcode: finalBarcode,
         costPrice: parseFloat(formData.costPrice) || 0,
         sellingPrice: parseFloat(formData.sellingPrice) || 0,
         wholesalePrice: parseFloat(formData.wholesalePrice) || 0,

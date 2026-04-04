@@ -267,20 +267,23 @@ const AddProductPage = () => {
       }
       cacheCategories();
       
+      const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
+      const finalBarcode = form.barcode || `BAR-${finalSku}`;
+      const payload = { ...form, sku: finalSku, barcode: finalBarcode };
+
       // Desktop: Local SQLite Offline Guarantee
       if (window.electron && window.electron.db) {
         await window.electron.db.saveProduct({
-          ...form,
-          name: form.name,
-          sku: form.hsnCode || form.sku || "SKU-" + Date.now(),
-          price: form.sellingPrice || 0,
-          quantity: form.stock || 0,
-          category: form.category || "General",
-          subCategory: form.subCategory || ""
+          ...payload,
+          name: payload.name,
+          price: parseFloat(payload.sellingPrice) || 0,
+          quantity: parseFloat(payload.stock) || 0,
+          category: payload.category || "General",
+          subCategory: payload.subCategory || ""
         });
       }
 
-      await api.post("/api/inventory", form).catch(() => {}); // Catch silent for offline
+      await api.post("/api/inventory", payload).catch(() => {}); // Catch silent for offline
       alert("Product saved successfully!");
       navigate("/inventory");
     } catch (err) {
@@ -297,20 +300,23 @@ const AddProductPage = () => {
       }
       cacheCategories();
       
+      const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
+      const finalBarcode = form.barcode || `BAR-${finalSku}`;
+      const payload = { ...form, sku: finalSku, barcode: finalBarcode };
+
       // Desktop: Local SQLite Offline Guarantee
       if (window.electron && window.electron.db) {
         await window.electron.db.saveProduct({
-          ...form,
-          name: form.name,
-          sku: form.hsnCode || form.sku || "SKU-" + Date.now(),
-          price: form.sellingPrice || 0,
-          quantity: form.stock || 0,
-          category: form.category || "General",
-          subCategory: form.subCategory || ""
+          ...payload,
+          name: payload.name,
+          price: parseFloat(payload.sellingPrice) || 0,
+          quantity: parseFloat(payload.stock) || 0,
+          category: payload.category || "General",
+          subCategory: payload.subCategory || ""
         });
       }
 
-      await api.post("/api/inventory", form).catch(() => {}); // Catch silent for offline
+      await api.post("/api/inventory", payload).catch(() => {}); // Catch silent for offline
       alert("Product saved! You can now add another one.");
       resetForm();
     } catch (err) {

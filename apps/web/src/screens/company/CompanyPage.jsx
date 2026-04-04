@@ -111,7 +111,11 @@ const CompanyPage = () => {
           <p className="text-gray-600 mt-1">Manage your companies and business types</p>
         </div>
         <button
-          onClick={() => setIsAdding(true)}
+          onClick={() => {
+            setIsAdding(true);
+            setIsEditing(false);
+            setFormData(getInitialFormState());
+          }}
           className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
         >
           <Plus size={20} />

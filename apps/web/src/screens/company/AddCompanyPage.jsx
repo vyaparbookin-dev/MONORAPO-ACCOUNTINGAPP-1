@@ -59,12 +59,12 @@ export default function AddCompanyPage({ onAdded }) {
       navigate("/dashboard");
     } catch (err) {
       console.error(err);
-      alert("Error adding company!");
+      alert(err.response?.data?.message || "Error adding company!");
     }
   };
 
   return (
-    <div className="bg-white shadow-md rounded-xl p-8 max-w-4xl mx-auto">
+    <div className="bg-white shadow-md rounded-xl p-8 max-w-4xl mx-auto mt-6">
       <h2 className="text-2xl font-bold mb-6 text-gray-800">Add New Company</h2>
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Basic Info */}

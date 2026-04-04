@@ -269,23 +269,26 @@ const AddProductPage = () => {
   };
 
   const saveProductLogic = async () => {
+    const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
+    const finalBarcode = form.barcode || `BAR-${finalSku}`;
+    const payload = { ...form, sku: finalSku, barcode: finalBarcode };
+
     // 1. Offline First: Local SQLite me turant save karein
     await dbService.saveProduct({
-        ...form,
-        name: form.name,
-        sku: form.sku || form.barcode || `SKU-${Date.now()}`,
-        price: parseFloat(form.sellingPrice) || 0,
-        quantity: parseFloat(form.stock) || 0,
-        category: form.category
+        ...payload,
+        name: payload.name,
+        price: parseFloat(payload.sellingPrice) || 0,
+        quantity: parseFloat(payload.stock) || 0,
+        category: payload.category || 'General',
       });
 
     // 2. Cloud Sync: Backend par bhejein
     try {
-      await api.post("/api/inventory", form);
+      await api.post("/api/inventory", payload);
     } catch (apiErr) {
       // Agar Internet nahi hai ya server down hai, toh queue me daal do
       if (!navigator.onLine || apiErr.message === "Network Error") {
-        syncQueue.enqueue({ method: "POST", url: "/api/inventory", data: form });
+        syncQueue.enqueue({ method: "POST", url: "/api/inventory", data: payload });
         console.log("Offline mode: Product queued for sync.");
       } else {
         throw apiErr;
