@@ -5,6 +5,7 @@ import BarcodeScanner from "../../components/BarcodeScanner";
 import DataTable from "../../components/Datatable";
 import ReportCard from "../../components/ReportCard";
 import Loader from "../../components/Loader";
+import api from "../../services/api";
 import { formatCurrency, syncQueue } from "@repo/shared";
 import { generateBarcode } from "../../utils/barcodeGenerator";
 import { auditService } from "../../services/auditService";
@@ -231,9 +232,9 @@ const InventoryPage = () => {
     if (searchTerm) {
       filtered = filtered.filter(
         (item) =>
-          item.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.hsnCode?.toLowerCase().includes(searchTerm.toLowerCase())
+          (item.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (item.sku || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (item.hsnCode || "").toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
     setFilteredInventory(filtered);

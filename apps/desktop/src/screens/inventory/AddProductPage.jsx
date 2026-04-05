@@ -312,6 +312,10 @@ const AddProductPage = () => {
   };
 
   const saveProductLogic = async () => {
+    if (!form.name || !form.category || ((isPurchaseGstEnabled || isSalesGstEnabled) && !form.hsnCode) || !form.costPrice || !form.sellingPrice) {
+      throw new Error("Please fill all required fields (Name, Category, Cost, Selling Price, and HSN if GST is enabled)");
+    }
+
     const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
     const finalBarcode = form.barcode || `BAR-${finalSku}`;
     const payload = { ...form, sku: finalSku, barcode: finalBarcode, hsnCode: form.hsnCode || "0000" };
@@ -484,11 +488,12 @@ const AddProductPage = () => {
 
           {(isPurchaseGstEnabled || isSalesGstEnabled) && ( // Show HSN if any GST is enabled
             <div>
-              <label className="block text-sm font-medium text-gray-700">HSN Code</label>
+              <label className="block text-sm font-medium text-gray-700">HSN Code *</label>
               <input
                 className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
                 value={form.hsnCode}
                 onChange={(e) => setForm({ ...form, hsnCode: e.target.value })}
+                required
               />
             </div>
           )}
