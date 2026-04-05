@@ -287,7 +287,7 @@ const AddProductPage = () => {
     });
   };
 
-ha  const saveProductLogic = async () => {
+  const saveProductLogic = async () => {
     const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
     const finalBarcode = form.barcode || `BAR-${finalSku}`;
     const payload = { ...form, sku: finalSku, barcode: finalBarcode };
@@ -458,14 +458,16 @@ ha  const saveProductLogic = async () => {
             </datalist>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700">HSN Code</label>
-            <input
-              className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
-              value={form.hsnCode}
-              onChange={(e) => setForm({ ...form, hsnCode: e.target.value })}
-            />
-          </div>
+          {isGstEnabled && ( // Only show HSN if GST is enabled
+            <div>
+              <label className="block text-sm font-medium text-gray-700">HSN Code</label>
+              <input
+                className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
+                value={form.hsnCode}
+                onChange={(e) => setForm({ ...form, hsnCode: e.target.value })}
+              />
+            </div>
+          )}
         </div>
 
         {/* Pricing */}
@@ -473,7 +475,7 @@ ha  const saveProductLogic = async () => {
           <h3 className="text-lg font-semibold mb-3 text-gray-800">Pricing & Margins</h3>
           
           {/* Base Costs & GST */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
             {isGstEnabled && (
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">GST Rate (%)</label>
@@ -488,7 +490,7 @@ ha  const saveProductLogic = async () => {
             </div>
             )}
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cost Price (W/O GST) *</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cost Price {isGstEnabled && "(W/O GST)"} *</label>
               <input
                 type="number"
                 className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
@@ -523,7 +525,7 @@ ha  const saveProductLogic = async () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Retail Price (W/O GST) *</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Retail Price {isGstEnabled && "(W/O GST)"} *</label>
               <input
                 type="number"
                 className="w-full border p-2 rounded focus:ring-2 focus:ring-green-500 outline-none bg-green-50 font-bold"
@@ -562,7 +564,7 @@ ha  const saveProductLogic = async () => {
               <input type="number" className="w-full border p-2 rounded focus:ring-2 focus:ring-purple-500 outline-none bg-purple-50" value={form.wholesaleMargin} onChange={(e) => handlePriceCalculation('wholesaleMargin', e.target.value)} placeholder="Optional" />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Wholesale Price (W/O GST)</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Wholesale Price {isGstEnabled && "(W/O GST)"}</label>
               <input type="number" className="w-full border p-2 rounded focus:ring-2 focus:ring-purple-500 outline-none" value={form.wholesalePrice} onChange={(e) => handlePriceCalculation('wholesalePrice', e.target.value)} />
             </div>
             {isGstEnabled && (
@@ -581,7 +583,7 @@ ha  const saveProductLogic = async () => {
               <input type="number" className="w-full border p-2 rounded focus:ring-2 focus:ring-orange-500 outline-none bg-orange-50" value={form.dealerMargin} onChange={(e) => handlePriceCalculation('dealerMargin', e.target.value)} placeholder="Optional" />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Dealer Price (W/O GST)</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Dealer Price {isGstEnabled && "(W/O GST)"}</label>
               <input type="number" className="w-full border p-2 rounded focus:ring-2 focus:ring-orange-500 outline-none" value={form.dealerPrice} onChange={(e) => handlePriceCalculation('dealerPrice', e.target.value)} />
             </div>
             {isGstEnabled && (
