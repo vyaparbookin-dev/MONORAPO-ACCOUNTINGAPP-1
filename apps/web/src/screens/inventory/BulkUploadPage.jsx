@@ -13,7 +13,7 @@ export default function BulkUploadPage() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {w
+    reader.onload = (evt) => {
       const bstr = evt.target.result;
       const wb = XLSX.read(bstr, { type: "binary" });
       const wsname = wb.SheetNames[0];

@@ -52,6 +52,7 @@ const AddProductPage = () => {
   const [units, setUnits] = useState(["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"]);
   const [categories, setCategories] = useState([]);
   const [subCategories, setSubCategories] = useState([]);
+  const [brands, setBrands] = useState([]);
   const [industry, setIndustry] = useState("general");
 
   const videoRef = useRef(null);
@@ -61,35 +62,46 @@ const AddProductPage = () => {
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        const invRes = await api.get('/api/inventory').catch(() => ({ data: { products: [] } }));
-        const inventoryList = invRes.data?.products || invRes.data || [];
+        const [invRes, catRes, subCatRes, brandRes, unitRes, settingsRes] = await Promise.all([
+          api.get('/api/inventory').catch(() => ({ data: { products: [] } })),
+          api.get('/api/category').catch(() => ({ data: [] })),
+          api.get('/api/subcategory').catch(() => ({ data: [] })),
+          api.get('/api/brand').catch(() => ({ data: [] })),
+          api.get('/api/unit').catch(() => null),
+          api.get('/api/settings').catch(() => null)
+        ]);
 
+        const inventoryList = invRes.data?.products || invRes.data || [];
         const productCats = inventoryList.map(p => p.category).filter(Boolean);
         const productSubCats = inventoryList.map(p => p.subCategory).filter(Boolean);
+        const productBrands = inventoryList.map(p => p.brand).filter(Boolean);
         
-        const catRes = await api.get('/api/category').catch(() => ({ data: [] }));
-        const masterCats = (catRes.data?.categories || catRes.data || []).map(c => c.name);
+        // Robust data extractor to prevent crashes
+        const extractNames = (resData, key) => {
+          if (!resData) return [];
+          let list = [];
+          if (Array.isArray(resData[key])) list = resData[key];
+          else if (Array.isArray(resData.data)) list = resData.data;
+          else if (Array.isArray(resData)) list = resData;
+          return list.map(c => typeof c === 'string' ? c : c?.name).filter(Boolean);
+        };
+
+        const masterCats = extractNames(catRes.data, 'categories');
+        const masterSubCats = extractNames(subCatRes.data, 'subCategories');
+        const masterBrands = extractNames(brandRes.data, 'brands');
+
+        setCategories([...new Set([...masterCats, ...productCats])]);
+        setSubCategories([...new Set([...masterSubCats, ...productSubCats])]);
+        setBrands([...new Set([...masterBrands, ...productBrands])]);
         
-        // Local Storage Cache Retrieval
-        const savedCats = JSON.parse(localStorage.getItem("categories") || "[]");
-        const savedSubCats = JSON.parse(localStorage.getItem("subCategories") || "[]");
+        localStorage.removeItem("categories");
+        localStorage.removeItem("subCategories");
 
-        const allCats = [...masterCats, ...productCats, ...savedCats];
-        if (allCats.length > 0) {
-          setCategories(prev => [...new Set([...prev, ...allCats])]);
-        }
-        if (productSubCats.length > 0 || savedSubCats.length > 0) {
-          setSubCategories([...new Set([...productSubCats, ...savedSubCats])]);
-        }
-
-        const unitRes = await api.get('/api/unit').catch(() => null);
         if (unitRes) {
           const fetchedUnits = unitRes.data?.units || unitRes.data || [];
           if (fetchedUnits.length > 0) setUnits(prev => [...new Set([...prev, ...fetchedUnits.map(u => u.name)])]);
         }
 
-        // Fetch company industry type for conditional logic
-        const settingsRes = await api.get('/api/settings').catch(() => null);
         if (settingsRes?.data?.data) {
           setIndustry((settingsRes.data.data.industryType || settingsRes.data.data.businessType || "general").toLowerCase());
         }
@@ -247,25 +259,12 @@ const AddProductPage = () => {
     });
   };
 
-  // Helper to Cache Categories Locally
-  const cacheCategories = () => {
-    if (form.category) {
-      const prevCat = JSON.parse(localStorage.getItem("categories") || "[]");
-      localStorage.setItem("categories", JSON.stringify([...new Set([...prevCat, form.category])]));
-    }
-    if (form.subCategory) {
-      const prevSub = JSON.parse(localStorage.getItem("subCategories") || "[]");
-      localStorage.setItem("subCategories", JSON.stringify([...new Set([...prevSub, form.subCategory])]));
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       if (!form.name) {
         return alert("Please enter the Product Name");
       }
-      cacheCategories();
       
       const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
       const finalBarcode = form.barcode || `BAR-${finalSku}`;
@@ -298,7 +297,6 @@ const AddProductPage = () => {
       if (!form.name) {
         return alert("Please enter the Product Name before saving.");
       }
-      cacheCategories();
       
       const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
       const finalBarcode = form.barcode || `BAR-${finalSku}`;
@@ -391,6 +389,20 @@ const AddProductPage = () => {
             />
           </div>
           
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Brand / Company</label>
+            <input
+              list="brand-list"
+              className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
+              value={form.brand}
+              onChange={(e) => setForm({ ...form, brand: e.target.value })}
+              placeholder="Type or select a brand"
+            />
+            <datalist id="brand-list">
+              {brands.map((b, idx) => <option key={idx} value={b} />)}
+            </datalist>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700">Barcode (Auto or Scan)</label>
             <input

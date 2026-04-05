@@ -24,16 +24,16 @@ const CategoryManagementPage = () => {
     try {
       if (activeTab === "categories") {
         const res = await api.get("/api/category");
-        setCategories(res.data.categories || res.data || []);
+        setCategories(res.data.categories || res.data.data || (Array.isArray(res.data) ? res.data : []));
       } else if (activeTab === "subCategories") {
         const res = await api.get("/api/subcategory");
-        setSubCategories(res.data.subCategories || res.data || []);
+        setSubCategories(res.data.subCategories || res.data.data || (Array.isArray(res.data) ? res.data : []));
       } else if (activeTab === "brands") {
         const res = await api.get("/api/brand");
-        setBrands(res.data.brands || res.data || []);
+        setBrands(res.data.brands || res.data.data || (Array.isArray(res.data) ? res.data : []));
       } else {
         const res = await api.get("/api/unit");
-        setUnits(res.data.units || res.data || []);
+        setUnits(res.data.units || res.data.data || (Array.isArray(res.data) ? res.data : []));
       }
     } catch (error) {
       console.error(`Failed to fetch ${activeTab}:`, error);

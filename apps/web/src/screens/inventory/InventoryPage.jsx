@@ -66,6 +66,7 @@ const InventoryPage = () => {
   const [units, setUnits] = useState(["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"]);
   const [categories, setCategories] = useState([]);
   const [subCategories, setSubCategories] = useState([]);
+  const [brands, setBrands] = useState([]);
   const [industry, setIndustry] = useState("general");
   const gstRates = [0, 5, 12, 18, 28];
 
@@ -185,17 +186,37 @@ const InventoryPage = () => {
         const localInventory = await window.electron.db.getInventory();
         setInventory(localInventory || []);
       } else {
-        const response = await api.get("/api/inventory");
-        const inventoryList = response.inventory || response.data?.products || response.data || (Array.isArray(response) ? response : []);
+        const [invRes, catRes, subCatRes, brandRes] = await Promise.all([
+          api.get("/api/inventory"),
+          api.get("/api/category").catch(() => ({ data: [] })),
+          api.get("/api/subcategory").catch(() => ({ data: [] })),
+          api.get("/api/brand").catch(() => ({ data: [] }))
+        ]);
+
+        const inventoryList = invRes.inventory || invRes.data?.products || invRes.data || (Array.isArray(invRes) ? invRes : []);
         setInventory(inventoryList);
 
-        // Extract unique categories and subcategories
-        const cats = inventoryList.map(p => p.category).filter(Boolean);
-        const subCats = inventoryList.map(p => p.subCategory).filter(Boolean);
+        const productCats = inventoryList.map(p => p.category).filter(Boolean);
+        const productSubCats = inventoryList.map(p => p.subCategory).filter(Boolean);
+        const productBrands = inventoryList.map(p => p.brand).filter(Boolean);
         
-        // Strictly use from existing products to prevent ghost categories
-        setCategories([...new Set(cats)]);
-        setSubCategories([...new Set(subCats)]);
+        // Robust data extractor to prevent crashes
+        const extractNames = (resData, key) => {
+          if (!resData) return [];
+          let list = [];
+          if (Array.isArray(resData[key])) list = resData[key];
+          else if (Array.isArray(resData.data)) list = resData.data;
+          else if (Array.isArray(resData)) list = resData;
+          return list.map(c => typeof c === 'string' ? c : c?.name).filter(Boolean);
+        };
+
+        const masterCats = extractNames(catRes.data, 'categories');
+        const masterSubCats = extractNames(subCatRes.data, 'subCategories');
+        const masterBrands = extractNames(brandRes.data, 'brands');
+
+        setCategories([...new Set([...masterCats, ...productCats])]);
+        setSubCategories([...new Set([...masterSubCats, ...productSubCats])]);
+        setBrands([...new Set([...masterBrands, ...productBrands])]);
         
         // Clear old cache
         localStorage.removeItem("categories");
@@ -693,11 +714,15 @@ const InventoryPage = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700">Brand / Company</label>
                 <input
+                  list="brand-list-edit"
                   className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
                   value={formData.brand}
                   onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
                   placeholder="e.g. Samsung, Nike, Asian Paints"
                 />
+                <datalist id="brand-list-edit">
+                  {brands.map((b, idx) => <option key={idx} value={b} />)}
+                </datalist>
               </div>
 
               <div>

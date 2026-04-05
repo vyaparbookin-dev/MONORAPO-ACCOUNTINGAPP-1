@@ -20,6 +20,11 @@ export default function SettingsPage() {
   const [showSubCategoryForm, setShowSubCategoryForm] = useState(false);
   const [showBrandForm, setShowBrandForm] = useState(false);
 
+  const [editingPartyId, setEditingPartyId] = useState(null);
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const [editingSubCategoryId, setEditingSubCategoryId] = useState(null);
+  const [editingBrandId, setEditingBrandId] = useState(null);
+
   const [partyForm, setPartyForm] = useState({
     name: "",
     partyType: "both",
@@ -116,12 +121,20 @@ export default function SettingsPage() {
   const handleAddParty = async (e) => {
     e.preventDefault();
     try {
-      const newId = crypto.randomUUID ? crypto.randomUUID() : `PARTY-${Date.now()}`;
-      const payload = { ...partyForm, _id: newId, uuid: newId };
-      
-      await dbService.addCustomer(payload);
-      await auditService.logAction('CREATE', 'party', null, payload);
-      await syncQueue.enqueue({ entityId: newId, entity: 'party', method: 'POST', url: '/api/party', data: payload });
+      if (editingPartyId) {
+        if (dbService.updateCustomer) await dbService.updateCustomer(editingPartyId, partyForm);
+        await auditService.logAction('UPDATE', 'party', { _id: editingPartyId }, partyForm);
+        await syncQueue.enqueue({ entityId: editingPartyId, entity: 'party', method: 'PUT', url: `/api/party/${editingPartyId}`, data: partyForm });
+        alert("Party updated offline successfully!");
+      } else {
+        const newId = crypto.randomUUID ? crypto.randomUUID() : `PARTY-${Date.now()}`;
+        const payload = { ...partyForm, _id: newId, uuid: newId };
+        
+        await dbService.addCustomer(payload);
+        await auditService.logAction('CREATE', 'party', null, payload);
+        await syncQueue.enqueue({ entityId: newId, entity: 'party', method: 'POST', url: '/api/party', data: payload });
+        alert("Party added offline successfully!");
+      }
 
       setPartyForm({
         name: "",
@@ -131,58 +144,109 @@ export default function SettingsPage() {
         gstNumber: "",
         contactPerson: "",
       });
+      setEditingPartyId(null);
       setShowPartyForm(false);
       loadParties();
-      alert("Party added offline successfully!");
     } catch (err) {
       alert(err.message || "Error adding party");
     }
   };
 
+  const handleEditParty = (party) => {
+    setPartyForm({
+      name: party.name || "",
+      partyType: party.partyType || "both",
+      mobileNumber: party.mobileNumber || "",
+      address: party.address || "",
+      gstNumber: party.gstNumber || "",
+      contactPerson: party.contactPerson || "",
+    });
+    setEditingPartyId(party._id);
+    setShowPartyForm(true);
+  };
+
   const handleAddCategory = async (e) => {
     e.preventDefault();
     try {
-      const newId = crypto.randomUUID ? crypto.randomUUID() : `CAT-${Date.now()}`;
-      const payload = { ...categoryForm, _id: newId, uuid: newId };
-      
-      await dbService.saveCategory(payload);
-      await syncQueue.enqueue({ entityId: newId, entity: 'category', method: 'POST', url: '/api/category', data: payload });
+      if (editingCategoryId) {
+        if (dbService.updateCategory) await dbService.updateCategory(editingCategoryId, categoryForm);
+        await syncQueue.enqueue({ entityId: editingCategoryId, entity: 'category', method: 'PUT', url: `/api/category/${editingCategoryId}`, data: categoryForm });
+        alert("Category updated offline successfully!");
+      } else {
+        const newId = crypto.randomUUID ? crypto.randomUUID() : `CAT-${Date.now()}`;
+        const payload = { ...categoryForm, _id: newId, uuid: newId };
+        if (dbService.saveCategory) await dbService.saveCategory(payload);
+        await syncQueue.enqueue({ entityId: newId, entity: 'category', method: 'POST', url: '/api/category', data: payload });
+        alert("Category added offline successfully!");
+      }
 
       setCategoryForm({ name: "", description: "" });
+      setEditingCategoryId(null);
       setShowCategoryForm(false);
       loadCategories();
-      alert("Category added offline successfully!");
     } catch (err) {
       alert(err.message || "Error adding category");
     }
   };
 
+  const handleEditCategory = (cat) => {
+    setCategoryForm({ name: cat.name || "", description: cat.description || "" });
+    setEditingCategoryId(cat._id);
+    setShowCategoryForm(true);
+  };
+
   const handleAddSubCategory = async (e) => {
     e.preventDefault();
     try {
-      const newId = crypto.randomUUID ? crypto.randomUUID() : `SUBCAT-${Date.now()}`;
-      const payload = { ...subCategoryForm, _id: newId, uuid: newId };
-      if (dbService.saveSubCategory) await dbService.saveSubCategory(payload);
-      await syncQueue.enqueue({ entityId: newId, entity: 'subCategory', method: 'POST', url: '/api/subcategory', data: payload });
+      if (editingSubCategoryId) {
+        if (dbService.updateSubCategory) await dbService.updateSubCategory(editingSubCategoryId, subCategoryForm);
+        await syncQueue.enqueue({ entityId: editingSubCategoryId, entity: 'subCategory', method: 'PUT', url: `/api/subcategory/${editingSubCategoryId}`, data: subCategoryForm });
+        alert("Sub-Category updated offline successfully!");
+      } else {
+        const newId = crypto.randomUUID ? crypto.randomUUID() : `SUBCAT-${Date.now()}`;
+        const payload = { ...subCategoryForm, _id: newId, uuid: newId };
+        if (dbService.saveSubCategory) await dbService.saveSubCategory(payload);
+        await syncQueue.enqueue({ entityId: newId, entity: 'subCategory', method: 'POST', url: '/api/subcategory', data: payload });
+        alert("Sub-Category added offline successfully!");
+      }
       setSubCategoryForm({ name: "", description: "" });
+      setEditingSubCategoryId(null);
       setShowSubCategoryForm(false);
       loadSubCategories();
-      alert("Sub-Category added offline successfully!");
     } catch (err) { alert(err.message || "Error adding sub-category"); }
+  };
+
+  const handleEditSubCategory = (sub) => {
+    setSubCategoryForm({ name: sub.name || "", description: sub.description || "" });
+    setEditingSubCategoryId(sub._id);
+    setShowSubCategoryForm(true);
   };
 
   const handleAddBrand = async (e) => {
     e.preventDefault();
     try {
-      const newId = crypto.randomUUID ? crypto.randomUUID() : `BRAND-${Date.now()}`;
-      const payload = { ...brandForm, _id: newId, uuid: newId };
-      if (dbService.saveBrand) await dbService.saveBrand(payload);
-      await syncQueue.enqueue({ entityId: newId, entity: 'brand', method: 'POST', url: '/api/brand', data: payload });
+      if (editingBrandId) {
+        if (dbService.updateBrand) await dbService.updateBrand(editingBrandId, brandForm);
+        await syncQueue.enqueue({ entityId: editingBrandId, entity: 'brand', method: 'PUT', url: `/api/brand/${editingBrandId}`, data: brandForm });
+        alert("Brand updated offline successfully!");
+      } else {
+        const newId = crypto.randomUUID ? crypto.randomUUID() : `BRAND-${Date.now()}`;
+        const payload = { ...brandForm, _id: newId, uuid: newId };
+        if (dbService.saveBrand) await dbService.saveBrand(payload);
+        await syncQueue.enqueue({ entityId: newId, entity: 'brand', method: 'POST', url: '/api/brand', data: payload });
+        alert("Brand added offline successfully!");
+      }
       setBrandForm({ name: "", description: "" });
+      setEditingBrandId(null);
       setShowBrandForm(false);
       loadBrands();
-      alert("Brand added offline successfully!");
     } catch (err) { alert(err.message || "Error adding brand"); }
+  };
+
+  const handleEditBrand = (brand) => {
+    setBrandForm({ name: brand.name || "", description: brand.description || "" });
+    setEditingBrandId(brand._id);
+    setShowBrandForm(true);
   };
 
   const handleDeleteParty = async (id) => {
@@ -293,7 +357,11 @@ export default function SettingsPage() {
       {activeTab === "parties" && (
         <div className="space-y-4">
           <button
-            onClick={() => setShowPartyForm(!showPartyForm)}
+            onClick={() => {
+              setPartyForm({ name: "", partyType: "both", mobileNumber: "", address: "", gstNumber: "", contactPerson: "" });
+              setEditingPartyId(null);
+              setShowPartyForm(!showPartyForm);
+            }}
             className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
           >
             <Plus size={20} />
@@ -302,7 +370,7 @@ export default function SettingsPage() {
 
           {showPartyForm && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-bold mb-4">Add New Party</h2>
+              <h2 className="text-xl font-bold mb-4">{editingPartyId ? "Edit Party" : "Add New Party"}</h2>
               <form onSubmit={handleAddParty} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <input
@@ -358,11 +426,14 @@ export default function SettingsPage() {
                     type="submit"
                     className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
-                    Add Party
+                    {editingPartyId ? "Update Party" : "Add Party"}
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowPartyForm(false)}
+                    onClick={() => {
+                      setShowPartyForm(false);
+                      setEditingPartyId(null);
+                    }}
                     className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
                   >
                     Cancel
@@ -395,7 +466,10 @@ export default function SettingsPage() {
                           {party.partyType}
                         </span>
                       </td>
-                      <td className="px-6 py-3 text-center">
+                      <td className="px-6 py-3 text-center flex justify-center gap-2">
+                        <button onClick={() => handleEditParty(party)} className="p-2 text-blue-600 hover:bg-blue-50 rounded">
+                          <Edit size={18} />
+                        </button>
                         <button
                           onClick={() => handleDeleteParty(party._id)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded"
@@ -422,7 +496,11 @@ export default function SettingsPage() {
       {activeTab === "categories" && (
         <div className="space-y-4">
           <button
-            onClick={() => setShowCategoryForm(!showCategoryForm)}
+            onClick={() => {
+              setCategoryForm({ name: "", description: "" });
+              setEditingCategoryId(null);
+              setShowCategoryForm(!showCategoryForm);
+            }}
             className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
           >
             <Plus size={20} />
@@ -431,7 +509,7 @@ export default function SettingsPage() {
 
           {showCategoryForm && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-bold mb-4">Add New Category</h2>
+              <h2 className="text-xl font-bold mb-4">{editingCategoryId ? "Edit Category" : "Add New Category"}</h2>
               <form onSubmit={handleAddCategory} className="space-y-4">
                 <input
                   type="text"
@@ -453,11 +531,14 @@ export default function SettingsPage() {
                     type="submit"
                     className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
-                    Add Category
+                    {editingCategoryId ? "Update Category" : "Add Category"}
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowCategoryForm(false)}
+                    onClick={() => {
+                      setShowCategoryForm(false);
+                      setEditingCategoryId(null);
+                    }}
                     className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
                   >
                     Cancel
@@ -482,7 +563,10 @@ export default function SettingsPage() {
                     <tr key={category._id} className="border-b hover:bg-gray-50">
                       <td className="px-6 py-3 font-medium">{category.name}</td>
                       <td className="px-6 py-3 text-sm text-gray-600">{category.description || "-"}</td>
-                      <td className="px-6 py-3 text-center">
+                      <td className="px-6 py-3 text-center flex justify-center gap-2">
+                        <button onClick={() => handleEditCategory(category)} className="p-2 text-blue-600 hover:bg-blue-50 rounded">
+                          <Edit size={18} />
+                        </button>
                         <button
                           onClick={() => handleDeleteCategory(category._id)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded"
@@ -509,7 +593,11 @@ export default function SettingsPage() {
       {activeTab === "subCategories" && (
         <div className="space-y-4">
           <button
-            onClick={() => setShowSubCategoryForm(!showSubCategoryForm)}
+            onClick={() => {
+              setSubCategoryForm({ name: "", description: "" });
+              setEditingSubCategoryId(null);
+              setShowSubCategoryForm(!showSubCategoryForm);
+            }}
             className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
           >
             <Plus size={20} /> Add Sub-Category
@@ -517,7 +605,7 @@ export default function SettingsPage() {
 
           {showSubCategoryForm && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-bold mb-4">Add New Sub-Category</h2>
+              <h2 className="text-xl font-bold mb-4">{editingSubCategoryId ? "Edit Sub-Category" : "Add New Sub-Category"}</h2>
               <form onSubmit={handleAddSubCategory} className="space-y-4">
                 <input
                   type="text"
@@ -535,8 +623,11 @@ export default function SettingsPage() {
                   rows="2"
                 />
                 <div className="flex gap-2">
-                  <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Sub-Category</button>
-                  <button type="button" onClick={() => setShowSubCategoryForm(false)} className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                  <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{editingSubCategoryId ? "Update Sub-Category" : "Add Sub-Category"}</button>
+                  <button type="button" onClick={() => {
+                    setShowSubCategoryForm(false);
+                    setEditingSubCategoryId(null);
+                  }} className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
                 </div>
               </form>
             </div>
@@ -557,7 +648,10 @@ export default function SettingsPage() {
                     <tr key={sub._id} className="border-b hover:bg-gray-50">
                       <td className="px-6 py-3 font-medium">{sub.name}</td>
                       <td className="px-6 py-3 text-sm text-gray-600">{sub.description || "-"}</td>
-                      <td className="px-6 py-3 text-center">
+                      <td className="px-6 py-3 text-center flex justify-center gap-2">
+                        <button onClick={() => handleEditSubCategory(sub)} className="p-2 text-blue-600 hover:bg-blue-50 rounded">
+                          <Edit size={18} />
+                        </button>
                         <button onClick={() => handleDeleteSubCategory(sub._id)} className="p-2 text-red-600 hover:bg-red-50 rounded">
                           <Trash2 size={18} />
                         </button>
@@ -577,7 +671,11 @@ export default function SettingsPage() {
       {activeTab === "brands" && (
         <div className="space-y-4">
           <button
-            onClick={() => setShowBrandForm(!showBrandForm)}
+            onClick={() => {
+              setBrandForm({ name: "", description: "" });
+              setEditingBrandId(null);
+              setShowBrandForm(!showBrandForm);
+            }}
             className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
           >
             <Plus size={20} /> Add Brand
@@ -585,7 +683,7 @@ export default function SettingsPage() {
 
           {showBrandForm && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-bold mb-4">Add New Brand / Company</h2>
+              <h2 className="text-xl font-bold mb-4">{editingBrandId ? "Edit Brand" : "Add New Brand / Company"}</h2>
               <form onSubmit={handleAddBrand} className="space-y-4">
                 <input
                   type="text"
@@ -603,8 +701,11 @@ export default function SettingsPage() {
                   rows="2"
                 />
                 <div className="flex gap-2">
-                  <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Brand</button>
-                  <button type="button" onClick={() => setShowBrandForm(false)} className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                  <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{editingBrandId ? "Update Brand" : "Add Brand"}</button>
+                  <button type="button" onClick={() => {
+                    setShowBrandForm(false);
+                    setEditingBrandId(null);
+                  }} className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
                 </div>
               </form>
             </div>
@@ -625,7 +726,10 @@ export default function SettingsPage() {
                     <tr key={brand._id} className="border-b hover:bg-gray-50">
                       <td className="px-6 py-3 font-medium">{brand.name}</td>
                       <td className="px-6 py-3 text-sm text-gray-600">{brand.description || "-"}</td>
-                      <td className="px-6 py-3 text-center">
+                      <td className="px-6 py-3 text-center flex justify-center gap-2">
+                        <button onClick={() => handleEditBrand(brand)} className="p-2 text-blue-600 hover:bg-blue-50 rounded">
+                          <Edit size={18} />
+                        </button>
                         <button onClick={() => handleDeleteBrand(brand._id)} className="p-2 text-red-600 hover:bg-red-50 rounded">
                           <Trash2 size={18} />
                         </button>

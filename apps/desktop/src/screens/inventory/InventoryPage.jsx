@@ -59,6 +59,7 @@ const InventoryPage = () => {
   const [units, setUnits] = useState(["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"]);
   const [categories, setCategories] = useState([]);
   const [subCategories, setSubCategories] = useState([]);
+  const [brands, setBrands] = useState([]);
   const [industry, setIndustry] = useState("general");
   const [isGstEnabled, setIsGstEnabled] = useState(true);
   const gstRates = [0, 5, 12, 18, 28];
@@ -144,13 +145,38 @@ const InventoryPage = () => {
 
       setInventory(list);
 
-      // Extract unique categories and subcategories
-      const cats = list.map(p => p.category).filter(Boolean);
-      const subCats = list.map(p => p.subCategory).filter(Boolean);
+      // Fetch masters
+      let [localCats, localSubCats, localBrands] = await Promise.all([
+        dbService.getCategories?.() || Promise.resolve([]),
+        dbService.getSubCategories?.() || Promise.resolve([]),
+        dbService.getBrands?.() || Promise.resolve([])
+      ]);
       
-      // Strictly use categories from existing products to prevent "Ghost" categories
-      setCategories([...new Set(cats)]);
-      setSubCategories([...new Set(subCats)]);
+      // Fallback to Cloud API if local DB is empty
+      if (!localCats.length) {
+        const res = await api.get('/api/category').catch(() => null);
+        if (res) localCats = res.data?.categories || res.data || [];
+      }
+      if (!localSubCats.length) {
+        const res = await api.get('/api/subcategory').catch(() => null);
+        if (res) localSubCats = res.data?.subCategories || res.data || [];
+      }
+      if (!localBrands.length) {
+        const res = await api.get('/api/brand').catch(() => null);
+        if (res) localBrands = res.data?.brands || res.data || [];
+      }
+
+      const masterCats = (Array.isArray(localCats) ? localCats : []).map(c => c.name);
+      const masterSubCats = (Array.isArray(localSubCats) ? localSubCats : []).map(c => c.name);
+      const masterBrands = (Array.isArray(localBrands) ? localBrands : []).map(c => c.name);
+
+      const productCats = list.map(p => p.category).filter(Boolean);
+      const productSubCats = list.map(p => p.subCategory).filter(Boolean);
+      const productBrands = list.map(p => p.brand).filter(Boolean);
+
+      setCategories([...new Set([...masterCats, ...productCats])]);
+      setSubCategories([...new Set([...masterSubCats, ...productSubCats])]);
+      setBrands([...new Set([...masterBrands, ...productBrands])]);
       
       // Clear the old stubborn cache that was causing deleted items to reappear
       localStorage.removeItem("categories");
@@ -613,64 +639,43 @@ const InventoryPage = () => {
             <div>
               <h3 className="text-lg font-semibold mb-3 text-gray-800">Basic Information</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input
-                  type="text"
-                  placeholder="Product Name *"
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
-                />
-                <textarea
-                  placeholder="Description"
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows="2"
-                />
-                <input
-                  type="text"
-                  placeholder="Brand / Company (e.g. Samsung)"
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.brand}
-                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                />
-                <input
-                  list="category-list-edit"
-                  placeholder="Type or Select Category *"
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  required
-                />
-                <datalist id="category-list-edit">
-                  {categories.map((cat, idx) => <option key={idx} value={cat} />)}
-                </datalist>
-                <input
-                  list="subcategory-list-edit"
-                  placeholder="Sub Category"
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.subCategory}
-                  onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
-                />
-                <datalist id="subcategory-list-edit">
-                  {subCategories.map((scat, idx) => <option key={idx} value={scat} />)}
-                </datalist>
-                <input
-                  type="text"
-                  placeholder="HSN Code *"
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.hsnCode}
-                  onChange={(e) => setFormData({ ...formData, hsnCode: e.target.value })}
-                  required
-                />
-                <input
-                  type="text"
-                  placeholder="Supplier"
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.supplier}
-                  onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
-                />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Product Name *</label>
+                  <input type="text" placeholder="Enter product name" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <textarea placeholder="Enter description" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} rows="1" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Brand / Company</label>
+                  <input list="brand-list-edit" placeholder="e.g. Samsung" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.brand} onChange={(e) => setFormData({ ...formData, brand: e.target.value })} />
+                  <datalist id="brand-list-edit">
+                    {brands.map((b, idx) => <option key={idx} value={b} />)}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+                  <input list="category-list-edit" placeholder="Type or Select Category" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} required />
+                  <datalist id="category-list-edit">
+                    {categories.map((cat, idx) => <option key={idx} value={cat} />)}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Sub Category</label>
+                  <input list="subcategory-list-edit" placeholder="Type or Select Sub Category" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.subCategory} onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })} />
+                  <datalist id="subcategory-list-edit">
+                    {subCategories.map((scat, idx) => <option key={idx} value={scat} />)}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">HSN Code *</label>
+                  <input type="text" placeholder="Enter HSN Code" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.hsnCode} onChange={(e) => setFormData({ ...formData, hsnCode: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
+                  <input type="text" placeholder="Enter Supplier" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.supplier} onChange={(e) => setFormData({ ...formData, supplier: e.target.value })} />
+                </div>
               </div>
             </div>
 
@@ -799,10 +804,22 @@ const InventoryPage = () => {
             <div className="border-t pt-6">
               <h3 className="text-lg font-semibold mb-3 text-gray-800">Units & Stock</h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <input type="text" placeholder="Unit (e.g. PCS, KG)" className="px-4 py-2 border border-gray-300 rounded-lg" value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} required />
-                <input type="number" placeholder="Current Stock" className="px-4 py-2 border border-gray-300 rounded-lg" value={formData.currentStock} onChange={(e) => setFormData({ ...formData, currentStock: parseFloat(e.target.value) })} step="0.01" />
-                <input type="number" placeholder="Minimum Stock" className="px-4 py-2 border border-gray-300 rounded-lg" value={formData.minimumStock} onChange={(e) => setFormData({ ...formData, minimumStock: parseFloat(e.target.value) })} />
-                <input type="number" placeholder="Maximum Stock" className="px-4 py-2 border border-gray-300 rounded-lg" value={formData.maximumStock} onChange={(e) => setFormData({ ...formData, maximumStock: parseFloat(e.target.value) })} />
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Unit *</label>
+                  <input type="text" placeholder="e.g. PCS, KG" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Current Stock</label>
+                  <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.currentStock} onChange={(e) => setFormData({ ...formData, currentStock: parseFloat(e.target.value) })} step="0.01" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Min Stock</label>
+                  <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.minimumStock} onChange={(e) => setFormData({ ...formData, minimumStock: parseFloat(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Max Stock</label>
+                  <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.maximumStock} onChange={(e) => setFormData({ ...formData, maximumStock: parseFloat(e.target.value) })} />
+                </div>
               </div>
             </div>
 

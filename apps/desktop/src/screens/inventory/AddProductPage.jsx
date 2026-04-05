@@ -54,6 +54,7 @@ const AddProductPage = () => {
   const [units, setUnits] = useState(["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"]);
   const [categories, setCategories] = useState([]);
   const [subCategories, setSubCategories] = useState([]);
+  const [brands, setBrands] = useState([]);
   const [industry, setIndustry] = useState("general");
   const [isGstEnabled, setIsGstEnabled] = useState(true);
 
@@ -64,27 +65,45 @@ const AddProductPage = () => {
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        const [localCats, localProducts, localUnits] = await Promise.all([
+        let [localCats, localSubCats, localBrands, localProducts, localUnits] = await Promise.all([
           dbService.getCategories?.() || Promise.resolve([]),
+          dbService.getSubCategories?.() || Promise.resolve([]),
+          dbService.getBrands?.() || Promise.resolve([]),
           dbService.getInventory?.() || Promise.resolve([]),
           dbService.getUnits?.() || Promise.resolve([])
         ]);
+        
+        // Fallback to Cloud API if local DB is empty
+        if (!localCats.length) {
+          const res = await api.get('/api/category').catch(() => null);
+          if (res) localCats = res.data?.categories || res.data || [];
+        }
+        if (!localSubCats.length) {
+          const res = await api.get('/api/subcategory').catch(() => null);
+          if (res) localSubCats = res.data?.subCategories || res.data || [];
+        }
+        if (!localBrands.length) {
+          const res = await api.get('/api/brand').catch(() => null);
+          if (res) localBrands = res.data?.brands || res.data || [];
+        }
+        if (!localProducts.length) {
+          const res = await api.get('/api/inventory').catch(() => null);
+          if (res) localProducts = res.data?.products || res.data || [];
+        }
 
         const masterCats = (Array.isArray(localCats) ? localCats : []).map(c => c.name);
+        const masterSubCats = (Array.isArray(localSubCats) ? localSubCats : []).map(c => c.name);
+        const masterBrands = (Array.isArray(localBrands) ? localBrands : []).map(c => c.name);
+
         const productCats = (Array.isArray(localProducts) ? localProducts : []).map(p => p.category).filter(Boolean);
         const productSubCats = (Array.isArray(localProducts) ? localProducts : []).map(p => p.subCategory).filter(Boolean);
+        const productBrands = (Array.isArray(localProducts) ? localProducts : []).map(p => p.brand).filter(Boolean);
 
-        // Local Storage Cache Retrieval
-        const savedCats = JSON.parse(localStorage.getItem("categories") || "[]");
-        const savedSubCats = JSON.parse(localStorage.getItem("subCategories") || "[]");
-
-        const allCats = [...masterCats, ...productCats, ...savedCats];
-        if (allCats.length > 0) {
-          setCategories(prev => [...new Set([...prev, ...allCats])]);
-        }
-        if (productSubCats.length > 0 || savedSubCats.length > 0) {
-          setSubCategories([...new Set([...productSubCats, ...savedSubCats])]);
-        }
+        setCategories([...new Set([...masterCats, ...productCats])]);
+        setSubCategories([...new Set([...masterSubCats, ...productSubCats])]);
+        setBrands([...new Set([...masterBrands, ...productBrands])]);
+        localStorage.removeItem("categories");
+        localStorage.removeItem("subCategories");
 
         if (!localUnits.length) {
           const unitRes = await api.get('/api/unit').catch(() => null);
@@ -268,7 +287,7 @@ const AddProductPage = () => {
     });
   };
 
-  const saveProductLogic = async () => {
+ha  const saveProductLogic = async () => {
     const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
     const finalBarcode = form.barcode || `BAR-${finalSku}`;
     const payload = { ...form, sku: finalSku, barcode: finalBarcode };
@@ -299,7 +318,6 @@ const AddProductPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      cacheCategories();
       await saveProductLogic();
       alert("Product added successfully!");
       navigate("/inventory"); // Using correct path based on common routing
@@ -312,7 +330,6 @@ const AddProductPage = () => {
   const handleSaveAndAddAnother = async (e) => {
     e.preventDefault();
     try {
-      cacheCategories();
       await saveProductLogic();
       alert("Product saved! You can now add another one.");
       resetForm();
@@ -388,6 +405,20 @@ const AddProductPage = () => {
             />
           </div>
           
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Brand / Company</label>
+            <input
+              list="brand-list"
+              className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
+              value={form.brand}
+              onChange={(e) => setForm({ ...form, brand: e.target.value })}
+              placeholder="Type or select a brand"
+            />
+            <datalist id="brand-list">
+              {brands.map((b, idx) => <option key={idx} value={b} />)}
+            </datalist>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700">Barcode (Auto or Scan)</label>
             <input
