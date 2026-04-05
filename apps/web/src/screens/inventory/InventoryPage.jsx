@@ -8,6 +8,7 @@ import Loader from "../../components/Loader";
 import api from "../../services/api";
 import { formatCurrency, syncQueue } from "@repo/shared";
 import { generateBarcode } from "../../utils/barcodeGenerator";
+import { getGstFlags, normalizeGstType } from "../../utils/gst";
 
 const InventoryPage = () => {
   const navigate = useNavigate();
@@ -85,18 +86,27 @@ const InventoryPage = () => {
     filterInventory();
   }, [inventory, searchTerm]);
 
-  const isComposition = gstType === 'composite' || gstType === 'composition';
-
-  const showPurchaseGST = isGstEnabled && (gstType === 'regular' || isComposition);
-  const showSalesGST = isGstEnabled && gstType === 'regular';
+  const { isComposition, isUnregistered, showPurchaseGST, showSalesGST, showHSN } = getGstFlags(gstType, isGstEnabled);
 
   useEffect(() => {
-    setFormData(prev => ({
-      ...prev,
-      ...(!showPurchaseGST ? { gstRate: 0, costPriceWithTax: "" } : {}),
-      ...(!showSalesGST ? { sellingPriceWithTax: "", wholesalePriceWithTax: "", dealerPriceWithTax: "" } : {})
-    }));
-  }, [showPurchaseGST, showSalesGST]);
+    console.log("GST DEBUG:", {
+      gstType,
+      isGstEnabled,
+      showPurchaseGST,
+      showSalesGST
+    });
+  }, [gstType, isGstEnabled, showPurchaseGST, showSalesGST]);
+
+  useEffect(() => {
+    if (!showPurchaseGST) {
+      setFormData(prev => ({ ...prev, gstRate: 0, costPriceWithTax: "" }));
+    }
+    if (!showSalesGST) {
+      setFormData(prev => ({
+        ...prev, sellingPriceWithTax: "", wholesalePriceWithTax: "", dealerPriceWithTax: ""
+      }));
+    }
+  }, [gstType, isGstEnabled, showPurchaseGST, showSalesGST]);
 
   const handleEdit = (item) => {
     const cp = parseFloat(item.costPrice) || 0;
@@ -241,15 +251,15 @@ const InventoryPage = () => {
 
       // Fetch company industry type
       let compData = null;
-      const settingsRes = await api.get('/api/settings').catch(() => null);
-      if (settingsRes) {
-        compData = settingsRes.data?.data || settingsRes.data?.settings || settingsRes.data;
+      const companyRes = await api.get('/api/company/current').catch(() => null);
+      if (companyRes) {
+        compData = companyRes.data?.company || companyRes.data || companyRes;
       }
       if (compData) {
         setIndustry((compData.industryType || compData.businessType || "general").toLowerCase());
         const fetchedGstType = (compData.gstType || "").toLowerCase().trim();
-        const isGstOn = compData.enableGst !== false;
-        setGstType(fetchedGstType || "regular");
+        const isGstOn = compData.enableGst === true || String(compData.enableGst) === "true";
+        setGstType(normalizeGstType(fetchedGstType));
         setIsGstEnabled(isGstOn);
       }
     } catch (err) {
@@ -369,8 +379,8 @@ const InventoryPage = () => {
   const handleAddProduct = async (e) => {
     e.preventDefault();
     try {
-      if (!formData.name || !formData.category || (showPurchaseGST && !formData.hsnCode) || !formData.costPrice || !formData.sellingPrice) {
-        alert("Please fill all required fields (Name, Category, Cost, Selling Price, and HSN if GST is enabled)");
+      if (!formData.name || !formData.category || (showHSN && !formData.hsnCode) || !formData.costPrice || !formData.sellingPrice) {
+        alert("Please fill all required fields (Name, Category, Cost, Selling Price" + (showHSN ? ", and HSN Code" : "") + ")");
         return;
       }
 
@@ -792,7 +802,7 @@ const InventoryPage = () => {
                 </datalist>
               </div>
 
-              {showPurchaseGST && (
+              {showHSN && (
               <div>
                 <label className="block text-sm font-medium text-gray-700">HSN Code *</label>
                 <input

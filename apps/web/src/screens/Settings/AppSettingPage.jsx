@@ -34,7 +34,10 @@ const AppSettingPage = () => {
     setFreeBillCount(selectedCompany?.freeBillCount || 0);
     setMaxFreeBills(selectedCompany?.maxFreeBills || 50);
     setSubscriptionExpiresAt(selectedCompany?.subscriptionExpiresAt ? new Date(selectedCompany.subscriptionExpiresAt) : null);
-    setEnableGst(selectedCompany?.enableGst !== false); // Default to true
+    setEnableGst(
+      selectedCompany?.enableGst === true || 
+      String(selectedCompany?.enableGst).toLowerCase() === "true"
+    );
   }, [selectedCompany]);
 
   const handleLogoUpload = (e) => {
