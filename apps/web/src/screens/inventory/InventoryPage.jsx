@@ -9,6 +9,7 @@ import api from "../../services/api";
 import { formatCurrency, syncQueue } from "@repo/shared";
 import { generateBarcode } from "../../utils/barcodeGenerator";
 import { getGstFlags, normalizeGstType } from "../../utils/gst";
+import { useCompany } from "../../contexts/CompanyContext";
 
 const InventoryPage = () => {
   const navigate = useNavigate();
@@ -69,10 +70,12 @@ const InventoryPage = () => {
   const [categories, setCategories] = useState([]);
   const [subCategories, setSubCategories] = useState([]);
   const [brands, setBrands] = useState([]);
-  const [industry, setIndustry] = useState("general");
-  const [gstType, setGstType] = useState("regular");
-  const [isGstEnabled, setIsGstEnabled] = useState(true);
   const gstRates = [0, 5, 12, 18, 28];
+
+  const { selectedCompany } = useCompany();
+  const industry = String(selectedCompany?.industryType || selectedCompany?.businessType || "general").toLowerCase();
+  const gstType = selectedCompany?.gstType || "regular";
+  const isGstEnabled = selectedCompany ? (selectedCompany.enableGst === true || String(selectedCompany.enableGst).toLowerCase() === "true") : true;
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -249,19 +252,6 @@ const InventoryPage = () => {
         localStorage.removeItem("subCategories");
       }
 
-      // Fetch company industry type
-      let compData = null;
-      const companyRes = await api.get('/api/company/current').catch(() => null);
-      if (companyRes) {
-        compData = companyRes.data?.company || companyRes.data || companyRes;
-      }
-      if (compData) {
-        setIndustry((compData.industryType || compData.businessType || "general").toLowerCase());
-        const fetchedGstType = (compData.gstType || "").toLowerCase().trim();
-        const isGstOn = compData.enableGst === true || String(compData.enableGst) === "true";
-        setGstType(normalizeGstType(fetchedGstType));
-        setIsGstEnabled(isGstOn);
-      }
     } catch (err) {
       console.error("Failed to fetch inventory:", err);
       if (!window.electron) setInventory([]);

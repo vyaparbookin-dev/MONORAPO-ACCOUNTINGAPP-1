@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { syncQueue } from "@repo/shared";
 import { dbService } from "../../services/dbService";
 import { Camera as CameraIcon, UploadCloud, X } from "lucide-react";
+import { getGstFlags, normalizeGstType } from "../../utils/gst";
+import { useCompany } from "../../contexts/CompanyContext";
 
 const AddProductPage = () => {
   const navigate = useNavigate();
@@ -55,9 +57,11 @@ const AddProductPage = () => {
   const [categories, setCategories] = useState([]);
   const [subCategories, setSubCategories] = useState([]);
   const [brands, setBrands] = useState([]);
-  const [industry, setIndustry] = useState("general");
-  const [gstType, setGstType] = useState("regular");
-  const [isGstEnabled, setIsGstEnabled] = useState(true);
+
+  const { selectedCompany } = useCompany();
+  const industry = String(selectedCompany?.industryType || selectedCompany?.businessType || "general").toLowerCase();
+  const gstType = selectedCompany?.gstType || "regular";
+  const isGstEnabled = selectedCompany ? (selectedCompany.enableGst === true || String(selectedCompany.enableGst).toLowerCase() === "true") : true;
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -112,41 +116,23 @@ const AddProductPage = () => {
         }
         if (localUnits.length > 0) setUnits(prev => [...new Set([...prev, ...localUnits.map(u => u.name)])]);
 
-        // Fetch company industry type for conditional logic
-        let compData = null;
-        const settingsRes = await api.get('/api/settings').catch(() => null);
-        if (settingsRes) {
-          compData = settingsRes.data?.data || settingsRes.data?.settings || settingsRes.data;
-        }
-        if (!compData || !compData.gstType) {
-          const localSettings = await dbService.getSettings?.();
-          if (localSettings) compData = localSettings.data || localSettings.settings || localSettings;
-        }
-
-        if (compData) {
-          setIndustry((compData.industryType || compData.businessType || "general").toLowerCase());
-          const fetchedGstType = (compData.gstType || "").toLowerCase().trim();
-          const isGstOn = compData.enableGst !== false;
-          setGstType(fetchedGstType || "regular");
-          setIsGstEnabled(isGstOn);
-        }
       } catch (err) { console.warn("Failed to load dynamic dropdowns", err); }
     };
     fetchDropdowns();
   }, []);
 
-  const isComposition = gstType === 'composite' || gstType === 'composition';
-
-  const showPurchaseGST = isGstEnabled && (gstType === 'regular' || isComposition);
-  const showSalesGST = isGstEnabled && gstType === 'regular';
+  const { isComposition, isUnregistered, showPurchaseGST, showSalesGST, showHSN } = getGstFlags(gstType, isGstEnabled);
 
   useEffect(() => {
-    setForm(prev => ({
-      ...prev,
-      ...(!showPurchaseGST ? { gstRate: 0, costPriceWithTax: "" } : {}),
-      ...(!showSalesGST ? { sellingPriceWithTax: "", wholesalePriceWithTax: "", dealerPriceWithTax: "" } : {})
-    }));
-  }, [showPurchaseGST, showSalesGST]);
+    if (!showPurchaseGST) {
+      setForm(prev => ({ ...prev, gstRate: 0, costPriceWithTax: "" }));
+    }
+    if (!showSalesGST) {
+      setForm(prev => ({
+        ...prev, sellingPriceWithTax: "", wholesalePriceWithTax: "", dealerPriceWithTax: ""
+      }));
+    }
+  }, [gstType, isGstEnabled, showPurchaseGST, showSalesGST]);
 
   const handlePriceCalculation = (field, value) => {
     let updatedForm = { ...form, [field]: value };
@@ -309,8 +295,8 @@ const AddProductPage = () => {
   };
 
   const saveProductLogic = async () => {
-    if (!form.name || !form.category || (showPurchaseGST && !form.hsnCode) || !form.costPrice || !form.sellingPrice) {
-      throw new Error("Please fill all required fields (Name, Category, Cost, Selling Price, and HSN if GST is enabled)");
+    if (!form.name || !form.category || (showHSN && !form.hsnCode) || !form.costPrice || !form.sellingPrice) {
+      throw new Error("Please fill all required fields (Name, Category, Cost, Selling Price" + (showHSN ? ", and HSN Code" : "") + ")");
     }
 
     const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
@@ -483,7 +469,7 @@ const AddProductPage = () => {
             </datalist>
           </div>
 
-          {showPurchaseGST && (
+          {showHSN && (
             <div>
               <label className="block text-sm font-medium text-gray-700">HSN Code *</label>
               <input

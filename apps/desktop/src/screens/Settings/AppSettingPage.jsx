@@ -40,7 +40,10 @@ const AppSettingPage = () => {
     setPlan(selectedCompany?.plan || 'free');
     setFreeBillCount(selectedCompany?.freeBillCount || 0);
     setMaxFreeBills(selectedCompany?.maxFreeBills || 50);
-    setEnableGst(selectedCompany?.enableGst !== false); // Default to true unless explicitly false
+    setEnableGst(
+      selectedCompany?.enableGst === true || 
+      String(selectedCompany?.enableGst).toLowerCase() === "true"
+    );
     setSubscriptionExpiresAt(selectedCompany?.subscriptionExpiresAt ? new Date(selectedCompany.subscriptionExpiresAt) : null);
 
     // WhatsApp Status Setup (Listens to Electron Main Process)

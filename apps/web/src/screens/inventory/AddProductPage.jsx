@@ -3,6 +3,7 @@ import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
 import { Camera as CameraIcon, UploadCloud, X } from "lucide-react";
 import { getGstFlags, normalizeGstType } from "../../utils/gst";
+import { useCompany } from "../../contexts/CompanyContext";
 
 const AddProductPage = () => {
   const navigate = useNavigate();
@@ -54,9 +55,11 @@ const AddProductPage = () => {
   const [categories, setCategories] = useState([]);
   const [subCategories, setSubCategories] = useState([]);
   const [brands, setBrands] = useState([]);
-  const [industry, setIndustry] = useState("general");
-  const [gstType, setGstType] = useState("regular");
-  const [isGstEnabled, setIsGstEnabled] = useState(true);
+
+  const { selectedCompany } = useCompany();
+  const industry = String(selectedCompany?.industryType || selectedCompany?.businessType || "general").toLowerCase();
+  const gstType = selectedCompany?.gstType || "regular";
+  const isGstEnabled = selectedCompany ? (selectedCompany.enableGst === true || String(selectedCompany.enableGst).toLowerCase() === "true") : true;
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -65,13 +68,12 @@ const AddProductPage = () => {
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        const [invRes, catRes, subCatRes, brandRes, unitRes, companyRes] = await Promise.all([
+        const [invRes, catRes, subCatRes, brandRes, unitRes] = await Promise.all([
           api.get('/api/inventory').catch(() => ({ data: { products: [] } })),
           api.get('/api/category').catch(() => ({ data: [] })),
           api.get('/api/subcategory').catch(() => ({ data: [] })),
           api.get('/api/brand').catch(() => ({ data: [] })),
-          api.get('/api/unit').catch(() => null),
-          api.get('/api/company/current').catch(() => null)
+          api.get('/api/unit').catch(() => null)
         ]);
 
         const inventoryList = invRes.data?.products || invRes.data || [];
@@ -105,17 +107,6 @@ const AddProductPage = () => {
           if (fetchedUnits.length > 0) setUnits(prev => [...new Set([...prev, ...fetchedUnits.map(u => u.name)])]);
         }
 
-        let compData = null;
-        if (companyRes) {
-          compData = companyRes.data?.company || companyRes.data || companyRes;
-        }
-        if (compData) {
-          setIndustry((compData.industryType || compData.businessType || "general").toLowerCase());
-          const fetchedGstType = (compData.gstType || "").toLowerCase().trim();
-          const isGstOn = compData.enableGst === true || String(compData.enableGst) === "true";
-          setGstType(normalizeGstType(fetchedGstType));
-          setIsGstEnabled(isGstOn);
-        }
       } catch (err) { console.warn("Failed to load dynamic dropdowns", err); }
     };
     fetchDropdowns();
