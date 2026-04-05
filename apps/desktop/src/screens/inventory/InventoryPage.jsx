@@ -61,7 +61,8 @@ const InventoryPage = () => {
   const [subCategories, setSubCategories] = useState([]);
   const [brands, setBrands] = useState([]);
   const [industry, setIndustry] = useState("general");
-  const [isGstEnabled, setIsGstEnabled] = useState(true);
+  const [isPurchaseGstEnabled, setIsPurchaseGstEnabled] = useState(true);
+  const [isSalesGstEnabled, setIsSalesGstEnabled] = useState(true);
   const gstRates = [0, 5, 12, 18, 28];
 
   useEffect(() => {
@@ -185,12 +186,35 @@ const InventoryPage = () => {
       // Fetch company industry type
       const settingsRes = await api.get('/api/settings').catch(() => null);
       if (settingsRes?.data?.data) {
-        setIndustry((settingsRes.data.data.industryType || settingsRes.data.data.businessType || "general").toLowerCase());
-        setIsGstEnabled(settingsRes.data.data.enableGst !== false);
+        const compData = settingsRes.data.data;
+        setIndustry((compData.industryType || compData.businessType || "general").toLowerCase());
+        const gstType = (compData.gstType || "").toLowerCase();
+        const isGstOn = compData.enableGst !== false;
+        if (gstType === 'unregistered') {
+          setIsPurchaseGstEnabled(false);
+          setIsSalesGstEnabled(false);
+        } else if (gstType === 'composite' || gstType === 'composition') {
+          setIsPurchaseGstEnabled(isGstOn);
+          setIsSalesGstEnabled(false);
+        } else {
+          setIsPurchaseGstEnabled(isGstOn);
+          setIsSalesGstEnabled(isGstOn);
+        }
       } else {
         const localSettings = await dbService.getSettings?.();
         if (localSettings) {
-           setIsGstEnabled(localSettings.enableGst !== false);
+           const gstType = (localSettings.gstType || "").toLowerCase();
+           const isGstOn = localSettings.enableGst !== false;
+           if (gstType === 'unregistered') {
+             setIsPurchaseGstEnabled(false);
+             setIsSalesGstEnabled(false);
+           } else if (gstType === 'composite' || gstType === 'composition') {
+             setIsPurchaseGstEnabled(isGstOn);
+             setIsSalesGstEnabled(false);
+           } else {
+             setIsPurchaseGstEnabled(isGstOn);
+             setIsSalesGstEnabled(isGstOn);
+           }
         }
       }
     } catch (err) {
@@ -310,7 +334,7 @@ const InventoryPage = () => {
   const handleAddProduct = async (e) => {
     e.preventDefault();
     try {
-      if (!formData.name || !formData.category || !formData.hsnCode || !formData.costPrice || !formData.sellingPrice) {
+      if (!formData.name || !formData.category || ((isPurchaseGstEnabled || isSalesGstEnabled) && !formData.hsnCode) || !formData.costPrice || !formData.sellingPrice) {
         alert("Please fill all required fields");
         return;
       }
@@ -323,6 +347,7 @@ const InventoryPage = () => {
         ...formData,
         sku: finalSku,
         barcode: finalBarcode,
+        hsnCode: formData.hsnCode || "0000",
         costPrice: parseFloat(formData.costPrice) || 0,
         sellingPrice: parseFloat(formData.sellingPrice) || 0,
         wholesalePrice: parseFloat(formData.wholesalePrice) || 0,
@@ -492,9 +517,9 @@ const InventoryPage = () => {
       },
     },
     {
-      header: isGstEnabled ? "Retail Price (Inc. GST)" : "Retail Price",
+      header: isSalesGstEnabled ? "Retail Price (Inc. GST)" : "Retail Price",
       cell: (row) => {
-        const gst = isGstEnabled ? (parseFloat(row.gstRate) || 0) : 0;
+        const gst = isSalesGstEnabled ? (parseFloat(row.gstRate) || 0) : 0;
         const spWithGst = (parseFloat(row.sellingPrice) || parseFloat(row.price) || 0) * (1 + gst / 100);
         return (
           <div className="text-xs">
@@ -503,7 +528,7 @@ const InventoryPage = () => {
         );
       },
     },
-    ...(isGstEnabled ? [{
+    ...((isPurchaseGstEnabled || isSalesGstEnabled) ? [{
       header: "GST",
       cell: (row) => (
         <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">{row.gstRate}%</span>
@@ -668,10 +693,12 @@ const InventoryPage = () => {
                     {subCategories.map((scat, idx) => <option key={idx} value={scat} />)}
                   </datalist>
                 </div>
+                {(isPurchaseGstEnabled || isSalesGstEnabled) && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">HSN Code *</label>
                   <input type="text" placeholder="Enter HSN Code" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.hsnCode} onChange={(e) => setFormData({ ...formData, hsnCode: e.target.value })} required />
                 </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
                   <input type="text" placeholder="Enter Supplier" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.supplier} onChange={(e) => setFormData({ ...formData, supplier: e.target.value })} />
@@ -684,7 +711,7 @@ const InventoryPage = () => {
               <h3 className="text-lg font-semibold mb-3 text-gray-800">Pricing & Margins</h3>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
-                {isGstEnabled && (
+                {(isPurchaseGstEnabled || isSalesGstEnabled) && (
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">GST Rate (%)</label>
                   <select
@@ -710,7 +737,7 @@ const InventoryPage = () => {
                     required
                   />
                 </div>
-                {isGstEnabled && (
+                {isPurchaseGstEnabled && (
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cost Price (With GST)</label>
                   <input
@@ -740,7 +767,7 @@ const InventoryPage = () => {
                     required
                   />
                 </div>
-                {isGstEnabled && (
+                {isSalesGstEnabled && (
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Retail Price (With GST) *</label>
                   <input
@@ -749,7 +776,7 @@ const InventoryPage = () => {
                     value={formData.sellingPriceWithTax}
                     onChange={(e) => handlePriceCalculation('sellingPriceWithTax', e.target.value)}
                     step="0.01"
-                    required={isGstEnabled}
+                    required={isSalesGstEnabled}
                   />
                 </div>
                 )}
@@ -774,7 +801,7 @@ const InventoryPage = () => {
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Wholesale Price (W/O GST)</label>
                   <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500" value={formData.wholesalePrice} onChange={(e) => handlePriceCalculation('wholesalePrice', e.target.value)} />
                 </div>
-                {isGstEnabled && (
+                {isSalesGstEnabled && (
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Wholesale Price (With GST)</label>
                   <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500" value={formData.wholesalePriceWithTax} onChange={(e) => handlePriceCalculation('wholesalePriceWithTax', e.target.value)} />
@@ -791,7 +818,7 @@ const InventoryPage = () => {
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Dealer Price (W/O GST)</label>
                   <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500" value={formData.dealerPrice} onChange={(e) => handlePriceCalculation('dealerPrice', e.target.value)} />
                 </div>
-                {isGstEnabled && (
+                {isSalesGstEnabled && (
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Dealer Price (With GST)</label>
                   <input type="number" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500" value={formData.dealerPriceWithTax} onChange={(e) => handlePriceCalculation('dealerPriceWithTax', e.target.value)} />
