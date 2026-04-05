@@ -33,8 +33,14 @@ export const getCompany = async (req, res) => {
 export const updateCompany = async (req, res) => {
   try {
     // Explicitly define which fields can be updated for security and clarity.
-    const { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications } = req.body;
+    const { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, enableGst } = req.body;
+    
+    let finalEnableGst = enableGst;
+    if (gstType === 'unregistered') finalEnableGst = false;
+
     const updateData = { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications };
+    if (finalEnableGst !== undefined) updateData.enableGst = finalEnableGst;
+
     const company = await Company.findOneAndUpdate(
       { _id: req.params.id, user: req.user.id }, // Security ke liye user ID check
       { $set: updateData }, // Frontend se bheji gayi naye details (website, bank, etc.)

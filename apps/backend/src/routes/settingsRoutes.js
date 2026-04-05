@@ -10,7 +10,13 @@ router.get("/", protect, async (req, res) => {
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
     const company = await Company.findById(req.companyId);
     if (!company) return res.status(404).json({ success: false, message: "Company not found" });
-    res.json({ success: true, data: company });
+    
+    const data = company.toJSON();
+    // If company is unregistered, force GST off
+    if (data.gstType === 'unregistered') {
+      data.enableGst = false;
+    }
+    res.json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -20,11 +26,18 @@ router.get("/", protect, async (req, res) => {
 router.post("/update", protect, async (req, res) => {
   try {
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
-    const { upiId, name, gstNumber, enableGst } = req.body;
+    const { upiId, name, gstNumber, enableGst, gstType } = req.body;
     
+    const updateFields = { upiId, name, gstNumber };
+    if (enableGst !== undefined) updateFields.enableGst = enableGst;
+    if (gstType !== undefined) {
+      updateFields.gstType = gstType;
+      if (gstType === 'unregistered') updateFields.enableGst = false;
+    }
+
     const company = await Company.findByIdAndUpdate(
       req.companyId,
-      { $set: { upiId, name, gstNumber, enableGst } }, // Update these fields in MongoDB
+      { $set: updateFields },
       { new: true }
     );
     
