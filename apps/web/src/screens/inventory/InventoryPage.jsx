@@ -68,6 +68,7 @@ const InventoryPage = () => {
   const [subCategories, setSubCategories] = useState([]);
   const [brands, setBrands] = useState([]);
   const [industry, setIndustry] = useState("general");
+  const [isGstEnabled, setIsGstEnabled] = useState(true);
   const gstRates = [0, 5, 12, 18, 28];
 
   const videoRef = useRef(null);
@@ -227,6 +228,7 @@ const InventoryPage = () => {
       const settingsRes = await api.get('/api/settings').catch(() => null);
       if (settingsRes?.data?.data) {
         setIndustry((settingsRes.data.data.industryType || settingsRes.data.data.businessType || "general").toLowerCase());
+        setIsGstEnabled(settingsRes.data.data.enableGst !== false);
       }
     } catch (err) {
       console.error("Failed to fetch inventory:", err);
@@ -514,9 +516,9 @@ const InventoryPage = () => {
       },
     },
     {
-      header: "Retail Price (Inc. GST)",
+      header: isGstEnabled ? "Retail Price (Inc. GST)" : "Retail Price",
       cell: (row) => {
-        const gst = parseFloat(row.gstRate) || 0;
+        const gst = isGstEnabled ? (parseFloat(row.gstRate) || 0) : 0;
         const spWithGst = (parseFloat(row.sellingPrice) || 0) * (1 + gst / 100);
         return (
           <div className="text-xs">
@@ -525,12 +527,12 @@ const InventoryPage = () => {
         );
       },
     },
-    {
+    ...(isGstEnabled ? [{
       header: "GST",
       cell: (row) => (
         <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">{row.gstRate}%</span>
       ),
-    },
+    }] : []),
     {
       header: "Actions",
       headerClassName: "text-center",

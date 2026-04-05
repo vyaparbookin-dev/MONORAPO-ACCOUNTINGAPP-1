@@ -20,11 +20,11 @@ router.get("/", protect, async (req, res) => {
 router.post("/update", protect, async (req, res) => {
   try {
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
-    const { upiId, name, gstNumber } = req.body;
+    const { upiId, name, gstNumber, enableGst } = req.body;
     
     const company = await Company.findByIdAndUpdate(
       req.companyId,
-      { $set: { upiId, name, gstNumber } }, // Update these fields in MongoDB
+      { $set: { upiId, name, gstNumber, enableGst } }, // Update these fields in MongoDB
       { new: true }
     );
     

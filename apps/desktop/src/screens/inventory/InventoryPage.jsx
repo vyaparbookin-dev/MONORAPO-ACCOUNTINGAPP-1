@@ -492,9 +492,9 @@ const InventoryPage = () => {
       },
     },
     {
-      header: "Retail Price (Inc. GST)",
+      header: isGstEnabled ? "Retail Price (Inc. GST)" : "Retail Price",
       cell: (row) => {
-        const gst = parseFloat(row.gstRate) || 0;
+        const gst = isGstEnabled ? (parseFloat(row.gstRate) || 0) : 0;
         const spWithGst = (parseFloat(row.sellingPrice) || parseFloat(row.price) || 0) * (1 + gst / 100);
         return (
           <div className="text-xs">
@@ -503,12 +503,12 @@ const InventoryPage = () => {
         );
       },
     },
-    {
+    ...(isGstEnabled ? [{
       header: "GST",
       cell: (row) => (
         <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">{row.gstRate}%</span>
       ),
-    },
+    }] : []),
     {
       header: "Actions",
       headerClassName: "text-center",
