@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef } from "react";
 import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
 import { Camera as CameraIcon, UploadCloud, X } from "lucide-react";
+import { getGstFlags, normalizeGstType } from "../../utils/gst";
 
 const AddProductPage = () => {
   const navigate = useNavigate();
   const [form, setForm] = useState({
     name: "",
     sku: "",
-    barcode: `ITM${Date.now().toString().slice(-6)}`,
+    barcode: "",
     description: "",
     category: "",
     subCategory: "",
@@ -64,13 +65,13 @@ const AddProductPage = () => {
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        const [invRes, catRes, subCatRes, brandRes, unitRes, settingsRes] = await Promise.all([
+        const [invRes, catRes, subCatRes, brandRes, unitRes, companyRes] = await Promise.all([
           api.get('/api/inventory').catch(() => ({ data: { products: [] } })),
           api.get('/api/category').catch(() => ({ data: [] })),
           api.get('/api/subcategory').catch(() => ({ data: [] })),
           api.get('/api/brand').catch(() => ({ data: [] })),
           api.get('/api/unit').catch(() => null),
-          api.get('/api/settings').catch(() => null)
+          api.get('/api/company/current').catch(() => null)
         ]);
 
         const inventoryList = invRes.data?.products || invRes.data || [];
@@ -105,14 +106,14 @@ const AddProductPage = () => {
         }
 
         let compData = null;
-        if (settingsRes) {
-          compData = settingsRes.data?.data || settingsRes.data?.settings || settingsRes.data;
+        if (companyRes) {
+          compData = companyRes.data?.company || companyRes.data || companyRes;
         }
         if (compData) {
           setIndustry((compData.industryType || compData.businessType || "general").toLowerCase());
           const fetchedGstType = (compData.gstType || "").toLowerCase().trim();
-          const isGstOn = compData.enableGst !== false;
-          setGstType(fetchedGstType || "regular");
+          const isGstOn = compData.enableGst === true || String(compData.enableGst) === "true";
+          setGstType(normalizeGstType(fetchedGstType));
           setIsGstEnabled(isGstOn);
         }
       } catch (err) { console.warn("Failed to load dynamic dropdowns", err); }
@@ -120,18 +121,27 @@ const AddProductPage = () => {
     fetchDropdowns();
   }, []);
 
-  const isComposition = gstType === 'composite' || gstType === 'composition';
-
-  const showPurchaseGST = isGstEnabled && (gstType === 'regular' || isComposition);
-  const showSalesGST = isGstEnabled && gstType === 'regular';
+  const { isComposition, isUnregistered, showPurchaseGST, showSalesGST, showHSN } = getGstFlags(gstType, isGstEnabled);
 
   useEffect(() => {
-    setForm(prev => ({
-      ...prev,
-      ...(!showPurchaseGST ? { gstRate: 0, costPriceWithTax: "" } : {}),
-      ...(!showSalesGST ? { sellingPriceWithTax: "", wholesalePriceWithTax: "", dealerPriceWithTax: "" } : {})
-    }));
-  }, [showPurchaseGST, showSalesGST]);
+    console.log("GST DEBUG:", {
+      gstType,
+      isGstEnabled,
+      showPurchaseGST,
+      showSalesGST
+    });
+  }, [gstType, isGstEnabled, showPurchaseGST, showSalesGST]);
+
+  useEffect(() => {
+    if (!showPurchaseGST) {
+      setForm(prev => ({ ...prev, gstRate: 0, costPriceWithTax: "" }));
+    }
+    if (!showSalesGST) {
+      setForm(prev => ({
+        ...prev, sellingPriceWithTax: "", wholesalePriceWithTax: "", dealerPriceWithTax: ""
+      }));
+    }
+  }, [gstType, isGstEnabled, showPurchaseGST, showSalesGST]);
 
   const handlePriceCalculation = (field, value) => {
     let updatedForm = { ...form, [field]: value };
@@ -286,7 +296,7 @@ const AddProductPage = () => {
     e.preventDefault();
     try {
       if (!form.name || !form.category || (showPurchaseGST && !form.hsnCode) || !form.costPrice || !form.sellingPrice) {
-        return alert("Please fill all required fields (Name, Category, Cost, Selling Price, and HSN if GST is enabled)");
+        return alert("Please fill all required fields (Name, Category, Cost, Selling Price" + (showHSN ? ", and HSN Code" : "") + ")");
       }
       
       const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
@@ -318,7 +328,7 @@ const AddProductPage = () => {
     e.preventDefault();
     try {
       if (!form.name || !form.category || (showPurchaseGST && !form.hsnCode) || !form.costPrice || !form.sellingPrice) {
-        return alert("Please fill all required fields (Name, Category, Cost, Selling Price, and HSN if GST is enabled)");
+        return alert("Please fill all required fields (Name, Category, Cost, Selling Price" + (showHSN ? ", and HSN Code" : "") + ")");
       }
       
       const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
@@ -464,7 +474,7 @@ const AddProductPage = () => {
             </datalist>
           </div>
 
-          {showPurchaseGST && (
+          {showHSN && (
           <div>
             <label className="block text-sm font-medium text-gray-700">HSN Code</label>
             <input
