@@ -10,6 +10,8 @@ import { formatCurrency, syncQueue } from "@repo/shared";
 import { generateBarcode } from "../../utils/barcodeGenerator";
 import { auditService } from "../../services/auditService";
 import { dbService } from "../../services/dbService";
+import { getGstFlags, normalizeGstType } from "../../utils/gst";
+import { useCompany } from "../../contexts/CompanyContext";
 
 const InventoryPage = () => {
   const navigate = useNavigate();
@@ -61,10 +63,12 @@ const InventoryPage = () => {
   const [categories, setCategories] = useState([]);
   const [subCategories, setSubCategories] = useState([]);
   const [brands, setBrands] = useState([]);
-  const [industry, setIndustry] = useState("general");
-  const [gstType, setGstType] = useState("regular");
-  const [isGstEnabled, setIsGstEnabled] = useState(true);
   const gstRates = [0, 5, 12, 18, 28];
+
+  const { selectedCompany } = useCompany();
+  const industry = String(selectedCompany?.industryType || selectedCompany?.businessType || "general").toLowerCase();
+  const gstType = selectedCompany?.gstType || "regular";
+  const isGstEnabled = selectedCompany ? (selectedCompany.enableGst === true || String(selectedCompany.enableGst).toLowerCase() === "true") : true;
 
   useEffect(() => {
     fetchInventory();
@@ -74,18 +78,18 @@ const InventoryPage = () => {
     filterInventory();
   }, [inventory, searchTerm]);
 
-  const isComposition = gstType === 'composite' || gstType === 'composition';
-
-  const showPurchaseGST = isGstEnabled && (gstType === 'regular' || isComposition);
-  const showSalesGST = isGstEnabled && gstType === 'regular';
+  const { isComposition, isUnregistered, showPurchaseGST, showSalesGST, showHSN } = getGstFlags(gstType, isGstEnabled);
 
   useEffect(() => {
-    setFormData(prev => ({
-      ...prev,
-      ...(!showPurchaseGST ? { gstRate: 0, costPriceWithTax: "" } : {}),
-      ...(!showSalesGST ? { sellingPriceWithTax: "", wholesalePriceWithTax: "", dealerPriceWithTax: "" } : {})
-    }));
-  }, [showPurchaseGST, showSalesGST]);
+    if (!showPurchaseGST) {
+      setFormData(prev => ({ ...prev, gstRate: 0, costPriceWithTax: "" }));
+    }
+    if (!showSalesGST) {
+      setFormData(prev => ({
+        ...prev, sellingPriceWithTax: "", wholesalePriceWithTax: "", dealerPriceWithTax: ""
+      }));
+    }
+  }, [gstType, isGstEnabled, showPurchaseGST, showSalesGST]);
 
   const handleEdit = (item) => {
     const cp = parseFloat(item.costPrice) || 0;
@@ -197,24 +201,6 @@ const InventoryPage = () => {
       localStorage.removeItem("categories");
       localStorage.removeItem("subCategories");
 
-      // Fetch company industry type
-      let compData = null;
-      const settingsRes = await api.get('/api/settings').catch(() => null);
-      if (settingsRes) {
-        compData = settingsRes.data?.data || settingsRes.data?.settings || settingsRes.data;
-      }
-      if (!compData || !compData.gstType) {
-        const localSettings = await dbService.getSettings?.();
-        if (localSettings) compData = localSettings.data || localSettings.settings || localSettings;
-      }
-
-      if (compData) {
-        setIndustry((compData.industryType || compData.businessType || "general").toLowerCase());
-        const fetchedGstType = (compData.gstType || "").toLowerCase().trim();
-        const isGstOn = compData.enableGst !== false;
-        setGstType(fetchedGstType || "regular");
-        setIsGstEnabled(isGstOn);
-      }
     } catch (err) {
       console.error("Failed to fetch inventory:", err);
       setInventory([]);
@@ -332,8 +318,8 @@ const InventoryPage = () => {
   const handleAddProduct = async (e) => {
     e.preventDefault();
     try {
-      if (!formData.name || !formData.category || (showPurchaseGST && !formData.hsnCode) || !formData.costPrice || !formData.sellingPrice) {
-        alert("Please fill all required fields");
+      if (!formData.name || !formData.category || (showHSN && !formData.hsnCode) || !formData.costPrice || !formData.sellingPrice) {
+        alert("Please fill all required fields" + (showHSN ? " including HSN Code" : ""));
         return;
       }
 
@@ -691,7 +677,7 @@ const InventoryPage = () => {
                     {subCategories.map((scat, idx) => <option key={idx} value={scat} />)}
                   </datalist>
                 </div>
-                {showPurchaseGST && (
+                {showHSN && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">HSN Code *</label>
                   <input type="text" placeholder="Enter HSN Code" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value={formData.hsnCode} onChange={(e) => setFormData({ ...formData, hsnCode: e.target.value })} required />
