@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
+import { useCompany } from "../../contexts/CompanyContext";
 
 export default function BillDetailPage({ bill: propBill, onBack }) {
   const { id } = useParams();
@@ -9,6 +10,10 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
   const [bill, setBill] = useState(propBill || null);
   const [loading, setLoading] = useState(!propBill);
   const [error, setError] = useState(null);
+
+  const { selectedCompany } = useCompany();
+  const gstType = selectedCompany?.gstType || "regular";
+  const isComposition = String(gstType).toLowerCase() === "composition";
 
   useEffect(() => {
     if (!bill && id) {
@@ -51,6 +56,11 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
 
   return (
     <div className="p-6 bg-white rounded-xl shadow-md max-w-4xl mx-auto my-6">
+      {isComposition && (
+        <div className="mb-6 p-2 bg-gray-100 border border-gray-400 rounded text-gray-800 text-sm font-bold text-center uppercase tracking-wide">
+          Composition Scheme
+        </div>
+      )}
       <button 
         onClick={onBack || (() => navigate("/billing"))} 
         className="mb-6 flex items-center gap-2 text-gray-600 hover:text-gray-900 font-medium"

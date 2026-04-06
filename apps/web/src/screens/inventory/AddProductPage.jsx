@@ -112,7 +112,11 @@ const AddProductPage = () => {
     fetchDropdowns();
   }, []);
 
-  const { isComposition, isUnregistered, showPurchaseGST, showSalesGST, showHSN } = getGstFlags(gstType, isGstEnabled);
+  const isComposition = String(gstType).toLowerCase() === "composition";
+  const isUnregistered = String(gstType).toLowerCase() === "unregistered" || !isGstEnabled;
+  const showPurchaseGST = !isUnregistered;
+  const showSalesGST = !isUnregistered && !isComposition;
+  const showHSN = !isUnregistered;
 
   useEffect(() => {
     console.log("GST DEBUG:", {
@@ -484,7 +488,7 @@ const AddProductPage = () => {
           {isComposition && (
             <div className="mb-4">
               <p className="text-xs text-orange-700 bg-orange-50 p-2 rounded border border-orange-200 font-medium">
-                💡 Composition Scheme: GST fields are hidden. Please enter your final inclusive costs and selling prices directly.
+                💡 Composition Scheme: Enter your purchase GST for accurate costing. For sales, enter the final inclusive selling price.
               </p>
             </div>
           )}

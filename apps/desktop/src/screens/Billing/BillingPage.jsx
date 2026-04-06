@@ -29,6 +29,7 @@ import WhatsappSender from "../../components/WhatsappSender";
 import UdharReminder from "../../components/UdharReminder";
 import { dbService } from "../../services/dbService";
 import { auditService } from "../../services/auditService";
+import { useCompany } from "../../contexts/CompanyContext";
 
 export default function BillingPage() {
   const navigate = useNavigate();
@@ -109,6 +110,10 @@ export default function BillingPage() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
+
+  const { selectedCompany } = useCompany();
+  const gstType = selectedCompany?.gstType || "regular";
+  const isComposition = String(gstType).toLowerCase() === "composition";
 
   useEffect(() => {
     // Check if company is selected, otherwise redirect
@@ -1035,6 +1040,12 @@ export default function BillingPage() {
           <h2 className="text-xl font-bold text-gray-900 mb-4">
             {editingId ? "Edit Invoice" : "Create New Invoice"}
           </h2>
+
+          {isComposition && (
+            <div className="mb-6 p-3 bg-orange-50 border border-orange-200 rounded-lg text-orange-800 text-sm font-bold text-center uppercase tracking-wide">
+              Composition Scheme
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Basic Info */}
