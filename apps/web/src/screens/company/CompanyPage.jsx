@@ -390,14 +390,24 @@ const CompanyPage = () => {
 
                 {/* Tax & Bank Details */}
                 <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <FileText className="text-gray-400" size={20} />
+                  <div className="flex items-start gap-3">
+                    <FileText className="text-gray-400 mt-1" size={20} />
                     <div>
-                      <p className="text-sm text-gray-500">GST Number</p>
-                      <p className="font-medium text-gray-800 uppercase">
-                        {selectedCompany.gstNumber || "Not provided"} 
-                        {selectedCompany.gstNumber && <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded ml-2 capitalize">{selectedCompany.gstType}</span>}
-                      </p>
+                      <p className="text-sm text-gray-500 mb-1">Firm Type & GST Details</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide ${
+                          selectedCompany.gstType === 'composition' ? 'bg-orange-100 text-orange-800 border border-orange-200' :
+                          selectedCompany.gstType === 'unregistered' ? 'bg-gray-100 text-gray-800 border border-gray-200' :
+                          'bg-green-100 text-green-800 border border-green-200'
+                        }`}>
+                          {selectedCompany.gstType === 'composition' ? 'Composition Firm' : selectedCompany.gstType === 'unregistered' ? 'Unregistered Firm' : 'Regular Firm'}
+                        </span>
+                        {selectedCompany.gstNumber && (
+                          <span className="font-medium text-gray-800 uppercase text-sm border-l pl-2 border-gray-300">
+                            GSTIN: {selectedCompany.gstNumber}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -416,6 +426,21 @@ const CompanyPage = () => {
                       <div>
                         <p className="text-sm text-gray-500 mb-2">Payment QR Code</p>
                         <img src={selectedCompany.customQrCode} alt="Payment QR" className="w-32 h-32 border rounded-lg shadow-sm" />
+                      </div>
+                      <div className="flex items-center gap-3 pt-2">
+                        <FileText size={16} className="text-gray-400" />
+                        <div className="flex flex-wrap gap-2">
+                          <span className={`text-xs uppercase px-2 py-1 border rounded font-bold tracking-wider ${
+                            selectedCompany.gstType === 'composition' ? 'bg-orange-900 border-orange-700 text-orange-300' :
+                            selectedCompany.gstType === 'unregistered' ? 'bg-gray-800 border-gray-600 text-gray-300' :
+                            'bg-green-900 border-green-700 text-green-300'
+                          }`}>
+                            {selectedCompany.gstType === 'composition' ? 'COMPOSITION' : selectedCompany.gstType === 'unregistered' ? 'UNREGISTERED' : 'REGULAR GST'}
+                          </span>
+                          {selectedCompany.gstNumber && (
+                            <span className="text-xs uppercase bg-gray-800 px-2 py-1 border border-gray-600 rounded font-medium tracking-wider text-gray-200">GST: {selectedCompany.gstNumber}</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}

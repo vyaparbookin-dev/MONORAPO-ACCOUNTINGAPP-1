@@ -113,7 +113,7 @@ const AddProductPage = () => {
   }, []);
 
   const isComposition = String(gstType).toLowerCase() === "composition";
-  const isUnregistered = String(gstType).toLowerCase() === "unregistered" || !isGstEnabled;
+  const isUnregistered = String(gstType).toLowerCase() === "unregistered";
   const showPurchaseGST = !isUnregistered;
   const showSalesGST = !isUnregistered;
   const showHSN = !isUnregistered;
