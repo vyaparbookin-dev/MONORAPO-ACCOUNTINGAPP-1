@@ -51,6 +51,7 @@ const AddProductPage = () => {
     certification: "",
     warrantyPeriod: "",
   });
+  const [inventory, setInventory] = useState([]);
 
   const gstRates = [0, 5, 12, 18, 28];
 
@@ -97,6 +98,7 @@ const AddProductPage = () => {
           const res = await api.get('/api/inventory').catch(() => null);
           if (res) localProducts = res.data?.products || res.data || [];
         }
+        setInventory(localProducts);
 
         const masterCats = (Array.isArray(localCats) ? localCats : []).map(c => c.name);
         const masterSubCats = (Array.isArray(localSubCats) ? localSubCats : []).map(c => c.name);
@@ -306,9 +308,21 @@ const AddProductPage = () => {
       throw new Error("Please fill all required fields (Name, Category, Cost, Selling Price" + (showHSN ? ", and HSN Code" : "") + ")");
     }
 
+    const cleanName = form.name.trim();
+    if (inventory.some(p => p.name.toLowerCase().trim() === cleanName.toLowerCase())) {
+      throw new Error(`A product with the name "${cleanName}" already exists in your inventory!`);
+    }
+
+    const formatMasterValue = (val, list) => {
+      if (!val) return "";
+      const cleanVal = val.trim();
+      const existing = list.find(item => typeof item === 'string' && item.toLowerCase() === cleanVal.toLowerCase());
+      return existing || (cleanVal.charAt(0).toUpperCase() + cleanVal.slice(1));
+    };
+
     const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
     const finalBarcode = form.barcode || `BAR-${finalSku}`;
-    const payload = { ...form, sku: finalSku, barcode: finalBarcode, hsnCode: form.hsnCode || "0000" };
+    const payload = { ...form, name: cleanName, category: formatMasterValue(form.category, categories) || "General", subCategory: formatMasterValue(form.subCategory, subCategories), brand: formatMasterValue(form.brand, brands), sku: finalSku, barcode: finalBarcode, hsnCode: form.hsnCode || "0000" };
 
     // 1. Offline First: Local SQLite me turant save karein
     await dbService.saveProduct({

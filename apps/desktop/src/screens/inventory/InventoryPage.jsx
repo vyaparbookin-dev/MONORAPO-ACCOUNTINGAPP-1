@@ -331,12 +331,30 @@ const InventoryPage = () => {
         return;
       }
 
+      const cleanName = formData.name.trim();
+      const duplicateItem = safeInventoryList.find(p => p.name.toLowerCase().trim() === cleanName.toLowerCase() && p._id !== editingId);
+      if (duplicateItem) {
+        alert(`Error: A product with the name "${cleanName}" already exists!`);
+        return;
+      }
+
+      const formatMasterValue = (val, list) => {
+        if (!val) return "";
+        const cleanVal = val.trim();
+        const existing = list.find(item => typeof item === 'string' && item.toLowerCase() === cleanVal.toLowerCase());
+        return existing || (cleanVal.charAt(0).toUpperCase() + cleanVal.slice(1));
+      };
+
       const finalSku = formData.sku || formData.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
       const finalBarcode = formData.barcode || `BAR-${finalSku}`;
 
       // Sanitization: Ensure all number fields are valid numbers before saving to DB
       const sanitizedData = {
         ...formData,
+        name: cleanName,
+        category: formatMasterValue(formData.category, categories) || "General",
+        subCategory: formatMasterValue(formData.subCategory, subCategories),
+        brand: formatMasterValue(formData.brand, brands),
         sku: finalSku,
         barcode: finalBarcode,
         hsnCode: formData.hsnCode || "0000",

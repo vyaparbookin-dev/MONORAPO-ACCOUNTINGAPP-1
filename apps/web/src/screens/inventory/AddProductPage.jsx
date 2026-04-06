@@ -49,6 +49,7 @@ const AddProductPage = () => {
     certification: "",
     warrantyPeriod: "",
   });
+  const [inventory, setInventory] = useState([]);
 
   const gstRates = [0, 5, 12, 18, 28];
 
@@ -79,6 +80,7 @@ const AddProductPage = () => {
         ]);
 
         const inventoryList = invRes.data?.products || invRes.data || [];
+        setInventory(inventoryList);
         const productCats = inventoryList.map(p => p.category).filter(Boolean);
         const productSubCats = inventoryList.map(p => p.subCategory).filter(Boolean);
         const productBrands = inventoryList.map(p => p.brand).filter(Boolean);
@@ -287,10 +289,22 @@ const AddProductPage = () => {
       if (!form.name || !form.category || (showPurchaseGST && !form.hsnCode) || !form.costPrice || !form.sellingPrice) {
         return alert("Please fill all required fields (Name, Category, Cost, Selling Price" + (showHSN ? ", and HSN Code" : "") + ")");
       }
+
+      const cleanName = form.name.trim();
+      if (inventory.some(p => p.name.toLowerCase().trim() === cleanName.toLowerCase())) {
+        return alert(`Error: A product with the name "${cleanName}" already exists!`);
+      }
+
+      const formatMasterValue = (val, list) => {
+        if (!val) return "";
+        const cleanVal = val.trim();
+        const existing = list.find(item => typeof item === 'string' && item.toLowerCase() === cleanVal.toLowerCase());
+        return existing || (cleanVal.charAt(0).toUpperCase() + cleanVal.slice(1));
+      };
       
       const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
       const finalBarcode = form.barcode || `BAR-${finalSku}`;
-      const payload = { ...form, sku: finalSku, barcode: finalBarcode, hsnCode: form.hsnCode || "0000" };
+      const payload = { ...form, name: cleanName, category: formatMasterValue(form.category, categories) || "General", subCategory: formatMasterValue(form.subCategory, subCategories), brand: formatMasterValue(form.brand, brands), sku: finalSku, barcode: finalBarcode, hsnCode: form.hsnCode || "0000" };
 
       // Desktop: Local SQLite Offline Guarantee
       if (window.electron && window.electron.db) {
@@ -319,10 +333,22 @@ const AddProductPage = () => {
       if (!form.name || !form.category || (showPurchaseGST && !form.hsnCode) || !form.costPrice || !form.sellingPrice) {
         return alert("Please fill all required fields (Name, Category, Cost, Selling Price" + (showHSN ? ", and HSN Code" : "") + ")");
       }
+
+      const cleanName = form.name.trim();
+      if (inventory.some(p => p.name.toLowerCase().trim() === cleanName.toLowerCase())) {
+        return alert(`Error: A product with the name "${cleanName}" already exists!`);
+      }
+
+      const formatMasterValue = (val, list) => {
+        if (!val) return "";
+        const cleanVal = val.trim();
+        const existing = list.find(item => typeof item === 'string' && item.toLowerCase() === cleanVal.toLowerCase());
+        return existing || (cleanVal.charAt(0).toUpperCase() + cleanVal.slice(1));
+      };
       
       const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
       const finalBarcode = form.barcode || `BAR-${finalSku}`;
-      const payload = { ...form, sku: finalSku, barcode: finalBarcode, hsnCode: form.hsnCode || "0000" };
+      const payload = { ...form, name: cleanName, category: formatMasterValue(form.category, categories) || "General", subCategory: formatMasterValue(form.subCategory, subCategories), brand: formatMasterValue(form.brand, brands), sku: finalSku, barcode: finalBarcode, hsnCode: form.hsnCode || "0000" };
 
       // Desktop: Local SQLite Offline Guarantee
       if (window.electron && window.electron.db) {

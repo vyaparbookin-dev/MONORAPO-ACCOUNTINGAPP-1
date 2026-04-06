@@ -25,7 +25,7 @@ export default function DashboardScreen() {
       const billsData = Array.isArray(rawData) ? rawData : (rawData.bills || []);
       setBills(billsData.slice(0, 8));
 
-      const totalRevenue = billsData.reduce((sum, b) => sum + (b.total || 0), 0);
+      const totalRevenue = billsData.reduce((sum, b) => sum + (b.finalAmount || b.totalAmount || b.total || 0), 0);
       const totalExpenses = 55000; // From seed data
       const pendingPayments = billsData.filter((b) => b.status !== "paid").length;
       const completedPayments = billsData.filter((b) => b.status === "paid").length;
@@ -190,6 +190,7 @@ export default function DashboardScreen() {
             <div className="space-y-3">
               <ActionButton label="Create Invoice" href="/billing" icon="📄" color="blue" />
               <ActionButton label="Add Product" href="/inventory" icon="📦" color="green" />
+              <ActionButton label="Data Masters" href="/inventory/masters" icon="🗂️" color="blue" />
               <ActionButton label="Record Expense" href="/expenses" icon="💰" color="orange" />
               <ActionButton label="View Reports" href="/reports" icon="📊" color="purple" />
             </div>

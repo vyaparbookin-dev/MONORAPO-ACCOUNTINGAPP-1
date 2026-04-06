@@ -263,6 +263,7 @@ export default function DashboardScreen() {
             <div className="space-y-3">
               <ActionButton label="Create Invoice" onClick={() => navigate("/billing")} icon="📄" color="blue" />
               <ActionButton label="Add Product" onClick={() => navigate("/inventory")} icon="📦" color="green" />
+              <ActionButton label="Data Masters" onClick={() => navigate("/inventory/masters")} icon="🗂️" color="blue" />
               <ActionButton label="Record Expense" onClick={() => navigate("/expenses")} icon="💰" color="orange" />
               <ActionButton label="View Reports" onClick={() => navigate("/reports")} icon="📊" color="purple" />
             </div>
