@@ -28,7 +28,10 @@ const CompanyListPage = () => {
   }, []);
 
   const handleSelectCompany = (company) => {
-    dbService.setCompanyId(company._id || company.uuid);
+    const compId = company._id || company.uuid;
+    dbService.setCompanyId(compId);
+    localStorage.setItem("companyId", compId);
+    localStorage.setItem("companyName", company.name);
     // Desktop crash fix: React Router ka 'navigate' use karein
     navigate("/dashboard");
     window.location.reload(); // Context refresh karne ke liye safe reload

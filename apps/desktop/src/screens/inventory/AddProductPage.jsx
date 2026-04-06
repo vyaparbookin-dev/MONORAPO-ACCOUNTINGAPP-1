@@ -32,6 +32,8 @@ const AddProductPage = () => {
     mrp: "",
     gstRate: "",
     unit: "pcs",
+    secondaryUnit: "",
+    conversionRate: "",
     stock: "",
     minimumStock: 10,
     maximumStock: "",
@@ -290,6 +292,7 @@ const AddProductPage = () => {
       name: "", sku: "", barcode: `ITM${Date.now().toString().slice(-6)}`, description: "", category: "", subCategory: "", image: "",
       hsnCode: "", costPrice: "", costPriceWithTax: "", profitMargin: "", sellingPrice: "",
       sellingPriceWithTax: "", mrp: "", gstRate: "", unit: "pcs", stock: "",
+      secondaryUnit: "", conversionRate: "",
       wholesalePrice: "", wholesalePriceWithTax: "", wholesaleMargin: "",
       dealerPrice: "", dealerPriceWithTax: "", dealerMargin: "",
       minimumStock: 10, maximumStock: "", supplier: "", isRawMaterial: false, weight: "", purity: "",
@@ -642,6 +645,22 @@ const AddProductPage = () => {
                 {units.map(u => <option key={u} value={u}>{u}</option>)}
               </select>
             </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Alternate Unit (Optional)</label>
+              <select className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none" value={form.secondaryUnit} onChange={(e) => setForm({ ...form, secondaryUnit: e.target.value })}>
+                <option value="">-- None --</option>
+                {units.filter(u => u !== form.unit).map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+            
+            {form.secondaryUnit && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 text-blue-600">1 {form.unit || 'pcs'} = ? {form.secondaryUnit}</label>
+                <input type="number" step="0.01" className="w-full border border-blue-300 bg-blue-50 p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none" value={form.conversionRate} onChange={(e) => setForm({ ...form, conversionRate: parseFloat(e.target.value) || "" })} placeholder={`e.g. 3 (If 1 ${form.unit || 'pcs'} = 3 ${form.secondaryUnit})`} required />
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-gray-700">Min Stock Alert</label>
               <input

@@ -48,6 +48,8 @@ const InventoryPage = () => {
     mrp: 0,
     gstRate: 0,
     unit: "pcs",
+    secondaryUnit: "",
+    conversionRate: "",
     minimumStock: 10,
     maximumStock: "",
     currentStock: 0,
@@ -96,15 +98,6 @@ const InventoryPage = () => {
   const showHSN = !isUnregistered;
 
   useEffect(() => {
-    console.log("GST DEBUG:", {
-      gstType,
-      isGstEnabled,
-      showPurchaseGST,
-      showSalesGST
-    });
-  }, [gstType, isGstEnabled, showPurchaseGST, showSalesGST]);
-
-  useEffect(() => {
     if (!showPurchaseGST) {
       setFormData(prev => ({ ...prev, gstRate: 0, costPriceWithTax: "" }));
     }
@@ -149,6 +142,8 @@ const InventoryPage = () => {
       mrp: item.mrp,
       gstRate: item.gstRate,
       unit: item.unit,
+      secondaryUnit: item.secondaryUnit || "",
+      conversionRate: item.conversionRate || "",
       minimumStock: item.minimumStock,
       maximumStock: item.maximumStock || "",
       currentStock: item.currentStock,
@@ -439,6 +434,8 @@ const InventoryPage = () => {
       mrp: 0,
       gstRate: 0,
       unit: "pcs",
+      secondaryUnit: "",
+      conversionRate: "",
       minimumStock: 10,
       maximumStock: "",
       currentStock: 0,
@@ -537,11 +534,16 @@ const InventoryPage = () => {
           <div className={isLowStock ? 'bg-orange-50 p-2 rounded-md' : ''}>
             <div className="flex items-center gap-1">
               <span className={`font-bold text-sm ${isLowStock ? 'text-orange-600' : 'text-gray-900'}`}>
-                {row.currentStock}
+                {row.currentStock} {row.unit}
               </span>
               {isLowStock && <AlertTriangle className="text-orange-600" size={14} />}
             </div>
-            <p className="text-xs text-gray-500">Min: {row.minimumStock}</p>
+            {row.secondaryUnit && row.conversionRate && (
+              <p className="text-xs font-bold text-blue-600 mt-0.5">
+                {Number((row.currentStock * row.conversionRate).toFixed(2))} {row.secondaryUnit}
+              </p>
+            )}
+            <p className="text-[10px] text-gray-500 mt-0.5">Min: {row.minimumStock}</p>
           </div>
         );
       },
@@ -974,6 +976,22 @@ const InventoryPage = () => {
                     {units.map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Alternate Unit (Optional)</label>
+                  <select className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.secondaryUnit} onChange={(e) => setFormData({ ...formData, secondaryUnit: e.target.value })}>
+                    <option value="">-- None --</option>
+                    {units.filter(u => u !== formData.unit).map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+                
+                {formData.secondaryUnit && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 text-blue-600">1 {formData.unit || 'pcs'} = ? {formData.secondaryUnit}</label>
+                    <input type="number" step="0.01" className="w-full border border-blue-300 bg-blue-50 p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.conversionRate} onChange={(e) => setFormData({ ...formData, conversionRate: parseFloat(e.target.value) || "" })} placeholder={`e.g. 3 (If 1 ${formData.unit || 'pcs'} = 3 ${formData.secondaryUnit})`} required />
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Min Stock Alert</label>
                   <input
