@@ -69,6 +69,22 @@ const CompanyListPage = () => {
                 <div className="flex items-center text-blue-600 font-medium text-sm group-hover:translate-x-1 transition-transform">
                   Select Company <ArrowRight size={16} className="ml-1" />
                 </div>
+                <div className="flex flex-col items-end gap-1 mr-8 mt-1">
+                  {company.businessType && (
+                    <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-200 uppercase tracking-wide">
+                      {Array.isArray(company.businessType) ? company.businessType.join(', ') : company.businessType}
+                    </span>
+                  )}
+                  {company.gstType && (
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wide ${
+                      company.gstType === 'composition' ? 'bg-orange-100 text-orange-800 border-orange-200' :
+                      company.gstType === 'unregistered' ? 'bg-gray-100 text-gray-800 border-gray-200' :
+                      'bg-green-100 text-green-800 border-green-200'
+                    }`}>
+                      {company.gstType === 'composition' ? 'COMPOSITION' : company.gstType === 'unregistered' ? 'UNREGISTERED' : 'REGULAR GST'}
+                    </span>
+                  )}
+                </div>
               </div>
             ))
           ) : (

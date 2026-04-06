@@ -68,7 +68,7 @@ const InventoryPage = () => {
   const { selectedCompany } = useCompany();
   const industry = String(selectedCompany?.industryType || selectedCompany?.businessType || "general").toLowerCase();
   const gstType = selectedCompany?.gstType || "regular";
-  const isGstEnabled = selectedCompany ? (selectedCompany.enableGst === true || String(selectedCompany.enableGst).toLowerCase() === "true") : true;
+  const isGstEnabled = selectedCompany?.enableGst !== false && String(selectedCompany?.enableGst).toLowerCase() !== "false";
 
   useEffect(() => {
     fetchInventory();
@@ -81,7 +81,7 @@ const InventoryPage = () => {
   const isComposition = String(gstType).toLowerCase() === "composition";
   const isUnregistered = String(gstType).toLowerCase() === "unregistered" || !isGstEnabled;
   const showPurchaseGST = !isUnregistered;
-  const showSalesGST = !isUnregistered && !isComposition;
+  const showSalesGST = !isUnregistered;
   const showHSN = !isUnregistered;
 
   useEffect(() => {

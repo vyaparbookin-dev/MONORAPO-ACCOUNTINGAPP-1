@@ -46,7 +46,8 @@ const CompanyListScreen = ({ navigation }) => {
               ifscCode: comp.ifscCode,
               upiId: comp.upiId,
               caName: comp.caName,
-              caPhone: comp.caPhone
+              caPhone: comp.caPhone,
+              gstType: comp.gstType || 'regular'
             });
           }
           // Cloud se save karne ke baad wapas local DB se read karo
@@ -73,9 +74,16 @@ const CompanyListScreen = ({ navigation }) => {
         {item.businessDescription ? (
           <Text style={styles.businessDesc}>{item.businessDescription.toUpperCase()}</Text>
         ) : null}
+      <View style={{ flexDirection: 'row', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
         {item.businessType ? (
           <View style={styles.badge}><Text style={styles.badgeText}>{item.businessType.toUpperCase()}</Text></View>
         ) : null}
+        {item.gstType ? (
+          <View style={[styles.badge, { backgroundColor: item.gstType === 'composition' ? '#f59e0b' : item.gstType === 'unregistered' ? '#6b7280' : '#10b981' }]}>
+            <Text style={styles.badgeText}>{(item.gstType === 'composition' ? 'COMPOSITION' : item.gstType === 'unregistered' ? 'UNREGISTERED' : 'REGULAR GST')}</Text>
+          </View>
+        ) : null}
+      </View>
       </View>
       
       {/* Visiting Card Body (Only Main Details) */}
