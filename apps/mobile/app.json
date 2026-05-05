@@ -1,46 +1,39 @@
 {
   "expo": {
-    "name": "mobile-inventory-app",
-    "slug": "mobile-inventory-app",
+    "name": "Mono Rapo",
+    "slug": "mono-rapo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "updates": {
-      "fallbackToCacheTimeout": 0
-    },
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
+    "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#2563eb"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.monorapo.accounting"
     },
     "android": {
-      "package": "com.yourcompany.accountingapp",
-      "usesCleartextTraffic": true
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2563eb"
+      },
+      "package": "com.monorapo.accounting"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "@react-native-community/datetimepicker",
-      "expo-font",
-      "expo-secure-store",
-      "expo-camera",
-      "expo-web-browser",
-      "expo-sqlite"
+      "expo-router"
     ],
-    "web": {
-      "favicon": "./assets/icon.png",
-      "name": "Red Accounting Book",
-      "shortName": "RedBook",
-      "themeColor": "#ef4444",
-      "backgroundColor": "#ffffff",
-      "display": "standalone",
-      "startUrl": ".",
-      "bundler": "metro"
-    },
     "extra": {
-      "RAZORPAY_KEY_ID": "rzp_test_YOUR_KEY_ID"
+      "eas": {
+        "projectId": "mono-rapo-accounting"
+      }
     }
+    // REMOVED: "runtimeVersion" - not needed for bare workflow
   }
 }
