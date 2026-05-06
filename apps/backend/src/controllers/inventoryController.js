@@ -76,7 +76,7 @@ export const addProduct = async (req, res) => {
 export const bulkImportProducts = async (req, res) => {
   try {
     const { companyId } = req;
-    const { products } = req.body; // Excel se mapped data yaha aayega array format me
+    const { products, mapping, startRow } = req.body; // 'startRow' add kiya taaki Marg jese A,B,C map karte waqt Header skip ho sake
 
     if (!companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
     if (!products || !Array.isArray(products) || products.length === 0) {
@@ -85,9 +85,23 @@ export const bulkImportProducts = async (req, res) => {
 
     const formattedProducts = [];
     
+    // Marg ERP jesa system: User batayega data kis row se start hai (Default 0).
+    // Agar Excel me pehli line (Row 1) headers hain ('Product Name', 'Price'), toh startRow 1 bhejenge taaki wo skip ho jaye.
+    const startIndex = startRow !== undefined ? Number(startRow) : 0;
+
     // Loop through each product from the Excel sheet
-    for (let i = 0; i < products.length; i++) {
-      const item = products[i];
+    for (let i = startIndex; i < products.length; i++) {
+      const rawItem = products[i];
+      const item = {};
+
+      // Agar Tally/Marg jesa mapping configuration aaya hai, toh Excel headers ko DB fields se map karein
+      if (mapping && Object.keys(mapping).length > 0) {
+        for (const [dbField, excelColumnName] of Object.entries(mapping)) {
+          item[dbField] = rawItem[excelColumnName];
+        }
+      } else {
+        Object.assign(item, rawItem); // Fallback: agar frontend ne bina mapping already match karke bheja hai
+      }
 
       // Agar user ne Excel me SKU ya Barcode nahi diya, toh automatic generate karo
       const baseSku = item.sku || `SKU-${Date.now()}-${i}`;
@@ -104,6 +118,10 @@ export const bulkImportProducts = async (req, res) => {
         barcode: baseBarcode,
         costPrice: Number(item.purchaseRate) || Number(item.costPrice) || 0,
         sellingPrice: Number(item.sellingPrice) || Number(item.mrp) || 0,
+        wholesalePrice: Number(item.p1) || Number(item.wholesalePrice) || 0, // p1 mapped to wholesalePrice
+        dealerPrice: Number(item.p2) || Number(item.dealerPrice) || 0,       // p2 mapped to dealerPrice
+        p3Rate: Number(item.p3) || 0,                                        // Custom p3 rate (Strict: false will auto-save)
+        discount: Number(item.discount) || 0,                                // Discount mapping
         mrp: Number(item.mrp) || 0,
         gstRate: Number(item.gstRate) || 0,
         unit: item.unit || "pcs",
@@ -113,16 +131,30 @@ export const bulkImportProducts = async (req, res) => {
       });
     }
 
-    // Ek baar me saare products Insert karna (Speed ke liye)
-    // ordered: false lagane se agar 1 product duplicate (SKU error) hoga, tab bhi baaki upload ho jayenge
-    const insertedProducts = await Product.insertMany(formattedProducts, { ordered: false });
+    // bulkWrite ka use karke "Upsert" (Update if exists, Insert if new) logic
+    const bulkOps = formattedProducts.map(item => {
+      const { sku, barcode, ...updateFields } = item;
+      return {
+        updateOne: {
+          filter: { companyId: item.companyId, name: item.name }, // Item Name se match karega
+          update: {
+            $set: updateFields, // Jo fields nayi aayi hain (MRP, Rate, etc.) unhe update kar dega
+            $setOnInsert: { sku: item.sku, barcode: item.barcode } // Naya product banne par hi auto-generate wala SKU/Barcode set karega
+          },
+          upsert: true // Agar database me ye Item Name nahi mila toh naya bana dega
+        }
+      };
+    });
 
-    res.status(201).json({ success: true, message: `${insertedProducts.length} products imported successfully!`, data: insertedProducts });
+    // Database me ek sath changes push karna
+    const result = await Product.bulkWrite(bulkOps, { ordered: false });
+
+    res.status(200).json({ 
+      success: true, 
+      message: `Import complete! ${result.upsertedCount} new products added, ${result.modifiedCount} products updated.` 
+    });
   } catch (error) {
     console.error("🔴 Bulk Import Error:", error);
-    if (error.name === 'BulkWriteError') {
-       return res.status(207).json({ success: true, message: `Partial import successful. ${error.insertedDocs.length} products added. Some were skipped due to duplicate SKU/Barcode.`, errors: error.writeErrors });
-    }
     res.status(500).json({ success: false, message: "Failed to import products", error: error.message });
   }
 };

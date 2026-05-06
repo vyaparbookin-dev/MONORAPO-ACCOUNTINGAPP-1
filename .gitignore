@@ -60,3 +60,7 @@ scan-project.js
 .vs/
 *.sln
 *.suo
+
+# AI or Brain specific generated data
+.brain
+.brain/
