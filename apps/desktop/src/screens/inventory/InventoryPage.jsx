@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, Download, Edit, Trash2, Package, AlertTriangle, Upload, Scan, ShoppingBag, ClipboardList, Undo2, BookUser, Camera, Barcode, X, Link as LinkIcon } from "lucide-react";
+import { Plus, Search, Download, Edit, Trash2, Package, AlertTriangle, Upload, Scan, ShoppingBag, ClipboardList, Undo2, BookUser, Camera, Barcode, X, Link as LinkIcon, UploadCloud, History } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import BarcodeScanner from "../../components/BarcodeScanner";
 import DataTable from "../../components/Datatable";
@@ -437,6 +437,43 @@ const InventoryPage = () => {
     setEditingId(null);
   };
 
+  // Smart Undo Logic
+  const getRecentProducts = () => {
+    const hours = parseFloat(undoTimeframe);
+    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+    return safeInventoryList.filter(p => {
+      if (!p.createdAt) return false;
+      return new Date(p.createdAt) >= cutoff;
+    });
+  };
+  
+  const recentProducts = getRecentProducts();
+
+  const handleConfirmUndo = async () => {
+    if (recentProducts.length === 0) return;
+    if (!window.confirm(`Are you sure you want to permanently delete these ${recentProducts.length} recently added products?`)) return;
+
+    setLoading(true);
+    try {
+      for (let i = 0; i < recentProducts.length; i += 20) {
+        const chunk = recentProducts.slice(i, i + 20);
+        // Delete locally first
+        for (const item of chunk) {
+          await dbService.deleteProduct(item._id || item.uuid);
+        }
+        await Promise.all(chunk.map(item => api.delete(`/api/inventory/${item._id}`).catch(() => null)));
+      }
+      alert(`Successfully deleted ${recentProducts.length} products offline & online!`);
+      setShowUndoModal(false);
+      fetchInventory();
+    } catch(err) {
+      console.error(err);
+      alert("Error undoing products.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Industry conditional logic
   const showRawMaterial = ['restaurant', 'food', 'cafe', 'bakery', 'manufacturing'].some(i => industry.includes(i));
   const showJewellery = ['jewellery', 'jewelry', 'goldsmith'].some(i => industry.includes(i));
@@ -623,6 +660,13 @@ const InventoryPage = () => {
           >
             <Upload size={20} />
             Bulk Upload
+          </button>
+          <button
+            onClick={() => setShowUndoModal(true)}
+            className="flex items-center gap-2 bg-orange-50 border border-orange-200 text-orange-600 px-4 py-2 rounded-lg hover:bg-orange-100 transition font-medium"
+          >
+            <History size={20} />
+            Undo Upload
           </button>
           <button
             onClick={() => navigate("/inventory/add")}

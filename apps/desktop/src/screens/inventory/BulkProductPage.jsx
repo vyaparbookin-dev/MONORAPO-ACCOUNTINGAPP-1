@@ -11,6 +11,7 @@ const SYSTEM_FIELDS = [
   { key: "subCategory", label: "Sub Category" },
   { key: "brand", label: "Company / Brand" },
   { key: "hsnCode", label: "HSN Code" },
+  { key: "packing", label: "Packing (e.g. 1x10)" },
   { key: "unit", label: "Unit (e.g. PCS)" },
   { key: "secondaryUnit", label: "Unit-2 (Alt Unit)" },
   { key: "conversionRate", label: "Conversion Rate" },
@@ -60,6 +61,7 @@ const BulkProductPage = () => {
             (field.key === 'costPrice' && h.toLowerCase().includes('dpl')) ||
             (field.key === 'sellingPrice' && h.toLowerCase().includes('rate 1')) ||
             (field.key === 'currentStock' && h.toLowerCase().includes('opening')) ||
+            (field.key === 'packing' && h.toLowerCase().includes('pack')) ||
             (field.key === 'name' && h.toLowerCase().includes('item'))
           );
           if (matchedHeader) initialMapping[field.key] = matchedHeader;
@@ -99,6 +101,7 @@ const BulkProductPage = () => {
         "item-code": "ITM-001",
         "item name": "Example Product",
         "barcode": "890123456789",
+        "packing": "1x10",
         "group": "Electronics",
         "company": "Samsung",
         "hsn code": "8517",
