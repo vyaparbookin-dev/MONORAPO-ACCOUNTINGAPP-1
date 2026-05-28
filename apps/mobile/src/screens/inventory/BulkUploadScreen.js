@@ -2,9 +2,13 @@ import React, { useState } from "react";
 import { View, Text, TouchableOpacity, Alert, StyleSheet, Platform } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system';
+import * as XLSX from 'xlsx';
+import api from '../../services/api';
 
 const BulkUploadScreen = () => {
   const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
 
   const pickFile = async () => {
     try {
@@ -21,8 +25,23 @@ const BulkUploadScreen = () => {
 
   const uploadFile = async () => {
     if (!file) return Alert.alert("Please select a file first");
-    Alert.alert("Uploading", `${file.name} uploaded successfully`);
-    // Later: integrate with backend API
+    setUploading(true);
+    try {
+      const fileContent = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
+      const wb = XLSX.read(fileContent, { type: "base64" });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data = XLSX.utils.sheet_to_json(ws);
+
+      await api.post("/inventory/import", { products: data });
+      Alert.alert("Success", `${data.length} products uploaded successfully`);
+      setFile(null);
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Error", "Failed to upload products. Please check the file format.");
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -55,11 +74,11 @@ const BulkUploadScreen = () => {
           )}
 
           <TouchableOpacity 
-            style={[styles.uploadBtn, !file ? styles.btnDisabled : null]} 
+            style={[styles.uploadBtn, (!file || uploading) ? styles.btnDisabled : null]} 
             onPress={uploadFile}
-            disabled={!file}
+            disabled={!file || uploading}
           >
-            <Text style={styles.uploadBtnText}>Upload Items</Text>
+            <Text style={styles.uploadBtnText}>{uploading ? "Uploading..." : "Upload Items"}</Text>
           </TouchableOpacity>
         </View>
       </View>

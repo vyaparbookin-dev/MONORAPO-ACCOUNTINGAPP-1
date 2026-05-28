@@ -104,29 +104,33 @@ export const bulkImportProducts = async (req, res) => {
       }
 
       // Agar user ne Excel me SKU ya Barcode nahi diya, toh automatic generate karo
-      const baseSku = item.sku || `SKU-${Date.now()}-${i}`;
-      const baseBarcode = item.barcode || `BAR-${baseSku}`;
+      const baseSku = item.sku || item['item-code'] || item.itemCode || `SKU-${Date.now()}-${i}`;
+      const baseBarcode = item.barcode || item.barcodeNo || `BAR-${baseSku}`;
 
       // Mapping Logic (Backend me safely store karne ke liye format)
       formattedProducts.push({
-        name: item.name || item.productName || "Unknown Product",
+        name: item.name || item['item name'] || item.productName || "Unknown Product",
         companyId: companyId,
-        category: item.category || "General",      // Excel column mapped to Category
+        category: item.category || item.group || item.Category || "General",
         subCategory: item.subCategory || "",       // Excel column mapped to SubCategory
-        hsnCode: item.hsnCode || "0000",
+        brand: item.brand || item.company || "",
+        hsnCode: item.hsnCode || item['hsn code'] || "0000",
         sku: baseSku,
         barcode: baseBarcode,
-        costPrice: Number(item.purchaseRate) || Number(item.costPrice) || 0,
-        sellingPrice: Number(item.sellingPrice) || Number(item.mrp) || 0,
-        wholesalePrice: Number(item.p1) || Number(item.wholesalePrice) || 0, // p1 mapped to wholesalePrice
-        dealerPrice: Number(item.p2) || Number(item.dealerPrice) || 0,       // p2 mapped to dealerPrice
+        costPrice: Number(item.costPrice) || Number(item.purchaseRate) || Number(item.dpl) || 0,
+        sellingPrice: Number(item.sellingPrice) || Number(item['rate 1']) || Number(item.rate1) || Number(item.mrp) || 0,
+        wholesalePrice: Number(item.wholesalePrice) || Number(item['rate 2']) || Number(item.rate2) || Number(item.p1) || 0,
+        dealerPrice: Number(item.dealerPrice) || Number(item['rate 3']) || Number(item.rate3) || Number(item.p2) || 0,
         p3Rate: Number(item.p3) || 0,                                        // Custom p3 rate (Strict: false will auto-save)
         discount: Number(item.discount) || 0,                                // Discount mapping
         mrp: Number(item.mrp) || 0,
-        gstRate: Number(item.gstRate) || 0,
+        gstRate: Number(item.gstRate) || Number(item.gst) || 0,
         unit: item.unit || "pcs",
-        currentStock: Number(item.stock) || Number(item.quantity) || 0,
-        minimumStock: Number(item.minimumStock) || 10,
+        secondaryUnit: item.secondaryUnit || item['unit-2'] || "",
+        conversionRate: Number(item.conversionRate) || Number(item['conversionunit -1']) || 0,
+        currentStock: Number(item.currentStock) || Number(item['opening stock']) || Number(item.stock) || Number(item.quantity) || 0,
+        minimumStock: Number(item.minimumStock) || Number(item.miniqua) || 10,
+        maximumStock: Number(item.maximumStock) || Number(item['max.qua']) || 0,
         isActive: true
       });
     }

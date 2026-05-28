@@ -1,10 +1,35 @@
 import React, { useState } from "react";
 import * as XLSX from "xlsx";
 import api from "../../services/api";
-import { Upload, FileSpreadsheet, CheckCircle, AlertCircle } from "lucide-react";
+import { Upload, Download, ArrowRight, Settings2, FileSpreadsheet, CheckCircle, AlertCircle } from "lucide-react";
+
+const SYSTEM_FIELDS = [
+  { key: "name", label: "Item Name (*Required)" },
+  { key: "sku", label: "Item Code / SKU" },
+  { key: "barcode", label: "Barcode" },
+  { key: "category", label: "Category / Group" },
+  { key: "subCategory", label: "Sub Category" },
+  { key: "brand", label: "Company / Brand" },
+  { key: "hsnCode", label: "HSN Code" },
+  { key: "unit", label: "Unit (e.g. PCS)" },
+  { key: "secondaryUnit", label: "Unit-2 (Alt Unit)" },
+  { key: "conversionRate", label: "Conversion Rate" },
+  { key: "costPrice", label: "Cost Price / DPL" },
+  { key: "sellingPrice", label: "Rate 1 (Selling Price)" },
+  { key: "wholesalePrice", label: "Rate 2 (Wholesale)" },
+  { key: "dealerPrice", label: "Rate 3 (Dealer)" },
+  { key: "mrp", label: "MRP" },
+  { key: "gstRate", label: "GST %" },
+  { key: "currentStock", label: "Opening Stock" },
+  { key: "minimumStock", label: "Min Quantity" },
+  { key: "maximumStock", label: "Max Quantity" }
+];
 
 export default function BulkUploadPage() {
+  const [step, setStep] = useState(1);
   const [data, setData] = useState([]);
+  const [headers, setHeaders] = useState([]);
+  const [mapping, setMapping] = useState({});
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState(null);
 
@@ -19,7 +44,31 @@ export default function BulkUploadPage() {
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
       const parsedData = XLSX.utils.sheet_to_json(ws);
-      setData(parsedData);
+      
+      if (parsedData.length > 0) {
+        const fileHeaders = Object.keys(parsedData[0]);
+        setHeaders(fileHeaders);
+        setData(parsedData);
+        
+        // Smart auto-guess initial mapping
+        const initialMapping = {};
+        SYSTEM_FIELDS.forEach(field => {
+          const matchedHeader = fileHeaders.find(h => 
+            h.toLowerCase().includes(field.key.toLowerCase()) || 
+            (field.key === 'category' && h.toLowerCase().includes('group')) ||
+            (field.key === 'costPrice' && h.toLowerCase().includes('dpl')) ||
+            (field.key === 'sellingPrice' && h.toLowerCase().includes('rate 1')) ||
+            (field.key === 'currentStock' && h.toLowerCase().includes('opening')) ||
+            (field.key === 'name' && h.toLowerCase().includes('item'))
+          );
+          if (matchedHeader) initialMapping[field.key] = matchedHeader;
+        });
+        
+        setMapping(initialMapping);
+        setStep(2);
+      } else {
+        setMessage({ type: "error", text: "No data found in the Excel file!" });
+      }
     };
     reader.readAsBinaryString(file);
   };
@@ -29,9 +78,11 @@ export default function BulkUploadPage() {
     setUploading(true);
     try {
       // Backend API endpoint for bulk upload
-      const res = await api.post("/api/inventory/bulk", { products: data });
-      setMessage({ type: "success", text: `Successfully uploaded ${data.length} products!` });
+      const res = await api.post("/inventory/import", { products: data, mapping });
+      setMessage({ type: "success", text: res.data?.message || `Successfully processed ${data.length} products!` });
+      setStep(1);
       setData([]);
+      setMapping({});
     } catch (err) {
       setMessage({ type: "error", text: "Upload failed. Please check the file format." });
     } finally {
@@ -39,45 +90,91 @@ export default function BulkUploadPage() {
     }
   };
 
-  return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
-        <FileSpreadsheet className="text-green-600" /> Bulk Product Upload
-      </h1>
+  const downloadTemplate = () => {
+    const templateData = [{
+      "item-code": "ITM-001", "item name": "Example Product", "barcode": "890123456789", "group": "Electronics",
+      "company": "Samsung", "hsn code": "8517", "unit": "pcs", "unit-2": "box", "conversionunit -1": 10,
+      "costPrice": 1000, "rate 1": 1500, "rate 2": 1400, "rate 3": 1350, "mrp": 1999, "gst": 18,
+      "opening stock": 50, "miniqua": 5, "max.qua": 100
+    }];
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, "Product_Upload_Template.xlsx");
+  };
 
-      <div className="bg-white p-8 rounded-xl shadow-md border border-dashed border-gray-300 text-center">
-        <input
-          type="file"
-          accept=".xlsx, .xls, .csv"
-          onChange={handleFileUpload}
-          className="hidden"
-          id="fileUpload"
-        />
-        <label
-          htmlFor="fileUpload"
-          className="cursor-pointer flex flex-col items-center justify-center gap-4"
-        >
-          <div className="bg-blue-50 p-4 rounded-full">
-            <Upload size={32} className="text-blue-600" />
-          </div>
-          <p className="text-gray-600 font-medium">Click to upload Excel or CSV file</p>
-          <p className="text-xs text-gray-400">Columns: Name, Price, SKU, Quantity</p>
-        </label>
+  return (
+    <div className="p-6 max-w-4xl mx-auto bg-gray-50 min-h-screen">
+      <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <FileSpreadsheet className="text-green-600" /> Bulk Product Upload
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">Upload and map your Excel/CSV data manually.</p>
+        </div>
+        <button onClick={downloadTemplate} className="flex items-center gap-2 text-blue-600 hover:text-blue-800 text-sm font-semibold">
+          <Download size={16} /> Download Template
+        </button>
       </div>
 
-      {data.length > 0 && (
-        <div className="mt-6">
-          <h3 className="font-semibold mb-2">Preview ({data.length} items)</h3>
-          <div className="bg-gray-50 p-4 rounded border max-h-60 overflow-auto">
-            <pre className="text-xs">{JSON.stringify(data.slice(0, 3), null, 2)}...</pre>
+      {step === 1 ? (
+        <div className="bg-white p-12 rounded-xl shadow-sm border-2 border-dashed border-gray-300 text-center">
+          <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} className="hidden" id="fileUpload" />
+          <label htmlFor="fileUpload" className="cursor-pointer flex flex-col items-center justify-center gap-4">
+            <div className="bg-blue-50 p-4 rounded-full">
+              <Upload size={40} className="text-blue-600" />
+            </div>
+            <p className="text-lg font-semibold text-gray-700">Click to select CSV or Excel file</p>
+            <p className="text-sm text-gray-500">We will let you map the columns manually in the next step.</p>
+          </label>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="p-4 border-b bg-gray-50 flex items-center gap-2">
+            <Settings2 className="text-blue-600" size={20} />
+            <h3 className="font-bold text-gray-800">Map Your Columns</h3>
           </div>
-          <button
-            onClick={handleUpload}
-            disabled={uploading}
-            className="mt-4 w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition font-semibold"
-          >
-            {uploading ? "Uploading..." : "Confirm & Upload to Inventory"}
-          </button>
+          <div className="p-6">
+            <p className="text-sm text-gray-600 mb-6">Please match your Excel column names to our System fields. Skip the ones you don't have.</p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[50vh] overflow-y-auto pr-2 mb-6">
+              {SYSTEM_FIELDS.map((field) => (
+                <div key={field.key} className="flex items-center justify-between bg-gray-50 p-3 rounded border border-gray-100">
+                  <label className="text-sm font-medium text-gray-700 w-1/2">{field.label}</label>
+                  <select className="w-1/2 border p-2 rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={mapping[field.key] || ""} onChange={(e) => setMapping({ ...mapping, [field.key]: e.target.value })}>
+                    <option value="">-- Skip / Not Available --</option>
+                    {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+
+            {/* Data Preview */}
+            <div className="mt-6 border-t pt-4">
+              <h4 className="font-bold text-gray-800 mb-3">Data Preview (First 5 Rows)</h4>
+              <div className="overflow-x-auto rounded-lg border border-gray-200 bg-gray-50">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-100">
+                    <tr>{SYSTEM_FIELDS.filter(f => mapping[f.key]).map(field => <th key={field.key} className="p-2 font-semibold text-gray-600 text-left whitespace-nowrap">{field.label.replace(' (*Required)', '')}</th>)}</tr>
+                  </thead>
+                  <tbody className="bg-white">
+                    {data.slice(0, 5).map((row, rowIndex) => (
+                      <tr key={rowIndex} className="border-b last:border-0">
+                        {SYSTEM_FIELDS.filter(f => mapping[f.key]).map(field => <td key={field.key} className="p-2 text-gray-700 whitespace-nowrap">{String(row[mapping[field.key]] ?? '')}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center border-t pt-4 mt-6">
+              <button onClick={() => { setStep(1); document.getElementById('fileUpload').value = null; }} className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 font-medium">Cancel & Back</button>
+              <button onClick={handleUpload} disabled={uploading} className="px-8 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-2 disabled:bg-gray-400">
+                {uploading ? "Importing..." : "Confirm & Import Data"} <ArrowRight size={18} />
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

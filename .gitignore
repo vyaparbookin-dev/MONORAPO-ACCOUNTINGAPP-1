@@ -64,3 +64,6 @@ scan-project.js
 # AI or Brain specific generated data
 .brain
 .brain/
+scan-project-health.js
+archive-unused-files.js
+generate-mobile-tree.js
