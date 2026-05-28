@@ -80,25 +80,39 @@ export default function BulkUploadPage() {
       const wb = XLSX.read(bstr, { type: "binary" });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      const parsedData = XLSX.utils.sheet_to_json(ws);
       
-      if (parsedData.length > 0) {
-        const fileHeaders = Object.keys(parsedData[0]);
-        setHeaders(fileHeaders);
-        setData(parsedData);
+      // Use header: "A" to force Excel column letters (A, B, C) as keys
+      const rawData = XLSX.utils.sheet_to_json(ws, { header: "A", defval: "" });
+      
+      if (rawData.length > 1) {
+        const excelHeaders = rawData[0]; // Row 1 (Headers)
+        const firstDataRow = rawData[1]; // Row 2 (Sample Data)
+        const actualData = rawData.slice(1); // Data starting from Row 2
         
+        const fileColumns = Object.keys(excelHeaders);
+        const enhancedHeaders = fileColumns.map(col => ({
+          key: col,
+          label: `Col ${col}: ${excelHeaders[col] || 'Empty'}`,
+          sample: firstDataRow[col] ? String(firstDataRow[col]).substring(0, 20) : ""
+        }));
+
+        setHeaders(enhancedHeaders);
+        setData(actualData);
+
         // Smart auto-guess initial mapping
         const initialMapping = {};
         SYSTEM_FIELDS.forEach(field => {
-          const matchedHeader = fileHeaders.find(h => 
-            h.toLowerCase().includes(field.key.toLowerCase()) || 
-            (field.key === 'category' && h.toLowerCase().includes('group')) ||
-            (field.key === 'costPrice' && h.toLowerCase().includes('dpl')) ||
-            (field.key === 'sellingPrice' && h.toLowerCase().includes('rate 1')) ||
-            (field.key === 'currentStock' && h.toLowerCase().includes('opening')) ||
-            (field.key === 'name' && h.toLowerCase().includes('item'))
-          );
-          if (matchedHeader) initialMapping[field.key] = matchedHeader;
+          const matchedCol = fileColumns.find(col => {
+            const hText = String(excelHeaders[col]).toLowerCase();
+            return hText.includes(field.key.toLowerCase()) || 
+            (field.key === 'category' && hText.includes('group')) ||
+            (field.key === 'costPrice' && hText.includes('dpl')) ||
+            (field.key === 'sellingPrice' && hText.includes('rate 1')) ||
+            (field.key === 'currentStock' && hText.includes('opening')) ||
+            (field.key === 'packing' && hText.includes('pack')) ||
+            (field.key === 'name' && hText.includes('item'));
+          });
+          if (matchedCol) initialMapping[field.key] = matchedCol;
         });
         
         setMapping(initialMapping);
@@ -185,7 +199,7 @@ export default function BulkUploadPage() {
                   <label className="text-sm font-medium text-gray-700 w-1/2">{field.label}</label>
                   <select className="w-1/2 border p-2 rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={mapping[field.key] || ""} onChange={(e) => setMapping({ ...mapping, [field.key]: e.target.value })}>
                     <option value="">-- Skip / Not Available --</option>
-                    {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                    {headers.map(h => <option key={h.key} value={h.key}>{h.label} {h.sample ? `(Ex: ${h.sample})` : ''}</option>)}
                   </select>
                 </div>
               ))}
