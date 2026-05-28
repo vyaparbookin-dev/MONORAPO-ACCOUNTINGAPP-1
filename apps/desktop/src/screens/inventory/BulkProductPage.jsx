@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { Upload, Download, ArrowRight, Settings2 } from "lucide-react";
+import { Upload, Download, ArrowRight, Settings2, History, Undo2, X, Trash2 } from "lucide-react";
 import api from "../../services/api";
 import * as XLSX from "xlsx";
+import { dbService } from "../../services/dbService";
 
 const SYSTEM_FIELDS = [
   { key: "name", label: "Item Name (*Required)" },
@@ -33,6 +34,48 @@ const BulkProductPage = () => {
   const [headers, setHeaders] = useState([]);
   const [mapping, setMapping] = useState({});
   const [uploading, setUploading] = useState(false);
+
+  // Undo Upload States
+  const [showUndoModal, setShowUndoModal] = useState(false);
+  const [undoTimeframe, setUndoTimeframe] = useState("1");
+  const [recentProducts, setRecentProducts] = useState([]);
+  const [undoLoading, setUndoLoading] = useState(false);
+
+  const fetchRecentProducts = async (timeframe) => {
+    try {
+      let allProds = await dbService.getInventory?.();
+      if(!allProds || allProds.length === 0) {
+        const res = await api.get('/api/inventory').catch(()=>({data:[]}));
+        allProds = res.data?.products || res.data || [];
+      }
+      const safeProds = Array.isArray(allProds) ? allProds : [];
+      const hours = parseFloat(timeframe);
+      const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+      const recent = safeProds.filter(p => p.createdAt && new Date(p.createdAt) >= cutoff);
+      setRecentProducts(recent);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleConfirmUndo = async () => {
+    if (recentProducts.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete these ${recentProducts.length} products?`)) return;
+    setUndoLoading(true);
+    try {
+      for (let i = 0; i < recentProducts.length; i += 20) {
+        const chunk = recentProducts.slice(i, i + 20);
+        for (const item of chunk) await dbService.deleteProduct?.(item._id || item.uuid).catch(()=>{});
+        await Promise.all(chunk.map(item => api.delete(`/api/inventory/${item._id}`).catch(() => null)));
+      }
+      alert(`Successfully deleted ${recentProducts.length} products!`);
+      setShowUndoModal(false);
+    } catch(err) {
+      alert("Error undoing products.");
+    } finally {
+      setUndoLoading(false);
+    }
+  };
 
   const handleFileParse = (e) => {
     const selectedFile = e.target.files[0];
@@ -132,9 +175,14 @@ const BulkProductPage = () => {
           <h2 className="text-2xl font-bold text-gray-800">Bulk Product Upload</h2>
           <p className="text-sm text-gray-500">Upload and map your Excel/CSV data manually.</p>
         </div>
-        <button onClick={downloadTemplate} className="flex items-center gap-2 text-blue-600 hover:text-blue-800 text-sm font-semibold">
-          <Download size={16} /> Download Template
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => { setShowUndoModal(true); fetchRecentProducts("1"); }} className="flex items-center gap-2 text-orange-600 bg-orange-50 px-3 py-2 rounded-lg hover:bg-orange-100 text-sm font-semibold border border-orange-200 transition">
+            <History size={16} /> Undo Last Upload
+          </button>
+          <button onClick={downloadTemplate} className="flex items-center gap-2 text-blue-600 bg-blue-50 px-3 py-2 rounded-lg hover:bg-blue-100 text-sm font-semibold border border-blue-200 transition">
+            <Download size={16} /> Download Template
+          </button>
+        </div>
       </div>
 
       {step === 1 ? (
@@ -223,6 +271,45 @@ const BulkProductPage = () => {
               >
                 {uploading ? "Importing..." : "Confirm & Import Data"} <ArrowRight size={18} />
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Undo Modal */}
+      {showUndoModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden text-left">
+            <div className="p-4 border-b flex justify-between items-center bg-orange-50">
+              <h3 className="font-bold text-orange-700 flex items-center gap-2"><Undo2 size={20}/> Undo Recent Upload</h3>
+              <button onClick={() => setShowUndoModal(false)} className="text-orange-400 hover:text-orange-700"><X size={20}/></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">Select a timeframe to find and delete products that were uploaded by mistake.</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Timeframe</label>
+                <select className="w-full border border-gray-300 rounded-lg p-2 outline-none focus:ring-2 focus:ring-orange-500" value={undoTimeframe} onChange={(e) => { setUndoTimeframe(e.target.value); fetchRecentProducts(e.target.value); }}>
+                  <option value="0.25">Last 15 Minutes</option>
+                  <option value="1">Last 1 Hour</option>
+                  <option value="4">Last 4 Hours</option>
+                  <option value="24">Last 24 Hours</option>
+                </select>
+              </div>
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <h4 className="font-bold text-gray-800">Found: {recentProducts.length} Products</h4>
+                {recentProducts.length > 0 && (
+                  <ul className="text-sm text-gray-600 mt-2 space-y-1 max-h-32 overflow-y-auto">
+                    {recentProducts.slice(0, 5).map(p => <li key={p._id}>• {p.name} (SKU: {p.sku})</li>)}
+                    {recentProducts.length > 5 && <li className="font-medium">... and {recentProducts.length - 5} more</li>}
+                  </ul>
+                )}
+              </div>
+              <div className="pt-4 flex gap-3">
+                <button onClick={() => setShowUndoModal(false)} className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg hover:bg-gray-200 font-medium">Cancel</button>
+                <button onClick={handleConfirmUndo} disabled={recentProducts.length === 0 || undoLoading} className="flex-1 bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+                  {undoLoading ? "Deleting..." : <><Trash2 size={18}/> Delete {recentProducts.length}</>}
+                </button>
+              </div>
             </div>
           </div>
         </div>
