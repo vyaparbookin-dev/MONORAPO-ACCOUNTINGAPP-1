@@ -10,6 +10,9 @@ export default function DashboardScreen() {
     completedPayments: 0,
     activeProducts: 0,
     monthlyData: [],
+    lowStockItems: 0,
+    pendingBillsCount: 0,
+    pendingExpensesCount: 0,
   });
   const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,20 +29,34 @@ export default function DashboardScreen() {
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
 
-      const billsResponse = await api.get("/api/billing");
-      const rawData = billsResponse.data || billsResponse;
-      const billsData = Array.isArray(rawData) ? rawData : (rawData.bills || []);
+      // Parallel API calls for faster loading
+      const [billsRes, expensesRes, invSummaryRes, approvalsRes] = await Promise.all([
+        api.get("/api/billing").catch(() => ({ data: { bills: [] } })),
+        api.get("/api/expense").catch(() => ({ data: { expenses: [] } })),
+        api.get("/api/inventory/summary").catch(() => ({ data: { summary: {} } })),
+        api.get("/api/approvals").catch(() => ({ data: { data: {} } }))
+      ]);
+
+      const billsData = billsRes.data?.bills || billsRes.data || [];
+      const expensesData = expensesRes.data?.expenses || expensesRes.data || [];
+      const invSummary = invSummaryRes.data?.summary || {};
+      const approvalsData = approvalsRes.data?.data || {};
 
       // Filter by date range
       const filteredBills = filterBillsByDate(billsData, dateRange);
+      const filteredExpenses = filterBillsByDate(expensesData, dateRange);
       setBills(filteredBills.slice(0, 8));
 
       // Calculate stats from filtered data
       const totalRevenue = filteredBills.reduce((sum, b) => 
         sum + (b.finalAmount || b.totalAmount || b.total || 0), 0);
-      const totalExpenses = 55000;
+      const totalExpenses = filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
       const pendingPayments = filteredBills.filter((b) => b.status !== "paid").length;
       const completedPayments = filteredBills.filter((b) => b.status === "paid").length;
+      const activeProducts = invSummary.totalProducts || 0;
+      const lowStockItems = invSummary.lowStockItems || 0;
+      const pendingBillsCount = (approvalsData.bills || []).length;
+      const pendingExpensesCount = (approvalsData.expenses || []).length;
 
       // Generate monthly data for chart
       const monthlyData = generateMonthlyData(filteredBills);
@@ -49,8 +66,11 @@ export default function DashboardScreen() {
         totalExpenses,
         pendingPayments,
         completedPayments,
-        activeProducts: 3,
+        activeProducts,
         monthlyData,
+        lowStockItems,
+        pendingBillsCount,
+        pendingExpensesCount,
       });
       
       setLastUpdated(new Date());
@@ -64,6 +84,9 @@ export default function DashboardScreen() {
         completedPayments: 0,
         activeProducts: 0,
         monthlyData: [],
+        lowStockItems: 0,
+        pendingBillsCount: 0,
+        pendingExpensesCount: 0,
       });
     } finally {
       setLoading(false);
@@ -73,13 +96,13 @@ export default function DashboardScreen() {
 
   const filterBillsByDate = (bills, range) => {
     const now = new Date();
-    const daysMap = { "last7days": 7, "last30days": 30, "last90days": 90, "allyears": Infinity };
+    const daysMap = { "last7days": 7, "last30days": 30, "last90days": 90, "allyear": Infinity };
     const days = daysMap[range] || 30;
     
     if (days === Infinity) return bills;
     
-    return bills.filter(bill => {
-      const billDate = new Date(bill.createdAt);
+    return (bills || []).filter(item => {
+      const billDate = new Date(item.createdAt || item.date);
       const diffTime = Math.abs(now - billDate);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       return diffDays <= days;
@@ -151,7 +174,7 @@ export default function DashboardScreen() {
               <option value="last7days">Last 7 Days</option>
               <option value="last30days">Last 30 Days</option>
               <option value="last90days">Last 90 Days</option>
-              <option value="allyears">All Time</option>
+              <option value="allyear">All Time</option>
             </select>
           </div>
           
@@ -221,7 +244,7 @@ export default function DashboardScreen() {
         <KPICard
           label="Active Products"
           value={stats.activeProducts}
-          subtext="3 low stock"
+          subtext={`${stats.lowStockItems} low stock`}
           icon={<Package className="text-purple-600" size={20} />}
           bgColor="bg-gradient-to-br from-purple-50 to-purple-100"
           borderColor="border-purple-200"
@@ -336,30 +359,27 @@ export default function DashboardScreen() {
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <AlertCircle size={20} className="text-orange-600" />
               Alerts
-              <span className="ml-auto bg-orange-100 text-orange-700 text-xs font-bold px-2 py-0.5 rounded-full">3</span>
+              <span className="ml-auto bg-orange-100 text-orange-700 text-xs font-bold px-2 py-0.5 rounded-full">{stats.lowStockItems + stats.pendingBillsCount + stats.pendingExpensesCount}</span>
             </h3>
             <div className="space-y-3">
+              {stats.lowStockItems > 0 && (
               <div className="flex items-start gap-3 p-3 bg-white/60 rounded-lg border border-orange-100">
                 <span className="text-orange-600 text-lg">⚠️</span>
                 <div>
                   <p className="text-gray-800 font-medium text-sm">Low Stock Alert</p>
-                  <p className="text-gray-600 text-xs">3 products have low stock</p>
+                  <p className="text-gray-600 text-xs">{stats.lowStockItems} products have low stock</p>
                 </div>
               </div>
-              <div className="flex items-start gap-3 p-3 bg-white/60 rounded-lg border border-red-100">
-                <span className="text-red-600 text-lg">⏰</span>
-                <div>
-                  <p className="text-gray-800 font-medium text-sm">Overdue Invoice</p>
-                  <p className="text-gray-600 text-xs">INV001 is 10 days overdue</p>
-                </div>
-              </div>
+              )}
+              {stats.pendingBillsCount > 0 && (
               <div className="flex items-start gap-3 p-3 bg-white/60 rounded-lg border border-blue-100">
                 <span className="text-blue-600 text-lg">📋</span>
                 <div>
-                  <p className="text-gray-800 font-medium text-sm">Pending Approval</p>
-                  <p className="text-gray-600 text-xs">2 invoices pending approval</p>
+                  <p className="text-gray-800 font-medium text-sm">Pending Invoice Approvals</p>
+                  <p className="text-gray-600 text-xs">{stats.pendingBillsCount} invoices pending approval</p>
                 </div>
               </div>
+              )}
             </div>
           </div>
         </div>
@@ -420,16 +440,16 @@ export default function DashboardScreen() {
           </div>
           
           <div className="space-y-5">
-            <ExpenseItem label="Rent" amount={50000} percentage={45} color="from-red-500" />
-            <ExpenseItem label="Salary" amount={75000} percentage={68} color="from-blue-500" />
-            <ExpenseItem label="Supplies" amount={15000} percentage={13} color="from-green-500" />
-            <ExpenseItem label="Utilities" amount={5000} percentage={5} color="from-orange-500" />
+            <ExpenseItem label="Rent" amount={50000} percentage={stats.totalExpenses > 0 ? (50000/stats.totalExpenses*100) : 0} color="from-red-500" />
+            <ExpenseItem label="Salary" amount={75000} percentage={stats.totalExpenses > 0 ? (75000/stats.totalExpenses*100) : 0} color="from-blue-500" />
+            <ExpenseItem label="Supplies" amount={15000} percentage={stats.totalExpenses > 0 ? (15000/stats.totalExpenses*100) : 0} color="from-green-500" />
+            <ExpenseItem label="Utilities" amount={5000} percentage={stats.totalExpenses > 0 ? (5000/stats.totalExpenses*100) : 0} color="from-orange-500" />
           </div>
 
           {/* Total */}
           <div className="mt-6 pt-4 border-t border-gray-100 flex justify-between items-center">
             <span className="font-semibold text-gray-700">Total Expenses</span>
-            <span className="text-xl font-bold text-gray-900">₹1,45,000</span>
+            <span className="text-xl font-bold text-gray-900">₹{stats.totalExpenses.toLocaleString()}</span>
           </div>
         </div>
       </div>
@@ -512,7 +532,7 @@ function ExpenseItem({ label, amount, percentage, color }) {
       <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
         <div
           className={`h-full rounded-full bg-gradient-to-r ${color} to-transparent group-hover:opacity-80 transition-all duration-500`}
-          style={{ width: `${percentage}%` }}
+          style={{ width: `${Math.min(percentage, 100)}%` }}
         ></div>
       </div>
       <p className="text-xs text-gray-500 mt-1">{percentage}% of total</p>

@@ -206,7 +206,11 @@ const BulkProductPage = () => {
             </div>
 
             <div className="flex justify-between items-center border-t pt-4 mt-6">
-              <button onClick={() => { setStep(1); setFile(null); }} className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 font-medium">
+              <button onClick={() => { 
+                setStep(1); 
+                setFile(null); 
+                if (document.getElementById('bulk-upload')) document.getElementById('bulk-upload').value = null; 
+              }} className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 font-medium">
                 Cancel & Back
               </button>
               <button
