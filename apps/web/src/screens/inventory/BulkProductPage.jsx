@@ -11,15 +11,16 @@ const SYSTEM_FIELDS = [
   { key: "subCategory", label: "Sub Category" },
   { key: "brand", label: "Company / Brand" },
   { key: "hsnCode", label: "HSN Code" },
-  { key: "packing", label: "Packing (e.g. 1x10)" },
-  { key: "unit", label: "Unit (e.g. PCS)" },
-  { key: "secondaryUnit", label: "Unit-2 (Alt Unit)" },
-  { key: "conversionRate", label: "Conversion Rate" },
-  { key: "costPrice", label: "Cost Price / DPL" },
+  { key: "packing", label: "Packing (e.g. ML, 10x10)" },
+  { key: "unit", label: "Unit 1 (e.g. PCS)" },
+  { key: "secondaryUnit", label: "Unit 2 (e.g. CRT, BOX)" },
+  { key: "conversionRate", label: "Conversion (e.g. 12)" },
+  { key: "costPrice", label: "Cost Price / DPL / P.Cost" },
   { key: "sellingPrice", label: "Rate 1 (Selling Price)" },
   { key: "wholesalePrice", label: "Rate 2 (Wholesale)" },
   { key: "dealerPrice", label: "Rate 3 (Dealer)" },
   { key: "mrp", label: "MRP" },
+  { key: "discount", label: "Discount %" },
   { key: "gstRate", label: "GST %" },
   { key: "currentStock", label: "Opening Stock" },
   { key: "minimumStock", label: "Min Quantity" },
@@ -89,7 +90,8 @@ const BulkProductPage = () => {
       if (rawData.length > 1) {
         const excelHeaders = rawData[0]; // Row 1 (Headers)
         const firstDataRow = rawData[1]; // Row 2 (Sample Data)
-        const actualData = rawData.slice(1); // Data starting from Row 2
+        // Empty rows ko ignore karne ka bulletproof logic
+        const actualData = rawData.slice(1).filter(row => Object.values(row).some(val => val !== "")); 
         
         const fileColumns = Object.keys(excelHeaders);
         const enhancedHeaders = fileColumns.map(col => ({
@@ -108,11 +110,16 @@ const BulkProductPage = () => {
             const hText = String(excelHeaders[col]).toLowerCase();
             return hText.includes(field.key.toLowerCase()) || 
             (field.key === 'category' && hText.includes('group')) ||
-            (field.key === 'costPrice' && hText.includes('dpl')) ||
+            (field.key === 'costPrice' && (hText.includes('dpl') || hText.includes('p.cost'))) ||
             (field.key === 'sellingPrice' && hText.includes('rate 1')) ||
+            (field.key === 'wholesalePrice' && hText.includes('rate 2')) ||
+            (field.key === 'dealerPrice' && hText.includes('rate 3')) ||
             (field.key === 'currentStock' && hText.includes('opening')) ||
+            (field.key === 'unit' && (hText.includes('unit 1') || hText.includes('unit-1'))) ||
+            (field.key === 'secondaryUnit' && (hText.includes('unit-2') || hText.includes('unit 2') || hText.includes('alt'))) ||
             (field.key === 'packing' && hText.includes('pack')) ||
-            (field.key === 'name' && hText.includes('item'));
+            (field.key === 'conversionRate' && hText.includes('conv')) ||
+            (field.key === 'name' && (hText === 'item' || hText === 'product name' || hText === 'item name'));
           });
           if (matchedCol) initialMapping[field.key] = matchedCol;
         });
@@ -147,9 +154,9 @@ const BulkProductPage = () => {
   const downloadTemplate = () => {
     const templateData = [
       {
-        "item-code": "ITM-001", "item name": "Example Product", "barcode": "890123456789", "packing": "1x10", "group": "Electronics",
+        "item-code": "ITM-001", "item name": "Example Product", "barcode": "890123456789", "packing": "10x10", "group": "Electronics",
         "company": "Samsung", "hsn code": "8517", "unit": "pcs", "unit-2": "box", "conversionunit -1": 10,
-        "costPrice": 1000, "rate 1": 1500, "rate 2": 1400, "rate 3": 1350, "mrp": 1999, "gst": 18,
+        "costPrice": 1000, "rate 1": 1500, "rate 2": 1400, "rate 3": 1350, "mrp": 1999, "discount": 5, "gst": 18,
         "opening stock": 50, "miniqua": 5, "max.qua": 100
       }
     ];
@@ -202,9 +209,8 @@ const BulkProductPage = () => {
             <h3 className="font-bold text-gray-800">Map Your Columns</h3>
           </div>
           <div className="p-6">
-            <p className="text-sm text-gray-600 mb-6">
-              Please match your Excel column names to our System fields. Skip the ones you don't have.
-            </p>
+            <p className="text-sm text-gray-600 mb-2">System ne automatically columns match karne ki koshish ki hai.</p>
+            <p className="text-sm text-red-600 font-medium mb-6">* Agar koi field galat map hui hai (e.g. Duplicate names ki wajah se), toh aap use Dropdown se manually sahi kar sakte hain.</p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[50vh] overflow-y-auto pr-2 mb-6">
               {SYSTEM_FIELDS.map((field) => (

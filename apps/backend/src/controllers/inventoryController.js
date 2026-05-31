@@ -103,13 +103,17 @@ export const bulkImportProducts = async (req, res) => {
         Object.assign(item, rawItem); // Fallback: agar frontend ne bina mapping already match karke bheja hai
       }
 
+      // Agar data me 'name' ya 'item name' dono hi nahi hain (completely empty/invalid row), toh use skip karein
+      const itemName = item.name || item['item name'] || item.productName || item['Product Name'];
+      if (!itemName || String(itemName).trim() === "") continue;
+
       // Agar user ne Excel me SKU ya Barcode nahi diya, toh automatic generate karo
       const baseSku = item.sku || item['item-code'] || item.itemCode || `SKU-${Date.now()}-${i}`;
       const baseBarcode = item.barcode || item.barcodeNo || `BAR-${baseSku}`;
 
       // Mapping Logic (Backend me safely store karne ke liye format)
       formattedProducts.push({
-        name: item.name || item['item name'] || item.productName || "Unknown Product",
+        name: String(itemName).trim(),
         companyId: companyId,
         category: item.category || item.group || item.Category || "General",
         subCategory: item.subCategory || "",       // Excel column mapped to SubCategory
@@ -133,6 +137,10 @@ export const bulkImportProducts = async (req, res) => {
         maximumStock: Number(item.maximumStock) || Number(item['max.qua']) || 0,
         isActive: true
       });
+    }
+
+    if (formattedProducts.length === 0) {
+      return res.status(400).json({ success: false, message: "No valid product data found. Please check your Excel mapping." });
     }
 
     // bulkWrite ka use karke "Upsert" (Update if exists, Insert if new) logic
