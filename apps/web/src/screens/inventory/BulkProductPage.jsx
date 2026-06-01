@@ -223,7 +223,7 @@ const BulkProductPage = () => {
                   >
                     <option value="">-- Skip / Not Available --</option>
                     {headers.map(h => (
-                      <option key={h} value={h}>{h}</option>
+                      <option key={h.key} value={h.key}>{h.label} {h.sample ? `(Ex: ${h.sample})` : ''}</option>
                     ))}
                   </select>
                 </div>

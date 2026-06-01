@@ -88,26 +88,36 @@ const BulkProductPage = () => {
       const wb = XLSX.read(bstr, { type: "binary" });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      const parsedData = XLSX.utils.sheet_to_json(ws);
+      const rawData = XLSX.utils.sheet_to_json(ws, { header: "A", defval: "" });
       
-      if (parsedData.length > 0) {
-        const fileHeaders = Object.keys(parsedData[0]);
-        setHeaders(fileHeaders);
-        setData(parsedData);
+      if (rawData.length > 1) {
+        const excelHeaders = rawData[0]; // Row 1 (Headers)
+        const firstDataRow = rawData[1]; // Row 2 (Sample Data)
+        const actualData = rawData.slice(1).filter(row => Object.values(row).some(val => val !== "")); 
         
-        // Smart auto-guess initial mapping (Aapke liye automatic map kardega jo match hoga)
+        const fileColumns = Object.keys(excelHeaders);
+        const enhancedHeaders = fileColumns.map(col => ({
+          key: col,
+          label: `Col ${col}: ${excelHeaders[col] || 'Empty'}`,
+          sample: firstDataRow[col] ? String(firstDataRow[col]).substring(0, 20) : ""
+        }));
+
+        setHeaders(enhancedHeaders);
+        setData(actualData);
+        
         const initialMapping = {};
         SYSTEM_FIELDS.forEach(field => {
-          const matchedHeader = fileHeaders.find(h => 
-            h.toLowerCase().includes(field.key.toLowerCase()) || 
-            (field.key === 'category' && h.toLowerCase().includes('group')) ||
-            (field.key === 'costPrice' && h.toLowerCase().includes('dpl')) ||
-            (field.key === 'sellingPrice' && h.toLowerCase().includes('rate 1')) ||
-            (field.key === 'currentStock' && h.toLowerCase().includes('opening')) ||
-            (field.key === 'packing' && h.toLowerCase().includes('pack')) ||
-            (field.key === 'name' && h.toLowerCase().includes('item'))
-          );
-          if (matchedHeader) initialMapping[field.key] = matchedHeader;
+          const matchedCol = fileColumns.find(col => {
+            const hText = String(excelHeaders[col]).toLowerCase();
+            return hText.includes(field.key.toLowerCase()) || 
+            (field.key === 'category' && hText.includes('group')) ||
+            (field.key === 'costPrice' && (hText.includes('dpl') || hText.includes('p.cost'))) ||
+            (field.key === 'sellingPrice' && hText.includes('rate 1')) ||
+            (field.key === 'currentStock' && hText.includes('opening')) ||
+            (field.key === 'packing' && hText.includes('pack')) ||
+            (field.key === 'name' && (hText === 'item' || hText === 'product name' || hText === 'item name'));
+          });
+          if (matchedCol) initialMapping[field.key] = matchedCol;
         });
         
         setMapping(initialMapping);
