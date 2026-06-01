@@ -87,6 +87,8 @@ const InventoryPage = () => {
   const [showUndoModal, setShowUndoModal] = useState(false);
   const [undoTimeframe, setUndoTimeframe] = useState("1"); // hours
 
+  const safeInventoryList = Array.isArray(inventory) ? inventory : [];
+
   useEffect(() => {
     fetchInventory();
   }, []);
@@ -544,7 +546,6 @@ const InventoryPage = () => {
     setShowMergeModal(true);
   };
 
-  const safeInventoryList = Array.isArray(inventory) ? inventory : [];
   const lowStockCount = safeInventoryList.filter((item) => item.currentStock < (item.minimumStock || 10)).length;
   const totalValue = safeInventoryList.reduce((sum, item) => sum + ((item.currentStock || 0) * (item.sellingPrice || 0)), 0);
   const totalProducts = safeInventoryList.length;

@@ -236,7 +236,6 @@ export default function BulkUploadPage() {
             <div className="flex justify-between items-center border-t pt-4 mt-6">
               <button onClick={() => { 
                 setStep(1); 
-                setFile(null);
                 if (document.getElementById('fileUpload')) document.getElementById('fileUpload').value = null; 
               }} className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 font-medium">Cancel & Back</button>
               <button onClick={handleUpload} disabled={uploading} className="px-8 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-2 disabled:bg-gray-400">

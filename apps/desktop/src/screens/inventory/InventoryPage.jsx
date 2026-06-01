@@ -72,6 +72,8 @@ const InventoryPage = () => {
   const gstType = selectedCompany?.gstType || "regular";
   const isGstEnabled = selectedCompany?.enableGst !== false && String(selectedCompany?.enableGst).toLowerCase() !== "false";
 
+  const safeInventoryList = Array.isArray(inventory) ? inventory : [];
+
   useEffect(() => {
     fetchInventory();
   }, []);
@@ -511,7 +513,6 @@ const InventoryPage = () => {
     setShowMergeModal(true);
   };
 
-  const safeInventoryList = Array.isArray(inventory) ? inventory : [];
   const lowStockCount = safeInventoryList.filter((item) => item.currentStock < (item.minimumStock || 10)).length;
   const totalValue = safeInventoryList.reduce((sum, item) => sum + ((item.currentStock || 0) * (item.sellingPrice || 0)), 0);
   const totalProducts = safeInventoryList.length;
