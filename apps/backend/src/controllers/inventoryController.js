@@ -29,7 +29,7 @@ export const addProduct = async (req, res) => {
     }
 
     const {
-      name, category, subCategory, costPrice, sellingPrice, unit, stock, currentStock
+      name, category, subCategory, dpl, costPrice, sellingPrice, unit, stock, currentStock
     } = req.body;
 
     // Validation
@@ -52,6 +52,7 @@ export const addProduct = async (req, res) => {
     const product = await Product.create({
       ...req.body,
       category: category || "General",
+      dpl: Number(dpl) || 0,
       costPrice: Number(costPrice) || 0,
       sellingPrice: Number(sellingPrice) || 0,
       unit: unit || "pcs",
@@ -121,7 +122,8 @@ export const bulkImportProducts = async (req, res) => {
         hsnCode: item.hsnCode || item['hsn code'] || "0000",
         sku: baseSku,
         barcode: baseBarcode,
-        costPrice: Number(item.costPrice) || Number(item.purchaseRate) || Number(item.dpl) || 0,
+        dpl: Number(item.dpl) || Number(item.companyRate) || 0,
+        costPrice: Number(item.costPrice) || Number(item.purchaseRate) || Number(item.pCost) || Number(item['p.cost']) || Number(item.landing) || 0,
         sellingPrice: Number(item.sellingPrice) || Number(item['rate 1']) || Number(item.rate1) || Number(item.mrp) || 0,
         wholesalePrice: Number(item.wholesalePrice) || Number(item['rate 2']) || Number(item.rate2) || Number(item.p1) || 0,
         dealerPrice: Number(item.dealerPrice) || Number(item['rate 3']) || Number(item.rate3) || Number(item.p2) || 0,

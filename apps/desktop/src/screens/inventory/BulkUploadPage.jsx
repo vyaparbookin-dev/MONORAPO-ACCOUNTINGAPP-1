@@ -18,7 +18,8 @@ const SYSTEM_FIELDS = [
   { key: "unit", label: "Unit (e.g. PCS)" },
   { key: "secondaryUnit", label: "Unit-2 (Alt Unit)" },
   { key: "conversionRate", label: "Conversion Rate" },
-  { key: "costPrice", label: "Cost Price / DPL" },
+  { key: "dpl", label: "DPL (Company Rate)" },
+  { key: "costPrice", label: "P.Cost / Landing Rate" },
   { key: "sellingPrice", label: "Rate 1 (Selling Price)" },
   { key: "wholesalePrice", label: "Rate 2 (Wholesale)" },
   { key: "dealerPrice", label: "Rate 3 (Dealer)" },
@@ -115,7 +116,8 @@ export default function BulkUploadPage() {
             const hText = String(excelHeaders[col]).toLowerCase();
             return hText.includes(field.key.toLowerCase()) || 
             (field.key === 'category' && hText.includes('group')) ||
-            (field.key === 'costPrice' && hText.includes('dpl')) ||
+            (field.key === 'dpl' && hText.includes('dpl')) ||
+            (field.key === 'costPrice' && (hText.includes('p.cost') || hText.includes('landing') || hText.includes('purchase rate'))) ||
             (field.key === 'sellingPrice' && hText.includes('rate 1')) ||
             (field.key === 'currentStock' && hText.includes('opening')) ||
             (field.key === 'packing' && hText.includes('pack')) ||

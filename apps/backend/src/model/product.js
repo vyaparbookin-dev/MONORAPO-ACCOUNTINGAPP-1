@@ -18,6 +18,7 @@ const productSchema = new mongoose.Schema({
   barcode: { type: String }, // Auto-generated
   
   // Pricing
+  dpl: { type: Number, default: 0 }, // Company Rate / Basic Rate
   costPrice: { type: Number, required: true }, // Cost to you
   sellingPrice: { type: Number, required: true }, // Sell price
   wholesalePrice: { type: Number, default: 0 }, // Wholesale Rate

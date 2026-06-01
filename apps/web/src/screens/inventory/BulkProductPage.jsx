@@ -15,7 +15,8 @@ const SYSTEM_FIELDS = [
   { key: "unit", label: "Unit 1 (e.g. PCS)" },
   { key: "secondaryUnit", label: "Unit 2 (e.g. CRT, BOX)" },
   { key: "conversionRate", label: "Conversion (e.g. 12)" },
-  { key: "costPrice", label: "Cost Price / DPL / P.Cost" },
+  { key: "dpl", label: "DPL (Company Rate)" },
+  { key: "costPrice", label: "P.Cost / Landing Rate" },
   { key: "sellingPrice", label: "Rate 1 (Selling Price)" },
   { key: "wholesalePrice", label: "Rate 2 (Wholesale)" },
   { key: "dealerPrice", label: "Rate 3 (Dealer)" },
@@ -110,7 +111,8 @@ const BulkProductPage = () => {
             const hText = String(excelHeaders[col]).toLowerCase();
             return hText.includes(field.key.toLowerCase()) || 
             (field.key === 'category' && hText.includes('group')) ||
-            (field.key === 'costPrice' && (hText.includes('dpl') || hText.includes('p.cost'))) ||
+            (field.key === 'dpl' && hText.includes('dpl')) ||
+            (field.key === 'costPrice' && (hText.includes('p.cost') || hText.includes('landing') || hText.includes('purchase rate'))) ||
             (field.key === 'sellingPrice' && hText.includes('rate 1')) ||
             (field.key === 'wholesalePrice' && hText.includes('rate 2')) ||
             (field.key === 'dealerPrice' && hText.includes('rate 3')) ||

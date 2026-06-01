@@ -16,6 +16,7 @@ const AddProductPage = () => {
     subCategory: "",
     hsnCode: "",
     image: "",
+    dpl: "",
     costPrice: "",
     costPriceWithTax: "",
     profitMargin: "", // NEW: Profit Margin %
@@ -272,7 +273,7 @@ const AddProductPage = () => {
   const resetForm = () => {
     setForm({
       name: "", sku: "", barcode: `ITM${Date.now().toString().slice(-6)}`, description: "", category: "", subCategory: "", image: "",
-      hsnCode: "", costPrice: "", costPriceWithTax: "", profitMargin: "", sellingPrice: "",
+      hsnCode: "", dpl: "", costPrice: "", costPriceWithTax: "", profitMargin: "", sellingPrice: "",
       sellingPriceWithTax: "", mrp: "", gstRate: "", unit: "pcs", stock: "",
       secondaryUnit: "", conversionRate: "",
       wholesalePrice: "", wholesalePriceWithTax: "", wholesaleMargin: "",
@@ -304,7 +305,7 @@ const AddProductPage = () => {
       
       const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
       const finalBarcode = form.barcode || `BAR-${finalSku}`;
-      const payload = { ...form, name: cleanName, category: formatMasterValue(form.category, categories) || "General", subCategory: formatMasterValue(form.subCategory, subCategories), brand: formatMasterValue(form.brand, brands), sku: finalSku, barcode: finalBarcode, hsnCode: form.hsnCode || "0000" };
+      const payload = { ...form, name: cleanName, dpl: parseFloat(form.dpl) || 0, category: formatMasterValue(form.category, categories) || "General", subCategory: formatMasterValue(form.subCategory, subCategories), brand: formatMasterValue(form.brand, brands), sku: finalSku, barcode: finalBarcode, hsnCode: form.hsnCode || "0000" };
 
       // Desktop: Local SQLite Offline Guarantee
       if (window.electron && window.electron.db) {
@@ -514,7 +515,16 @@ const AddProductPage = () => {
           )}
 
           {/* Base Costs & GST */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">DPL (Company Rate)</label>
+              <input
+                type="number"
+                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                value={form.dpl}
+                onChange={(e) => setForm({ ...form, dpl: e.target.value })}
+              />
+            </div>
             {showPurchaseGST && (
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">GST Rate (%)</label>
