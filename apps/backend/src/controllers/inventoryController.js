@@ -94,7 +94,7 @@ export const bulkImportProducts = async (req, res) => {
     const parseNum = (val) => {
       if (val === null || val === undefined || val === '') return 0;
       if (typeof val === 'number') return val;
-      const cleaned = String(val).replace(/[₹$,\s]/g, '');
+      const cleaned = String(val).replace(/[^\d.-]/g, ''); // Extract only exact numbers/decimals
       const num = Number(cleaned);
       return isNaN(num) ? 0 : num;
     };
@@ -173,20 +173,35 @@ export const bulkImportProducts = async (req, res) => {
 
     // --- SMART DEDUPLICATION & VALIDATION (Excel Sheet ke andar) ---
     const validProducts = [];
+    const seenNames = new Set();
     const seenSkus = new Set();
     const seenBarcodes = new Set();
 
     for (const p of formattedProducts) {
-        const isAutoSku = p.sku.startsWith('SKU-');
-        const isAutoBarcode = p.barcode.startsWith('BAR-');
+        let isAutoSku = p.sku.startsWith('SKU-');
+        let isAutoBarcode = p.barcode.startsWith('BAR-');
         
-        const skuKey = p.sku.toLowerCase();
-        const barcodeKey = p.barcode.toLowerCase();
+        let skuKey = p.sku.toLowerCase();
+        let barcodeKey = p.barcode.toLowerCase();
+        const nameKey = p.name.toLowerCase();
 
-        // Humne Name se duplicate skip karna hata diya hai, ab sirf explicit duplicate SKU hone par hi ignore karega
-        if (!isAutoSku && seenSkus.has(skuKey)) continue;
-        if (!isAutoBarcode && seenBarcodes.has(barcodeKey)) continue;
+        // Agar galti se Excel me same Name do baar ho tab hi skip karega (Mongo rules)
+        if (seenNames.has(nameKey)) continue;
 
+        // Sabse Badi Fix: Agar user ne galat/duplicate SKU map kar diya hai, toh product DROP nahi karna hai!
+        // Usko ek auto-SKU de dena hai taaki wo bina error ke database me successfully save ho jaye.
+        if (!isAutoSku && seenSkus.has(skuKey)) {
+            p.sku = `SKU-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+            skuKey = p.sku.toLowerCase();
+            isAutoSku = true;
+        }
+        if (!isAutoBarcode && seenBarcodes.has(barcodeKey)) {
+            p.barcode = `BAR-${p.sku}`;
+            barcodeKey = p.barcode.toLowerCase();
+            isAutoBarcode = true;
+        }
+
+        seenNames.add(nameKey);
         if (!isAutoSku) seenSkus.add(skuKey);
         if (!isAutoBarcode) seenBarcodes.add(barcodeKey);
 
