@@ -29,7 +29,7 @@ export const addProduct = async (req, res) => {
     }
 
     const {
-      name, category, subCategory, dpl, costPrice, sellingPrice, unit, stock, currentStock
+      name, category, subCategory, costPrice, sellingPrice, unit, stock, currentStock
     } = req.body;
 
     // Validation
@@ -52,7 +52,6 @@ export const addProduct = async (req, res) => {
     const product = await Product.create({
       ...req.body,
       category: category || "General",
-      dpl: Number(dpl) || 0,
       costPrice: Number(costPrice) || 0,
       sellingPrice: Number(sellingPrice) || 0,
       unit: unit || "pcs",
@@ -90,6 +89,14 @@ export const bulkImportProducts = async (req, res) => {
     // Agar Excel me pehli line (Row 1) headers hain ('Product Name', 'Price'), toh startRow 1 bhejenge taaki wo skip ho jaye.
     const startIndex = startRow !== undefined ? Number(startRow) : 0;
 
+    // Safe number parser for Excel strings with commas or spaces
+    const parseNum = (val) => {
+      if (typeof val === 'number') return val;
+      if (!val) return 0;
+      const num = Number(String(val).replace(/,/g, ''));
+      return isNaN(num) ? 0 : num;
+    };
+
     // Loop through each product from the Excel sheet
     for (let i = startIndex; i < products.length; i++) {
       const rawItem = products[i];
@@ -122,8 +129,7 @@ export const bulkImportProducts = async (req, res) => {
         hsnCode: item.hsnCode || item['hsn code'] || "0000",
         sku: baseSku,
         barcode: baseBarcode,
-        dpl: Number(item.dpl) || Number(item.companyRate) || 0,
-        costPrice: Number(item.costPrice) || Number(item.purchaseRate) || Number(item.pCost) || Number(item['p.cost']) || Number(item.landing) || 0,
+        costPrice: Number(item.costPrice) || Number(item.purchaseRate) || Number(item.dpl) || 0,
         sellingPrice: Number(item.sellingPrice) || Number(item['rate 1']) || Number(item.rate1) || Number(item.mrp) || 0,
         wholesalePrice: Number(item.wholesalePrice) || Number(item['rate 2']) || Number(item.rate2) || Number(item.p1) || 0,
         dealerPrice: Number(item.dealerPrice) || Number(item['rate 3']) || Number(item.rate3) || Number(item.p2) || 0,
@@ -145,8 +151,16 @@ export const bulkImportProducts = async (req, res) => {
       return res.status(400).json({ success: false, message: "No valid product data found. Please check your Excel mapping." });
     }
 
+    // --- DEDUPLICATION LOGIC ---
+    // Prevent MongoDB E11000 errors if the Excel sheet contains duplicate product names.
+    const uniqueMap = new Map();
+    for (const p of formattedProducts) {
+        uniqueMap.set(p.name.toLowerCase(), p);
+    }
+    const deduplicatedProducts = Array.from(uniqueMap.values());
+
     // bulkWrite ka use karke "Upsert" (Update if exists, Insert if new) logic
-    const bulkOps = formattedProducts.map(item => {
+    const bulkOps = deduplicatedProducts.map(item => {
       const { sku, barcode, ...updateFields } = item;
       return {
         updateOne: {
@@ -169,6 +183,13 @@ export const bulkImportProducts = async (req, res) => {
     });
   } catch (error) {
     console.error("🔴 Bulk Import Error:", error);
+    if (error.code === 11000) {
+        return res.status(400).json({ 
+            success: false, 
+            message: "Duplicate Entry Error: File contains SKUs or Barcodes that already exist in the system for different products.", 
+            error: error.message 
+        });
+    }
     res.status(500).json({ success: false, message: "Failed to import products", error: error.message });
   }
 };

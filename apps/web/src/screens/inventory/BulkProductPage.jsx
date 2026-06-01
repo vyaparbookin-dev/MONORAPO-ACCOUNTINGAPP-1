@@ -147,7 +147,7 @@ const BulkProductPage = () => {
       setMapping({});
     } catch (error) {
       console.error(error);
-      alert("Failed to upload products. Please check the file format.");
+      alert(error.response?.data?.message || error.message || "Failed to upload products. Please check the file format.");
     } finally {
       setUploading(false);
     }

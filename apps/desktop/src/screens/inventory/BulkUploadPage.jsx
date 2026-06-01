@@ -145,7 +145,7 @@ export default function BulkUploadPage() {
       setData([]);
       setMapping({});
     } catch (err) {
-      setMessage({ type: "error", text: "Upload failed. Please check the file format." });
+      setMessage({ type: "error", text: err.response?.data?.message || err.message || "Upload failed. Please check the file format." });
     } finally {
       setUploading(false);
     }
