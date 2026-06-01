@@ -89,12 +89,19 @@ export const bulkImportProducts = async (req, res) => {
     // Agar Excel me pehli line (Row 1) headers hain ('Product Name', 'Price'), toh startRow 1 bhejenge taaki wo skip ho jaye.
     const startIndex = startRow !== undefined ? Number(startRow) : 0;
 
-    // Safe number parser for Excel strings with commas or spaces
+    // Safe number parser for Excel strings with commas, spaces, or ₹ symbols
     const parseNum = (val) => {
+      if (val === null || val === undefined || val === '') return 0;
       if (typeof val === 'number') return val;
-      if (!val) return 0;
-      const num = Number(String(val).replace(/,/g, ''));
+      const num = Number(String(val).replace(/[^0-9.-]+/g, ''));
       return isNaN(num) ? 0 : num;
+    };
+
+    // Helper: Marg/Tally me khali fields me '-', 'NA', 'N/A' aata hai, jisko handle karna zaroori hai
+    const isPlaceholder = (val) => {
+        if (!val) return true;
+        const str = String(val).trim().toLowerCase();
+        return str === "" || str === "-" || str === "na" || str === "n/a" || str === "null" || str === "none";
     };
 
     // Loop through each product from the Excel sheet
@@ -115,16 +122,16 @@ export const bulkImportProducts = async (req, res) => {
       const itemName = item.name || item['item name'] || item.productName || item['Product Name'];
       if (!itemName || String(itemName).trim() === "") continue;
 
-      // Excel mapping edge cases (Capital letters, spaces) handle karne ke liye
+      // Excel mapping edge cases (Capital letters, spaces, placeholders) handle karne ke liye
       let baseSku = item.sku || item['item-code'] || item.itemCode || item.ItemCode || item['Item Code'];
-      if (baseSku) {
+      if (!isPlaceholder(baseSku)) {
           baseSku = String(baseSku).trim();
       } else {
           baseSku = `SKU-${Date.now()}-${i}`;
       }
 
       let baseBarcode = item.barcode || item.barcodeNo || item.Barcode || item['Barcode'];
-      if (baseBarcode) {
+      if (!isPlaceholder(baseBarcode)) {
           baseBarcode = String(baseBarcode).trim();
       } else {
           baseBarcode = `BAR-${baseSku}`;
@@ -140,20 +147,20 @@ export const bulkImportProducts = async (req, res) => {
         hsnCode: item.hsnCode || item['hsn code'] || "0000",
         sku: baseSku,
         barcode: baseBarcode,
-        costPrice: Number(item.costPrice) || Number(item.purchaseRate) || Number(item.dpl) || 0,
-        sellingPrice: Number(item.sellingPrice) || Number(item['rate 1']) || Number(item.rate1) || Number(item.mrp) || 0,
-        wholesalePrice: Number(item.wholesalePrice) || Number(item['rate 2']) || Number(item.rate2) || Number(item.p1) || 0,
-        dealerPrice: Number(item.dealerPrice) || Number(item['rate 3']) || Number(item.rate3) || Number(item.p2) || 0,
-        p3Rate: Number(item.p3) || 0,                                        // Custom p3 rate (Strict: false will auto-save)
-        discount: Number(item.discount) || 0,                                // Discount mapping
-        mrp: Number(item.mrp) || 0,
-        gstRate: Number(item.gstRate) || Number(item.gst) || 0,
+        costPrice: parseNum(item.costPrice) || parseNum(item.purchaseRate) || parseNum(item.dpl) || 0,
+        sellingPrice: parseNum(item.sellingPrice) || parseNum(item['rate 1']) || parseNum(item.rate1) || parseNum(item.mrp) || 0,
+        wholesalePrice: parseNum(item.wholesalePrice) || parseNum(item['rate 2']) || parseNum(item.rate2) || parseNum(item.p1) || 0,
+        dealerPrice: parseNum(item.dealerPrice) || parseNum(item['rate 3']) || parseNum(item.rate3) || parseNum(item.p2) || 0,
+        p3Rate: parseNum(item.p3) || 0,
+        discount: parseNum(item.discount) || 0,
+        mrp: parseNum(item.mrp) || 0,
+        gstRate: parseNum(item.gstRate) || parseNum(item.gst) || 0,
         unit: item.unit || "pcs",
         secondaryUnit: item.secondaryUnit || item['unit-2'] || "",
-        conversionRate: Number(item.conversionRate) || Number(item['conversionunit -1']) || 0,
-        currentStock: Number(item.currentStock) || Number(item['opening stock']) || Number(item.stock) || Number(item.quantity) || 0,
-        minimumStock: Number(item.minimumStock) || Number(item.miniqua) || 10,
-        maximumStock: Number(item.maximumStock) || Number(item['max.qua']) || 0,
+        conversionRate: parseNum(item.conversionRate) || parseNum(item['conversionunit -1']) || 0,
+        currentStock: parseNum(item.currentStock) || parseNum(item['opening stock']) || parseNum(item.stock) || parseNum(item.quantity) || 0,
+        minimumStock: parseNum(item.minimumStock) || parseNum(item.miniqua) || 10,
+        maximumStock: parseNum(item.maximumStock) || parseNum(item['max.qua']) || 0,
         isActive: true
       });
     }
@@ -164,7 +171,6 @@ export const bulkImportProducts = async (req, res) => {
 
     // --- SMART DEDUPLICATION & VALIDATION (Excel Sheet ke andar) ---
     const validProducts = [];
-    const seenNames = new Set();
     const seenSkus = new Set();
     const seenBarcodes = new Set();
 
@@ -172,16 +178,13 @@ export const bulkImportProducts = async (req, res) => {
         const isAutoSku = p.sku.startsWith('SKU-');
         const isAutoBarcode = p.barcode.startsWith('BAR-');
         
-        const nameKey = p.name.toLowerCase();
         const skuKey = p.sku.toLowerCase();
         const barcodeKey = p.barcode.toLowerCase();
 
-        // Skip row agar Excel sheet me hi ek naam 2 baar aa gaya ho (taaki error na aaye)
-        if (seenNames.has(nameKey)) continue;
+        // Humne Name se duplicate skip karna hata diya hai, ab sirf explicit duplicate SKU hone par hi ignore karega
         if (!isAutoSku && seenSkus.has(skuKey)) continue;
         if (!isAutoBarcode && seenBarcodes.has(barcodeKey)) continue;
 
-        seenNames.add(nameKey);
         if (!isAutoSku) seenSkus.add(skuKey);
         if (!isAutoBarcode) seenBarcodes.add(barcodeKey);
 
