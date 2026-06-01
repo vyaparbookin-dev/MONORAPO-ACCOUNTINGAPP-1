@@ -89,11 +89,13 @@ export const bulkImportProducts = async (req, res) => {
     // Agar Excel me pehli line (Row 1) headers hain ('Product Name', 'Price'), toh startRow 1 bhejenge taaki wo skip ho jaye.
     const startIndex = startRow !== undefined ? Number(startRow) : 0;
 
-    // Safe number parser for Excel strings with commas, spaces, or ₹ symbols
+    // Safe number parser: Commas, spaces aur currency symbols ko hatayega
+    // Lekin agar column me string/text hai toh zabardasti number nahi nikalega
     const parseNum = (val) => {
       if (val === null || val === undefined || val === '') return 0;
       if (typeof val === 'number') return val;
-      const num = Number(String(val).replace(/[^0-9.-]+/g, ''));
+      const cleaned = String(val).replace(/[₹$,\s]/g, '');
+      const num = Number(cleaned);
       return isNaN(num) ? 0 : num;
     };
 
@@ -141,26 +143,26 @@ export const bulkImportProducts = async (req, res) => {
       formattedProducts.push({
         name: String(itemName).trim(),
         companyId: companyId,
-        category: item.category || item.group || item.Category || "General",
-        subCategory: item.subCategory || "",       // Excel column mapped to SubCategory
-        brand: item.brand || item.company || "",
-        hsnCode: item.hsnCode || item['hsn code'] || "0000",
+        category: String(item.category || item.group || "General").trim(),
+        subCategory: String(item.subCategory || "").trim(),
+        brand: String(item.brand || "").trim(), // Smart catching removed, will only take strictly mapped brand
+        hsnCode: String(item.hsnCode || "0000").trim(),
         sku: baseSku,
         barcode: baseBarcode,
-        costPrice: parseNum(item.costPrice) || parseNum(item.purchaseRate) || parseNum(item.dpl) || 0,
-        sellingPrice: parseNum(item.sellingPrice) || parseNum(item['rate 1']) || parseNum(item.rate1) || parseNum(item.mrp) || 0,
-        wholesalePrice: parseNum(item.wholesalePrice) || parseNum(item['rate 2']) || parseNum(item.rate2) || parseNum(item.p1) || 0,
-        dealerPrice: parseNum(item.dealerPrice) || parseNum(item['rate 3']) || parseNum(item.rate3) || parseNum(item.p2) || 0,
-        p3Rate: parseNum(item.p3) || 0,
-        discount: parseNum(item.discount) || 0,
-        mrp: parseNum(item.mrp) || 0,
-        gstRate: parseNum(item.gstRate) || parseNum(item.gst) || 0,
-        unit: item.unit || "pcs",
-        secondaryUnit: item.secondaryUnit || item['unit-2'] || "",
-        conversionRate: parseNum(item.conversionRate) || parseNum(item['conversionunit -1']) || 0,
-        currentStock: parseNum(item.currentStock) || parseNum(item['opening stock']) || parseNum(item.stock) || parseNum(item.quantity) || 0,
-        minimumStock: parseNum(item.minimumStock) || parseNum(item.miniqua) || 10,
-        maximumStock: parseNum(item.maximumStock) || parseNum(item['max.qua']) || 0,
+        costPrice: parseNum(item.costPrice || item.purchaseRate || item['purchase cost']),
+        sellingPrice: parseNum(item.sellingPrice || item.rate1 || item['rate 1'] || item['rate a']),
+        wholesalePrice: parseNum(item.wholesalePrice || item.rate2 || item['rate 2'] || item['rate b']),
+        dealerPrice: parseNum(item.dealerPrice || item.rate3 || item['rate 3'] || item['rate c']),
+        p3Rate: parseNum(item.p3Rate || item.p3 || item.rate4 || item['rate 4'] || item['rate d']),
+        discount: parseNum(item.discount || item.disc),
+        mrp: parseNum(item.mrp || item.maximumRetailPrice),
+        gstRate: parseNum(item.gstRate || item.gst || item.tax),
+        unit: String(item.unit || "pcs").trim(),
+        secondaryUnit: String(item.secondaryUnit || item['unit-2'] || "").trim(),
+        conversionRate: parseNum(item.conversionRate || item['conversionunit -1']),
+        currentStock: parseNum(item.currentStock || item['opening stock'] || item.stock || item.quantity),
+        minimumStock: parseNum(item.minimumStock || item.miniqua || item['min stock'] || 10),
+        maximumStock: parseNum(item.maximumStock || item['max.qua'] || item['max stock'] || 0),
         isActive: true
       });
     }
