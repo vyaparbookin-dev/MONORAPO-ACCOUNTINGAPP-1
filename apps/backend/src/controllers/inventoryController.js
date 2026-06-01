@@ -179,7 +179,11 @@ export const bulkImportProducts = async (req, res) => {
 
     res.status(200).json({ 
       success: true, 
-      message: `Import complete! ${result.upsertedCount} new products added, ${result.modifiedCount} products updated.` 
+      message: `Import complete! ${result.upsertedCount} new products added, ${result.modifiedCount} products updated.`,
+      stats: {
+        newlyAdded: result.upsertedCount,
+        updated: result.modifiedCount
+      }
     });
   } catch (error) {
     console.error("🔴 Bulk Import Error:", error);
