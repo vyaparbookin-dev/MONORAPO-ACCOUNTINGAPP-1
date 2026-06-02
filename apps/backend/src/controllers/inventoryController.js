@@ -106,63 +106,66 @@ export const bulkImportProducts = async (req, res) => {
         return str === "" || str === "-" || str === "na" || str === "n/a" || str === "null" || str === "none";
     };
 
+    const hasMapping = mapping && Object.keys(mapping).length > 0;
+
     // Loop through each product from the Excel sheet
     for (let i = startIndex; i < products.length; i++) {
       const rawItem = products[i];
       const item = {};
 
-      // Agar Tally/Marg jesa mapping configuration aaya hai, toh Excel headers ko DB fields se map karein
-      if (mapping && Object.keys(mapping).length > 0) {
+      // A, B, C, D Strict Mapping (Agar frontend se send ki gayi hai)
+      if (hasMapping) {
         for (const [dbField, excelColumnName] of Object.entries(mapping)) {
+          // Cell ka pura data strictly uthayega
           item[dbField] = rawItem[excelColumnName];
         }
       } else {
-        Object.assign(item, rawItem); // Fallback: agar frontend ne bina mapping already match karke bheja hai
+        // Fallback: Agar mapping disable hai, toh old auto-detect chalega
+        Object.assign(item, rawItem); 
       }
 
-      // Agar data me 'name' ya 'item name' dono hi nahi hain (completely empty/invalid row), toh use skip karein
-      const itemName = item.name || item['item name'] || item.productName || item['Product Name'];
+      // Agar mapped data me name nahi hai (khali row hai), toh use skip karein
+      const itemName = hasMapping ? item.name : (item.name || item['item name'] || item.productName || item['Product Name']);
       if (!itemName || String(itemName).trim() === "") continue;
 
-      // Excel mapping edge cases (Capital letters, spaces, placeholders) handle karne ke liye
-      let baseSku = item.sku || item['item-code'] || item.itemCode || item.ItemCode || item['Item Code'];
+      let baseSku = hasMapping ? item.sku : (item.sku || item['item-code'] || item.itemCode || item.ItemCode || item['Item Code']);
       if (!isPlaceholder(baseSku)) {
           baseSku = String(baseSku).trim();
       } else {
           baseSku = `SKU-${Date.now()}-${i}`;
       }
 
-      let baseBarcode = item.barcode || item.barcodeNo || item.Barcode || item['Barcode'];
+      let baseBarcode = hasMapping ? item.barcode : (item.barcode || item.barcodeNo || item.Barcode || item['Barcode']);
       if (!isPlaceholder(baseBarcode)) {
           baseBarcode = String(baseBarcode).trim();
       } else {
           baseBarcode = `BAR-${baseSku}`;
       }
 
-      // Mapping Logic (Backend me safely store karne ke liye format)
+      // Mapping Logic (Strict Mode vs Auto-detect Fallback)
       formattedProducts.push({
         name: String(itemName).trim(),
         companyId: companyId,
-        category: String(item.category || item.group || "General").trim(),
+        category: String(item.category || (!hasMapping ? item.group : null) || "General").trim(),
         subCategory: String(item.subCategory || "").trim(),
-        brand: String(item.brand || "").trim(), // Smart catching removed, will only take strictly mapped brand
+        brand: String(item.brand || "").trim(), 
         hsnCode: String(item.hsnCode || "0000").trim(),
         sku: baseSku,
         barcode: baseBarcode,
-        costPrice: parseNum(item.costPrice || item.purchaseRate || item['purchase cost']),
-        sellingPrice: parseNum(item.sellingPrice || item.rate1 || item['rate 1'] || item['rate a']),
-        wholesalePrice: parseNum(item.wholesalePrice || item.rate2 || item['rate 2'] || item['rate b']),
-        dealerPrice: parseNum(item.dealerPrice || item.rate3 || item['rate 3'] || item['rate c']),
-        p3Rate: parseNum(item.p3Rate || item.p3 || item.rate4 || item['rate 4'] || item['rate d']),
-        discount: parseNum(item.discount || item.disc),
-        mrp: parseNum(item.mrp || item.maximumRetailPrice),
-        gstRate: parseNum(item.gstRate || item.gst || item.tax),
+        costPrice: parseNum(item.costPrice || (!hasMapping ? (item.purchaseRate || item['purchase cost']) : null)),
+        sellingPrice: parseNum(item.sellingPrice || (!hasMapping ? (item.rate1 || item['rate 1'] || item['rate a']) : null)),
+        wholesalePrice: parseNum(item.wholesalePrice || (!hasMapping ? (item.rate2 || item['rate 2'] || item['rate b']) : null)),
+        dealerPrice: parseNum(item.dealerPrice || (!hasMapping ? (item.rate3 || item['rate 3'] || item['rate c']) : null)),
+        p3Rate: parseNum(item.p3Rate || (!hasMapping ? (item.p3 || item.rate4 || item['rate 4'] || item['rate d']) : null)),
+        discount: parseNum(item.discount || (!hasMapping ? item.disc : null)),
+        mrp: parseNum(item.mrp || (!hasMapping ? item.maximumRetailPrice : null)),
+        gstRate: parseNum(item.gstRate || (!hasMapping ? (item.gst || item.tax) : null)),
         unit: String(item.unit || "pcs").trim(),
-        secondaryUnit: String(item.secondaryUnit || item['unit-2'] || "").trim(),
-        conversionRate: parseNum(item.conversionRate || item['conversionunit -1']),
-        currentStock: parseNum(item.currentStock || item['opening stock'] || item.stock || item.quantity),
-        minimumStock: parseNum(item.minimumStock || item.miniqua || item['min stock'] || 10),
-        maximumStock: parseNum(item.maximumStock || item['max.qua'] || item['max stock'] || 0),
+        secondaryUnit: String(item.secondaryUnit || (!hasMapping ? item['unit-2'] : null) || "").trim(),
+        conversionRate: parseNum(item.conversionRate || (!hasMapping ? item['conversionunit -1'] : null)),
+        currentStock: parseNum(item.currentStock || (!hasMapping ? (item['opening stock'] || item.stock || item.quantity) : null)),
+        minimumStock: parseNum(item.minimumStock || (!hasMapping ? (item.miniqua || item['min stock']) : null) || 10),
+        maximumStock: parseNum(item.maximumStock || (!hasMapping ? (item['max.qua'] || item['max stock']) : null) || 0),
         isActive: true
       });
     }
@@ -222,9 +225,8 @@ export const bulkImportProducts = async (req, res) => {
     }
 
     const bulkOps = validProducts.map(item => {
-      const { sku, barcode, ...updateFields } = item;
-      const isAutoGeneratedSku = item.sku.startsWith('SKU-');
-      const isAutoGeneratedBarcode = item.barcode.startsWith('BAR-');
+      let isAutoGeneratedSku = item.sku.startsWith('SKU-');
+      let isAutoGeneratedBarcode = item.barcode.startsWith('BAR-');
 
       let matchId = null;
       if (!isAutoGeneratedSku && skuMap.has(item.sku.toLowerCase())) {
@@ -234,6 +236,32 @@ export const bulkImportProducts = async (req, res) => {
       } else if (nameMap.has(item.name.toLowerCase())) {
           matchId = nameMap.get(item.name.toLowerCase());
       }
+
+      // --- COLLISION PREVENTION (Fixes 11000 Duplicate Key Error) ---
+      if (matchId) {
+          // Agar existing product update ho raha hai, toh ensure karein ki SKU/Barcode kisi DUSRE product ka toh nahi hai
+          const confSkuId = skuMap.get(item.sku.toLowerCase());
+          if (confSkuId && confSkuId.toString() !== matchId.toString()) {
+              item.sku = `SKU-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+              isAutoGeneratedSku = true; // Prevent overwriting existing good SKU
+          }
+          
+          const confBarId = barcodeMap.get(item.barcode.toLowerCase());
+          if (confBarId && confBarId.toString() !== matchId.toString()) {
+              item.barcode = `BAR-${item.sku}`;
+              isAutoGeneratedBarcode = true; // Prevent overwriting existing good Barcode
+          }
+      } else {
+          // Agar naya product insert ho raha hai, ensure karein ki SKU/Barcode database me bilkul nahi hai
+          if (!isAutoGeneratedSku && skuMap.has(item.sku.toLowerCase())) {
+              item.sku = `SKU-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+          }
+          if (!isAutoGeneratedBarcode && barcodeMap.has(item.barcode.toLowerCase())) {
+              item.barcode = `BAR-${item.sku}`;
+          }
+      }
+
+      const { sku, barcode, ...updateFields } = item;
 
       if (matchId) {
         return {
