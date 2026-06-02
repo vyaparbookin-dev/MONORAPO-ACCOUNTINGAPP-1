@@ -1,5 +1,6 @@
 import Product from "../model/product.js";
 import StockAdjustment from "../model/stockAdjustment.js";
+import { Parser } from "json2csv";
 
 export const addPurchaseEntry = async (req, res) => {
   try {
@@ -19,6 +20,45 @@ export const addPurchaseEntry = async (req, res) => {
     res.status(201).json({ success: true, message: "Purchase saved & stock updated successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// --- EXPORT PRODUCTS TO EXCEL / CSV ---
+export const exportProductsCSV = async (req, res) => {
+  try {
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing." });
+    }
+
+    // Get all active products
+    const products = await Product.find({ companyId: req.companyId, isActive: true }).sort({ createdAt: -1 });
+
+    // Define columns you want in Excel
+    const fields = [
+      'name', 'description', 'category', 'subCategory', 'brand', 'hsnCode', 'sku', 'barcode',
+      'costPrice', 'sellingPrice', 'wholesalePrice', 'dealerPrice', 'p3Rate', 'mrp', 'discount',
+      'gstRate', 'unit', 'secondaryUnit', 'conversionRate', 'minimumStock', 'maximumStock', 'currentStock'
+    ];
+
+    // Map the database data to fit into the Excel columns
+    const csvData = products.map(p => {
+      let row = {};
+      fields.forEach(field => {
+        row[field] = p[field] !== undefined && p[field] !== null ? p[field] : '';
+      });
+      return row;
+    });
+
+    const json2csvParser = new Parser({ fields });
+    const csv = json2csvParser.parse(csvData);
+
+    // Send file to client for download
+    res.header('Content-Type', 'text/csv');
+    res.attachment(`Products_Export_${Date.now()}.csv`);
+    return res.send(csv);
+  } catch (error) {
+    console.error("Export Error:", error);
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
@@ -106,69 +146,65 @@ export const bulkImportProducts = async (req, res) => {
         return str === "" || str === "-" || str === "na" || str === "n/a" || str === "null" || str === "none";
     };
 
-    const hasMapping = mapping && Object.keys(mapping).length > 0;
-
     // Loop through each product from the Excel sheet
     for (let i = startIndex; i < products.length; i++) {
       const rawItem = products[i];
       const item = {};
 
-      // A, B, C, D Strict Mapping (Agar frontend se send ki gayi hai)
-      if (hasMapping) {
+      // Agar Tally/Marg jesa mapping configuration aaya hai, toh Excel headers ko DB fields se map karein
+      if (mapping && Object.keys(mapping).length > 0) {
         for (const [dbField, excelColumnName] of Object.entries(mapping)) {
-          // Cell ka pura data strictly uthayega
           item[dbField] = rawItem[excelColumnName];
         }
       } else {
-        // Fallback: Agar mapping disable hai, toh old auto-detect chalega
-        Object.assign(item, rawItem); 
+        Object.assign(item, rawItem); // Fallback: agar frontend ne bina mapping already match karke bheja hai
       }
 
-      // Agar mapped data me name nahi hai (khali row hai), toh use skip karein
-      const itemName = hasMapping ? item.name : (item.name || item['item name'] || item.productName || item['Product Name']);
+      // Agar data me 'name' ya 'item name' dono hi nahi hain (completely empty/invalid row), toh use skip karein
+      const itemName = item.name || item['item name'] || item.productName || item['Product Name'];
       if (!itemName || String(itemName).trim() === "") continue;
 
-      let baseSku = hasMapping ? item.sku : (item.sku || item['item-code'] || item.itemCode || item.ItemCode || item['Item Code']);
+      // Excel mapping edge cases (Capital letters, spaces, placeholders) handle karne ke liye
+      let baseSku = item.sku || item['item-code'] || item.itemCode || item.ItemCode || item['Item Code'];
       if (!isPlaceholder(baseSku)) {
           baseSku = String(baseSku).trim();
       } else {
           baseSku = `SKU-${Date.now()}-${i}`;
       }
 
-      let baseBarcode = hasMapping ? item.barcode : (item.barcode || item.barcodeNo || item.Barcode || item['Barcode']);
+      let baseBarcode = item.barcode || item.barcodeNo || item.Barcode || item['Barcode'];
       if (!isPlaceholder(baseBarcode)) {
           baseBarcode = String(baseBarcode).trim();
       } else {
           baseBarcode = `BAR-${baseSku}`;
       }
 
-      // Mapping Logic (Strict Mode vs Auto-detect Fallback)
+      // Mapping Logic (Backend me safely store karne ke liye format)
       formattedProducts.push({
         name: String(itemName).trim(),
-        description: item.description ? String(item.description).trim() : undefined,
         companyId: companyId,
-        category: String(item.category || (!hasMapping ? item.group : null) || "General").trim(),
+        category: String(item.category || item.group || "General").trim(),
         subCategory: String(item.subCategory || "").trim(),
-        brand: String(item.brand || "").trim(),
+        brand: String(item.brand || "").trim(), // Smart catching removed, will only take strictly mapped brand
         hsnCode: String(item.hsnCode || "0000").trim(),
         sku: baseSku,
         barcode: baseBarcode,
-        supplier: item.supplier ? String(item.supplier).trim() : undefined,
-        costPrice: parseNum(item.costPrice || (!hasMapping ? (item.purchaseRate || item['purchase cost']) : null)),
-        sellingPrice: parseNum(item.sellingPrice || (!hasMapping ? (item.rate1 || item['rate 1'] || item['rate a']) : null)),
-        wholesalePrice: parseNum(item.wholesalePrice || (!hasMapping ? (item.rate2 || item['rate 2'] || item['rate b']) : null)),
-        dealerPrice: parseNum(item.dealerPrice || (!hasMapping ? (item.rate3 || item['rate 3'] || item['rate c']) : null)),
-        p3Rate: parseNum(item.p3Rate || (!hasMapping ? (item.p3 || item.rate4 || item['rate 4'] || item['rate d']) : null)),
-        discount: parseNum(item.discount || (!hasMapping ? item.disc : null)),
-        mrp: parseNum(item.mrp || (!hasMapping ? item.maximumRetailPrice : null)),
-        gstRate: parseNum(item.gstRate || (!hasMapping ? (item.gst || item.tax) : null)),
+        costPrice: parseNum(item.costPrice || item.purchaseRate || item['purchase cost']),
+        sellingPrice: parseNum(item.sellingPrice || item.rate1 || item['rate 1'] || item['rate a']),
+        wholesalePrice: parseNum(item.wholesalePrice || item.rate2 || item['rate 2'] || item['rate b']),
+        dealerPrice: parseNum(item.dealerPrice || item.rate3 || item['rate 3'] || item['rate c']),
+        p3Rate: parseNum(item.p3Rate || item.p3 || item.rate4 || item['rate 4'] || item['rate d']),
+        discount: parseNum(item.discount || item.disc),
+        mrp: parseNum(item.mrp || item.maximumRetailPrice),
+        gstRate: parseNum(item.gstRate || item.gst || item.tax),
         unit: String(item.unit || "pcs").trim(),
-        secondaryUnit: String(item.secondaryUnit || (!hasMapping ? item['unit-2'] : null) || "").trim(),
-        conversionRate: parseNum(item.conversionRate || (!hasMapping ? item['conversionunit -1'] : null)),
-        currentStock: parseNum(item.currentStock || (!hasMapping ? (item['opening stock'] || item.stock || item.quantity) : null)),
-        minimumStock: parseNum(item.minimumStock || (!hasMapping ? (item.miniqua || item['min stock']) : null) || 10),
-        maximumStock: parseNum(item.maximumStock || (!hasMapping ? (item['max.qua'] || item['max stock']) : null) || 0),
-        isActive: true
+        secondaryUnit: String(item.secondaryUnit || item['unit-2'] || "").trim(),
+        conversionRate: parseNum(item.conversionRate || item['conversionunit -1']),
+        currentStock: parseNum(item.currentStock || item['opening stock'] || item.stock || item.quantity),
+        minimumStock: parseNum(item.minimumStock || item.miniqua || item['min stock'] || 10),
+        maximumStock: parseNum(item.maximumStock || item['max.qua'] || item['max stock'] || 0),
+        isActive: true,
+        source: 'excel' // Ye mark karega ki data Excel se aaya hai
       });
     }
 
@@ -470,6 +506,41 @@ export const getInventorySummary = async (req, res) => {
         lowStockItems,
         totalValue
       }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// --- REAL BULK DELETE (Hard Delete from MongoDB) ---
+export const bulkDeleteProducts = async (req, res) => {
+  try {
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    const { productIds, deleteAll, deleteInactiveOnly, deleteImportedOnly } = req.body;
+
+    let result;
+    if (deleteAll === true) {
+      // Permanently delete ALL products for this company (Poora Kachra Saaf)
+      result = await Product.deleteMany({ companyId: req.companyId });
+    } else if (deleteInactiveOnly === true) {
+      // Permanently delete only soft-deleted (hidden) products
+      result = await Product.deleteMany({ companyId: req.companyId, isActive: false });
+    } else if (deleteImportedOnly === true) {
+      // Permanently delete ALL products that came from Excel 
+      result = await Product.deleteMany({ companyId: req.companyId, source: 'excel' });
+    } else if (Array.isArray(productIds) && productIds.length > 0) {
+      // Permanently delete specific selected products
+      result = await Product.deleteMany({ _id: { $in: productIds }, companyId: req.companyId });
+    } else {
+      return res.status(400).json({ success: false, message: "Provide productIds array, deleteAll, or deleteInactiveOnly flag" });
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Successfully permanently deleted ${result.deletedCount} products from database.` 
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

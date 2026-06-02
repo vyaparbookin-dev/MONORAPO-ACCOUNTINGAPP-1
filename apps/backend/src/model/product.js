@@ -76,6 +76,7 @@ const productSchema = new mongoose.Schema({
   // Metadata
   isActive: { type: Boolean, default: true },
   synced: { type: Boolean, default: false },
+  source: { type: String, default: 'manual' }, // Tracking kahan se add hua
 
   // Flexible fields for different business types
   customFields: { type: Map, of: String },

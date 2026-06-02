@@ -233,6 +233,43 @@ const InventoryPage = () => {
     setFilteredInventory(filtered);
   };
 
+  // --- NEW ACTIONS (Export & Clean MongoDB) ---
+  const exportToExcel = async () => {
+    try {
+      const response = await api.get("/api/inventory/export/csv", { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Products_Export_${new Date().getTime()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+    } catch (error) {
+      console.error("Export failed", error);
+      alert("Excel download failed!");
+    }
+  };
+
+  const cleanJunkData = async () => {
+    if(!window.confirm("Kachra data (inactive/deleted) hamesha ke liye MongoDB se uda dein?")) return;
+    try {
+      setLoading(true);
+      const res = await api.post("/api/inventory/bulk-delete", { deleteInactiveOnly: true });
+      alert(res.data.message || "Junk data cleaned!");
+      fetchInventory();
+    } catch (err) { alert("Failed to clean junk data."); } finally { setLoading(false); }
+  };
+
+  const deleteExcelData = async () => {
+    if(!window.confirm("Excel se upload hue saare products delete karna chahte hain? Manual entries safe rahengi.")) return;
+    try {
+      setLoading(true);
+      const res = await api.post("/api/inventory/bulk-delete", { deleteImportedOnly: true });
+      alert(res.data.message || "Excel imports deleted!");
+      fetchInventory();
+    } catch (err) { alert("Failed to delete Excel imports."); } finally { setLoading(false); }
+  };
+
   const handlePriceCalculation = (field, value) => {
     let updatedForm = { ...formData, [field]: value };
     
@@ -668,6 +705,27 @@ const InventoryPage = () => {
           >
             <History size={20} />
             Undo Upload
+          </button>
+          <button
+            onClick={exportToExcel}
+            className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded-lg hover:bg-green-100 transition font-medium"
+          >
+            <Download size={20} />
+            Export to Excel
+          </button>
+          <button
+            onClick={cleanJunkData}
+            className="flex items-center gap-2 bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-2 rounded-lg hover:bg-yellow-100 transition font-medium"
+          >
+            <Trash2 size={20} />
+            Clean Junk DB
+          </button>
+          <button
+            onClick={deleteExcelData}
+            className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg hover:bg-red-100 transition font-medium"
+          >
+            <Trash2 size={20} />
+            Delete Excel DB
           </button>
           <button
             onClick={() => navigate("/inventory/add")}
