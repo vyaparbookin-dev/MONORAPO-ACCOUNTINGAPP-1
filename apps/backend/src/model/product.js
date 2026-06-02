@@ -23,6 +23,8 @@ const productSchema = new mongoose.Schema({
   sellingPrice: { type: Number, required: true }, // Sell price
   wholesalePrice: { type: Number, default: 0 }, // Wholesale Rate
   dealerPrice: { type: Number, default: 0 },
+  p3Rate: { type: Number, default: 0 }, // Extra rate mapped in import
+  discount: { type: Number, default: 0 }, // Discount % mapped in import
   mrp: Number, // Maximum Retail Price
   
   // Tax & GST
@@ -31,6 +33,8 @@ const productSchema = new mongoose.Schema({
   
   // Units & Quantity
   unit: { type: String, required: true }, // kg, ltr, pcs, ft, mtr, etc.
+  secondaryUnit: { type: String }, // Box, Carton, Dozen etc.
+  conversionRate: { type: Number, default: 1 }, // 1 Box = 10 pcs
   minimumStock: { type: Number, default: 10 },
   maximumStock: { type: Number, default: 0 },
   currentStock: { type: Number, default: 0 },

@@ -145,6 +145,7 @@ export const bulkImportProducts = async (req, res) => {
       // Mapping Logic (Strict Mode vs Auto-detect Fallback)
       formattedProducts.push({
         name: String(itemName).trim(),
+        description: item.description ? String(item.description).trim() : undefined,
         companyId: companyId,
         category: String(item.category || (!hasMapping ? item.group : null) || "General").trim(),
         subCategory: String(item.subCategory || "").trim(),
@@ -152,6 +153,7 @@ export const bulkImportProducts = async (req, res) => {
         hsnCode: String(item.hsnCode || "0000").trim(),
         sku: baseSku,
         barcode: baseBarcode,
+        supplier: item.supplier ? String(item.supplier).trim() : undefined,
         costPrice: parseNum(item.costPrice || (!hasMapping ? (item.purchaseRate || item['purchase cost']) : null)),
         sellingPrice: parseNum(item.sellingPrice || (!hasMapping ? (item.rate1 || item['rate 1'] || item['rate a']) : null)),
         wholesalePrice: parseNum(item.wholesalePrice || (!hasMapping ? (item.rate2 || item['rate 2'] || item['rate b']) : null)),
