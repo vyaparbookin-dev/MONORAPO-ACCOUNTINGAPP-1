@@ -15,7 +15,7 @@ const productSchema = new mongoose.Schema({
   
   // Codes & Identifiers
   sku: { type: String }, // Auto-generated
-  barcode: { type: String }, // Auto-generated
+  barcode: { type: String, sparse: true }, // Optional & Unique if provided
   
   // Pricing
   dpl: { type: Number, default: 0 }, // Company Rate / Basic Rate
@@ -77,6 +77,7 @@ const productSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
   synced: { type: Boolean, default: false },
   source: { type: String, default: 'manual' }, // Tracking kahan se add hua
+  importBatchId: { type: String }, // Excel upload ko group (Batch 1, Batch 2) karne ke liye
 
   // Flexible fields for different business types
   customFields: { type: Map, of: String },

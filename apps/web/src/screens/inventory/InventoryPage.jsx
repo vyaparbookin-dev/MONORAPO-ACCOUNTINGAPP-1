@@ -83,10 +83,6 @@ const InventoryPage = () => {
   const canvasRef = useRef(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   
-  // Undo Upload States
-  const [showUndoModal, setShowUndoModal] = useState(false);
-  const [undoTimeframe, setUndoTimeframe] = useState("1"); // hours
-
   const safeInventoryList = Array.isArray(inventory) ? inventory : [];
 
   useEffect(() => {
@@ -277,43 +273,6 @@ const InventoryPage = () => {
       );
     }
     setFilteredInventory(filtered);
-  };
-
-  // --- NEW ACTIONS (Export & Clean MongoDB) ---
-  const exportToExcel = async () => {
-    try {
-      const response = await api.get("/api/inventory/export/csv", { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `Products_Export_${new Date().getTime()}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
-    } catch (error) {
-      console.error("Export failed", error);
-      alert("Excel download failed!");
-    }
-  };
-
-  const cleanJunkData = async () => {
-    if(!window.confirm("Kachra data (inactive/deleted) hamesha ke liye MongoDB se uda dein?")) return;
-    try {
-      setLoading(true);
-      const res = await api.post("/api/inventory/bulk-delete", { deleteInactiveOnly: true });
-      alert(res.data.message || "Junk data cleaned!");
-      fetchInventory();
-    } catch (err) { alert("Failed to clean junk data."); } finally { setLoading(false); }
-  };
-
-  const deleteExcelData = async () => {
-    if(!window.confirm("Excel se upload hue saare products delete karna chahte hain? Manual entries safe rahengi.")) return;
-    try {
-      setLoading(true);
-      const res = await api.post("/api/inventory/bulk-delete", { deleteImportedOnly: true });
-      alert(res.data.message || "Excel imports deleted!");
-      fetchInventory();
-    } catch (err) { alert("Failed to delete Excel imports."); } finally { setLoading(false); }
   };
 
   const handlePriceCalculation = (field, value) => {
@@ -517,39 +476,6 @@ const InventoryPage = () => {
     setEditingId(null);
   };
 
-  // Smart Undo Logic
-  const getRecentProducts = () => {
-    const hours = parseFloat(undoTimeframe);
-    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
-    return safeInventoryList.filter(p => {
-      if (!p.createdAt) return false;
-      return new Date(p.createdAt) >= cutoff;
-    });
-  };
-  
-  const recentProducts = getRecentProducts();
-
-  const handleConfirmUndo = async () => {
-    if (recentProducts.length === 0) return;
-    if (!window.confirm(`Are you sure you want to permanently delete these ${recentProducts.length} recently added products?`)) return;
-
-    setLoading(true);
-    try {
-      for (let i = 0; i < recentProducts.length; i += 20) {
-        const chunk = recentProducts.slice(i, i + 20);
-        await Promise.all(chunk.map(item => api.delete(`/api/inventory/${item._id}`).catch(() => null)));
-      }
-      alert(`Successfully deleted ${recentProducts.length} products!`);
-      setShowUndoModal(false);
-      fetchInventory();
-    } catch(err) {
-      console.error(err);
-      alert("Error undoing products.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Industry conditional logic
   const showRawMaterial = ['restaurant', 'food', 'cafe', 'bakery', 'manufacturing'].some(i => industry.includes(i));
   const showJewellery = ['jewellery', 'jewelry', 'goldsmith'].some(i => industry.includes(i));
@@ -731,34 +657,6 @@ const InventoryPage = () => {
           >
             <Upload size={20} />
             Bulk Upload
-          </button>
-          <button
-            onClick={() => setShowUndoModal(true)}
-            className="flex items-center gap-2 bg-orange-50 border border-orange-200 text-orange-600 px-4 py-2 rounded-lg hover:bg-orange-100 transition font-medium"
-          >
-            <History size={20} />
-            Undo Upload
-          </button>
-          <button
-            onClick={exportToExcel}
-            className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded-lg hover:bg-green-100 transition font-medium"
-          >
-            <Download size={20} />
-            Export to Excel
-          </button>
-          <button
-            onClick={cleanJunkData}
-            className="flex items-center gap-2 bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-2 rounded-lg hover:bg-yellow-100 transition font-medium"
-          >
-            <Trash2 size={20} />
-            Clean Junk DB
-          </button>
-          <button
-            onClick={deleteExcelData}
-            className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg hover:bg-red-100 transition font-medium"
-          >
-            <Trash2 size={20} />
-            Delete Excel DB
           </button>
           <button
             onClick={() => navigate("/inventory/add")}
@@ -1225,46 +1123,6 @@ const InventoryPage = () => {
              setShowMergeModal(false);
           }}
         />
-      )}
-
-      {/* Undo Upload Modal */}
-      {showUndoModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden">
-            <div className="p-4 border-b flex justify-between items-center bg-orange-50">
-              <h3 className="font-bold text-orange-700 flex items-center gap-2"><Undo2 size={20}/> Undo Recent Upload</h3>
-              <button onClick={() => setShowUndoModal(false)} className="text-orange-400 hover:text-orange-700"><X size={20}/></button>
-            </div>
-            <div className="p-6 space-y-4">
-              <p className="text-sm text-gray-600">Select a timeframe to find and delete products that were uploaded by mistake. <br/><strong className="text-gray-800">Note:</strong> This only targets NEW products. Merged or previously existing products will NOT be deleted.</p>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Timeframe</label>
-                <select className="w-full border border-gray-300 rounded-lg p-2 outline-none focus:ring-2 focus:ring-orange-500" value={undoTimeframe} onChange={e => setUndoTimeframe(e.target.value)}>
-                  <option value="0.25">Last 15 Minutes</option>
-                  <option value="1">Last 1 Hour</option>
-                  <option value="4">Last 4 Hours</option>
-                  <option value="24">Last 24 Hours</option>
-                </select>
-              </div>
-
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <h4 className="font-bold text-gray-800">Found: {recentProducts.length} Products</h4>
-                {recentProducts.length > 0 && (
-                  <ul className="text-sm text-gray-600 mt-2 space-y-1 max-h-32 overflow-y-auto">
-                    {recentProducts.slice(0, 5).map(p => <li key={p._id}>• {p.name} (SKU: {p.sku})</li>)}
-                    {recentProducts.length > 5 && <li className="font-medium">... and {recentProducts.length - 5} more</li>}
-                  </ul>
-                )}
-              </div>
-
-              <div className="pt-4 flex gap-3">
-                <button onClick={() => setShowUndoModal(false)} className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg hover:bg-gray-200 font-medium">Cancel</button>
-                <button onClick={handleConfirmUndo} disabled={recentProducts.length === 0} className="flex-1 bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 font-medium disabled:opacity-50 flex items-center justify-center gap-2"><Trash2 size={18}/> Delete {recentProducts.length} Products</button>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
 
     </div>

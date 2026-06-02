@@ -35,6 +35,7 @@ export default function BulkUploadPage() {
   const [mapping, setMapping] = useState({});
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState(null);
+  const [warnings, setWarnings] = useState([]);
 
   const [showUndoModal, setShowUndoModal] = useState(false);
   const [undoTimeframe, setUndoTimeframe] = useState("1");
@@ -141,6 +142,7 @@ export default function BulkUploadPage() {
       // Backend API endpoint for bulk upload
       const res = await api.post("/inventory/import", { products: data, mapping });
       setMessage({ type: "success", text: res.data?.message || `Successfully processed ${data.length} products!` });
+      if (res.data?.warnings?.length > 0) setWarnings(res.data.warnings);
       setStep(1);
       setData([]);
       setMapping({});
@@ -252,6 +254,17 @@ export default function BulkUploadPage() {
         <div className={`mt-4 p-4 rounded-lg flex items-center gap-2 ${message.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
           {message.type === 'success' ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
           {message.text}
+        </div>
+      )}
+
+      {warnings.length > 0 && (
+        <div className="mt-4 p-4 rounded-lg bg-yellow-50 border border-yellow-200">
+          <h4 className="font-bold text-yellow-800 mb-2 flex items-center gap-2">
+            <AlertCircle size={20} /> Upload Report & Auto-Resolved Conflicts ({warnings.length})
+          </h4>
+          <ul className="list-disc pl-5 text-sm text-yellow-700 max-h-40 overflow-y-auto space-y-1">
+            {warnings.map((warn, i) => <li key={i}>{warn}</li>)}
+          </ul>
         </div>
       )}
 

@@ -1,6 +1,5 @@
 import Product from "../model/product.js";
 import StockAdjustment from "../model/stockAdjustment.js";
-import { Parser } from "json2csv";
 
 export const addPurchaseEntry = async (req, res) => {
   try {
@@ -20,45 +19,6 @@ export const addPurchaseEntry = async (req, res) => {
     res.status(201).json({ success: true, message: "Purchase saved & stock updated successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// --- EXPORT PRODUCTS TO EXCEL / CSV ---
-export const exportProductsCSV = async (req, res) => {
-  try {
-    if (!req.companyId) {
-      return res.status(400).json({ success: false, message: "Company ID is missing." });
-    }
-
-    // Get all active products
-    const products = await Product.find({ companyId: req.companyId, isActive: true }).sort({ createdAt: -1 });
-
-    // Define columns you want in Excel
-    const fields = [
-      'name', 'description', 'category', 'subCategory', 'brand', 'hsnCode', 'sku', 'barcode',
-      'costPrice', 'sellingPrice', 'wholesalePrice', 'dealerPrice', 'p3Rate', 'mrp', 'discount',
-      'gstRate', 'unit', 'secondaryUnit', 'conversionRate', 'minimumStock', 'maximumStock', 'currentStock'
-    ];
-
-    // Map the database data to fit into the Excel columns
-    const csvData = products.map(p => {
-      let row = {};
-      fields.forEach(field => {
-        row[field] = p[field] !== undefined && p[field] !== null ? p[field] : '';
-      });
-      return row;
-    });
-
-    const json2csvParser = new Parser({ fields });
-    const csv = json2csvParser.parse(csvData);
-
-    // Send file to client for download
-    res.header('Content-Type', 'text/csv');
-    res.attachment(`Products_Export_${Date.now()}.csv`);
-    return res.send(csv);
-  } catch (error) {
-    console.error("Export Error:", error);
-    res.status(500).json({ success: false, error: error.message });
   }
 };
 
@@ -203,8 +163,7 @@ export const bulkImportProducts = async (req, res) => {
         currentStock: parseNum(item.currentStock || item['opening stock'] || item.stock || item.quantity),
         minimumStock: parseNum(item.minimumStock || item.miniqua || item['min stock'] || 10),
         maximumStock: parseNum(item.maximumStock || item['max.qua'] || item['max stock'] || 0),
-        isActive: true,
-        source: 'excel' // Ye mark karega ki data Excel se aaya hai
+        isActive: true
       });
     }
 
@@ -469,17 +428,28 @@ export const deleteProduct = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const product = await Product.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId },
-      { isActive: false },
-      { new: true }
-    );
+    const productId = req.params.id;
 
-    if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+    // 🚀 SMART DELETE LOGIC (Hard Delete vs Soft Delete)
+    // TODO: Jab Invoices/Bills ka backend banega, yahan check lagana hoga:
+    // const isUsedInBills = await Bill.exists({ "items.productId": productId });
+    const isUsedInBills = false; // Abhi ke liye 'false' maan rahe hain (Hard delete allowed)
+
+    if (isUsedInBills) {
+      // SOFT DELETE: Product hide hoga, par SKU same rahega taaki Excel se wapas merge (restore) ho sake
+      const product = await Product.findOneAndUpdate(
+        { _id: productId, companyId: req.companyId },
+        { isActive: false },
+        { new: true }
+      );
+      if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+      return res.json({ success: true, message: "Product is linked to bills. Soft-deleted safely." });
+    } else {
+      // HARD DELETE: Koi bill nahi bana, toh DB se permanently saaf
+      const product = await Product.findOneAndDelete({ _id: productId, companyId: req.companyId });
+      if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+      return res.json({ success: true, message: "Unused product permanently deleted." });
     }
-
-    res.json({ success: true, message: "Product deleted successfully" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -506,41 +476,6 @@ export const getInventorySummary = async (req, res) => {
         lowStockItems,
         totalValue
       }
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
-
-// --- REAL BULK DELETE (Hard Delete from MongoDB) ---
-export const bulkDeleteProducts = async (req, res) => {
-  try {
-    if (!req.companyId) {
-      return res.status(400).json({ success: false, message: "Company ID is missing" });
-    }
-
-    const { productIds, deleteAll, deleteInactiveOnly, deleteImportedOnly } = req.body;
-
-    let result;
-    if (deleteAll === true) {
-      // Permanently delete ALL products for this company (Poora Kachra Saaf)
-      result = await Product.deleteMany({ companyId: req.companyId });
-    } else if (deleteInactiveOnly === true) {
-      // Permanently delete only soft-deleted (hidden) products
-      result = await Product.deleteMany({ companyId: req.companyId, isActive: false });
-    } else if (deleteImportedOnly === true) {
-      // Permanently delete ALL products that came from Excel 
-      result = await Product.deleteMany({ companyId: req.companyId, source: 'excel' });
-    } else if (Array.isArray(productIds) && productIds.length > 0) {
-      // Permanently delete specific selected products
-      result = await Product.deleteMany({ _id: { $in: productIds }, companyId: req.companyId });
-    } else {
-      return res.status(400).json({ success: false, message: "Provide productIds array, deleteAll, or deleteInactiveOnly flag" });
-    }
-
-    res.json({ 
-      success: true, 
-      message: `Successfully permanently deleted ${result.deletedCount} products from database.` 
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

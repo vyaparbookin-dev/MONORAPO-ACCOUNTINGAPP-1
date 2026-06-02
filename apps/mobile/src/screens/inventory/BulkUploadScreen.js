@@ -33,8 +33,14 @@ const BulkUploadScreen = () => {
       const ws = wb.Sheets[wsname];
       const data = XLSX.utils.sheet_to_json(ws);
 
-      await api.post("/inventory/import", { products: data });
-      Alert.alert("Success", `${data.length} products uploaded successfully`);
+      const res = await api.post("/inventory/import", { products: data });
+      let msg = res.data?.message || `${data.length} products processed successfully.`;
+      
+      if (res.data?.warnings && res.data.warnings.length > 0) {
+         msg += `\n\nNote: ${res.data.warnings.length} conflicts were automatically resolved (like duplicate SKUs).`;
+      }
+
+      Alert.alert("Success", msg);
       setFile(null);
     } catch (err) {
       console.error(err);

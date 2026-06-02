@@ -288,6 +288,17 @@ const BulkProductPage = () => {
         </div>
       )}
 
+      {warnings.length > 0 && (
+        <div className="mt-4 p-4 rounded-lg bg-yellow-50 border border-yellow-200">
+          <h4 className="font-bold text-yellow-800 mb-2 flex items-center gap-2">
+            <AlertCircle size={20} /> Upload Report & Auto-Resolved Conflicts ({warnings.length})
+          </h4>
+          <ul className="list-disc pl-5 text-sm text-yellow-700 max-h-40 overflow-y-auto space-y-1">
+            {warnings.map((warn, i) => <li key={i}>{warn}</li>)}
+          </ul>
+        </div>
+      )}
+
       {/* Undo Modal */}
       {showUndoModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
