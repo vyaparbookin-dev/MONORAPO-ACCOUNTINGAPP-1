@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { dbService } from "../../services/dbService";
 import { auditService } from "../../services/auditService";
 import { syncQueue } from "@repo/shared";
+import ImportHistoryManager from "../../components/ImportHistoryManager";
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -337,7 +338,8 @@ export default function SettingsPage() {
           { id: "parties", label: "Parties" },
           { id: "categories", label: "Categories" },
           { id: "subCategories", label: "Sub-Categories" },
-          { id: "brands", label: "Brands / Companies" }
+        { id: "brands", label: "Brands / Companies" },
+        { id: "imports", label: "Import History" }
         ].map((tab) => (
           <button
             key={tab.id}
@@ -742,6 +744,13 @@ export default function SettingsPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* IMPORTS TAB */}
+      {activeTab === "imports" && (
+        <div className="space-y-4">
+          <ImportHistoryManager />
         </div>
       )}
 

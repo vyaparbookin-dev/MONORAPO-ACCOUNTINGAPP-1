@@ -5,6 +5,7 @@ import { dbService } from "../../services/dbService";
 import { auditService } from "../../services/auditService";
 import { syncQueue } from "@repo/shared";
 import { useNavigate } from "react-router-dom";
+import ImportHistoryManager from "../../components/ImportHistoryManager";
 
 const AppSettingPage = () => {
   const { selectedCompany, refetchCompanies } = useCompany();
@@ -357,6 +358,11 @@ const AppSettingPage = () => {
             Push Notifications
           </label>
         </div>
+      </div>
+
+      {/* Data Management & Imports */}
+      <div className="mb-6 border-b pb-6">
+        <ImportHistoryManager />
       </div>
 
       <button onClick={handleSaveChanges} disabled={saving} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50">

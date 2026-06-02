@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Plus, Edit, Trash2, Search, ChevronDown, Settings, Users, Shield, Globe, Database, Scale } from "lucide-react";
 import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
+import ImportHistoryManager from "../../components/ImportHistoryManager";
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -303,7 +304,8 @@ export default function SettingsPage() {
           { id: "parties", label: "Parties" },
           { id: "categories", label: "Categories" },
           { id: "subCategories", label: "Sub-Categories" },
-          { id: "brands", label: "Brands / Companies" }
+        { id: "brands", label: "Brands / Companies" },
+        { id: "imports", label: "Import History" }
         ].map((tab) => (
           <button
             key={tab.id}
@@ -708,6 +710,13 @@ export default function SettingsPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* IMPORTS TAB */}
+      {activeTab === "imports" && (
+        <div className="space-y-4">
+          <ImportHistoryManager />
         </div>
       )}
 

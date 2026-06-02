@@ -1,5 +1,6 @@
 import Product from "../model/product.js";
 import StockAdjustment from "../model/stockAdjustment.js";
+import mongoose from "mongoose";
 
 export const addPurchaseEntry = async (req, res) => {
   try {
@@ -83,6 +84,8 @@ export const bulkImportProducts = async (req, res) => {
       return res.status(400).json({ success: false, message: "No products provided for import" });
     }
 
+    const batchId = `IMP-${Date.now()}`; // Har Excel upload ko ek naya Batch ID milega
+
     const formattedProducts = [];
     
     // Marg ERP jesa system: User batayega data kis row se start hai (Default 0).
@@ -163,7 +166,9 @@ export const bulkImportProducts = async (req, res) => {
         currentStock: parseNum(item.currentStock || item['opening stock'] || item.stock || item.quantity),
         minimumStock: parseNum(item.minimumStock || item.miniqua || item['min stock'] || 10),
         maximumStock: parseNum(item.maximumStock || item['max.qua'] || item['max stock'] || 0),
-        isActive: true
+        isActive: true,
+        source: 'excel',
+        importBatchId: batchId // Product ke andar save ho jayega ki ye kis excel sheet se aaya tha
       });
     }
 
@@ -302,6 +307,53 @@ export const adjustStock = async (req, res) => {
     await product.save();
 
     res.status(201).json({ success: true, message: "Stock adjusted successfully", product, adjustment });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// --- FETCH EXCEL IMPORT BATCHES (For Settings Page) ---
+export const getImportBatches = async (req, res) => {
+  try {
+    if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID is missing" });
+    const batches = await Product.aggregate([
+      { $match: { companyId: new mongoose.Types.ObjectId(req.companyId), source: 'excel', importBatchId: { $exists: true } } },
+      { $group: { 
+          _id: "$importBatchId", 
+          itemCount: { $sum: 1 }, 
+          uploadDate: { $first: "$createdAt" } 
+      }},
+      { $sort: { uploadDate: -1 } }
+    ]);
+    res.json({ success: true, batches });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// --- REAL BULK DELETE (Batch / Imported Data) ---
+export const bulkDeleteProducts = async (req, res) => {
+  try {
+    if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID is missing" });
+
+    const { productIds, deleteAll, deleteInactiveOnly, deleteImportedOnly, batchId } = req.body;
+
+    let result;
+    if (deleteAll === true) {
+      result = await Product.deleteMany({ companyId: req.companyId });
+    } else if (deleteInactiveOnly === true) {
+      result = await Product.deleteMany({ companyId: req.companyId, isActive: false });
+    } else if (deleteImportedOnly === true) {
+      result = await Product.deleteMany({ companyId: req.companyId, source: 'excel' });
+    } else if (batchId) {
+      result = await Product.deleteMany({ companyId: req.companyId, importBatchId: batchId });
+    } else if (Array.isArray(productIds) && productIds.length > 0) {
+      result = await Product.deleteMany({ _id: { $in: productIds }, companyId: req.companyId });
+    } else {
+      return res.status(400).json({ success: false, message: "Provide valid delete parameters" });
+    }
+
+    res.json({ success: true, message: `Successfully deleted ${result?.deletedCount || 0} products.` });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
