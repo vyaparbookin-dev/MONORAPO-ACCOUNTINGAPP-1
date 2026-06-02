@@ -123,53 +123,56 @@ export const bulkImportProducts = async (req, res) => {
         Object.assign(item, rawItem); // Fallback: agar frontend ne bina mapping already match karke bheja hai
       }
 
-      // Agar data me 'name' ya 'item name' dono hi nahi hain (completely empty/invalid row), toh use skip karein
-      const itemName = item.name || item['item name'] || item.productName || item['Product Name'];
+      // 🚨 STRICT MANUAL MAPPING: No automatic guessing at all.
+      // Sirf item.name (jo explicitly map hua ho ya raw exact match ho)
+      const itemName = item.name;
       if (!itemName || String(itemName).trim() === "") continue;
 
-      // Excel mapping edge cases (Capital letters, spaces, placeholders) handle karne ke liye
-      let baseSku = item.sku || item['item-code'] || item.itemCode || item.ItemCode || item['Item Code'];
+      let baseSku = item.sku;
       if (!isPlaceholder(baseSku)) {
           baseSku = String(baseSku).trim();
       } else {
           baseSku = `SKU-${Date.now()}-${i}`;
       }
 
-      let baseBarcode = item.barcode || item.barcodeNo || item.Barcode || item['Barcode'];
+      let baseBarcode = item.barcode;
       if (!isPlaceholder(baseBarcode)) {
           baseBarcode = String(baseBarcode).trim();
       } else {
           baseBarcode = `BAR-${baseSku}`;
       }
 
-      // Mapping Logic (Backend me safely store karne ke liye format)
-      formattedProducts.push({
+      const parsedItem = {
         name: String(itemName).trim(),
         companyId: companyId,
-        category: String(item.category || item.group || "General").trim(),
-        subCategory: String(item.subCategory || "").trim(),
-        brand: String(item.brand || "").trim(), // Smart catching removed, will only take strictly mapped brand
-        hsnCode: String(item.hsnCode || "0000").trim(),
         sku: baseSku,
         barcode: baseBarcode,
-        costPrice: parseNum(item.costPrice || item.purchaseRate || item['purchase cost']),
-        sellingPrice: parseNum(item.sellingPrice || item.rate1 || item['rate 1'] || item['rate a']),
-        wholesalePrice: parseNum(item.wholesalePrice || item.rate2 || item['rate 2'] || item['rate b']),
-        dealerPrice: parseNum(item.dealerPrice || item.rate3 || item['rate 3'] || item['rate c']),
-        p3Rate: parseNum(item.p3Rate || item.p3 || item.rate4 || item['rate 4'] || item['rate d']),
-        discount: parseNum(item.discount || item.disc),
-        mrp: parseNum(item.mrp || item.maximumRetailPrice),
-        gstRate: parseNum(item.gstRate || item.gst || item.tax),
-        unit: String(item.unit || "pcs").trim(),
-        secondaryUnit: String(item.secondaryUnit || item['unit-2'] || "").trim(),
-        conversionRate: parseNum(item.conversionRate || item['conversionunit -1']),
-        currentStock: parseNum(item.currentStock || item['opening stock'] || item.stock || item.quantity),
-        minimumStock: parseNum(item.minimumStock || item.miniqua || item['min stock'] || 10),
-        maximumStock: parseNum(item.maximumStock || item['max.qua'] || item['max stock'] || 0),
         isActive: true,
         source: 'excel',
         importBatchId: batchId // Product ke andar save ho jayega ki ye kis excel sheet se aaya tha
-      });
+      };
+
+      // SIRF WAHI FIELDS ASSIGN KAREIN JO EXPLICITLY MAP HUI HAIN
+      if (item.category !== undefined) parsedItem.category = String(item.category).trim();
+      if (item.subCategory !== undefined) parsedItem.subCategory = String(item.subCategory).trim();
+      if (item.brand !== undefined) parsedItem.brand = String(item.brand).trim();
+      if (item.hsnCode !== undefined) parsedItem.hsnCode = String(item.hsnCode).trim();
+      if (item.costPrice !== undefined) parsedItem.costPrice = parseNum(item.costPrice);
+      if (item.sellingPrice !== undefined) parsedItem.sellingPrice = parseNum(item.sellingPrice);
+      if (item.wholesalePrice !== undefined) parsedItem.wholesalePrice = parseNum(item.wholesalePrice);
+      if (item.dealerPrice !== undefined) parsedItem.dealerPrice = parseNum(item.dealerPrice);
+      if (item.p3Rate !== undefined) parsedItem.p3Rate = parseNum(item.p3Rate);
+      if (item.discount !== undefined) parsedItem.discount = parseNum(item.discount);
+      if (item.mrp !== undefined) parsedItem.mrp = parseNum(item.mrp);
+      if (item.gstRate !== undefined) parsedItem.gstRate = parseNum(item.gstRate);
+      if (item.unit !== undefined) parsedItem.unit = String(item.unit).trim();
+      if (item.secondaryUnit !== undefined) parsedItem.secondaryUnit = String(item.secondaryUnit).trim();
+      if (item.conversionRate !== undefined) parsedItem.conversionRate = parseNum(item.conversionRate);
+      if (item.currentStock !== undefined) parsedItem.currentStock = parseNum(item.currentStock);
+      if (item.minimumStock !== undefined) parsedItem.minimumStock = parseNum(item.minimumStock);
+      if (item.maximumStock !== undefined) parsedItem.maximumStock = parseNum(item.maximumStock);
+
+      formattedProducts.push(parsedItem);
     }
 
     if (formattedProducts.length === 0) {
@@ -255,7 +258,16 @@ export const bulkImportProducts = async (req, res) => {
           }
         };
       } else {
-        return { insertOne: { document: item } };
+        // Naye product ke liye zaroori required defaults (kyunki mapping strictly empty aati hai)
+        const newProduct = {
+            ...item,
+            category: item.category || "General",
+            costPrice: item.costPrice || 0,
+            sellingPrice: item.sellingPrice || 0,
+            unit: item.unit || "pcs",
+            currentStock: item.currentStock || 0
+        };
+        return { insertOne: { document: newProduct } };
       }
     });
 
