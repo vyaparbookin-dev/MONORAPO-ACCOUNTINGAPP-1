@@ -65,6 +65,7 @@ export default function DashboardLayout() {
 
   const handleLogout = () => {
     SecurityTracker.track('USER_LOGOUT', { userId: user?._id, email: user?.email });
+    localStorage.removeItem("authToken");
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     navigate("/login");

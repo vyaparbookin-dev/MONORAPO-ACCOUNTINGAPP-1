@@ -30,7 +30,7 @@ const setStorage = async (key, value) => {
 // Base axios instance
 const api = axios.create({
   baseURL: "", // This will be set dynamically by the app itself
-  timeout: 10000,
+  timeout: 120000, // Increased to 120 seconds to handle large data requests smoothly
 });
 
 // Request interceptor with async storage support

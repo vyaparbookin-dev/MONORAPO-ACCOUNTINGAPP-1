@@ -22,12 +22,18 @@ export default function LoginScreen() {
     try {
       const response = await api.post("/api/auth/login", { email: cleanEmail, password });
       
-      if (response.success || response.token) {
+      // Safely extract token and user
+      const token = response?.token || response?.data?.token || response?.data?.data?.token;
+      const userObj = response?.user || response?.data?.user || response?.data?.data?.user;
+      
+      if (token) {
         // Store auth data securely via dbService
-        dbService.setAuthData(response.token, response.user);
+        dbService.setAuthData(token, userObj || { email: cleanEmail, name: cleanEmail.split('@')[0] });
 
         // Redirect to dashboard
         navigate("/");
+      } else {
+        setError("Token not received from server");
       }
     } catch (err) {
       console.log("Login Catch Error:", err);

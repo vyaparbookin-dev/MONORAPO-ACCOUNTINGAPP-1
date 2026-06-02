@@ -32,7 +32,7 @@ export default function DashboardScreen() {
       // Parallel API calls for faster loading
       const [billsRes, expensesRes, invSummaryRes, approvalsRes] = await Promise.all([
         api.get("/api/billing").catch(() => ({ data: { bills: [] } })),
-        api.get("/api/expense").catch(() => ({ data: { expenses: [] } })),
+        api.get("/api/expenses").catch(() => ({ data: { expenses: [] } })),
         api.get("/api/inventory/summary").catch(() => ({ data: { summary: {} } })),
         api.get("/api/approvals").catch(() => ({ data: { data: {} } }))
       ]);

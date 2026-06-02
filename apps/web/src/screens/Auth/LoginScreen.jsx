@@ -17,17 +17,23 @@ export default function LoginScreen() {
     try {
       const response = await api.post("/api/auth/login", { email, password });
       
-      if (response.success || response.token) {
-        // Store token in localStorage
-        localStorage.setItem("authToken", response.token);
+      // Safely extract token and user from deeply nested backend responses
+      const token = response?.token || response?.data?.token || response?.data?.data?.token;
+      const userObj = response?.user || response?.data?.user || response?.data?.data?.user;
+      
+      if (token) {
+        // Store token in localStorage (setting both keys to prevent 401 interceptor loop)
+        localStorage.setItem("authToken", token);
+        localStorage.setItem("token", token);
         
-        // Optionally store user info
-        if (response.user) {
-          localStorage.setItem("user", JSON.stringify(response.user));
+        if (userObj) {
+          localStorage.setItem("user", JSON.stringify(userObj));
         }
 
         // Redirect to dashboard
         navigate("/");
+      } else {
+        setError("Token not received from server");
       }
     } catch (err) {
       const errData = err.response?.data || err;

@@ -44,7 +44,7 @@ const getBaseUrl = () => {
 // Base axios instance
 const api = axios.create({
   baseURL: getBaseUrl(),
-  timeout: 30000, // Increased to 30 seconds to handle server cold starts on free tiers
+  timeout: 120000, // Increased to 120 seconds to handle large Excel imports and server cold starts
 });
 
 // Request interceptor with async storage support
