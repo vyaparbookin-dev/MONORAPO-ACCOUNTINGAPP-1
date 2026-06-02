@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Switch, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { postData } from '../../services/ApiService';
 import { getSettingLocal, saveSettingLocal } from '../../../db'; // Offline DB
+import { syncQueueNative } from '@repo/shared/src/services/syncqueue.native';
 
 const CloudsyncSetting = () => {
   const [isSyncEnabled, setIsSyncEnabled] = useState(false);
@@ -37,6 +38,17 @@ const CloudsyncSetting = () => {
     }
   };
 
+  const handleClearQueue = async () => {
+    Alert.alert("Clear Stuck Data", "Are you sure you want to delete pending offline data? Use this only if data is repeatedly syncing by mistake.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Clear Data", style: "destructive", onPress: async () => {
+          await syncQueueNative.clearQueue();
+          Alert.alert("Cleared", "Offline sync queue has been emptied.");
+        }
+      }
+    ]);
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.header}>Cloud Sync Settings</Text>
@@ -53,6 +65,10 @@ const CloudsyncSetting = () => {
 
       <TouchableOpacity style={styles.syncButton} onPress={handleManualSync} disabled={loading}>
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sync Now</Text>}
+      </TouchableOpacity>
+      
+      <TouchableOpacity style={[styles.syncButton, { backgroundColor: '#dc2626' }]} onPress={handleClearQueue} disabled={loading}>
+        <Text style={styles.buttonText}>Clear Stuck Offline Data</Text>
       </TouchableOpacity>
 
       <Text style={styles.info}>Last Synced: Never</Text>

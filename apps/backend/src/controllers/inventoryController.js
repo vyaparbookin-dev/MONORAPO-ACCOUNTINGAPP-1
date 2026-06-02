@@ -292,17 +292,49 @@ export const bulkImportProducts = async (req, res) => {
   } catch (error) {
     console.error("🔴 Bulk Import Error:", error);
     
+    // --- 🛠️ DEBUG LOGIC START ---
+    try {
+        const totalSaved = await Product.countDocuments({ companyId });
+        console.log(`\n================= 🛠️ IMPORT DEBUG INFO 🛠️ =================`);
+        console.log(`Total Products currently in DB for this company: ${totalSaved}`);
+        
+        if (error.result) {
+            console.log(`Products Successfully Inserted in this batch: ${error.result.nInserted || 0}`);
+            console.log(`Products Successfully Updated in this batch: ${error.result.nModified || 0}`);
+        }
+        
+        if (error.writeErrors && error.writeErrors.length > 0) {
+            console.log(`Number of Failed Entries (Duplicates): ${error.writeErrors.length}`);
+            console.log(`First 5 Errors for Debugging (Check the exact Barcode/SKU causing issues):`);
+            error.writeErrors.slice(0, 5).forEach(err => {
+                console.log(` - Row/Index [${err.index}]: ${err.errmsg}`);
+            });
+        }
+        console.log(`=========================================================\n`);
+    } catch(debugErr) {
+        console.error("Debug logic failed:", debugErr);
+    }
+    // --- 🛠️ DEBUG LOGIC END ---
+
     let errorMessage = "Failed to import products. Check your Excel mapping.";
-    if (error.code === 11000) {
+    const isDuplicate = error.code === 11000 || (error.writeErrors && error.writeErrors.some(e => e.code === 11000));
+
+    if (isDuplicate) {
         let duplicateKey = "an identifier";
-        if (error.message.includes("sku_1")) duplicateKey = "SKU / Item Code";
-        else if (error.message.includes("barcode_1")) duplicateKey = "Barcode";
-        else if (error.message.includes("name_1")) duplicateKey = "Product Name";
+        const msgToCheck = error.message + (error.writeErrors ? JSON.stringify(error.writeErrors) : "");
+        
+        if (msgToCheck.includes("sku_1")) duplicateKey = "SKU / Item Code";
+        else if (msgToCheck.includes("barcode_1")) duplicateKey = "Barcode";
+        else if (msgToCheck.includes("name_1")) duplicateKey = "Product Name";
         
         errorMessage = `Duplicate Entry Error: The Excel file contains a ${duplicateKey} that is already assigned to a DIFFERENT product in the system.`;
+
+        if (error.result && error.result.nInserted > 0) {
+            errorMessage += ` However, ${error.result.nInserted} valid products were successfully saved before this error occurred.`;
+        }
     }
 
-    return res.status(400).json({ success: false, message: errorMessage, error: error.message });
+    return res.status(400).json({ success: false, message: errorMessage, error: error.message, debugInfo: error.writeErrors?.slice(0, 2) });
   }
 };
 
