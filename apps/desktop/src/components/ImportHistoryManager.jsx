@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, FileSpreadsheet, Package, Clock } from 'lucide-react';
-import api from '../../services/api'; // Aapke system ka api path
+import api from '../services/api'; // Corrected import path
 
 const ImportHistoryManager = () => {
   const [batches, setBatches] = useState([]);

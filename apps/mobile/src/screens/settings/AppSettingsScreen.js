@@ -6,6 +6,7 @@ import { getData, putData } from '../../services/ApiService';
 import { AuthContext } from '../../context/AuthContext';
 import { getSettingLocal, saveSettingLocal, updateCompanyLocal } from '../../../db'; // Offline DB
 import api, { RAZORPAY_KEY_ID } from '../../services/ApiService'; // Ensure this is imported for payment API calls and Razorpay Key
+import ImportHistoryManager from '../../components/ImportHistoryManager';
 
 // Safely import Razorpay so it doesn't crash the Web version or Expo Go
 let RazorpayCheckout = null;
@@ -276,6 +277,11 @@ const AppSettingsScreen = ({ navigation }) => {
           <Text style={styles.label}>Push Notifications</Text>
           <Switch value={notifications.push} onValueChange={(val) => setNotifications({...notifications, push: val})} />
         </View>
+      </View>
+
+      {/* Data Management & Imports */}
+      <View style={styles.section}>
+        <ImportHistoryManager />
       </View>
 
       <TouchableOpacity style={styles.saveBtn} onPress={handleSaveChanges} disabled={saving}>
