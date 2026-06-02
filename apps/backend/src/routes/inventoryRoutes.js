@@ -1,5 +1,5 @@
 import express from "express";
-import { addProduct, listProducts, getProductById, updateProduct, deleteProduct, adjustStock, getStockAdjustments, updateStock, getProductByBarcode, getInventorySummary, addPurchaseEntry, bulkImportProducts, exportProductsCSV } from "../controllers/inventoryController.js";
+import { addProduct, listProducts, getProductById, updateProduct, deleteProduct, adjustStock, getStockAdjustments, updateStock, getProductByBarcode, getInventorySummary, addPurchaseEntry, bulkImportProducts, exportProductsCSV, bulkDeleteProducts } from "../controllers/inventoryController.js";
 import { protect, requireCompany } from "../middleware/authmiddleware.js";
 
 const router = express.Router();
@@ -11,6 +11,7 @@ router.use(requireCompany);
 // Custom inventory actions
 router.post("/import", bulkImportProducts);
 router.post("/purchase", addPurchaseEntry);
+router.post("/bulk-delete", bulkDeleteProducts);
 router.get("/export/csv", exportProductsCSV);
 router.post("/adjust", adjustStock);
 router.get("/adjustments", getStockAdjustments);
