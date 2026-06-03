@@ -678,8 +678,8 @@ const AddProductPage = () => {
             
             {form.secondaryUnit && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 text-blue-600">1 {form.unit || 'pcs'} = ? {form.secondaryUnit}</label>
-                <input type="number" step="0.01" className="w-full border border-blue-300 bg-blue-50 p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none" value={form.conversionRate} onChange={(e) => setForm({ ...form, conversionRate: parseFloat(e.target.value) || "" })} placeholder={`e.g. 3 (If 1 ${form.unit || 'pcs'} = 3 ${form.secondaryUnit})`} required />
+                <label className="block text-sm font-medium text-gray-700 text-blue-600">1 {form.secondaryUnit} = ? {form.unit || 'pcs'}</label>
+                <input type="number" step="0.01" className="w-full border border-blue-300 bg-blue-50 p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none" value={form.conversionRate} onChange={(e) => setForm({ ...form, conversionRate: parseFloat(e.target.value) || "" })} placeholder={`e.g. 6 (If 1 ${form.secondaryUnit} = 6 ${form.unit || 'pcs'})`} required />
               </div>
             )}
 

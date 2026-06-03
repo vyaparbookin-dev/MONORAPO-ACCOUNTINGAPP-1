@@ -557,9 +557,9 @@ const InventoryPage = () => {
               </span>
               {isLowStock && <AlertTriangle className="text-orange-600" size={14} />}
             </div>
-            {row.secondaryUnit && row.conversionRate && (
+            {row.secondaryUnit && row.conversionRate && row.conversionRate !== 0 && (
               <p className="text-xs font-bold text-blue-600 mt-0.5">
-                {Number((row.currentStock * row.conversionRate).toFixed(2))} {row.secondaryUnit}
+                {Number((row.currentStock / row.conversionRate).toFixed(2))} {row.secondaryUnit}
               </p>
             )}
             <p className="text-[10px] text-gray-500 mt-0.5">Min: {row.minimumStock}</p>

@@ -241,6 +241,7 @@ export default function BulkUploadPage() {
           </div>
           <div className="p-6">
             <p className="text-sm text-gray-600 mb-2">System ne automatically columns match karne ki koshish ki hai.</p>
+            <p className="text-sm text-blue-700 mb-3">Opening Stock ko hamesha Unit 1 mein bharein. Agar aap Unit 2 (Carton/Box) use kar rahe hain toh Conversion Rate mein Unit 2 ke andar kitne Unit 1 aate hain, wo dalein.</p>
             <p className="text-sm text-red-600 font-medium mb-6">* Agar koi field galat map hui hai (e.g. Duplicate names ki wajah se), toh aap use Dropdown se manually sahi kar sakte hain.</p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[50vh] overflow-y-auto pr-2 mb-6">

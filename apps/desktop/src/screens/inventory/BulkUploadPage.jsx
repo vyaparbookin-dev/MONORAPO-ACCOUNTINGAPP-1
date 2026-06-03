@@ -245,8 +245,8 @@ export default function BulkUploadPage() {
             <h3 className="font-bold text-gray-800">Map Your Columns</h3>
           </div>
           <div className="p-6">
-            <p className="text-sm text-gray-600 mb-6">Please match your Excel column names to our System fields. Skip the ones you don't have.</p>
-            
+            <p className="text-sm text-gray-600 mb-2">Please match your Excel column names to our System fields. Skip the ones you don't have.</p>
+            <p className="text-sm text-blue-700 mb-4">Opening Stock should be entered in Unit 1. If Unit 2 is a carton/box, Conversion Rate should be 'how many Unit 1 are in one Unit 2'.</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[50vh] overflow-y-auto pr-2 mb-6">
               {SYSTEM_FIELDS.map((field) => (
                 <div key={field.key} className="flex items-center justify-between bg-gray-50 p-3 rounded border border-gray-100">
