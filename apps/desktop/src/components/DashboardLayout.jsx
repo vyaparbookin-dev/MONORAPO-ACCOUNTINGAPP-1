@@ -115,6 +115,7 @@ export default function DashboardLayout() {
     { icon: CheckCircle, label: "Approvals", href: "/approvals", color: "text-emerald-500", roles: ['admin', 'manager'] },
     { icon: Users, label: "Parties", href: "/parties", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
     ...(!Array.isArray(selectedCompany?.businessType) || selectedCompany?.businessType.length === 0 || selectedCompany?.businessType.some(t => t !== 'service') ? [{ icon: Package, label: "Inventory", href: "/inventory", color: "text-purple-600", roles: ['admin', 'manager'] }] : []),
+    ...(!Array.isArray(selectedCompany?.businessType) || selectedCompany?.businessType.length === 0 || selectedCompany?.businessType.some(t => t !== 'service') ? [{ icon: BarChart3, label: "Category Analytics", href: "/inventory/analytics", color: "text-blue-600", roles: ['admin', 'manager'] }] : []),
     { icon: Landmark, label: "Cash & Bank", href: "/banking", color: "text-cyan-600", roles: ['admin', 'manager'] },
     { icon: DollarSign, label: "Expenses", href: "/expenses", color: "text-orange-600", roles: ['admin', 'manager'] },
     { icon: Building2, label: "Company", href: "/company", color: "text-indigo-600", roles: ['admin'] },

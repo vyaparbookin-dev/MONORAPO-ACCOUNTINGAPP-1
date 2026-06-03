@@ -35,6 +35,7 @@ import InventoryPage from "./screens/inventory/InventoryPage";
 import AddProductPage from "./screens/inventory/AddProductPage";
 import BulkProductPage from "./screens/inventory/BulkProductPage";
 import BulkUploadPage from "./screens/inventory/BulkUploadPage";
+import CategoryAnalyticsPage from "./screens/inventory/CategoryAnalyticsPage";
 import PurchaseEntryPage from "./screens/inventory/PurchaseEntryPage";
 import StockAdjustmentPage from "./screens/inventory/StockAdjustmentPage";
 import ProductListPage from "./screens/inventory/ProductListPage";
@@ -208,6 +209,7 @@ const App = () => {
             <Route path="/inventory/add" element={<AddProductPage />} />
             <Route path="/inventory/bulk" element={<BulkProductPage />} />
             <Route path="/inventory/bulk-upload" element={<BulkUploadPage />} />
+            <Route path="/inventory/analytics" element={<CategoryAnalyticsPage />} />
             <Route path="/inventory/purchase" element={<PurchaseEntryPage />} />
             <Route path="/inventory/adjust" element={<StockAdjustmentPage />} />
             <Route path="/inventory/list" element={<ProductListPage />} />
