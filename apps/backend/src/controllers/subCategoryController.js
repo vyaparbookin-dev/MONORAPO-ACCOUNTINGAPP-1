@@ -15,7 +15,7 @@ export const createSubCategory = async (req, res) => {
 
 export const listSubCategories = async (req, res) => {
   try {
-    const subCategories = await SubCategory.find({ isActive: true, companyId: req.companyId });
+    const subCategories = await SubCategory.find({ companyId: req.companyId, isActive: { $ne: false } });
     res.json({ success: true, subCategories });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

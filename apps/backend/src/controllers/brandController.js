@@ -15,7 +15,7 @@ export const createBrand = async (req, res) => {
 
 export const listBrands = async (req, res) => {
   try {
-    const brands = await Brand.find({ isActive: true, companyId: req.companyId });
+    const brands = await Brand.find({ companyId: req.companyId, isActive: { $ne: false } });
     res.json({ success: true, brands });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

@@ -82,9 +82,14 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <View style={styles.center}>
-          <Text style={styles.errorTitle}>Something went wrong!</Text>
-          <Text style={styles.errorText}>{this.state.error?.toString()}</Text>
+        <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: '#fef2f2'}}>
+          <View style={{backgroundColor: '#fff', padding: 30, borderRadius: 15, elevation: 10, width: '100%', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: {width: 0, height: 2}}}>
+            <Text style={{fontSize: 22, fontWeight: 'bold', color: '#dc2626', marginBottom: 10}}>⚠️ App Error</Text>
+            <Text style={{fontSize: 14, color: '#4b5563', textAlign: 'center', marginBottom: 20}}>
+              {this.state.error?.toString()}
+            </Text>
+            <Text style={{fontSize: 12, color: '#9ca3af', textAlign: 'center'}}>Terminal (Expo log) me error details check karein.</Text>
+          </View>
         </View>
       );
     }
@@ -102,7 +107,15 @@ export default function AppNavigator() {
   }, [loading, token]);
 
   if (loading) {
-    return <Loader />;
+    return (
+      <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f3f4f6'}}>
+        <Loader />
+        <Text style={{marginTop: 20, color: '#4b5563', fontWeight: 'bold'}}>Connecting to server...</Text>
+        <Text style={{marginTop: 10, color: '#ef4444', fontSize: 12, textAlign: 'center', paddingHorizontal: 40}}>
+          (Agar ye yahi atka rahe, toh pakka Backend API connect nahi ho raha. Apna local IP address .env me check karein, 'localhost' mobile me kaam nahi karta.)
+        </Text>
+      </View>
+    );
   }
 
   return (

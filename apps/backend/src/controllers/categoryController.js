@@ -26,7 +26,7 @@ export const listCategories = async (req, res) => {
   try {
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID is missing" });
     
-    const categories = await Category.find({ isActive: true, companyId: req.companyId });
+    const categories = await Category.find({ companyId: req.companyId, isActive: { $ne: false } });
     res.json({ success: true, categories });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
