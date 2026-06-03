@@ -36,6 +36,7 @@ export default function BulkUploadPage() {
   const [data, setData] = useState([]);
   const [headers, setHeaders] = useState([]);
   const [mapping, setMapping] = useState({});
+  const [mappingSource, setMappingSource] = useState({});
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState(null);
   const [warnings, setWarnings] = useState([]);
@@ -113,6 +114,7 @@ export default function BulkUploadPage() {
 
         // Smart auto-guess initial mapping
         const initialMapping = {};
+        const initialMappingSource = {};
         SYSTEM_FIELDS.forEach(field => {
           const matchedCol = fileColumns.find(col => {
             const hText = String(excelHeaders[col]).toLowerCase().trim();
@@ -145,10 +147,20 @@ export default function BulkUploadPage() {
             
             return false;
           });
-          if (matchedCol) initialMapping[field.key] = matchedCol;
+          if (matchedCol) {
+            initialMapping[field.key] = matchedCol;
+            initialMappingSource[field.key] = 'auto';
+          }
         });
         
         setMapping(initialMapping);
+        setMappingSource(initialMappingSource);
+        console.groupCollapsed("Bulk Upload Auto-Mapping");
+        console.log("auto mapping result:", initialMapping);
+        console.log("auto mapping source:", initialMappingSource);
+        console.log("headers:", excelHeaders);
+        console.log("sample first row:", firstDataRow);
+        console.groupEnd();
         setStep(2);
       } else {
         setMessage({ type: "error", text: "No data found in the Excel file!" });
@@ -159,6 +171,15 @@ export default function BulkUploadPage() {
 
   const handleUpload = async () => {
     if (data.length === 0) return;
+    console.group("Bulk Upload Submit");
+    console.log("rows to upload:", data.length);
+    console.log("mapping:", mapping);
+    console.log("mappingSource:", mappingSource);
+    console.log("first mapped row:", SYSTEM_FIELDS.reduce((acc, field) => {
+      if (mapping[field.key]) acc[field.key] = data[0][mapping[field.key]];
+      return acc;
+    }, {}));
+    console.groupEnd();
     setUploading(true);
     try {
       const res = await api.post("/api/inventory/import", { products: data, mapping });
@@ -230,12 +251,52 @@ export default function BulkUploadPage() {
               {SYSTEM_FIELDS.map((field) => (
                 <div key={field.key} className="flex items-center justify-between bg-gray-50 p-3 rounded border border-gray-100">
                   <label className="text-sm font-medium text-gray-700 w-1/2">{field.label}</label>
-                  <select className="w-1/2 border p-2 rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={mapping[field.key] || ""} onChange={(e) => setMapping({ ...mapping, [field.key]: e.target.value })}>
+                  <select className="w-1/2 border p-2 rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={mapping[field.key] || ""} onChange={(e) => {
+                      const value = e.target.value;
+                      const nextMapping = { ...mapping };
+                      const nextSource = { ...mappingSource };
+                      if (value) {
+                        nextMapping[field.key] = value;
+                        nextSource[field.key] = 'manual';
+                      } else {
+                        delete nextMapping[field.key];
+                        delete nextSource[field.key];
+                      }
+                      setMapping(nextMapping);
+                      setMappingSource(nextSource);
+                    }}>
                     <option value="">-- Skip / Not Available --</option>
                     {headers.map(h => <option key={h.key} value={h.key}>{h.label} {h.sample ? `(Ex: ${h.sample})` : ''}</option>)}
                   </select>
                 </div>
               ))}
+            </div>
+
+            <div className="mb-6 rounded-lg border border-blue-100 bg-blue-50 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-bold text-blue-900">Mapping Debug</h4>
+                <span className="text-sm text-blue-700">Auto vs Manual</span>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                {SYSTEM_FIELDS.filter(field => mapping[field.key]).map(field => {
+                  const sampleValues = data.slice(0, 3).map(row => String(row[mapping[field.key]] ?? '')).filter(Boolean);
+                  return (
+                    <div key={field.key} className="space-y-1 p-2 rounded border border-blue-100 bg-white">
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-gray-700">
+                        <span className="font-semibold">{field.label.replace(' (*Required)', '')}:</span>
+                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-700">{mapping[field.key]}</span>
+                        <span className="text-xs text-gray-500">Source: {mappingSource[field.key] || 'unknown'}</span>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Sample values: {sampleValues.length > 0 ? sampleValues.join(' | ') : 'No sample values available'}
+                      </div>
+                    </div>
+                  );
+                })}
+                {Object.keys(mapping).length === 0 && (
+                  <p className="text-sm text-gray-600">No mappings selected yet. The system may have auto-filled columns above.</p>
+                )}
+              </div>
             </div>
 
             {/* Data Preview */}
