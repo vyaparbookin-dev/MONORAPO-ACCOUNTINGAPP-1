@@ -1,0 +1,84 @@
+// --- SMART BULK DELETE (With Billing Check) ---
+export const bulkDeleteProducts = async (req, res) => {
+  try {
+    if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID is missing" });
+
+    const { productIds, deleteAll, deleteInactiveOnly, deleteImportedOnly, batchId } = req.body;
+    const Bill = mongoose.model('Bill');
+
+    let productsToDelete = [];
+    
+    if (deleteAll === true) {
+      productsToDelete = await Product.find({ companyId: req.companyId }).select('_id name isActive');
+    } else if (deleteInactiveOnly === true) {
+      productsToDelete = await Product.find({ companyId: req.companyId, isActive: false }).select('_id name');
+    } else if (deleteImportedOnly === true) {
+      productsToDelete = await Product.find({ companyId: req.companyId, source: 'excel' }).select('_id name');
+    } else if (batchId) {
+      productsToDelete = await Product.find({ companyId: req.companyId, importBatchId: batchId }).select('_id name');
+    } else if (Array.isArray(productIds) && productIds.length > 0) {
+      productsToDelete = await Product.find({ _id: { $in: productIds }, companyId: req.companyId }).select('_id name');
+    } else {
+      return res.status(400).json({ success: false, message: "Provide valid delete parameters" });
+    }
+
+    if (productsToDelete.length === 0) {
+      return res.json({ success: true, message: "No products to delete.", deletedCount: 0, softDeletedCount: 0 });
+    }
+
+    // GET ALL PRODUCTS USED IN BILLS
+    const productsInBills = new Set();
+    try {
+      const billsWithProducts = await Bill.find({ companyId: req.companyId }).select('items.name').lean();
+      billsWithProducts.forEach(bill => {
+        if (bill.items) {
+          bill.items.forEach(item => {
+            productsInBills.add(item.name?.toLowerCase());
+          });
+        }
+      });
+    } catch (e) {
+      console.warn("Could not fetch bill data:", e.message);
+    }
+
+    // SEPARATE: Hard delete vs Soft delete
+    const hardDeleteIds = [];
+    const softDeleteIds = [];
+
+    productsToDelete.forEach(p => {
+      if (productsInBills.has(p.name.toLowerCase())) {
+        softDeleteIds.push(p._id);
+      } else {
+        hardDeleteIds.push(p._id);
+      }
+    });
+
+    let deletedCount = 0;
+    let softDeletedCount = 0;
+
+    // HARD DELETE
+    if (hardDeleteIds.length > 0) {
+      const hardResult = await Product.deleteMany({ _id: { $in: hardDeleteIds }, companyId: req.companyId });
+      deletedCount = hardResult.deletedCount || 0;
+    }
+
+    // SOFT DELETE
+    if (softDeleteIds.length > 0) {
+      const softResult = await Product.updateMany(
+        { _id: { $in: softDeleteIds }, companyId: req.companyId },
+        { isActive: false, inactiveReason: "Soft-deleted - used in billing" }
+      );
+      softDeletedCount = softResult.modifiedCount || 0;
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Deleted: ${deletedCount} products permanently. Soft-deleted: ${softDeletedCount} products (used in billing).`,
+      deletedCount,
+      softDeletedCount,
+      totalProcessed: deletedCount + softDeletedCount
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};

@@ -108,20 +108,35 @@ export default function BulkUploadPage() {
         const initialMapping = {};
         SYSTEM_FIELDS.forEach(field => {
           const matchedCol = fileColumns.find(col => {
-            const hText = String(excelHeaders[col]).toLowerCase();
-            return hText.includes(field.key.toLowerCase()) || 
-            (field.key === 'category' && hText.includes('group')) ||
-            (field.key === 'dpl' && hText.includes('dpl')) ||
-            (field.key === 'costPrice' && (hText.includes('p.cost') || hText.includes('landing') || hText.includes('purchase rate'))) ||
-            (field.key === 'sellingPrice' && hText.includes('rate 1')) ||
-            (field.key === 'wholesalePrice' && hText.includes('rate 2')) ||
-            (field.key === 'dealerPrice' && hText.includes('rate 3')) ||
-            (field.key === 'currentStock' && hText.includes('opening')) ||
-            (field.key === 'unit' && (hText.includes('unit 1') || hText.includes('unit-1'))) ||
-            (field.key === 'secondaryUnit' && (hText.includes('unit-2') || hText.includes('unit 2') || hText.includes('alt'))) ||
-            (field.key === 'packing' && hText.includes('pack')) ||
-            (field.key === 'conversionRate' && hText.includes('conv')) ||
-            (field.key === 'name' && (hText === 'item' || hText === 'product name' || hText === 'item name'));
+            const hText = String(excelHeaders[col]).toLowerCase().trim();
+            
+            // Exact matches first
+            if (hText === field.key.toLowerCase()) return true;
+            
+            // Field-specific patterns with multiple variations
+            if (field.key === 'name' && ((hText.includes('item') && hText.includes('name')) || hText === 'product' || hText === 'product name')) return true;
+            if (field.key === 'category' && (hText.includes('category') || hText.includes('group'))) return true;
+            if (field.key === 'brand' && (hText.includes('brand') || hText.includes('company') || hText.includes('manufacturer'))) return true;
+            if (field.key === 'unit' && (hText.includes('unit') && (!hText.includes('2') && !hText.includes('secondary')) || hText === 'uom')) return true;
+            if (field.key === 'mrp' && (hText.includes('mrp') || hText.includes('maximum retail price'))) return true;
+            if (field.key === 'gstRate' && (hText.includes('gst') || hText.includes('tax') || hText === 'gst %' || hText === 'gst%')) return true;
+            if (field.key === 'costPrice' && (hText.includes('cost') || hText.includes('p.cost') || hText.includes('landing') || hText.includes('purchase rate') || hText.includes('cost price'))) return true;
+            if (field.key === 'sellingPrice' && (hText.includes('selling') || hText.includes('rate 1') || hText.includes('sale price') || hText.includes('selling price') || hText === 'rate1')) return true;
+            if (field.key === 'wholesalePrice' && (hText.includes('wholesale') || hText.includes('rate 2') || hText === 'rate2')) return true;
+            if (field.key === 'dealerPrice' && (hText.includes('dealer') || hText.includes('rate 3') || hText === 'rate3')) return true;
+            if (field.key === 'currentStock' && (hText.includes('stock') || hText.includes('opening') || hText.includes('current stock'))) return true;
+            if (field.key === 'minimumStock' && (hText.includes('min') || hText.includes('minimum') || hText.includes('safety stock'))) return true;
+            if (field.key === 'maximumStock' && (hText.includes('max') || hText.includes('maximum'))) return true;
+            if (field.key === 'secondaryUnit' && (hText.includes('unit') && (hText.includes('2') || hText.includes('secondary')) || hText.includes('alt'))) return true;
+            if (field.key === 'conversionRate' && (hText.includes('conversion') || hText.includes('conversion rate'))) return true;
+            if (field.key === 'hsnCode' && (hText.includes('hsn') || hText.includes('code'))) return true;
+            if (field.key === 'sku' && (hText.includes('sku') || hText.includes('code') || hText.includes('item code'))) return true;
+            if (field.key === 'barcode' && hText.includes('barcode')) return true;
+            if (field.key === 'dpl' && hText.includes('dpl')) return true;
+            if (field.key === 'packing' && hText.includes('pack')) return true;
+            if (field.key === 'discount' && hText.includes('discount')) return true;
+            
+            return false;
           });
           if (matchedCol) initialMapping[field.key] = matchedCol;
         });
@@ -155,10 +170,10 @@ export default function BulkUploadPage() {
 
   const downloadTemplate = () => {
     const templateData = [{
-      "item-code": "ITM-001", "item name": "Example Product", "barcode": "890123456789", "group": "Electronics",
-      "company": "Samsung", "hsn code": "8517", "packing": "10x10", "unit": "pcs", "unit-2": "box", "conversionunit -1": 10,
-      "costPrice": 1000, "rate 1": 1500, "rate 2": 1400, "rate 3": 1350, "mrp": 1999, "discount": 5, "gst": 18,
-      "opening stock": 50, "miniqua": 5, "max.qua": 100
+      "Item Name": "Example Product", "Item Code": "ITM-001", "Barcode": "890123456789", "Category": "Electronics",
+      "Brand": "Samsung", "HSN Code": "8517", "Packing": "10x10", "Unit": "pcs", "Unit-2": "box", "Conversion Rate": 10,
+      "Cost Price": 1000, "Selling Price": 1500, "Wholesale Price": 1400, "Dealer Price": 1350, "MRP": 1999, "Discount": 5, "GST %": 18,
+      "Opening Stock": 50, "Minimum Stock": 5, "Maximum Stock": 100
     }];
     const ws = XLSX.utils.json_to_sheet(templateData);
     const wb = XLSX.utils.book_new();

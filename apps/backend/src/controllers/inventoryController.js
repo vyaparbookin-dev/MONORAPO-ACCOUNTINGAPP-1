@@ -1,6 +1,7 @@
 import Product from "../model/product.js";
 import StockAdjustment from "../model/stockAdjustment.js";
 import mongoose from "mongoose";
+import { Parser } from "json2csv";
 
 export const addPurchaseEntry = async (req, res) => {
   try {
@@ -20,6 +21,40 @@ export const addPurchaseEntry = async (req, res) => {
     res.status(201).json({ success: true, message: "Purchase saved & stock updated successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const exportProductsCSV = async (req, res) => {
+  try {
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing." });
+    }
+    
+    const products = await Product.find({ companyId: req.companyId, isActive: true }).sort({ createdAt: -1 });
+
+    const fields = ['Name', 'SKU', 'Barcode', 'Category', 'Sub Category', 'Cost Price', 'Selling Price', 'Current Stock', 'Minimum Stock', 'Unit'];
+    
+    const csvData = products.map(p => ({
+      'Name': p.name || 'Unknown',
+      'SKU': p.sku || 'N/A',
+      'Barcode': p.barcode || 'N/A',
+      'Category': p.category || 'General',
+      'Sub Category': p.subCategory || 'N/A',
+      'Cost Price': p.costPrice || 0,
+      'Selling Price': p.sellingPrice || 0,
+      'Current Stock': p.currentStock || 0,
+      'Minimum Stock': p.minimumStock || 0,
+      'Unit': p.unit || 'pcs'
+    }));
+
+    const json2csvParser = new Parser({ fields });
+    const csv = json2csvParser.parse(csvData);
+
+    res.header('Content-Type', 'text/csv');
+    res.attachment(`Products_Export_${Date.now()}.csv`);
+    return res.send(csv);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 

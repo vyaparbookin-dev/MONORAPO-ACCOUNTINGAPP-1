@@ -24,6 +24,7 @@ const SYSTEM_FIELDS = [
   { key: "wholesalePrice", label: "Rate 2 (Wholesale)" },
   { key: "dealerPrice", label: "Rate 3 (Dealer)" },
   { key: "mrp", label: "MRP" },
+  { key: "discount", label: "Discount %" },
   { key: "gstRate", label: "GST %" },
   { key: "currentStock", label: "Opening Stock" },
   { key: "minimumStock", label: "Min Quantity" },
@@ -37,6 +38,7 @@ export default function BulkUploadPage() {
   const [mapping, setMapping] = useState({});
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState(null);
+  const [warnings, setWarnings] = useState([]);
 
   // Undo Upload States
   const [showUndoModal, setShowUndoModal] = useState(false);
@@ -113,15 +115,35 @@ export default function BulkUploadPage() {
         const initialMapping = {};
         SYSTEM_FIELDS.forEach(field => {
           const matchedCol = fileColumns.find(col => {
-            const hText = String(excelHeaders[col]).toLowerCase();
-            return hText.includes(field.key.toLowerCase()) || 
-            (field.key === 'category' && hText.includes('group')) ||
-            (field.key === 'dpl' && hText.includes('dpl')) ||
-            (field.key === 'costPrice' && (hText.includes('p.cost') || hText.includes('landing') || hText.includes('purchase rate'))) ||
-            (field.key === 'sellingPrice' && hText.includes('rate 1')) ||
-            (field.key === 'currentStock' && hText.includes('opening')) ||
-            (field.key === 'packing' && hText.includes('pack')) ||
-            (field.key === 'name' && hText.includes('item'));
+            const hText = String(excelHeaders[col]).toLowerCase().trim();
+            
+            // Exact matches first
+            if (hText === field.key.toLowerCase()) return true;
+            
+            // Field-specific patterns with multiple variations
+            if (field.key === 'name' && ((hText.includes('item') && hText.includes('name')) || hText === 'product' || hText === 'product name')) return true;
+            if (field.key === 'category' && (hText.includes('category') || hText.includes('group'))) return true;
+            if (field.key === 'brand' && (hText.includes('brand') || hText.includes('company') || hText.includes('manufacturer'))) return true;
+            if (field.key === 'unit' && (hText.includes('unit') || hText === 'uom')) return true;
+            if (field.key === 'mrp' && (hText.includes('mrp') || hText.includes('maximum retail price'))) return true;
+            if (field.key === 'gstRate' && (hText.includes('gst') || hText.includes('tax') || hText === 'gst %' || hText === 'gst%')) return true;
+            if (field.key === 'costPrice' && (hText.includes('cost') || hText.includes('p.cost') || hText.includes('landing') || hText.includes('purchase rate') || hText.includes('cost price'))) return true;
+            if (field.key === 'sellingPrice' && (hText.includes('selling') || hText.includes('rate 1') || hText.includes('sale price') || hText.includes('selling price') || hText === 'rate1')) return true;
+            if (field.key === 'wholesalePrice' && (hText.includes('wholesale') || hText.includes('rate 2') || hText === 'rate2')) return true;
+            if (field.key === 'dealerPrice' && (hText.includes('dealer') || hText.includes('rate 3') || hText === 'rate3')) return true;
+            if (field.key === 'currentStock' && (hText.includes('stock') || hText.includes('opening') || hText.includes('current stock'))) return true;
+            if (field.key === 'minimumStock' && (hText.includes('min') || hText.includes('minimum') || hText.includes('safety stock'))) return true;
+            if (field.key === 'maximumStock' && (hText.includes('max') || hText.includes('maximum'))) return true;
+            if (field.key === 'secondaryUnit' && (hText.includes('unit') && (hText.includes('2') || hText.includes('secondary')) || hText.includes('alt'))) return true;
+            if (field.key === 'conversionRate' && (hText.includes('conversion') || hText.includes('conversion rate'))) return true;
+            if (field.key === 'hsnCode' && (hText.includes('hsn') || hText.includes('code'))) return true;
+            if (field.key === 'sku' && (hText.includes('sku') || hText.includes('code') || hText.includes('item code'))) return true;
+            if (field.key === 'barcode' && hText.includes('barcode')) return true;
+            if (field.key === 'dpl' && hText.includes('dpl')) return true;
+            if (field.key === 'packing' && hText.includes('pack')) return true;
+            if (field.key === 'discount' && hText.includes('discount')) return true;
+            
+            return false;
           });
           if (matchedCol) initialMapping[field.key] = matchedCol;
         });
@@ -141,6 +163,7 @@ export default function BulkUploadPage() {
     try {
       const res = await api.post("/api/inventory/import", { products: data, mapping });
       setMessage({ type: "success", text: res.data?.message || `Successfully processed ${data.length} products!` });
+      if (res.data?.warnings?.length > 0) setWarnings(res.data.warnings);
       setStep(1);
       setData([]);
       setMapping({});
@@ -153,10 +176,10 @@ export default function BulkUploadPage() {
 
   const downloadTemplate = () => {
     const templateData = [{
-      "item-code": "ITM-001", "item name": "Example Product", "barcode": "890123456789", "packing": "1x10", "group": "Electronics",
-      "company": "Samsung", "hsn code": "8517", "unit": "pcs", "unit-2": "box", "conversionunit -1": 10,
-      "costPrice": 1000, "rate 1": 1500, "rate 2": 1400, "rate 3": 1350, "mrp": 1999, "gst": 18,
-      "opening stock": 50, "miniqua": 5, "max.qua": 100
+      "Item Name": "Example Product", "Item Code": "ITM-001", "Barcode": "890123456789", "Packing": "1x10", "Category": "Electronics",
+      "Brand": "Samsung", "HSN Code": "8517", "Unit": "pcs", "Unit-2": "box", "Conversion Rate": 10,
+      "Cost Price": 1000, "Selling Price": 1500, "Wholesale Price": 1400, "Dealer Price": 1350, "MRP": 1999, "Discount": 5, "GST %": 18,
+      "Opening Stock": 50, "Minimum Stock": 5, "Maximum Stock": 100
     }];
     const ws = XLSX.utils.json_to_sheet(templateData);
     const wb = XLSX.utils.book_new();
@@ -251,6 +274,17 @@ export default function BulkUploadPage() {
         <div className={`mt-4 p-4 rounded-lg flex items-center gap-2 ${message.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
           {message.type === 'success' ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
           {message.text}
+        </div>
+      )}
+
+      {warnings.length > 0 && (
+        <div className="mt-4 p-4 rounded-lg bg-yellow-50 border border-yellow-200">
+          <h4 className="font-bold text-yellow-800 mb-2 flex items-center gap-2">
+            <AlertCircle size={20} /> Upload Report & Auto-Resolved Conflicts ({warnings.length})
+          </h4>
+          <ul className="list-disc pl-5 text-sm text-yellow-700 max-h-40 overflow-y-auto space-y-1">
+            {warnings.map((warn, i) => <li key={i}>{warn}</li>)}
+          </ul>
         </div>
       )}
 
