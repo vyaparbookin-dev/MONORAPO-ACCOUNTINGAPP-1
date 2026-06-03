@@ -11,6 +11,7 @@ import PurchaseEntryScreen from '../screens/inventory/PurchaseEntryScreen';
 import QRCodeGenerator from '../screens/inventory/QRCodeGenerator';
 import SerialBatchScreen from '../screens/inventory/SerialBatchScreen';
 import StockThresholdScreen from '../screens/inventory/StockThresholdScreen';
+import CategoryAnalyticsScreen from '../screens/inventory/CategoryAnalyticsScreen';
 
 const Stack = createStackNavigator();
 
@@ -27,6 +28,7 @@ export default function InventoryNavigator() {
       <Stack.Screen name="QRCodeGen" component={QRCodeGenerator} />
       <Stack.Screen name="SerialBatch" component={SerialBatchScreen} />
       <Stack.Screen name="StockThreshold" component={StockThresholdScreen} />
+      <Stack.Screen name="CategoryAnalytics" component={CategoryAnalyticsScreen} options={{ title: 'Category Analytics' }} />
     </Stack.Navigator>
   );
 }

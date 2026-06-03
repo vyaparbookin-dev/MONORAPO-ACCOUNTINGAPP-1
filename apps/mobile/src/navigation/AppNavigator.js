@@ -59,6 +59,7 @@ import CloudsyncSetting from '../screens/settings/CloudsyncSetting';
 import SettingsScreen from '../screens/settings/SettingsScreen';
 import AddWarehouseScreen from '../screens/warehouse/AddWarehouseScreen';
 import WarehouseListScreen from '../screens/warehouse/WarehouseListScreen';
+import CategoryAnalyticsScreen from '../screens/inventory/CategoryAnalyticsScreen';
 
 
 const Stack = createStackNavigator();
@@ -158,6 +159,7 @@ export default function AppNavigator() {
               <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: true, title: 'Settings' }} />
               <Stack.Screen name="AddWarehouse" component={AddWarehouseScreen} options={{ headerShown: true, title: 'Add Warehouse' }} />
               <Stack.Screen name="WarehouseList" component={WarehouseListScreen} options={{ headerShown: true, title: 'Warehouses' }} />
+              <Stack.Screen name="CategoryAnalytics" component={CategoryAnalyticsScreen} options={{ headerShown: true, title: 'Category Analytics' }} />
             </>
           ) : (
             <>
