@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { dbService } from "../../services/db";
+import { dbService } from "../../services/dbService";
 import { Package, AlertTriangle, TrendingUp, Eye, BarChart3 } from "lucide-react";
 
 export default function CategoryAnalyticsPage() {

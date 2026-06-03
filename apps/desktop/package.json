@@ -9,7 +9,7 @@
     "@react-oauth/google": "^0.13.4",
     "@repo/shared": "*",
     "axios": "^1.7.2",
-    "better-sqlite3": "^12.6.2",
+    "better-sqlite3": "^11.1.2",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.3",
     "html5-qrcode": "^2.3.8",
