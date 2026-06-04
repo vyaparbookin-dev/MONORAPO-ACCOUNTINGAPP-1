@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, TextInput } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, TextInput, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getData } from '../../services/ApiService';
 import { useFocusEffect } from '@react-navigation/native';
@@ -8,6 +8,7 @@ import { getStaffLocal } from '../../../db'; // Offline DB
 const SalaryListScreen = ({ navigation }) => {
   const [staffList, setStaffList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   useFocusEffect(
@@ -20,15 +21,29 @@ const SalaryListScreen = ({ navigation }) => {
     try {
       setLoading(true);
       // 1. Offline First: Fetch staff from SQLite
-      const localStaff = await getStaffLocal();
-      setStaffList(localStaff || []);
+      const localStaff = await getStaffLocal().catch(() => []);
+      if (localStaff && localStaff.length > 0) {
+        setStaffList(localStaff);
+        setLoading(false);
+      }
       
+      // 2. Background Sync: Fetch from Cloud
+      const res = await getData('/staff').catch(() => null);
+      if (res) {
+        setStaffList(res.data?.staff || res.data || []);
+      }
     } catch (err) {
       console.error("Fetch staff error:", err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchStaffData();
+  }, []);
 
   const filteredStaff = staffList.filter(s => 
     (s.name || s.employeeName || '').toLowerCase().includes(searchQuery.toLowerCase())
@@ -98,6 +113,7 @@ const SalaryListScreen = ({ navigation }) => {
           keyExtractor={(item, index) => item._id || String(index)}
           renderItem={renderItem}
           ListEmptyComponent={<Text style={styles.empty}>No staff found. Please add a new staff member.</Text>}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563eb']} />}
         />
       )}
     </View>

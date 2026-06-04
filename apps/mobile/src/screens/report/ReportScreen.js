@@ -73,12 +73,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 10,
     ...Platform.select({
-      ios: {     },
-      android: { ...Platform.select({
-      ios: {     },
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1.41 },
       android: { elevation: 2 },
-      web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.2)' }
-    }), },
       web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.2)' }
     })
   },

@@ -1,7 +1,7 @@
 // c:\Users\Lenovo1\Desktop\red-accounting-book\frontend\mobile\src\screens\warehouse\WarehouseListScreen.js
 
-import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getData } from '../../services/ApiService';
 import { getWarehousesLocal } from '../../../db'; // Offline DB
@@ -9,6 +9,7 @@ import { getWarehousesLocal } from '../../../db'; // Offline DB
 const WarehouseListScreen = ({ navigation }) => {
   const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
@@ -22,15 +23,29 @@ const WarehouseListScreen = ({ navigation }) => {
       setLoading(true);
       
       // 1. Offline First: Fetch from SQLite
-      const localWarehouses = await getWarehousesLocal();
-      setWarehouses(localWarehouses || []);
+      const localWarehouses = await getWarehousesLocal().catch(() => []);
+      if (localWarehouses && localWarehouses.length > 0) {
+        setWarehouses(localWarehouses);
+        setLoading(false);
+      }
       
+      // 2. Background Sync
+      const res = await getData('/warehouse').catch(() => null);
+      if (res) {
+        setWarehouses(res.data?.warehouses || res.data?.data || []);
+      }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchWarehouses();
+  }, []);
 
   const renderItem = ({ item }) => (
     <View style={styles.card}>
@@ -58,6 +73,7 @@ const WarehouseListScreen = ({ navigation }) => {
         data={warehouses}
         keyExtractor={item => item.uuid || item._id || Math.random().toString()}
         renderItem={renderItem}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#d97706']} />}
         ListEmptyComponent={<Text style={styles.empty}>No warehouses found.</Text>}
       />
     </View>
@@ -74,12 +90,8 @@ const styles = StyleSheet.create({
     borderRadius: 10, 
     marginBottom: 10, 
     ...Platform.select({
-      ios: {     },
-      android: { ...Platform.select({
-      ios: {     },
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1.41 },
       android: { elevation: 2 },
-      web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.2)' }
-    }), },
       web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.2)' }
     })
   },

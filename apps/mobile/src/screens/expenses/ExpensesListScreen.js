@@ -21,12 +21,18 @@ const ExpansesListScreen = ({ navigation }) => {
     try {
       setLoading(true);
       
-      // 1. Offline First: Fetch from SQLite
-      const localExpenses = await getExpensesLocal();
-      setExpenses(localExpenses || []);
+      // 1. Offline First: Turant Local SQLite se dikhayein
+      const localExpenses = await getExpensesLocal().catch(() => []);
+      if (localExpenses && localExpenses.length > 0) {
+        setExpenses(localExpenses);
+        setLoading(false);
+      }
 
-      // const res = await API.get('/expance');
-      // setExpenses(res.data?.expenses || res.data || []);
+      // 2. Background Sync: Cloud API se data update karein
+      const res = await API.get('/expance').catch(() => null);
+      if (res) {
+        setExpenses(res.data?.expances || res.data?.expenses || res.data || []);
+      }
     } catch (err) {
       console.error(err);
     } finally {

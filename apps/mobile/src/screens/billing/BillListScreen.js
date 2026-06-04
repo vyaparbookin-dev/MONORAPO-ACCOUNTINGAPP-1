@@ -18,23 +18,30 @@ const BillListScreen = () => {
 
   const fetchBills = async (pageNumber = 1, shouldRefresh = false) => {
     try {
-      if (pageNumber === 1 && !shouldRefresh) setLoading(true);
+      if (pageNumber === 1 && !shouldRefresh) {
+        // 1. Offline First: Turant Local SQLite se dikhayein
+        const localBills = await getBillsLocal().catch(() => []);
+        if (localBills && localBills.length > 0) {
+          setBills(localBills);
+          setLoading(false);
+        } else {
+          setLoading(true);
+        }
+      }
       if (pageNumber > 1) setLoadingMore(true);
 
-      try {
-        // Try fetching from API first
-        const res = await getData(`/billing?page=${pageNumber}&limit=20`);
+      // 2. Background Sync: Cloud API se real-time data laayein
+      const res = await getData(`/billing?page=${pageNumber}&limit=20`).catch(() => null);
+      if (res) {
         const apiBills = res.data?.bills || [];
-        
-        setBills(prev => shouldRefresh ? apiBills : [...prev, ...apiBills]);
+        setBills(prev => (shouldRefresh || pageNumber === 1) ? apiBills : [...prev, ...apiBills]);
         setHasMore(res.data?.pagination?.totalPages > pageNumber);
         setPage(pageNumber);
-      } catch (apiError) {
-        console.log("API fetch failed, falling back to local DB", apiError.message);
-        // Fallback to local DB if API fails
-        const localBills = await getBillsLocal();
+      } else if (pageNumber === 1 && bills.length === 0) {
+        // Agar cloud fail ho gaya aur local me bhi kuch nahi tha
+        const localBills = await getBillsLocal().catch(() => []);
         setBills(localBills || []);
-        setHasMore(false); // Offline fetch loads all
+        setHasMore(false);
       }
     } catch (error) {
       console.error("Error fetching bills:", error);

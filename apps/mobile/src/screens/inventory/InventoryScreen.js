@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Platform, ActivityIndicator, TextInput, RefreshControl } from 'react-native';
 import { getData } from '../../services/ApiService';
 import { Ionicons } from '@expo/vector-icons';
+import { getProductsLocal } from '../../../db';
 
 const InventoryScreen = ({ navigation }) => {
   const [items, setItems] = useState([]);
@@ -18,9 +19,18 @@ const InventoryScreen = ({ navigation }) => {
 
   const fetchInventory = async () => {
     try {
-      const res = await getData('/inventory');
-      // Adjust mapping based on exact backend response format (e.g. res.data.items or res.data)
-      setItems(res.data?.items || res.data?.products || (Array.isArray(res.data) ? res.data : []));
+      // 1. Offline First: Turant Local SQLite se data dikhayein
+      const localProducts = await getProductsLocal().catch(() => []);
+      if (localProducts && localProducts.length > 0) {
+        setItems(localProducts);
+        setLoading(false); // Data milte hi loader hata do
+      }
+
+      // 2. Background Sync: Chupchap Cloud se naya data laakar list update karein
+      const res = await getData('/inventory').catch(() => null);
+      if (res) {
+        setItems(res.data?.items || res.data?.products || (Array.isArray(res.data) ? res.data : []));
+      }
     } catch (err) {
       console.error("Error fetching inventory:", err);
     } finally {

@@ -1,30 +1,68 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator, RefreshControl } from 'react-native';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import { getData } from '../../services/ApiService';
+import { getPartiesLocal } from '../../../db';
 
-const dummyParties = [
-  { id: '1', name: 'Ramesh Hardware', type: 'Customer', amount: 15400, isToCollect: true, phone: '9876543210' },
-  { id: '2', name: 'Super Traders (Supplier)', type: 'Supplier', amount: 8200, isToCollect: false, phone: '9876543211' },
-  { id: '3', name: 'Amit Builders', type: 'Customer', amount: 4500, isToCollect: true, phone: '9876543212' },
-];
-
-export default function PartiesScreen() {
+export default function PartiesScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('All');
+  const [parties, setParties] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const renderParty = ({ item }) => (
+  const fetchParties = async () => {
+    try {
+      // 1. Offline First: Turant Local SQLite se dikhayein
+      const localParties = await getPartiesLocal().catch(() => []);
+      if (localParties && localParties.length > 0) {
+        setParties(localParties);
+        setLoading(false);
+      }
+
+      // 2. Background Sync: Cloud API se real-time data laayein
+      const res = await getData('/party').catch(() => null);
+      if (res) {
+        setParties(res.data?.parties || (Array.isArray(res.data) ? res.data : []));
+      }
+    } catch (err) {
+      console.error("Error fetching parties:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useFocusEffect(useCallback(() => { fetchParties(); }, []));
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchParties();
+    setRefreshing(false);
+  }, []);
+
+  const renderParty = ({ item }) => {
+    const bal = item.balance || item.currentBalance || 0;
+    const isToCollect = (item.partyType === 'customer' || item.partyType === 'both') && bal > 0;
+    const isToPay = (item.partyType === 'supplier' || item.partyType === 'both') && bal > 0;
+    const amountStr = bal.toLocaleString('en-IN');
+    const displayType = item.partyType ? item.partyType.charAt(0).toUpperCase() + item.partyType.slice(1) : 'Unknown';
+    const statusColor = isToCollect ? '#2ECC71' : (isToPay ? '#E74C3C' : '#7F8C8D');
+
+    return (
     <View style={styles.partyCard}>
       <View style={styles.partyInfo}>
-        <View style={styles.avatar}><Text style={styles.avatarText}>{item.name.charAt(0)}</Text></View>
-        <View>
-          <Text style={styles.partyName}>{item.name}</Text>
-          <Text style={styles.partyType}>{item.type}</Text>
+        <View style={styles.avatar}><Text style={styles.avatarText}>{(item.name || '?').charAt(0).toUpperCase()}</Text></View>
+        <View style={{ flex: 1, paddingRight: 10 }}>
+          <Text style={styles.partyName} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.partyType}>{displayType} {item.mobileNumber ? `• ${item.mobileNumber}` : ''}</Text>
         </View>
       </View>
       <View style={styles.amountSection}>
-        <Text style={[styles.amountText, { color: item.isToCollect ? '#2ECC71' : '#E74C3C' }]}>
-          ₹ {item.amount}
+        <Text style={[styles.amountText, { color: statusColor }]}>
+          ₹ {amountStr}
         </Text>
-        <Text style={styles.amountSubtext}>{item.isToCollect ? 'To Collect' : 'To Pay'}</Text>
+        <Text style={styles.amountSubtext}>{isToCollect ? 'To Collect' : (isToPay ? 'To Pay' : 'Settled')}</Text>
         
         <TouchableOpacity style={styles.whatsappBtn}>
           <FontAwesome name="whatsapp" size={14} color="#2ECC71" />
@@ -32,7 +70,20 @@ export default function PartiesScreen() {
         </TouchableOpacity>
       </View>
     </View>
-  );
+    );
+  };
+
+  const filteredParties = parties.filter(item => {
+    const matchesSearch = (item.name || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const bal = item.balance || item.currentBalance || 0;
+    const isToCollect = (item.partyType === 'customer' || item.partyType === 'both') && bal > 0;
+    const isToPay = (item.partyType === 'supplier' || item.partyType === 'both') && bal > 0;
+
+    if (!matchesSearch) return false;
+    if (activeTab === 'To Collect' && !isToCollect) return false;
+    if (activeTab === 'To Pay' && !isToPay) return false;
+    return true;
+  });
 
   return (
     <View style={styles.container}>
@@ -41,7 +92,7 @@ export default function PartiesScreen() {
         <Text style={styles.headerTitle}>Parties</Text>
         <View style={styles.searchBar}>
           <Ionicons name="search" size={20} color="#7F8C8D" />
-          <TextInput placeholder="Search party..." style={styles.searchInput} placeholderTextColor="#7F8C8D" />
+          <TextInput placeholder="Search party..." style={styles.searchInput} placeholderTextColor="#7F8C8D" value={searchQuery} onChangeText={setSearchQuery} />
         </View>
       </View>
 
@@ -55,15 +106,21 @@ export default function PartiesScreen() {
       </View>
 
       {/* List */}
-      <FlatList
-        data={dummyParties}
-        keyExtractor={item => item.id}
-        renderItem={renderParty}
-        contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
-      />
+      {loading && !refreshing ? (
+        <ActivityIndicator size="large" color="#6C4CF1" style={{ marginTop: 40 }} />
+      ) : (
+        <FlatList
+          data={filteredParties}
+          keyExtractor={item => item._id || Math.random().toString()}
+          renderItem={renderParty}
+          contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#6C4CF1']} />}
+          ListEmptyComponent={<Text style={{textAlign: 'center', color: '#7F8C8D', marginTop: 40}}>No parties found.</Text>}
+        />
+      )}
 
       {/* Bottom Action */}
-      <TouchableOpacity style={styles.createBtn}>
+      <TouchableOpacity style={styles.createBtn} onPress={() => alert("Add Party Feature Coming Soon")}>
         <Ionicons name="person-add" size={20} color="#FFF" />
         <Text style={styles.createBtnText}>Create New Party</Text>
       </TouchableOpacity>
