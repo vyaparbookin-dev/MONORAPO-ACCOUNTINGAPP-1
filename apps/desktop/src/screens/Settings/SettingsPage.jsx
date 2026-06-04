@@ -66,12 +66,12 @@ export default function SettingsPage() {
   const loadParties = async () => {
     try {
       setLoading(true);
-      let res = await dbService.getCustomers();
-      if (!res || res.length === 0) {
+      let res = dbService.getCustomers ? await dbService.getCustomers().catch(() => null) : null;
+      if (!res || !Array.isArray(res) || res.length === 0) {
         const apiRes = await api.get("/api/party").catch(() => null);
-        res = apiRes?.data?.parties || apiRes?.data || [];
+        res = apiRes?.data?.parties || apiRes?.parties || apiRes?.data || [];
       }
-      setParties((res || []).map(p => ({ ...p, _id: p.uuid || p._id })));
+      setParties((Array.isArray(res) ? res : []).map(p => ({ ...p, _id: p.uuid || p._id })));
     } catch (err) {
       console.error("Error loading parties:", err);
       setParties([]);
@@ -83,12 +83,12 @@ export default function SettingsPage() {
   const loadCategories = async () => {
     try {
       setLoading(true);
-      let res = await dbService.getCategories();
-      if (!res || res.length === 0) {
+      let res = dbService.getCategories ? await dbService.getCategories().catch(() => null) : null;
+      if (!res || !Array.isArray(res) || res.length === 0) {
         const apiRes = await api.get("/api/category").catch(() => null);
-        res = apiRes?.data?.categories || apiRes?.data || [];
+        res = apiRes?.data?.categories || apiRes?.categories || apiRes?.data || [];
       }
-      setCategories((res || []).map(c => ({ ...c, _id: c.uuid || c._id })));
+      setCategories((Array.isArray(res) ? res : []).map(c => ({ ...c, _id: c.uuid || c._id })));
     } catch (err) {
       console.error("Error loading categories:", err);
       setCategories([]);
@@ -100,12 +100,12 @@ export default function SettingsPage() {
   const loadSubCategories = async () => {
     try {
       setLoading(true);
-      let res = await dbService.getSubCategories?.();
-      if (!res || res.length === 0) {
+      let res = dbService.getSubCategories ? await dbService.getSubCategories().catch(() => null) : null;
+      if (!res || !Array.isArray(res) || res.length === 0) {
         const apiRes = await api.get("/api/subcategory").catch(() => null);
-        res = apiRes?.data?.subCategories || apiRes?.data || [];
+        res = apiRes?.data?.subCategories || apiRes?.subCategories || apiRes?.data || [];
       }
-      setSubCategories((res || []).map(c => ({ ...c, _id: c.uuid || c._id })));
+      setSubCategories((Array.isArray(res) ? res : []).map(c => ({ ...c, _id: c.uuid || c._id })));
     } catch (err) {
       console.error("Error loading subCategories:", err);
       setSubCategories([]);
@@ -115,12 +115,12 @@ export default function SettingsPage() {
   const loadBrands = async () => {
     try {
       setLoading(true);
-      let res = await dbService.getBrands?.();
-      if (!res || res.length === 0) {
+      let res = dbService.getBrands ? await dbService.getBrands().catch(() => null) : null;
+      if (!res || !Array.isArray(res) || res.length === 0) {
         const apiRes = await api.get("/api/brand").catch(() => null);
-        res = apiRes?.data?.brands || apiRes?.data || [];
+        res = apiRes?.data?.brands || apiRes?.brands || apiRes?.data || [];
       }
-      setBrands((res || []).map(c => ({ ...c, _id: c.uuid || c._id })));
+      setBrands((Array.isArray(res) ? res : []).map(c => ({ ...c, _id: c.uuid || c._id })));
     } catch (err) {
       console.error("Error loading brands:", err);
       setBrands([]);
