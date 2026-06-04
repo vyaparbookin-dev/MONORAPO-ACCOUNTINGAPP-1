@@ -26,16 +26,21 @@ const ItemMasterPage = () => {
     try {
       const res = await api.get(`/api/${currentTab.endpoint}`);
       let list = [];
+      
+      // API response key fix: "category" -> "categories"
+      let dataKey = currentTab.endpoint + 's';
+      if (currentTab.endpoint === 'category') dataKey = 'categories';
+      if (currentTab.endpoint === 'subcategory') dataKey = 'subCategories';
+
       // Handle different API response structures dynamically
-      if (res.data) {
-        if (Array.isArray(res.data)) list = res.data;
-        else if (Array.isArray(res.data[currentTab.endpoint + 's'])) list = res.data[currentTab.endpoint + 's'];
-        else if (activeTab === 'subcategory' && Array.isArray(res.data['subCategories'])) list = res.data['subCategories'];
-        else list = res.data;
+      if (res?.data?.[dataKey] && Array.isArray(res.data[dataKey])) {
+        list = res.data[dataKey];
+      } else if (res?.[dataKey] && Array.isArray(res[dataKey])) {
+        list = res[dataKey];
+      } else if (res?.data && Array.isArray(res.data)) {
+        list = res.data;
       } else if (Array.isArray(res)) {
         list = res;
-      } else {
-        list = res[currentTab.endpoint + 's'] || res['subCategories'] || [];
       }
       
       if (!Array.isArray(list)) {
