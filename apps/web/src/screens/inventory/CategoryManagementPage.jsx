@@ -24,16 +24,20 @@ const CategoryManagementPage = () => {
     try {
       if (activeTab === "categories") {
         const res = await api.get("/api/category");
-        setCategories(res.data.categories || res.data.data || (Array.isArray(res.data) ? res.data : []));
+        const data = res?.data?.categories || res?.data?.data || res?.data;
+        setCategories(Array.isArray(data) ? data : []);
       } else if (activeTab === "subCategories") {
         const res = await api.get("/api/subcategory");
-        setSubCategories(res.data.subCategories || res.data.data || (Array.isArray(res.data) ? res.data : []));
+        const data = res?.data?.subCategories || res?.data?.data || res?.data;
+        setSubCategories(Array.isArray(data) ? data : []);
       } else if (activeTab === "brands") {
         const res = await api.get("/api/brand");
-        setBrands(res.data.brands || res.data.data || (Array.isArray(res.data) ? res.data : []));
+        const data = res?.data?.brands || res?.data?.data || res?.data;
+        setBrands(Array.isArray(data) ? data : []);
       } else {
         const res = await api.get("/api/unit");
-        setUnits(res.data.units || res.data.data || (Array.isArray(res.data) ? res.data : []));
+        const data = res?.data?.units || res?.data?.data || res?.data;
+        setUnits(Array.isArray(data) ? data : []);
       }
     } catch (error) {
       console.error(`Failed to fetch ${activeTab}:`, error);

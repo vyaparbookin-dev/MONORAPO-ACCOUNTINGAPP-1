@@ -31,7 +31,7 @@ const CategoryManagementPage = () => {
           const res = await api.get("/api/category").catch(() => ({ data: [] }));
           localCats = res.data?.categories || res.data || [];
         }
-        setCategories(localCats);
+        setCategories(Array.isArray(localCats) ? localCats : []);
       } else if (activeTab === "subCategories") {
         // Offline First
         let localSubCats = await dbService.getSubCategories?.() || [];
@@ -39,7 +39,7 @@ const CategoryManagementPage = () => {
           const res = await api.get("/api/subcategory").catch(() => ({ data: [] }));
           localSubCats = res.data?.subCategories || res.data || [];
         }
-        setSubCategories(localSubCats);
+        setSubCategories(Array.isArray(localSubCats) ? localSubCats : []);
       } else if (activeTab === "brands") {
         // Offline First
         let localBrands = await dbService.getBrands?.() || [];
@@ -47,7 +47,7 @@ const CategoryManagementPage = () => {
           const res = await api.get("/api/brand").catch(() => ({ data: [] }));
           localBrands = res.data?.brands || res.data || [];
         }
-        setBrands(localBrands);
+        setBrands(Array.isArray(localBrands) ? localBrands : []);
       } else {
         // Offline First
         let localUnits = await dbService.getUnits?.() || [];
@@ -55,7 +55,7 @@ const CategoryManagementPage = () => {
           const res = await api.get("/api/unit").catch(() => ({ data: [] }));
           localUnits = res.data?.units || res.data || [];
         }
-        setUnits(localUnits);
+        setUnits(Array.isArray(localUnits) ? localUnits : []);
       }
     } catch (error) {
       console.error(`Failed to fetch ${activeTab}:`, error);

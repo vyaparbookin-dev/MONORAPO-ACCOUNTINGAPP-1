@@ -38,6 +38,10 @@ const ItemMasterPage = () => {
         list = res[currentTab.endpoint + 's'] || res['subCategories'] || [];
       }
       
+      if (!Array.isArray(list)) {
+        list = [];
+      }
+
       // Convert string arrays to objects for consistent mapping if needed
       const normalizedList = list.map(item => 
         typeof item === 'string' ? { _id: item, name: item, isStringOnly: true } : item
