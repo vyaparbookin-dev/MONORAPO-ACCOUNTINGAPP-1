@@ -66,7 +66,11 @@ export default function SettingsPage() {
   const loadParties = async () => {
     try {
       setLoading(true);
-      const res = await dbService.getCustomers();
+      let res = await dbService.getCustomers();
+      if (!res || res.length === 0) {
+        const apiRes = await api.get("/api/party").catch(() => null);
+        res = apiRes?.data?.parties || apiRes?.data || [];
+      }
       setParties((res || []).map(p => ({ ...p, _id: p.uuid || p._id })));
     } catch (err) {
       console.error("Error loading parties:", err);
@@ -79,7 +83,11 @@ export default function SettingsPage() {
   const loadCategories = async () => {
     try {
       setLoading(true);
-      const res = await dbService.getCategories();
+      let res = await dbService.getCategories();
+      if (!res || res.length === 0) {
+        const apiRes = await api.get("/api/category").catch(() => null);
+        res = apiRes?.data?.categories || apiRes?.data || [];
+      }
       setCategories((res || []).map(c => ({ ...c, _id: c.uuid || c._id })));
     } catch (err) {
       console.error("Error loading categories:", err);

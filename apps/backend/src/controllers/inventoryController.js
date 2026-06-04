@@ -688,3 +688,48 @@ export const getInventorySummary = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+// --- SYNC MASTERS FROM PRODUCTS (Fix for missing Categories/Brands in Settings) ---
+export const syncMastersFromProducts = async (req, res) => {
+  try {
+    const { companyId } = req;
+    if (!companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
+
+    // 1. Get all unique values directly from existing Products
+    const uniqueCategories = await Product.distinct("category", { companyId });
+    const uniqueSubCategories = await Product.distinct("subCategory", { companyId });
+    const uniqueBrands = await Product.distinct("brand", { companyId });
+    const uniqueUnits = await Product.distinct("unit", { companyId });
+
+    const companyObjectId = new mongoose.Types.ObjectId(companyId);
+
+    // 2. Create bulk operations to insert missing masters safely
+    const createBulkOps = (items, isUnit = false) => 
+      items.filter(Boolean).map(name => ({
+        updateOne: {
+          filter: { companyId: companyObjectId, name },
+          update: { 
+            $setOnInsert: { 
+              companyId: companyObjectId, 
+              name, 
+              ...(isUnit ? { shortCode: String(name).substring(0, 3).toUpperCase() } : { isActive: true }) 
+            } 
+          },
+          upsert: true
+        }
+      }));
+
+    // 3. Execute Database Updates
+    let stats = { categories: 0, subCategories: 0, brands: 0, units: 0 };
+
+    if (uniqueCategories.length > 0) { const resCat = await Category.bulkWrite(createBulkOps(uniqueCategories), { ordered: false }); stats.categories = resCat.upsertedCount || 0; }
+    if (uniqueSubCategories.length > 0) { const resSub = await SubCategory.bulkWrite(createBulkOps(uniqueSubCategories), { ordered: false }); stats.subCategories = resSub.upsertedCount || 0; }
+    if (uniqueBrands.length > 0) { const resBrand = await Brand.bulkWrite(createBulkOps(uniqueBrands), { ordered: false }); stats.brands = resBrand.upsertedCount || 0; }
+    if (uniqueUnits.length > 0) { const resUnit = await Unit.bulkWrite(createBulkOps(uniqueUnits, true), { ordered: false }); stats.units = resUnit.upsertedCount || 0; }
+
+    res.json({ success: true, message: "Masters synced successfully from products!", stats });
+  } catch (error) {
+    console.error("Sync Masters Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

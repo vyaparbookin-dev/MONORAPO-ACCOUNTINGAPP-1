@@ -60,7 +60,7 @@ export default function SettingsPage() {
     try {
       setLoading(true);
       const response = await api.get("/api/party");
-      setParties(response.parties || []);
+      setParties(response?.data?.parties || response?.parties || []);
     } catch (err) {
       console.error("Error loading parties:", err);
     } finally {
@@ -72,7 +72,7 @@ export default function SettingsPage() {
     try {
       setLoading(true);
       const response = await api.get("/api/category");
-      setCategories(response.categories || []);
+      setCategories(response?.data?.categories || response?.categories || []);
     } catch (err) {
       console.error("Error loading categories:", err);
     } finally {
@@ -84,7 +84,7 @@ export default function SettingsPage() {
     try {
       setLoading(true);
       const response = await api.get("/api/subcategory");
-      setSubCategories(response.subCategories || response.data || []);
+      setSubCategories(response?.data?.subCategories || response?.data || response?.subCategories || []);
     } catch (err) {
       console.error("Error loading sub-categories:", err);
     } finally {
@@ -96,7 +96,7 @@ export default function SettingsPage() {
     try {
       setLoading(true);
       const response = await api.get("/api/brand");
-      setBrands(response.brands || response.data || []);
+      setBrands(response?.data?.brands || response?.data || response?.brands || []);
     } catch (err) {
       console.error("Error loading brands:", err);
     } finally {
