@@ -6,7 +6,6 @@ import { getData, putData } from '../../services/ApiService';
 import { AuthContext } from '../../context/AuthContext';
 import { getSettingLocal, saveSettingLocal, updateCompanyLocal } from '../../../db'; // Offline DB
 import api, { RAZORPAY_KEY_ID } from '../../services/ApiService'; // Ensure this is imported for payment API calls and Razorpay Key
-import ImportHistoryManager from '../../components/ImportHistoryManager';
 
 // Safely import Razorpay so it doesn't crash the Web version or Expo Go
 let RazorpayCheckout = null;
@@ -146,7 +145,7 @@ const AppSettingsScreen = ({ navigation }) => {
         description: planName,
         image: 'https://your-app-logo.png', // Replace with your app logo URL
         currency: order.currency,
-        key: process.env.RAZORPAY_KEY_ID || 'rzp_test_YOUR_KEY_ID', // **IMPORTANT: Replace with your actual Razorpay Key ID**
+        key: RAZORPAY_KEY_ID || process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_YOUR_KEY_ID', // **IMPORTANT: Replace with your actual Razorpay Key ID**
         amount: order.amount,
         name: 'RedAccounting App',
         order_id: order.id,
@@ -277,11 +276,6 @@ const AppSettingsScreen = ({ navigation }) => {
           <Text style={styles.label}>Push Notifications</Text>
           <Switch value={notifications.push} onValueChange={(val) => setNotifications({...notifications, push: val})} />
         </View>
-      </View>
-
-      {/* Data Management & Imports */}
-      <View style={styles.section}>
-        <ImportHistoryManager />
       </View>
 
       <TouchableOpacity style={styles.saveBtn} onPress={handleSaveChanges} disabled={saving}>

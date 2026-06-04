@@ -78,7 +78,10 @@ const ItemMasterPage = () => {
   }, [activeTab]);
 
   const handleAddEdit = (item = null) => {
-    if (item && !item.isStringOnly) {
+    if (item && item.isSystemDefault) {
+      setEditingItem(null); // System default ko naya manega taaki edit karte hi DB me permanently save ho jaye
+      setFormData({ name: item.name, description: "", shortCode: item.shortCode || "" });
+    } else if (item && !item.isStringOnly) {
       setEditingItem(item);
       setFormData({ 
         name: item.name || "", 
