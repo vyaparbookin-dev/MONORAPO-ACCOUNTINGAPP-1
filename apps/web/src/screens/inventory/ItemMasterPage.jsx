@@ -52,6 +52,21 @@ const ItemMasterPage = () => {
         typeof item === 'string' ? { _id: item, name: item, isStringOnly: true } : item
       );
       
+      // System Defaults: Taaki purane hardcoded units na tootein
+      if (currentTab.endpoint === 'unit') {
+        const defaultUnits = ["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"];
+        defaultUnits.forEach(defUnit => {
+          if (!normalizedList.some(u => (u.name || "").toLowerCase() === defUnit.toLowerCase())) {
+            normalizedList.push({
+              _id: `default-${defUnit}`,
+              name: defUnit,
+              shortCode: defUnit.toUpperCase(),
+              isSystemDefault: true
+            });
+          }
+        });
+      }
+
       setDataList(normalizedList);
     } catch (error) {
       console.error(`Error fetching ${activeTab}:`, error);
@@ -230,8 +245,8 @@ const ItemMasterPage = () => {
                           <td className="py-3 px-6 font-medium text-gray-800">{item.name}</td>
                           {activeTab === 'unit' && <td className="py-3 px-6 text-gray-600">{item.shortCode || '-'}</td>}
                           <td className="py-3 px-6 text-right">
-                            <button onClick={() => handleAddEdit(item)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded mr-2" title="Edit"><Edit size={16} /></button>
-                            {!item.isStringOnly && <button onClick={() => handleDelete(item._id)} className="p-1.5 text-red-600 hover:bg-red-100 rounded" title="Delete"><Trash2 size={16} /></button>}
+                            <button onClick={() => handleAddEdit(item)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded mr-2" title={item.isSystemDefault ? "Save to DB" : "Edit"}><Edit size={16} /></button>
+                            {!item.isStringOnly && !item.isSystemDefault && <button onClick={() => handleDelete(item._id)} className="p-1.5 text-red-600 hover:bg-red-100 rounded" title="Delete"><Trash2 size={16} /></button>}
                           </td>
                         </tr>
                       ))}

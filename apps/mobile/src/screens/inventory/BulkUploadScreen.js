@@ -4,7 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as XLSX from 'xlsx';
 import { Ionicons } from '@expo/vector-icons';
-import api from '../../services/api';
+import api from '../../services/ApiService';
 
 const SYSTEM_FIELDS = [
   { key: "name", label: "Item Name (*Required)" },

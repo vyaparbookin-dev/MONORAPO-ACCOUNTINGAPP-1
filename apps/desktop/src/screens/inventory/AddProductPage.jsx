@@ -56,7 +56,7 @@ const AddProductPage = () => {
   const gstRates = [0, 5, 12, 18, 28];
 
   // Make dropdowns dynamic
-  const [units, setUnits] = useState(["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"]);
+  const [units, setUnits] = useState([]); // Initialized as empty, will be populated from API/DB
   const [categories, setCategories] = useState([]);
   const [subCategories, setSubCategories] = useState([]);
   const [brands, setBrands] = useState([]);
@@ -118,7 +118,9 @@ const AddProductPage = () => {
           const unitRes = await api.get('/api/unit').catch(() => null);
           if (unitRes) localUnits = unitRes.data?.units || unitRes.data || [];
         }
-        if (localUnits.length > 0) setUnits(prev => [...new Set([...prev, ...localUnits.map(u => u.name)])]);
+        const fetchedUnitNames = Array.isArray(localUnits) ? localUnits.map(u => u.name) : [];
+        const defaultUnits = ["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"];
+        setUnits([...new Set([...defaultUnits, ...fetchedUnitNames])]); // Merge defaults so old items don't break
 
       } catch (err) { console.warn("Failed to load dynamic dropdowns", err); }
     };
