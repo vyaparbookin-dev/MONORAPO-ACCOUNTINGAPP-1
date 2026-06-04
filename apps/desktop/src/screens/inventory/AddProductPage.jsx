@@ -310,7 +310,18 @@ const AddProductPage = () => {
       throw new Error("Please fill all required fields (Name, Category, Cost, Selling Price" + (showHSN ? ", and HSN Code" : "") + ")");
     }
 
-    const cleanName = form.name.trim();
+    let cleanName = form.name.trim();
+    const extras = [];
+    const nameLower = cleanName.toLowerCase();
+    
+    if (form.dimensions && !nameLower.includes(form.dimensions.trim().toLowerCase())) extras.push(form.dimensions.trim());
+    if (form.purity && !nameLower.includes(form.purity.trim().toLowerCase())) extras.push(form.purity.trim());
+    if (form.weight && !nameLower.includes(String(form.weight).trim().toLowerCase())) extras.push(`${form.weight}g`);
+    
+    if (extras.length > 0) {
+      cleanName = `${cleanName} (${extras.join(' ')})`;
+    }
+
     if (inventory.some(p => p.name.toLowerCase().trim() === cleanName.toLowerCase())) {
       throw new Error(`A product with the name "${cleanName}" already exists in your inventory!`);
     }

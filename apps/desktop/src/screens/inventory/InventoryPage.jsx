@@ -650,7 +650,7 @@ const InventoryPage = () => {
         <ReportCard title="Total Products" value={totalProducts} icon="📦" />
         <ReportCard title="Total Value" value={formatCurrency(totalValue)} icon="💰" />
         <ReportCard title="Low Stock" value={lowStockCount} icon={<AlertTriangle className="text-orange-600" size={24} />} />
-        <ReportCard title="Categories" value="5" icon="🏷️" />
+        <ReportCard title="Categories" value={categories.length} icon="🏷️" />
       </div>
 
       {/* Search & Filter */}

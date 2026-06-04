@@ -40,21 +40,29 @@ const AddProductScreen = ({ navigation }) => {
   });
   const [loading, setLoading] = useState(false);
 
-  const [units, setUnits] = useState(["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"]);
-  const [categories, setCategories] = useState(["Electronics", "Textiles", "Groceries", "Hardware", "Chemicals", "Others"]);
+  const [units, setUnits] = useState([]);
+  const [categories, setCategories] = useState([]);
   const gstRates = [0, 5, 12, 18, 28];
 
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        const catRes = await getData('/category').catch(() => null);
-        if (catRes && catRes.data?.categories) {
-          setCategories(prev => [...new Set([...prev, ...catRes.data.categories.map(c => c.name)])]);
-        }
-        const unitRes = await getData('/unit').catch(() => null);
-        if (unitRes && unitRes.data?.units) {
-          setUnits(prev => [...new Set([...prev, ...unitRes.data.units.map(u => u.name)])]);
-        }
+        const [invRes, catRes, unitRes] = await Promise.all([
+          getData('/inventory').catch(() => ({ data: { products: [] } })),
+          getData('/category').catch(() => ({ data: { categories: [] } })),
+          getData('/unit').catch(() => ({ data: { units: [] } }))
+        ]);
+
+        const inventoryList = invRes.data?.products || (Array.isArray(invRes.data) ? invRes.data : []);
+        const productCats = inventoryList.map(p => p.category).filter(Boolean);
+        const masterCats = (catRes.data?.categories || []).map(c => c.name);
+        setCategories([...new Set([...masterCats, ...productCats])]);
+
+        const productUnits = inventoryList.map(p => p.unit).filter(Boolean);
+        const masterUnits = (unitRes.data?.units || []).map(u => u.name);
+        const defaultUnits = ["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"];
+        setUnits([...new Set([...defaultUnits, ...masterUnits, ...productUnits])]);
+
       } catch (err) { console.warn("Failed to fetch dropdowns", err); }
     };
     fetchDropdowns();
@@ -81,12 +89,24 @@ const AddProductScreen = ({ navigation }) => {
       return;
     }
 
+    let cleanName = form.name.trim();
+    const extras = [];
+    const nameLower = cleanName.toLowerCase();
+    
+    if (form.dimensions && !nameLower.includes(form.dimensions.trim().toLowerCase())) extras.push(form.dimensions.trim());
+    if (form.purity && !nameLower.includes(form.purity.trim().toLowerCase())) extras.push(form.purity.trim());
+    if (form.weight && !nameLower.includes(String(form.weight).trim().toLowerCase())) extras.push(`${form.weight}g`);
+    
+    if (extras.length > 0) {
+      cleanName = `${cleanName} (${extras.join(' ')})`;
+    }
+
     setLoading(true);
     try {
       // 1. Offline First: Local SQLite Database me product save karein
       const localResult = await addProductLocal({
         ...form,
-        name: form.name,
+        name: cleanName,
         sku: form.sku,
         price: parseFloat(form.sellingPrice) || 0,
         quantity: parseInt(form.currentStock, 10) || 0,
@@ -99,7 +119,7 @@ const AddProductScreen = ({ navigation }) => {
       syncQueue.enqueue({
         method: 'post',
         url: '/inventory',
-        data: form
+        data: { ...form, name: cleanName }
       });
 
       Alert.alert('Success', 'Product added successfully!');
