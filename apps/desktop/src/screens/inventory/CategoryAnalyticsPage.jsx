@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { dbService } from "../../services/dbService";
-import { Package, AlertTriangle, TrendingUp, Eye, BarChart3 } from "lucide-react";
+import { Package, AlertTriangle, TrendingUp, Eye, BarChart3, ShoppingCart, ArrowLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export default function CategoryAnalyticsPage() {
+  const navigate = useNavigate();
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [categoryStats, setCategoryStats] = useState({});
@@ -109,8 +111,9 @@ export default function CategoryAnalyticsPage() {
           </div>
         ) : (
           <div>
-            {/* Category Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            {!selectedCategory ? (
+              /* Category Cards Grid */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
               {categories.map(cat => {
                 const stats = categoryStats[cat] || {};
                 const lowStockPct = stats.itemCount > 0 ? ((stats.lowStockCount / stats.itemCount) * 100).toFixed(0) : 0;
@@ -154,12 +157,15 @@ export default function CategoryAnalyticsPage() {
                 );
               })}
             </div>
-
-            {/* Selected Category Details */}
-            {selectedCategory && categoryStats[selectedCategory] && (
+            ) : (
+              /* Selected Category Details */
+              categoryStats[selectedCategory] && (
               <div className="bg-white rounded-lg shadow p-6">
                 <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-bold text-gray-800">{selectedCategory}</h2>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setSelectedCategory(null)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition"><ArrowLeft size={24} /></button>
+                    <h2 className="text-2xl font-bold text-gray-800">{selectedCategory}</h2>
+                  </div>
                   <button
                     onClick={() => setSelectedCategory(null)}
                     className="text-gray-400 hover:text-gray-600 text-2xl"
@@ -199,6 +205,7 @@ export default function CategoryAnalyticsPage() {
                         <th className="p-3 text-right font-semibold">Cost Price</th>
                         <th className="p-3 text-right font-semibold">Value</th>
                         <th className="p-3 text-center font-semibold">Status</th>
+                        <th className="p-3 text-center font-semibold">Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -225,6 +232,13 @@ export default function CategoryAnalyticsPage() {
                                 </span>
                               )}
                             </td>
+                            <td className="p-3 text-center">
+                              {isLow && (
+                                <button onClick={(e) => { e.stopPropagation(); navigate('/inventory/purchase'); }} className="bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-semibold hover:bg-blue-700 flex items-center gap-1 justify-center mx-auto shadow-sm transition">
+                                  <ShoppingCart size={14} /> Restock
+                                </button>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}
@@ -232,6 +246,7 @@ export default function CategoryAnalyticsPage() {
                   </table>
                 </div>
               </div>
+              )
             )}
           </div>
         )}

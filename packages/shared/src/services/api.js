@@ -25,20 +25,13 @@ const getEnv = (key) => {
 
 // Helper to determine base URL dynamically
 const getBaseUrl = () => {
-  // 1. Vercel/Netlify/Render pe deployment ke liye sabse important
-  // @ts-ignore
-  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) {
-    // @ts-ignore
-    return import.meta.env.VITE_API_URL;
-  }
-
   // 2. Local development (npm run dev) ke liye fallback
   if (typeof window !== 'undefined' && window.location && window.location.hostname === 'localhost') {
     return "http://localhost:5001/api";
   }
   
   // 3. Default fallback agar kuch bhi set na ho
-  return getEnv("REACT_APP_API_URL") || getEnv("EXPO_PUBLIC_API_URL") || getEnv("VITE_API_URL") || "http://localhost:5001/api";
+  return getEnv("REACT_APP_API_URL") || getEnv("EXPO_PUBLIC_API_URL") || getEnv("VITE_API_URL") || "https://monorapo-accountingapp-1.onrender.com/api";
 };
 
 // Base axios instance

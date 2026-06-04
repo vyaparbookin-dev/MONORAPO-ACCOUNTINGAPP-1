@@ -11,7 +11,7 @@ const FORCED_API_URL = Platform.OS === 'web' ? LOCAL_WEB_URL : NETWORK_URL;
 setBaseUrl(FORCED_API_URL);
 console.log('🚀 Mobile API Base URL FORCED to:', FORCED_API_URL);
 
-export const RAZORPAY_KEY_ID = Constants.manifest.extra.RAZORPAY_KEY_ID;
+export const RAZORPAY_KEY_ID = Constants.expoConfig?.extra?.RAZORPAY_KEY_ID || Constants.manifest?.extra?.RAZORPAY_KEY_ID || process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || null;
 
 // NOTE: We removed the duplicated interceptor here because @repo/shared/api.native.js 
 // ALREADY handles attaching the authToken and companyId automatically.
@@ -25,10 +25,11 @@ export const getData = async (endpoint) => {
     console.log(`✅ [API GET SUCCESS] Data received from: ${endpoint}`);
     return { data };
   } catch (error) {
-    console.error(`❌ [API GET ERROR] Failed at: ${endpoint}`);
-    console.error(`🔍 Details: ${error.message}`);
+    console.error(`\n❌❌ [API GET ERROR] Failed at: ${endpoint}`);
+    console.error(`🔍 Details: ${error.message || error.error || JSON.stringify(error)}`);
     if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
-      console.error("🚨 NETWORK ISSUE: Your app cannot reach the backend. Ensure backend is running and Firewall allows it.");
+      console.error(`🚨 NETWORK ISSUE: Your app cannot reach the backend at ${FORCED_API_URL}.`);
+      console.error("👉 TIP: Check if Backend is running, and your Mobile & Laptop are on the SAME Wi-Fi.");
     }
     throw error;
   }
@@ -43,8 +44,11 @@ export const postData = async (endpoint, body) => {
     console.log(`✅ [API POST SUCCESS] Data sent to: ${endpoint}`);
     return { data };
   } catch (error) {
-    console.error(`❌ [API POST ERROR] Failed at: ${endpoint}`);
-    console.error(`🔍 Details: ${error.message}`);
+    console.error(`\n❌❌ [API POST ERROR] Failed at: ${endpoint}`);
+    console.error(`🔍 Details: ${error.message || error.error || JSON.stringify(error)}`);
+    if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
+      console.error(`🚨 NETWORK ISSUE: Cannot reach ${FORCED_API_URL}. Check IP and Wi-Fi connection.`);
+    }
     throw error;
   }
 };
@@ -59,7 +63,8 @@ export const put = async (endpoint, body) => {
     const data = await api.put(endpoint, body);
     return { data };
   } catch (error) {
-    console.error("Mobile API PUT Error:", error);
+    console.error(`\n❌❌ [API PUT ERROR] Failed at: ${endpoint}`);
+    console.error(`🔍 Details: ${error.message || error.error || JSON.stringify(error)}`);
     throw error;
   }
 };
@@ -69,7 +74,8 @@ const del = async (endpoint) => {
     const data = await api.delete(endpoint);
     return { data };
   } catch (error) {
-    console.error("Mobile API DELETE Error:", error);
+    console.error(`\n❌❌ [API DELETE ERROR] Failed at: ${endpoint}`);
+    console.error(`🔍 Details: ${error.message || error.error || JSON.stringify(error)}`);
     throw error;
   }
 };

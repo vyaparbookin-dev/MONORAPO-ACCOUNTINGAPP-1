@@ -1,51 +1,77 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, Alert, FlatList, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, Alert, FlatList, Platform, ActivityIndicator, RefreshControl } from 'react-native';
 import { Ionicons, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import CalculatorModal from '../../components/CalculatorModal';
 import { getData } from '../../services/ApiService';
-
+import { getBillsLocal, getProductsLocal, getPartiesLocal } from '../../../db'; 
 
 export default function MainDashboard({ navigation }) {
   const [calculatorVisible, setCalculatorVisible] = useState(false);
   const [recentBills, setRecentBills] = useState([]);
-  const [summary, setSummary] = useState({ toCollect: 0, toPay: 0, stockValue: 0, totalBalance: 0 });
+  const [summary, setSummary] = useState({ toCollect: 0, toPay: 0, stockValue: 0, totalBalance: 0, lowStockCount: 0, recentSales: 0 });
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchDashboardData = async () => {
     try {
-      const [billsRes, partiesRes, invRes] = await Promise.all([
-        getData('/billing?limit=5'),
-        getData('/party'),
-        getData('/inventory')
+      // 1. Primary: Fetch Live Data from Backend
+      const [billsRes, partiesRes, invSumRes] = await Promise.all([
+        getData('/billing?limit=5').catch(() => null),
+        getData('/party').catch(() => null),
+        getData('/inventory/summary').catch(() => null)
       ]);
 
-      if (billsRes.data?.bills) setRecentBills(billsRes.data.bills);
+      let toCollect = 0, toPay = 0, totalBal = 0, stockVal = 0, lowStock = 0, recentSales = 0;
+      let rBills = [];
 
-      let toCollect = 0, toPay = 0, totalBal = 0;
-      if (partiesRes.data?.parties) {
-        partiesRes.data.parties.forEach(p => {
+      if (billsRes || partiesRes || invSumRes) {
+        rBills = billsRes?.data?.bills || billsRes?.data || [];
+        recentSales = rBills.reduce((sum, b) => sum + (b.finalAmount || b.total || 0), 0);
+
+        const partiesList = partiesRes?.data?.parties || partiesRes?.data || [];
+        partiesList.forEach(p => {
           const bal = p.balance || p.currentBalance || 0;
-          if (p.partyType === 'customer' && bal > 0) toCollect += bal;
-          if (p.partyType === 'supplier' && bal > 0) toPay += bal;
+          if ((p.partyType === 'customer' || p.partyType === 'both') && bal > 0) toCollect += bal;
+          if ((p.partyType === 'supplier' || p.partyType === 'both') && bal > 0) toPay += bal;
+          totalBal += bal;
+        });
+
+        if (invSumRes?.data?.summary) {
+           stockVal = invSumRes.data.summary.totalValue || 0;
+           lowStock = invSumRes.data.summary.lowStockItems || 0;
+        }
+      } else {
+        // 2. Fallback: Fetch Offline Data (SQLite) if API fails
+        const [localBills, localProducts, localParties] = await Promise.all([ getBillsLocal().catch(()=>[]), getProductsLocal().catch(()=>[]), getPartiesLocal().catch(()=>[]) ]);
+        rBills = localBills.slice(0, 5);
+        recentSales = rBills.reduce((sum, b) => sum + (b.finalAmount || b.totalAmount || 0), 0);
+        stockVal = localProducts.reduce((sum, p) => sum + ((p.price || p.costPrice || 0) * (p.quantity || p.currentStock || 0)), 0);
+        lowStock = localProducts.filter(p => (p.quantity || p.currentStock || 0) <= (p.minimumStock || 10)).length;
+        localParties.forEach(p => {
+          const bal = p.balance || p.currentBalance || 0;
+          if ((p.partyType === 'customer' || p.partyType === 'both') && bal > 0) toCollect += bal;
+          if ((p.partyType === 'supplier' || p.partyType === 'both') && bal > 0) toPay += bal;
           totalBal += bal;
         });
       }
 
-      let stockVal = 0;
-      if (invRes.data?.products) {
-        invRes.data.products.forEach(p => { stockVal += (p.currentStock || 0) * (p.costPrice || 0); });
-      }
-
-      setSummary({ toCollect, toPay, stockValue: stockVal, totalBalance: totalBal });
+      setSummary({ toCollect, toPay, stockValue: stockVal, totalBalance: totalBal, lowStockCount: lowStock, recentSales });
+      setRecentBills(rBills);
     } catch (e) {
       console.log("Dashboard fetch error:", e);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   useFocusEffect(useCallback(() => { fetchDashboardData(); }, []));
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchDashboardData();
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -72,7 +98,7 @@ export default function MainDashboard({ navigation }) {
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#5B3FD0']} />}>
         
         {/* To Collect & To Pay Summary */}
         <View style={styles.topSummaryContainer}>
@@ -89,8 +115,8 @@ export default function MainDashboard({ navigation }) {
         {/* Main Grid Cards */}
         <View style={styles.gridContainer}>
           <GridCard title="Stock Value" amount={`₹ ${summary.stockValue.toLocaleString('en-IN')}`} icon="cube-outline" iconColor="#64748B" bg="#FFFFFF" onPress={() => navigation.navigate('Inventory', { screen: 'ProductList' })} />
-          <GridCard title="This Week's Sale" amount="View Sales" icon="cart-outline" iconColor="#64748B" bg="#FFFFFF" onPress={() => navigation.navigate('Billing', { screen: 'BillList' })} />
-          <GridCard title="Total Balance" amount={`₹ ${summary.totalBalance.toLocaleString('en-IN')}`} icon="wallet-outline" iconColor="#64748B" bg="#FFFFFF" onPress={() => navigation.navigate('Parties')} />
+          <GridCard title="Recent Sales" amount={`₹ ${summary.recentSales.toLocaleString('en-IN')}`} icon="cart-outline" iconColor="#10B981" bg="#FFFFFF" onPress={() => navigation.navigate('Billing', { screen: 'BillList' })} />
+          <GridCard title="Low Stock Alerts" amount={`${summary.lowStockCount} Items`} icon="warning-outline" iconColor="#EF4444" bg="#FFF1F2" onPress={() => navigation.navigate('Inventory', { screen: 'CategoryAnalytics' })} actionText={summary.lowStockCount > 0} />
           <GridCard title="Reports" amount="View All" icon="bar-chart-outline" iconColor="#5B3FD0" bg="#FFFFFF" onPress={() => navigation.navigate('ReportsTab')} actionText />
         </View>
 

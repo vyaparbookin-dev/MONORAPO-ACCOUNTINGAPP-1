@@ -62,7 +62,13 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
   (res) => res.data || {}, // Unwraps the data object from the response
   (err) => {
-    console.error("API Request Failed:", err.config?.url, err.response?.data || err.message);
+    console.log("\n================ 🚨 API ERROR (MOBILE) 🚨 ================");
+    console.log("📍 URL    :", err.config?.url);
+    console.log("🛠️ METHOD :", err.config?.method?.toUpperCase());
+    console.log("🛑 STATUS :", err.response?.status || "NETWORK_ERROR");
+    console.log("💬 MESSAGE:", err.message);
+    console.log("📦 DATA   :", JSON.stringify(err.response?.data || "No Data", null, 2));
+    console.log("==========================================================\n");
     return Promise.reject(err.response?.data || err);
   }
 );
