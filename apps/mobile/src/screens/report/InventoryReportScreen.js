@@ -12,12 +12,16 @@ import {
   Platform,
 } from "react-native";
 import { getData } from "../../services/ApiService";
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import { Ionicons } from '@expo/vector-icons';
 
 const InventoryReportScreen = ({ navigation }) => {
   const [inventory, setInventory] = useState([]);
   const [filteredInventory, setFilteredInventory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isSharing, setIsSharing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
@@ -61,6 +65,49 @@ const InventoryReportScreen = ({ navigation }) => {
   const totalValue = inventory.reduce((sum, item) => sum + (item.currentStock * item.sellingPrice), 0);
   const totalProducts = inventory.length;
 
+  const handleSharePDF = async () => {
+    setIsSharing(true);
+    try {
+      const rows = filteredInventory.map(item => `
+        <tr style="${item.currentStock < (item.minimumStock || 10) ? 'background-color: #fff7ed;' : ''}">
+          <td style="border: 1px solid #e5e7eb; padding: 10px;">${item.name}</td>
+          <td style="border: 1px solid #e5e7eb; padding: 10px;">${item.sku || '-'}</td>
+          <td style="border: 1px solid #e5e7eb; padding: 10px; text-align: center; ${item.currentStock < (item.minimumStock || 10) ? 'color: #dc2626; font-weight: bold;' : 'color: #16a34a;'}">${item.currentStock}</td>
+          <td style="border: 1px solid #e5e7eb; padding: 10px; text-align: right;">₹${item.sellingPrice || 0}</td>
+        </tr>
+      `).join('');
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <body style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+            <h2 style="text-align: center; color: #111827;">Inventory Stock Report</h2>
+            <div style="margin-bottom: 25px; padding: 15px; background: #f9fafb; border: 1px solid #d1d5db; border-radius: 8px; text-align: center; display: flex; justify-content: space-around;">
+              <div><p style="margin: 0; color: #6b7280; font-size: 14px;">Total Products</p><h3 style="margin: 5px 0 0 0;">${totalProducts}</h3></div>
+              <div><p style="margin: 0; color: #6b7280; font-size: 14px;">Total Value</p><h3 style="margin: 5px 0 0 0;">₹${totalValue.toLocaleString('en-IN')}</h3></div>
+              <div><p style="margin: 0; color: #6b7280; font-size: 14px;">Low Stock Alerts</p><h3 style="margin: 5px 0 0 0; color: #ea580c;">${lowStockCount}</h3></div>
+            </div>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr style="background-color: #f3f4f6; color: #374151;">
+                <th style="border: 1px solid #d1d5db; padding: 12px; text-align: left;">Product Name</th>
+                <th style="border: 1px solid #d1d5db; padding: 12px; text-align: left;">SKU</th>
+                <th style="border: 1px solid #d1d5db; padding: 12px; text-align: center;">Stock</th>
+                <th style="border: 1px solid #d1d5db; padding: 12px; text-align: right;">Price</th>
+              </tr>
+              ${rows}
+            </table>
+          </body>
+        </html>
+      `;
+      const { uri } = await Print.printToFileAsync({ html });
+      await Sharing.shareAsync(uri, { dialogTitle: 'Share Inventory Report' });
+    } catch (error) {
+      Alert.alert('Error', 'Failed to generate PDF');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   const renderProductItem = ({ item }) => {
     const isLowStock = item.currentStock < (item.minimumStock || 10);
     return (
@@ -83,13 +130,18 @@ const InventoryReportScreen = ({ navigation }) => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Inventory Report</Text>
-        <TouchableOpacity onPress={fetchInventory} style={styles.refreshButton}>
-          {loading ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Text style={styles.refreshButtonText}>Refresh</Text>
-          )}
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity onPress={handleSharePDF} style={[styles.refreshButton, { backgroundColor: '#16a34a' }]} disabled={isSharing}>
+            {isSharing ? <ActivityIndicator color="#fff" size="small" /> : (
+              <><Ionicons name="share-social-outline" size={16} color="#fff" /><Text style={[styles.refreshButtonText, { marginLeft: 4 }]}>PDF</Text></>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity onPress={fetchInventory} style={styles.refreshButton}>
+            {loading ? <ActivityIndicator color="#fff" size="small" /> : (
+              <Text style={styles.refreshButtonText}>Refresh</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {error && <Text style={styles.errorText}>{error}</Text>}

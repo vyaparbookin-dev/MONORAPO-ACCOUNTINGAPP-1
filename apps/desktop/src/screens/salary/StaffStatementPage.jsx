@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { FileText, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
+import { FileText, ArrowDownCircle, ArrowUpCircle, Printer, MessageCircle } from "lucide-react";
 import { dbService } from "../../services/dbService";
 
 export default function StaffStatementPage() {
@@ -36,17 +36,35 @@ export default function StaffStatementPage() {
 
   const currentStaff = staffList.find((s) => s._id === selectedStaff);
 
+  const handleWhatsAppShare = () => {
+    if (!currentStaff) return;
+    const bal = currentStaff.balance || 0;
+    const text = `Hello ${currentStaff.name},\n\nYour Staff Ledger has been generated.\nCurrent Balance: *Rs. ${Math.abs(bal).toLocaleString()}* (${bal >= 0 ? 'Payable to you' : 'Advance to be recovered'}).\n\nPlease check with management for details.`;
+    const phone = currentStaff.phone || currentStaff.mobileNumber ? (currentStaff.phone || currentStaff.mobileNumber).replace(/\D/g, '') : '';
+    window.open(`https://web.whatsapp.com/send?phone=91${phone}&text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  const handlePrint = () => window.print();
+
   return (
     <div className="p-6 max-w-5xl mx-auto bg-gray-50 min-h-screen">
       <div className="flex items-center gap-3 mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-        <FileText className="text-blue-600" size={28} />
+        <FileText className="text-blue-600 print:hidden" size={28} />
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Staff Statement / Ledger</h1>
           <p className="text-gray-500 text-sm">View complete history of attendance, advance, and salary payments.</p>
         </div>
+        <div className="ml-auto flex gap-2 print:hidden">
+          <button onClick={handleWhatsAppShare} disabled={!currentStaff} className="p-2 bg-green-100 text-green-700 hover:bg-green-200 rounded-lg disabled:opacity-50">
+            <MessageCircle size={20} />
+          </button>
+          <button onClick={handlePrint} disabled={!currentStaff} className="p-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg disabled:opacity-50">
+            <Printer size={20} />
+          </button>
+        </div>
       </div>
 
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-6 flex flex-col md:flex-row gap-4 items-end">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-6 flex flex-col md:flex-row gap-4 items-end print:hidden">
         <div className="flex-1 w-full">
           <label className="block text-sm font-medium text-gray-700 mb-1">Select Employee</label>
           <select className="w-full border p-3 rounded-lg bg-gray-50" value={selectedStaff} onChange={e => setSelectedStaff(e.target.value)}>

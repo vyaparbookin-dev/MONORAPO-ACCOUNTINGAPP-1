@@ -1,11 +1,15 @@
 import express from "express";
 import Company from "../model/company.js";
 import { protect } from "../middleware/authmiddleware.js";
+import { getWhatsappSettings, updateWhatsappSettings } from "../controllers/settingsController.js";
 
 const router = express.Router();
 
+// All routes in this file are protected
+router.use(protect); 
+
 // Get company settings (Including UPI ID)
-router.get("/", protect, async (req, res) => {
+router.get("/", async (req, res) => { // Removed redundant 'protect'
   try {
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
     const company = await Company.findById(req.companyId);
@@ -23,7 +27,7 @@ router.get("/", protect, async (req, res) => {
 });
 
 // Update company settings
-router.post("/update", protect, async (req, res) => {
+router.post("/update", async (req, res) => { // Removed redundant 'protect'
   try {
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
     const { upiId, name, gstNumber, enableGst, gstType } = req.body;
@@ -46,5 +50,10 @@ router.post("/update", protect, async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// WhatsApp Automation Settings Routes
+router.route('/whatsapp')
+  .get(getWhatsappSettings)
+  .post(updateWhatsappSettings);
 
 export default router;

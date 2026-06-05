@@ -41,6 +41,17 @@ const companySchema = new mongoose.Schema({
   freeBillCount: { type: Number, default: 0 }, // Number of bills created by free users
   maxFreeBills: { type: Number, default: 50 }, // Max bills allowed for free plan
   subscriptionExpiresAt: { type: Date }, // Date when premium subscription expires
+
+  // New Settings object for extensibility
+  settings: {
+    whatsapp: {
+      enabled: { type: Boolean, default: false },
+      apiKey: { type: String },
+      apiUrl: { type: String },
+      senderId: { type: String },
+      template: { type: String, default: 'Hello {customerName}, your invoice {billNumber} for Rs. {amount} is ready. Thank you for your business, {companyName}.' }
+    }
+  }
 });
 
 export default mongoose.model("Company", companySchema)

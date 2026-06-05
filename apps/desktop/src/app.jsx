@@ -127,6 +127,7 @@ import PageProfile from "./pages/setting/profile";
 import PageSecurityLog from "./pages/setting/securityLog";
 import PageSettings from "./pages/setting/settings";
 
+import WhatsappSettingsPage from "./screens/Settings/WhatsappSettingsPage";
 // Components
 import DashboardLayout from "./components/DashboardLayout";
 
@@ -300,6 +301,7 @@ const App = () => {
         <Route path="/settings/security" element={<SecurityLogPage />} />
         <Route path="/settings/web" element={<WebPreferences />} />
         <Route path="/settings/staff" element={<StaffManagementPage />} />
+        <Route path="/settings/whatsapp" element={<WhatsappSettingsPage />} />
 
         {/* Additional Settings Routes */}
         <Route path="/pages/settings" element={<PageSettings />} />

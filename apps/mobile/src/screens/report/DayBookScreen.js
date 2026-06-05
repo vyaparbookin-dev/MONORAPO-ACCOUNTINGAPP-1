@@ -5,11 +5,13 @@ import { getData } from '../../services/ApiService';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import * as Print from 'expo-print';
 
 const DayBookScreen = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   
   const [summary, setSummary] = useState({
     totalIn: 0, totalOut: 0, netBalance: 0,
@@ -95,6 +97,67 @@ const DayBookScreen = () => {
     }
   };
 
+  const handleSharePDF = async () => {
+    setIsSharing(true);
+    try {
+      const dateStr = selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      
+      let inRows = `
+        <tr><td>Cash/Online Sales</td><td style="text-align:right">₹${summary.cashSales.toFixed(2)}</td></tr>
+        <tr><td>Payment Received (Parties)</td><td style="text-align:right">₹${summary.partyIn.toFixed(2)}</td></tr>
+      `;
+      
+      let outRows = `
+        <tr><td>Cash Purchases</td><td style="text-align:right">₹${summary.cashPurchases.toFixed(2)}</td></tr>
+        <tr><td>Expenses Paid</td><td style="text-align:right">₹${summary.expenses.toFixed(2)}</td></tr>
+        <tr><td>Staff Salary Paid</td><td style="text-align:right">₹${summary.salaries.toFixed(2)}</td></tr>
+        <tr><td>Payment Given (Parties)</td><td style="text-align:right">₹${summary.partyOut.toFixed(2)}</td></tr>
+      `;
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <body style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+            <h2 style="text-align: center; color: #111827; margin-bottom: 5px;">Day Book Report</h2>
+            <p style="text-align: center; margin-top: 0; color: #6b7280;">Date: ${dateStr}</p>
+            
+            <div style="display: flex; justify-content: space-between; margin-bottom: 20px; margin-top: 20px;">
+              <div style="background: #dcfce7; padding: 15px; border-radius: 8px; width: 45%; text-align: center; border: 1px solid #bbf7d0;">
+                <h3 style="margin: 0; color: #374151; font-size: 16px;">Money IN (+)</h3>
+                <h2 style="margin: 10px 0 0 0; color: #16a34a;">₹${summary.totalIn.toFixed(2)}</h2>
+              </div>
+              <div style="background: #fee2e2; padding: 15px; border-radius: 8px; width: 45%; text-align: center; border: 1px solid #fecaca;">
+                <h3 style="margin: 0; color: #374151; font-size: 16px;">Money OUT (-)</h3>
+                <h2 style="margin: 10px 0 0 0; color: #dc2626;">₹${summary.totalOut.toFixed(2)}</h2>
+              </div>
+            </div>
+            
+            <h3 style="text-align: center; background: ${summary.netBalance >= 0 ? '#2563eb' : '#dc2626'}; color: white; padding: 15px; border-radius: 8px; font-size: 22px;">
+              Net Balance: ₹${summary.netBalance.toFixed(2)}
+            </h3>
+
+            <h3 style="margin-top: 30px; border-bottom: 2px solid #eee; padding-bottom: 5px;">Money IN Breakdown</h3>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+              ${inRows}
+            </table>
+
+            <h3 style="margin-top: 30px; border-bottom: 2px solid #eee; padding-bottom: 5px;">Money OUT Breakdown</h3>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+              ${outRows}
+            </table>
+          </body>
+        </html>
+      `;
+      const { uri } = await Print.printToFileAsync({ html });
+      await Sharing.shareAsync(uri, { dialogTitle: `Share Daybook - ${dateStr}` });
+    } catch (error) {
+      console.error("PDF Gen Error:", error);
+      Alert.alert('Error', 'Failed to generate PDF');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   const renderBreakdownRow = (label, amount, type = 'neutral') => (
     <View style={styles.breakdownRow}>
       <Text style={styles.breakdownLabel}>{label}</Text>
@@ -110,6 +173,11 @@ const DayBookScreen = () => {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Day Book (Cash Book)</Text>
         <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity style={[styles.iconBtn, { backgroundColor: '#2563eb' }]} onPress={handleSharePDF} disabled={isSharing}>
+            {isSharing ? <ActivityIndicator size="small" color="#fff" /> : (
+              <Ionicons name="document-text-outline" size={20} color="#fff" />
+            )}
+          </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={handleTallyExport}>
             <Ionicons name="download-outline" size={20} color="#fff" />
           </TouchableOpacity>

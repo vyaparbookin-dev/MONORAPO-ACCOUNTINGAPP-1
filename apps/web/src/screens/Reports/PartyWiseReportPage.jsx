@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
+import { Printer } from "lucide-react";
 
 const PartyWiseReportPage = () => {
   const [report, setReport] = useState([]);
@@ -25,29 +26,46 @@ const PartyWiseReportPage = () => {
   }, []);
 
   return (
-    <div className="partywise-report-page">
+    <div className="space-y-6">
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold print:text-2xl">Party Wise Report</h1>
+          <p className="text-sm text-gray-600">Summary of balances for all parties</p>
+        </div>
+        <div className="flex gap-2 print:hidden">
+          <button onClick={() => window.print()} className="bg-gray-700 text-white px-4 py-2 rounded-lg inline-flex items-center gap-2 hover:bg-gray-800">
+            <Printer size={16} /> Print
+          </button>
+          <button onClick={fetchReport} className="bg-blue-600 text-white px-4 py-2 rounded-lg">
+            Refresh
+          </button>
+        </div>
+      </div>
+
       {loading && <Loader />}
-      <h2>Party Wise Report</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Party Name</th>
-            <th>Total Purchase</th>
-            <th>Total Sales</th>
-            <th>Balance</th>
-          </tr>
-        </thead>
-        <tbody>
-          {report.map((item) => (
-            <tr key={item._id}>
-              <td>{item.partyName}</td>
-              <td>{item.totalPurchase}</td>
-              <td>{item.totalSales}</td>
-              <td>{item.balance}</td>
+
+      <div className="bg-white rounded shadow overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-gray-50 text-sm text-gray-600">
+            <tr>
+              <th className="px-4 py-3 text-left">Party Name</th>
+              <th className="px-4 py-3 text-right">Total Purchase</th>
+              <th className="px-4 py-3 text-right">Total Sales</th>
+              <th className="px-4 py-3 text-right">Balance</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {report.map((item) => (
+              <tr key={item._id} className="border-t">
+                <td className="px-4 py-3 font-semibold">{item.partyName}</td>
+                <td className="px-4 py-3 text-right">₹{item.totalPurchase?.toLocaleString('en-IN') || 0}</td>
+                <td className="px-4 py-3 text-right">₹{item.totalSales?.toLocaleString('en-IN') || 0}</td>
+                <td className={`px-4 py-3 text-right font-bold ${item.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>₹{item.balance?.toLocaleString('en-IN') || 0}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };

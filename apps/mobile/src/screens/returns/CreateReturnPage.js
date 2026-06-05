@@ -4,6 +4,7 @@ import { Picker } from '@react-native-picker/picker';
 // Ensuring exact case import for API Service
 import { getData, postData } from '../../services/ApiService';
 import { syncQueue } from '@repo/shared/src/services/syncqueue.native';
+import { getPartiesLocal, getProductsLocal, updateProductLocal, updateCustomerLocal, addTransactionLocal } from '../../../db';
 
 const CreateReturnScreen = ({ navigation }) => {
   const [parties, setParties] = useState([]);
@@ -31,15 +32,23 @@ const CreateReturnScreen = ({ navigation }) => {
 
   const fetchInitialData = async () => {
     try {
-      const [partyRes, invRes] = await Promise.all([
-        getData('/party'),
-        getData('/inventory')
-      ]);
-      setParties(partyRes.data?.parties || (Array.isArray(partyRes.data) ? partyRes.data : []));
-      setInventory(invRes.data?.products || invRes.data?.items || (Array.isArray(invRes.data) ? invRes.data : []));
+      // 1. Offline First: Fetch from SQLite DB
+      const localParties = await getPartiesLocal().catch(() => []);
+      const localProducts = await getProductsLocal().catch(() => []);
+      
+      if (localParties.length > 0 || localProducts.length > 0) {
+        setParties(localParties);
+        setInventory(localProducts);
+      }
+
+      // 2. Background fetch to keep data fresh
+      const partyRes = await getData('/party').catch(() => null);
+      const invRes = await getData('/inventory').catch(() => null);
+      
+      if (partyRes?.data) setParties(partyRes.data?.parties || (Array.isArray(partyRes.data) ? partyRes.data : []));
+      if (invRes?.data) setInventory(invRes.data?.products || invRes.data?.items || (Array.isArray(invRes.data) ? invRes.data : []));
     } catch (error) {
       console.error("Error fetching data:", error);
-      Alert.alert("Error", "Failed to load parties or inventory.");
     } finally {
       setFetching(false);
     }
@@ -99,6 +108,43 @@ const CreateReturnScreen = ({ navigation }) => {
         date: new Date().toISOString()
       };
 
+      // --- 1. LOCAL OFFLINE SAVE & STOCK UPDATE ---
+      try {
+        const party = parties.find(p => p._id === selectedParty || p.uuid === selectedParty);
+        
+        // Local Stock Update
+        for (const item of returnItems) {
+          const product = inventory.find(p => p._id === item.productId || p.uuid === item.productId);
+          if (product && typeof updateProductLocal === 'function') {
+            // Sales Return: stock comes back in (+) | Purchase Return: stock goes out (-)
+            const stockChange = returnType === 'sales_return' ? item.quantity : -item.quantity;
+            await updateProductLocal(product._id || product.uuid, { 
+              ...product, 
+              currentStock: (parseFloat(product.currentStock) || 0) + stockChange 
+            });
+          }
+        }
+
+        // Local Party Balance Update
+        if (party && typeof updateCustomerLocal === 'function') {
+          const totalAmount = calculateGrandTotal();
+          const newBalance = (parseFloat(party.balance || party.currentBalance || 0)) - totalAmount;
+          await updateCustomerLocal(party._id || party.uuid, { ...party, balance: newBalance, currentBalance: newBalance });
+
+          if (typeof addTransactionLocal === 'function') {
+             await addTransactionLocal({
+               uuid: `TX-RET-${Date.now()}`, partyId: party._id || party.uuid, type: returnType,
+               debit: returnType === 'purchase_return' ? totalAmount : 0, 
+               credit: returnType === 'sales_return' ? totalAmount : 0, 
+               date: payload.date, details: `${returnType === 'sales_return' ? 'Sales' : 'Purchase'} Return #${payload.returnNumber}`, status: 'completed'
+             });
+          }
+        }
+      } catch (localErr) {
+        console.log("Local return save skipped or failed", localErr);
+      }
+
+      // --- 2. CLOUD SYNC QUEUE ---
       syncQueue.enqueue({
         method: 'post',
         url: '/return',

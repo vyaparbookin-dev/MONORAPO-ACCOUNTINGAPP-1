@@ -11,11 +11,15 @@ import {
 } from "react-native";
 import { Picker } from '@react-native-picker/picker';
 import { getData, postData } from "../../services/ApiService";
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import { Ionicons } from '@expo/vector-icons';
 
 const SitewiseReportScreen = ({ navigation }) => {
   const [reportData, setReportData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isSharing, setIsSharing] = useState(false);
   const [dateRange, setDateRange] = useState("month"); // Default filter
   const [selectedSite, setSelectedSite] = useState(""); // Filter by specific site
   const [actualSites, setActualSites] = useState([]); // To store actual sites from API
@@ -77,6 +81,45 @@ const SitewiseReportScreen = ({ navigation }) => {
     fetchReport();
   }, [dateRange, selectedSite]); // Refetch when filters change
 
+  const handleSharePDF = async () => {
+    setIsSharing(true);
+    try {
+      const rows = reportData.map(row => `
+        <tr>
+          <td style="border: 1px solid #d1d5db; padding: 12px; font-weight: bold;">${row.siteName}</td>
+          <td style="border: 1px solid #d1d5db; padding: 12px; text-align: center;">${row.totalBills}</td>
+          <td style="border: 1px solid #d1d5db; padding: 12px; text-align: right;">₹${(row.totalAmount || 0).toLocaleString('en-IN')}</td>
+          <td style="border: 1px solid #d1d5db; padding: 12px; text-align: right;">₹${(row.totalTax || 0).toLocaleString('en-IN')}</td>
+        </tr>
+      `).join('');
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <body style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+            <h2 style="text-align: center; color: #111827;">Sitewise Report</h2>
+            <p style="text-align: center; color: #6b7280; margin-top: 0;">Period: ${dateRange.toUpperCase()}</p>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+              <tr style="background-color: #f3f4f6; color: #374151;">
+                <th style="border: 1px solid #d1d5db; padding: 12px; text-align: left;">Site Name</th>
+                <th style="border: 1px solid #d1d5db; padding: 12px; text-align: center;">Total Bills</th>
+                <th style="border: 1px solid #d1d5db; padding: 12px; text-align: right;">Total Amount</th>
+                <th style="border: 1px solid #d1d5db; padding: 12px; text-align: right;">Total Tax</th>
+              </tr>
+              ${rows}
+            </table>
+          </body>
+        </html>
+      `;
+      const { uri } = await Print.printToFileAsync({ html });
+      await Sharing.shareAsync(uri, { dialogTitle: 'Share Sitewise Report' });
+    } catch (error) {
+      Alert.alert('Error', 'Failed to generate PDF');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   const renderItemSold = (itemsSold) => {
     return itemsSold.map((item, i) => (
       <Text key={i} style={styles.itemSoldText}>
@@ -89,13 +132,18 @@ const SitewiseReportScreen = ({ navigation }) => {
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Sitewise Report</Text>
-        <TouchableOpacity onPress={fetchReport} style={styles.refreshButton}>
-          {loading ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Text style={styles.refreshButtonText}>Refresh</Text>
-          )}
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity onPress={handleSharePDF} style={[styles.refreshButton, { backgroundColor: '#16a34a' }]} disabled={isSharing}>
+            {isSharing ? <ActivityIndicator color="#fff" size="small" /> : (
+              <><Ionicons name="share-social-outline" size={16} color="#fff" /><Text style={[styles.refreshButtonText, { marginLeft: 4 }]}>PDF</Text></>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity onPress={fetchReport} style={styles.refreshButton}>
+            {loading ? <ActivityIndicator color="#fff" size="small" /> : (
+              <Text style={styles.refreshButtonText}>Refresh</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {error && <Text style={styles.errorText}>{error}</Text>}

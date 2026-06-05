@@ -161,6 +161,57 @@ const BillDetailScreen = ({ route }) => {
     }
   };
 
+  const handleThermalPrint = async () => {
+    if (!bill) return;
+    try {
+      const itemsHtml = bill.items.map(item => `
+        <tr>
+          <td style="text-align: left; padding: 2px 0;">${item.name}</td>
+          <td style="text-align: center; padding: 2px 0;">${item.quantity}</td>
+          <td style="text-align: right; padding: 2px 0;">${item.rate || item.price}</td>
+          <td style="text-align: right; padding: 2px 0;">${item.total?.toFixed(2) || 0}</td>
+        </tr>
+      `).join('');
+
+      const html = `
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+            <style>
+              body { font-family: monospace; width: 100%; margin: 0; padding: 10px; font-size: 14px; color: #000; }
+              .center { text-align: center; }
+              .bold { font-weight: bold; }
+              .divider { border-bottom: 1px dashed #000; margin: 8px 0; }
+              table { width: 100%; border-collapse: collapse; }
+              th { border-bottom: 1px dashed #000; text-align: left; padding-bottom: 4px; }
+            </style>
+          </head>
+          <body>
+            <div class="center bold" style="font-size: 18px;">Retail Invoice</div>
+            <div class="divider"></div>
+            <div>Bill No: ${bill.billNumber}</div>
+            <div>Date: ${new Date(bill.date || bill.createdAt).toLocaleDateString()}</div>
+            <div>Customer: ${bill.customerName || bill.partyId?.name || 'Cash'}</div>
+            <div class="divider"></div>
+            <table>
+              <tr><th>Item</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Rate</th><th style="text-align:right;">Amt</th></tr>
+              ${itemsHtml}
+            </table>
+            <div class="divider"></div>
+            <div style="display: flex; justify-content: space-between; font-size: 16px;" class="bold">
+              <span>Total:</span><span>₹${(bill.finalAmount || bill.totalAmount || bill.total || 0).toFixed(2)}</span>
+            </div>
+            <div class="divider"></div>
+            <div class="center">Thank You! Visit Again</div>
+          </body>
+        </html>
+      `;
+      await Print.printAsync({ html });
+    } catch (error) {
+      Alert.alert("Error", "Could not print thermal receipt.");
+    }
+  };
+
   if (loading) return <ActivityIndicator size="large" color="#007bff" style={{ marginTop: 50 }} />;
   if (error) return <Text style={styles.error}>{error}</Text>;
   if (!bill) return <Text style={styles.error}>Bill not found</Text>;
@@ -209,17 +260,29 @@ const BillDetailScreen = ({ route }) => {
         <View style={styles.waContainer}>
           <WhatsappSender bill={bill} />
         </View>
+        <TouchableOpacity style={styles.printBtn} onPress={handleThermalPrint}>
+          <Ionicons name="print-outline" size={22} color="white" />
+        </TouchableOpacity>
         <TouchableOpacity style={styles.shareButton} onPress={handleShareBill} disabled={isSharing}>
           {isSharing ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <>
               <Ionicons name="share-social-outline" size={22} color="white" />
-              <Text style={styles.shareButtonText}>Share PDF</Text>
+              <Text style={styles.shareButtonText}>Share</Text>
             </>
           )}
         </TouchableOpacity>
       </View>
+      {(bill.finalAmount >= 50000 || bill.total >= 50000 || bill.totalAmount >= 50000) && (
+        <TouchableOpacity style={styles.ewayBtn} onPress={() => {
+          Alert.alert("E-Way Bill", "Ready to integrate with NIC E-Way Bill Portal.");
+          // navigation.navigate('EwayBill', { bill });
+        }}>
+          <Ionicons name="bus-outline" size={20} color="white" />
+          <Text style={styles.ewayBtnText}>Generate E-Way Bill</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -269,13 +332,20 @@ const styles = StyleSheet.create({
   bottomActions: {
     flexDirection: 'row',
     padding: 15,
+    paddingBottom: 20,
     backgroundColor: '#fff',
     borderTopWidth: 1,
     borderColor: '#eee',
     alignItems: 'center',
   },
-  waContainer: {
+  waContainer: { marginRight: 10 },
+  printBtn: {
+    backgroundColor: '#4b5563',
+    padding: 12,
+    borderRadius: 10,
     marginRight: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   shareButton: {
     flex: 1,
@@ -292,6 +362,18 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 10,
   },
+  ewayBtn: {
+    backgroundColor: '#f59e0b',
+    flexDirection: 'row',
+    margin: 15,
+    marginTop: 0,
+    padding: 15,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10
+  },
+  ewayBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 }
 });
 
 export default BillDetailScreen;

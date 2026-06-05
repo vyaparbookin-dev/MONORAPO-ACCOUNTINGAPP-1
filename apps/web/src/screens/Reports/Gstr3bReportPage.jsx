@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
+import { Printer } from "lucide-react";
 
 const Gstr3bReportPage = () => {
   const [from, setFrom] = useState("");
@@ -33,15 +34,20 @@ const Gstr3bReportPage = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-start">
         <div>
-          <h1 className="text-3xl font-bold">GSTR-3B / Quarterly Summary</h1>
+          <h1 className="text-3xl font-bold print:text-2xl">GSTR-3B / Quarterly Summary</h1>
           <p className="text-sm text-gray-600">Summary of GST liabilities and collections</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={fetchReport} className="bg-blue-600 text-white px-4 py-2 rounded">Generate</button>
+        <div className="flex gap-2 print:hidden">
+          <button onClick={() => window.print()} className="bg-gray-700 text-white px-4 py-2 rounded-lg inline-flex items-center gap-2 hover:bg-gray-800">
+            <Printer size={16} /> Print
+          </button>
+          <button onClick={fetchReport} className="bg-blue-600 text-white px-4 py-2 rounded-lg">
+            Generate
+          </button>
         </div>
       </div>
 
-      <div className="bg-white p-4 rounded shadow">
+      <div className="bg-white p-4 rounded shadow print:hidden">
         <div className="flex gap-4 items-center">
           <div>
             <label className="block text-sm">From</label>

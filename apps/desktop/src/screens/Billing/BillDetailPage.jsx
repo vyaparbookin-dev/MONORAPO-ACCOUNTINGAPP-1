@@ -66,6 +66,19 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
     }
   };
 
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleWhatsAppShare = () => {
+    if (!bill) return;
+    const text = `Hello ${bill.customerName || 'Customer'},\n\nYour invoice *${bill.billNumber || bill.billNo}* for *Rs. ${(bill.total || bill.finalAmount || bill.totalAmount || 0).toLocaleString('en-IN')}* has been generated.\n\nThank you for your business!`;
+    const encodedText = encodeURIComponent(text);
+    const phone = bill.customerMobile ? bill.customerMobile.replace(/\D/g, '') : '';
+    const url = `https://web.whatsapp.com/send?phone=91${phone}&text=${encodedText}`;
+    window.open(url, '_blank');
+  };
+
   if (loading) return <Loader />;
   if (error) return <div className="p-6 text-red-600 bg-white rounded-xl shadow">{error}</div>;
   if (!bill) return <div className="p-6 text-gray-600 bg-white rounded-xl shadow">Bill not found</div>;
@@ -73,13 +86,13 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
   return (
     <div className="p-6 bg-white rounded-xl shadow-md max-w-4xl mx-auto my-6">
       {isComposition && (
-        <div className="mb-6 p-2 bg-gray-100 border border-gray-400 rounded text-gray-800 text-sm font-bold text-center uppercase tracking-wide">
+        <div className="mb-6 p-2 bg-gray-100 border border-gray-400 rounded text-gray-800 text-sm font-bold text-center uppercase tracking-wide print:hidden">
           Composition Scheme
         </div>
       )}
       <button 
         onClick={onBack || (() => navigate("/billing"))} 
-        className="mb-6 flex items-center gap-2 text-gray-600 hover:text-gray-900 font-medium"
+        className="mb-6 flex items-center gap-2 text-gray-600 hover:text-gray-900 font-medium print:hidden"
       >
         ← Back to List
       </button>
@@ -168,7 +181,19 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
         </div>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-3 mt-6 print:hidden">
+        <button
+          onClick={handleWhatsAppShare}
+          className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition shadow-sm font-medium"
+        >
+          Share via WhatsApp
+        </button>
+        <button
+          onClick={handlePrint}
+          className="bg-gray-800 text-white px-6 py-2 rounded-lg hover:bg-gray-900 transition shadow-sm font-medium"
+        >
+          Print Document
+        </button>
         <button
           onClick={handleDownload}
           className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition shadow-sm"

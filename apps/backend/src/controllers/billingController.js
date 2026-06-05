@@ -10,6 +10,7 @@ import Company from "../model/company.js";
 import { generateUpiQrCode } from "../utils/paymentUtils.js";
 import { Parser } from "json2csv";
 import { logActivity } from "../utils/logger.js";
+import { sendAutoWhatsappMessage } from "../services/whatsappService.js";
 
 export const createBill = async (req, res) => {
   try {
@@ -75,6 +76,12 @@ export const createBill = async (req, res) => {
       company.freeBillCount += 1;
       await company.save();
     }
+
+    // --- WHATSAPP AUTOMATION (Runs in background) ---
+    // We don't wait for this to finish, so the API response is fast.
+    // It will try to send a message if WhatsApp is enabled in settings.
+    sendAutoWhatsappMessage(req.companyId, bill).catch(err => console.error("Non-blocking WA Error:", err));
+
     // --- END LICENSING UPDATE ---
     res.status(201).json({ success: true, bill, message: `Bill ${bill.billNumber} created successfully!` });
   } catch (error) {

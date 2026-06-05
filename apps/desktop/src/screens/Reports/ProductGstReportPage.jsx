@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
+import { Printer } from "lucide-react";
 
 const ProductGstReportPage = () => {
   const [data, setData] = useState([]);
@@ -30,11 +31,16 @@ const ProductGstReportPage = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-start">
         <div>
-          <h1 className="text-3xl font-bold">Product-wise GST</h1>
+          <h1 className="text-3xl font-bold print:text-2xl">Product-wise GST</h1>
           <p className="text-sm text-gray-600">GST collected per product</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={fetchReport} className="bg-blue-600 text-white px-4 py-2 rounded">Refresh</button>
+        <div className="flex gap-2 print:hidden">
+          <button onClick={() => window.print()} className="bg-gray-700 text-white px-4 py-2 rounded-lg inline-flex items-center gap-2 hover:bg-gray-800">
+            <Printer size={16} /> Print
+          </button>
+          <button onClick={fetchReport} className="bg-blue-600 text-white px-4 py-2 rounded-lg">
+            Refresh
+          </button>
         </div>
       </div>
 

@@ -4,6 +4,7 @@ import { Picker } from '@react-native-picker/picker';
 import { getData, postData } from '../../services/ApiService';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { syncQueue } from '@repo/shared/src/services/syncqueue.native';
+import { getPartiesLocal, updateCustomerLocal, addTransactionLocal } from '../../../db';
 
 const PaymentEntryScreen = ({ navigation }) => {
   const [parties, setParties] = useState([]);
@@ -19,12 +20,17 @@ const PaymentEntryScreen = ({ navigation }) => {
   useEffect(() => {
     const fetchParties = async () => {
       try {
-        const res = await getData('/party');
-        // Ensure we get an array, handling both direct array and nested object responses
-        const partyData = res.data?.parties || (Array.isArray(res.data) ? res.data : []);
-        setParties(partyData);
+        // Offline First: Try to fetch from SQLite first
+        const localParties = await getPartiesLocal();
+        if (localParties && localParties.length > 0) {
+          setParties(localParties);
+        } else {
+          const res = await getData('/party');
+          const partyData = res.data?.parties || (Array.isArray(res.data) ? res.data : []);
+          setParties(partyData);
+        }
       } catch (error) {
-        Alert.alert('Error', 'Failed to load parties.');
+        console.log('Error fetching parties', error);
       } finally {
         setFetching(false);
       }
@@ -49,6 +55,37 @@ const PaymentEntryScreen = ({ navigation }) => {
         paymentMethod: 'cash' // Default method
       };
       
+      // --- OFFLINE DB UPDATE (Instant UI Update) ---
+      try {
+        const party = parties.find(p => p._id === selectedParty || p.uuid === selectedParty);
+        if (party && typeof updateCustomerLocal === 'function') {
+          let newBalance = parseFloat(party.balance || party.currentBalance || 0);
+          if (paymentType === 'received') {
+            newBalance -= parseFloat(amount); // Paisa aaya (Jama) to udhar kam hoga
+          } else {
+            newBalance += parseFloat(amount); // Udhar diya to balance badhega
+          }
+          
+          await updateCustomerLocal(party._id || party.uuid, { ...party, balance: newBalance, currentBalance: newBalance });
+          
+          if (typeof addTransactionLocal === 'function') {
+            await addTransactionLocal({
+              uuid: `TX-PAY-${Date.now()}`,
+              partyId: party._id || party.uuid,
+              type: paymentType === 'received' ? 'payment_received' : 'payment_given',
+              debit: paymentType === 'paid' ? parseFloat(amount) : 0,
+              credit: paymentType === 'received' ? parseFloat(amount) : 0,
+              date: payload.date,
+              details: notes || `Payment ${paymentType}`,
+              status: 'completed'
+            });
+          }
+        }
+      } catch (localErr) {
+        console.log("Local payment save failed:", localErr);
+      }
+
+      // --- CLOUD SYNC QUEUE ---
       syncQueue.enqueue({
         method: 'post',
         url: '/payment/entry',

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
-import { Download, FileText, CheckCircle } from "lucide-react";
+import { Download, FileText, CheckCircle, Printer } from "lucide-react";
 
 const GstReportPage = () => {
   const [report, setReport] = useState([]);
@@ -35,7 +35,7 @@ const GstReportPage = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-xl shadow-sm border border-gray-200 print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><FileText className="text-blue-600"/> GST Filing Reports</h1>
           <p className="text-gray-600 mt-1 text-sm">GSTR-1, GSTR-2, and GSTR-3B Summary</p>
@@ -50,6 +50,9 @@ const GstReportPage = () => {
           <select className="border border-gray-300 rounded p-2 outline-none" value={year} onChange={e => setYear(e.target.value)}>
             {[2023, 2024, 2025].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
+          <button onClick={() => window.print()} className="flex items-center gap-2 bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition">
+            <Printer size={16} />
+          </button>
           <button onClick={fetchGstReport} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
             Refresh
           </button>

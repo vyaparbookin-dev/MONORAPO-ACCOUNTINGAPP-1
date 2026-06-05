@@ -3,12 +3,16 @@ import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, 
 import { Picker } from '@react-native-picker/picker';
 import { getData } from '../../services/ApiService';
 import { getStaffLocal, getStaffStatementLocal } from '../../../db'; // Offline DB
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import { Ionicons } from '@expo/vector-icons';
 
 const StaffStatementScreen = () => {
   const [staffList, setStaffList] = useState([]);
   const [selectedStaff, setSelectedStaff] = useState('');
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const [fetchingStaff, setFetchingStaff] = useState(true);
 
   useEffect(() => {
@@ -44,6 +48,49 @@ const StaffStatementScreen = () => {
   };
 
   const currentStaff = staffList.find(s => (s.uuid || s._id) === selectedStaff);
+
+  const handleSharePDF = async () => {
+    if (!currentStaff) return;
+    setIsSharing(true);
+    try {
+      const rows = transactions.map(item => `
+        <tr>
+          <td style="padding: 10px; border: 1px solid #ddd;">${new Date(item.date).toLocaleDateString()}</td>
+          <td style="padding: 10px; border: 1px solid #ddd;">${item.type.replace('_', ' ').toUpperCase()}</td>
+          <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #dc2626;">${item.debit ? `₹${item.debit}` : '-'}</td>
+          <td style="padding: 10px; border: 1px solid #ddd; text-align: right; color: #16a34a;">${item.credit ? `₹${item.credit}` : '-'}</td>
+        </tr>
+      `).join('');
+      
+      const html = `
+        <html>
+          <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="text-align: center;">Staff Ledger / Statement</h2>
+            <p style="text-align: center; font-size: 18px; font-weight: bold;">${currentStaff.name}</p>
+            <p style="text-align: center; color: ${currentStaff.balance >= 0 ? '#16a34a' : '#dc2626'}; font-weight: bold;">
+              Balance: ₹${Math.abs(currentStaff.balance || 0)} (${currentStaff.balance >= 0 ? 'Payable' : 'Advance'})
+            </p>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+              <tr style="background-color: #f3f4f6;">
+                <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Date</th>
+                <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Type</th>
+                <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Advance (-)</th>
+                <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Due (+)</th>
+              </tr>
+              ${rows}
+            </table>
+          </body>
+        </html>
+      `;
+      
+      const { uri } = await Print.printToFileAsync({ html });
+      await Sharing.shareAsync(uri, { dialogTitle: 'Share Staff Statement' });
+    } catch (error) {
+      Alert.alert('Error', 'Failed to generate PDF');
+    } finally {
+      setIsSharing(false);
+    }
+  };
 
   const renderTransaction = ({ item }) => (
     <View style={styles.tCard}>
@@ -91,10 +138,17 @@ const StaffStatementScreen = () => {
       </View>
 
       {currentStaff && (
-        <View style={[styles.balanceCard, currentStaff.balance >= 0 ? styles.bgGreen : styles.bgRed]}>
-          <Text style={styles.balanceLabel}>{currentStaff.balance >= 0 ? 'Payable (Salary Due)' : 'Advance Given'}</Text>
-          <Text style={styles.balanceValue}>₹{Math.abs(currentStaff.balance || 0)}</Text>
-        </View>
+        <>
+          <View style={[styles.balanceCard, currentStaff.balance >= 0 ? styles.bgGreen : styles.bgRed]}>
+            <Text style={styles.balanceLabel}>{currentStaff.balance >= 0 ? 'Payable (Salary Due)' : 'Advance Given'}</Text>
+            <Text style={styles.balanceValue}>₹{Math.abs(currentStaff.balance || 0)}</Text>
+          </View>
+          <TouchableOpacity style={{backgroundColor: '#2563eb', padding: 12, borderRadius: 8, alignItems: 'center', marginBottom: 10, flexDirection: 'row', justifyContent: 'center', gap: 8}} onPress={handleSharePDF} disabled={isSharing}>
+            {isSharing ? <ActivityIndicator color="#fff" /> : (
+              <><Ionicons name="share-social-outline" size={18} color="#fff" /><Text style={{color: '#fff', fontWeight: 'bold'}}>Share PDF</Text></>
+            )}
+          </TouchableOpacity>
+        </>
       )}
 
       <FlatList

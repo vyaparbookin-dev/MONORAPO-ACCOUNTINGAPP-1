@@ -3,8 +3,7 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Alert, A
 import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { getData, postData } from '../../services/ApiService';
-const { putData } = require('../../services/ApiService'); // Assumes putData exists for updating
+import { getData, postData, putData } from '../../services/ApiService';
 import { getPartiesLocal, getProductsLocal, addBillLocal, updateProductLocal, updateCustomerLocal, addTransactionLocal } from '../../../db'; // Offline DB
 import { syncQueue } from '@repo/shared/src/services/syncqueue.native';
 

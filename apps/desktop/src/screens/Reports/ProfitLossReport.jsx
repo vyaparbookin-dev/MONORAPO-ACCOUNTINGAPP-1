@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { DollarSign, TrendingDown, TrendingUp } from "lucide-react";
+import { DollarSign, TrendingDown, TrendingUp, Printer } from "lucide-react";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
 
@@ -34,11 +34,14 @@ const ProfitLossReportPage = () => {
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-gray-800">Profit & Loss Statement</h1>
-          <button onClick={fetchReport} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-            Refresh
-          </button>
+        <div className="flex justify-between items-center mb-6 print:hidden">
+          <h1 className="text-3xl font-bold text-gray-800 print:text-2xl">Profit & Loss Statement</h1>
+          <div className="flex gap-2">
+            <button onClick={() => window.print()} className="bg-gray-700 text-white px-4 py-2 rounded-lg inline-flex items-center gap-2 hover:bg-gray-800"><Printer size={16} /> Print</button>
+            <button onClick={fetchReport} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+              Refresh
+            </button>
+          </div>
         </div>
 
         {loading && <Loader />}
