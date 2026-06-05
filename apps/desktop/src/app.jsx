@@ -131,6 +131,16 @@ import WhatsappSettingsPage from "./screens/Settings/WhatsappSettingsPage";
 // Components
 import DashboardLayout from "./components/DashboardLayout";
 
+const ComingSoonPage = () => (
+  <div className="flex items-center justify-center h-full min-h-[400px]">
+    <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 text-center">
+      <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">🚀</div>
+      <h2 className="text-2xl font-bold text-gray-800 mb-2">Coming Soon</h2>
+      <p className="text-gray-500">This feature is currently under development.</p>
+    </div>
+  </div>
+);
+
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -284,6 +294,9 @@ const App = () => {
         <Route path="/salary/statement" element={<StaffStatementPage />} />
         <Route path="/salary/list" element={<SalaryListPage />} />
 
+        {/* Cash & Bank */}
+        <Route path="/banking" element={<BankReconciliationPage />} />
+
         {/* Late Payments */}
         <Route path="/laterpad" element={<LaterpadPage />} />
         <Route path="/laterpad/list" element={<LaterpadListPage />} />
@@ -302,6 +315,7 @@ const App = () => {
         <Route path="/settings/web" element={<WebPreferences />} />
         <Route path="/settings/staff" element={<StaffManagementPage />} />
         <Route path="/settings/whatsapp" element={<WhatsappSettingsPage />} />
+        <Route path="/settings/units" element={<ItemMasterPage />} />
 
         {/* Additional Settings Routes */}
         <Route path="/pages/settings" element={<PageSettings />} />

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Edit, Trash2, Search, ChevronDown, Settings, Users, Shield, Globe, Database, Scale } from "lucide-react";
+import { Plus, Edit, Trash2, Search, ChevronDown, Settings, Users, Shield, Globe, Database, Scale, MessageCircle } from "lucide-react";
 import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
 import ImportHistoryManager from "../../components/ImportHistoryManager";
@@ -275,7 +275,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Quick Links */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         <button onClick={() => navigate("/settings/app")} className="p-4 bg-white border rounded-xl shadow-sm hover:shadow-md transition flex flex-col items-center gap-2 text-center">
           <div className="p-2 bg-blue-50 rounded-full text-blue-600"><Settings size={24} /></div>
           <span className="font-medium text-gray-700">App Settings</span>
@@ -292,9 +292,13 @@ export default function SettingsPage() {
           <div className="p-2 bg-orange-50 rounded-full text-orange-600"><Database size={24} /></div>
           <span className="font-medium text-gray-700">Backup & Restore</span>
         </button>
-        <button onClick={() => navigate("/settings/units")} className="p-4 bg-white border rounded-xl shadow-sm hover:shadow-md transition flex flex-col items-center gap-2 text-center">
+        <button onClick={() => navigate("/inventory/masters")} className="p-4 bg-white border rounded-xl shadow-sm hover:shadow-md transition flex flex-col items-center gap-2 text-center">
           <div className="p-2 bg-indigo-50 rounded-full text-indigo-600"><Scale size={24} /></div>
           <span className="font-medium text-gray-700">Unit Settings</span>
+        </button>
+        <button onClick={() => navigate("/settings/whatsapp")} className="p-4 bg-white border rounded-xl shadow-sm hover:shadow-md transition flex flex-col items-center gap-2 text-center">
+          <div className="p-2 bg-green-50 rounded-full text-green-600"><MessageCircle size={24} /></div>
+          <span className="font-medium text-gray-700">WhatsApp API</span>
         </button>
       </div>
 
