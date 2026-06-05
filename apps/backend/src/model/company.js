@@ -46,9 +46,9 @@ const companySchema = new mongoose.Schema({
   settings: {
     whatsapp: {
       enabled: { type: Boolean, default: false },
-      apiKey: { type: String },
-      apiUrl: { type: String },
-      senderId: { type: String },
+      accessToken: { type: String }, // Meta Access Token
+      phoneNumberId: { type: String }, // Meta Phone Number ID
+      wabaId: { type: String }, // Meta WABA ID (Optional for sending)
       template: { type: String, default: 'Hello {customerName}, your invoice {billNumber} for Rs. {amount} is ready. Thank you for your business, {companyName}.' }
     }
   }

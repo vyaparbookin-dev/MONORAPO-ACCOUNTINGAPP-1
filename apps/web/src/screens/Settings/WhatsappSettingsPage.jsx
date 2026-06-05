@@ -5,9 +5,9 @@ import { Save, AlertCircle } from 'lucide-react';
 export default function WhatsappSettingsPage() {
   const [settings, setSettings] = useState({
     enabled: false,
-    apiKey: '',
-    apiUrl: '',
-    senderId: '',
+    accessToken: '',
+    phoneNumberId: '',
+    wabaId: '',
     template: 'Hello {customerName}, your invoice {billNumber} for Rs. {amount} is ready. Thank you for your business, {companyName}.'
   });
   const [loading, setLoading] = useState(true);
@@ -46,8 +46,8 @@ export default function WhatsappSettingsPage() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto bg-white rounded-xl shadow-md mt-6">
-      <h2 className="text-2xl font-bold mb-2">WhatsApp Automation Settings</h2>
-      <p className="text-gray-600 mb-6">Configure your own WhatsApp Business API to send messages automatically.</p>
+      <h2 className="text-2xl font-bold mb-2">Official Meta WhatsApp API</h2>
+      <p className="text-gray-600 mb-6">Configure your Official Meta (Facebook) Cloud API credentials.</p>
 
       <div className="space-y-6">
         <div className="flex items-center justify-between bg-gray-50 p-4 rounded-lg border">
@@ -66,16 +66,16 @@ export default function WhatsappSettingsPage() {
         {settings.enabled && (
           <div className="space-y-4 border-t pt-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">API Endpoint URL</label>
-              <input type="url" name="apiUrl" value={settings.apiUrl} onChange={handleInputChange} className="w-full border p-2 rounded-lg" placeholder="e.g., https://api.yourprovider.com/v1/messages" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number ID</label>
+              <input type="text" name="phoneNumberId" value={settings.phoneNumberId} onChange={handleInputChange} className="w-full border p-2 rounded-lg font-mono" placeholder="e.g., 102345678901234" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">API Key / Auth Token</label>
-              <input type="password" name="apiKey" value={settings.apiKey} onChange={handleInputChange} className="w-full border p-2 rounded-lg" placeholder="Enter your secret API key" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Access Token (Permanent/System User)</label>
+              <input type="password" name="accessToken" value={settings.accessToken} onChange={handleInputChange} className="w-full border p-2 rounded-lg font-mono" placeholder="EAAI..." />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sender ID / Number</label>
-              <input type="text" name="senderId" value={settings.senderId} onChange={handleInputChange} className="w-full border p-2 rounded-lg" placeholder="e.g., 91xxxxxxxxxx or your Sender ID" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">WABA ID (WhatsApp Business Account ID)</label>
+              <input type="text" name="wabaId" value={settings.wabaId} onChange={handleInputChange} className="w-full border p-2 rounded-lg font-mono" placeholder="e.g., 108765432109876" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Message Template</label>
