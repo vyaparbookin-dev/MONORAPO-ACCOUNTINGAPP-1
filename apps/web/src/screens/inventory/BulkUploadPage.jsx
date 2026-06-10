@@ -22,6 +22,8 @@ const SYSTEM_FIELDS = [
   { key: "dealerPrice", label: "Rate 3 (Dealer)" },
   { key: "mrp", label: "MRP" },
   { key: "discount", label: "Discount %" },
+  { key: "secondaryDiscount", label: "Scheme Discount %" },
+  { key: "cashDiscount", label: "Cash Discount % (CD)" },
   { key: "gstRate", label: "GST %" },
   { key: "currentStock", label: "Opening Stock" },
   { key: "minimumStock", label: "Min Quantity" },
@@ -136,7 +138,9 @@ export default function BulkUploadPage() {
             if (field.key === 'barcode' && hText.includes('barcode')) return true;
             if (field.key === 'dpl' && hText.includes('dpl')) return true;
             if (field.key === 'packing' && hText.includes('pack')) return true;
-            if (field.key === 'discount' && hText.includes('discount')) return true;
+            if (field.key === 'discount' && hText.includes('discount') && !hText.includes('scheme') && !hText.includes('cash') && !hText.includes('cd')) return true;
+            if (field.key === 'secondaryDiscount' && (hText.includes('scheme') || hText.includes('secondary') || hText.includes('+'))) return true;
+            if (field.key === 'cashDiscount' && (hText.includes('cash') || hText.includes('cd'))) return true;
             
             return false;
           });
@@ -192,9 +196,9 @@ export default function BulkUploadPage() {
 
   const downloadTemplate = () => {
     const templateData = [{
-      "Item Name": "Example Product", "Item Code": "ITM-001", "Barcode": "890123456789", "Category": "Electronics",
-      "Brand": "Samsung", "HSN Code": "8517", "Packing": "10x10", "Unit": "pcs", "Unit-2": "box", "Conversion Rate": 10,
-      "Cost Price": 1000, "Selling Price": 1500, "Wholesale Price": 1400, "Dealer Price": 1350, "MRP": 1999, "Discount": 5, "GST %": 18,
+      "Item Name": "Example Product", "Item Code": "ITM-001", "Barcode": "890123456789", "Packing": "10x10", "Category": "Electronics", "Sub Category": "Accessories",
+      "Brand": "Samsung", "HSN Code": "8517", "Unit": "pcs", "Unit-2": "box", "Conversion Rate": 10,
+      "DPL (Company Rate)": 900, "Cost Price": 1000, "Selling Price": 1500, "Wholesale Price": 1400, "Dealer Price": 1350, "MRP": 1999, "Discount": 5, "Scheme Discount": 2, "Cash Discount": 1, "GST %": 18,
       "Opening Stock": 50, "Minimum Stock": 5, "Maximum Stock": 100
     }];
     const ws = XLSX.utils.json_to_sheet(templateData);

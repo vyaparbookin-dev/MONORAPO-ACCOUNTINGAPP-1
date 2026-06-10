@@ -22,6 +22,9 @@ const SYSTEM_FIELDS = [
   { key: "wholesalePrice", label: "Rate 2 (Wholesale)" },
   { key: "dealerPrice", label: "Rate 3 (Dealer)" },
   { key: "mrp", label: "MRP" },
+  { key: "discount", label: "Discount %" },
+  { key: "secondaryDiscount", label: "Scheme Discount %" },
+  { key: "cashDiscount", label: "Cash Discount % (CD)" },
   { key: "gstRate", label: "GST %" },
   { key: "currentStock", label: "Opening Stock" },
   { key: "minimumStock", label: "Min Quantity" },
@@ -135,6 +138,9 @@ const BulkProductPage = () => {
             if (field.key === 'barcode' && hText.includes('barcode')) return true;
             if (field.key === 'dpl' && hText.includes('dpl')) return true;
             if (field.key === 'packing' && (hText.includes('pack') || hText.includes('packing') || hText.includes('carton'))) return true;
+            if (field.key === 'discount' && hText.includes('discount') && !hText.includes('scheme') && !hText.includes('cash') && !hText.includes('cd')) return true;
+            if (field.key === 'secondaryDiscount' && (hText.includes('scheme') || hText.includes('secondary') || hText.includes('+'))) return true;
+            if (field.key === 'cashDiscount' && (hText.includes('cash') || hText.includes('cd'))) return true;
             
             return false;
           });
@@ -188,6 +194,9 @@ const BulkProductPage = () => {
         "Dealer Price": 1350,
         "MRP": 1999,
         "GST %": 18,
+        "Discount": 5,
+        "Scheme Discount": 2,
+        "Cash Discount": 1,
         "Opening Stock": 50,
         "Minimum Stock": 5,
         "Maximum Stock": 100

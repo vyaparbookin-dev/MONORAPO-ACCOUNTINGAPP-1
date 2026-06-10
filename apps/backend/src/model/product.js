@@ -24,7 +24,10 @@ const productSchema = new mongoose.Schema({
   wholesalePrice: { type: Number, default: 0 }, // Wholesale Rate
   dealerPrice: { type: Number, default: 0 },
   p3Rate: { type: Number, default: 0 }, // Extra rate mapped in import
-  discount: { type: Number, default: 0 }, // Discount % mapped in import
+  discount: { type: Number, default: 0 }, // Primary Discount % (Jaise normal 5%)
+  secondaryDiscount: { type: Number, default: 0 }, // Secondary/Scheme Discount % (Jaise 5+2% me 2%)
+  cashDiscount: { type: Number, default: 0 }, // Cash Discount (CD) % (Jaise CD 1%)
+  discountDisplayFormat: { type: String }, // Text format save karne ke liye jaise: "5+2% + CD 1%"
   mrp: Number, // Maximum Retail Price
   
   // Tax & GST
