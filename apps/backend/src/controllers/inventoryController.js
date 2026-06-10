@@ -214,7 +214,9 @@ export const bulkImportProducts = async (req, res) => {
       if (item.brand !== undefined) parsedItem.brand = String(item.brand).trim();
       if (item.hsnCode !== undefined) parsedItem.hsnCode = String(item.hsnCode).trim();
       if (item.costPrice !== undefined) parsedItem.costPrice = parseNum(item.costPrice);
+      if (item.costPriceWithTax !== undefined) parsedItem.costPriceWithTax = parseNum(item.costPriceWithTax);
       if (item.sellingPrice !== undefined) parsedItem.sellingPrice = parseNum(item.sellingPrice);
+      if (item.sellingPriceWithTax !== undefined) parsedItem.sellingPriceWithTax = parseNum(item.sellingPriceWithTax);
       if (item.wholesalePrice !== undefined) parsedItem.wholesalePrice = parseNum(item.wholesalePrice);
       if (item.dealerPrice !== undefined) parsedItem.dealerPrice = parseNum(item.dealerPrice);
       if (item.p3Rate !== undefined) parsedItem.p3Rate = parseNum(item.p3Rate);
@@ -242,6 +244,14 @@ export const bulkImportProducts = async (req, res) => {
     const seenBarcodes = new Set();
 
     for (const p of formattedProducts) {
+        const gst = p.gstRate || 0;
+        if (p.costPrice === undefined && p.costPriceWithTax !== undefined) {
+            p.costPrice = +(p.costPriceWithTax / (1 + gst / 100)).toFixed(2);
+        }
+        if (p.sellingPrice === undefined && p.sellingPriceWithTax !== undefined) {
+            p.sellingPrice = +(p.sellingPriceWithTax / (1 + gst / 100)).toFixed(2);
+        }
+
         let isAutoSku = !p.sku;
         let isAutoBarcode = !p.barcode;
 

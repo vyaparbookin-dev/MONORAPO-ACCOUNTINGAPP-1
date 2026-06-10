@@ -17,7 +17,8 @@ const SYSTEM_FIELDS = [
   { key: "secondaryUnit", label: "Unit-2 (Alt Unit)" },
   { key: "conversionRate", label: "Conversion Rate" },
   { key: "dpl", label: "DPL (Company Rate)" },
-  { key: "costPrice", label: "P.Cost / Landing Rate" },
+  { key: "costPrice", label: "P.Cost (Without GST)" },
+  { key: "costPriceWithTax", label: "P.Cost (With GST)" },
   { key: "sellingPrice", label: "Rate 1 (Selling Price)" },
   { key: "wholesalePrice", label: "Rate 2 (Wholesale)" },
   { key: "dealerPrice", label: "Rate 3 (Dealer)" },
@@ -124,8 +125,9 @@ const BulkProductPage = () => {
             if (field.key === 'unit' && (hText.includes('unit') || hText === 'uom')) return true;
             if (field.key === 'mrp' && (hText.includes('mrp') || hText.includes('maximum retail price'))) return true;
             if (field.key === 'gstRate' && (hText.includes('gst') || hText.includes('tax') || hText === 'gst %' || hText === 'gst%')) return true;
-            if (field.key === 'costPrice' && (hText.includes('cost') || hText.includes('p.cost') || hText.includes('landing') || hText.includes('purchase rate') || hText.includes('purchase price') || hText.includes('cost price') || hText.includes('landed cost'))) return true;
-            if (field.key === 'sellingPrice' && (hText.includes('selling') || hText.includes('rate 1') || hText.includes('sale price') || hText.includes('selling price') || hText.includes('retail price') || hText === 'rate1')) return true;
+            if (field.key === 'costPriceWithTax' && (hText.includes('cost') || hText.includes('landing') || hText.includes('purchase rate')) && (hText.includes('with gst') || hText.includes('inc') || hText.includes('tax') || hText.includes('+'))) return true;
+            if (field.key === 'costPrice' && (hText.includes('cost') || hText.includes('p.cost') || hText.includes('landing') || hText.includes('purchase rate') || hText.includes('cost price')) && !hText.includes('with gst') && !hText.includes('inc') && !hText.includes('tax') && !hText.includes('+')) return true;
+            if (field.key === 'sellingPrice' && (hText.includes('selling') || hText.includes('rate 1') || hText.includes('sale price') || hText.includes('selling price') || hText === 'rate1' || hText.includes('retail price'))) return true;
             if (field.key === 'wholesalePrice' && (hText.includes('wholesale') || hText.includes('rate 2') || hText === 'rate2')) return true;
             if (field.key === 'dealerPrice' && (hText.includes('dealer') || hText.includes('rate 3') || hText === 'rate3')) return true;
             if (field.key === 'currentStock' && (hText.includes('stock') || hText.includes('opening') || hText.includes('current stock') || hText.includes('opening balance') || hText.includes('initial stock') || hText.includes('starting stock') || hText.includes('physical stock'))) return true;
@@ -188,7 +190,9 @@ const BulkProductPage = () => {
         "Unit": "pcs",
         "Unit-2": "box",
         "Conversion Rate": 10,
-        "Cost Price": 1000,
+        "DPL (Company Rate)": 900,
+        "P.Cost (Without GST)": 1000,
+        "P.Cost (With GST)": 1180,
         "Selling Price": 1500,
         "Wholesale Price": 1400,
         "Dealer Price": 1350,
