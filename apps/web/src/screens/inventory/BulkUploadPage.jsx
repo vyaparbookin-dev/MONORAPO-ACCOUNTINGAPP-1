@@ -190,7 +190,7 @@ export default function BulkUploadPage() {
     setUploading(true);
     try {
       // Backend API endpoint for bulk upload
-      const res = await api.post("/inventory/import", { products: data, mapping });
+      const res = await api.post("/api/inventory/import", { products: data, mapping });
       setMessage({ type: "success", text: res.data?.message || `Successfully processed ${data.length} products!` });
       if (res.data?.warnings?.length > 0) setWarnings(res.data.warnings);
       setStep(1);
