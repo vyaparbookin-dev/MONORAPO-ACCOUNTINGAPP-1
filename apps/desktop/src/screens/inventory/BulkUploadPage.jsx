@@ -203,7 +203,12 @@ export default function BulkUploadPage() {
       setData([]);
       setMapping({});
     } catch (err) {
-      setMessage({ type: "error", text: err.response?.data?.message || err.message || "Upload failed. Please check the file format." });
+      console.error("Detailed API Error:", err.response?.data || err);
+      const errData = err.response?.data;
+      setMessage({ type: "error", text: errData?.message || err.message || "Upload failed. Please check the file format." });
+      if (errData?.errors && Array.isArray(errData.errors) && errData.errors.length > 0) {
+        setWarnings(errData.errors.map(e => `🔴 API REJECTED: ${e}`));
+      }
     } finally {
       setUploading(false);
     }
@@ -353,11 +358,11 @@ export default function BulkUploadPage() {
       )}
 
       {warnings.length > 0 && (
-        <div className="mt-4 p-4 rounded-lg bg-yellow-50 border border-yellow-200">
-          <h4 className="font-bold text-yellow-800 mb-2 flex items-center gap-2">
-            <AlertCircle size={20} /> Upload Report & Auto-Resolved Conflicts ({warnings.length})
+        <div className={`mt-4 p-4 rounded-lg border ${message?.type === 'error' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
+          <h4 className={`font-bold mb-2 flex items-center gap-2 ${message?.type === 'error' ? 'text-red-800' : 'text-yellow-800'}`}>
+            <AlertCircle size={20} /> {message?.type === 'error' ? 'Upload Errors Details' : 'Upload Report & Auto-Resolved Conflicts'} ({warnings.length})
           </h4>
-          <ul className="list-disc pl-5 text-sm text-yellow-700 max-h-40 overflow-y-auto space-y-1">
+          <ul className={`list-disc pl-5 text-sm max-h-40 overflow-y-auto space-y-1 ${message?.type === 'error' ? 'text-red-700' : 'text-yellow-700'}`}>
             {warnings.map((warn, i) => <li key={i}>{warn}</li>)}
           </ul>
         </div>

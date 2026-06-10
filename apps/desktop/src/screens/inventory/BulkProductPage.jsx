@@ -179,8 +179,15 @@ const BulkProductPage = () => {
       setData([]);
       setMapping({});
     } catch (error) {
-      console.error(error);
-      alert(error.response?.data?.message || error.message || "Failed to upload products. Please check the file format.");
+      console.error("Upload Detailed Error:", error.response?.data || error);
+      const errData = error.response?.data;
+      const mainMsg = errData?.message || error.message || "Failed to upload products.";
+      let detailMsg = "";
+      if (errData?.errors && Array.isArray(errData.errors) && errData.errors.length > 0) {
+         detailMsg = "\n\nReason for Rejection:\n- " + errData.errors.join("\n- ");
+         setWarnings(errData.errors.map(e => `🔴 API REJECTED: ${e}`));
+      }
+      alert(mainMsg + detailMsg);
     } finally {
       setUploading(false);
     }

@@ -127,7 +127,13 @@ export default function BulkUploadScreen({ navigation }) {
         { text: "OK", onPress: () => navigation.goBack ? navigation.goBack() : setStep(1) }
       ]);
     } catch (err) {
-      Alert.alert("Upload Failed", err.response?.data?.message || err.message);
+      console.error("Bulk Upload Mobile Error:", err.response?.data || err);
+      const errData = err.response?.data;
+      let errMsg = errData?.message || err.message;
+      if (errData?.errors && Array.isArray(errData.errors) && errData.errors.length > 0) {
+          errMsg += "\n\nDetails:\n" + errData.errors.slice(0, 3).join("\n"); // Show only first 3 to avoid giant alert
+      }
+      Alert.alert("Upload Failed", errMsg);
     } finally {
       setUploading(false);
     }
