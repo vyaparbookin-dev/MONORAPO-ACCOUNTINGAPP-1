@@ -145,101 +145,79 @@ app.get("/", (req, res) => res.send("Vyapar Backend Running ✅"));
 // Render dynamically assigns a PORT, use 5001 as fallback for local dev
 const PORT = process.env.PORT || 5001;
 
-const startServer = async () => {
-  try {
-    // Connect to Database
-    await connectDB();
-    
-    // Start Background Automation Jobs
-    startCronJobs();
+app.use("/api/auth", authRoutes);
+app.use("/api/billing", billingRoutes);
+app.use("/api/branch", branchRoutes);
+app.use("/api/company", companyRoutes);
+app.use("/api/aging", agingRoutes);
+app.use("/api/approvals", approvalRoutes);
+app.use("/api/attendance", attendanceRoutes);
+app.use("/api/b2b", b2bRoutes);
+app.use("/api/bank-rec", bankRecRoutes);
+app.use("/api/category", categoryRoutes);
+app.use("/api/subcategory", subCategoryRoutes);
+app.use("/api/brand", brandRoutes);
+app.use("/api/cloud", cloudRoutes);
+app.use("/api/consolidated-statement", consolidatedStatementRoutes);
+app.use("/api/coupon", coupanRoutes); // Fixed spelling to match frontend request
+app.use("/api/daybook", daybookRoutes);
+app.use("/api/ewaybill", eWayBillRoutes);
+app.use("/api/expance", expanceRoutes); // Old spelling
+app.use("/api/expenses", expanceRoutes); // Alias for correct spelling
+app.use("/api/fixed-assets", fixedAssetRoutes);
+app.use("/api/gst", gstRoutes);
+app.use("/api/inventory", inventoryRoutes);
+app.use("/api/laterpad", laterpadRoutes);
+app.use("/api/licensing", licensingRoutes);
+app.use("/api/membership", membershipRoutes);
+app.use("/api/notification", notificationRoutes);
+app.use("/api/party", partyRoutes);
+app.use("/api/payment", paymentRoutes);
+app.use("/api/purchase", purchaseRoutes);
+app.use("/api/purchase-orders", purchaseOrderRoutes);
+app.use("/api/reminders", reminderRoutes);
+app.use("/api/report", reportRoutes);
+app.use("/api/return", returnRoutes);
+app.use("/api/salary", salaryRoutes);
+app.use("/api/scheme", schemeRoutes);
+app.use("/api/security", securityRoutes);
+app.use("/api/settings", settingsRoutes);
+app.use("/api/staff", staffRoutes);
+app.use("/api/stock-transfer", stockTransferRoutes);
+app.use("/api/sync", syncRoutes);
+app.use("/api/tally", tallyRoutes);
+app.use("/api/tds-tcs", tdsTcsRoutes);
+app.use("/api/unit", unitRoutes);
+app.use("/api/user", userRoutes);
+app.use("/api/warehouse", warehouseRoutes);
+app.use("/api/whatsapp", whatsappRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/schemes", schemeRoutes);
+app.use("/api/logs", securityRoutes);
+const stubRouter = express.Router();
+stubRouter.all('*', (req, res) => res.json({ success: true, message: "Feature coming soon / API under construction" }));
+app.use("/api/roles", stubRouter);
+app.use("/api/leaves", stubRouter);
+app.use("/api/keys", stubRouter);
+Sentry.setupExpressErrorHandler(app);
+app.use(errorHandler);
+app.use((req, res) => {
+  console.log(`⚠️ 404 Route Not Found: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ message: `Route not found: ${req.originalUrl}` });
+});
 
-    // --- PUBLIC ROUTES (No Auth Token Required) ---
-    // Ye routes hamesha sabke liye open rahenge
-    app.use("/api/auth", authRoutes);
-
-    // --- PROTECTED ROUTES (Auth Token & Company ID Required) ---
-    // Note: The 'protect' middleware is applied inside each route file.
-    app.use("/api/billing", billingRoutes);
-    app.use("/api/branch", branchRoutes);
-    app.use("/api/company", companyRoutes);
-    app.use("/api/aging", agingRoutes);
-    app.use("/api/approvals", approvalRoutes);
-    app.use("/api/attendance", attendanceRoutes);
-    app.use("/api/b2b", b2bRoutes);
-    app.use("/api/bank-rec", bankRecRoutes);
-    app.use("/api/category", categoryRoutes);
-    app.use("/api/subcategory", subCategoryRoutes);
-    app.use("/api/brand", brandRoutes);
-    app.use("/api/cloud", cloudRoutes);
-    app.use("/api/consolidated-statement", consolidatedStatementRoutes);
-    app.use("/api/coupon", coupanRoutes); // Fixed spelling to match frontend request
-    app.use("/api/daybook", daybookRoutes);
-    app.use("/api/ewaybill", eWayBillRoutes);
-    app.use("/api/expance", expanceRoutes); // Old spelling
-    app.use("/api/expenses", expanceRoutes); // Alias for correct spelling
-    app.use("/api/fixed-assets", fixedAssetRoutes);
-    app.use("/api/gst", gstRoutes);
-    app.use("/api/inventory", inventoryRoutes);
-    app.use("/api/laterpad", laterpadRoutes);
-    app.use("/api/licensing", licensingRoutes);
-    app.use("/api/membership", membershipRoutes);
-    app.use("/api/notification", notificationRoutes);
-    app.use("/api/party", partyRoutes);
-    app.use("/api/payment", paymentRoutes);
-    app.use("/api/purchase", purchaseRoutes);
-    app.use("/api/purchase-orders", purchaseOrderRoutes);
-    app.use("/api/reminders", reminderRoutes);
-    app.use("/api/report", reportRoutes);
-    app.use("/api/return", returnRoutes);
-    app.use("/api/salary", salaryRoutes);
-    app.use("/api/scheme", schemeRoutes);
-    app.use("/api/security", securityRoutes);
-    app.use("/api/settings", settingsRoutes);
-    app.use("/api/staff", staffRoutes);
-    app.use("/api/stock-transfer", stockTransferRoutes);
-    app.use("/api/sync", syncRoutes);
-    app.use("/api/tally", tallyRoutes);
-    app.use("/api/tds-tcs", tdsTcsRoutes);
-    app.use("/api/unit", unitRoutes);
-    app.use("/api/user", userRoutes);
-    app.use("/api/warehouse", warehouseRoutes);
-    app.use("/api/whatsapp", whatsappRoutes);
-
-    // Frontend Plural Mismatch Fixes (Aliases)
-    app.use("/api/reports", reportRoutes);
-    app.use("/api/schemes", schemeRoutes);
-    app.use("/api/logs", securityRoutes);
-
-    // Stub Routes for Upcoming Features (Prevents 404 Crashes)
-    const stubRouter = express.Router();
-    stubRouter.all('*', (req, res) => res.json({ success: true, message: "Feature coming soon / API under construction" }));
-    
-    app.use("/api/roles", stubRouter);
-    app.use("/api/leaves", stubRouter);
-    app.use("/api/keys", stubRouter);
-
-    // Sentry Error Handler (Must be before custom error handler)
-    Sentry.setupExpressErrorHandler(app);
-
-    // Error Handler Middleware (must be last)
-    app.use(errorHandler);
-
-    // 404 Handler for debugging
-    app.use((req, res) => {
-      console.log(`⚠️ 404 Route Not Found: ${req.method} ${req.originalUrl}`);
-      res.status(404).json({ message: `Route not found: ${req.originalUrl}` });
-    });
-
-    // Start Listening strictly on PORT 5001
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📡 Backend accessible at http://localhost:${PORT}`);
-    });
-
-  } catch (error) {
-    console.error("❌ Failed to start server:", error);
-    process.exit(1);
-  }
+const startServer = () => {
+  app.listen(PORT, '0.0.0.0', async () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📡 Backend accessible at http://localhost:${PORT}`);
+    try {
+      await connectDB();
+      startCronJobs();
+    } catch (error) {
+      console.error("❌ DB Connection Failed:", error);
+      Sentry.captureException(error);
+    }
+  });
 };
 
 startServer();
