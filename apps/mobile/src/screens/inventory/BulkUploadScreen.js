@@ -76,8 +76,10 @@ export default function BulkUploadScreen({ navigation }) {
 
         // Smart Auto-Mapping Logic
         const initialMapping = {};
+        const usedColumns = new Set();
         SYSTEM_FIELDS.forEach(field => {
           const matchedCol = fileColumns.find(col => {
+            if (usedColumns.has(col)) return false;
             const hText = String(excelHeaders[col]).toLowerCase().trim();
             if (hText === field.key.toLowerCase()) return true;
             if (field.key === 'name' && (hText.includes('item') || hText === 'product' || hText.includes('name'))) return true;
@@ -94,7 +96,10 @@ export default function BulkUploadScreen({ navigation }) {
             if (field.key === 'barcode' && hText.includes('barcode')) return true;
             return false;
           });
-          if (matchedCol) initialMapping[field.key] = matchedCol;
+          if (matchedCol) {
+            initialMapping[field.key] = matchedCol;
+            usedColumns.add(matchedCol);
+          }
         });
 
         setMapping(initialMapping);
@@ -111,6 +116,10 @@ export default function BulkUploadScreen({ navigation }) {
 
   const handleUpload = async () => {
     if (data.length === 0) return;
+    if (!mapping.name) {
+      Alert.alert("Mapping Error", "'Item Name (*Required)' must be mapped. Please select a column for Item Name.");
+      return;
+    }
     setUploading(true);
     try {
       const res = await api.post("/api/inventory/import", { products: data, mapping });

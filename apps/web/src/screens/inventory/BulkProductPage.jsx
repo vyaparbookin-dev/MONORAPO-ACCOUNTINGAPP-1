@@ -110,8 +110,10 @@ const BulkProductPage = () => {
 
         // Smart auto-guess initial mapping
         const initialMapping = {};
+        const usedColumns = new Set();
         SYSTEM_FIELDS.forEach(field => {
           const matchedCol = fileColumns.find(col => {
+            if (usedColumns.has(col)) return false;
             const hText = String(excelHeaders[col]).toLowerCase().trim();
             
             if (hText === field.key.toLowerCase()) return true;
@@ -141,7 +143,10 @@ const BulkProductPage = () => {
             if (field.key === 'cashDiscount' && (hText.includes('cash') || hText.includes('cd'))) return true;
             return false;
           });
-          if (matchedCol) initialMapping[field.key] = matchedCol;
+          if (matchedCol) {
+            initialMapping[field.key] = matchedCol;
+            usedColumns.add(matchedCol);
+          }
         });
         
         setMapping(initialMapping);
@@ -155,6 +160,12 @@ const BulkProductPage = () => {
 
   const handleUpload = async () => {
     if (data.length === 0) return;
+    
+    if (!mapping.name) {
+      alert("Error: 'Item Name (*Required)' must be mapped. Please select a column for Item Name.");
+      return;
+    }
+
     setUploading(true);
     try {
       const res = await api.post("/inventory/import", { products: data, mapping });

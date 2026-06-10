@@ -111,8 +111,11 @@ export default function BulkUploadPage() {
         // Smart auto-guess initial mapping
         const initialMapping = {};
         const initialMappingSource = {};
+        const usedColumns = new Set();
+        
         SYSTEM_FIELDS.forEach(field => {
           const matchedCol = fileColumns.find(col => {
+            if (usedColumns.has(col)) return false;
             const hText = String(excelHeaders[col]).toLowerCase().trim();
             
             // Exact matches first
@@ -149,6 +152,7 @@ export default function BulkUploadPage() {
           if (matchedCol) {
             initialMapping[field.key] = matchedCol;
             initialMappingSource[field.key] = 'auto';
+            usedColumns.add(matchedCol);
           }
         });
         
@@ -170,6 +174,10 @@ export default function BulkUploadPage() {
 
   const handleUpload = async () => {
     if (data.length === 0) return;
+    if (!mapping.name) {
+      alert("Error: 'Item Name (*Required)' must be mapped. Please select a column for Item Name.");
+      return;
+    }
     console.group("Bulk Upload Submit");
     console.log("rows to upload:", data.length);
     console.log("mapping:", mapping);
