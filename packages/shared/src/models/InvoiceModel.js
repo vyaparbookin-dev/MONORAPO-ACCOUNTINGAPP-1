@@ -1,22 +1,25 @@
-import mongoose from "mongoose";
-
-const InvoiceSchema = new mongoose.Schema({
-  invoiceNo: { type: String, required: true, unique: true },
-  customerName: { type: String, required: true },
-  customerPhone: { type: String },
-  items: [
-    {
-      productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
-      quantity: Number,
-      price: Number,
-      gst: Number,
-    },
-  ],
-  totalAmount: { type: Number },
-  gstTotal: { type: Number },
-  discount: { type: Number, default: 0 },
-  billType: { type: String, default: "GST" }, // GST / Non-GST
-  createdAt: { type: Date, default: Date.now },
-});
-
-export default mongoose.models.Invoice || mongoose.model("Invoice", InvoiceSchema);
+export default class InvoiceModel {
+  constructor({
+    id,
+    invoiceNo,
+    customerName,
+    customerPhone,
+    items = [],
+    totalAmount = 0,
+    gstTotal = 0,
+    discount = 0,
+    billType = "GST",
+    createdAt
+  }) {
+    this.id = id;
+    this.invoiceNo = invoiceNo;
+    this.customerName = customerName;
+    this.customerPhone = customerPhone;
+    this.items = items;
+    this.totalAmount = totalAmount;
+    this.gstTotal = gstTotal;
+    this.discount = discount;
+    this.billType = billType;
+    this.createdAt = createdAt;
+  }
+}

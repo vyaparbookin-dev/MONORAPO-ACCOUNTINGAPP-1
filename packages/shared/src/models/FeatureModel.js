@@ -1,11 +1,17 @@
-import mongoose from "mongoose";
-
-const FeatureSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  description: { type: String },
-  isActive: { type: Boolean, default: false },
-  applyTo: [{ type: String }], // e.g., ["party", "product"]
-  createdAt: { type: Date, default: Date.now },
-});
-
-export default mongoose.models.Feature || mongoose.model("Feature", FeatureSchema);
+export default class FeatureModel {
+  constructor({
+    id,
+    name,
+    description,
+    isActive = false,
+    applyTo = [],
+    createdAt
+  }) {
+    this.id = id;
+    this.name = name;
+    this.description = description;
+    this.isActive = isActive;
+    this.applyTo = applyTo;
+    this.createdAt = createdAt;
+  }
+}

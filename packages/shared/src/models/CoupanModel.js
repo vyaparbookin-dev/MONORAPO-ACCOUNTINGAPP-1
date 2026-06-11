@@ -1,14 +1,23 @@
-import mongoose from "mongoose";
-
-const CouponSchema = new mongoose.Schema({
-  code: { type: String, required: true, unique: true },
-  description: { type: String },
-  discountType: { type: String, enum: ["percentage", "fixed"], default: "percentage" },
-  discountValue: { type: Number, required: true },
-  validFrom: { type: Date, required: true },
-  validTo: { type: Date, required: true },
-  maxUsage: { type: Number, default: 0 }, // 0 = unlimited
-  createdAt: { type: Date, default: Date.now },
-});
-
-export default mongoose.models.Coupon || mongoose.model("Coupon", CouponSchema);
+export default class CouponModel {
+  constructor({
+    id,
+    code,
+    description,
+    discountType = "percentage",
+    discountValue = 0,
+    validFrom,
+    validTo,
+    maxUsage = 0,
+    createdAt
+  }) {
+    this.id = id;
+    this.code = code;
+    this.description = description;
+    this.discountType = discountType;
+    this.discountValue = discountValue;
+    this.validFrom = validFrom;
+    this.validTo = validTo;
+    this.maxUsage = maxUsage;
+    this.createdAt = createdAt;
+  }
+}
