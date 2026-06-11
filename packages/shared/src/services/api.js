@@ -89,7 +89,7 @@ api.interceptors.response.use(
         ['filter', 'map', 'forEach', 'reduce', 'find', 'some', 'slice'].forEach(method => {
           if (typeof payload[arrayKey][method] === 'function') {
             Object.defineProperty(payload, method, {
-              value: function(...args) { return payload[arrayKey]method; },
+              value: function(...args) { return payload[arrayKey][method](...args); },
               enumerable: false,
               configurable: true
             });
