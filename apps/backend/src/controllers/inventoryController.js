@@ -414,7 +414,7 @@ export const bulkImportProducts = async (req, res) => {
       if (matchId) {
         return {
           updateOne: {
-            filter: { _id: matchId }, // Removed companyId to guarantee match and prevent casting issues
+            filter: { _id: matchId }, // Use only _id to guarantee match and prevent casting issues
             update: { 
                 $set: { 
                     ...updateFields,
@@ -443,15 +443,17 @@ export const bulkImportProducts = async (req, res) => {
     console.log(`🚀 [DEBUG BULK IMPORT] Executing DB bulkWrite with ${bulkOps.length} operations...`);
     const result = await Product.bulkWrite(bulkOps, { ordered: false });
 
-    // Handle different MongoDB driver version result formats so counts are never undefined
+    // Handle different MongoDB driver version result formats
     const finalInserted = result.insertedCount ?? result.nInserted ?? 0;
     const finalUpdated = result.modifiedCount ?? result.nModified ?? 0;
     const finalMatched = result.matchedCount ?? result.nMatched ?? 0;
     const finalUpserted = result.upsertedCount ?? result.nUpserted ?? 0;
 
+    console.log(`✅ [DEBUG BULK IMPORT] DB Operation Success! Inserted: ${finalInserted}, Updated: ${finalUpdated}, Matched: ${finalMatched}`);
+
     res.status(200).json({ 
       success: true, 
-      message: `Import complete! ${finalInserted || finalUpserted || 0} new products added, ${finalUpdated || 0} products updated (out of ${finalMatched || 0} exact matches found).` 
+      message: `Import complete! ${finalInserted || finalUpserted || 0} new products added, ${finalUpdated || 0} products updated (out of ${finalMatched || 0} exact matches found).`
     });
   } catch (error) {
     console.error("🔴 Bulk Import Error Details:", JSON.stringify(error, null, 2));
