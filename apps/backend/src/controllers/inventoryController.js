@@ -463,16 +463,24 @@ export const bulkImportProducts = async (req, res) => {
 
     // 2. Process Inserts
     if (insertDocs.length > 0) {
-      console.log(`🚀 [DEBUG BULK IMPORT] Executing DB insertMany for ${insertDocs.length} inserts...`);
-      try {
-        const insertResult = await Product.insertMany(insertDocs, { ordered: false });
-        finalInserted = insertResult.length;
-      } catch (insertErr) {
-        console.error("🔴 insertMany Error:", insertErr.message);
-        if (insertErr.insertedDocs) {
-          finalInserted = insertErr.insertedDocs.length;
+      console.log(`🚀 [DEBUG BULK IMPORT] Executing parallel DB saves for ${insertDocs.length} inserts...`);
+      
+      const insertPromises = insertDocs.map(doc => new Product(doc).save());
+      const results = await Promise.allSettled(insertPromises);
+      
+      const fulfilled = results.filter(r => r.status === 'fulfilled');
+      const rejected = results.filter(r => r.status === 'rejected');
+      
+      finalInserted = fulfilled.length;
+
+      if (rejected.length > 0) {
+        console.error(`🔴 [DEBUG BULK IMPORT] ${rejected.length} items failed to insert!`);
+        console.error("First error detail:", rejected[0].reason?.message || rejected[0].reason);
+        
+        // If NO items succeeded, throw the error to bubble up to the frontend
+        if (finalInserted === 0) {
+          throw rejected[0].reason;
         }
-        throw insertErr; // Bubble up to outer catch for detailed response
       }
     }
 
