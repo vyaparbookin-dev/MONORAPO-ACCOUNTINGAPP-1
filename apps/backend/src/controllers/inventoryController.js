@@ -464,7 +464,6 @@ export const bulkImportProducts = async (req, res) => {
     const totalProductsBefore = await Product.countDocuments({});
     console.log("TOTAL PRODUCTS BEFORE:", totalProductsBefore);
 
-    const companyObjectId = new mongoose.Types.ObjectId(companyId);
     const companyProducts = await Product.countDocuments({ companyId: companyObjectId });
     console.log("COMPANY PRODUCT COUNT:", companyProducts);
 
