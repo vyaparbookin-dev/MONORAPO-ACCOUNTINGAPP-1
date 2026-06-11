@@ -450,8 +450,7 @@ export const bulkImportProducts = async (req, res) => {
 
     res.status(200).json({ 
       success: true, 
-      message: `Import complete! ${result.insertedCount || result.upsertedCount || 0} new products added, ${result.modifiedCount || 0} products updated (out of ${result.matchedCount || 0} exact matches found).` 
-      message: `Import complete! ${result.insertedCount || result.upsertedCount || 0} new products added, ${result.modifiedCount || 0} products updated.` 
+      message: `Import complete! ${result.insertedCount || result.upsertedCount || 0} new products added, ${result.modifiedCount || 0} products updated (out of ${result.matchedCount || 0} exact matches found).`
     });
   } catch (error) {
     console.error("🔴 Bulk Import Error Details:", JSON.stringify(error, null, 2));
