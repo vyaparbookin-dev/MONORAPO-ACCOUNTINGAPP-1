@@ -10,7 +10,7 @@ const productSchema = new mongoose.Schema({
   // Category & Classification
   category: { type: String, required: true }, // Electronics, Textiles, etc.
   subCategory: String,
-  hsnCode: { type: String, required: true }, // HSN Code for GST
+  hsnCode: { type: String, default: "" }, // HSN Code for GST (Made optional to fix Excel Imports)
   image: { type: String }, // Base64 compressed image
   
   // Codes & Identifiers

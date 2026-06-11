@@ -463,24 +463,27 @@ export const bulkImportProducts = async (req, res) => {
 
     // 2. Process Inserts
     if (insertDocs.length > 0) {
-      console.log(`🚀 [DEBUG BULK IMPORT] Executing parallel DB saves for ${insertDocs.length} inserts...`);
-      
-      const insertPromises = insertDocs.map(doc => new Product(doc).save());
-      const results = await Promise.allSettled(insertPromises);
-      
-      const fulfilled = results.filter(r => r.status === 'fulfilled');
-      const rejected = results.filter(r => r.status === 'rejected');
-      
-      finalInserted = fulfilled.length;
+      console.log(`🚀 [DEBUG BULK IMPORT] Bypassing Mongoose! Executing Native MongoDB insertMany for ${insertDocs.length} inserts...`);
 
-      if (rejected.length > 0) {
-        console.error(`🔴 [DEBUG BULK IMPORT] ${rejected.length} items failed to insert!`);
-        console.error("First error detail:", rejected[0].reason?.message || rejected[0].reason);
+      try {
+        // Direct Native MongoDB insert to prevent any Mongoose silent failures
+        const nativeResult = await Product.collection.insertMany(insertDocs, { ordered: false });
         
-        // If NO items succeeded, throw the error to bubble up to the frontend
-        if (finalInserted === 0) {
-          throw rejected[0].reason;
+        console.log("🟢 NATIVE INSERT RESULT:", JSON.stringify(nativeResult, null, 2));
+        finalInserted = nativeResult.insertedCount || nativeResult.nInserted || 0;
+      } catch (insertErr) {
+        console.error("🔴 NATIVE INSERT ERROR:", insertErr.message);
+        
+        // MongoDB Native Error object contains a 'result' property on partial failures
+        if (insertErr.result && insertErr.result.nInserted) {
+          finalInserted = insertErr.result.nInserted;
+          console.log(`⚠️ Partial success: ${finalInserted} items were inserted despite the error.`);
         }
+        
+        if (insertErr.writeErrors) {
+          console.error("❌ FIRST WRITE ERROR DETAIL:", JSON.stringify(insertErr.writeErrors[0], null, 2));
+        }
+        throw insertErr; // Bubble up to outer catch for detailed response
       }
     }
 
