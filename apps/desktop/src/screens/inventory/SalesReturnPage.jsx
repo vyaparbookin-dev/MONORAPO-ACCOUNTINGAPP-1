@@ -18,7 +18,7 @@ const SalesReturnPage = () => {
     items: [],
   });
 
-  const [newItem, setNewItem] = useState({ productId: "", quantity: 1, price: 0 });
+  const [newItem, setNewItem] = useState({ productId: "", searchName: "", name: "", quantity: 1, price: 0 });
 
   useEffect(() => {
     const loadProducts = async () => {
@@ -47,7 +47,7 @@ const SalesReturnPage = () => {
         },
       ],
     }));
-    setNewItem({ productId: "", quantity: 1, price: 0 });
+    setNewItem({ productId: "", searchName: "", name: "", quantity: 1, price: 0 });
   };
 
   const handleSubmit = async (e) => {
@@ -114,20 +114,22 @@ const SalesReturnPage = () => {
           <h3 className="font-semibold mb-3">Items to Return</h3>
           <div className="flex gap-2 items-end mb-4 bg-gray-50 p-3 rounded">
             <div className="flex-1">
-              <label className="text-xs text-gray-500">Product</label>
-              <select
+              <label className="text-xs text-gray-500">Search Product</label>
+              <input
                 className="w-full border p-2 rounded"
-                value={newItem.productId}
+                list="product-list-return"
+                placeholder="Type to search product..."
+                value={newItem.searchName || ""}
                 onChange={(e) => {
-                  const p = products.find((prod) => prod._id === e.target.value);
-                  setNewItem({ ...newItem, productId: e.target.value, price: p?.costPrice || 0 });
+                  const val = e.target.value;
+                  const p = products.find(prod => prod.name === val || prod.barcode === val || prod.sku === val);
+                  if (p) setNewItem({...newItem, productId: p._id, searchName: p.name, name: p.name, price: p.costPrice || 0});
+                  else setNewItem({...newItem, searchName: val, productId: ""});
                 }}
-              >
-                <option value="">Select Product</option>
-                {products.map((p) => (
-                  <option key={p._id} value={p._id}>{p.name}</option>
-                ))}
-              </select>
+              />
+              <datalist id="product-list-return">
+                {products.map(p => <option key={p._id} value={p.name}>{p.sku ? `SKU: ${p.sku}` : ''}</option>)}
+              </datalist>
             </div>
             <div className="w-24">
               <label className="text-xs text-gray-500">Qty</label>

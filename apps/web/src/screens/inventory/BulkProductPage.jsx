@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Upload, Download, ArrowRight, Settings2, FileSpreadsheet, History, Undo2, X, Trash2 } from "lucide-react";
+import { Upload, Download, ArrowRight, Settings2, FileSpreadsheet, History, Undo2, X, Trash2, AlertCircle } from "lucide-react";
 import api from "../../services/api";
 import * as XLSX from "xlsx";
 
@@ -169,6 +169,9 @@ const BulkProductPage = () => {
     setUploading(true);
     try {
       const res = await api.post("/inventory/import", { products: data, mapping });
+      
+      console.log("✅ [BULK UPLOAD SUCCESS] API Response:", res.data);
+
       if (res.data?.warnings?.length > 0) setWarnings(res.data.warnings);
       alert(res.data?.message || `Successfully processed ${data.length} products!`);
       setStep(1);

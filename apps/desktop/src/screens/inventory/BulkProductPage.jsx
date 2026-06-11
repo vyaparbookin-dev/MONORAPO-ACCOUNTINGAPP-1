@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Upload, Download, ArrowRight, Settings2, History, Undo2, X, Trash2 } from "lucide-react";
+import { Upload, Download, ArrowRight, Settings2, FileSpreadsheet, History, Undo2, X, Trash2, AlertCircle } from "lucide-react";
 import api from "../../services/api";
 import * as XLSX from "xlsx";
 import { dbService } from "../../services/dbService";
@@ -39,6 +39,7 @@ const BulkProductPage = () => {
   const [headers, setHeaders] = useState([]);
   const [mapping, setMapping] = useState({});
   const [uploading, setUploading] = useState(false);
+  const [warnings, setWarnings] = useState([]);
 
   // Undo Upload States
   const [showUndoModal, setShowUndoModal] = useState(false);

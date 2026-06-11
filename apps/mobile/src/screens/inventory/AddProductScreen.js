@@ -84,8 +84,8 @@ const AddProductScreen = ({ navigation }) => {
   };
 
   const handleSubmit = async () => {
-    if (!form.name || form.sellingPrice <= 0 || !form.category || form.currentStock < 0) { // Updated validation
-      Alert.alert('Validation', 'Please fill all required fields: Product Name, Selling Price (must be > 0), Category, and Current Stock (must be >= 0).');
+    if (!form.name || form.sellingPrice === "" || form.sellingPrice < 0 || !form.category || form.currentStock === "" || form.currentStock < 0) { 
+      Alert.alert('Validation', 'Please fill all required fields: Product Name, Selling Price (must be >= 0), Category, and Current Stock (must be >= 0).');
       return;
     }
 
@@ -214,6 +214,11 @@ const AddProductScreen = ({ navigation }) => {
       {/* Pricing */}
       <View style={styles.section}>
         <Text style={styles.sectionHeader}>Pricing & Tax</Text>
+        <View style={{ marginBottom: 15, backgroundColor: '#eff6ff', padding: 10, borderRadius: 8, borderColor: '#bfdbfe', borderWidth: 1 }}>
+           <Text style={{ fontSize: 12, color: '#1d4ed8', fontWeight: '500' }}>
+             💡 Tip for Paint/Variable Cost: If making cost varies per order, put Base Price here or 0. You can edit the final selling price at the time of billing!
+           </Text>
+        </View>
         <Text style={styles.label}>Cost Price</Text>
         <TextInput
           style={styles.input}

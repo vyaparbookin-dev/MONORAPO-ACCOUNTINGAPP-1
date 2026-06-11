@@ -328,7 +328,7 @@ const InventoryPage = () => {
   const handleAddProduct = async (e) => {
     e.preventDefault();
     try {
-      if (!formData.name || !formData.category || (showHSN && !formData.hsnCode) || !formData.costPrice || !formData.sellingPrice) {
+      if (!formData.name || !formData.category || (showHSN && !formData.hsnCode) || formData.costPrice === "" || formData.sellingPrice === "") {
         alert("Please fill all required fields" + (showHSN ? " including HSN Code" : ""));
         return;
       }
@@ -728,6 +728,11 @@ const InventoryPage = () => {
             <div className="border-t pt-6">
               <h3 className="text-lg font-semibold mb-3 text-gray-800">Pricing & Margins</h3>
               
+              <div className="mb-4">
+                <p className="text-xs text-blue-700 bg-blue-50 p-2 rounded border border-blue-200 font-medium">
+                  💡 <b>Tip for Paint/Variable Cost:</b> If making cost varies per order, put Base Price here or 0. You can edit the final selling price at the time of billing!
+                </p>
+              </div>
               {isComposition && (
                 <div className="mb-4">
                   <p className="text-xs text-orange-700 bg-orange-50 p-2 rounded border border-orange-200 font-medium">

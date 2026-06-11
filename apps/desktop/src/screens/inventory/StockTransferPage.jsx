@@ -20,7 +20,7 @@ export default function StockTransferPage() {
     items: [],
   });
 
-  const [newItem, setNewItem] = useState({ productId: "", name: "", quantity: 1 });
+  const [newItem, setNewItem] = useState({ productId: "", searchName: "", name: "", quantity: 1 });
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -60,7 +60,7 @@ export default function StockTransferPage() {
       ...prev,
       items: [...prev.items, { productId: newItem.productId, name: product.name, quantity: parseFloat(newItem.quantity) }],
     }));
-    setNewItem({ productId: "", name: "", quantity: 1 });
+    setNewItem({ productId: "", searchName: "", name: "", quantity: 1 });
   };
 
   const handleRemoveItem = (index) => {
@@ -149,11 +149,22 @@ export default function StockTransferPage() {
           <h3 className="font-semibold mb-2">Items to Transfer</h3>
           <div className="flex gap-2 items-end mb-4">
             <div className="flex-1">
-              <label className="text-xs text-gray-500">Product</label>
-              <select className="w-full border p-2 rounded" value={newItem.productId} onChange={e => setNewItem({...newItem, productId: e.target.value})}>
-                <option value="">Select Product</option>
-                {products.map(p => <option key={p._id} value={p._id}>{p.name} (In Stock: {p.currentStock})</option>)}
-              </select>
+              <label className="text-xs text-gray-500">Search Product</label>
+              <input
+                className="w-full border p-2 rounded"
+                list="product-list-transfer"
+                placeholder="Type to search product..."
+                value={newItem.searchName || ""}
+                onChange={e => {
+                  const val = e.target.value;
+                  const p = products.find(prod => prod.name === val || prod.barcode === val || prod.sku === val);
+                  if (p) setNewItem({...newItem, productId: p._id, searchName: p.name, name: p.name});
+                  else setNewItem({...newItem, searchName: val, productId: ""});
+                }}
+              />
+              <datalist id="product-list-transfer">
+                {products.map(p => <option key={p._id} value={p.name}>In Stock: {p.currentStock}</option>)}
+              </datalist>
             </div>
             <div className="w-32">
               <label className="text-xs text-gray-500">Transfer Qty</label>

@@ -127,6 +127,9 @@ export const bulkImportProducts = async (req, res) => {
     const { companyId } = req;
     const { products, mapping, startRow } = req.body; // 'startRow' add kiya taaki Marg jese A,B,C map karte waqt Header skip ho sake
 
+    console.log(`\n🚀 [DEBUG BULK IMPORT] Started for Company ID: ${companyId}`);
+    console.log(`🚀 [DEBUG BULK IMPORT] Total Raw Rows Received: ${products?.length || 0}`);
+
     if (!companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
     if (!products || !Array.isArray(products) || products.length === 0) {
       return res.status(400).json({ success: false, message: "No products provided for import" });
@@ -232,6 +235,8 @@ export const bulkImportProducts = async (req, res) => {
 
       formattedProducts.push(parsedItem);
     }
+
+    console.log(`🚀 [DEBUG BULK IMPORT] Formatted/Parsed Products Count: ${formattedProducts.length}`);
 
     if (formattedProducts.length === 0) {
       return res.status(400).json({ success: false, message: "No valid product data found. Please check your Excel mapping." });
@@ -398,6 +403,9 @@ export const bulkImportProducts = async (req, res) => {
       validatedProducts.push(item);
     }
 
+    console.log(`🚀 [DEBUG BULK IMPORT] Validated Products Count: ${validatedProducts.length}`);
+    console.log(`🚀 [DEBUG BULK IMPORT] Validation Errors: ${validationErrors.length}`, validationErrors);
+
     if (validationErrors.length > 0) {
       return res.status(400).json({ success: false, message: "Duplicate or inconsistent product identifiers detected.", errors: validationErrors });
     }
@@ -435,10 +443,14 @@ export const bulkImportProducts = async (req, res) => {
     });
 
     // Database me ek sath changes push karna
+    console.log(`🚀 [DEBUG BULK IMPORT] Executing DB bulkWrite with ${bulkOps.length} operations...`);
     const result = await Product.bulkWrite(bulkOps, { ordered: false });
+
+    console.log(`✅ [DEBUG BULK IMPORT] DB Operation Success! Inserted: ${result.insertedCount}, Updated: ${result.modifiedCount}, Matched: ${result.matchedCount}`);
 
     res.status(200).json({ 
       success: true, 
+      message: `Import complete! ${result.insertedCount || result.upsertedCount || 0} new products added, ${result.modifiedCount || 0} products updated (out of ${result.matchedCount || 0} exact matches found).` 
       message: `Import complete! ${result.insertedCount || result.upsertedCount || 0} new products added, ${result.modifiedCount || 0} products updated.` 
     });
   } catch (error) {

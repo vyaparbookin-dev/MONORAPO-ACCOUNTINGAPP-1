@@ -23,7 +23,7 @@ export default function PurchaseEntryPage() {
     finalAmount: 0,
     amountPaid: 0,
   });
-  const [newItem, setNewItem] = useState({ productId: "", name: "", quantity: 1, rate: 0 });
+  const [newItem, setNewItem] = useState({ productId: "", searchName: "", name: "", quantity: 1, rate: 0 });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -68,14 +68,14 @@ export default function PurchaseEntryPage() {
       items: [...prev.items, { productId: newItem.productId, name: product.name, quantity: newItem.quantity, rate: newItem.rate, total: itemTotal }],
       finalAmount: prev.finalAmount + itemTotal
     }));
-    setNewItem({ productId: "", name: "", quantity: 1, rate: 0 });
+    setNewItem({ productId: "", searchName: "", name: "", quantity: 1, rate: 0 });
   };
 
   const handleScanSuccess = (decodedText) => {
     setShowScanner(false);
     const product = products.find(p => p.barcode === decodedText || p.sku === decodedText);
     if (product) {
-      setNewItem({ ...newItem, productId: product._id, name: product.name, rate: product.costPrice || 0 });
+      setNewItem({ ...newItem, productId: product._id, searchName: product.name, name: product.name, rate: product.costPrice || 0 });
       // Auto-focus quantity field after scan
       setTimeout(() => document.getElementById('purchase-qty')?.focus(), 100);
     } else {
@@ -219,18 +219,27 @@ export default function PurchaseEntryPage() {
 
           <div className="flex gap-2 items-end mb-4">
             <div className="flex-1">
-              <label className="text-xs text-gray-500">Product</label>
-              <select
+              <label className="text-xs text-gray-500">Search Product</label>
+              <input
+                type="text"
                 className="w-full border p-2 rounded"
-                value={newItem.productId}
+                placeholder="Type to search product..."
+                list="product-list-purchase"
+                value={newItem.searchName || ""}
                 onChange={e => {
-                  const p = products.find(prod => prod._id === e.target.value);
-                  setNewItem({...newItem, productId: e.target.value, name: p?.name, rate: p?.costPrice || 0});
+                  const val = e.target.value;
+                  const p = products.find(prod => prod.name === val || prod.barcode === val || prod.sku === val);
+                  if (p) {
+                    setNewItem({...newItem, productId: p._id, searchName: p.name, name: p.name, rate: p.costPrice || 0});
+                    setTimeout(() => document.getElementById('purchase-qty')?.focus(), 100);
+                  } else {
+                    setNewItem({...newItem, searchName: val, productId: ""});
+                  }
                 }}
-              >
-                <option value="">Select Product</option>
-                {products.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
-              </select>
+              />
+              <datalist id="product-list-purchase">
+                {products.map(p => <option key={p._id} value={p.name}>{p.sku ? `SKU: ${p.sku}` : ''}</option>)}
+              </datalist>
             </div>
             <div className="w-24">
               <label className="text-xs text-gray-500">Qty</label>
