@@ -80,6 +80,24 @@ api.interceptors.response.use(
     const isObject = typeof payload === 'object' && payload !== null;
     const hasDataProperty = isObject && 'data' in payload;
 
+    // --- LEGACY ARRAY COMPATIBILITY HACK ---
+    // If the frontend expects an array (to call .filter) but the backend now returns
+    // a paginated object like { success: true, bills: [...] }, this automatically routes it.
+    if (isObject && !Array.isArray(payload)) {
+      const arrayKey = Object.keys(payload).find(k => Array.isArray(payload[k]));
+      if (arrayKey) {
+        ['filter', 'map', 'forEach', 'reduce', 'find', 'some', 'slice'].forEach(method => {
+          if (typeof payload[arrayKey][method] === 'function') {
+            Object.defineProperty(payload, method, {
+              value: function(...args) { return payload[arrayKey]method; },
+              enumerable: false,
+              configurable: true
+            });
+          }
+        });
+      }
+    }
+
     if (isObject && !hasDataProperty) {
       Object.defineProperty(payload, 'data', { value: payload, enumerable: false, configurable: true });
     }
