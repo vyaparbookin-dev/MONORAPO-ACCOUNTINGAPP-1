@@ -44,6 +44,10 @@ export const generateInvoicePdf = async (invoiceData, companyData, res) => {
     doc.moveDown(2);
     doc.fontSize(12).text(`Subtotal: ${invoiceData.total.toFixed(2)}`, { align: 'right' });
     doc.text(`Tax: ${invoiceData.tax.toFixed(2)}`, { align: 'right' });
+    if (invoiceData.discount || invoiceData.discountAmount) doc.text(`Discount: -₹${(invoiceData.discount || invoiceData.discountAmount).toFixed(2)}`, { align: 'right' });
+    if (invoiceData.freightCharges) doc.text(`Freight/Transport: +₹${invoiceData.freightCharges.toFixed(2)}`, { align: 'right' });
+    if (invoiceData.packingForwardingCharges) doc.text(`P&F Charges: +₹${invoiceData.packingForwardingCharges.toFixed(2)}`, { align: 'right' });
+    if (invoiceData.laborCharges) doc.text(`Labor/Install: +₹${invoiceData.laborCharges.toFixed(2)}`, { align: 'right' });
     doc.fillColor(themeColor).fontSize(16).text(`Grand Total: ₹${invoiceData.finalAmount.toFixed(2)}`, { align: 'right' }).moveDown(2);
 
   } else if (templateType === 'minimal') {
@@ -69,6 +73,11 @@ export const generateInvoicePdf = async (invoiceData, companyData, res) => {
     });
     doc.lineWidth(1).strokeColor('#ccc').moveTo(50, y+10).lineTo(565, y+10).stroke();
     doc.moveDown(2);
+    
+    doc.fillColor('#000').fontSize(10);
+    if (invoiceData.freightCharges) doc.text(`Freight: ₹${invoiceData.freightCharges.toFixed(2)}`, { align: 'right' });
+    if (invoiceData.laborCharges) doc.text(`Labor: ₹${invoiceData.laborCharges.toFixed(2)}`, { align: 'right' });
+    
     doc.fillColor('#000').fontSize(12).text(`Total: ₹${invoiceData.finalAmount.toFixed(2)}`, { align: 'right' }).moveDown(2);
 
   } else {
@@ -141,8 +150,12 @@ export const generateInvoicePdf = async (invoiceData, companyData, res) => {
   doc.fillColor('#333')
      .fontSize(12)
      .text(`Subtotal: ${invoiceData.total.toFixed(2)}`, { align: 'right' })
-     .text(`Tax: ${invoiceData.tax.toFixed(2)}`, { align: 'right' })
-     .fillColor(themeColor)
+     .text(`Tax: ${invoiceData.tax.toFixed(2)}`, { align: 'right' });
+     if (invoiceData.discount || invoiceData.discountAmount) doc.text(`Discount: -₹${(invoiceData.discount || invoiceData.discountAmount).toFixed(2)}`, { align: 'right' });
+     if (invoiceData.freightCharges) doc.text(`Freight/Transport: +₹${invoiceData.freightCharges.toFixed(2)}`, { align: 'right' });
+     if (invoiceData.packingForwardingCharges) doc.text(`P&F Charges: +₹${invoiceData.packingForwardingCharges.toFixed(2)}`, { align: 'right' });
+     if (invoiceData.laborCharges) doc.text(`Labor/Install: +₹${invoiceData.laborCharges.toFixed(2)}`, { align: 'right' });
+  doc.fillColor(themeColor)
      .fontSize(14)
      .text(`Grand Total: ₹${invoiceData.finalAmount.toFixed(2)}`, { align: 'right' })
      .moveDown(2);

@@ -369,7 +369,7 @@ const CreateBillScreen = ({ navigation }) => {
         <View style={{ zIndex: 10, marginBottom: 10 }}>
           <TextInput
             style={styles.searchInput}
-            placeholder="Type Product Name to Search or Add Custom..."
+            placeholder="🔍 Search Product by Name or Add Custom..."
             value={currentItem.name}
             onChangeText={(text) => {
               setCurrentItem({ ...currentItem, name: text, productId: '' });

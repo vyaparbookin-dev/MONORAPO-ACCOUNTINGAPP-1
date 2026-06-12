@@ -1211,7 +1211,8 @@ export default function BillingPage() {
                     <label className="text-xs font-medium text-gray-600 mb-1 block">Qty</label>
                     <input
                       id="item-qty"
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       placeholder="Qty"
                       className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                       value={newItem.quantity}
@@ -1222,7 +1223,6 @@ export default function BillingPage() {
                         })
                       }
                       onKeyDown={(e) => handleEnterNavigation(e, 'item-unit')}
-                      min="0"
                     />
                   </div>
                   <div className="md:col-span-1">
@@ -1244,7 +1244,8 @@ export default function BillingPage() {
                     <label className="text-xs font-medium text-gray-600 mb-1 block">Rate (₹)</label>
                     <input
                       id="item-rate"
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       placeholder="Price"
                       className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                       value={newItem.rate}
@@ -1255,7 +1256,6 @@ export default function BillingPage() {
                         })
                       }
                       onKeyDown={(e) => handleEnterNavigation(e, 'submit-item')}
-                      min="0"
                     />
                     {lastRateMsg && <p className="text-[10px] text-green-700 mt-1 font-bold absolute whitespace-nowrap">{lastRateMsg}</p>}
                   </div>
@@ -1374,9 +1374,9 @@ export default function BillingPage() {
               <div className="flex justify-end items-center gap-4">
                  <label className="text-sm font-medium text-gray-700">Tax / GST (₹):</label>
                  <input 
-                   type="number" 
-                   min="0"
-                   className="w-32 px-3 py-1 border border-gray-300 rounded focus:ring-blue-500 text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                   type="text" 
+                   inputMode="decimal"
+                   className="w-32 px-3 py-1 border border-gray-300 rounded focus:ring-blue-500 text-right"
                    value={formData.tax || ""}
                    onChange={(e) => setFormData({...formData, tax: parseFloat(e.target.value) || 0})}
                    onFocus={(e) => e.target.select()}
@@ -1386,9 +1386,9 @@ export default function BillingPage() {
               <div className="flex justify-end items-center gap-4">
                  <label className="text-sm font-medium text-gray-700">Discount (₹):</label>
                  <input 
-                   type="number" 
-                   min="0"
-                   className="w-32 px-3 py-1 border border-gray-300 rounded focus:ring-blue-500 text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                   type="text" 
+                   inputMode="decimal"
+                   className="w-32 px-3 py-1 border border-gray-300 rounded focus:ring-blue-500 text-right"
                    value={formData.discount || ""}
                    onChange={(e) => setFormData({...formData, discount: parseFloat(e.target.value) || 0})}
                    onFocus={(e) => e.target.select()}
@@ -1398,9 +1398,9 @@ export default function BillingPage() {
               <div className="flex justify-end items-center gap-4">
                  <label className="text-sm font-medium text-gray-700">Freight / Transport (₹):</label>
                  <input 
-                   type="number" 
-                   min="0"
-                   className="w-32 px-3 py-1 border border-gray-300 rounded focus:ring-blue-500 text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                   type="text" 
+                   inputMode="decimal"
+                   className="w-32 px-3 py-1 border border-gray-300 rounded focus:ring-blue-500 text-right"
                    value={formData.freightCharges || ""}
                    onChange={(e) => setFormData({...formData, freightCharges: parseFloat(e.target.value) || 0})}
                    onFocus={(e) => e.target.select()}
@@ -1410,9 +1410,9 @@ export default function BillingPage() {
               <div className="flex justify-end items-center gap-4">
                  <label className="text-sm font-medium text-gray-700">Packing & Forwarding (₹):</label>
                  <input 
-                   type="number" 
-                   min="0"
-                   className="w-32 px-3 py-1 border border-gray-300 rounded focus:ring-blue-500 text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                   type="text" 
+                   inputMode="decimal"
+                   className="w-32 px-3 py-1 border border-gray-300 rounded focus:ring-blue-500 text-right"
                    value={formData.packingForwardingCharges || ""}
                    onChange={(e) => setFormData({...formData, packingForwardingCharges: parseFloat(e.target.value) || 0})}
                    onFocus={(e) => e.target.select()}
@@ -1422,9 +1422,9 @@ export default function BillingPage() {
               <div className="flex justify-end items-center gap-4">
                  <label className="text-sm font-medium text-gray-700">Labor / Installation (₹):</label>
                  <input 
-                   type="number" 
-                   min="0"
-                   className="w-32 px-3 py-1 border border-gray-300 rounded focus:ring-blue-500 text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                   type="text" 
+                   inputMode="decimal"
+                   className="w-32 px-3 py-1 border border-gray-300 rounded focus:ring-blue-500 text-right"
                    value={formData.laborCharges || ""}
                    onChange={(e) => setFormData({...formData, laborCharges: parseFloat(e.target.value) || 0})}
                    onFocus={(e) => e.target.select()}

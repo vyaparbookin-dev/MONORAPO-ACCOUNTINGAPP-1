@@ -8,8 +8,13 @@ export default class InvoiceModel {
     totalAmount = 0,
     gstTotal = 0,
     discount = 0,
+    freightCharges = 0,
+    laborCharges = 0,
+    packingForwardingCharges = 0,
     billType = "GST",
-    createdAt
+    status = "draft",
+    dueDate,
+    createdAt,
   }) {
     this.id = id;
     this.invoiceNo = invoiceNo;
@@ -19,7 +24,12 @@ export default class InvoiceModel {
     this.totalAmount = totalAmount;
     this.gstTotal = gstTotal;
     this.discount = discount;
+    this.freightCharges = freightCharges;
+    this.laborCharges = laborCharges;
+    this.packingForwardingCharges = packingForwardingCharges;
     this.billType = billType;
+    this.status = status;
+    this.dueDate = dueDate;
     this.createdAt = createdAt;
   }
 }
