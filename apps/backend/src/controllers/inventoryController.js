@@ -1,12 +1,29 @@
 import Product from "../model/product.js";
 import StockAdjustment from "../model/stockAdjustment.js";
 import mongoose from "mongoose";
+import { z } from "zod";
 import crypto from "crypto";
 import { Parser } from "json2csv";
 import Category from "../model/category.js";
 import SubCategory from "../model/subCategory.js";
 import Brand from "../model/brand.js";
 import Unit from "../model/unit.js";
+
+// Zod schema for robust validation
+const productSchema = z.object({
+  name: z.string().min(1, "Product name is required"),
+  category: z.string().min(1, "Category is required"),
+  unit: z.string().min(1, "Unit is required"),
+  brand: z.string().optional(),
+  hsnCode: z.string().optional(), // HSN code is now optional
+  sku: z.string().optional(),
+  barcode: z.string().optional(),
+  notes: z.string().optional(),
+  costPrice: z.number().min(0, "Cost price must be non-negative"),
+  sellingPrice: z.number().min(0, "Selling price must be non-negative"),
+  currentStock: z.number().optional(),
+  minimumStock: z.number().optional(),
+}).strict(); // strict() ensures no extra properties are allowed
 
 export const addPurchaseEntry = async (req, res) => {
   try {
@@ -69,16 +86,15 @@ export const addProduct = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const {
-      name, category, subCategory, costPrice, sellingPrice, unit, stock, currentStock
-    } = req.body;
+    const validationResult = productSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({ success: false, errors: validationResult.error.errors });
+    }
 
-    // Validation
-    if (!name) { return res.status(400).json({ success: false, message: "Product name is required" }); }
+    const { name, category, subCategory, costPrice, sellingPrice, unit, stock, currentStock } = validationResult.data;
 
     // Check if product already exists (Smart detection based on Name + Category + SubCategory)
     const existingProduct = await Product.findOne({ 
-      name, 
       category: category || "General", 
       subCategory: subCategory || "", 
       companyId: req.companyId 

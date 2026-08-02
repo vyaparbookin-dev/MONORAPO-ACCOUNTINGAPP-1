@@ -84,12 +84,14 @@ const AddProductScreen = ({ navigation }) => {
   };
 
   const handleSubmit = async () => {
-    if (!form.name || form.sellingPrice === "" || form.sellingPrice < 0 || !form.category || form.currentStock === "" || form.currentStock < 0) { 
-      Alert.alert('Validation', 'Please fill all required fields: Product Name, Selling Price (must be >= 0), Category, and Current Stock (must be >= 0).');
+    if (loading) return; // Prevent double submission
+    if (!form.name || !form.category || form.sellingPrice === "" || form.sellingPrice < 0) { 
+      Alert.alert('Validation', 'Please fill all required fields: Product Name, Selling Price (must be >= 0), and Category.');
       return;
     }
 
     let cleanName = form.name.trim();
+    
     const extras = [];
     const nameLower = cleanName.toLowerCase();
     
@@ -103,6 +105,11 @@ const AddProductScreen = ({ navigation }) => {
 
     setLoading(true);
     try {
+      const payload = {
+        ...form,
+        name: cleanName,
+        hsnCode: form.hsnCode || undefined, // Send undefined if empty
+      };
       // 1. Offline First: Local SQLite Database me product save karein
       const localResult = await addProductLocal({
         ...form,
@@ -119,7 +126,7 @@ const AddProductScreen = ({ navigation }) => {
       syncQueue.enqueue({
         method: 'post',
         url: '/inventory',
-        data: { ...form, name: cleanName }
+        data: payload
       });
 
       Alert.alert('Success', 'Product added successfully!');

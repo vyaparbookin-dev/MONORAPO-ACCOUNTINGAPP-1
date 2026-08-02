@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import api from '../../services/Api';
+import { getData } from '../../services/ApiService';
 
 export default function CategoryAnalyticsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
@@ -26,20 +26,20 @@ export default function CategoryAnalyticsScreen({ navigation }) {
     try {
       setLoading(true);
       const [invRes, catRes, subCatRes, brandRes] = await Promise.all([
-        api.get("/api/inventory").catch(() => ({ data: { products: [] } })),
-        api.get("/api/category").catch(() => ({ data: { categories: [] } })),
-        api.get("/api/subcategory").catch(() => ({ data: { subCategories: [] } })),
-        api.get("/api/brand").catch(() => ({ data: { brands: [] } }))
+        getData("/inventory").catch(() => ({ products: [] })),
+        getData("/category").catch(() => ({ categories: [] })),
+        getData("/subcategory").catch(() => ({ subCategories: [] })),
+        getData("/brand").catch(() => ({ brands: [] }))
       ]);
 
-      const products = invRes.data?.products || invRes.data || [];
+      const products = invRes.products || (Array.isArray(invRes) ? invRes : []);
       const safe = Array.isArray(products) ? products : [];
       setInventory(safe);
 
       const masters = {
-        category: (catRes.data?.categories || catRes.data || []).map(c => c.name).filter(Boolean),
-        subCategory: (subCatRes.data?.subCategories || subCatRes.data || []).map(c => c.name).filter(Boolean),
-        brand: (brandRes.data?.brands || brandRes.data || []).map(c => c.name).filter(Boolean)
+        category: (catRes.categories || (Array.isArray(catRes) ? catRes : [])).map(c => c.name).filter(Boolean),
+        subCategory: (subCatRes.subCategories || (Array.isArray(subCatRes) ? subCatRes : [])).map(c => c.name).filter(Boolean),
+        brand: (brandRes.brands || (Array.isArray(brandRes) ? brandRes : [])).map(c => c.name).filter(Boolean)
       };
       setMasterLists(masters);
 

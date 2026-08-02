@@ -3,7 +3,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 
 import BillListScreen from '../screens/billing/BillListScreen';
 import CreateBillScreen from '../screens/billing/CreateBillScreen';
-import BillDetailscreen from '../screens/billing/BillDetailscreen';
+import BillDetailScreen from '../screens/billing/BillDetailscreen';
 import ImportBillScreen from '../screens/billing/ImportBillScreen';
 import NongstBillingScreen from '../screens/billing/NongstBillingScreen';
 import ThirdPartyDispatchBilling from '../screens/billing/ThirdPartyDispatchBilling';
@@ -20,7 +20,7 @@ export default function BillingNavigator() {
     <Stack.Navigator screenOptions={{ headerShown: true }}>
       <Stack.Screen name="BillList" component={BillListScreen} options={{ title: 'Invoices' }} />
       <Stack.Screen name="CreateBill" component={CreateBillScreen} options={{ title: 'New Invoice' }} />
-      <Stack.Screen name="BillDetail" component={BillDetailscreen} options={{ title: 'Invoice Details' }} />
+      <Stack.Screen name="BillDetail" component={BillDetailScreen} options={{ title: 'Invoice Details' }} />
       <Stack.Screen name="ImportBill" component={ImportBillScreen} />
       <Stack.Screen name="NonGSTBilling" component={NongstBillingScreen} />
       <Stack.Screen name="ThirdPartyBilling" component={ThirdPartyDispatchBilling} />

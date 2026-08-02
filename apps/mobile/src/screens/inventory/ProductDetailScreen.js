@@ -1,25 +1,48 @@
-import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, StyleSheet, Platform } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, StyleSheet, Platform, ActivityIndicator } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
+import { getData, put } from '../../services/ApiService';
 
-const ProductDetailScreen = () => {
-  const [product, setProduct] = useState({
-    name: "",
-    code: "",
-    price: "",
-    stock: "",
-  });
+const ProductDetailScreen = ({ route, navigation }) => {
+  const { productId } = route.params;
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const fetchProduct = async () => {
+      try {
+        const res = await getData(`/inventory/${productId}`);
+        setProduct(res.product);
+      } catch (error) {
+        Alert.alert("Error", "Failed to load product details.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProduct();
+  }, [productId]);
 
   const handleSave = () => {
-    if (!product.name || !product.price) return Alert.alert("Fill all details");
-    Alert.alert("Product Saved", `${product.name} added successfully`);
+    if (!product.name || !product.sellingPrice) return Alert.alert("Validation", "Product name and price are required.");
+    setSaving(true);
+    put(`/inventory/${productId}`, product)
+      .then(() => {
+        Alert.alert("Success", "Product updated successfully!");
+        navigation.goBack();
+      })
+      .catch(err => Alert.alert("Error", err.message || "Failed to update product."))
+      .finally(() => setSaving(false));
   };
+
+  if (loading) return <ActivityIndicator size="large" color="#4338ca" style={{ flex: 1 }} />;
+  if (!product) return <View style={styles.container}><Text style={{ textAlign: 'center', marginTop: 20 }}>Product not found.</Text></View>;
 
   return (
     <View style={styles.container}>
       <View style={styles.headerContainer}>
         <Text style={styles.headerTitle}>Product Details</Text>
-        <Text style={styles.headerSubtitle}>View or update item info</Text>
+        <Text style={styles.headerSubtitle}>View or update item information</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -27,7 +50,6 @@ const ProductDetailScreen = () => {
           <Text style={styles.label}>Product Name *</Text>
           <TextInput
             style={styles.input}
-            placeholder="e.g. Wireless Mouse"
             value={product.name}
             onChangeText={(text) => setProduct({ ...product, name: text })}
           />
@@ -35,31 +57,28 @@ const ProductDetailScreen = () => {
           <Text style={styles.label}>Product Code / SKU</Text>
           <TextInput
             style={styles.input}
-            placeholder="e.g. SKU-1234"
-            value={product.code}
-            onChangeText={(text) => setProduct({ ...product, code: text })}
+            value={product.sku}
+            onChangeText={(text) => setProduct({ ...product, sku: text })}
           />
           
-          <Text style={styles.label}>Price (₹) *</Text>
+          <Text style={styles.label}>Selling Price (₹) *</Text>
           <TextInput
             style={styles.input}
-            placeholder="0.00"
             keyboardType="numeric"
-            value={product.price}
-            onChangeText={(text) => setProduct({ ...product, price: text })}
+            value={String(product.sellingPrice)}
+            onChangeText={(text) => setProduct({ ...product, sellingPrice: text })}
           />
           
           <Text style={styles.label}>Current Stock</Text>
           <TextInput
             style={styles.input}
-            placeholder="0"
             keyboardType="numeric"
-            value={product.stock}
-            onChangeText={(text) => setProduct({ ...product, stock: text })}
+            value={String(product.currentStock)}
+            onChangeText={(text) => setProduct({ ...product, currentStock: text })}
           />
 
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-            <Text style={styles.saveBtnText}>Save Product</Text>
+          <TouchableOpacity style={[styles.saveBtn, saving && styles.btnDisabled]} onPress={handleSave} disabled={saving}>
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Update Product</Text>}
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -77,7 +96,8 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
   input: { backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, paddingHorizontal: 15, height: 55, fontSize: 16, color: '#111827', marginBottom: 20 },
   saveBtn: { backgroundColor: '#4338ca', paddingVertical: 16, borderRadius: 12, alignItems: 'center', shadowColor: '#4338ca', shadowOpacity: 0.3, shadowRadius: 4, elevation: 4, marginTop: 10 },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 }
+  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
+  btnDisabled: { backgroundColor: '#9ca3af' },
 });
 
 export default ProductDetailScreen;

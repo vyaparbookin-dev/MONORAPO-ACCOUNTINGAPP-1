@@ -12,12 +12,14 @@
   "scripts": {
     "start": "npm run dev",
     "dev": "npm run dev --workspaces --if-present",
-    "mobile": "npm run start --workspace=apps/mobile -- --offline --clear",
+    "mobile": "npm run start --workspace=apps/mobile -- --lan --clear",
     "desktop": "npm run electron:dev --workspace=apps/desktop",
     "web": "npm run dev --workspace=apps/web",
     "backend": "npm run dev --workspace=apps/backend",
     "dev:all": "npx concurrently \"npm run backend\" \"npm run web\" \"npm run mobile\"",
-    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules"
+    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules",
+    "build:desktop": "npm run build --workspace=apps/desktop",
+    "build:web": "npm run build --workspace=apps/web"
   },
   "dependencies": {
     "18": "^0.0.0",

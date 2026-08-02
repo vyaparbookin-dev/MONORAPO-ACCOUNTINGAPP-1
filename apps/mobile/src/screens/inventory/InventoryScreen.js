@@ -29,7 +29,7 @@ const InventoryScreen = ({ navigation }) => {
       // 2. Background Sync: Chupchap Cloud se naya data laakar list update karein
       const res = await getData('/inventory').catch(() => null);
       if (res) {
-        setItems(res.data?.items || res.data?.products || (Array.isArray(res.data) ? res.data : []));
+        setItems(res.products || (Array.isArray(res) ? res : []));
       }
     } catch (err) {
       console.error("Error fetching inventory:", err);
@@ -47,18 +47,20 @@ const InventoryScreen = ({ navigation }) => {
   const filteredItems = items.filter(i => i.name?.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const renderItem = ({ item }) => (
-    <View style={styles.card}>
-      <View style={styles.iconBg}>
-        <Ionicons name="cube" size={24} color="#4338ca" />
+    <TouchableOpacity onPress={() => navigation.navigate('ProductDetail', { productId: item._id })}>
+      <View style={styles.card}>
+        <View style={styles.iconBg}>
+          <Ionicons name="cube" size={24} color="#4338ca" />
+        </View>
+        <View style={{ flex: 1, paddingHorizontal: 12 }}>
+          <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.itemStock}>Stock: <Text style={{ fontWeight: 'bold', color: (item.currentStock || 0) > (item.minimumStock || 10) ? '#16a34a' : '#dc2626' }}>{item.currentStock || 0}</Text></Text>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={styles.price}>₹{item.sellingPrice || 0}</Text>
+        </View>
       </View>
-      <View style={{ flex: 1, paddingHorizontal: 12 }}>
-        <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.itemStock}>Stock: <Text style={{ fontWeight: 'bold', color: (item.stock || item.quantity) > 0 ? '#16a34a' : '#dc2626' }}>{item.stock || item.quantity || 0}</Text></Text>
-      </View>
-      <View style={{ alignItems: 'flex-end' }}>
-        <Text style={styles.price}>₹{item.price || item.sellingPrice || 0}</Text>
-      </View>
-    </View>
+    </TouchableOpacity>
   );
 
   return (

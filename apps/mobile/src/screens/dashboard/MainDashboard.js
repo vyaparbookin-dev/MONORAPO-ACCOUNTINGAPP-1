@@ -1,14 +1,16 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useContext } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, Alert, FlatList, Platform, ActivityIndicator, RefreshControl } from 'react-native';
 import { Ionicons, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import CalculatorModal from '../../components/CalculatorModal';
 import { getData } from '../../services/ApiService';
 import { getBillsLocal, getProductsLocal, getPartiesLocal } from '../../../db'; 
+import { CompanyContext } from '../../context/CompanyContext';
 
 export default function MainDashboard({ navigation }) {
   const [calculatorVisible, setCalculatorVisible] = useState(false);
   const [recentBills, setRecentBills] = useState([]);
+  const { selectedCompany } = useContext(CompanyContext);
   const [summary, setSummary] = useState({ toCollect: 0, toPay: 0, stockValue: 0, totalBalance: 0, lowStockCount: 0, recentSales: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -81,9 +83,11 @@ export default function MainDashboard({ navigation }) {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <View style={styles.businessNameContainer}>
-            <Text style={styles.businessName}>GANESH TRADERS <Ionicons name="chevron-down" size={16} color="#FFF" /></Text>
-          </View>
+          <TouchableOpacity style={styles.businessNameContainer} onPress={() => navigation.navigate('CompanyList')}>
+            <Text style={styles.businessName} numberOfLines={1}>
+              {selectedCompany?.name || 'Select Company'} <Ionicons name="chevron-down" size={16} color="#FFF" />
+            </Text>
+          </TouchableOpacity>
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity style={styles.iconButton} onPress={() => setCalculatorVisible(true)}>

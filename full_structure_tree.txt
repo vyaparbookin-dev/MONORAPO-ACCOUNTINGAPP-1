@@ -1,0 +1,871 @@
+📦 Project Structure: monorapo-accountingapp-1
+
+├── .brain
+│   ├── changes.json
+│   ├── chat.json
+│   └── metrics.json
+├── .gitignore
+├── .vs
+│   ├── monorapo-accountingapp-1
+│   │   └── CopilotIndices
+│   │       └── 18.3.511.5503
+│   │           ├── CodeChunks.db
+│   │           └── SemanticSymbols.db
+│   ├── monorapo-accountingapp-1.slnx
+│   │   ├── FileContentIndex
+│   │   │   └── edb23c90-4ecd-4b9f-bf11-95f6062c91df.vsidx
+│   │   └── v18
+│   │       ├── .wsuo
+│   │       └── DocumentLayout.json
+│   ├── ProjectSettings.json
+│   ├── slnx.sqlite
+│   └── VSWorkspaceState.json
+├── apps
+│   ├── backend
+│   │   ├── backendsrczipfolder.zip
+│   │   ├── package.json
+│   │   ├── seed.js
+│   │   ├── server.js
+│   │   └── src
+│   │       ├── config
+│   │       │   ├── db.js
+│   │       │   ├── firebase.js
+│   │       │   ├── jwt.js
+│   │       │   └── otpservice.js
+│   │       ├── controllers
+│   │       │   ├── agingController.js
+│   │       │   ├── approvalController.js
+│   │       │   ├── attendanceController.js
+│   │       │   ├── authController.js
+│   │       │   ├── b2bController.js
+│   │       │   ├── bankRecController.js
+│   │       │   ├── billingController.js
+│   │       │   ├── branchController.js
+│   │       │   ├── brandController.js
+│   │       │   ├── bulkDelete.txt
+│   │       │   ├── categoryController.js
+│   │       │   ├── cloudController.js
+│   │       │   ├── companyController.js
+│   │       │   ├── consolidatedStatementController.js
+│   │       │   ├── coupanController.js
+│   │       │   ├── daybookController.js
+│   │       │   ├── eWayBillController.js
+│   │       │   ├── expanceController.js
+│   │       │   ├── fixedAssetController.js
+│   │       │   ├── gstController.js
+│   │       │   ├── inventoryController.js
+│   │       │   ├── laterpadController.js
+│   │       │   ├── membershipController.js
+│   │       │   ├── notificationController.js
+│   │       │   ├── partyController.js
+│   │       │   ├── paymentController.js
+│   │       │   ├── purchaseController.js
+│   │       │   ├── purchaseOrderController.js
+│   │       │   ├── reminderController.js
+│   │       │   ├── reportController.js
+│   │       │   ├── returnController.js
+│   │       │   ├── salaryController.js
+│   │       │   ├── schemeController.js
+│   │       │   ├── securityController.js
+│   │       │   ├── settingsController.js
+│   │       │   ├── staffController.js
+│   │       │   ├── stockTransferController.js
+│   │       │   ├── subCategoryController.js
+│   │       │   ├── tdsTcsController.js
+│   │       │   ├── unitController.js
+│   │       │   ├── userController.js
+│   │       │   └── warehouseController.js
+│   │       ├── middleware
+│   │       │   ├── authmiddleware.js
+│   │       │   ├── errormiddleware.js
+│   │       │   ├── offlinesyncmiddleware.js
+│   │       │   ├── roleMiddleware.js
+│   │       │   └── validateData.js
+│   │       ├── model
+│   │       │   ├── attendance.js
+│   │       │   ├── b2bDocument.js
+│   │       │   ├── bankStatement.js
+│   │       │   ├── bill.js
+│   │       │   ├── branch.js
+│   │       │   ├── brand.js
+│   │       │   ├── category.js
+│   │       │   ├── company.js
+│   │       │   ├── ConsolidatedCreditStatement.js
+│   │       │   ├── coupan.js
+│   │       │   ├── eWayBill.js
+│   │       │   ├── expance.js
+│   │       │   ├── fixedAsset.js
+│   │       │   ├── laterpad.js
+│   │       │   ├── membership.js
+│   │       │   ├── notification.js
+│   │       │   ├── party.js
+│   │       │   ├── PartyTransaction.js
+│   │       │   ├── product.js
+│   │       │   ├── purchase.js
+│   │       │   ├── purchaseOrder.js
+│   │       │   ├── report.js
+│   │       │   ├── return.js
+│   │       │   ├── salary.js
+│   │       │   ├── scheme.js
+│   │       │   ├── schemeusage.js
+│   │       │   ├── securitylog.js
+│   │       │   ├── staff.js
+│   │       │   ├── StaffTransaction.js
+│   │       │   ├── stockAdjustment.js
+│   │       │   ├── stockTransfer.js
+│   │       │   ├── subCategory.js
+│   │       │   ├── tdsTcs.js
+│   │       │   ├── unit.js
+│   │       │   ├── user.js
+│   │       │   └── warehouse.js
+│   │       ├── routes
+│   │       │   ├── agingRoutes.js
+│   │       │   ├── approvalRoutes.js
+│   │       │   ├── attendanceRoutes.js
+│   │       │   ├── authRoutes.js
+│   │       │   ├── b2bRoutes.js
+│   │       │   ├── bankRecRoutes.js
+│   │       │   ├── billingRoutes.js
+│   │       │   ├── branchRoutes.js
+│   │       │   ├── brandRoutes.js
+│   │       │   ├── categoryRoutes.js
+│   │       │   ├── cloudRoutes.js
+│   │       │   ├── companyRoutes.js
+│   │       │   ├── consolidatedStatementRoutes.js
+│   │       │   ├── coupanRoutes.js
+│   │       │   ├── daybookRoutes.js
+│   │       │   ├── eWayBillRoutes.js
+│   │       │   ├── expanceRoutes.js
+│   │       │   ├── fixedAssetRoutes.js
+│   │       │   ├── gstRoutes.js
+│   │       │   ├── inventoryRoutes.js
+│   │       │   ├── laterpadRoutes.js
+│   │       │   ├── licensingRoutes.js
+│   │       │   ├── membershipRoutes.js
+│   │       │   ├── notificationRoutes.js
+│   │       │   ├── partyRoutes.js
+│   │       │   ├── paymentRoutes.js
+│   │       │   ├── purchaseOrderRoutes.js
+│   │       │   ├── purchaseRoutes.js
+│   │       │   ├── reminderRoutes.js
+│   │       │   ├── reportRoutes.js
+│   │       │   ├── returnRoutes.js
+│   │       │   ├── salaryRoutes.js
+│   │       │   ├── schemeRoutes.js
+│   │       │   ├── securityRoutes.js
+│   │       │   ├── settingsRoutes.js
+│   │       │   ├── staffRoutes.js
+│   │       │   ├── stockTransferRoutes.js
+│   │       │   ├── subCategoryRoutes.js
+│   │       │   ├── syncRoutes.js
+│   │       │   ├── tallyRoutes.js
+│   │       │   ├── tdsTcsRoutes.js
+│   │       │   ├── unitRoutes.js
+│   │       │   ├── userRoutes.js
+│   │       │   ├── warehouseRoutes.js
+│   │       │   └── whatsappRoutes.js
+│   │       ├── services
+│   │       │   └── whatsappService.js
+│   │       └── utils
+│   │           ├── barcodeGenerator.js
+│   │           ├── cronJobs.js
+│   │           ├── emailSender.js
+│   │           ├── fileUploader.js
+│   │           ├── index.js
+│   │           ├── invoicePdfGenerator.js
+│   │           ├── keyManager.js
+│   │           ├── logger.js
+│   │           ├── paymentUtils.js
+│   │           ├── pdfGenerator.js
+│   │           ├── pdfParser.JS
+│   │           ├── schemeParser.js
+│   │           ├── taxCalculator.js
+│   │           └── validators.js
+│   ├── desktop
+│   │   ├── desktopsrczipfolder.zip
+│   │   ├── index.html
+│   │   ├── main.cjs
+│   │   ├── package.json
+│   │   ├── postcss.config.js
+│   │   ├── preload.js
+│   │   ├── public
+│   │   ├── src
+│   │   │   ├── app.jsx
+│   │   │   ├── company
+│   │   │   ├── components
+│   │   │   │   ├── BarcodeScanner.jsx
+│   │   │   │   ├── Button.jsx
+│   │   │   │   ├── CloudSyncToggel.jsx
+│   │   │   │   ├── DashboardLayout.jsx
+│   │   │   │   ├── Datatable.jsx
+│   │   │   │   ├── ErrorBoundary.jsx
+│   │   │   │   ├── Footer.jsx
+│   │   │   │   ├── GoogleDriveBackup.jsx
+│   │   │   │   ├── ImportHistoryManager.jsx
+│   │   │   │   ├── Loader.jsx
+│   │   │   │   ├── ReportCard.jsx
+│   │   │   │   ├── SecurityTracker.jsx
+│   │   │   │   ├── UdharReminder.jsx
+│   │   │   │   └── WhatsappSender.jsx
+│   │   │   ├── contexts
+│   │   │   │   ├── CompanyContext.jsx
+│   │   │   │   └── ThemeContext.jsx
+│   │   │   ├── index.css
+│   │   │   ├── index.jsx
+│   │   │   ├── main
+│   │   │   │   ├── database
+│   │   │   │   │   ├── db.js
+│   │   │   │   │   └── schema.js
+│   │   │   │   ├── ipc
+│   │   │   │   │   └── handlers.js
+│   │   │   │   └── services
+│   │   │   │       └── SyncService.js
+│   │   │   ├── navigation
+│   │   │   │   ├── AppNavigator.jsx
+│   │   │   │   └── WebRoutes.jsx
+│   │   │   ├── pages
+│   │   │   │   └── setting
+│   │   │   │       ├── appsetting.jsx
+│   │   │   │       ├── cloudSync.jsx
+│   │   │   │       ├── profile.jsx
+│   │   │   │       ├── securityLog.jsx
+│   │   │   │       ├── settings.jsx
+│   │   │   │       └── VerifyOtp.jsx
+│   │   │   ├── screens
+│   │   │   │   ├── Auth
+│   │   │   │   │   ├── ForgotPasswordScreen.jsx
+│   │   │   │   │   ├── KeyreCoveryPage.jsx
+│   │   │   │   │   ├── LoginScreen.jsx
+│   │   │   │   │   └── RegisterScreen.jsx
+│   │   │   │   ├── Billing
+│   │   │   │   │   ├── B2bDocumentListPage.jsx
+│   │   │   │   │   ├── BillDetailPage.jsx
+│   │   │   │   │   ├── BillingPage.jsx
+│   │   │   │   │   ├── BillListPage.jsx
+│   │   │   │   │   ├── CreateB2bDocumentPage.jsx
+│   │   │   │   │   ├── FastPOSPage.jsx
+│   │   │   │   │   ├── ImportBillPage.jsx
+│   │   │   │   │   ├── ParseBillFromImage.jsx
+│   │   │   │   │   ├── SalesReturnPage.jsx
+│   │   │   │   │   └── ScheemApplyModel.jsx
+│   │   │   │   ├── company
+│   │   │   │   │   ├── AddCompanyPage.jsx
+│   │   │   │   │   ├── BranchPage.jsx
+│   │   │   │   │   ├── CompanyListPage.jsx
+│   │   │   │   │   └── CompanyPage.jsx
+│   │   │   │   ├── coupons
+│   │   │   │   │   ├── CouponListPage.jsx
+│   │   │   │   │   ├── CouponsPage.jsx
+│   │   │   │   │   └── GenerateCouponPage.jsx
+│   │   │   │   ├── Dashboard
+│   │   │   │   │   ├── ApprovalsPage.jsx
+│   │   │   │   │   └── DashboardScreen.jsx
+│   │   │   │   ├── expanses
+│   │   │   │   │   ├── AddExpansePage.jsx
+│   │   │   │   │   ├── ExpansesListPage.jsx
+│   │   │   │   │   └── ExpensesPage.jsx
+│   │   │   │   ├── inventory
+│   │   │   │   │   ├── AddProductPage.jsx
+│   │   │   │   │   ├── BulkProductPage.jsx
+│   │   │   │   │   ├── BulkUploadPage.jsx
+│   │   │   │   │   ├── CategoryAnalyticsPage.jsx
+│   │   │   │   │   ├── CategoryManagementPage.jsx
+│   │   │   │   │   ├── InventoryPage.jsx
+│   │   │   │   │   ├── ItemMasterPage.jsx
+│   │   │   │   │   ├── ParseBillFromImage.jsx
+│   │   │   │   │   ├── ProductDetailPage.jsx
+│   │   │   │   │   ├── ProductListPage.jsx
+│   │   │   │   │   ├── PurchaseEntryPage.jsx
+│   │   │   │   │   ├── SalesReturnPage.jsx
+│   │   │   │   │   ├── SerialBatchPage.jsx
+│   │   │   │   │   ├── StockAdjustmentPage.jsx
+│   │   │   │   │   ├── StockTransferPage.jsx
+│   │   │   │   │   └── SupplierLedgerPage.jsx
+│   │   │   │   ├── laterpad
+│   │   │   │   │   ├── LaterpadlistPage.jsx
+│   │   │   │   │   └── LaterpadPage.jsx
+│   │   │   │   ├── membership
+│   │   │   │   │   ├── LoyaltyDetailPage.jsx
+│   │   │   │   │   ├── MemberShipListPage.jsx
+│   │   │   │   │   └── MembershipPage.jsx
+│   │   │   │   ├── notification
+│   │   │   │   │   ├── NotificationPage.jsx
+│   │   │   │   │   └── ReminderPage.jsx
+│   │   │   │   ├── parties
+│   │   │   │   │   └── PartiesPage.jsx
+│   │   │   │   ├── Reports
+│   │   │   │   │   ├── AgingReportPage.jsx
+│   │   │   │   │   ├── BankReconciliationPage.jsx
+│   │   │   │   │   ├── BillWiseReportPage.jsx
+│   │   │   │   │   ├── CustomerReportBuilder.jsx
+│   │   │   │   │   ├── DayBookPage.jsx
+│   │   │   │   │   ├── EWayBillPage.jsx
+│   │   │   │   │   ├── FixedAssetsPage.jsx
+│   │   │   │   │   ├── GraphicalAnalytics.jsx
+│   │   │   │   │   ├── Gstr3bReportPage.jsx
+│   │   │   │   │   ├── GstReportPage.jsx
+│   │   │   │   │   ├── ItemWiseReport.jsx
+│   │   │   │   │   ├── ItemWiseReportpage.jsx
+│   │   │   │   │   ├── PartyWiseReportPage.jsx
+│   │   │   │   │   ├── ProductGstReportPage.jsx
+│   │   │   │   │   ├── ProfitLossReport.jsx
+│   │   │   │   │   ├── ReportsPage.jsx
+│   │   │   │   │   ├── ScheemReportPage.jsx
+│   │   │   │   │   ├── SitewiseReportPage.jsx
+│   │   │   │   │   ├── SupplierLedgerPage.jsx
+│   │   │   │   │   └── TdsTcsPage.jsx
+│   │   │   │   ├── returns
+│   │   │   │   │   └── CreateReturnPage.jsx
+│   │   │   │   ├── salary
+│   │   │   │   │   ├── AddSalaryPage.jsx
+│   │   │   │   │   ├── MarkAttendancePage.jsx
+│   │   │   │   │   ├── SalaryListPage.jsx
+│   │   │   │   │   ├── SalaryPage.jsx
+│   │   │   │   │   └── StaffStatementPage.jsx
+│   │   │   │   ├── Settings
+│   │   │   │   │   ├── AppSettingPage.jsx
+│   │   │   │   │   ├── BackupRestore.jsx
+│   │   │   │   │   ├── ProfilePage.jsx
+│   │   │   │   │   ├── SecurityLogPage.jsx
+│   │   │   │   │   ├── SettingsPage.jsx
+│   │   │   │   │   ├── StaffManagementPage.jsx
+│   │   │   │   │   ├── UnitSettingsPage.jsx
+│   │   │   │   │   ├── WebPreferences.jsx
+│   │   │   │   │   └── WhatsappSettingsPage.jsx
+│   │   │   │   └── warehouse
+│   │   │   │       ├── AddWarehousePage.jsx
+│   │   │   │       └── WareHouseListPage.jsx
+│   │   │   ├── services
+│   │   │   │   ├── api.jsx
+│   │   │   │   ├── auditService.js
+│   │   │   │   └── dbService.js
+│   │   │   ├── styles
+│   │   │   │   ├── theme.jsx
+│   │   │   │   └── Webtheme.jsx
+│   │   │   └── utils
+│   │   │       ├── barcodeGenerator.jsx
+│   │   │       ├── gst.js
+│   │   │       ├── imageHandler.jsx
+│   │   │       ├── index.js
+│   │   │       └── PdfParser.jsx
+│   │   ├── tailwind.config.js
+│   │   └── vite.config.js
+│   ├── mobile
+│   │   ├── android
+│   │   │   ├── .gitignore
+│   │   │   ├── app
+│   │   │   │   ├── build.gradle
+│   │   │   │   ├── debug.keystore
+│   │   │   │   ├── proguard-rules.pro
+│   │   │   │   └── src
+│   │   │   │       ├── debug
+│   │   │   │       │   └── AndroidManifest.xml
+│   │   │   │       ├── debugOptimized
+│   │   │   │       │   └── AndroidManifest.xml
+│   │   │   │       └── main
+│   │   │   │           ├── AndroidManifest.xml
+│   │   │   │           ├── java
+│   │   │   │           │   └── com
+│   │   │   │           │       └── yourcompany
+│   │   │   │           │           └── accountingapp
+│   │   │   │           │               ├── MainActivity.kt
+│   │   │   │           │               └── MainApplication.kt
+│   │   │   │           └── res
+│   │   │   │               ├── drawable
+│   │   │   │               │   ├── ic_launcher_background.xml
+│   │   │   │               │   └── rn_edit_text_material.xml
+│   │   │   │               ├── drawable-hdpi
+│   │   │   │               │   └── splashscreen_logo.png
+│   │   │   │               ├── drawable-mdpi
+│   │   │   │               │   └── splashscreen_logo.png
+│   │   │   │               ├── drawable-xhdpi
+│   │   │   │               │   └── splashscreen_logo.png
+│   │   │   │               ├── drawable-xxhdpi
+│   │   │   │               │   └── splashscreen_logo.png
+│   │   │   │               ├── drawable-xxxhdpi
+│   │   │   │               │   └── splashscreen_logo.png
+│   │   │   │               ├── mipmap-anydpi-v26
+│   │   │   │               ├── mipmap-hdpi
+│   │   │   │               │   ├── ic_launcher.webp
+│   │   │   │               │   └── ic_launcher_foreground.webp
+│   │   │   │               ├── mipmap-mdpi
+│   │   │   │               │   ├── ic_launcher.webp
+│   │   │   │               │   └── ic_launcher_foreground.webp
+│   │   │   │               ├── mipmap-xhdpi
+│   │   │   │               │   ├── ic_launcher.webp
+│   │   │   │               │   └── ic_launcher_foreground.webp
+│   │   │   │               ├── mipmap-xxhdpi
+│   │   │   │               │   ├── ic_launcher.webp
+│   │   │   │               │   └── ic_launcher_foreground.webp
+│   │   │   │               ├── mipmap-xxxhdpi
+│   │   │   │               │   ├── ic_launcher.webp
+│   │   │   │               │   └── ic_launcher_foreground.webp
+│   │   │   │               ├── values
+│   │   │   │               │   ├── colors.xml
+│   │   │   │               │   ├── strings.xml
+│   │   │   │               │   └── styles.xml
+│   │   │   │               └── values-night
+│   │   │   │                   └── colors.xml
+│   │   │   ├── build.gradle
+│   │   │   ├── gradle
+│   │   │   │   └── wrapper
+│   │   │   │       ├── gradle-wrapper.jar
+│   │   │   │       └── gradle-wrapper.properties
+│   │   │   ├── gradle.properties
+│   │   │   ├── gradlew
+│   │   │   ├── gradlew.bat
+│   │   │   └── settings.gradle
+│   │   ├── app.js
+│   │   ├── app.json
+│   │   ├── assets
+│   │   │   ├── adaptive-icon.png
+│   │   │   ├── fevicon.png
+│   │   │   ├── icon.png
+│   │   │   └── splash.png
+│   │   ├── babel.config.js
+│   │   ├── db.js
+│   │   ├── ignoreWarnings.js
+│   │   ├── metro.config.js
+│   │   ├── mobilesrczipfolder.zip
+│   │   ├── package.json
+│   │   └── src
+│   │       ├── components
+│   │       │   ├── Button.js
+│   │       │   ├── CalculatorModal.js
+│   │       │   ├── Card.js
+│   │       │   ├── CloudSyncToggle.js
+│   │       │   ├── Footer.js
+│   │       │   ├── Header.js
+│   │       │   ├── ImportHistoryManager.js
+│   │       │   ├── index.js
+│   │       │   ├── Loader.js
+│   │       │   ├── ReportCard.js
+│   │       │   ├── UdharReminder.js
+│   │       │   └── WhatsappSender.js
+│   │       ├── context
+│   │       │   └── AuthContext.js
+│   │       ├── hooks
+│   │       │   └── useOfflineMode.js
+│   │       ├── navigation
+│   │       │   ├── AppNavigator.js
+│   │       │   ├── BillingNavigator.js
+│   │       │   ├── InventoryNavigator.js
+│   │       │   ├── MainTabNavigator.js
+│   │       │   ├── ReportNavigator.js
+│   │       │   └── SettingsNavigator.js
+│   │       ├── screens
+│   │       │   ├── auth
+│   │       │   │   ├── ForgotPasswordscreen.js
+│   │       │   │   ├── KeyrecoveryScreen.js
+│   │       │   │   ├── LoginScreen.js
+│   │       │   │   └── RegisterScreen.js
+│   │       │   ├── billing
+│   │       │   │   ├── B2bDocumentListScreen.js
+│   │       │   │   ├── BillDetailscreen.js
+│   │       │   │   ├── BillListScreen.js
+│   │       │   │   ├── ConsolidatedStatementDetail.js
+│   │       │   │   ├── ConsolidateUdharScreen.js
+│   │       │   │   ├── CreateB2bDocumentScreen.js
+│   │       │   │   ├── CreateBillScreen.js
+│   │       │   │   ├── ImportBillScreen.js
+│   │       │   │   ├── MultiSiteBillingScreen.js
+│   │       │   │   ├── NongstBillingScreen.js
+│   │       │   │   ├── ReviewParsedBillScreen.js
+│   │       │   │   ├── SchemeApplyModel.js
+│   │       │   │   └── ThirdPartyDispatchBilling.js
+│   │       │   ├── company
+│   │       │   │   ├── AddCompanyScreen.js
+│   │       │   │   ├── BranchScreen.js
+│   │       │   │   ├── CompanyListScreen.js
+│   │       │   │   └── FeatureControlScreen.js
+│   │       │   ├── coupons
+│   │       │   │   ├── AddCouponScreen.js
+│   │       │   │   └── couponListScreen.js
+│   │       │   ├── dashboard
+│   │       │   │   ├── ApprovalsScreen.js
+│   │       │   │   └── MainDashboard.js
+│   │       │   ├── expenses
+│   │       │   │   ├── AddExpenseScreen.js
+│   │       │   │   └── ExpensesListScreen.js
+│   │       │   ├── inventory
+│   │       │   │   ├── AddProductScreen.js
+│   │       │   │   ├── BulkUploadScreen.js
+│   │       │   │   ├── CategoryAnalyticsScreen.js
+│   │       │   │   ├── InventoryScreen.js
+│   │       │   │   ├── ProductDetailScreen.js
+│   │       │   │   ├── ProductImageUpload.js
+│   │       │   │   ├── ProductListScreen.js
+│   │       │   │   ├── PurchaseEntryScreen.js
+│   │       │   │   ├── QRCodeGenerator.js
+│   │       │   │   ├── SerialBatchScreen.js
+│   │       │   │   ├── StockAdjustmentScreen.js
+│   │       │   │   ├── StockThresholdScreen.js
+│   │       │   │   ├── StockTransferScreen.js
+│   │       │   │   └── SupplierLedgerScreen.js
+│   │       │   ├── laterpad
+│   │       │   │   ├── AddLaterpadScreen.js
+│   │       │   │   └── LaterpadListScreen.js
+│   │       │   ├── membership
+│   │       │   │   ├── LoyaltyDetailScreen.js
+│   │       │   │   └── MembershipListScreen.js
+│   │       │   ├── notification
+│   │       │   │   └── ReminderScreen.js
+│   │       │   ├── parties
+│   │       │   │   ├── AddPartyScreen.js
+│   │       │   │   ├── PartiesScreen.js
+│   │       │   │   ├── PartyStatementScreen.js
+│   │       │   │   ├── PaymentEntryScreen.js
+│   │       │   │   └── ReviewParsedStatementScreen.js
+│   │       │   ├── report
+│   │       │   │   ├── AgingReportScreen.js
+│   │       │   │   ├── BalanceSheetReport.js
+│   │       │   │   ├── BankReconciliationScreen.js
+│   │       │   │   ├── BillWiseReport.js
+│   │       │   │   ├── CashFlowReportScreen.js
+│   │       │   │   ├── DailySellPurchaseReport.js
+│   │       │   │   ├── DayBookScreen.js
+│   │       │   │   ├── EwayBillScreen.js
+│   │       │   │   ├── ExpenseReportScreen.js
+│   │       │   │   ├── FixedAssetsScreen.js
+│   │       │   │   ├── Gstr3bReportScreen.js
+│   │       │   │   ├── GstReportScreen.js
+│   │       │   │   ├── InventoryReportScreen.js
+│   │       │   │   ├── ItemWiseReport.js
+│   │       │   │   ├── PartyWiseReport.js
+│   │       │   │   ├── ProfitLossReport.js
+│   │       │   │   ├── PurchaseReturnReport.js
+│   │       │   │   ├── ReportScreen.js
+│   │       │   │   ├── ReportsMenuScreen.js
+│   │       │   │   ├── SalesReportScreen.js
+│   │       │   │   ├── SalesReturnReport.js
+│   │       │   │   ├── SchemeReport.js
+│   │       │   │   ├── SitewiseReportScreen.js
+│   │       │   │   ├── StockalertReport.js
+│   │       │   │   └── TdsTcsScreen.js
+│   │       │   ├── returns
+│   │       │   │   └── CreateReturnPage.js
+│   │       │   ├── salary
+│   │       │   │   ├── AddSalaryScreen.js
+│   │       │   │   ├── AddStaffScreen.js
+│   │       │   │   ├── MarkAttendanceScreen.js
+│   │       │   │   ├── SalaryListScreen.js
+│   │       │   │   └── StaffStatementScreen.js
+│   │       │   ├── settings
+│   │       │   │   ├── AppSettingsScreen.js
+│   │       │   │   ├── BackupRestoreScreen.js
+│   │       │   │   ├── CloudsyncSetting.js
+│   │       │   │   ├── MoreSettingsScreen.js
+│   │       │   │   ├── NotificationSettings.js
+│   │       │   │   ├── ProfileScreen.js
+│   │       │   │   ├── SecurityLogsScreen.js
+│   │       │   │   ├── SettingsScreen.js
+│   │       │   │   └── StaffManagementScreen.js
+│   │       │   └── warehouse
+│   │       │       ├── AddWarehouseScreen.js
+│   │       │       └── WarehouseListScreen.js
+│   │       ├── services
+│   │       │   ├── Api.js
+│   │       │   ├── ApiService.js
+│   │       │   ├── cloudsyncservices.js
+│   │       │   ├── config.js
+│   │       │   ├── encryptionservice.js
+│   │       │   ├── FeatureControlServices.js
+│   │       │   ├── GstValidator.js
+│   │       │   ├── ImageOCR.js
+│   │       │   ├── index.js
+│   │       │   └── QrService.js
+│   │       ├── styles
+│   │       └── utils
+│   │           ├── barcodeGenerator.js
+│   │           ├── Featureutils.js
+│   │           ├── index.js
+│   │           └── pdfParser.js
+│   ├── web
+│   │   ├── index.html
+│   │   ├── package.json
+│   │   ├── postcss.config.js
+│   │   ├── public
+│   │   ├── src
+│   │   │   ├── app.jsx
+│   │   │   ├── company
+│   │   │   ├── components
+│   │   │   │   ├── BarcodeScanner.jsx
+│   │   │   │   ├── Button.jsx
+│   │   │   │   ├── CloudSyncToggel.jsx
+│   │   │   │   ├── DashboardLayout.jsx
+│   │   │   │   ├── Datatable.jsx
+│   │   │   │   ├── Footer.jsx
+│   │   │   │   ├── GoogleDriveBackup.jsx
+│   │   │   │   ├── ImportHistoryManager.jsx
+│   │   │   │   ├── Loader.jsx
+│   │   │   │   ├── ReportCard.jsx
+│   │   │   │   ├── SecurityTracker.jsx
+│   │   │   │   ├── UdharReminder.jsx
+│   │   │   │   └── WhatsappSender.jsx
+│   │   │   ├── contexts
+│   │   │   │   ├── CompanyContext.jsx
+│   │   │   │   └── ThemeContext.jsx
+│   │   │   ├── index.css
+│   │   │   ├── index.jsx
+│   │   │   ├── navigation
+│   │   │   │   └── WebRoutes.jsx
+│   │   │   ├── pages
+│   │   │   │   └── setting
+│   │   │   │       ├── appsetting.jsx
+│   │   │   │       ├── cloudSync.jsx
+│   │   │   │       ├── profile.jsx
+│   │   │   │       ├── securityLog.jsx
+│   │   │   │       ├── settings.jsx
+│   │   │   │       └── VerifyOtp.jsx
+│   │   │   ├── screens
+│   │   │   │   ├── Auth
+│   │   │   │   │   ├── ForgotPasswordScreen.jsx
+│   │   │   │   │   ├── KeyreCoveryPage.jsx
+│   │   │   │   │   ├── LoginScreen.jsx
+│   │   │   │   │   └── RegisterScreen.jsx
+│   │   │   │   ├── Billing
+│   │   │   │   │   ├── B2bDocumentListPage.jsx
+│   │   │   │   │   ├── BillDetailPage.jsx
+│   │   │   │   │   ├── BillingPage.jsx
+│   │   │   │   │   ├── BillListPage.jsx
+│   │   │   │   │   ├── CreateB2bDocumentPage.jsx
+│   │   │   │   │   ├── FastPOSPage.jsx
+│   │   │   │   │   ├── ImportBillPage.jsx
+│   │   │   │   │   ├── ParseBillFromImage.jsx
+│   │   │   │   │   ├── SalesReturnPage.jsx
+│   │   │   │   │   └── ScheemApplyModel.jsx
+│   │   │   │   ├── company
+│   │   │   │   │   ├── AddCompanyPage.jsx
+│   │   │   │   │   ├── BranchPage.jsx
+│   │   │   │   │   ├── CompanyListPage.jsx
+│   │   │   │   │   └── CompanyPage.jsx
+│   │   │   │   ├── coupons
+│   │   │   │   │   ├── CouponListPage.jsx
+│   │   │   │   │   ├── CouponsPage.jsx
+│   │   │   │   │   └── GenerateCouponPage.jsx
+│   │   │   │   ├── Dashboard
+│   │   │   │   │   ├── ApprovalsPage.jsx
+│   │   │   │   │   └── DashboardScreen.jsx
+│   │   │   │   ├── expanses
+│   │   │   │   │   ├── AddExpansePage.jsx
+│   │   │   │   │   ├── ExpansesListPage.jsx
+│   │   │   │   │   └── ExpensesPage.jsx
+│   │   │   │   ├── inventory
+│   │   │   │   │   ├── AddProductPage.jsx
+│   │   │   │   │   ├── BulkProductPage.jsx
+│   │   │   │   │   ├── BulkUploadPage.jsx
+│   │   │   │   │   ├── CategoryAnalyticsPage.jsx
+│   │   │   │   │   ├── CategoryManagementPage.jsx
+│   │   │   │   │   ├── InventoryPage.jsx
+│   │   │   │   │   ├── ItemMasterPage.jsx
+│   │   │   │   │   ├── ParseBillFromImage.jsx
+│   │   │   │   │   ├── ProductDetailPage.jsx
+│   │   │   │   │   ├── ProductListPage.jsx
+│   │   │   │   │   ├── PurchaseEntryPage.jsx
+│   │   │   │   │   ├── SalesReturnPage.jsx
+│   │   │   │   │   ├── SerialBatchPage.jsx
+│   │   │   │   │   ├── StockAdjustmentPage.jsx
+│   │   │   │   │   ├── StockTransferPage.jsx
+│   │   │   │   │   └── SupplierLedgerPage.jsx
+│   │   │   │   ├── laterpad
+│   │   │   │   │   ├── LaterpadlistPage.jsx
+│   │   │   │   │   └── LaterpadPage.jsx
+│   │   │   │   ├── membership
+│   │   │   │   │   ├── LoyaltyDetailPage.jsx
+│   │   │   │   │   ├── MemberShipListPage.jsx
+│   │   │   │   │   └── MembershipPage.jsx
+│   │   │   │   ├── notification
+│   │   │   │   │   ├── NotificationPage.jsx
+│   │   │   │   │   └── ReminderPage.jsx
+│   │   │   │   ├── parties
+│   │   │   │   │   └── PartiesPage.jsx
+│   │   │   │   ├── Reports
+│   │   │   │   │   ├── AgingReportPage.jsx
+│   │   │   │   │   ├── BankReconciliationPage.jsx
+│   │   │   │   │   ├── BillWiseReportPage.jsx
+│   │   │   │   │   ├── CustomerReportBuilder.jsx
+│   │   │   │   │   ├── DayBookPage.jsx
+│   │   │   │   │   ├── EWayBillPage.jsx
+│   │   │   │   │   ├── FixedAssetsPage.jsx
+│   │   │   │   │   ├── GraphicalAnalytics.jsx
+│   │   │   │   │   ├── Gstr3bReportPage.jsx
+│   │   │   │   │   ├── GstReportPage.jsx
+│   │   │   │   │   ├── ItemWiseReport.jsx
+│   │   │   │   │   ├── ItemWiseReportpage.jsx
+│   │   │   │   │   ├── PartyWiseReportPage.jsx
+│   │   │   │   │   ├── ProductGstReportPage.jsx
+│   │   │   │   │   ├── ProfitLossReport.jsx
+│   │   │   │   │   ├── ReportsPage.jsx
+│   │   │   │   │   ├── ScheemReportPage.jsx
+│   │   │   │   │   ├── SitewiseReportPage.jsx
+│   │   │   │   │   ├── SupplierLedgerPage.jsx
+│   │   │   │   │   └── TdsTcsPage.jsx
+│   │   │   │   ├── returns
+│   │   │   │   │   └── CreateReturnScreen.jsx
+│   │   │   │   ├── salary
+│   │   │   │   │   ├── AddSalaryPage.jsx
+│   │   │   │   │   ├── MarkAttendancePage.jsx
+│   │   │   │   │   ├── SalaryListPage.jsx
+│   │   │   │   │   ├── SalaryPage.jsx
+│   │   │   │   │   └── StaffStatementPage.jsx
+│   │   │   │   ├── Settings
+│   │   │   │   │   ├── AppSettingPage.jsx
+│   │   │   │   │   ├── BackupRestore.jsx
+│   │   │   │   │   ├── ProfilePage.jsx
+│   │   │   │   │   ├── SecurityLogPage.jsx
+│   │   │   │   │   ├── SettingsPage.jsx
+│   │   │   │   │   ├── StaffManagementPage.jsx
+│   │   │   │   │   ├── UnitSettingsPage.jsx
+│   │   │   │   │   ├── WebPreferences.jsx
+│   │   │   │   │   └── WhatsappSettingsPage.jsx
+│   │   │   │   └── warehouse
+│   │   │   │       ├── AddWarehousePage.jsx
+│   │   │   │       └── WareHouseListPage.jsx
+│   │   │   ├── services
+│   │   │   │   └── api.jsx
+│   │   │   ├── styles
+│   │   │   │   ├── theme.jsx
+│   │   │   │   └── Webtheme.jsx
+│   │   │   └── utils
+│   │   │       ├── barcodeGenerator.jsx
+│   │   │       ├── gst.js
+│   │   │       ├── imageHandler.jsx
+│   │   │       ├── index.js
+│   │   │       └── PdfParser.jsx
+│   │   ├── tailwind.config.js
+│   │   ├── vercel.json
+│   │   └── websrczipfolder.zip
+│   └── website
+│       ├── .gitignore
+│       ├── eslint.config.js
+│       ├── index.html
+│       ├── package.json
+│       ├── postcss.config.js
+│       ├── public
+│       │   ├── favicon.svg
+│       │   └── icons.svg
+│       ├── README.md
+│       ├── src
+│       │   ├── App.css
+│       │   ├── App.jsx
+│       │   ├── assets
+│       │   │   ├── hero.png
+│       │   │   ├── react.svg
+│       │   │   └── vite.svg
+│       │   ├── components
+│       │   │   ├── Footer.jsx
+│       │   │   └── Navbar.jsx
+│       │   ├── index.css
+│       │   ├── main.jsx
+│       │   └── pages
+│       │       ├── About.jsx
+│       │       ├── FAQ.jsx
+│       │       ├── Help.jsx
+│       │       ├── Home.jsx
+│       │       └── Pricing.jsx
+│       ├── tailwind.config.js
+│       └── vite.config.js
+├── archive-unused-files.js
+├── FULL_PROJECT_TREE.txt
+├── generate-mobile-tree.js
+├── md_all_files
+│   ├── BULK_IMPORT_IMPROVEMENTS.md
+│   ├── CATEGORY_ANALYTICS_IMPLEMENTATION.md
+│   ├── CHANGE_LOG.md
+│   ├── DEPLOYMENT_ROADMAP.md
+│   ├── MOBILE_TODO.md
+│   ├── project-details-data.md
+│   ├── PROJECT_GUIDE.md
+│   ├── PROJECT_OVERVIEW.md
+│   └── REQUIREMENTS_COMPLETION.md
+├── MOBILE_APP_TREE.txt
+├── package.json
+├── packages
+│   ├── schemas
+│   │   └── jscpd.json
+│   └── shared
+│       ├── package.json
+│       └── src
+│           ├── constant
+│           │   ├── apiRoutes.js
+│           │   ├── businessModules.js
+│           │   ├── businessTypes.js
+│           │   ├── config.js
+│           │   ├── defaultFeatures.js
+│           │   ├── roles.js
+│           │   └── taxRate.js
+│           ├── hooks
+│           │   ├── useAuth.js
+│           │   ├── usefeatureControl.js
+│           │   └── useSync.js
+│           ├── index.js
+│           ├── models
+│           │   ├── ConsolidatedCreditStatementModel.js
+│           │   ├── CoupanModel.js
+│           │   ├── ExpenseModel.js
+│           │   ├── FeatureModel.js
+│           │   ├── InvoiceModel.js
+│           │   ├── ProductModel.js
+│           │   └── userModel.js
+│           ├── services
+│           │   ├── api.js
+│           │   ├── api.native.js
+│           │   ├── cloudApi.js
+│           │   ├── index.js
+│           │   ├── KeyManager.js
+│           │   ├── schemeEngine.js
+│           │   ├── securityTracker.js
+│           │   ├── sync.js
+│           │   ├── syncqueue.js
+│           │   ├── syncqueue.native.js
+│           │   └── whatsapp.js
+│           └── utils
+│               ├── cloudAuth.js
+│               ├── currency.js
+│               ├── dateFormatter.js
+│               ├── encryption.js
+│               ├── logger.js
+│               ├── taxCalculator.js
+│               ├── useOfflineMode.js
+│               └── validators.js
+├── scan-project-health.js
+├── scripts
+│   ├── audit-report.txt
+│   ├── audit-shared-usage.js
+│   ├── check-shared-imports.js
+│   ├── find-service-usage.js
+│   ├── find-usage-script-details
+│   ├── find-usage.js
+│   ├── find-usage.ps1
+│   ├── project -shared-files-details.txt
+│   └── scripts
+│       └── check-shared-imports.js
+├── scripts-all
+│   ├── check-imports.js
+│   ├── file-tree
+│   ├── find-duplicates.cjs
+│   ├── generate-full-tree.cjs
+│   ├── generate-tree-script.js
+│   ├── generate-tree.cjs
+│   ├── project-tree.txt
+│   ├── run-diagnostics.js
+│   ├── scan-project.cjs
+│   ├── scripts
+│   │   ├── analyze-project.js
+│   │   ├── project-structure-mobile
+│   │   └── project-tree.js
+│   └── show-ip.js
+├── scripts-all copy
+│   ├── check-imports.js
+│   ├── file-tree
+│   ├── find-duplicates.cjs
+│   ├── generate-tree-script.js
+│   ├── generate-tree.cjs
+│   ├── project-tree.txt
+│   ├── scan-project.cjs
+│   ├── scripts
+│   │   ├── analyze-project.js
+│   │   ├── project-structure-mobile
+│   │   └── project-tree.js
+│   └── show-ip.js
+└── sharedpackageszipfolder.zip

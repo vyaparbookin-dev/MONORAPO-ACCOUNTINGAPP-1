@@ -13,12 +13,10 @@ const SupplierLedgerScreen = () => {
   useEffect(() => {
     const fetchSuppliers = async () => {
       try {
-        const res = await getData('/inventory');
-        const inventoryData = res.data?.products || (Array.isArray(res.data) ? res.data : []);
-        // Extract unique suppliers from inventory
-        const uniqueSuppliers = [...new Set(inventoryData.map(i => i.supplier).filter(Boolean))];
-        setSuppliers(uniqueSuppliers);
-      } catch (e) {
+        const res = await getData('/party?type=supplier');
+        const supplierParties = res.parties || (Array.isArray(res) ? res : []);
+        setSuppliers(supplierParties);
+      } catch (e) { 
         console.error('Error fetching suppliers:', e);
         Alert.alert('Error', 'Failed to load suppliers list');
       } finally {
@@ -32,9 +30,8 @@ const SupplierLedgerScreen = () => {
     if (!selectedSupplier) return;
     setLoading(true);
     try {
-      // Matching the web API endpoint logic
-      const res = await getData(`/inventory/purchase?supplier=${selectedSupplier}`);
-      setLedgerData(res.data || []);
+      const res = await getData(`/party/statement/${selectedSupplier}`);
+      setLedgerData(res.transactions || []);
     } catch (err) {
       console.error('Failed to fetch ledger', err);
       setLedgerData([]);
@@ -53,18 +50,18 @@ const SupplierLedgerScreen = () => {
   const renderLedgerItem = ({ item }) => (
     <View style={styles.ledgerCard}>
       <View style={styles.row}>
-        <Text style={styles.dateText}>{formatDate(item.date)}</Text>
-        <Text style={styles.typeText}>{item.type?.toUpperCase()}</Text>
+        <Text style={styles.dateText}>{formatDate(item.date)}</Text> 
+        <Text style={styles.typeText}>{item.type?.toUpperCase()}</Text> 
       </View>
-      <Text style={styles.refText}>Ref: {item.refNo || 'N/A'}</Text>
+      <Text style={styles.refText}>{item.details || 'N/A'}</Text>
       
       <View style={styles.amountRow}>
         <View style={styles.amountBox}>
-          <Text style={styles.label}>Debit (Paid)</Text>
+          <Text style={styles.label}>Debit</Text>
           <Text style={[styles.amount, { color: '#16a34a' }]}>{item.debit ? `₹${item.debit}` : '-'}</Text>
         </View>
         <View style={styles.amountBox}>
-          <Text style={styles.label}>Credit (Purchase)</Text>
+          <Text style={styles.label}>Credit</Text>
           <Text style={[styles.amount, { color: '#dc2626' }]}>{item.credit ? `₹${item.credit}` : '-'}</Text>
         </View>
         <View style={styles.amountBox}>
@@ -91,8 +88,8 @@ const SupplierLedgerScreen = () => {
               style={styles.picker}
             >
               <Picker.Item label="-- Choose Supplier --" value="" color="#888" />
-              {suppliers.map((s, i) => (
-                <Picker.Item key={i} label={s} value={s} />
+              {suppliers.map(s => (
+                <Picker.Item key={s._id} label={s.name} value={s._id} />
               ))}
             </Picker>
           </View>

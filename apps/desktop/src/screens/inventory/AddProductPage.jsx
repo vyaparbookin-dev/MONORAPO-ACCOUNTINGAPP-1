@@ -52,6 +52,7 @@ const AddProductPage = () => {
     warrantyPeriod: "",
   });
   const [inventory, setInventory] = useState([]);
+  const [isSaving, setIsSaving] = useState(false); // State to handle save button disabling
 
   const gstRates = [0, 5, 12, 18, 28];
 
@@ -307,10 +308,12 @@ const AddProductPage = () => {
 
   const saveProductLogic = async () => {
     if (!form.name || !form.category || (showHSN && !form.hsnCode) || form.costPrice === "" || form.sellingPrice === "") {
-      throw new Error("Please fill all required fields (Name, Category, Cost, Selling Price" + (showHSN ? ", and HSN Code" : "") + ")");
+      // HSN Code is now optional, so removed from the required check
+      throw new Error("Please fill all required fields (Name, Category, Cost, Selling Price)");
     }
 
     let cleanName = form.name.trim();
+    if (isSaving) return; // Prevent double-submission
     const extras = [];
     const nameLower = cleanName.toLowerCase();
     
@@ -322,10 +325,12 @@ const AddProductPage = () => {
       cleanName = `${cleanName} (${extras.join(' ')})`;
     }
 
-    if (inventory.some(p => p.name.toLowerCase().trim() === cleanName.toLowerCase())) {
-      throw new Error(`A product with the name "${cleanName}" already exists in your inventory!`);
+    const safeInventory = Array.isArray(inventory) ? inventory : [];
+    if (safeInventory.some(p => p.name.toLowerCase().trim() === cleanName.toLowerCase())) {
+      throw new Error(`A product with the name "${cleanName}" already exists!`);
     }
 
+    setIsSaving(true); // Disable button on save
     const formatMasterValue = (val, list) => {
       if (!val) return "";
       const cleanVal = val.trim();
@@ -381,6 +386,8 @@ const AddProductPage = () => {
     } catch (err) {
       console.error(err);
       alert("Error adding product: " + (err.response?.data?.message || err.message));
+    } finally {
+      setIsSaving(false); // Re-enable button
     }
   };
 
@@ -504,15 +511,14 @@ const AddProductPage = () => {
           </div>
 
           {showHSN && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700">HSN Code *</label>
-              <input
-                className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
-                value={form.hsnCode}
-                onChange={(e) => setForm({ ...form, hsnCode: e.target.value })}
-                required
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">HSN Code</label>
+            <input
+              className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
+              value={form.hsnCode}
+              onChange={(e) => setForm({ ...form, hsnCode: e.target.value })}
+            />
+          </div>
           )}
         </div>
 
@@ -768,11 +774,11 @@ const AddProductPage = () => {
           <button type="button" onClick={() => navigate(-1)} className="flex-1 bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200">
             Cancel
           </button>
-          <button type="button" onClick={handleSaveAndAddAnother} className="flex-1 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-medium">
-            Save & Add Another
+          <button type="button" onClick={handleSaveAndAddAnother} disabled={isSaving} className="flex-1 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-medium disabled:opacity-50">
+            {isSaving ? 'Saving...' : 'Save & Add Another'}
           </button>
-          <button type="submit" className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-medium">
-          Save Product
+          <button type="submit" disabled={isSaving} className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-medium disabled:opacity-50">
+          {isSaving ? 'Saving...' : 'Save Product'}
         </button>
         </div>
       </form>

@@ -43,16 +43,16 @@ const PurchaseEntryScreen = () => {
       // 1. Offline First: Fetch Suppliers
       let localParties = await getCustomersLocal().catch(() => []);
       if (!localParties || localParties.length === 0) {
-        const partyRes = await getData("/party").catch(() => ({}));
-        localParties = partyRes.data?.parties || (Array.isArray(partyRes.data) ? partyRes.data : []);
+        const partyRes = await getData("/party").catch(() => ({ parties: [] }));
+        localParties = partyRes.parties || [];
       }
       setSuppliers(localParties.filter(p => p.partyType === 'supplier' || p.partyType === 'both' || p.partyType === 'Customer')); // Allow flexibility
 
       // 2. Offline First: Fetch Inventory
       let localProducts = await getProductsLocal().catch(() => []);
       if (!localProducts || localProducts.length === 0) {
-        const invRes = await getData("/inventory").catch(() => ({}));
-        localProducts = invRes.data?.products || (Array.isArray(invRes.data) ? invRes.data : []);
+        const invRes = await getData("/inventory").catch(() => ({ products: [] }));
+        localProducts = invRes.products || [];
       }
       setProducts(localProducts);
 

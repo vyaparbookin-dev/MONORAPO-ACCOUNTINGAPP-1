@@ -7,15 +7,18 @@ import AppNavigator from "./src/navigation/AppNavigator";
 import { StatusBar, StyleSheet, View, Platform } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "./src/context/AuthContext";
+import { CompanyProvider } from "./src/context/CompanyContext";
 
 export default function App() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <StatusBar barStyle="light-content" backgroundColor="#2563eb" />
-        <View style={styles.container}>
-          <AppNavigator />
-        </View>
+        <CompanyProvider>
+          <StatusBar barStyle="light-content" backgroundColor="#2563eb" />
+          <View style={styles.container}>
+            <AppNavigator />
+          </View>
+        </CompanyProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

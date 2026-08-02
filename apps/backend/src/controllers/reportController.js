@@ -2,6 +2,7 @@ import Report from "../model/report.js";
 import Bill from "../model/bill.js";
 import Product from "../model/product.js";
 import Expance from "../model/expance.js";
+import User from "../model/user.js"; // User model ko import karein
 import mongoose from "mongoose";
 
 export const generateReport = async (req, res) => {
@@ -297,6 +298,49 @@ export const generateReport = async (req, res) => {
     res.json({ success: true, type, reports });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * @desc    Get Staff Performance Report
+ * @route   GET /api/reports/staff-performance
+ * @access  Private
+ */
+export const getStaffPerformanceReport = async (req, res) => {
+  try {
+    const { companyId } = req;
+    if (!companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    // 1. Get all staff members (users) for the company
+    const staffMembers = await User.find({ companyId, role: { $ne: 'owner' } }).select('name email role salesTarget').lean();
+
+    // 2. Get all bills for the company to calculate performance
+    const bills = await Bill.find({ companyId }).select('salesmanId finalAmount').lean();
+
+    // 3. Process data to calculate performance for each staff member
+    const performanceData = staffMembers.map(staff => {
+      const staffIdString = staff._id.toString();
+      
+      // Filter bills created by this staff member
+      const staffBills = bills.filter(bill => bill.salesmanId?.toString() === staffIdString);
+      
+      // Calculate total revenue from their bills
+      const totalRevenue = staffBills.reduce((sum, bill) => sum + (bill.finalAmount || 0), 0);
+
+      return {
+        name: staff.name,
+        revenue: totalRevenue,
+        bills: staffBills.length,
+        salesTarget: staff.salesTarget || 0,
+      };
+    });
+
+    res.status(200).json(performanceData);
+  } catch (error) {
+    console.error("Error generating staff performance report:", error);
+    res.status(500).json({ success: false, message: "Server Error", error: error.message });
   }
 };
 

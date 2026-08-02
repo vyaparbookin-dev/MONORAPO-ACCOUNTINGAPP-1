@@ -164,6 +164,7 @@ app.use("/api/daybook", daybookRoutes);
 app.use("/api/ewaybill", eWayBillRoutes);
 app.use("/api/expance", expanceRoutes); // Old spelling
 app.use("/api/expenses", expanceRoutes); // Alias for correct spelling
+app.use("/api/expense", expanceRoutes); // Alias for singular form
 app.use("/api/fixed-assets", fixedAssetRoutes);
 app.use("/api/gst", gstRoutes);
 app.use("/api/inventory", inventoryRoutes);

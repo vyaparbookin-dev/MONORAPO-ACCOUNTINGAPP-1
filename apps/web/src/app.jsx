@@ -125,6 +125,8 @@ import PageCloudSync from "./pages/setting/cloudSync";
 import PageProfile from "./pages/setting/profile";
 import PageSecurityLog from "./pages/setting/securityLog";
 import PageSettings from "./pages/setting/settings";
+import UnitSettingsPage from "./screens/Settings/UnitSettingsPage";
+import StaffPerformancePage from "./screens/Settings/StaffPerformancePage";
 
 import WhatsappSettingsPage from "./screens/Settings/WhatsappSettingsPage";
 // Components
@@ -310,7 +312,8 @@ const App = () => {
             <Route path="/settings/web" element={<WebPreferences />} />
             <Route path="/settings/staff" element={<StaffManagementPage />} />
             <Route path="/settings/whatsapp" element={<WhatsappSettingsPage />} />
-            <Route path="/settings/units" element={<ItemMasterPage />} />
+            <Route path="/settings/units" element={<UnitSettingsPage />} />
+            <Route path="/settings/performance" element={<StaffPerformancePage />} />
 
             {/* Additional Settings Routes */}
             <Route path="/pages/settings" element={<PageSettings />} />
