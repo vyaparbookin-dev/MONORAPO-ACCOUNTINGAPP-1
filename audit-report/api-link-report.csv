@@ -1,0 +1,9 @@
+file,url,matched,matchedRoute
+"apps/desktop/src/screens/membership/LoyaltyDetailPage.jsx","/api/membership/${id}","true","/api/membership/"
+"apps/web/src/screens/expenses/AddExpensesPage.jsx","/api/expenses","true","/api/expenses/"
+"apps/web/src/screens/expenses/ExpensesListPage.jsx","/api/expenses","true","/api/expenses/"
+"apps/web/src/screens/membership/LoyaltyDetailPage.jsx","/api/membership/${id}","true","/api/membership/"
+"apps/web/src/screens/notification/ReminderPage.jsx","/api/reminders","true","/api/reminders/"
+"apps/web/src/screens/notification/ReminderPage.jsx","/api/reminders/${id}/done","true","/api/reminders/"
+"apps/web/src/screens/salary/AddSalaryPage.jsx","/api/salary","true","/api/salary/"
+"apps/web/src/screens/salary/SalaryListPage.jsx","/api/salary","true","/api/salary/"

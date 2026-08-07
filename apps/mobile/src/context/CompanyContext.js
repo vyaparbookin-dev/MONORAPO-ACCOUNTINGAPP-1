@@ -14,7 +14,10 @@ export const CompanyProvider = ({ children }) => {
   const { token } = useContext(AuthContext);
 
   const refetchCompanies = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       // 1. Offline First: Try to load from local DB

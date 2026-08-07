@@ -75,6 +75,12 @@ export default function MainDashboard({ navigation }) {
     fetchDashboardData();
   }, []);
 
+  const openNestedTab = (tabName) => {
+    if (navigation?.navigate) {
+      navigation.navigate('MainApp', { screen: tabName });
+    }
+  };
+
   return (
     <View style={styles.container}>
       <CalculatorModal visible={calculatorVisible} onClose={() => setCalculatorVisible(false)} />
@@ -106,11 +112,11 @@ export default function MainDashboard({ navigation }) {
         
         {/* To Collect & To Pay Summary */}
         <View style={styles.topSummaryContainer}>
-          <TouchableOpacity style={[styles.topSummaryCard, { borderLeftColor: '#10B981' }]} onPress={() => navigation.navigate('Parties')}>
+          <TouchableOpacity style={[styles.topSummaryCard, { borderLeftColor: '#10B981' }]} onPress={() => navigation.navigate('MainApp', { screen: 'Parties' })}>
             <Text style={styles.topSummaryLabel}>To Collect (Udhar)</Text>
             <Text style={[styles.topSummaryAmount, { color: '#10B981' }]}>₹ {summary.toCollect.toLocaleString('en-IN')}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.topSummaryCard, { borderLeftColor: '#EF4444' }]} onPress={() => navigation.navigate('Parties')}>
+          <TouchableOpacity style={[styles.topSummaryCard, { borderLeftColor: '#EF4444' }]} onPress={() => navigation.navigate('MainApp', { screen: 'Parties' })}>
             <Text style={styles.topSummaryLabel}>To Pay</Text>
             <Text style={[styles.topSummaryAmount, { color: '#EF4444' }]}>₹ {summary.toPay.toLocaleString('en-IN')}</Text>
           </TouchableOpacity>
@@ -118,10 +124,11 @@ export default function MainDashboard({ navigation }) {
 
         {/* Main Grid Cards */}
         <View style={styles.gridContainer}>
-          <GridCard title="Stock Value" amount={`₹ ${summary.stockValue.toLocaleString('en-IN')}`} icon="cube-outline" iconColor="#64748B" bg="#FFFFFF" onPress={() => navigation.navigate('Inventory', { screen: 'ProductList' })} />
+          <GridCard title="Stock Value" amount={`₹ ${summary.stockValue.toLocaleString('en-IN')}`} icon="cube-outline" iconColor="#64748B" bg="#FFFFFF" onPress={() => openNestedTab('Inventory')} />
           <GridCard title="Recent Sales" amount={`₹ ${summary.recentSales.toLocaleString('en-IN')}`} icon="cart-outline" iconColor="#10B981" bg="#FFFFFF" onPress={() => navigation.navigate('Billing', { screen: 'BillList' })} />
-          <GridCard title="Low Stock Alerts" amount={`${summary.lowStockCount} Items`} icon="warning-outline" iconColor="#EF4444" bg="#FFF1F2" onPress={() => navigation.navigate('Inventory', { screen: 'CategoryAnalytics' })} actionText={summary.lowStockCount > 0} />
-          <GridCard title="Reports" amount="View All" icon="bar-chart-outline" iconColor="#5B3FD0" bg="#FFFFFF" onPress={() => navigation.navigate('ReportsTab')} actionText />
+          <GridCard title="Low Stock Alerts" amount={`${summary.lowStockCount} Items`} icon="warning-outline" iconColor="#EF4444" bg="#FFF1F2" onPress={() => openNestedTab('Inventory')} actionText={summary.lowStockCount > 0} />
+          <GridCard title="Reports" amount="View All" icon="bar-chart-outline" iconColor="#5B3FD0" bg="#FFFFFF" onPress={() => openNestedTab('Reports')} actionText />
+          <GridCard title="Sales/Purchase Return" amount="Create New" icon="return-up-back-outline" iconColor="#f59e0b" bg="#FFFFFF" onPress={() => navigation.navigate('CreateReturn')} actionText />
         </View>
 
         {/* Premium Banner */}

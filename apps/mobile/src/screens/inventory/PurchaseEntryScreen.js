@@ -154,7 +154,7 @@ const PurchaseEntryScreen = () => {
           }
         }
       } catch (localErr) {
-        console.log("Local save skipped or failed", localErr);
+        console.warn("Local save skipped or failed", localErr);
       }
 
       // --- 2. CLOUD SYNC QUEUE ---

@@ -9,8 +9,10 @@ const connectDB = async () => {
     await mongoose.connect(uri);
     console.log(`✅ Connected to DB`);
   } catch (err) {
+    // Log the error but do NOT exit the process — allow the server to run in
+    // degraded mode for frontend development (helps when Mongo is not running).
     console.error("❌ DB Connection Failed:", err.message);
-    process.exit(1);
+    console.warn('⚠️ Continuing without DB connection. Some API routes may fail.');
   }
 };
 

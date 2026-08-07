@@ -1,5 +1,11 @@
 import { db } from '../database/db.js';
-// import axios from 'axios'; // बाद में जब API रेडी हो तो इसे अन-कमेंट करें
+import axios from 'axios';
+
+// API क्लाइंट बनाएँ
+const api = axios.create({
+  baseURL: 'http://localhost:5000', // आपका बैकएंड सर्वर URL
+  timeout: 10000, // 10 सेकंड का टाइमआउट
+});
 
 export const startSyncService = () => {
   console.log('🚀 Background Sync Service Started');
@@ -21,16 +27,18 @@ const runSync = async () => {
       console.log(`🔄 Found ${unsyncedCustomers.length} unsynced customers. Syncing...`);
       
       for (const customer of unsyncedCustomers) {
-        // TODO: यहाँ असली API कॉल आएगा
-        // const response = await axios.post('https://api.yoursite.com/customers', customer);
-        
-        // अभी हम मान लेते हैं कि सर्वर पर सेव हो गया (Simulation)
-        const success = true; 
-
-        if (success) {
+        try {
+          // 1. सर्वर पर नया ग्राहक डेटा भेजें (POST रिक्वेस्ट)
+          const response = await api.post('/api/parties', customer);
+          
+          // 2. अगर सर्वर से सफलता का संकेत मिलता है (status 200-299)
+          if (response.status >= 200 && response.status < 300) {
           // लोकल डेटाबेस को अपडेट करें कि यह सिंक हो चुका है
           db.prepare('UPDATE customers SET is_synced = 1 WHERE uuid = ?').run(customer.uuid);
           console.log(`✅ Synced Customer: ${customer.name}`);
+          }
+        } catch (apiError) {
+          console.error(`❌ Failed to sync customer ${customer.name}:`, apiError.message);
         }
       }
     }

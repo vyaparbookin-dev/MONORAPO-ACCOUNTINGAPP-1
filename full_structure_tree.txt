@@ -22,7 +22,7 @@
 │   └── VSWorkspaceState.json
 ├── apps
 │   ├── backend
-│   │   ├── backendsrczipfolder.zip
+│   │   ├── backend-src-zip-folder.zip
 │   │   ├── package.json
 │   │   ├── seed.js
 │   │   ├── server.js
@@ -42,15 +42,14 @@
 │   │       │   ├── billingController.js
 │   │       │   ├── branchController.js
 │   │       │   ├── brandController.js
-│   │       │   ├── bulkDelete.txt
 │   │       │   ├── categoryController.js
 │   │       │   ├── cloudController.js
 │   │       │   ├── companyController.js
 │   │       │   ├── consolidatedStatementController.js
-│   │       │   ├── coupanController.js
+│   │       │   ├── couponController.js
 │   │       │   ├── daybookController.js
 │   │       │   ├── eWayBillController.js
-│   │       │   ├── expanceController.js
+│   │       │   ├── expensesController.js
 │   │       │   ├── fixedAssetController.js
 │   │       │   ├── gstController.js
 │   │       │   ├── inventoryController.js
@@ -91,9 +90,9 @@
 │   │       │   ├── category.js
 │   │       │   ├── company.js
 │   │       │   ├── ConsolidatedCreditStatement.js
-│   │       │   ├── coupan.js
+│   │       │   ├── coupon.js
 │   │       │   ├── eWayBill.js
-│   │       │   ├── expance.js
+│   │       │   ├── expenses.js
 │   │       │   ├── fixedAsset.js
 │   │       │   ├── laterpad.js
 │   │       │   ├── membership.js
@@ -132,10 +131,10 @@
 │   │       │   ├── cloudRoutes.js
 │   │       │   ├── companyRoutes.js
 │   │       │   ├── consolidatedStatementRoutes.js
-│   │       │   ├── coupanRoutes.js
+│   │       │   ├── couponRoutes.js
 │   │       │   ├── daybookRoutes.js
 │   │       │   ├── eWayBillRoutes.js
-│   │       │   ├── expanceRoutes.js
+│   │       │   ├── expensesRoutes.js
 │   │       │   ├── fixedAssetRoutes.js
 │   │       │   ├── gstRoutes.js
 │   │       │   ├── inventoryRoutes.js
@@ -182,7 +181,7 @@
 │   │           ├── taxCalculator.js
 │   │           └── validators.js
 │   ├── desktop
-│   │   ├── desktopsrczipfolder.zip
+│   │   ├── desktop-src-zip-folder.zip
 │   │   ├── index.html
 │   │   ├── main.cjs
 │   │   ├── package.json
@@ -247,7 +246,7 @@
 │   │   │   │   │   ├── ImportBillPage.jsx
 │   │   │   │   │   ├── ParseBillFromImage.jsx
 │   │   │   │   │   ├── SalesReturnPage.jsx
-│   │   │   │   │   └── ScheemApplyModel.jsx
+│   │   │   │   │   └── SchemeApplyModel.jsx
 │   │   │   │   ├── company
 │   │   │   │   │   ├── AddCompanyPage.jsx
 │   │   │   │   │   ├── BranchPage.jsx
@@ -260,9 +259,9 @@
 │   │   │   │   ├── Dashboard
 │   │   │   │   │   ├── ApprovalsPage.jsx
 │   │   │   │   │   └── DashboardScreen.jsx
-│   │   │   │   ├── expanses
-│   │   │   │   │   ├── AddExpansePage.jsx
-│   │   │   │   │   ├── ExpansesListPage.jsx
+│   │   │   │   ├── expenses
+│   │   │   │   │   ├── AddExpensePage.jsx
+│   │   │   │   │   ├── ExpensesListPage.jsx
 │   │   │   │   │   └── ExpensesPage.jsx
 │   │   │   │   ├── inventory
 │   │   │   │   │   ├── AddProductPage.jsx
@@ -310,7 +309,7 @@
 │   │   │   │   │   ├── ProductGstReportPage.jsx
 │   │   │   │   │   ├── ProfitLossReport.jsx
 │   │   │   │   │   ├── ReportsPage.jsx
-│   │   │   │   │   ├── ScheemReportPage.jsx
+│   │   │   │   │   ├── SchemeReportPage.jsx
 │   │   │   │   │   ├── SitewiseReportPage.jsx
 │   │   │   │   │   ├── SupplierLedgerPage.jsx
 │   │   │   │   │   └── TdsTcsPage.jsx
@@ -329,6 +328,7 @@
 │   │   │   │   │   ├── SecurityLogPage.jsx
 │   │   │   │   │   ├── SettingsPage.jsx
 │   │   │   │   │   ├── StaffManagementPage.jsx
+│   │   │   │   │   ├── StaffPerformancePage.jsx
 │   │   │   │   │   ├── UnitSettingsPage.jsx
 │   │   │   │   │   ├── WebPreferences.jsx
 │   │   │   │   │   └── WhatsappSettingsPage.jsx
@@ -353,6 +353,29 @@
 │   ├── mobile
 │   │   ├── android
 │   │   │   ├── .gitignore
+│   │   │   ├── .gradle
+│   │   │   │   ├── 8.14.3
+│   │   │   │   │   ├── checksums
+│   │   │   │   │   │   ├── checksums.lock
+│   │   │   │   │   │   ├── md5-checksums.bin
+│   │   │   │   │   │   └── sha1-checksums.bin
+│   │   │   │   │   ├── expanded
+│   │   │   │   │   │   └── expanded.lock
+│   │   │   │   │   ├── fileChanges
+│   │   │   │   │   │   └── last-build.bin
+│   │   │   │   │   ├── fileHashes
+│   │   │   │   │   │   ├── fileHashes.bin
+│   │   │   │   │   │   ├── fileHashes.lock
+│   │   │   │   │   │   └── resourceHashesCache.bin
+│   │   │   │   │   ├── gc.properties
+│   │   │   │   │   └── vcsMetadata
+│   │   │   │   ├── buildOutputCleanup
+│   │   │   │   │   ├── buildOutputCleanup.lock
+│   │   │   │   │   └── cache.properties
+│   │   │   │   ├── noVersion
+│   │   │   │   │   └── buildLogic.lock
+│   │   │   │   └── vcs-1
+│   │   │   │       └── gc.properties
 │   │   │   ├── app
 │   │   │   │   ├── build.gradle
 │   │   │   │   ├── debug.keystore
@@ -426,7 +449,7 @@
 │   │   ├── db.js
 │   │   ├── ignoreWarnings.js
 │   │   ├── metro.config.js
-│   │   ├── mobilesrczipfolder.zip
+│   │   ├── mobile-src-zip-folder.zip
 │   │   ├── package.json
 │   │   └── src
 │   │       ├── components
@@ -443,9 +466,13 @@
 │   │       │   ├── UdharReminder.js
 │   │       │   └── WhatsappSender.js
 │   │       ├── context
-│   │       │   └── AuthContext.js
+│   │       │   ├── AuthContext.js
+│   │       │   └── CompanyContext.js
 │   │       ├── hooks
 │   │       │   └── useOfflineMode.js
+│   │       ├── lib
+│   │       │   ├── ImageOCR.js
+│   │       │   └── QrService.js
 │   │       ├── navigation
 │   │       │   ├── AppNavigator.js
 │   │       │   ├── BillingNavigator.js
@@ -485,7 +512,7 @@
 │   │       │   │   ├── ApprovalsScreen.js
 │   │       │   │   └── MainDashboard.js
 │   │       │   ├── expenses
-│   │       │   │   ├── AddExpenseScreen.js
+│   │       │   │   ├── AddExpensesScreen.js
 │   │       │   │   └── ExpensesListScreen.js
 │   │       │   ├── inventory
 │   │       │   │   ├── AddProductScreen.js
@@ -633,7 +660,7 @@
 │   │   │   │   │   ├── ImportBillPage.jsx
 │   │   │   │   │   ├── ParseBillFromImage.jsx
 │   │   │   │   │   ├── SalesReturnPage.jsx
-│   │   │   │   │   └── ScheemApplyModel.jsx
+│   │   │   │   │   └── SchemeApplyModel.jsx
 │   │   │   │   ├── company
 │   │   │   │   │   ├── AddCompanyPage.jsx
 │   │   │   │   │   ├── BranchPage.jsx
@@ -646,9 +673,9 @@
 │   │   │   │   ├── Dashboard
 │   │   │   │   │   ├── ApprovalsPage.jsx
 │   │   │   │   │   └── DashboardScreen.jsx
-│   │   │   │   ├── expanses
-│   │   │   │   │   ├── AddExpansePage.jsx
-│   │   │   │   │   ├── ExpansesListPage.jsx
+│   │   │   │   ├── expenses
+│   │   │   │   │   ├── AddExpensesPage.jsx
+│   │   │   │   │   ├── ExpensesListPage.jsx
 │   │   │   │   │   └── ExpensesPage.jsx
 │   │   │   │   ├── inventory
 │   │   │   │   │   ├── AddProductPage.jsx
@@ -696,7 +723,7 @@
 │   │   │   │   │   ├── ProductGstReportPage.jsx
 │   │   │   │   │   ├── ProfitLossReport.jsx
 │   │   │   │   │   ├── ReportsPage.jsx
-│   │   │   │   │   ├── ScheemReportPage.jsx
+│   │   │   │   │   ├── SchemeReportPage.jsx
 │   │   │   │   │   ├── SitewiseReportPage.jsx
 │   │   │   │   │   ├── SupplierLedgerPage.jsx
 │   │   │   │   │   └── TdsTcsPage.jsx
@@ -715,6 +742,7 @@
 │   │   │   │   │   ├── SecurityLogPage.jsx
 │   │   │   │   │   ├── SettingsPage.jsx
 │   │   │   │   │   ├── StaffManagementPage.jsx
+│   │   │   │   │   ├── StaffPerformancePage.jsx
 │   │   │   │   │   ├── UnitSettingsPage.jsx
 │   │   │   │   │   ├── WebPreferences.jsx
 │   │   │   │   │   └── WhatsappSettingsPage.jsx
@@ -734,7 +762,7 @@
 │   │   │       └── PdfParser.jsx
 │   │   ├── tailwind.config.js
 │   │   ├── vercel.json
-│   │   └── websrczipfolder.zip
+│   │   └── web-src-zip-folder.zip
 │   └── website
 │       ├── .gitignore
 │       ├── eslint.config.js
@@ -753,6 +781,7 @@
 │       │   │   ├── react.svg
 │       │   │   └── vite.svg
 │       │   ├── components
+│       │   │   ├── ErrorBoundary.jsx
 │       │   │   ├── Footer.jsx
 │       │   │   └── Navbar.jsx
 │       │   ├── index.css
@@ -766,7 +795,18 @@
 │       ├── tailwind.config.js
 │       └── vite.config.js
 ├── archive-unused-files.js
+├── audit-report
+│   ├── api-link-report.csv
+│   ├── backend-routes.csv
+│   ├── broken-imports.csv
+│   ├── file-inventory.csv
+│   ├── frontend-pages.csv
+│   ├── orphan-files.csv
+│   ├── shared-usage-matrix.csv
+│   └── SUMMARY.md
+├── audit-report-zip-folder.zip
 ├── FULL_PROJECT_TREE.txt
+├── full_structure_tree.txt
 ├── generate-mobile-tree.js
 ├── md_all_files
 │   ├── BULK_IMPORT_IMPROVEMENTS.md
@@ -774,10 +814,13 @@
 │   ├── CHANGE_LOG.md
 │   ├── DEPLOYMENT_ROADMAP.md
 │   ├── MOBILE_TODO.md
+│   ├── new_file_projectes_deatiles.md
 │   ├── project-details-data.md
 │   ├── PROJECT_GUIDE.md
 │   ├── PROJECT_OVERVIEW.md
-│   └── REQUIREMENTS_COMPLETION.md
+│   ├── project_script_deatailes.md
+│   ├── REQUIREMENTS_COMPLETION.md
+│   └── scripts_documentation.md
 ├── MOBILE_APP_TREE.txt
 ├── package.json
 ├── packages
@@ -801,7 +844,7 @@
 │           ├── index.js
 │           ├── models
 │           │   ├── ConsolidatedCreditStatementModel.js
-│           │   ├── CoupanModel.js
+│           │   ├── CouponModel.js
 │           │   ├── ExpenseModel.js
 │           │   ├── FeatureModel.js
 │           │   ├── InvoiceModel.js
@@ -828,44 +871,29 @@
 │               ├── taxCalculator.js
 │               ├── useOfflineMode.js
 │               └── validators.js
+├── packages-zip-folder.zip
 ├── scan-project-health.js
 ├── scripts
-│   ├── audit-report.txt
+│   ├── audit-local-usage.js
 │   ├── audit-shared-usage.js
 │   ├── check-shared-imports.js
 │   ├── find-service-usage.js
-│   ├── find-usage-script-details
 │   ├── find-usage.js
 │   ├── find-usage.ps1
-│   ├── project -shared-files-details.txt
-│   └── scripts
-│       └── check-shared-imports.js
+│   └── Full-repo-audit.js
 ├── scripts-all
 │   ├── check-imports.js
-│   ├── file-tree
 │   ├── find-duplicates.cjs
 │   ├── generate-full-tree.cjs
-│   ├── generate-tree-script.js
-│   ├── generate-tree.cjs
-│   ├── project-tree.txt
 │   ├── run-diagnostics.js
 │   ├── scan-project.cjs
 │   ├── scripts
 │   │   ├── analyze-project.js
-│   │   ├── project-structure-mobile
+│   │   ├── bulkDelete.txt
 │   │   └── project-tree.js
 │   └── show-ip.js
-├── scripts-all copy
-│   ├── check-imports.js
-│   ├── file-tree
-│   ├── find-duplicates.cjs
-│   ├── generate-tree-script.js
-│   ├── generate-tree.cjs
-│   ├── project-tree.txt
-│   ├── scan-project.cjs
-│   ├── scripts
-│   │   ├── analyze-project.js
-│   │   ├── project-structure-mobile
-│   │   └── project-tree.js
-│   └── show-ip.js
-└── sharedpackageszipfolder.zip
+└── script_archive_unused
+    ├── check-offline-sync.js
+    ├── DashboardScreen.js
+    ├── generate-tree.cjs
+    └── scan-project.js

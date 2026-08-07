@@ -1,3 +1,4 @@
 export * from './imageHandler';
-// Commented out because backend PDF parsers (using 'fs' or 'path') will crash the Vite Frontend build.
-// export * from './PdfParser';
+// The PdfParser uses 'pdfjs-dist' which is a client-side library and safe for web.
+export * from './PdfParser';
+export * from './gst';

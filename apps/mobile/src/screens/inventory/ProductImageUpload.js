@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { View, Text, TouchableOpacity, Image, Alert, ActivityIndicator, StyleSheet, Platform } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
-import api from "../../services/Api"; // Assuming the path is correct
+import { api, API_ROUTES } from "@repo/shared"; // API_ROUTES is not used here, can be removed
+import { extractTextFromImage } from '../../services/ImageOCR';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -31,16 +32,26 @@ const ProductImageUpload = () => {
 
     setIsLoading(true);
     try {
-      const base64Image = await FileSystem.readAsStringAsync(image, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      const response = await api.post("/billing/parse-image", { image: base64Image });
+      // The OCR service expects a file object, not just a URI.
+      const file = {
+        uri: image,
+        name: 'bill_image.jpg',
+        type: 'image/jpeg',
+      };
+      const response = await extractTextFromImage(file);
       
       // Assuming the response contains parsed bill data
-      console.log("Parsed Bill Data:", response.data);
       Alert.alert("Success", "Bill image parsed successfully!");
-      navigation.navigate('ReviewParsedBill', { parsedItems: response.data.parsedItems, fullText: response.data.text, partyId: partyId, partyName: partyName, billImageUrl: `data:image/jpeg;base64,${base64Image}` });
+      navigation.navigate('Billing', { // Navigate to the 'Billing' navigator first
+        screen: 'ReviewParsedBill',
+        params: {
+          parsedItems: response.data.parsedItems,
+          fullText: response.data.text,
+          partyId: partyId,
+          partyName: partyName,
+          billImageUrl: image // Pass the local file URI
+        }
+      });
     } catch (error) {
       console.error("Image upload/parse error:", error);
       Alert.alert("Error", "Failed to parse bill image. Please try again.");

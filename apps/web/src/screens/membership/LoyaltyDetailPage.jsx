@@ -18,8 +18,8 @@ const LoyaltyDetailPage = ({ membershipId }) => {
   const fetchLoyaltyDetails = async (id) => {
     try {
       setLoading(true);
-      const response = await axios.get(`/api/memberships/${id}/loyalty`); // Backend endpoint
-      setLoyaltyDetails(response.data || []);
+      const response = await axios.get(`/api/membership/${id}`);
+      setLoyaltyDetails(Array.isArray(response?.data) ? response.data : [response?.data].filter(Boolean));
     } catch (error) {
       console.error("Failed to fetch loyalty details", error);
       setLoyaltyDetails([]);

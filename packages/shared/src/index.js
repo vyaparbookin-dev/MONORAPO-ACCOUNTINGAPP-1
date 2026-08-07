@@ -24,6 +24,7 @@ export * from './services/schemeEngine';
 export * from './services/securityTracker';
 export * from './services/sync';
 export { syncQueue } from './services/syncqueue';
+export * from './accounting'; // New accounting module
 export * from './services/whatsapp';
 
 // 4. Utils
@@ -32,6 +33,5 @@ export * from './utils/currency';
 export * from './utils/dateFormatter';
 export * from './utils/encryption';
 export * from './utils/logger';
-export * from './utils/taxCalculator';
 export * from './utils/useOfflineMode';
 export * from './utils/validators';

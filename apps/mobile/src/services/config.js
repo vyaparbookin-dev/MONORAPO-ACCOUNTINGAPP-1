@@ -1,6 +1,6 @@
 // Mobile App Configuration
 // Change IP to your machine's IP address if connecting from physical device
-import { setBaseUrl } from '@repo/shared/api.native';
+import { setBaseUrl } from '@repo/shared/src/services/api.native';
 import { Platform } from 'react-native'; 
 import Constants from 'expo-constants';
 
@@ -18,15 +18,16 @@ const NETWORK_API = hostUri ? `http://${hostUri.split(':')[0]}:5001/api` : LOCAL
 const PRODUCTION_API = 'https://monorapo-accountingapp-1.onrender.com/api'; // Your Deployed Render URL
 
 // Auto-detect environment
-// __DEV__ is a global variable set by React Native. 
-// It's true in development and false in production builds. This is safer than a manual flag.
-const IS_PRODUCTION = !__DEV__; 
+// __DEV__ is a global variable set by React Native.
+// It's true in development and false in production builds.
+const IS_PRODUCTION = !__DEV__;
+const ENV_API_URL = process.env.EXPO_PUBLIC_API_URL || process.env.VITE_API_URL || process.env.REACT_APP_API_URL;
 
-// --- TEMPORARY FIX FOR LOCAL TESTING WITH LIVE DATA ---
-// To test the mobile app with your deployed Render backend, uncomment the line below.
-// Remember to comment it back when you want to test with your local backend.
-export const API_BASE_URL = PRODUCTION_API;
-// export const API_BASE_URL = IS_PRODUCTION ? PRODUCTION_API : (IS_WEB ? LOCALHOST_API : NETWORK_API);
+export const API_BASE_URL = IS_PRODUCTION
+  ? PRODUCTION_API
+  : ENV_API_URL
+    ? ENV_API_URL
+    : (IS_WEB ? LOCALHOST_API : NETWORK_API);
 
 // This is the crucial step: configure the shared axios instance with the correct URL
 setBaseUrl(API_BASE_URL);
