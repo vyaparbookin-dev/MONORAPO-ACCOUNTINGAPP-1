@@ -1,9 +1,0 @@
-{
-  "installCommand": "npm install --ignore-scripts",
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ]
-}

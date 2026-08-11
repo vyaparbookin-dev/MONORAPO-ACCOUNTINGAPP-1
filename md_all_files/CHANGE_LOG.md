@@ -214,12 +214,11 @@ Mobile App को **Expo SDK 54** (Latest) पर अपडेट किया �
 
 ### 📦 Correct Versions (apps/mobile/package.json)
 अगर कभी `node_modules` डिलीट हो जाए, तो ये वर्जन्स सुनिश्चित करें (Expo 54 Compatible):
-
 - **Expo:** `~54.0.0`
-- **React Native:** `0.81.5`
-- **React:** `19.1.0`
-- **React DOM:** `19.1.0`
-- **React Native Web:** `^0.21.0`
+- **React Native:** `0.75.1` (Official for SDK 54)
+- **React:** `18.2.0` (Official for SDK 54)
+- **React DOM:** `18.2.0` (Official for SDK 54)
+- **React Native Web:** `~0.19.10` (Official for SDK 54)
 
 ### 🛠️ Setup Instructions (Clean Install)
 अगर मोबाइल ऐप क्रैश हो या "Version Mismatch" एरर आए:
@@ -263,4 +262,3 @@ Mobile App को **Expo SDK 54** (Latest) पर अपडेट किया �
 3.  `reportRoutes.js` में Temporary Route को हटाकर Controller फंक्शन कनेक्ट करें।
 
 **File Location:** `apps/backend/src/routes/reportRoutes.js`
-

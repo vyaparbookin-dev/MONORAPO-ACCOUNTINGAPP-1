@@ -1,10 +1,12 @@
 import jwt from "jsonwebtoken";
 import User from "../model/user.js";
 import Company from "../model/company.js";
+import { asyncHandler } from "./errormiddleware.js";
 
-export const protect = async (req, res, next) => {
+export const protect = asyncHandler(async (req, res, next) => {
   let token;
-  if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
+
+  if (req.headers.authorization?.startsWith("Bearer")) {
     token = req.headers.authorization.split(" ")[1];
   }
 
@@ -12,7 +14,7 @@ export const protect = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).select("-password");
+    req.user = await User.findById(decoded.id).select("-password").lean();
 
     if (!req.user) {
       return res.status(401).json({ success: false, message: "Not authorized, user not found" });
@@ -23,12 +25,12 @@ export const protect = async (req, res, next) => {
 
     // If a company ID is provided in the header, validate it
     if (companyId) {
-      // Validate the companyId
-      const company = await Company.findById(companyId);
+      // Validate the companyId using lean for performance
+      const company = await Company.findById(companyId).lean();
 
       // Check 1: Company exists
       if (!company) {
-        return res.status(404).json({ success: false, message: "Company not found." });
+        return res.status(404).json({ success: false, message: "Company not found or you don't have access." });
       }
 
       // Check 2: User is authorized for this company
@@ -43,9 +45,9 @@ export const protect = async (req, res, next) => {
 
     next();
   } catch (error) {
-    res.status(401).json({ success: false, message: "Token invalid" });
+    res.status(401).json({ success: false, message: "Not authorized, token failed" });
   }
-};
+});
 
 // Middleware to check user roles
 export const authorize = (...roles) => {

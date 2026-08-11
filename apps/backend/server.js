@@ -57,6 +57,9 @@ import brandRoutes from "./src/routes/brandRoutes.js";
 import subCategoryRoutes from "./src/routes/subCategoryRoutes.js";
 import { startCronJobs } from "./src/utils/cronJobs.js";
 import tallyRoutes from "./src/routes/tallyRoutes.js";
+import leadRoutes from "./src/routes/leadRoutes.js";
+import { getProductAnalytics } from "./src/controllers/productAnalyticsController.js";
+import quotationRoutes from "./src/routes/quotationRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -167,6 +170,11 @@ app.use("/api/fixed-assets", fixedAssetRoutes);
 app.use("/api/gst", gstRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/laterpad", laterpadRoutes);
+app.use("/api/leads", leadRoutes);
+// New Product Analytics Route
+app.get('/api/products/:id/analytics', getProductAnalytics);
+
+app.use("/api/quotations", quotationRoutes);
 app.use("/api/licensing", licensingRoutes);
 app.use("/api/membership", membershipRoutes);
 app.use("/api/notification", notificationRoutes);

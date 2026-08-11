@@ -25,6 +25,7 @@ import FixedAssetsScreen from '../screens/report/FixedAssetsScreen';
 import EwayBillScreen from '../screens/report/EwayBillScreen';
 import AgingReportScreen from '../screens/report/AgingReportScreen';
 import DayBookScreen from '../screens/report/DayBookScreen';
+import NonMovingStockScreen from '../screens/report/NonMovingStockScreen'; // Import the new screen
 
 const Stack = createStackNavigator();
 
@@ -56,6 +57,7 @@ export default function ReportNavigator() {
       <Stack.Screen name="EwayBill" component={EwayBillScreen} options={{ title: 'E-Way Bills' }} />
       <Stack.Screen name="AgingReport" component={AgingReportScreen} options={{ title: 'Aging Analysis' }} />
       <Stack.Screen name="DayBook" component={DayBookScreen} options={{ title: 'Day Book' }} />
+      <Stack.Screen name="NonMovingStock" component={NonMovingStockScreen} options={{ title: 'Non-Moving Stock' }} />
     </Stack.Navigator>
   );
 }

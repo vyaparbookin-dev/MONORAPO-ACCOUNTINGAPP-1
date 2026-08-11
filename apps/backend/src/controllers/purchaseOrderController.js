@@ -1,53 +1,40 @@
-import PurchaseOrder from "../model/purchaseOrder.js";
-import { logActivity } from "../utils/logger.js";
+import PurchaseOrder from '../model/PurchaseOrder.js';
+import { asyncHandler } from '../middleware/errormiddleware.js';
 
-// Create a new Purchase Order (No stock update yet)
-export const createPurchaseOrder = async (req, res) => {
-  try {
-    const { companyId } = req;
-    if (!companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
+/**
+ * @desc    Create a new purchase order
+ * @route   POST /api/purchase-orders
+ * @access  Private
+ */
+export const createPurchaseOrder = asyncHandler(async (req, res) => {
+  const { supplierId, orderDate, items, notes } = req.body;
 
-    const order = new PurchaseOrder({ ...req.body, companyId });
-    await order.save();
-
-    await logActivity(req, `Created Purchase Order #${order.orderNumber} for amount ₹${order.finalAmount}`);
-
-    res.status(201).json({ success: true, message: "Purchase Order created successfully!", order });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+  if (!items || items.length === 0) {
+    return res.status(400).json({ success: false, message: 'PO must have at least one item' });
   }
-};
 
-// Get all Purchase Orders
-export const getPurchaseOrders = async (req, res) => {
-  try {
-    const orders = await PurchaseOrder.find({ companyId: req.companyId, isDeleted: false })
-      .populate("partyId", "name mobileNumber")
-      .sort({ date: -1 });
+  const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
 
-    res.status(200).json({ success: true, orders });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-};
+  const purchaseOrder = new PurchaseOrder({
+    companyId: req.companyId,
+    supplierId,
+    orderDate,
+    items,
+    totalAmount,
+    notes,
+    status: 'Pending',
+  });
 
-// Update Order Status (e.g., from 'pending' to 'completed' or 'cancelled')
-export const updateOrderStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body; // 'pending', 'completed', 'cancelled'
+  const createdOrder = await purchaseOrder.save();
+  res.status(201).json({ success: true, data: createdOrder });
+});
 
-    const order = await PurchaseOrder.findOneAndUpdate(
-      { _id: id, companyId: req.companyId },
-      { status },
-      { new: true }
-    );
-    if (!order) return res.status(404).json({ success: false, message: "Purchase Order not found" });
-
-    await logActivity(req, `Changed Purchase Order #${order.orderNumber} status to ${status.toUpperCase()}`);
-
-    res.status(200).json({ success: true, message: `Order status updated to ${status}`, order });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-};
+/**
+ * @desc    Get all purchase orders
+ * @route   GET /api/purchase-orders
+ * @access  Private
+ */
+export const getPurchaseOrders = asyncHandler(async (req, res) => {
+  const purchaseOrders = await PurchaseOrder.find({ companyId: req.companyId }).sort({ orderDate: -1 });
+  res.json({ success: true, data: purchaseOrders });
+});

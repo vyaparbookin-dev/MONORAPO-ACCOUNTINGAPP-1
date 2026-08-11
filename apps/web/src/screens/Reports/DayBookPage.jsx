@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import api from "../../services/api";
 import { Calendar, ArrowDownCircle, ArrowUpCircle, Download } from "lucide-react";
+import CustomerSummaryModal from "../../components/modals/CustomerSummaryModal";
 
 export default function DayBookPage() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
@@ -11,7 +12,11 @@ export default function DayBookPage() {
     cashSales: 0, partyIn: 0,
     cashPurchases: 0, expenses: 0, salaries: 0, partyOut: 0,
   });
-
+  
+  // State for Customer 360° Modal
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+  
   useEffect(() => {
     fetchDayBook();
   }, [selectedDate]);
@@ -67,6 +72,12 @@ export default function DayBookPage() {
       console.error("Tally Export Failed", err);
       alert("Failed to export Tally XML. Ensure the backend is running.");
     }
+  };
+
+  const handleCustomerClick = (partyId) => {
+    if (!partyId) return;
+    setSelectedCustomerId(partyId);
+    setIsModalOpen(true);
   };
 
   return (
@@ -136,6 +147,33 @@ export default function DayBookPage() {
             </div>
           </div>
 
+          {/* Today's Sales Bills */}
+          <div className="mt-8 bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h2 className="text-lg font-bold text-gray-800 mb-4">Today's Sales Bills</h2>
+            <div className="divide-y divide-gray-100">
+              {rawdata?.bills?.length > 0 ? rawdata.bills.map(bill => (
+                <div key={bill._id} className="py-3 flex justify-between items-center">
+                  <div>
+                    <span className="font-semibold text-gray-700">#{bill.billNumber}</span>
+                    <button
+                      onClick={() => handleCustomerClick(bill.partyId?._id)}
+                      className="ml-4 text-blue-600 hover:underline disabled:text-gray-500 disabled:no-underline"
+                      disabled={!bill.partyId?._id}
+                    >
+                      {bill.partyId?.name || bill.customerName || 'Walk-in Customer'}
+                    </button>
+                    {bill.partyId && (
+                      <span className={`ml-2 text-xs font-bold px-2 py-1 rounded-full ${bill.isNewCustomer ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                        {bill.isNewCustomer ? 'New' : 'Returning'}
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-bold text-gray-800">₹{(bill.finalAmount || bill.total || 0).toFixed(2)}</span>
+                </div>
+              )) : <div className="py-4 text-center text-gray-500 text-sm">No sales bills found for this day.</div>}
+            </div>
+          </div>
+
           {/* Transaction Logs */}
           <div className="mt-8 bg-white p-6 rounded-xl shadow-sm border border-gray-200">
             <h2 className="text-lg font-bold text-gray-800 mb-4">Recent Manual Entries</h2>
@@ -152,6 +190,14 @@ export default function DayBookPage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Customer 360° Modal */}
+      {isModalOpen && (
+        <CustomerSummaryModal
+          partyId={selectedCustomerId}
+          onClose={() => setIsModalOpen(false)}
+        />
       )}
     </div>
   );

@@ -1,12 +1,18 @@
 import React, { useEffect, useState } from "react";
-import { DollarSign, TrendingDown, TrendingUp, Printer } from "lucide-react";
+import { DollarSign, TrendingDown, TrendingUp, Printer, ShieldAlert } from "lucide-react";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
+
+// Dummy auth context hook - replace with your actual implementation
+const useAuth = () => ({ user: { role: 'owner' } }); // DUMMY: 'owner', 'manager', or 'staff'
 
 const ProfitLossReportPage = () => {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const { user } = useAuth();
+
+  const hasPermission = user.role === 'owner' || user.role === 'manager';
 
   const fetchReport = async () => {
     setLoading(true);
@@ -28,9 +34,22 @@ const ProfitLossReportPage = () => {
   };
 
   useEffect(() => {
-    fetchReport();
-  }, []);
+    if (hasPermission) {
+      fetchReport();
+    } else {
+      setLoading(false);
+    }
+  }, [hasPermission]);
 
+  if (!hasPermission) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-red-50 text-red-700 p-8 rounded-lg">
+        <ShieldAlert size={48} className="mb-4" />
+        <h2 className="text-2xl font-bold">Permission Denied</h2>
+        <p className="mt-2">You do not have the required permissions to view this report.</p>
+      </div>
+    );
+  }
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="max-w-4xl mx-auto">

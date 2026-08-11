@@ -1,11 +1,14 @@
-import express from "express";
-import { createPurchaseOrder, getPurchaseOrders, updateOrderStatus } from "../controllers/purchaseOrderController.js";
-import { protect } from "../middleware/authmiddleware.js";
+import express from 'express';
+import { createPurchaseOrder, getPurchaseOrders } from '../controllers/purchaseOrderController.js';
+import { protect, requireCompany } from '../middleware/authmiddleware.js';
+import { authorizeRoles } from '../middleware/roleMiddleware.js';
 
 const router = express.Router();
 
-router.post("/", protect, createPurchaseOrder);
-router.get("/", protect, getPurchaseOrders);
-router.patch("/:id/status", protect, updateOrderStatus);
+router.use(protect, requireCompany);
+
+router.route('/')
+  .post(authorizeRoles('owner', 'manager'), createPurchaseOrder)
+  .get(authorizeRoles('owner', 'manager'), getPurchaseOrders);
 
 export default router;

@@ -16,6 +16,7 @@ import CategoryAnalyticsScreen from '../screens/inventory/CategoryAnalyticsScree
 import StockAdjustmentScreen from '../screens/inventory/StockAdjustmentScreen';
 import StockTransferScreen from '../screens/inventory/StockTransferScreen';
 import SupplierLedgerScreen from '../screens/inventory/SupplierLedgerScreen';
+import CreatePurchaseOrderScreen from '../screens/inventory/CreatePurchaseOrderScreen';
 
 const Stack = createStackNavigator();
 
@@ -39,6 +40,7 @@ function InventoryNavigator() {
       <Stack.Screen name="StockAdjustment" component={StockAdjustmentScreen} options={{ headerShown: true, title: 'Stock Adjustment' }} />
       <Stack.Screen name="StockTransfer" component={StockTransferScreen} options={{ headerShown: true, title: 'Stock Transfer' }} />
       <Stack.Screen name="SupplierLedger" component={SupplierLedgerScreen} options={{ headerShown: true, title: 'Supplier Ledger' }} />
+      <Stack.Screen name="CreatePurchaseOrder" component={CreatePurchaseOrderScreen} options={{ headerShown: true, title: 'Create Purchase Order' }} />
     </Stack.Navigator>
   );
 }

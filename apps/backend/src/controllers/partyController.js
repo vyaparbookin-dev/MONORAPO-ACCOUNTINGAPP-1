@@ -1,5 +1,7 @@
 import Party from "../model/party.js";
+import Bill from "../model/bill.js";
 import PartyTransaction from "../model/PartyTransaction.js";
+import mongoose from "mongoose";
 
 export const createParty = async (req, res) => {
   try {
@@ -20,6 +22,118 @@ export const createParty = async (req, res) => {
     const party = new Party({ ...req.body, companyId: req.companyId });
     await party.save();
     res.status(201).json({ success: true, party, message: `Party ${name} created successfully!` });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * @desc    Get quick summary for a party (last purchase date and amount)
+ * @route   GET /api/parties/:id/quick-summary
+ * @access  Private
+ */
+export const getPartyQuickSummary = async (req, res) => {
+  try {
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    const { id } = req.params;
+
+    // Find the last bill for this party
+    const lastBill = await Bill.findOne({
+      partyId: new mongoose.Types.ObjectId(id),
+      companyId: req.companyId,
+      isDeleted: false,
+    })
+    .sort({ date: -1 }) // Sort by date descending to get the latest
+    .select('date finalAmount total billNumber') // Select only necessary fields
+    .lean();
+
+    res.json({
+      success: true,
+      summary: lastBill ? {
+        lastPurchaseDate: lastBill.date,
+        lastPurchaseAmount: lastBill.finalAmount || lastBill.total,
+        lastBillNumber: lastBill.billNumber,
+      } : null,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const getPartySummary = async (req, res) => {
+  try {
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    const { id } = req.params;
+    const party = await Party.findOne({ _id: id, companyId: req.companyId }).lean();
+    const Return = mongoose.model('Return'); // Dynamically get Return model
+    if (!party) return res.status(404).json({ success: false, error: "Party not found" });
+
+    const bills = await Bill.find({ partyId: id, companyId: req.companyId, isDeleted: false }).sort({ date: 1 }).lean();
+
+    if (bills.length === 0) {
+      return res.json({ success: true, summary: { ...party, lifetimeValue: 0, visitCount: 0, topProducts: [] } });
+    }
+
+    const lifetimeValue = bills.reduce((sum, bill) => sum + (bill.finalAmount || bill.total || 0), 0);
+    const firstVisit = bills[0].date;
+    const lastVisit = bills[bills.length - 1].date;
+
+    const productFrequency = new Map();
+    bills.forEach(bill => {
+      if (Array.isArray(bill.items)) {
+        bill.items.forEach(item => {
+          const name = item.name || "Unknown Product";
+          productFrequency.set(name, (productFrequency.get(name) || 0) + (item.quantity || 1));
+        });
+      }
+    });
+
+    const topProducts = Array.from(productFrequency.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, quantity]) => ({ name, quantity }));
+
+    // --- NEW: Calculate Return History & Recent Transactions ---
+    const returns = await Return.find({ partyId: id, companyId: req.companyId, type: 'sales_return', isDeleted: false }).sort({ date: -1 }).lean();
+    const totalReturnValue = returns.reduce((sum, ret) => sum + (ret.totalAmount || 0), 0);
+    const returnCount = returns.length;
+
+    const billHistory = bills.map(b => ({
+        type: 'Sale',
+        date: b.date,
+        details: `Invoice #${b.billNumber}`,
+        amount: b.finalAmount || b.total || 0
+    }));
+    const returnHistory = returns.map(r => ({
+        type: 'Return',
+        date: r.date,
+        details: `Return #${r.returnNumber || r._id}`,
+        amount: -(r.totalAmount || 0) // Negative amount for returns
+    }));
+    const transactionHistory = [...billHistory, ...returnHistory]
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 5); // Send last 5 transactions
+
+    res.json({
+      success: true,
+      summary: {
+        ...party,
+        lifetimeValue,
+        visitCount: bills.length,
+        firstVisit,
+        lastVisit,
+        topProducts,
+        totalReturnValue,
+        returnCount,
+        transactionHistory
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

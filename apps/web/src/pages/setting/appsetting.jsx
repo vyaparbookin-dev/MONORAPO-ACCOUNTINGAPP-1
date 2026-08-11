@@ -5,6 +5,7 @@ const AppSettings = () => {
   const settings = [
     { name: "Profile", path: "/profile" },
     { name: "Cloud Sync", path: "/cloudsync" },
+    { name: "Billing Settings", path: "/settings/billing" },
     { name: "Security Log", path: "/security" },
   ];
 

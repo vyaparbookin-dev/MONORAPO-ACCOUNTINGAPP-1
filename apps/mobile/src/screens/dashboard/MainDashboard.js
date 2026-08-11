@@ -5,12 +5,17 @@ import { useFocusEffect } from '@react-navigation/native';
 import CalculatorModal from '../../components/CalculatorModal';
 import { getData } from '../../services/ApiService';
 import { getBillsLocal, getProductsLocal, getPartiesLocal } from '../../../db'; 
-import { CompanyContext } from '../../context/CompanyContext';
+import { useAuth } from '../../context/AuthContext'; // Corrected import
+
+// Dummy auth context hook - replace with your actual implementation
+// const useAuth = () => ({ user: { role: 'owner' } }); // DUMMY: 'owner', 'manager', or 'staff'
 
 export default function MainDashboard({ navigation }) {
   const [calculatorVisible, setCalculatorVisible] = useState(false);
   const [recentBills, setRecentBills] = useState([]);
-  const { selectedCompany } = useContext(CompanyContext);
+  // const { selectedCompany } = useContext(CompanyContext);
+  const { user } = useAuth();
+  const userRole = user?.role || 'staff';
   const [summary, setSummary] = useState({ toCollect: 0, toPay: 0, stockValue: 0, totalBalance: 0, lowStockCount: 0, recentSales: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -90,7 +95,7 @@ export default function MainDashboard({ navigation }) {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <TouchableOpacity style={styles.businessNameContainer} onPress={() => navigation.navigate('CompanyList')}>
-            <Text style={styles.businessName} numberOfLines={1}>
+            <Text style={styles.businessName} numberOfLines={1}> 
               {selectedCompany?.name || 'Select Company'} <Ionicons name="chevron-down" size={16} color="#FFF" />
             </Text>
           </TouchableOpacity>
@@ -127,6 +132,8 @@ export default function MainDashboard({ navigation }) {
           <GridCard title="Stock Value" amount={`₹ ${summary.stockValue.toLocaleString('en-IN')}`} icon="cube-outline" iconColor="#64748B" bg="#FFFFFF" onPress={() => openNestedTab('Inventory')} />
           <GridCard title="Recent Sales" amount={`₹ ${summary.recentSales.toLocaleString('en-IN')}`} icon="cart-outline" iconColor="#10B981" bg="#FFFFFF" onPress={() => navigation.navigate('Billing', { screen: 'BillList' })} />
           <GridCard title="Low Stock Alerts" amount={`${summary.lowStockCount} Items`} icon="warning-outline" iconColor="#EF4444" bg="#FFF1F2" onPress={() => openNestedTab('Inventory')} actionText={summary.lowStockCount > 0} />
+          <GridCard title="Quotations" amount="Manage" icon="document-text-outline" iconColor="#f97316" bg="#FFFFFF" onPress={() => navigation.navigate('Quotations')} actionText />
+          <GridCard title="Leads" amount="Follow up" icon="person-add-outline" iconColor="#8b5cf6" bg="#FFFFFF" onPress={() => navigation.navigate('Leads')} actionText/>
           <GridCard title="Reports" amount="View All" icon="bar-chart-outline" iconColor="#5B3FD0" bg="#FFFFFF" onPress={() => openNestedTab('Reports')} actionText />
           <GridCard title="Sales/Purchase Return" amount="Create New" icon="return-up-back-outline" iconColor="#f59e0b" bg="#FFFFFF" onPress={() => navigation.navigate('CreateReturn')} actionText />
         </View>

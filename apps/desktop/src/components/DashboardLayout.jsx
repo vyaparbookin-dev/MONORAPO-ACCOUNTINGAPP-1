@@ -115,7 +115,10 @@ export default function DashboardLayout() {
     { icon: CheckCircle, label: "Approvals", href: "/approvals", color: "text-emerald-500", roles: ['admin', 'manager'] },
     { icon: Users, label: "Parties", href: "/parties", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
     ...(!Array.isArray(selectedCompany?.businessType) || selectedCompany?.businessType.length === 0 || selectedCompany?.businessType.some(t => t !== 'service') ? [{ icon: Package, label: "Inventory", href: "/inventory", color: "text-purple-600", roles: ['admin', 'manager'] }] : []),
+    { icon: Users, label: "Leads", href: "/leads", color: "text-purple-600", roles: ['admin', 'manager'] },
+    { icon: FileText, label: "Quotations", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
     ...(!Array.isArray(selectedCompany?.businessType) || selectedCompany?.businessType.length === 0 || selectedCompany?.businessType.some(t => t !== 'service') ? [{ icon: BarChart3, label: "Category Analytics", href: "/inventory/analytics", color: "text-blue-600", roles: ['admin', 'manager'] }] : []),
+    { icon: PackageWarning, label: "Non-Moving Stock", href: "/reports/non-moving-stock", color: "text-red-500", roles: ['admin', 'manager'] },
     { icon: Landmark, label: "Cash & Bank", href: "/banking", color: "text-cyan-600", roles: ['admin', 'manager'] },
     { icon: DollarSign, label: "Expenses", href: "/expenses", color: "text-orange-600", roles: ['admin', 'manager'] },
     { icon: Building2, label: "Company", href: "/company", color: "text-indigo-600", roles: ['admin'] },
@@ -136,7 +139,7 @@ export default function DashboardLayout() {
     ...(Array.isArray(selectedCompany?.businessType) && selectedCompany?.businessType.includes('manufacturing') ? [{ icon: Warehouse, label: "Warehouse", href: "/warehouse", color: "text-amber-600", roles: ['admin', 'manager'] }] : []),
   ];
 
-  const userRole = user?.role || 'admin'; // Default to admin if no role found
+  const userRole = user?.role || 'owner'; // Default to owner for desktop, can be changed
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -183,7 +186,7 @@ export default function DashboardLayout() {
 
         {/* Settings & Logout */}
         <div className="p-3 border-t border-slate-700 space-y-1">
-          {['admin'].includes(userRole) && (
+          {['owner', 'admin', 'manager'].includes(userRole) && (
           <button
             onClick={() => navigate("/settings")}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-slate-700 hover:text-white transition text-left mb-1"

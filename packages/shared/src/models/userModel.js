@@ -4,7 +4,7 @@ export default class UserModel {
     name,
     email,
     phone,
-    role = "admin",
+    role = "staff", // Default role is now 'staff'
     companyId,
     isActive = true,
     isVerified = false,
@@ -15,7 +15,8 @@ export default class UserModel {
     this.name = name;
     this.email = email;
     this.phone = phone;
-    this.role = role;
+    // Ensure role is one of the allowed values
+    this.role = ['owner', 'manager', 'staff'].includes(role) ? role : 'staff';
     this.companyId = companyId;
     this.isActive = isActive;
     this.isVerified = isVerified;

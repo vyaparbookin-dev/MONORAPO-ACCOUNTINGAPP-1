@@ -55,12 +55,44 @@ export const getDayBook = async (req, res) => {
       Salary.countDocuments(salaryQuery)
     ]);
 
+    // --- New/Returning Customer Logic ---
+    const billsWithCustomerStatus = [...bills]; // Create a mutable copy
+    const partyIds = bills
+      .map(b => b.partyId?._id)
+      .filter(id => id);
+
+    if (partyIds.length > 0) {
+      // Find the first bill date for each customer
+      const firstBillDates = await Bill.aggregate([
+        { $match: { partyId: { $in: partyIds } } },
+        { $group: { _id: "$partyId", firstBillDate: { $min: "$date" } } }
+      ]);
+
+      const firstBillDateMap = new Map(
+        firstBillDates.map(item => [item._id.toString(), new Date(item.firstBillDate).toISOString().split('T')[0]])
+      );
+
+      // Add isNewCustomer flag to each bill
+      for (let i = 0; i < billsWithCustomerStatus.length; i++) {
+        const bill = billsWithCustomerStatus[i];
+        if (bill.partyId?._id) {
+          const partyIdStr = bill.partyId._id.toString();
+          const firstDate = firstBillDateMap.get(partyIdStr);
+          const billDate = new Date(bill.date).toISOString().split('T')[0];
+          
+          // Convert to plain object to modify
+          billsWithCustomerStatus[i] = bill.toObject(); 
+          billsWithCustomerStatus[i].isNewCustomer = (firstDate === billDate);
+        }
+      }
+    }
+
     // Combine and send everything back
     res.status(200).json({
       success: true,
       data: {
         targetDate: startOfDay,
-        bills,
+        bills: billsWithCustomerStatus,
         purchases,
         expenses,
         partyTransactions,

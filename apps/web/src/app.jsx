@@ -2,6 +2,7 @@ import React, { Suspense, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Outlet } from "react-router-dom";
 import { CompanyProvider } from "./contexts/CompanyContext";
 import { GoogleOAuthProvider } from "@react-oauth/google";
+import { SettingsProvider } from "./contexts/SettingsContext"; // Import SettingsProvider
 import { SecurityTracker } from "./components/SecurityTracker";
 import DashboardLayout from "./components/DashboardLayout";
 import Loader from "./components/Loader"; // Assuming a loader component exists
@@ -131,6 +132,14 @@ const UnitSettingsPage = React.lazy(() => import("./screens/Settings/UnitSetting
 const StaffPerformancePage = React.lazy(() => import("./screens/Settings/StaffPerformancePage"));
 const WhatsappSettingsPage = React.lazy(() => import("./screens/Settings/WhatsappSettingsPage"));
 
+// Leads & Quotations
+const LeadListPage = React.lazy(() => import("./screens/lead/LeadListPage"));
+const CreateLeadPage = React.lazy(() => import("./screens/lead/CreateLeadPage"));
+const LeadDetailPage = React.lazy(() => import("./screens/lead/LeadDetailPage"));
+const QuotationListPage = React.lazy(() => import("./screens/quotation/QuotationListPage"));
+const CreateQuotationPage = React.lazy(() => import("./screens/quotation/CreateQuotationPage"));
+const QuotationDetailPage = React.lazy(() => import("./screens/quotation/QuotationDetailPage"));
+
 const ComingSoonPage = () => (
   <div className="flex items-center justify-center h-full min-h-[400px]">
     <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 text-center">
@@ -183,6 +192,7 @@ const App = () => {
   <GoogleOAuthProvider clientId={googleClientId || "dummy-client-id-for-dev"}>
   <ErrorBoundary>
     <Router>
+      <SettingsProvider> {/* Wrap with SettingsProvider */}
       <CompanyProvider>
         <Suspense fallback={<Loader />}>
           <Routes>
@@ -286,6 +296,18 @@ const App = () => {
               <Route path="/reports/fixed-assets" element={<FixedAssetsPage />} />
               <Route path="/reports/tds-tcs" element={<TdsTcsPage />} />
 
+              {/* Leads */}
+              <Route path="/leads" element={<LeadListPage />} />
+              <Route path="/leads/create" element={<CreateLeadPage />} />
+              <Route path="/leads/:id" element={<LeadDetailPage />} />
+
+              {/* Quotations */}
+              <Route path="/quotations" element={<QuotationListPage />} />
+              <Route path="/quotations/create" element={<CreateQuotationPage />} />
+              <Route path="/quotations/:id" element={<QuotationDetailPage />} />
+              <Route path="/billing/quotations" element={<QuotationListPage />} />
+              <Route path="/billing/quotations/create" element={<CreateQuotationPage />} />
+
               {/* Salary */}
               <Route path="/salary" element={<SalaryPage />} />
               <Route path="/salary/add" element={<AddSalaryPage />} />
@@ -326,6 +348,7 @@ const App = () => {
             </Route>
           </Routes>
         </Suspense>
+      </SettingsProvider>
       </CompanyProvider>
     </Router>
   </ErrorBoundary>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import api from "../../services/api";
-import { Calendar, ArrowDownCircle, ArrowUpCircle, Download } from "lucide-react";
+import { Calendar, ArrowDownCircle, ArrowUpCircle, Download, User, X } from "lucide-react";
 import { dbService } from "../../services/dbService";
+import CustomerSummaryModal from "../../components/modals/CustomerSummaryModal"; // Import the new component
 
 export default function DayBookPage() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
@@ -12,6 +13,10 @@ export default function DayBookPage() {
     cashSales: 0, partyIn: 0,
     cashPurchases: 0, expenses: 0, salaries: 0, partyOut: 0,
   });
+
+  // State for Customer 360° Modal
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
 
   useEffect(() => {
     fetchDayBook();
@@ -27,27 +32,49 @@ export default function DayBookPage() {
       };
 
       // 1. Offline First: Fetch everything from local SQLite DB
-      const allBills = await dbService.getInvoices?.() || [];
+      let allBills = await dbService.getInvoices?.() || [];
       const allPurchases = await dbService.getPurchases?.() || [];
       const allExpenses = await dbService.getExpenses?.() || [];
       const allPartyTx = await dbService.getPartyTransactions?.() || [];
       const allSalaries = await dbService.getSalaries?.() || [];
 
       // Filter records for the selected date
-      const localData = {
-        bills: allBills.filter(b => isSameDay(b.date || b.createdAt)),
+      let localData = {
+        bills: allBills.filter(b => isSameDay(b.date || b.createdAt)).map(b => ({...b, partyId: { _id: b.partyId, name: b.customerName }})), // Simulate populate
         purchases: allPurchases.filter(p => isSameDay(p.date || p.createdAt)),
         expenses: allExpenses.filter(e => isSameDay(e.date || e.createdAt)),
         partyTransactions: allPartyTx.filter(t => isSameDay(t.date || t.createdAt)),
         salaries: allSalaries.filter(s => isSameDay(s.date || s.createdAt))
       };
 
+      // --- New/Returning Customer Logic (Offline) ---
+      const partyIds = localData.bills.map(b => b.partyId?._id).filter(id => id);
+      if (partyIds.length > 0) {
+        const firstBillDates = {};
+        // Inefficient but works for offline: find first bill for each party
+        for (const bill of allBills) {
+            if (bill.partyId && !firstBillDates[bill.partyId]) {
+                firstBillDates[bill.partyId] = new Date(bill.date || bill.createdAt).toISOString().split('T')[0];
+            }
+        }
+
+        localData.bills = localData.bills.map(bill => {
+            if (bill.partyId?._id) {
+                const partyIdStr = bill.partyId._id.toString();
+                const firstDate = firstBillDates[partyIdStr];
+                const billDate = new Date(bill.date).toISOString().split('T')[0];
+                return { ...bill, isNewCustomer: firstDate === billDate };
+            }
+            return bill;
+        });
+      }
+
       // 2. Fallback: If local data is empty and we are online, try fetching from API
       if (navigator.onLine && localData.bills.length === 0 && localData.purchases.length === 0 && localData.expenses.length === 0) {
         try {
           const res = await api.get(`/api/daybook?date=${selectedDate}`);
           if (res.data?.data) {
-            Object.assign(localData, res.data.data);
+            localData = res.data.data; // Overwrite with fresh server data
           }
         } catch (apiErr) {
           console.warn("Offline: Could not fetch from API, relying entirely on local data.");
@@ -102,6 +129,12 @@ export default function DayBookPage() {
       console.error("Tally Export Failed", err);
       alert("Failed to export Tally XML. Ensure the backend is running.");
     }
+  };
+
+  const handleCustomerClick = (partyId) => {
+    if (!partyId) return;
+    setSelectedCustomerId(partyId);
+    setIsModalOpen(true);
   };
 
   return (
@@ -171,6 +204,33 @@ export default function DayBookPage() {
             </div>
           </div>
 
+          {/* Today's Sales Bills */}
+          <div className="mt-8 bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h2 className="text-lg font-bold text-gray-800 mb-4">Today's Sales Bills</h2>
+            <div className="divide-y divide-gray-100">
+              {rawdata?.bills?.length > 0 ? rawdata.bills.map(bill => (
+                <div key={bill._id} className="py-3 flex justify-between items-center">
+                  <div>
+                    <span className="font-semibold text-gray-700">#{bill.billNumber}</span>
+                    <button 
+                      onClick={() => handleCustomerClick(bill.partyId?._id)}
+                      className="ml-4 text-blue-600 hover:underline disabled:text-gray-500 disabled:no-underline"
+                      disabled={!bill.partyId?._id}
+                    >
+                      {bill.partyId?.name || bill.customerName || 'Walk-in Customer'}
+                    </button>
+                    {bill.partyId && (
+                      <span className={`ml-2 text-xs font-bold px-2 py-1 rounded-full ${bill.isNewCustomer ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                        {bill.isNewCustomer ? 'New' : 'Returning'}
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-bold text-gray-800">₹{(bill.finalAmount || bill.total || 0).toFixed(2)}</span>
+                </div>
+              )) : <div className="py-4 text-center text-gray-500 text-sm">No sales bills found for this day.</div>}
+            </div>
+          </div>
+
           {/* Transaction Logs */}
           <div className="mt-8 bg-white p-6 rounded-xl shadow-sm border border-gray-200">
             <h2 className="text-lg font-bold text-gray-800 mb-4">Recent Manual Entries</h2>
@@ -187,6 +247,14 @@ export default function DayBookPage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Customer 360° Modal */}
+      {isModalOpen && (
+        <CustomerSummaryModal 
+          partyId={selectedCustomerId} 
+          onClose={() => setIsModalOpen(false)} 
+        />
       )}
     </div>
   );

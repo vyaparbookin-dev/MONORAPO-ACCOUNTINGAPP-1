@@ -5,11 +5,17 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
 
+// Dummy auth context hook - replace with your actual implementation
+const useAuth = () => ({ user: { role: 'owner' } }); // DUMMY: 'owner', 'manager', or 'staff'
+
 const ProfitLossReport = () => {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isSharing, setIsSharing] = useState(false);
+  const { user } = useAuth();
 
+  const hasPermission = user.role === 'owner' || user.role === 'manager';
+  
   const fetchReport = async () => {
     setLoading(true);
     try {
@@ -24,8 +30,12 @@ const ProfitLossReport = () => {
   };
 
   useEffect(() => {
-    fetchReport();
-  }, []);
+    if (hasPermission) {
+      fetchReport();
+    } else {
+      setLoading(false);
+    }
+  }, [hasPermission]);
 
   const handleSharePDF = async () => {
     if (!report) return;
@@ -66,6 +76,16 @@ const ProfitLossReport = () => {
       setIsSharing(false);
     }
   };
+
+  if (!hasPermission) {
+    return (
+      <View style={[styles.container, styles.center, {backgroundColor: '#fef2f2'}]}>
+        <Ionicons name="shield-half-outline" size={48} color="#b91c1c" />
+        <Text style={[styles.title, {color: '#b91c1c', marginTop: 10}]}>Permission Denied</Text>
+        <Text style={{color: '#b91c1c'}}>You cannot view this report.</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

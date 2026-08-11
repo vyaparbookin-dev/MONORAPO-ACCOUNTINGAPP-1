@@ -6,6 +6,9 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash.png",
@@ -18,18 +21,22 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#2563eb"
       },
-      "package": "com.monorapo.accounting"
+      "package": "com.monorapo.accounting",
+      "updates": {
+        "url": "https://u.expo.dev/f64e9e60-5bd8-46f9-9066-26b1e42a04f3"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "extra": {
       "eas": {
-        "projectId": "mono-rapo-accounting"
+        "projectId": "f64e9e60-5bd8-46f9-9066-26b1e42a04f3"
       }
-    }
+    },
+    "owner": "ankush.vyaparbook.in"
   }
 }

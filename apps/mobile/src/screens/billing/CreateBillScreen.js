@@ -336,7 +336,21 @@ const CreateBillScreen = ({ navigation }) => {
         <View style={styles.pickerContainer}>
           <Picker
             selectedValue={selectedParty}
-            onValueChange={(val) => setSelectedParty(val)}
+            onValueChange={async (val) => {
+              setSelectedParty(val);
+              if (val) {
+                try {
+                  // Phase 5: Live Customer Insights
+                  const res = await getData(`/party/${val}/quick-summary`);
+                  if (res.success && res.summary) {
+                    const { lastPurchaseDate, lastPurchaseAmount } = res.summary;
+                    Alert.alert("Customer Insights", `Last Purchase: ${new Date(lastPurchaseDate).toLocaleDateString()} for ₹${lastPurchaseAmount}`);
+                  }
+                } catch (err) {
+                  console.log("Could not fetch party quick summary.");
+                }
+              }
+            }}
             style={styles.picker}
           >
             <Picker.Item label="-- Choose Customer --" value="" color="#888" />

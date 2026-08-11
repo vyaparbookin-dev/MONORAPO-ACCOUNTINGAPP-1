@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Platform, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableTouchableOpacity, ActivityIndicator, Platform, Alert } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getData } from '../../services/ApiService';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
+import CustomerSummaryModal from '../../components/modals/CustomerSummaryModal';
 
 const DayBookScreen = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -21,6 +22,10 @@ const DayBookScreen = () => {
   
   const [rawdata, setRawData] = useState(null);
 
+  // State for Customer 360° Modal
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+  
   useEffect(() => {
     fetchDayBook();
   }, [selectedDate]);
@@ -158,6 +163,12 @@ const DayBookScreen = () => {
     }
   };
 
+  const handleCustomerClick = (partyId) => {
+    if (!partyId) return;
+    setSelectedCustomerId(partyId);
+    setIsModalOpen(true);
+  };
+
   const renderBreakdownRow = (label, amount, type = 'neutral') => (
     <View style={styles.breakdownRow}>
       <Text style={styles.breakdownLabel}>{label}</Text>
@@ -235,6 +246,33 @@ const DayBookScreen = () => {
             {renderBreakdownRow("Payment Given (Parties)", summary.partyOut, 'out')}
           </View>
 
+          {/* Today's Sales Bills */}
+          <Text style={styles.sectionTitle}>Today's Sales Bills</Text>
+          <View style={styles.entriesCard}>
+            {rawdata?.bills?.length > 0 ? rawdata.bills.map(bill => (
+              <View key={bill._id} style={styles.entryRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: 'bold', color: '#374151' }}>#{bill.billNumber}</Text>
+                  <TouchableOpacity onPress={() => handleCustomerClick(bill.partyId?._id)} disabled={!bill.partyId?._id}>
+                    <Text style={{ color: '#2563eb', textDecorationLine: 'underline' }}>
+                      {bill.partyId?.name || bill.customerName || 'Walk-in Customer'}
+                    </Text>
+                  </TouchableOpacity>
+                  {bill.partyId && (
+                    <View style={[styles.badge, bill.isNewCustomer ? styles.badgeNew : styles.badgeReturning]}>
+                      <Text style={[styles.badgeText, bill.isNewCustomer ? styles.badgeTextNew : styles.badgeTextReturning]}>
+                        {bill.isNewCustomer ? 'New' : 'Returning'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={{ color: '#111827', fontWeight: 'bold' }}>₹{(bill.finalAmount || bill.total || 0).toFixed(2)}</Text>
+              </View>
+            )) : (
+              <Text style={{ textAlign: 'center', color: '#9ca3af', padding: 10 }}>No sales bills found for this day.</Text>
+            )}
+          </View>
+
           {/* Quick List of Entries */}
           <Text style={styles.sectionTitle}>Recent Entries</Text>
           <View style={styles.entriesCard}>
@@ -260,6 +298,13 @@ const DayBookScreen = () => {
           <View style={{height: 40}} />
         </ScrollView>
       )}
+      
+      {/* Customer 360° Modal */}
+      <CustomerSummaryModal 
+        partyId={selectedCustomerId}
+        visible={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+      />
     </View>
   );
 };
@@ -290,7 +335,13 @@ const styles = StyleSheet.create({
   breakdownLabel: { fontSize: 15, color: '#4b5563' },
   breakdownAmount: { fontSize: 16, fontWeight: '600', color: '#1f2937' },
   entriesCard: { backgroundColor: '#fff', borderRadius: 12, padding: 10, marginHorizontal: 5, elevation: 1 },
-  entryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }
+  entryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, alignSelf: 'flex-start', marginTop: 4 },
+  badgeNew: { backgroundColor: '#dcfce7' },
+  badgeReturning: { backgroundColor: '#dbeafe' },
+  badgeText: { fontSize: 10, fontWeight: 'bold' },
+  badgeTextNew: { color: '#16a34a' },
+  badgeTextReturning: { color: '#2563eb' },
 });
 
 export default DayBookScreen;

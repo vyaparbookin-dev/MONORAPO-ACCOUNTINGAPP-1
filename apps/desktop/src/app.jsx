@@ -2,6 +2,7 @@ import React, { useEffect } from "react";
 import { HashRouter as Router, Routes, Route } from "react-router-dom";
 import { CompanyProvider } from "./contexts/CompanyContext";
 import { GoogleOAuthProvider } from "@react-oauth/google";
+import { SettingsProvider } from "./contexts/SettingsContext"; // Import SettingsProvider
 import { SecurityTracker } from "./components/SecurityTracker";
 import ErrorBoundary from "./components/ErrorBoundary"; // Import the ErrorBoundary component
 
@@ -41,6 +42,7 @@ import BulkProductPage from "./screens/inventory/BulkProductPage";
 import BulkUploadPage from "./screens/inventory/BulkUploadPage";
 import CategoryAnalyticsPage from "./screens/inventory/CategoryAnalyticsPage";
 import PurchaseEntryPage from "./screens/inventory/PurchaseEntryPage";
+import CreatePurchaseOrderPage from "./screens/inventory/CreatePurchaseOrderPage";
 import StockAdjustmentPage from "./screens/inventory/StockAdjustmentPage";
 import ProductListPage from "./screens/inventory/ProductListPage";
 import ProductDetailPage from "./screens/inventory/ProductDetailPage";
@@ -85,6 +87,8 @@ import Gstr3bReportPage from "./screens/Reports/Gstr3bReportPage";
 import ItemWiseReport from "./screens/Reports/ItemWiseReport";
 import ItemWiseReportPage from "./screens/Reports/ItemWiseReportpage";
 import BillWiseReportPage from "./screens/Reports/BillWiseReportPage";
+import LowStockReportPage from "./screens/Reports/LowStockReportPage";
+import NonMovingStockPage from "./screens/Reports/NonMovingStockPage";
 import CustomerReportBuilder from "./screens/Reports/CustomerReportBuilder";
 import PartyWiseReportPage from "./screens/Reports/PartyWiseReportPage";
 import ProfitLossReportPage from "./screens/Reports/ProfitLossReport";
@@ -133,6 +137,14 @@ import PageProfile from "./pages/setting/profile";
 import PageSecurityLog from "./pages/setting/securityLog";
 import PageSettings from "./pages/setting/settings";
 
+// Leads & Quotations
+import LeadListPage from "./screens/lead/LeadListPage";
+import CreateLeadPage from "./screens/lead/CreateLeadPage";
+import LeadDetailPage from "./screens/lead/LeadDetailPage";
+import QuotationListPage from "./screens/quotation/QuotationListPage";
+import CreateQuotationPage from "./screens/quotation/CreateQuotationPage";
+import QuotationDetailPage from "./screens/quotation/QuotationDetailPage";
+
 const App = () => {
   useEffect(() => {
     // Desktop app start होते ही security tracker active हो जाएगा
@@ -142,6 +154,7 @@ const App = () => {
   return (
     <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ""}>
       <ErrorBoundary>
+        <SettingsProvider> {/* Wrap with SettingsProvider */}
         <Router>
           <CompanyProvider>
             <Routes>
@@ -185,6 +198,7 @@ const App = () => {
                 <Route path="/inventory/bulk-upload" element={<BulkUploadPage />} />
                 <Route path="/inventory/bulk-upload-preview" element={<BulkUploadPage />} />
                 <Route path="/inventory/analytics" element={<CategoryAnalyticsPage />} />
+                <Route path="/inventory/purchase-orders/create" element={<CreatePurchaseOrderPage />} />
                 <Route path="/inventory/purchase" element={<PurchaseEntryPage />} />
                 <Route path="/inventory/adjust" element={<StockAdjustmentPage />} />
                 <Route path="/inventory/list" element={<ProductListPage />} />
@@ -230,6 +244,8 @@ const App = () => {
                 <Route path="/reports/gstr3b" element={<Gstr3bReportPage />} />
                 <Route path="/reports/itemwise" element={<ItemWiseReport />} />
                 <Route path="/reports/itemwise-page" element={<ItemWiseReportPage />} />
+                <Route path="/reports/low-stock" element={<LowStockReportPage />} />
+                <Route path="/reports/non-moving-stock" element={<NonMovingStockPage />} />
                 <Route path="/reports/billwise" element={<BillWiseReportPage />} />
                 <Route path="/reports/customer" element={<CustomerReportBuilder />} />
                 <Route path="/reports/partywise" element={<PartyWiseReportPage />} />
@@ -244,6 +260,18 @@ const App = () => {
                 <Route path="/reports/fixed-assets" element={<FixedAssetsPage />} />
                 <Route path="/reports/tds-tcs" element={<TdsTcsPage />} />
                 <Route path="/reports/aging" element={<AgingReportPage />} />
+
+                {/* Leads */}
+                <Route path="/leads" element={<LeadListPage />} />
+                <Route path="/leads/create" element={<CreateLeadPage />} />
+                <Route path="/leads/:id" element={<LeadDetailPage />} />
+
+                {/* Quotations */}
+                <Route path="/quotations" element={<QuotationListPage />} />
+                <Route path="/quotations/create" element={<CreateQuotationPage />} />
+                <Route path="/quotations/:id" element={<QuotationDetailPage />} />
+                <Route path="/billing/quotations" element={<QuotationListPage />} />
+                <Route path="/billing/quotations/create" element={<CreateQuotationPage />} />
 
                 {/* Salary */}
                 <Route path="/salary" element={<SalaryPage />} />
@@ -286,6 +314,7 @@ const App = () => {
             </Routes>
           </CompanyProvider>
         </Router>
+        </SettingsProvider>
       </ErrorBoundary>
     </GoogleOAuthProvider>
   );

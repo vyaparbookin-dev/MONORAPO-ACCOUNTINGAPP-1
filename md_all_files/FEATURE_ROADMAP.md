@@ -43,10 +43,15 @@
 
 ### 2.2. लीड मैनेजमेंट
 
-*   **फ़ीचर:** एक "Leads" सेक्शन बनाना जहाँ यूज़र उन संभावित ग्राहकों की जानकारी दर्ज कर सकें जिन्होंने पूछताछ की है। हर लीड के लिए फॉलो-अप रिमाइंडर सेट करने की सुविधा देना।
+*   **फ़ीचर:** एक "Leads" सेक्शन बनाना जहाँ यूज़र उन संभावित ग्राहकों (जिन्होंने पूछताछ की है) की जानकारी दर्ज कर सकें। हर लीड के लिए फॉलो-अप रिमाइंडर सेट करने और लीड का स्टेटस (जैसे - नई, संपर्क किया गया, योग्य, अयोग्य) ट्रैक करने की सुविधा देना।
 *   **फ़ाइलें जिनमें बदलाव होगा:**
-    *   **Backend:** लीड्स के लिए नया मॉड्यूल (`GET, POST /api/leads`) और फॉलो-अप के लिए रिमाइंडर सिस्टम से इंटीग्रेशन।
-    *   **Frontend:** `LeadsPage.jsx` बनाना जहाँ सभी लीड्स और उनके फॉलो-अप की तारीखें दिखें।
+    *   **Backend:**
+        *   `lead.js` (नया मॉडल)
+        *   `leadController.js` (नया कंट्रोलर)
+        *   `leadRoutes.js` (नई API रूट्स)
+    *   **Frontend (Web, Desktop, Mobile):**
+        *   `LeadListPage` और `CreateLeadPage` नाम के नए पेज बनाना।
+        *   डैशबोर्ड और नेविगेशन में "Leads" का लिंक जोड़ना।
 
 ---
 
@@ -150,6 +155,20 @@
 
 ---
 
+## अंतिम चरण (Final Phase): डेटाबेस माइग्रेशन
+
+**लक्ष्य:** पूरे सिस्टम को MongoDB से Supabase (PostgreSQL) पर माइग्रेट करना। यह काम सभी फीचर्स के बन जाने और स्थिर हो जाने के बाद ही किया जाएगा।
+
+### 7.1. डेटाबेस स्कीमा रूपांतरण
+*   **कार्य:** Mongoose स्कीमा को PostgreSQL टेबल में बदलना।
+
+### 7.2. डेटा माइग्रेशन स्क्रिप्ट
+*   **कार्य:** एक स्क्रिप्ट बनाना जो MongoDB से मौजूदा डेटा को एक्सपोर्ट करके Supabase में इम्पोर्ट करे।
+
+### 7.3. बैकएंड रिफैक्टरिंग
+*   **कार्य:** बैकएंड में Mongoose के सभी फंक्शन्स को Supabase क्लाइंट (या किसी ORM जैसे Prisma) से बदलना।
+---
+
 यह रोडमैप आपके ऐप को एक साधारण अकाउंटिंग टूल से एक स्मार्ट बिजनेस असिस्टेंट में बदल देगा, जो आपके यूज़र्स को रोज़मर्रा के कामों में बहुत मदद करेगा।
 
 ```
@@ -166,3 +185,34 @@
 <!--
 [PROMPT_SUGGESTION]मुझे `DayBookPage.jsx` को इंटरैक्टिव बनाने के लिए UI का एक सैंपल दिखाओ।[/PROMPT_SUGGESTION]
 [PROMPT_SUGGESTION]एक नया पेज `LowStockReportPage.jsx` बनाने के लिए ज़रूरी कोड का ढाँचा तैयार करो।[/PROMPT_SUGGESTION]
+
+
+
+
+📝 अब तक क्या-क्या पूरा हुआ (Updated Summary)
+आपके CRM (लीड और कोटेशन) फीचर के लिए हमने यह सब कर लिया है:
+
+Backend Setup (सर्वर तैयार है):
+
+lead.js और quotation.js के लिए डेटाबेस मॉडल बनाए गए।
+leadController.js और quotationController.js में API लॉजिक लिखा गया।
+leadRoutes.js और quotationRoutes.js में API एंडपॉइंट्स (/api/leads, /api/quotations) बनाए गए।
+server.js में इन नए रूट्स को रजिस्टर किया गया ताकि वे काम कर सकें।
+Shared Logic (सेंट्रलाइज्ड कोड):
+
+packages/shared/src/types/crm.js: Lead और Quotation के लिए एक स्टैंडर्ड डेटा स्ट्रक्चर (typedef) बनाया गया।
+packages/shared/src/services/crmApiService.js: लीड्स और कोटेशन से संबंधित सभी API फंक्शन (जैसे getLeads, createLead) एक ही फाइल में सेंट्रलाइज किए गए।
+Frontend Routing (पेज लिंक किए गए):
+
+Web App (apps/web/src/app.jsx): लीड्स और कोटेशन के लिए सभी पेज (List, Create, Detail) के रूट्स जोड़े गए।
+Desktop App (apps/desktop/src/app.jsx): वेब ऐप की तरह ही, डेस्कटॉप में भी सभी रूट्स लिंक किए गए।
+Mobile App (AppNavigator.js): मोबाइल नेविगेशन में "Leads" और "Quotations" की स्क्रीन्स जोड़ी गईं।
+UI Components Refactoring (अब पूरा हुआ):
+
+apps/desktop/src/screens/lead/LeadDetailPage.jsx को crmApiService से जोड़ा गया।
+apps/desktop/src/screens/quotation/QuotationDetailPage.jsx को crmApiService से जोड़ा गया।
+apps/web/src/screens/lead/LeadDetailPage.jsx को crmApiService से जोड़ा गया। (अभी किया गया)
+अब आपका CRM फीचर का आर्किटेक्चर वेब और डेस्कटॉप दोनों पर एक जैसा हो गया है। अब हम अगले फीचर पर काम कर सकते हैं, जैसा कि आपके FEATURE_ROADMAP.md में बताया गया है।
+
+
+@creatbillscreen.js,apsetting.jsx,appsetting.jsx,billingpage.jsx,billipage.jsx,partyroutes.js,partycontroller inka codes update nai hua hai isko kerna padega isme phse 5 ki changes rah gya hai dekhna hai isi ko 

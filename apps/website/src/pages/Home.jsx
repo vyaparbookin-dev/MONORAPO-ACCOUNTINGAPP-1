@@ -21,10 +21,20 @@ export default function Home() {
           >
             🌐 Open Web App (PWA)
           </a>
-          <a href="#" className="w-full sm:w-auto px-8 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-bold shadow-lg transition-transform transform hover:scale-105">
+          <a 
+            href="<PASTE_YOUR_GITHUB_RELEASE_WINDOWS_EXE_LINK_HERE>" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="w-full sm:w-auto px-8 py-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-bold shadow-lg transition-transform transform hover:scale-105"
+          >
             💻 Download for Windows
           </a>
-          <a href="#" className="w-full sm:w-auto px-8 py-4 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold shadow-lg transition-transform transform hover:scale-105">
+          <a 
+            href="<PASTE_YOUR_GITHUB_RELEASE_ANDROID_APK_LINK_HERE>" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="w-full sm:w-auto px-8 py-4 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold shadow-lg transition-transform transform hover:scale-105"
+          >
             📱 Get Android App
           </a>
         </div>

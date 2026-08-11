@@ -1,126 +1,487 @@
-// This file will contain the core logic for calculating all totals for a sales invoice.
-// It should be pure and deterministic.
-
-import { calculateTaxBreakdown, calculateGST } from '../tax/taxCalculator';
 import { determineGstType } from '../tax/gstRules';
-import { roundToDecimal } from '../money/rounding';
+import { roundMoney } from '../money/rounding';
 
-const CALCULATION_VERSION = "1.0.0"; // Define a version for this calculation logic
+export const INVOICE_CALCULATION_VERSION = '1.0.0';
 
-/**
- * Calculates all financial totals for a sales invoice.
- * @param {object} invoiceInput - Raw input for the invoice.
- * @param {string} invoiceInput.sellerState - State of the selling company.
- * @param {string} invoiceInput.buyerState - State of the customer.
- * @param {string} [invoiceInput.placeOfSupply] - Place of supply (defaults to buyerState if not provided).
- * @param {Array<object>} invoiceInput.items - Array of item objects.
- * @param {number} invoiceInput.items[].quantity - Quantity of the item.
- * @param {number} invoiceInput.items[].rate - Rate per unit of the item.
- * @param {number} invoiceInput.items[].gstRate - GST rate for the item (e.g., 18 for 18%).
- * @param {boolean} [invoiceInput.items[].taxInclusive=false] - Is the item rate tax-inclusive?
- * @param {number} [invoiceInput.items[].itemDiscount=0] - Item-level discount amount.
- * @param {number} [invoiceInput.items[].cessRate=0] - Item-level cess rate (%).
- * @param {number} [invoiceInput.items[].cessAmount=0] - Item-level fixed cess amount.
- * @param {number} [invoiceInput.invoiceDiscount=0] - Overall invoice discount amount.
- * @param {'PRE_TAX' | 'POST_TAX'} [invoiceInput.invoiceDiscountType='POST_TAX'] - Type of invoice discount.
- * @param {number} [invoiceInput.freightCharges=0] - Freight charges.
- * @param {number} [invoiceInput.packingForwardingCharges=0] - Packing and forwarding charges.
- * @param {number} [invoiceInput.laborCharges=0] - Labor/installation charges.
- * @param {number} [invoiceInput.roundOff=0] - Round-off amount.
- * @returns {object} - Object containing all calculated totals and item-level breakdowns.
- */
+const numberValue = (value, fieldName, defaultValue = 0) => {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ''
+  ) {
+    return defaultValue;
+  }
+
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    throw new Error(
+      `Validation Error: ${fieldName} must be a valid number.`
+    );
+  }
+
+  return number;
+};
+
+const validateDiscountType = (type) => {
+  if (!['PRE_TAX', 'POST_TAX'].includes(type)) {
+    throw new Error(
+      'Validation Error: invoiceDiscountType must be PRE_TAX or POST_TAX.'
+    );
+  }
+};
+
 export const calculateInvoice = (invoiceInput) => {
-  let subtotal = 0;
-  let totalTaxableAmount = 0;
-  let totalCGST = 0;
-  let totalSGST = 0;
-  let totalIGST = 0;
-  let totalCess = 0; // Assuming cess might be added later
-  let totalTotalTax = 0;
+  if (!invoiceInput || typeof invoiceInput !== 'object') {
+    throw new Error(
+      'Validation Error: Invoice input is required.'
+    );
+  }
 
-  const processedItems = invoiceInput.items.map(item => {
-    const quantity = item.quantity || 0;
-    const rate = item.rate || 0;
-    const itemGstRate = item.gstRate || 0;
-    const taxInclusive = item.taxInclusive || false;
-    const itemDiscount = item.discount || 0; // Item-level discount
+  if (
+    !Array.isArray(invoiceInput.items) ||
+    invoiceInput.items.length === 0
+  ) {
+    throw new Error(
+      'Validation Error: Invoice must contain at least one item.'
+    );
+  }
 
-    let itemSubtotal = roundToDecimal(quantity * rate);
-    let itemTaxableAmount = itemSubtotal;
-    let itemCGST = 0;
-    let itemSGST = 0;
-    let itemIGST = 0;
-    let itemTotalTax = 0;
+  const gstType = determineGstType(
+    invoiceInput.sellerState,
+    invoiceInput.buyerState,
+    invoiceInput.placeOfSupply
+  );
 
-    // Apply item-level discount first
-    if (itemDiscount > 0) {
-      itemSubtotal = roundToDecimal(itemSubtotal - itemDiscount);
-      itemTaxableAmount = itemSubtotal;
-    }
+  const invoiceDiscount = roundMoney(
+    numberValue(
+      invoiceInput.invoiceDiscount,
+      'invoiceDiscount'
+    )
+  );
 
-    // Determine GST type (Intra-state or Inter-state)
-    const gstType = determineGstType(invoiceInput.sellerState, invoiceInput.buyerState, invoiceInput.placeOfSupply || invoiceInput.buyerState);
+  if (invoiceDiscount < 0) {
+    throw new Error(
+      'Validation Error: Invoice discount cannot be negative.'
+    );
+  }
 
-    if (itemGstRate > 0) {
-      if (taxInclusive) {
-        // If price is tax-inclusive, calculate taxable amount from total
-        itemTaxableAmount = roundToDecimal(itemSubtotal / (1 + itemGstRate / 100));
-        itemTotalTax = roundToDecimal(itemSubtotal - itemTaxableAmount);
-      } else {
-        // If price is tax-exclusive, calculate tax on taxable amount
-        itemTotalTax = roundToDecimal(itemTaxableAmount * (itemGstRate / 100));
+  const invoiceDiscountType =
+    invoiceInput.invoiceDiscountType || 'POST_TAX';
+
+  validateDiscountType(invoiceDiscountType);
+
+  const freightCharges = roundMoney(
+    numberValue(
+      invoiceInput.freightCharges,
+      'freightCharges'
+    )
+  );
+
+  const packingForwardingCharges = roundMoney(
+    numberValue(
+      invoiceInput.packingForwardingCharges,
+      'packingForwardingCharges'
+    )
+  );
+
+  const laborCharges = roundMoney(
+    numberValue(
+      invoiceInput.laborCharges,
+      'laborCharges'
+    )
+  );
+
+  const roundOff = roundMoney(
+    numberValue(invoiceInput.roundOff, 'roundOff')
+  );
+
+  if (
+    freightCharges < 0 ||
+    packingForwardingCharges < 0 ||
+    laborCharges < 0
+  ) {
+    throw new Error(
+      'Validation Error: Additional charges cannot be negative.'
+    );
+  }
+
+  // Phase 1:
+  // Normalize items and calculate taxable value before
+  // invoice-level PRE_TAX discount.
+
+  const normalizedItems = invoiceInput.items.map(
+    (item, index) => {
+      const label =
+        item?.name ||
+        item?.productName ||
+        `Item ${index + 1}`;
+
+      const quantity = numberValue(
+        item?.quantity,
+        `${label} quantity`
+      );
+
+      const rate = numberValue(
+        item?.rate,
+        `${label} rate`
+      );
+
+      const gstRate = numberValue(
+        item?.gstRate,
+        `${label} GST rate`
+      );
+
+      const itemDiscount = roundMoney(
+        numberValue(
+          item?.itemDiscount ?? item?.discount,
+          `${label} discount`
+        )
+      );
+
+      const cessRate = numberValue(
+        item?.cessRate,
+        `${label} cess rate`
+      );
+
+      const cessAmount = roundMoney(
+        numberValue(
+          item?.cessAmount,
+          `${label} cess amount`
+        )
+      );
+
+      const taxInclusive = Boolean(item?.taxInclusive);
+
+      if (quantity <= 0) {
+        throw new Error(
+          `Validation Error: ${label} quantity must be greater than zero.`
+        );
       }
+
+      if (rate < 0) {
+        throw new Error(
+          `Validation Error: ${label} rate cannot be negative.`
+        );
+      }
+
+      if (gstRate < 0) {
+        throw new Error(
+          `Validation Error: ${label} GST rate cannot be negative.`
+        );
+      }
+
+      if (cessRate < 0 || cessAmount < 0) {
+        throw new Error(
+          `Validation Error: ${label} cess cannot be negative.`
+        );
+      }
+
+      const grossAmount = roundMoney(quantity * rate);
+
+      if (itemDiscount < 0) {
+        throw new Error(
+          `Validation Error: ${label} discount cannot be negative.`
+        );
+      }
+
+      if (itemDiscount > grossAmount) {
+        throw new Error(
+          `Validation Error: ${label} discount cannot exceed gross amount.`
+        );
+      }
+
+      const amountAfterItemDiscount = roundMoney(
+        grossAmount - itemDiscount
+      );
+
+      let taxableBeforeInvoiceDiscount;
+
+      if (taxInclusive && gstRate > 0) {
+        taxableBeforeInvoiceDiscount = roundMoney(
+          amountAfterItemDiscount /
+            (1 + gstRate / 100)
+        );
+      } else {
+        taxableBeforeInvoiceDiscount =
+          amountAfterItemDiscount;
+      }
+
+      return {
+        ...item,
+        quantity,
+        rate,
+        gstRate,
+        taxInclusive,
+        grossAmount,
+        itemDiscountAmount: itemDiscount,
+        amountAfterItemDiscount,
+        taxableBeforeInvoiceDiscount,
+        cessRate,
+        cessAmount
+      };
+    }
+  );
+
+  const totalTaxableBeforeInvoiceDiscount =
+    roundMoney(
+      normalizedItems.reduce(
+        (sum, item) =>
+          sum + item.taxableBeforeInvoiceDiscount,
+        0
+      )
+    );
+
+  if (
+    invoiceDiscountType === 'PRE_TAX' &&
+    invoiceDiscount > totalTaxableBeforeInvoiceDiscount
+  ) {
+    throw new Error(
+      'Validation Error: PRE_TAX invoice discount cannot exceed taxable amount.'
+    );
+  }
+
+  // Phase 2:
+  // Allocate PRE_TAX discount proportionally.
+  // Last item absorbs rounding remainder so allocated
+  // discount exactly equals invoiceDiscount.
+
+  let remainingPreTaxDiscount =
+    invoiceDiscountType === 'PRE_TAX'
+      ? invoiceDiscount
+      : 0;
+
+  const processedItems = normalizedItems.map(
+    (item, index) => {
+      let allocatedInvoiceDiscount = 0;
+
+      if (
+        invoiceDiscountType === 'PRE_TAX' &&
+        invoiceDiscount > 0
+      ) {
+        const isLast =
+          index === normalizedItems.length - 1;
+
+        if (isLast) {
+          allocatedInvoiceDiscount =
+            roundMoney(remainingPreTaxDiscount);
+        } else {
+          allocatedInvoiceDiscount = roundMoney(
+            (
+              item.taxableBeforeInvoiceDiscount /
+              totalTaxableBeforeInvoiceDiscount
+            ) * invoiceDiscount
+          );
+
+          allocatedInvoiceDiscount = Math.min(
+            allocatedInvoiceDiscount,
+            remainingPreTaxDiscount
+          );
+        }
+
+        remainingPreTaxDiscount = roundMoney(
+          remainingPreTaxDiscount -
+            allocatedInvoiceDiscount
+        );
+      }
+
+      const itemTaxableValue = roundMoney(
+        item.taxableBeforeInvoiceDiscount -
+          allocatedInvoiceDiscount
+      );
+
+      if (itemTaxableValue < 0) {
+        throw new Error(
+          `Validation Error: Taxable value became negative for ${
+            item.name || item.productName || 'item'
+          }.`
+        );
+      }
+
+      let itemCGST = 0;
+      let itemSGST = 0;
+      let itemIGST = 0;
+
+      const itemTotalTax = roundMoney(
+        (itemTaxableValue * item.gstRate) / 100
+      );
 
       if (gstType === 'CGST_SGST') {
-        itemCGST = roundToDecimal(itemTotalTax / 2);
-        itemSGST = roundToDecimal(itemTotalTax / 2);
-      } else { // IGST
-        itemIGST = roundToDecimal(itemTotalTax);
+        itemCGST = roundMoney(itemTotalTax / 2);
+
+        // SGST gets the remainder to guarantee:
+        // CGST + SGST === total tax.
+        itemSGST = roundMoney(
+          itemTotalTax - itemCGST
+        );
+      } else {
+        itemIGST = itemTotalTax;
       }
+
+      let itemCess = 0;
+
+      if (item.cessRate > 0) {
+        itemCess = roundMoney(
+          (itemTaxableValue * item.cessRate) / 100
+        );
+      }
+
+      if (item.cessAmount > 0) {
+        itemCess = roundMoney(
+          itemCess + item.cessAmount
+        );
+      }
+
+      const itemGrandTotal = roundMoney(
+        itemTaxableValue +
+          itemTotalTax +
+          itemCess
+      );
+
+      return {
+        ...item,
+
+        invoiceDiscountAllocated:
+          allocatedInvoiceDiscount,
+
+        itemTaxableValue,
+
+        itemCGST,
+        itemSGST,
+        itemIGST,
+
+        itemTotalTax,
+        itemCess,
+        itemGrandTotal
+      };
     }
+  );
 
-    subtotal = roundToDecimal(subtotal + itemSubtotal);
-    totalTaxableAmount = roundToDecimal(totalTaxableAmount + itemTaxableAmount);
-    totalCGST = roundToDecimal(totalCGST + itemCGST);
-    totalSGST = roundToDecimal(totalSGST + itemSGST);
-    totalIGST = roundToDecimal(totalIGST + itemIGST);
-    totalTotalTax = roundToDecimal(totalTotalTax + itemTotalTax); // Sum of all item-level taxes
+  // Phase 3: Aggregate.
 
-    return {
-      ...item,
-      itemSubtotal: itemSubtotal,
-      itemTaxableAmount: itemTaxableAmount,
-      itemCGST: itemCGST,
-      itemSGST: itemSGST,
-      itemIGST: itemIGST,
-      itemTotalTax: itemTotalTax,
-      itemGrandTotal: roundToDecimal(itemTaxableAmount + itemTotalTax),
-    };
-  });
+  const grossTotal = roundMoney(
+    processedItems.reduce(
+      (sum, item) => sum + item.grossAmount,
+      0
+    )
+  );
 
-  const invoiceDiscount = invoiceInput.invoiceDiscount || 0;
-  const freightCharges = invoiceInput.freightCharges || 0;
-  const packingForwardingCharges = invoiceInput.packingForwardingCharges || 0;
-  const laborCharges = invoiceInput.laborCharges || 0;
-  const roundOff = invoiceInput.roundOff || 0;
+  const totalItemDiscount = roundMoney(
+    processedItems.reduce(
+      (sum, item) =>
+        sum + item.itemDiscountAmount,
+      0
+    )
+  );
 
-  // Grand Total calculation
-  let grandTotal = roundToDecimal(subtotal + totalTotalTax + freightCharges + packingForwardingCharges + laborCharges - invoiceDiscount + roundOff);
+  const subtotal = roundMoney(
+    grossTotal - totalItemDiscount
+  );
+
+  const totalTaxableAmount = roundMoney(
+    processedItems.reduce(
+      (sum, item) => sum + item.itemTaxableValue,
+      0
+    )
+  );
+
+  const totalCGST = roundMoney(
+    processedItems.reduce(
+      (sum, item) => sum + item.itemCGST,
+      0
+    )
+  );
+
+  const totalSGST = roundMoney(
+    processedItems.reduce(
+      (sum, item) => sum + item.itemSGST,
+      0
+    )
+  );
+
+  const totalIGST = roundMoney(
+    processedItems.reduce(
+      (sum, item) => sum + item.itemIGST,
+      0
+    )
+  );
+
+  const totalTax = roundMoney(
+    totalCGST + totalSGST + totalIGST
+  );
+
+  const totalCess = roundMoney(
+    processedItems.reduce(
+      (sum, item) => sum + item.itemCess,
+      0
+    )
+  );
+
+  const additionalCharges = roundMoney(
+    freightCharges +
+      packingForwardingCharges +
+      laborCharges
+  );
+
+  const postTaxDiscount =
+    invoiceDiscountType === 'POST_TAX'
+      ? invoiceDiscount
+      : 0;
+
+  const amountBeforeRoundOff = roundMoney(
+    totalTaxableAmount +
+      totalTax +
+      totalCess +
+      additionalCharges -
+      postTaxDiscount
+  );
+
+  if (amountBeforeRoundOff < 0) {
+    throw new Error(
+      'Validation Error: Invoice total cannot be negative.'
+    );
+  }
+
+  const grandTotal = roundMoney(
+    amountBeforeRoundOff + roundOff
+  );
+
+  if (grandTotal < 0) {
+    throw new Error(
+      'Validation Error: Grand total cannot be negative.'
+    );
+  }
 
   return {
+    calculationVersion:
+      INVOICE_CALCULATION_VERSION,
+
+    gstType,
+
     processedItems,
-    subtotal: subtotal,
-    totalTaxableAmount: totalTaxableAmount,
-    totalCGST: totalCGST,
-    totalSGST: totalSGST,
-    totalIGST: totalIGST,
-    totalCess: totalCess,
-    totalTax: totalTotalTax,
-    invoiceDiscount: invoiceDiscount,
-    freightCharges: freightCharges,
-    packingForwardingCharges: packingForwardingCharges,
-    laborCharges: laborCharges,
-    roundOff: roundOff,
-    grandTotal: grandTotal,
+
+    grossTotal,
+    totalItemDiscount,
+    subtotal,
+
+    totalTaxableAmount,
+
+    totalCGST,
+    totalSGST,
+    totalIGST,
+    totalTax,
+    totalCess,
+
+    invoiceDiscount,
+    invoiceDiscountType,
+
+    freightCharges,
+    packingForwardingCharges,
+    laborCharges,
+    additionalCharges,
+
+    amountBeforeRoundOff,
+    roundOff,
+    grandTotal
   };
 };
