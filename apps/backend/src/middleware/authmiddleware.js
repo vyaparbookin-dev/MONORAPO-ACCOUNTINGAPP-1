@@ -69,3 +69,15 @@ export const requireCompany = (req, res, next) => {
   }
   next();
 };
+
+/**
+ * @desc    Protect routes meant for internal services like AI Gateway
+ * @access  Internal
+ */
+export const protectAIGateway = (req, res, next) => {
+  const internalToken = req.headers['x-internal-api-token'];
+  if (internalToken && internalToken === process.env.INTERNAL_API_TOKEN) {
+    return next();
+  }
+  return res.status(401).json({ success: false, message: 'Unauthorized: Missing or invalid internal token.' });
+};

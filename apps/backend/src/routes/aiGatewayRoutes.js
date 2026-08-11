@@ -7,13 +7,12 @@ import {
   createQuotationForAI,
   getProductStock
 } from '../controllers/aiGatewayController.js';
-import { protect } from '../middleware/authmiddleware.js'; // सुरक्षा के लिए
+import { protectAIGateway } from '../middleware/authmiddleware.js'; // AI के लिए नया, सुरक्षित middleware
 
 const router = express.Router();
 
-// यह एक API Key या किसी अन्य तरीके से सुरक्षित होना चाहिए ताकि केवल आपका AI ही इसे एक्सेस कर सके
-// अभी के लिए हम protect middleware का उपयोग कर रहे हैं
-router.use(protect); // या एक कस्टम AI-specific middleware बनाएं
+// यह एक सीक्रेट API Key से सुरक्षित है ताकि केवल आपका व्हाट्सएप कंट्रोलर ही इसे एक्सेस कर सके
+router.use(protectAIGateway);
 
 // AI की क्षमताओं के अनुसार रूट्स
 router.get('/products/search', searchProductByName);

@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
-import { searchProductByName, getCustomerHistoryByPhone } from '../controllers/aiGatewayController.js';
+import { searchProductByName, getCustomerHistoryByPhone, createQuotationForAI, getProductStock } from '../controllers/aiGatewayController.js';
 
 // .env.local या .env.example से API Key लोड होगी
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -30,6 +30,28 @@ const tools = [
           required: ["phone"],
         },
       },
+      {
+        name: "createQuotationForAI",
+        description: "Create a quotation for a customer with a list of items.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            items: { type: "ARRAY", description: "An array of items, each with a name and quantity.", items: { type: "OBJECT", properties: { name: { type: "STRING" }, quantity: { type: "NUMBER" } } } },
+          },
+          required: ["items"],
+        },
+      },
+      {
+        name: "getProductStock",
+        description: "Check the available stock for a specific product.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            name: { type: "STRING", description: "The name of the product to check stock for." },
+          },
+          required: ["name"],
+        },
+      },
     ],
   },
 ];
@@ -38,6 +60,8 @@ const tools = [
 const availableFunctions = {
   searchProductByName,
   getCustomerHistoryByPhone,
+  createQuotationForAI,
+  getProductStock,
 };
 
 const model = genAI.getGenerativeModel({
@@ -57,7 +81,11 @@ export const callGeminiAI = async (userMessage, userPhone) => {
 
     if (apiFunction) {
       // Mock request and response objects for the controller
-      const mockReq = { query: { ...args, phone: args.phone || userPhone } };
+      const mockReq = { 
+        query: { ...args, phone: args.phone || userPhone },
+        body: { ...args }, // For POST requests like createQuotation
+        companyId: process.env.DEFAULT_COMPANY_ID // Assuming a default company for AI operations
+      };
       let apiResult;
       const mockRes = {
         status: () => mockRes,
