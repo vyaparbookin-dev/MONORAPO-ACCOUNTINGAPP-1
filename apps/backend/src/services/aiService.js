@@ -1,52 +1,88 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
+import { searchProductByName, getCustomerHistoryByPhone } from '../controllers/aiGatewayController.js';
 
 // .env.local या .env.example से API Key लोड होगी
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-const SYSTEM_PROMPT = `
-You are a helpful AI assistant for a business named 'Vyapar Sahayak'.
-Your goal is to understand the customer's question and use the available tools to answer it.
-You can only use the functions provided to you. Do not make up information.
+// Define the functions that the AI can call
+const tools = [
+  {
+    functionDeclarations: [
+      {
+        name: "searchProductByName",
+        description: "Get the price and stock of a product by its name.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            name: { type: "STRING", description: "The name of the product to search for." },
+          },
+          required: ["name"],
+        },
+      },
+      {
+        name: "getCustomerHistoryByPhone",
+        description: "Get the last purchase details for a customer using their phone number.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            phone: { type: "STRING", description: "The customer's phone number, including country code." },
+          },
+          required: ["phone"],
+        },
+      },
+    ],
+  },
+];
 
-Available tools:
-1. searchProductByName(name: string): To find product price and stock.
-2. getCustomerHistoryByPhone(phone: string): To find a customer's last purchase details.
+// Map function names to actual controller functions
+const availableFunctions = {
+  searchProductByName,
+  getCustomerHistoryByPhone,
+};
 
-Based on the user's message, decide which tool to use.
-If you don't understand, just say "मैं आपका सवाल समझ नहीं पाया, क्या आप कृपया इसे दोबारा पूछ सकते हैं?".
-Always reply in simple Hindi.
-`;
+const model = genAI.getGenerativeModel({
+  model: "gemini-1.5-flash",
+  tools,
+  systemInstruction: "You are a helpful AI assistant for a business. Your goal is to understand the customer's question and use the available tools to answer it. You can only use the functions provided to you. Do not make up information. Always reply in simple Hindi.",
+});
 
 export const callGeminiAI = async (userMessage, userPhone) => {
-    // यह एक बहुत ही सरल उदाहरण है। असली कार्यान्वयन Gemini के "Function Calling" फीचर से होगा।
-    // अभी के लिए, हम कीवर्ड के आधार पर काम करेंगे।
+  const chat = model.startChat();
+  const result = await chat.sendMessage(userMessage);
+  const call = result.response.functionCalls()?.[0];
 
-    const lowerMessage = userMessage.toLowerCase();
+  if (call) {
+    const { name, args } = call;
+    const apiFunction = availableFunctions[name];
 
-    // क्षमता 1: प्रोडक्ट की जानकारी
-    if (lowerMessage.includes('rate') || lowerMessage.includes('price') || lowerMessage.includes('daam') || lowerMessage.includes('bhav')) {
-        // उदाहरण: "Parle G का rate क्या है?" -> "Parle G" निकालना होगा
-        // अभी के लिए हम मान लेते हैं कि प्रोडक्ट का नाम "Parle G" है
-        const productName = "Parle G"; // TODO: मैसेज से प्रोडक्ट का नाम निकालें
-        
-        // अपने AI गेटवे को कॉल करें
-        // नोट: यह एक इंटरनल API कॉल है, इसलिए आपको ऑथेंटिकेशन टोकन भी भेजना होगा
-        const response = await fetch(`http://localhost:5001/api/ai-gateway/products/search?name=${encodeURIComponent(productName)}`, {
-            headers: { 'Authorization': `Bearer ${process.env.INTERNAL_API_TOKEN}` } // आपको एक इंटरनल टोकन बनाना होगा
-        });
-        const result = await response.json();
+    if (apiFunction) {
+      // Mock request and response objects for the controller
+      const mockReq = { query: { ...args, phone: args.phone || userPhone } };
+      let apiResult;
+      const mockRes = {
+        status: () => mockRes,
+        json: (data) => { apiResult = data; }
+      };
 
-        if (result.success) {
-            return `हाँ, ${result.data.name} उपलब्ध है। इसकी कीमत ₹${result.data.price} है और हमारे पास ${result.data.stock} ${result.data.unit} स्टॉक में हैं।`;
-        } else {
-            return `माफ़ कीजिए, मुझे ${productName} नाम का कोई प्रोडक्ट नहीं मिला।`;
-        }
+      await apiFunction(mockReq, mockRes);
+
+      // Send the API result back to the model
+      const result2 = await chat.sendMessage([
+        {
+          functionResponse: {
+            name,
+            response: apiResult,
+          },
+        },
+      ]);
+
+      // Get the model's final natural language response
+      return result2.response.text();
+    } else {
+      return "माफ़ कीजिए, मैं यह जानकारी नहीं ढूंढ पा रहा हूँ।";
     }
+  }
 
-    // क्षमता 2: ग्राहक का इतिहास
-    if (lowerMessage.includes('history') || lowerMessage.includes(' पिछला बिल') || lowerMessage.includes('last purchase')) {
-        // यहाँ getCustomerHistoryByPhone API को कॉल करने का लॉजिक आएगा
-    }
-
-    return "मैं अभी सीख रहा हूँ। जल्द ही आपके सभी सवालों का जवाब दूँगा।";
+  // If no function call was triggered, return the model's direct text response
+  return result.response.text();
 };

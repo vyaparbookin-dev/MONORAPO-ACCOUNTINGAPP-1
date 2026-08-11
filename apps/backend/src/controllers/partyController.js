@@ -70,11 +70,11 @@ export const getPartySummary = async (req, res) => {
     }
 
     const { id } = req.params;
-    const party = await Party.findOne({ _id: id, companyId: req.companyId }).lean();
-    const Return = mongoose.model('Return'); // Dynamically get Return model
+    const party = await Party.findOne({ _id: id, companyId: req.companyId }).lean();    
     if (!party) return res.status(404).json({ success: false, error: "Party not found" });
 
     const bills = await Bill.find({ partyId: id, companyId: req.companyId, isDeleted: false }).sort({ date: 1 }).lean();
+    const Return = mongoose.models.Return || mongoose.model('Return'); // Prevent OverwriteModelError
 
     if (bills.length === 0) {
       return res.json({ success: true, summary: { ...party, lifetimeValue: 0, visitCount: 0, topProducts: [] } });
@@ -100,20 +100,20 @@ export const getPartySummary = async (req, res) => {
       .map(([name, quantity]) => ({ name, quantity }));
 
     // --- NEW: Calculate Return History & Recent Transactions ---
-    const returns = await Return.find({ partyId: id, companyId: req.companyId, type: 'sales_return', isDeleted: false }).sort({ date: -1 }).lean();
+    const returns = await Return.find({ partyId: id, companyId: req.companyId, type: 'sales_return', isDeleted: { $ne: true } }).sort({ date: -1 }).lean();
     const totalReturnValue = returns.reduce((sum, ret) => sum + (ret.totalAmount || 0), 0);
     const returnCount = returns.length;
 
     const billHistory = bills.map(b => ({
         type: 'Sale',
         date: b.date,
-        details: `Invoice #${b.billNumber}`,
+        details: `Invoice #${b.billNumber || b._id.toString().slice(-4)}`,
         amount: b.finalAmount || b.total || 0
     }));
     const returnHistory = returns.map(r => ({
         type: 'Return',
         date: r.date,
-        details: `Return #${r.returnNumber || r._id}`,
+        details: `Return #${r.returnNumber || r._id.toString().slice(-4)}`,
         amount: -(r.totalAmount || 0) // Negative amount for returns
     }));
     const transactionHistory = [...billHistory, ...returnHistory]

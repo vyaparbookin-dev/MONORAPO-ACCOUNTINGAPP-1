@@ -254,7 +254,7 @@ const DayBookScreen = () => {
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontWeight: 'bold', color: '#374151' }}>#{bill.billNumber}</Text>
                   <TouchableOpacity onPress={() => handleCustomerClick(bill.partyId?._id)} disabled={!bill.partyId?._id}>
-                    <Text style={{ color: '#2563eb', textDecorationLine: 'underline' }}>
+                    <Text style={{ color: '#2563eb', textDecorationLine: bill.partyId?._id ? 'underline' : 'none' }}>
                       {bill.partyId?.name || bill.customerName || 'Walk-in Customer'}
                     </Text>
                   </TouchableOpacity>

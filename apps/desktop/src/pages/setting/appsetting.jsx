@@ -1,10 +1,13 @@
-import React from "react";
+import React, { useContext } from "react";
 import { Link } from "react-router-dom";
+import { SettingsContext } from "../../contexts/SettingsContext";
+import ToggleSwitch from "../../components/ToggleSwitch"; // Assuming you have a ToggleSwitch component
 
 const AppSettings = () => {
   const settings = [
     { name: "Profile", path: "/profile" },
     { name: "Cloud Sync", path: "/cloudsync" },
+    { name: "WhatsApp Settings", path: "/settings/whatsapp" },
     { name: "Billing Settings", path: "/settings/billing" },
     { name: "Security Log", path: "/security" },
   ];
@@ -24,6 +27,17 @@ const AppSettings = () => {
           </li>
         ))}
       </ul>
+
+      <div className="mt-6 border-t pt-4">
+        <h3 className="text-lg font-semibold mb-3">Billing Experience</h3>
+        <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
+          <div>
+            <h4 className="font-medium">Enable Live Customer Insights</h4>
+            <p className="text-sm text-gray-500">Show last purchase details on billing screen when a customer is selected.</p>
+          </div>
+          <p>Coming Soon</p>
+        </div>
+      </div>
     </div>
   );
 };

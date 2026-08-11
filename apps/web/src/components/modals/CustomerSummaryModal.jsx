@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api from '../../services/api';
+import api from '../../services/api'; // Assuming api service is correctly configured
 import { User, ShoppingBag, X, ArrowLeftRight, RotateCcw, History } from 'lucide-react';
 
 // Dummy auth context hook - replace with your actual implementation
@@ -15,7 +15,7 @@ export default function CustomerSummaryModal({ partyId, onClose }) {
       if (!partyId) return;
       setLoading(true);
       try {
-        const res = await api.get(`/api/parties/${partyId}/summary`);
+        const res = await api.get(`/api/party/${partyId}/summary`); // Corrected API endpoint
         setCustomer(res.data.summary);
       } catch (err) {
         console.error("Failed to fetch customer summary", err);
@@ -59,7 +59,7 @@ export default function CustomerSummaryModal({ partyId, onClose }) {
                 <p className="text-2xl font-bold text-blue-600">{customer.visitCount}</p>
               </div>
               <div className="bg-red-50 p-4 rounded-lg">
-                <p className="text-sm text-red-500 font-medium">Returns ({customer.returnCount})</p>
+                <p className="text-sm text-red-500 font-medium">Returns ({customer.returnCount || 0})</p>
                 <p className="text-2xl font-bold text-red-600">₹{customer.totalReturnValue?.toFixed(2)}</p>
               </div>
               <div className="bg-gray-50 p-4 rounded-lg">

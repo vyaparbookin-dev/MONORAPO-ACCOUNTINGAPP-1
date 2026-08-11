@@ -7,7 +7,7 @@ import {
   createQuotationForAI,
   getProductStock
 } from '../controllers/aiGatewayController.js';
-import { protect } from '../middleware/authMiddleware.js'; // सुरक्षा के लिए
+import { protect } from '../middleware/authmiddleware.js'; // सुरक्षा के लिए
 
 const router = express.Router();
 

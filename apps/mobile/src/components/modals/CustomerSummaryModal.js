@@ -16,8 +16,8 @@ const CustomerSummaryModal = ({ partyId, visible, onClose }) => {
       if (!partyId) return;
       setLoading(true);
       try {
-        const res = await api.get(`/parties/${partyId}/summary`);
-        setCustomer(res.summary);
+        const res = await api.get(`/party/${partyId}/summary`); // Corrected API endpoint
+        setCustomer(res.data.summary);
       } catch (err) {
         console.error("Failed to fetch customer summary", err);
       } finally {
@@ -68,7 +68,7 @@ const CustomerSummaryModal = ({ partyId, visible, onClose }) => {
                   <Text style={styles.statValue}>{customer.visitCount}</Text>
                 </View>
                 <View style={[styles.statBox, {backgroundColor: '#fee2e2'}]}>
-                  <Text style={[styles.statLabel, {color: '#991b1b'}]}>Returns ({customer.returnCount})</Text>
+                  <Text style={[styles.statLabel, {color: '#991b1b'}]}>Returns ({customer.returnCount || 0})</Text>
                   <Text style={[styles.statValue, {color: '#dc2626'}]}>₹{customer.totalReturnValue?.toFixed(2)}</Text>
                 </View>
               </View>

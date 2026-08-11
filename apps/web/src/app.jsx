@@ -348,8 +348,8 @@ const App = () => {
             </Route>
           </Routes>
         </Suspense>
-      </SettingsProvider>
       </CompanyProvider>
+      </SettingsProvider>
     </Router>
   </ErrorBoundary>
   </GoogleOAuthProvider>

@@ -155,12 +155,12 @@ export default function DayBookPage() {
                 <div key={bill._id} className="py-3 flex justify-between items-center">
                   <div>
                     <span className="font-semibold text-gray-700">#{bill.billNumber}</span>
-                    <button
+                    <button 
                       onClick={() => handleCustomerClick(bill.partyId?._id)}
                       className="ml-4 text-blue-600 hover:underline disabled:text-gray-500 disabled:no-underline"
                       disabled={!bill.partyId?._id}
                     >
-                      {bill.partyId?.name || bill.customerName || 'Walk-in Customer'}
+                      {bill.partyId?.name || bill.customerName || 'Walk-in'}
                     </button>
                     {bill.partyId && (
                       <span className={`ml-2 text-xs font-bold px-2 py-1 rounded-full ${bill.isNewCustomer ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
