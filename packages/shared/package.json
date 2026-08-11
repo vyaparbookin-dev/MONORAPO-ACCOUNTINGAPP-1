@@ -5,12 +5,11 @@
   "exports": {
     ".": "./src/index.js",
     "./api": "./src/services/api.js",
-    "./api.native": "./src/services/api.native.js",
-    "./crmApiService": "./src/services/crmApiService.js",
+    "./api.native": "./src/services/api.native.js",    
     "./dbService": "./src/services/dbService.js",
     "./syncqueue": "./src/services/syncqueue.js",
     "./syncqueue.native": "./src/services/syncqueue.native.js",
-    "./services/api": "./src/services/api.js"
+    "./services/crmApiService": "./src/services/crmApiService.js"
   },
   "dependencies": {
     "crypto-js": "^4.2.0",
