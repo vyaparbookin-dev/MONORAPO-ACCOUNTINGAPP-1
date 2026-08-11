@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Alert, ActivityIndicator, Platform, Modal } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Alert, ActivityIndicator, Platform, Modal, ScrollView } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera'; // This import is not used in this file, can be removed.
@@ -36,6 +36,7 @@ const CreateBillScreen = ({ navigation }) => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const hasPermission = permission?.granted;
+  const [quickInsight, setQuickInsight] = useState(null); // Phase 5: Live Customer Insights
   
   // Smart Barcode Unfound States
   const [unfoundBarcode, setUnfoundBarcode] = useState(null);
@@ -338,13 +339,14 @@ const CreateBillScreen = ({ navigation }) => {
             selectedValue={selectedParty}
             onValueChange={async (val) => {
               setSelectedParty(val);
+              setQuickInsight(null); // Reset insight on change
               if (val) {
                 try {
                   // Phase 5: Live Customer Insights
-                  const res = await getData(`/party/${val}/quick-summary`);
-                  if (res.success && res.summary) {
-                    const { lastPurchaseDate, lastPurchaseAmount } = res.summary;
-                    Alert.alert("Customer Insights", `Last Purchase: ${new Date(lastPurchaseDate).toLocaleDateString()} for ₹${lastPurchaseAmount}`);
+                  const res = await getData(`/party/${val}/quick-summary`); // Assuming getData is your api service
+                  if (res.data?.success && res.data.summary) {
+                    setQuickInsight(res.data.summary);
+                    // Optional: Show an alert or a small text below the picker
                   }
                 } catch (err) {
                   console.log("Could not fetch party quick summary.");
@@ -359,6 +361,11 @@ const CreateBillScreen = ({ navigation }) => {
             ))}
           </Picker>
         </View>
+        {quickInsight && (
+          <View style={styles.insightBox}>
+            <Text style={styles.insightText}>⚡ Last Purchase: <Text style={{fontWeight: 'bold'}}>{new Date(quickInsight.lastPurchaseDate).toLocaleDateString()}</Text> for <Text style={{fontWeight: 'bold'}}>₹{quickInsight.lastPurchaseAmount}</Text></Text>
+          </View>
+        )}
       </View>
 
       {/* Add Item Section */}
@@ -596,6 +603,8 @@ const styles = StyleSheet.create({
   headerContainer: { backgroundColor: '#fff', padding: 20, paddingTop: Platform.OS === 'ios' ? 50 : 20, borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
   headerTitle: { fontSize: 24, fontWeight: '900', color: '#111827' },
   headerSubtitle: { fontSize: 13, color: '#6b7280', fontWeight: '500', marginTop: 2 },
+  insightBox: { marginTop: 8, padding: 10, backgroundColor: '#eff6ff', borderRadius: 8, borderWidth: 1, borderColor: '#bfdbfe' },
+  insightText: { color: '#1e40af', fontSize: 13, fontWeight: '500' },
   section: { marginBottom: 20 },
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   label: { fontSize: 13, fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },

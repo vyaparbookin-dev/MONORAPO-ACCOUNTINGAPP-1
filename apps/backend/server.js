@@ -61,6 +61,7 @@ import leadRoutes from "./src/routes/leadRoutes.js";
 import { getProductAnalytics } from "./src/controllers/productAnalyticsController.js";
 import quotationRoutes from "./src/routes/quotationRoutes.js";
 
+import aiGatewayRoutes from "./src/routes/aiGatewayRoutes.js"; // AI Gateway को इम्पोर्ट करें
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -198,6 +199,7 @@ app.use("/api/unit", unitRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/warehouse", warehouseRoutes);
 app.use("/api/whatsapp", whatsappRoutes);
+app.use("/api/ai-gateway", aiGatewayRoutes); // AI Gateway को रजिस्टर करें
 app.use("/api/reports", reportRoutes);
 app.use("/api/schemes", schemeRoutes);
 app.use("/api/logs", securityRoutes);

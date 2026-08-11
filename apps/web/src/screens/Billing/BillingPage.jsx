@@ -99,6 +99,7 @@ export default function BillingPage() {
   const [unfoundFilteredInventory, setUnfoundFilteredInventory] = useState([]);
   const [unfoundSelectedProduct, setUnfoundSelectedProduct] = useState(null);
   const [newProdData, setNewProdData] = useState({ name: '', rate: '', unit: 'pcs' });
+  const [quickInsight, setQuickInsight] = useState(null); // Phase 5: Live Customer Insights
   const [isSavingProduct, setIsSavingProduct] = useState(false);
 
   // Pagination states
@@ -511,6 +512,7 @@ export default function BillingPage() {
     if (!partyId) {
       setFormData({ ...formData, partyId: "", customerName: "", customerMobile: "", customerAddress: "", customerGst: "" });
       setSelectedPartyBalance(null);
+      setQuickInsight(null); // Clear insights
       return;
     }
     const party = parties.find((p) => p._id === partyId);
@@ -528,6 +530,18 @@ export default function BillingPage() {
       // Positive value usually means Udhar (Debit), Negative means Advance (Credit) depending on your backend logic
       // Here assuming > 0 is Udhar (Receivable)
       setSelectedPartyBalance(party.currentBalance ?? party.balance ?? 0);
+
+      // --- PHASE 5: LIVE CUSTOMER INSIGHTS ---
+      // Fetch quick summary for the selected party
+      api.get(`/api/party/${partyId}/quick-summary`)
+        .then(res => {
+          if (res.data?.success && res.data.summary) {
+            setQuickInsight(res.data.summary);
+          }
+        })
+        .catch(err => {
+          console.log("Could not fetch party quick summary.");
+        });
     }
   };
 
@@ -867,6 +881,11 @@ export default function BillingPage() {
                     {selectedPartyBalance > 0 && (
                       <UdharReminder partyName={formData.customerName} mobileNumber={formData.customerMobile} pendingAmount={selectedPartyBalance} />
                     )}
+                  </div>
+                )}
+                {quickInsight && (
+                  <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 font-medium">
+                    ⚡ Last Purchase: <span className="font-bold">{new Date(quickInsight.lastPurchaseDate).toLocaleDateString()}</span> for <span className="font-bold">₹{quickInsight.lastPurchaseAmount}</span>
                   </div>
                 )}
               </div>

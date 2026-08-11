@@ -1,0 +1,12 @@
+{
+  "total_tokens": 1842,
+  "sessions": [
+    {
+      "date": "2026-05-05T11:05:06.341Z",
+      "provider": "Gemini",
+      "promptTokens": 615,
+      "completionTokens": 189,
+      "totalTokens": 1842
+    }
+  ]
+}
