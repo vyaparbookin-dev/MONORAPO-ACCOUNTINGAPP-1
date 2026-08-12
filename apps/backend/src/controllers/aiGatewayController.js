@@ -2,7 +2,7 @@
 
 import Product from '../model/product.js';
 import Party from '../model/party.js';
-import Bill from '../model/billing.js';
+import Bill from '../model/bill.js';
 // Quotation मॉडल को भी इम्पोर्ट करना होगा जब वह बन जाएगा
 
 // क्षमता 1: प्रोडक्ट की जानकारी देना
