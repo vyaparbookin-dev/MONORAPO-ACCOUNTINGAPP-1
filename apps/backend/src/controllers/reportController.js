@@ -465,3 +465,23 @@ export const getBalanceSheet = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+/**
+ * @desc    Get Non-Moving Items Report
+ * @route   GET /api/reports/non-moving-items
+ * @access  Private
+ */
+export const getNonMovingItems = async (req, res) => {
+  try {
+    const { companyId } = req;
+    if (!companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    // Placeholder logic: This feature is not fully implemented yet.
+    res.status(200).json({ success: true, message: "Non-moving items report is under development.", data: [] });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Server Error", error: error.message });
+  }
+};
