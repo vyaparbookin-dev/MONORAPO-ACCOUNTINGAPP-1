@@ -17,12 +17,16 @@
     "web": "npm run dev --workspace=apps/web",
     "backend": "npm run dev --workspace=apps/backend",
     "dev:all": "npx concurrently \"npm run backend\" \"npm run web\" \"npm run mobile\"",
+    "install:all": "npm install --workspaces --if-present",
     "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules",
     "build:desktop": "npm run build --workspace=apps/desktop",
-    "build:web": "npm run build --workspace=apps/web"
+    "build:web": "npm run build --workspace=apps/web",
+    "audit:health": "node scan-project-health.js",
+    "audit:repo": "node scripts/Full-repo-audit.js",
+    "audit:shared": "node scripts/audit-shared-usage.js",
+    "audit:all": "npm run audit:health && npm run audit:repo && npm run audit:shared"
   },
   "dependencies": {
-    "18": "^0.0.0",
     "glob": "^13.0.6"
   }
 }

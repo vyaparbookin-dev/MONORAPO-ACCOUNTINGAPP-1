@@ -1,8 +1,7 @@
 import React, { useContext } from "react";
 import { Link } from "react-router-dom";
 import { SettingsContext } from "../../contexts/SettingsContext";
-import ToggleSwitch from "../../components/ToggleSwitch"; // Assuming you have a ToggleSwitch component
-
+// import ToggleSwitch from "../../components/ToggleSwitch"; // This component is not used here, removing the import to fix the build error.
 const AppSettings = () => {
   const settings = [
     { name: "Profile", path: "/profile" },

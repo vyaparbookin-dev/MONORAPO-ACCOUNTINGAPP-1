@@ -9,7 +9,7 @@ const purchaseOrderItemSchema = new mongoose.Schema({
 
 const purchaseOrderSchema = new mongoose.Schema({
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
-  supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Party' }, // Optional for now
+  supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Party', required: true },
   orderNumber: { type: String, required: true, unique: true },
   orderDate: { type: Date, default: Date.now },
   items: [purchaseOrderItemSchema],
@@ -21,6 +21,8 @@ const purchaseOrderSchema = new mongoose.Schema({
   },
   notes: { type: String },
 }, { timestamps: true });
+
+purchaseOrderSchema.index({ companyId: 1, orderNumber: 1 }, { unique: true });
 
 // Auto-generate order number before saving
 purchaseOrderSchema.pre('save', async function(next) {
