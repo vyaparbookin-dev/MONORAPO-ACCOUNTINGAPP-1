@@ -134,6 +134,20 @@ export default function CalculatorModal({ visible, onClose }) {
       };
       syncQueue.enqueue({ method: 'post', url: '/billing', data: payload });
       Alert.alert('Cash IN', `₹${amount.toFixed(2)} recorded as Sale!`);
+    } else if (type === 'UDHAR') {
+      const payload = {
+        billNumber: `UDHAR-${Date.now()}`,
+        customerName: 'Credit Customer',
+        items: [{ productId: null, name: 'Quick Credit Entry', quantity: 1, rate: amount, total: amount }],
+        total: amount,
+        tax: 0,
+        finalAmount: amount,
+        status: 'credit',
+        paymentMethod: 'credit',
+        date: new Date().toISOString()
+      };
+      syncQueue.enqueue({ method: 'post', url: '/billing', data: payload });
+      Alert.alert('Udhar Added', `₹${amount.toFixed(2)} recorded as Credit Sale!`);
     } else {
       const payload = {
         title: 'Quick Cash Out',
@@ -206,8 +220,12 @@ export default function CalculatorModal({ visible, onClose }) {
         <View style={styles.actionRow}>
           <TouchableOpacity style={styles.smallActionBtn} onPress={() => handleSpecialInput('GT')}><Text style={styles.actionText}>GT</Text></TouchableOpacity>
           <TouchableOpacity style={styles.smallActionBtn} onPress={() => Alert.alert('Markup', 'MU Feature Coming Soon')}><Text style={styles.actionText}>MU</Text></TouchableOpacity>
-          <TouchableOpacity style={[styles.largeActionBtn, {backgroundColor: '#1ABC9C'}]} onPress={() => handleQuickTransaction('IN')}><Text style={styles.largeActionText}>CASH IN</Text></TouchableOpacity>
-          <TouchableOpacity style={[styles.largeActionBtn, {backgroundColor: '#E17055'}]} onPress={() => handleQuickTransaction('OUT')}><Text style={styles.largeActionText}>CASH OUT</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.smallActionBtn} onPress={() => handleQuickTransaction('UDHAR')}><Text style={styles.actionText}>UDHAR</Text></TouchableOpacity>
+        </View>
+
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={[styles.largeActionBtn, { backgroundColor: '#1ABC9C' }]} onPress={() => handleQuickTransaction('IN')}><Text style={styles.largeActionText}>CASH IN</Text></TouchableOpacity>
+          <TouchableOpacity style={[styles.largeActionBtn, { backgroundColor: '#E17055' }]} onPress={() => handleQuickTransaction('OUT')}><Text style={styles.largeActionText}>CASH OUT</Text></TouchableOpacity>
         </View>
 
         <View style={styles.gstRow}>

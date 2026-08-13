@@ -22,7 +22,7 @@ config.resolver.extraNodeModules = {
 };
 
 // 4. यह सुनिश्चित करें कि सिम्लिंक्स (Symlinks) सही से काम करें
-config.resolver.disableHierarchicalLookup = true;
+config.resolver.disableHierarchicalLookup = false;
 
 // 5. Axios/Crypto Error Fix: Prefer react-native/browser builds over node builds
 config.resolver.resolverMainFields = ['react-native', 'browser', 'main'];

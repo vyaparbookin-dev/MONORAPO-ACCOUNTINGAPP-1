@@ -30,7 +30,7 @@
     "build": "vite build && electron-builder",
     "electron:build": "vite build && electron-builder",
     "preview": "vite preview",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "node -e \"if (!process.env.EAS_BUILD) require('child_process').execSync('electron-builder install-app-deps', { stdio: 'inherit' })\""
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",

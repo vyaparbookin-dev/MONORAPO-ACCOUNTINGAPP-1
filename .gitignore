@@ -29,6 +29,10 @@ build/
 audit-report/
 *.txt
 
+# Native Android sources are committed and required by EAS Build.
+# Keep only generated native output ignored by apps/mobile/android/.gitignore.
+/apps/mobile/ios
+
 # Local documentation and notes
 md_all_files/
 scripts_documentation.md
@@ -36,6 +40,10 @@ scripts_documentation.md
 # Unused/Dummy/Archived code
 dummy-apps/
 script_archive_unused/
+scripts/
+scripts-all/
+full_structure_tree.txt/
+
 apps/desktop-web-bina module ke/
 
 apps/desktop/dist_electron/

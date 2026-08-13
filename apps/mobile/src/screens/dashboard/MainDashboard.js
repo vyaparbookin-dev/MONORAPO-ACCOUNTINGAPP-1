@@ -6,6 +6,7 @@ import CalculatorModal from '../../components/CalculatorModal';
 import { getData } from '../../services/ApiService';
 import { getBillsLocal, getProductsLocal, getPartiesLocal } from '../../../db'; 
 import { useAuth } from '../../context/AuthContext'; // Corrected import
+import { useCompany } from '../../context/CompanyContext';
 
 // Dummy auth context hook - replace with your actual implementation
 // const useAuth = () => ({ user: { role: 'owner' } }); // DUMMY: 'owner', 'manager', or 'staff'
@@ -16,6 +17,7 @@ export default function MainDashboard({ navigation }) {
   // const { selectedCompany } = useContext(CompanyContext);
   const { user } = useAuth();
   const userRole = user?.role || 'staff';
+  const { selectedCompany } = useCompany();
   const [summary, setSummary] = useState({ toCollect: 0, toPay: 0, stockValue: 0, totalBalance: 0, lowStockCount: 0, recentSales: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

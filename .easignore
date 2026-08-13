@@ -1,0 +1,19 @@
+# Ignore lock files and cached build files
+**/node_modules
+**/.gradle
+**/build
+**/dist
+**/.expo
+.git
+.gitignore
+.env*
+*.log
+**/.DS_Store
+**/.idea
+**/dist_electron
+md_all_files
+audit-report
+scripts
+scripts-all
+script_archive_unused
+*.txt

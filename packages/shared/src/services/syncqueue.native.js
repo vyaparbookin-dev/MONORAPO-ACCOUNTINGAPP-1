@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import { api, getStorage } from './api.native';
 
 const QUEUE_KEY = "offline_sync_queue";
 
@@ -40,7 +41,7 @@ export const syncQueue = {
     }
 
     // Do not process queue if user is not logged in
-    const token = await AsyncStorage.getItem("authToken");
+    const token = await getStorage("authToken");
     if (!token) return; // Don't sync if not logged in
 
     const queue = await syncQueue.getQueue();

@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { X, Package, TrendingUp, DollarSign, History, ShoppingCart } from 'lucide-react';
 import Loader from '../Loader';
-// Assuming you have a context to get the current user's role
-// import { useAuth } from '../../contexts/AuthContext'; 
 
 export default function ProductAnalyticsModal({ productId, onClose }) {
   const [data, setData] = useState(null);

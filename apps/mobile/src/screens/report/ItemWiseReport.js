@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, FlatList, ActivityIndicator, TouchableOpacity } from "react-native";
-import api from "../../services/api"; // Assuming you have a configured api service
+import api from "../../services";
 
 const ItemWiseReport = () => {
   const [reportData, setReportData] = useState([]);
