@@ -1,6 +1,12 @@
 import React, { createContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, API_ROUTES } from '@repo/shared';
+import { Platform } from 'react-native';
+
+// Supabase ke liye polyfill, lekin sirf native platforms par (web par nahi)
+if (Platform.OS !== 'web') {
+  require('react-native-url-polyfill/auto');
+}
 import { getData, postData } from '../services/ApiService';
 import { initDB } from '../../db';
 
