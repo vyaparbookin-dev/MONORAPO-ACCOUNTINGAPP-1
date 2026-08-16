@@ -1,51 +1,43 @@
-# Dependency directories
-node_modules/
-
-# Build and output directories
-dist/
-build/
-.expo/
-.next/
-
-# Log files
-*.log
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
 
 # Environment variables
 .env
-.env.*
-# Ignore sensitive credentials
-.env
-.env.*
+.env.local
+.env.*.local
 
-#---------------------------------------------------------------------------
-# Custom Ignores based on project audit and cleanup
-#---------------------------------------------------------------------------
-!.env.example
+# Build output
+dist
+build
+.next/
+.vercel/
 
-# Archives and Backups
-*.zip
+# Migration & Temporary Folders (As requested)
+migration-cloade-zip-extract/
+mongo-to-supabase-migration-script/
+apps/backend/supabase/
 
-# Generated reports, documentation, and logs
+# Build artifacts and logs
+apps/desktop/dist_electron/
+apps/mobile/.expo/
+.expo/
+*.log
+
+# Zipped files
+apps/web/web-src-zip.zip
+apps/backend/src/model-zip.zip
+
+# Local Supabase files
+supabase/
+
+# Scan outputs and temporary files
 audit-report/
-*.txt
-
-# Native Android sources are committed and required by EAS Build.
-# Keep only generated native output ignored by apps/mobile/android/.gitignore.
-/apps/mobile/ios
-
-# Local documentation and notes
 md_all_files/
-scripts_documentation.md
-
-# Unused/Dummy/Archived code
-dummy-apps/
+scan-output.txt
+scan-output2.txt
 script_archive_unused/
-scripts/
-scripts-all/
-full_structure_tree.txt/
-
-apps/desktop-web-bina module ke/
-
-apps/desktop/dist_electron/
-
-apps/desktop/dist_electron/
+scripts-all/scripts/bulkDelete.txt
+FULL_PROJECT_TREE.txt
+MOBILE_APP_TREE.txt

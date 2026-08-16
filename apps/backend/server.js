@@ -223,8 +223,9 @@ const startServer = () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📡 Backend accessible at http://localhost:${PORT}`);
     try {
-      await connectDB();
-      startCronJobs();
+      // await connectDB(); // TEMP: Disabled MongoDB connection to start server during Supabase migration.
+      console.log("🟡 MongoDB connection is temporarily disabled for Supabase migration.");
+      // startCronJobs(); // Cron jobs might depend on DB, so disable them too for now.
     } catch (error) {
       console.error("❌ DB Connection Failed:", error);
       Sentry.captureException(error);

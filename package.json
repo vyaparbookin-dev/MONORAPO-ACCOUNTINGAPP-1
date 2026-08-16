@@ -29,5 +29,8 @@
   },
   "dependencies": {
     "glob": "^13.0.6"
+  },
+  "devDependencies": {
+    "supabase": "^2.114.0"
   }
 }
