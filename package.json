@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "glob": "^13.0.6",
-    "react-native-get-random-values": "^2.0.0"
+    "react-native-get-random-values": "^1.11.0"
   },
   "devDependencies": {
     "supabase": "^2.114.0"
