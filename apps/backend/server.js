@@ -3,8 +3,8 @@ import dotenv from "dotenv";
 import cors from "cors";
 import connectDB from "./src/config/db.js";
 import { errorHandler } from "./src/middleware/errormiddleware.js"; // Changed SRC to src
-import path from "path";
-import "./src/config/firebase.js"; // Initialize Firebase on start
+import path from "path"; 
+import "./src/config/firebase.server.js"; // Initialize Firebase on start
 import { fileURLToPath } from "url";
 import fs from "fs";
 import rateLimit from "express-rate-limit";
