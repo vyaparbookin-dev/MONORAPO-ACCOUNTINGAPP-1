@@ -193,6 +193,7 @@ app.use("/api/scheme", schemeRoutes);
 app.use("/api/security", securityRoutes);
 app.use("/api/security-logs", securityRoutes);
 app.use("/api/settings", settingsRoutes);
+app.use("/api/security/log", securityRoutes); // FIX: Add missing singular log route
 app.use("/api/staff", staffRoutes);
 app.use("/api/stock-transfer", stockTransferRoutes);
 app.use("/api/sync", syncRoutes);

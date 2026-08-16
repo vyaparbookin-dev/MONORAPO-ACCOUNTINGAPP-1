@@ -28,7 +28,8 @@
     "audit:all": "npm run audit:health && npm run audit:repo && npm run audit:shared"
   },
   "dependencies": {
-    "glob": "^13.0.6"
+    "glob": "^13.0.6",
+    "react-native-get-random-values": "^2.0.0"
   },
   "devDependencies": {
     "supabase": "^2.114.0"
