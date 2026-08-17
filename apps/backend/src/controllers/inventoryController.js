@@ -96,8 +96,7 @@ export const addProduct = async (req, res) => {
     // Check if product already exists (Smart detection based on Name + Category + SubCategory)
     const existingProduct = await Product.findOne({ 
       name: name,
-      companyId: req.companyId,
-      isActive: true
+      companyId: req.companyId 
     });
     if (existingProduct) {
       return res.status(400).json({

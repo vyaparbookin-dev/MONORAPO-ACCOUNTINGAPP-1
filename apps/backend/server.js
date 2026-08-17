@@ -69,12 +69,12 @@ const __dirname = path.dirname(__filename);
 // For local development, load from .env.local if it exists.
 // On platforms like Render/Vercel, it will automatically use the variables set in the dashboard.
 const envLocalPath = path.resolve(__dirname, ".env.local");
-if (fs.existsSync(envLocalPath)) { // This will only be true on your local machine
+if (fs.existsSync(envLocalPath)) {
   dotenv.config({ path: envLocalPath });
   console.log("👉 Loaded keys from .env.local");
 } else {
-  dotenv.config(); // Load from platform environment (Render/Vercel) or .env file
-  console.log("👉 Loaded keys from platform environment (Render/Vercel) or .env file.");
+  dotenv.config(); // On Render, this will load variables from the dashboard environment.
+  console.log("👉 Loaded keys from platform environment (Render/Vercel).");
 }
 
 // --- DEBUGGING: Check if Brevo key is loaded correctly ---
@@ -226,8 +226,6 @@ const startServer = () => {
     console.log(`📡 Backend accessible at http://localhost:${PORT}`);
     try {
       await connectDB(); // MongoDB connection ko wapas chalu kar diya hai
-      console.log("[DEBUG] Connected to MongoDB database name:", mongoose.connection.db.databaseName);
-      startCronJobs();
     } catch (error) {
       console.error("❌ DB Connection Failed:", error);
       Sentry.captureException(error);

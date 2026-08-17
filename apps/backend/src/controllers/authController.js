@@ -56,6 +56,17 @@ export const register = async (req, res) => {
 
     await user.save();
 
+    // --- CRITICAL FIX: Create a company for the new user ---
+    const company = new Company({
+      name: `${name}'s Company`,
+      ownerName: name,
+      ownerEmail: normalizedEmail,
+      user: user._id,
+    });
+    await company.save();
+    user.companyId = company._id;
+    await user.save();
+
     try {
       // Fix: Use actual live frontend URL instead of localhost so mobile link works!
       const frontendUrl = process.env.FRONTEND_URL || 'https://monorapo-accountingapp-1.onrender.com';
@@ -235,6 +246,13 @@ export const googleAuth = async (req, res) => {
         isVerified: true,
         role: 'admin',
       });
+      
+      // Link company to user and user to company
+      // This step was missing, ensuring the new user is correctly associated.
+      company.user = user._id;
+      await company.save();
+      
+      user.companyId = company._id;
       await user.save();
     } else {
       console.log(`[Google Auth] Existing user: ${email}. Logging in.`);
