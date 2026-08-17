@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import api from "../../services/api";
+import { GoogleLogin } from '@react-oauth/google';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
@@ -10,6 +11,31 @@ export default function LoginScreen() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await api.post("/api/auth/google", { credential: credentialResponse.credential });
+      const { token, user } = response.data || response;
+      if (token && user) {
+        localStorage.setItem("authToken", token);
+        localStorage.setItem("token", token);
+        localStorage.setItem("user", JSON.stringify(user));
+        if (user.companyId) {
+          localStorage.setItem("companyId", user.companyId);
+          localStorage.setItem("selectedCompany", user.companyId);
+        }
+        navigate("/");
+      } else {
+        setError("Google login failed. Please try again.");
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || "Google login failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -120,6 +146,16 @@ export default function LoginScreen() {
               {error}
             </div>
           )}
+
+          <div className="my-6 flex items-center">
+            <div className="flex-grow border-t border-gray-300"></div>
+            <span className="mx-4 text-gray-500 text-sm">OR</span>
+            <div className="flex-grow border-t border-gray-300"></div>
+          </div>
+
+          <div className="flex justify-center">
+            <GoogleLogin onSuccess={handleGoogleSuccess} onError={() => setError("Google login failed.")} />
+          </div>
 
           <div className="mt-6 text-center space-y-3">
             <p className="text-gray-600">

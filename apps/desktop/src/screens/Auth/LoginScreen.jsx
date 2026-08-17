@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import api from "../../services/api";
 import { dbService } from "../../services/dbService";
 import { Eye, EyeOff } from "lucide-react";
+import { GoogleLogin } from '@react-oauth/google';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
@@ -11,6 +12,31 @@ export default function LoginScreen() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await api.post("/api/auth/google", { credential: credentialResponse.credential });
+      const { token, user } = response.data || response;
+      if (token && user) {
+        const normalizedUser = {
+          ...user,
+          _id: user._id || user.id,
+          companyId: user.companyId || user.company || user.company_id,
+          company: user.companyId || user.company || user.company_id,
+        };
+        dbService.setAuthData(token, normalizedUser);
+        navigate("/");
+      } else {
+        setError("Google login failed. Please try again.");
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || "Google login failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -28,8 +54,18 @@ export default function LoginScreen() {
       const userObj = response?.user || response?.data?.user || response?.data?.data?.user;
       
       if (token) {
-        // Store auth data securely via dbService
-        dbService.setAuthData(token, userObj || { email: cleanEmail, name: cleanEmail.split('@')[0] });
+        if (userObj) {
+          const normalizedUser = {
+            ...userObj,
+            _id: userObj._id || userObj.id,
+            companyId: userObj.companyId || userObj.company || userObj.company_id,
+            company: userObj.companyId || userObj.company || userObj.company_id,
+          };
+          dbService.setAuthData(token, normalizedUser);
+        } else {
+          // Fallback if user object is not returned
+          dbService.setAuthData(token, { email: cleanEmail, name: cleanEmail.split('@')[0] });
+        }
 
         // Redirect to dashboard
         navigate("/");
@@ -37,30 +73,9 @@ export default function LoginScreen() {
         setError("Token not received from server");
       }
     } catch (err) {
-      console.log("Login Catch Error:", err);
-      
-      // ROBUST OFFLINE CHECK: Agar server band hai ya internet nahi hai, toh offline bypass on karein
-      const isOfflineOrBackendDown = !navigator.onLine || !err.response || err.code === 'ERR_NETWORK' || err.message === "Network Error";
-      
-      if (isOfflineOrBackendDown) {
-        const localUser = dbService.getAuthUser();
-        if (localUser && (localUser.email || "").toLowerCase() === cleanEmail) {
-          dbService.setAuthData(localUser.token || "offline-token", localUser); // Allow offline session
-          navigate("/");
-        } else {
-          // 🚨 TOTAL OFFLINE BYPASS: Allow ANY email to login when backend is down for testing
-          dbService.setAuthData("offline-demo-token", { name: cleanEmail.split('@')[0] || "Offline User", email: cleanEmail, role: "admin" });
-          navigate("/");
-        }
-      } else {
-        const errData = err.response?.data?.message || err.response?.data || err;
-        if (errData.requiresVerification && errData.userId) {
-          alert("Account not verified. Redirecting to OTP verification page...");
-          navigate("/verify-otp", { state: { userId: errData.userId } });
-        } else {
-          setError(errData.message || err.message || "Invalid email or password");
-        }
-      }
+      const errData = err.response?.data || err;
+      setError(errData.message || "Invalid email or password");
+      console.error("Login error:", err);
     } finally {
       setLoading(false);
     }
@@ -119,6 +134,16 @@ export default function LoginScreen() {
               {error}
             </div>
           )}
+
+          <div className="my-6 flex items-center">
+            <div className="flex-grow border-t border-gray-300"></div>
+            <span className="mx-4 text-gray-500 text-sm">OR</span>
+            <div className="flex-grow border-t border-gray-300"></div>
+          </div>
+
+          <div className="flex justify-center">
+            <GoogleLogin onSuccess={handleGoogleSuccess} onError={() => setError("Google login failed.")} />
+          </div>
 
           <div className="mt-6 text-center space-y-3">
             <p className="text-gray-600">
