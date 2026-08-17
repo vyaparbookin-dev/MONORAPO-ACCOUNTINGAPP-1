@@ -3,6 +3,8 @@ import bcryptjs from "bcryptjs"; // Consistent naming
 import { generateToken } from "../config/jwt.js";
 import sendEmail from "../utils/emailSender.js"; // Use the new email sender
 
+const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
+
 // Register
 export const register = async (req, res) => {
   try {
@@ -11,7 +13,7 @@ export const register = async (req, res) => {
 
     // If user exists but is not verified, we'll resend OTP
     if (user && !user.isVerified) {
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otp = generateOtp();
       user.otp = otp;
       user.otpExpires = Date.now() + 30 * 60 * 1000; // 30 minutes validity
       await user.save();
@@ -32,7 +34,7 @@ export const register = async (req, res) => {
     }
 
     const hashedPassword = await bcryptjs.hash(password, 10);
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = generateOtp();
     const otpExpires = Date.now() + 30 * 60 * 1000; // 30 minutes
 
     user = new User({
@@ -90,6 +92,68 @@ export const login = async (req, res) => {
 
     res.json({ success: true, user: userResponse, token: generateToken(user._id) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: "Email is required." });
+    }
+
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
+    if (!user) {
+      return res.status(200).json({ success: true, message: "If that email is registered, a reset code has been sent." });
+    }
+
+    const otp = generateOtp();
+    user.otp = otp;
+    user.otpExpires = Date.now() + 30 * 60 * 1000;
+    await user.save();
+
+    const frontendUrl = process.env.FRONTEND_URL || 'https://monorapo-accountingapp-1.onrender.com';
+    const resetLink = `${frontendUrl}/verify-otp?userId=${user._id}&otp=${otp}`;
+
+    await sendEmail({
+      email: user.email,
+      subject: 'Reset Your Password',
+      message: `Your password reset OTP is: ${otp}.\n\nOr click here to reset your password: ${resetLink}\n\nValid for 30 minutes.`
+    });
+
+    return res.status(200).json({ success: true, message: "If that email is registered, a reset code has been sent." });
+  } catch (error) {
+    console.error("🔴 FORGOT PASSWORD FAILED:", error);
+    return res.status(500).json({ success: false, message: "Unable to process password reset right now." });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { userId, otp, newPassword } = req.body;
+    if (!userId || !otp || !newPassword) {
+      return res.status(400).json({ success: false, message: "User ID, OTP and new password are required." });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found." });
+    }
+
+    if (user.otp !== otp || !user.otpExpires || user.otpExpires < Date.now()) {
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP." });
+    }
+
+    const hashedPassword = await bcryptjs.hash(newPassword, 10);
+    user.password = hashedPassword;
+    user.otp = undefined;
+    user.otpExpires = undefined;
+    await user.save();
+
+    return res.status(200).json({ success: true, message: "Password reset successfully." });
+  } catch (error) {
+    console.error("🔴 RESET PASSWORD FAILED:", error);
+    return res.status(500).json({ success: false, message: "Unable to reset password." });
+  }
 };
 
 // --- New Controller for OTP Verification ---
