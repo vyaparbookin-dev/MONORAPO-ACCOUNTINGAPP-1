@@ -13,8 +13,9 @@ export default function LoginScreen() {
   const navigate = useNavigate();
 
   const handleGoogleSuccess = async (credentialResponse) => {
+    const viteGoogleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     console.log("[Auth Debug] Google Success. Credential received:", !!credentialResponse.credential);
-    console.log("[Auth Debug] Using Google Client ID from .env:", process.env.VITE_GOOGLE_CLIENT_ID ? 'Loaded' : 'MISSING!');
+    console.log("[Auth Debug] Using Google Client ID from Vite env:", viteGoogleClientId ? 'Loaded' : 'MISSING!');
     setLoading(true);
     setError("");
     try {
