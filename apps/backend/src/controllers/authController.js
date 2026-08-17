@@ -1,8 +1,11 @@
 import User from "../model/user.js";
 import bcryptjs from "bcryptjs"; // Consistent naming
 import { generateToken } from "../config/jwt.js";
-import sendEmail from "../utils/emailSender.js"; // Use the new email sender
+import sendEmail from "../utils/emailSender.js";
+import { OAuth2Client } from 'google-auth-library';
+import Company from "../model/company.js";
 
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 // Register
@@ -116,7 +119,7 @@ export const forgotPassword = async (req, res) => {
 
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
-      return res.status(200).json({ success: true, message: "If that email is registered, a reset code has been sent." });
+      return res.status(200).json({ success: true, message: "If a user with this email exists, a password reset link has been sent." });
     }
 
     const otp = generateOtp();
@@ -133,13 +136,64 @@ export const forgotPassword = async (req, res) => {
       message: `Your password reset OTP is: ${otp}.\n\nOr click here to reset your password: ${resetLink}\n\nValid for 30 minutes.`
     });
 
-    return res.status(200).json({ success: true, message: "If that email is registered, a reset code has been sent." });
+    return res.status(200).json({ success: true, message: "Password reset link sent to your email." });
   } catch (error) {
     console.error("🔴 FORGOT PASSWORD FAILED:", error);
     return res.status(500).json({ success: false, message: "Unable to process password reset right now." });
   }
 };
 
+export const googleAuth = async (req, res) => {
+  const { credential } = req.body;
+  try {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    console.log("[Auth Debug] Verifying Google token with Client ID:", clientId ? `${clientId.substring(0, 10)}...` : "Not Found! Check GOOGLE_CLIENT_ID on Render.");
+
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: clientId,
+    });
+    const payload = ticket.getPayload();
+    const { name, email } = payload;
+
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      console.log(`[Google Auth] New user: ${email}. Creating new company.`);
+      const company = new Company({
+        name: `${name}'s Company`,
+        ownerName: name,
+        industryType: 'General',
+        ownerEmail: email,
+      });
+      await company.save();
+
+      user = new User({
+        name,
+        email,
+        password: `google-auth-${Date.now()}`, // Dummy password
+        companyId: company._id,
+        isVerified: true, // Google users are pre-verified
+        role: 'admin',
+      });
+      await user.save();
+    } else {
+      console.log(`[Google Auth] Existing user: ${email}. Logging in.`);
+    }
+
+    const userResponse = user.toObject();
+    delete userResponse.password;
+    delete userResponse.otp;
+    delete userResponse.otpExpires;
+
+    console.log("[Auth Debug] Google login successful for:", email, "Company ID:", user.companyId);
+    const token = generateToken(user._id, user.companyId);
+    res.json({ success: true, token, user: userResponse });
+  } catch (error) {
+    console.error("🔴 Google Auth Error:", error.message);
+    res.status(500).json({ message: "Server error during Google authentication. Check your GOOGLE_CLIENT_ID." });
+  }
+};
 export const resetPassword = async (req, res) => {
   try {
     const { userId, otp, newPassword } = req.body;

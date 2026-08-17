@@ -46,7 +46,7 @@ export default function LoginScreen() {
     setLoading(true);
 
     const normalizedEmail = email.trim().toLowerCase();
-    console.log("[Auth Debug] login attempt for:", normalizedEmail);
+    console.log("[Auth Debug] Email/Pass login attempt for:", normalizedEmail);
 
     try {
       const response = await api.post("/api/auth/login", { email: normalizedEmail, password });
@@ -89,7 +89,7 @@ export default function LoginScreen() {
         return;
       }
       setError(errData.message || "Invalid email or password");
-      console.error("Email/Pass Login Error:", err.response?.data || err);
+      console.error("🔴 Email/Pass Login Error:", err.response?.data || err);
     } finally {
       setLoading(false);
     }
