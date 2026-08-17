@@ -13,6 +13,8 @@ export default function LoginScreen() {
   const navigate = useNavigate();
 
   const handleGoogleSuccess = async (credentialResponse) => {
+    console.log("[Auth Debug] Google Success. Credential received:", !!credentialResponse.credential);
+    console.log("[Auth Debug] Using Google Client ID from .env:", process.env.VITE_GOOGLE_CLIENT_ID ? 'Loaded' : 'MISSING!');
     setLoading(true);
     setError("");
     try {
@@ -31,7 +33,8 @@ export default function LoginScreen() {
         setError("Google login failed. Please try again.");
       }
     } catch (err) {
-      setError(err.response?.data?.message || "Google login failed.");
+      console.error("Google Login API Error:", err.response?.data || err);
+      setError(err.response?.data?.message || "Google login failed. Check console & backend logs.");
     } finally {
       setLoading(false);
     }
@@ -86,7 +89,7 @@ export default function LoginScreen() {
         return;
       }
       setError(errData.message || "Invalid email or password");
-      console.error("Login error:", err);
+      console.error("Email/Pass Login Error:", err.response?.data || err);
     } finally {
       setLoading(false);
     }

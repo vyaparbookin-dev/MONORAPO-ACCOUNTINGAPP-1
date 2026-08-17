@@ -1,11 +1,8 @@
 import User from "../model/user.js";
 import bcryptjs from "bcryptjs"; // Consistent naming
 import { generateToken } from "../config/jwt.js";
-import sendEmail from "../utils/emailSender.js";
-import { OAuth2Client } from 'google-auth-library';
-import Company from "../model/company.js";
+import sendEmail from "../utils/emailSender.js"; // Use the new email sender
 
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 // Register
@@ -93,13 +90,17 @@ export const login = async (req, res) => {
     const match = await bcryptjs.compare(password, user.password);
     if (!match) return res.status(400).json({ message: "Invalid credentials" });
 
+    // If login is successful, generate a token that includes the companyId
+    const token = generateToken(user._id, user.companyId);
+
     // Don't send password and OTP fields back to the client
     const userResponse = user.toObject();
     delete userResponse.password;
     delete userResponse.otp;
     delete userResponse.otpExpires;
 
-    res.json({ success: true, user: userResponse, token: generateToken(user._id) });
+    console.log("[Auth Debug] Login successful for:", normalizedEmail, "Company ID:", user.companyId);
+    res.json({ success: true, user: userResponse, token: token });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -191,62 +192,4 @@ export const verifyOtp = async (req, res) => {
     res.json({ success: true, message: "Account verified successfully. You can now log in." });
 
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-export const googleAuth = async (req, res) => {
-  const { credential } = req.body;
-  try {
-    const ticket = await client.verifyIdToken({
-      idToken: credential,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
-    const payload = ticket.getPayload();
-    const { name, email } = payload;
-
-    let user = await User.findOne({ email });
-
-    if (!user) {
-      // If user does not exist, create a new user and a new company
-      console.log(`[Google Auth] New user: ${email}. Creating new company.`);
-      const company = new Company({
-        name: `${name}'s Company`,
-        ownerName: name,
-        industryType: 'General',
-        ownerEmail: email,
-      });
-      await company.save();
-
-      user = new User({
-        name,
-        email,
-        password: `google-auth-${Date.now()}`, // Dummy password
-        companyId: company._id,
-        isVerified: true, // Google users are pre-verified
-        role: 'admin',
-      });
-      await user.save();
-    } else {
-      console.log(`[Google Auth] Existing user: ${email}. Logging in.`);
-      if (!user.companyId) {
-        // Edge case: User exists but has no company. Let's create one.
-        const company = new Company({ name: `${name}'s Company`, ownerName: name, ownerEmail: email });
-        await company.save();
-        user.companyId = company._id;
-        await user.save();
-      }
-    }
-
-    // Don't send password and OTP fields back to the client
-    const userResponse = user.toObject();
-    delete userResponse.password;
-    delete userResponse.otp;
-    delete userResponse.otpExpires;
-
-    // Generate token and send response
-    const token = generateToken(user._id, user.companyId);
-    res.json({ success: true, token, user: userResponse });
-  } catch (error) {
-    console.error("Google Auth Error:", error);
-    res.status(500).json({ message: "Server error during Google authentication." });
-  }
 };

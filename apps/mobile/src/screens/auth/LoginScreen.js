@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -11,15 +11,40 @@ import {
   Platform,
   ScrollView
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useContext } from 'react';
 import { AuthContext } from '../../context/AuthContext';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+
+WebBrowser.maybeCompleteAuthSession();
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useContext(AuthContext);
+  const { login, googleLogin } = useContext(AuthContext);
+
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID, // Ensure this is in your .env
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS, // Ensure this is in your .env
+  });
+
+  useEffect(() => {
+    const handleGoogleResponse = async () => {
+      if (response?.type === 'success') {
+        const { id_token } = response.params;
+        setLoading(true);
+        try {
+          await googleLogin(id_token);
+        } catch (error) {
+          Alert.alert('Google Login Failed', error.message || 'An error occurred during Google sign-in.');
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+    handleGoogleResponse();
+  }, [response]);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -90,6 +115,21 @@ const LoginScreen = ({ navigation }) => {
             ) : (
               <Text style={styles.buttonText}>Login</Text>
             )}
+          </TouchableOpacity>
+
+          <View style={styles.orContainer}>
+            <View style={styles.orLine} />
+            <Text style={styles.orText}>OR</Text>
+            <View style={styles.orLine} />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.button, styles.googleButton]}
+            onPress={() => promptAsync()}
+            disabled={!request || loading}
+          >
+            {/* You can add a Google icon here */}
+            <Text style={styles.buttonText}>Sign in with Google</Text>
           </TouchableOpacity>
 
           <View style={styles.footer}>
@@ -181,6 +221,24 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  googleButton: {
+    backgroundColor: '#4285F4',
+  },
+  orContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#cbd5e1',
+  },
+  orText: {
+    marginHorizontal: 10,
+    color: '#64748b',
+    fontSize: 14,
   },
   footer: {
     flexDirection: 'row',
