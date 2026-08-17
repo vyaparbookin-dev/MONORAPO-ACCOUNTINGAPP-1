@@ -62,6 +62,12 @@ export default function LoginScreen() {
             company: userObj.companyId || userObj.company || userObj.company_id,
           };
           dbService.setAuthData(token, normalizedUser);
+
+          const companyId = normalizedUser.companyId || normalizedUser.company;
+          if (companyId) {
+            // Manually set companyId in the underlying storage for desktop
+            dbService.setItem('companyId', companyId);
+          }
         } else {
           // Fallback if user object is not returned
           dbService.setAuthData(token, { email: cleanEmail, name: cleanEmail.split('@')[0] });

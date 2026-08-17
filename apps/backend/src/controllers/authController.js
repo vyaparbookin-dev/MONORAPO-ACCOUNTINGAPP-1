@@ -83,6 +83,10 @@ export const login = async (req, res) => {
     console.log("[Auth Debug] login attempt for:", normalizedEmail);
 
     const user = await User.findOne({ email: normalizedEmail }).select('+password'); // Explicitly include password
+    console.log("[DEBUG] User found in DB?", !!user, "for email:", normalizedEmail);
+    if (!user) {
+      console.log("[DEBUG] Total users in this DB:", await User.countDocuments());
+    }
     if (!user) return res.status(400).json({ message: "Invalid credentials" });
 
     // Check if user is verified
@@ -91,6 +95,7 @@ export const login = async (req, res) => {
     }
 
     const match = await bcryptjs.compare(password, user.password);
+    console.log("[DEBUG] Password match result:", match);
     if (!match) return res.status(400).json({ message: "Invalid credentials" });
 
     // If login is successful, generate a token that includes the companyId

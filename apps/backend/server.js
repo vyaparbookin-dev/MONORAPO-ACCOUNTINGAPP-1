@@ -65,16 +65,17 @@ import aiGatewayRoutes from "./src/routes/aiGatewayRoutes.js"; // AI Gateway क
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// --- CORRECT Environment Variable Loading Strategy ---
+// For local development, load from .env.local if it exists.
+// On platforms like Render/Vercel, it will automatically use the variables set in the dashboard.
 const envLocalPath = path.resolve(__dirname, ".env.local");
-const envExamplePath = path.resolve(__dirname, ".env.example");
-if (fs.existsSync(envLocalPath)) {
+if (fs.existsSync(envLocalPath)) { // This will only be true on your local machine
   dotenv.config({ path: envLocalPath });
   console.log("👉 Loaded keys from .env.local");
 } else {
-  dotenv.config({ path: envExamplePath });
-  console.log("👉 Loaded keys from .env.example");
+  dotenv.config(); // Load from platform environment (Render/Vercel) or .env file
+  console.log("👉 Loaded keys from platform environment (Render/Vercel) or .env file.");
 }
-console.log("👉 CHECK LOADED URI:", process.env.MONGO_URI);
 
 // --- DEBUGGING: Check if Brevo key is loaded correctly ---
 console.log("🔑 Checking Brevo Key:", process.env.BREVO_API_KEY ? `Loaded (${process.env.BREVO_API_KEY.substring(0, 4)}...)` : "NOT FOUND!");
@@ -225,6 +226,7 @@ const startServer = () => {
     console.log(`📡 Backend accessible at http://localhost:${PORT}`);
     try {
       await connectDB(); // MongoDB connection ko wapas chalu kar diya hai
+      console.log("[DEBUG] Connected to MongoDB database name:", mongoose.connection.db.databaseName);
       startCronJobs();
     } catch (error) {
       console.error("❌ DB Connection Failed:", error);

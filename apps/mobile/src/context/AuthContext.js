@@ -109,6 +109,23 @@ const AuthProvider = ({ children }) => {
     }
   };
 
+  const googleLogin = async (idToken) => {
+    try {
+      const response = await postData(API_ROUTES.AUTH.GOOGLE, { credential: idToken });
+      const { token, user } = response.data || response;
+
+      await AsyncStorage.setItem('authToken', token);
+      if (user.companyId) {
+        await AsyncStorage.setItem('companyId', user.companyId.toString());
+      }
+      setToken(token);
+      setUser(user);
+    } catch (error) {
+      console.error('Google login failed on mobile', error);
+      throw error;
+    }
+  };
+
   const logout = async () => {
     try {
       await AsyncStorage.removeItem('authToken');
@@ -122,7 +139,7 @@ const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, login, googleLogin, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );
