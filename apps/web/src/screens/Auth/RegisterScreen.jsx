@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { Eye, EyeOff } from "lucide-react";
 import api from "../../services/api";
 
 export default function RegisterScreen() {
@@ -7,6 +8,7 @@ export default function RegisterScreen() {
   const [userId, setUserId] = useState(null);
   const [otp, setOtp] = useState("");
   const [form, setForm] = useState({ name: "", email: "", password: "", phone: "" });
+  const [showPassword, setShowPassword] = useState(false);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [timer, setTimer] = useState(0);
@@ -112,7 +114,24 @@ export default function RegisterScreen() {
             <input type="text" name="name" placeholder="Full Name" onChange={handleChange} className="border p-3 w-full mb-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" required />
             <input type="email" name="email" placeholder="Email Address" onChange={handleChange} className="border p-3 w-full mb-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" required />
             <input type="tel" name="phone" placeholder="WhatsApp Mobile Number" onChange={handleChange} className="border p-3 w-full mb-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" required />
-            <input type="password" name="password" placeholder="Password" onChange={handleChange} className="border p-3 w-full mb-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" required />
+            <div className="relative mb-4">
+              <input
+                type={showPassword ? "text" : "password"}
+                name="password"
+                placeholder="Password"
+                onChange={handleChange}
+                className="border p-3 pr-12 w-full rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                required
+              />
+              <button
+                type="button"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
             <button disabled={loading || step === 2} className="bg-blue-600 hover:bg-blue-700 text-white w-full py-3 rounded-lg transition font-bold shadow-sm">
               {loading && step === 1 ? "Sending OTP..." : "Register & Get OTP"}
             </button>
