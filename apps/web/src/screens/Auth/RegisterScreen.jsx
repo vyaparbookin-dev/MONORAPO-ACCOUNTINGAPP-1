@@ -11,6 +11,7 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
   const [timer, setTimer] = useState(0);
 
   const navigate = useNavigate();
@@ -29,8 +30,9 @@ export default function RegisterScreen() {
 
       if (data?.requiresVerification && (data?.userId || data?.id)) {
         setUserId(data.userId || data.id);
-        setStep(2); // Switch directly to OTP Box
-        setTimer(60); // Start 60 second countdown
+        setOtpSent(true);
+        setStep(2);
+        setTimer(60);
         alert("OTP sent to your email!");
       } else if (data?.success) {
         alert("Registration successful! Please login.");
@@ -44,8 +46,9 @@ export default function RegisterScreen() {
       
       if (errData?.requiresVerification && (errData?.userId || errData?.id)) {
         setUserId(errData.userId || errData.id);
-        setStep(2); // Switch directly to OTP Box
-        setTimer(60); // Start countdown
+        setOtpSent(true);
+        setStep(2);
+        setTimer(60);
         setMsg(errData.message || "Please check your email for OTP.");
       } else {
         setMsg(errData?.message || err.message || "Registration failed. Try again.");
@@ -93,6 +96,7 @@ export default function RegisterScreen() {
       const res = await api.post("/api/auth/register", form);
       const data = res.data || res;
       if (data?.requiresVerification) {
+        setOtpSent(true);
         setTimer(60);
         alert("A new OTP has been sent to your email!");
       }
@@ -143,20 +147,19 @@ export default function RegisterScreen() {
           </form>
         </div>
 
-        {/* Step 2: OTP Box (Permanent on screen) */}
-        <div className={`bg-white p-6 rounded-xl shadow-md transition-all duration-300 ${step === 1 ? 'opacity-40 pointer-events-none grayscale border-l-4 border-gray-300' : 'border-l-4 border-green-500 shadow-xl scale-[1.02]'}`}>
-          <form onSubmit={handleVerifyOtp}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold text-gray-800">2. Verify OTP</h2>
-              {step === 2 && <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded animate-pulse">OTP Sent!</span>}
-            </div>
-            <p className="text-sm text-gray-600 mb-4 font-medium">Enter the 6-digit code sent to your email.</p>
-            <input type="text" maxLength="6" placeholder="Enter 6-digit OTP" value={otp} onChange={(e) => setOtp(e.target.value)} className="border border-gray-300 p-4 w-full mb-4 rounded-lg text-center tracking-[0.7em] text-2xl font-black focus:outline-none focus:ring-2 focus:ring-green-500 bg-gray-50" required disabled={step === 1} />
-            <button disabled={loading || step === 1} className="bg-green-600 hover:bg-green-700 text-white w-full py-3 rounded-lg transition font-bold shadow-sm">
-              {loading && step === 2 ? "Verifying..." : "Verify & Login"}
-            </button>
-            
-            {step === 2 && (
+        {otpSent && (
+          <div className="bg-white p-6 rounded-xl shadow-md transition-all duration-300 border-l-4 border-green-500 shadow-xl scale-[1.02]">
+            <form onSubmit={handleVerifyOtp}>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-gray-800">2. Verify OTP</h2>
+                <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded animate-pulse">OTP Sent!</span>
+              </div>
+              <p className="text-sm text-gray-600 mb-4 font-medium">Enter the 6-digit code sent to your email.</p>
+              <input type="text" maxLength="6" placeholder="Enter 6-digit OTP" value={otp} onChange={(e) => setOtp(e.target.value)} className="border border-gray-300 p-4 w-full mb-4 rounded-lg text-center tracking-[0.7em] text-2xl font-black focus:outline-none focus:ring-2 focus:ring-green-500 bg-gray-50" required />
+              <button disabled={loading} className="bg-green-600 hover:bg-green-700 text-white w-full py-3 rounded-lg transition font-bold shadow-sm disabled:bg-gray-400">
+                {loading ? "Verifying..." : "Verify & Login"}
+              </button>
+              
               <div className="mt-4 text-center">
                 <button
                   type="button"
@@ -167,10 +170,10 @@ export default function RegisterScreen() {
                   {timer > 0 ? `Resend OTP in ${timer}s` : "Didn't receive OTP? Resend"}
                 </button>
               </div>
-            )}
-            {step === 2 && msg && <p className="mt-3 text-center text-sm font-medium text-red-500">{msg}</p>}
-          </form>
-        </div>
+              {msg && <p className="mt-3 text-center text-sm font-medium text-red-500">{msg}</p>}
+            </form>
+          </div>
+        )}
 
       </div>
     </div>

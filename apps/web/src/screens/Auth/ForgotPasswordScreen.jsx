@@ -4,14 +4,28 @@ import api from "../../services/api";
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+    console.log("[Auth Debug] forgot-password attempt for:", normalizedEmail);
+
+    if (!normalizedEmail) {
+      setMessage("Please enter your email first.");
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+
     try {
-      const res = await api.post("/api/auth/forgot-password", { email });
-      setMessage(res.message || "Reset link sent to your email.");
+      const res = await api.post("/api/auth/forgot-password", { email: normalizedEmail });
+      setMessage(res?.message || "Reset link sent to your email.");
     } catch (err) {
-      setMessage("Error: Unable to send reset link.");
+      setMessage(err?.message || "Error: Unable to send reset link.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -25,8 +39,16 @@ export default function ForgotPasswordScreen() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="border p-2 w-full mb-4 rounded"
+          disabled={loading}
+          required
         />
-        <button className="bg-blue-500 text-white w-full py-2 rounded">Send Reset Link</button>
+        <button
+          type="submit"
+          disabled={loading}
+          className="bg-blue-500 text-white w-full py-2 rounded disabled:bg-gray-400 disabled:cursor-not-allowed"
+        >
+          {loading ? "Sending..." : "Send Reset Link"}
+        </button>
         {message && <p className="mt-4 text-sm text-center">{message}</p>}
       </form>
     </div>

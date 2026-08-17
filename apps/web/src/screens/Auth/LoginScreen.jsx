@@ -16,8 +16,11 @@ export default function LoginScreen() {
     setError("");
     setLoading(true);
 
+    const normalizedEmail = email.trim().toLowerCase();
+    console.log("[Auth Debug] login attempt for:", normalizedEmail);
+
     try {
-      const response = await api.post("/api/auth/login", { email, password });
+      const response = await api.post("/api/auth/login", { email: normalizedEmail, password });
       
       // Safely extract token and user from deeply nested backend responses
       const token = response?.token || response?.data?.token || response?.data?.data?.token;

@@ -9,7 +9,10 @@ const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString()
 export const register = async (req, res) => {
   try {
     const { name, email, password, phone, role } = req.body;
-    let user = await User.findOne({ email });
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    console.log("[Auth Debug] register attempt for:", normalizedEmail);
+
+    let user = await User.findOne({ email: normalizedEmail });
 
     // If user exists but is not verified, we'll resend OTP
     if (user && !user.isVerified) {
@@ -39,7 +42,7 @@ export const register = async (req, res) => {
 
     user = new User({
       name,
-      email,
+      email: normalizedEmail,
       password: hashedPassword,
       phone,
       role: role || 'admin',
@@ -73,7 +76,10 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email }).select('+password'); // Explicitly include password
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    console.log("[Auth Debug] login attempt for:", normalizedEmail);
+
+    const user = await User.findOne({ email: normalizedEmail }).select('+password'); // Explicitly include password
     if (!user) return res.status(400).json({ message: "Invalid credentials" });
 
     // Check if user is verified
@@ -97,11 +103,14 @@ export const login = async (req, res) => {
 export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-    if (!email) {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    console.log("[Auth Debug] forgot-password attempt for:", normalizedEmail);
+
+    if (!normalizedEmail) {
       return res.status(400).json({ success: false, message: "Email is required." });
     }
 
-    const user = await User.findOne({ email: email.trim().toLowerCase() });
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(200).json({ success: true, message: "If that email is registered, a reset code has been sent." });
     }

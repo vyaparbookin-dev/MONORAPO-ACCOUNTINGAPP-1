@@ -18,6 +18,7 @@ export default function LoginScreen() {
     setLoading(true);
 
     const cleanEmail = email.trim().toLowerCase();
+    console.log("[Auth Debug] desktop login attempt for:", cleanEmail);
 
     try {
       const response = await api.post("/api/auth/login", { email: cleanEmail, password });
