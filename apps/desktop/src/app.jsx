@@ -1,5 +1,5 @@
-import React, { useEffect } from "react";
-import { HashRouter as Router, Routes, Route } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { HashRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { CompanyProvider } from "./contexts/CompanyContext";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import { SettingsProvider } from "./contexts/SettingsContext"; // Import SettingsProvider
@@ -136,6 +136,7 @@ import PageCloudSync from "./pages/setting/cloudSync";
 import PageProfile from "./pages/setting/profile";
 import PageSecurityLog from "./pages/setting/securityLog";
 import PageSettings from "./pages/setting/settings";
+import { dbService } from "./services/dbService";
 
 // Leads & Quotations
 import LeadListPage from "./screens/lead/LeadListPage";
@@ -146,7 +147,16 @@ import CreateQuotationPage from "./screens/quotation/CreateQuotationPage";
 import QuotationDetailPage from "./screens/quotation/QuotationDetailPage";
 
 const App = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
   useEffect(() => {
+    console.log("✅ App component mounted");
+    // Check if user is authenticated
+    const token = localStorage.getItem("authToken") || localStorage.getItem("token");
+    const user = dbService.getAuthUser();
+    setIsAuthenticated(!!(token && token !== "null" && user));
+    setCheckingAuth(false);
     // Desktop app start होते ही security tracker active हो जाएगा
     SecurityTracker.track("APP_STARTED", { platform: "desktop", timestamp: new Date() });
   }, []);
@@ -158,6 +168,9 @@ const App = () => {
         <Router>
           <CompanyProvider>
             <Routes>
+              {/* Root Route - Redirect based on auth */}
+              <Route path="/" element={checkingAuth ? <div>Loading...</div> : isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/login" />} />
+              
               {/* Auth Routes - No Layout */}
               <Route path="/login" element={<LoginScreen />} />
               <Route path="/register" element={<RegisterScreen />} />

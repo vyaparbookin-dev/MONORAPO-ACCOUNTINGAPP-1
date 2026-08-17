@@ -25,8 +25,7 @@ db.pragma('journal_mode = WAL');
 
 // --- INITIALIZE TABLES ---
 const initializeDatabase = () => {
-  // 1. Products Table
-  db.prepare(`
+  const schema = `
     CREATE TABLE IF NOT EXISTS products (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       uuid TEXT UNIQUE NOT NULL,
@@ -37,11 +36,8 @@ const initializeDatabase = () => {
       category TEXT,
       is_synced INTEGER DEFAULT 0,
       is_deleted INTEGER DEFAULT 0
-    )
-  `).run();
+    );
 
-  // 2. Customers Table
-  db.prepare(`
     CREATE TABLE IF NOT EXISTS customers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       uuid TEXT UNIQUE NOT NULL,
@@ -50,13 +46,11 @@ const initializeDatabase = () => {
       phone TEXT,
       email TEXT,
       address TEXT,
+      balance REAL DEFAULT 0,
       is_synced INTEGER DEFAULT 0,
       is_deleted INTEGER DEFAULT 0
-    )
-  `).run();
+    );
 
-  // 3. Invoices Table
-  db.prepare(`
     CREATE TABLE IF NOT EXISTS invoices (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       uuid TEXT UNIQUE NOT NULL,
@@ -67,11 +61,8 @@ const initializeDatabase = () => {
       tax_amount REAL,
       status TEXT,
       is_synced INTEGER DEFAULT 0
-    )
-  `).run();
+    );
 
-  // 4. Invoice Items Table
-  db.prepare(`
     CREATE TABLE IF NOT EXISTS invoice_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       invoice_uuid TEXT NOT NULL,
@@ -82,19 +73,68 @@ const initializeDatabase = () => {
       tax_rate REAL,
       total REAL,
       FOREIGN KEY (invoice_uuid) REFERENCES invoices (uuid)
-    )
-  `).run();
+    );
 
-  // 5. Settings Table (For storing current company/user details offline)
-  db.prepare(`
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT
-    )
-  `).run();
+    );
 
+    CREATE TABLE IF NOT EXISTS companies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uuid TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      email TEXT,
+      phone TEXT,
+      address TEXT,
+      gstNumber TEXT,
+      website TEXT,
+      is_synced INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS units (
+      uuid TEXT PRIMARY KEY,
+      name TEXT,
+      shortCode TEXT,
+      description TEXT,
+      is_synced INTEGER DEFAULT 0,
+      is_deleted INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS categories (
+      uuid TEXT PRIMARY KEY,
+      name TEXT,
+      description TEXT,
+      is_synced INTEGER DEFAULT 0,
+      is_deleted INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS staff (
+      uuid TEXT PRIMARY KEY,
+      name TEXT,
+      role TEXT,
+      balance REAL DEFAULT 0,
+      is_synced INTEGER DEFAULT 0,
+      is_deleted INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS stock_adjustments (
+      uuid TEXT PRIMARY KEY,
+      product_uuid TEXT,
+      product_name TEXT,
+      type TEXT,
+      quantity REAL,
+      reason TEXT, notes TEXT, date TEXT, is_synced INTEGER DEFAULT 0
+    );
+  `;
+  db.exec(schema); // Use db.exec for multiple statements
   console.log('✅ Local Database initialized with all required tables.');
 };
 
 // Call initialization function on app start
-initializeDatabase();
+try {
+  initializeDatabase();
+} catch (error) {
+  console.error('❌ Failed to initialize database:', error);
+  throw error; // Re-throw the error to prevent the app from starting with a broken DB
+}

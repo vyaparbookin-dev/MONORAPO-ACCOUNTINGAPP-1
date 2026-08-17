@@ -1,43 +1,15 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useEffect } from 'react';
 
-const SettingsContext = createContext();
+// SettingsContext object is exported for direct consumption
+export const SettingsContext = createContext(null);
 
 export const SettingsProvider = ({ children }) => {
-  const [settings, setSettings] = useState(() => {
-    // Load settings from localStorage on initial render
-    try {
-      const storedSettings = localStorage.getItem('appSettings');
-      return storedSettings ? JSON.parse(storedSettings) : {
-        liveCustomerInsights: true, // Default value
-        // Add other default settings here
-      };
-    } catch (error) {
-      console.error("Failed to load settings from localStorage", error);
-      return { liveCustomerInsights: true }; // Fallback default
-    }
-  });
+  const [settings, setSettings] = useState({});
 
-  // Save settings to localStorage whenever they change
+  // You can add logic here to load/save settings from/to local storage or Electron's main process
   useEffect(() => {
-    try {
-      localStorage.setItem('appSettings', JSON.stringify(settings));
-    } catch (error) {
-      console.error("Failed to save settings to localStorage", error);
-    }
-  }, [settings]);
+    // Example: Load settings on app start
+  }, []);
 
-  const updateSetting = (key, value) => {
-    setSettings(prevSettings => ({
-      ...prevSettings,
-      [key]: value,
-    }));
-  };
-
-  return (
-    <SettingsContext.Provider value={{ settings, updateSetting }}>
-      {children}
-    </SettingsContext.Provider>
-  );
+  return <SettingsContext.Provider value={{ settings, setSettings }}>{children}</SettingsContext.Provider>;
 };
-
-export const useSettings = () => useContext(SettingsContext);

@@ -189,170 +189,170 @@ const App = () => {
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
   return (
-  <GoogleOAuthProvider clientId={googleClientId || "dummy-client-id-for-dev"}>
-  <ErrorBoundary>
-    <Router>
-      <SettingsProvider> {/* Wrap with SettingsProvider */}
-      <CompanyProvider>
-        <Suspense fallback={<Loader />}>
-          <Routes>
-            {/* Auth Routes - No Layout */}
-            <Route path="/login" element={<LoginScreen />} />
-            <Route path="/register" element={<RegisterScreen />} />
-            <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
-            <Route path="/key-recovery" element={<KeyreCoveryPage />} />
-            <Route path="/verify-otp" element={<VerifyOtp />} />
+    <GoogleOAuthProvider clientId={googleClientId || "dummy-client-id-for-dev"}>
+      <ErrorBoundary>
+        <SettingsProvider>
+          <CompanyProvider>
+            <Router>
+              <Suspense fallback={<Loader />}>
+                <Routes>
+                  {/* Auth Routes - No Layout */}
+                  <Route path="/login" element={<LoginScreen />} />
+                  <Route path="/register" element={<RegisterScreen />} />
+                  <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
+                  <Route path="/key-recovery" element={<KeyreCoveryPage />} />
+                  <Route path="/verify-otp" element={<VerifyOtp />} />
 
-            {/* Main App Routes - With Dashboard Layout */}
-            <Route element={<DashboardLayout />}>
-              {/* Dashboard */}
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/dashboard" element={<Dashboard />} />
+                  {/* Main App Routes - With Dashboard Layout */}
+                  <Route element={<DashboardLayout />}>
+                    {/* Dashboard */}
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/dashboard" element={<Dashboard />} />
 
-              {/* Approvals */}
-              <Route path="/approvals" element={<ApprovalsPage />} />
-              
-              {/* Parties */}
-              <Route path="/parties" element={<PartiesPage />} />
-              
-              {/* Fast POS */}
-              <Route path="/fast-pos" element={<FastPOSPage />} />
+                    {/* Approvals */}
+                    <Route path="/approvals" element={<ApprovalsPage />} />
 
-              {/* Billing */}
-              <Route path="/billing" element={<BillingPage />} />
-              <Route path="/billing/list" element={<BillListPage />} />
-              <Route path="/billing/import" element={<ImportBillPage />} />
-              <Route path="/billing/parse" element={<ParseBillFromImage />} />
-              <Route path="/billing/return" element={<SalesReturnPage />} />
-              <Route path="/billing/return/create" element={<CreateReturnScreen />} />
-              <Route path="/billing/b2b" element={<B2bDocumentListPage />} />
-              <Route path="/billing/b2b/create" element={<CreateB2bDocumentPage />} />
-              <Route path="/billing/:id" element={<BillDetailPage />} />
+                    {/* Parties */}
+                    <Route path="/parties" element={<PartiesPage />} />
 
-              {/* Inventory */}
-              <Route path="/inventory" element={<InventoryPage />} />
-              <Route path="/inventory/add" element={<AddProductPage />} />
-              <Route path="/inventory/bulk" element={<BulkProductPage />} />
-              <Route path="/inventory/bulk-upload" element={<BulkUploadPage />} />
-              <Route path="/inventory/analytics" element={<CategoryAnalyticsPage />} />
-              <Route path="/inventory/purchase" element={<PurchaseEntryPage />} />
-              <Route path="/inventory/adjust" element={<StockAdjustmentPage />} />
-              <Route path="/inventory/list" element={<ProductListPage />} />
-              <Route path="/inventory/detail/:id" element={<ProductDetailPage />} />
-              <Route path="/inventory/batch" element={<SerialBatchPage />} />
-              <Route path="/inventory/purchase-return" element={<InventorySalesReturnPage />} />
-              <Route path="/inventory/supplier-ledger" element={<InventorySupplierLedgerPage />} />
-              <Route path="/inventory/transfer" element={<StockTransferPage />} />
-              <Route path="/inventory/parse-purchase-bill" element={<ParsePurchaseBillPage />} />
-              <Route path="/inventory/categories" element={<CategoryManagementPage />} />
-              <Route path="/inventory/masters" element={<ItemMasterPage />} />
+                    {/* Fast POS */}
+                    <Route path="/fast-pos" element={<FastPOSPage />} />
 
-              {/* Expenses */}
-              <Route path="/expenses" element={<ExpensesPage />} />
-              <Route path="/expenses/add" element={<AddExpensePage />} />
-              <Route path="/expenses/list" element={<ExpensesListPage />} />
+                    {/* Billing */}
+                    <Route path="/billing" element={<BillingPage />} />
+                    <Route path="/billing/list" element={<BillListPage />} />
+                    <Route path="/billing/import" element={<ImportBillPage />} />
+                    <Route path="/billing/parse" element={<ParseBillFromImage />} />
+                    <Route path="/billing/return" element={<SalesReturnPage />} />
+                    <Route path="/billing/return/create" element={<CreateReturnScreen />} />
+                    <Route path="/billing/b2b" element={<B2bDocumentListPage />} />
+                    <Route path="/billing/b2b/create" element={<CreateB2bDocumentPage />} />
+                    <Route path="/billing/:id" element={<BillDetailPage />} />
 
-              {/* Company */}
-              <Route path="/company" element={<CompanyPage />} />
-              <Route path="/company/add" element={<AddCompanyPage />} />
-              <Route path="/company/branches" element={<BranchPage />} />
-              <Route path="/company/list" element={<CompanyListPage />} />
+                    {/* Inventory */}
+                    <Route path="/inventory" element={<InventoryPage />} />
+                    <Route path="/inventory/add" element={<AddProductPage />} />
+                    <Route path="/inventory/bulk" element={<BulkProductPage />} />
+                    <Route path="/inventory/bulk-upload" element={<BulkUploadPage />} />
+                    <Route path="/inventory/analytics" element={<CategoryAnalyticsPage />} />
+                    <Route path="/inventory/purchase" element={<PurchaseEntryPage />} />
+                    <Route path="/inventory/adjust" element={<StockAdjustmentPage />} />
+                    <Route path="/inventory/list" element={<ProductListPage />} />
+                    <Route path="/inventory/detail/:id" element={<ProductDetailPage />} />
+                    <Route path="/inventory/batch" element={<SerialBatchPage />} />
+                    <Route path="/inventory/purchase-return" element={<InventorySalesReturnPage />} />
+                    <Route path="/inventory/supplier-ledger" element={<InventorySupplierLedgerPage />} />
+                    <Route path="/inventory/transfer" element={<StockTransferPage />} />
+                    <Route path="/inventory/parse-purchase-bill" element={<ParsePurchaseBillPage />} />
+                    <Route path="/inventory/categories" element={<CategoryManagementPage />} />
+                    <Route path="/inventory/masters" element={<ItemMasterPage />} />
 
-              {/* Coupons */}
-              <Route path="/coupans" element={<CouponsPage />} />
-              <Route path="/coupons" element={<CouponsPage />} />
-              <Route path="/coupons/list" element={<CouponListPage />} />
-              {/* <Route path="/coupons/view" element={<CouponPage />} /> */}
-              <Route path="/coupons/generate" element={<GenerateCoupanPage />} />
+                    {/* Expenses */}
+                    <Route path="/expenses" element={<ExpensesPage />} />
+                    <Route path="/expenses/add" element={<AddExpensePage />} />
+                    <Route path="/expenses/list" element={<ExpensesListPage />} />
 
-              {/* Membership */}
-              <Route path="/membership" element={<MembershipPage />} />
-              <Route path="/membership/list" element={<MembershipListPage />} />
-              <Route path="/membership/loyalty/:id" element={<LoyaltyDetailPage />} />
+                    {/* Company */}
+                    <Route path="/company" element={<CompanyPage />} />
+                    <Route path="/company/add" element={<AddCompanyPage />} />
+                    <Route path="/company/branches" element={<BranchPage />} />
+                    <Route path="/company/list" element={<CompanyListPage />} />
 
-              {/* Notifications */}
-              <Route path="/notifications" element={<NotificationPage />} />
-              <Route path="/notifications/reminders" element={<ReminderPage />} />
+                    {/* Coupons */}
+                    <Route path="/coupans" element={<CouponsPage />} />
+                    <Route path="/coupons" element={<CouponsPage />} />
+                    <Route path="/coupons/list" element={<CouponListPage />} />
+                    {/* <Route path="/coupons/view" element={<CouponPage />} /> */}
+                    <Route path="/coupons/generate" element={<GenerateCoupanPage />} />
 
-              {/* Reports */}
-              <Route path="/reports" element={<ReportsPage />} />
-              <Route path="/reports/gst" element={<GstReportPost />} />
-              <Route path="/reports/product-gst" element={<ProductGstReportPage />} />
-              <Route path="/reports/gstr3b" element={<Gstr3bReportPage />} />
-              <Route path="/reports/itemwise" element={<ItemWiseReport />} />
-              <Route path="/reports/itemwise-page" element={<ItemWiseReportPage />} />
-              <Route path="/reports/billwise" element={<BillWiseReportPage />} />
-              <Route path="/reports/customer" element={<CustomerReportBuilder />} />
-              <Route path="/reports/partywise" element={<PartyWiseReportPage />} />
-              <Route path="/reports/profitloss" element={<ProfitLossReportPage />} />
-              <Route path="/reports/scheme" element={<SchemeReportPage />} />
-              <Route path="/reports/supplier-ledger" element={<SupplierLedgerPage />} />
-              <Route path="/reports/daybook" element={<DayBookPage />} />
-              <Route path="/reports/sitewise" element={<SitewiseReportPage />} />
-              <Route path="/reports/aging" element={<AgingReportPage />} />
-              <Route path="/reports/analytics" element={<GraphicalAnalytics />} />
-              <Route path="/reports/bank-reconciliation" element={<BankReconciliationPage />} />
-              <Route path="/reports/eway-bill" element={<EWayBillPage />} />
-              <Route path="/reports/fixed-assets" element={<FixedAssetsPage />} />
-              <Route path="/reports/tds-tcs" element={<TdsTcsPage />} />
+                    {/* Membership */}
+                    <Route path="/membership" element={<MembershipPage />} />
+                    <Route path="/membership/list" element={<MembershipListPage />} />
+                    <Route path="/membership/loyalty/:id" element={<LoyaltyDetailPage />} />
 
-              {/* Leads */}
-              <Route path="/leads" element={<LeadListPage />} />
-              <Route path="/leads/create" element={<CreateLeadPage />} />
-              <Route path="/leads/:id" element={<LeadDetailPage />} />
+                    {/* Notifications */}
+                    <Route path="/notifications" element={<NotificationPage />} />
+                    <Route path="/notifications/reminders" element={<ReminderPage />} />
 
-              {/* Quotations */}
-              <Route path="/quotations" element={<QuotationListPage />} />
-              <Route path="/quotations/create" element={<CreateQuotationPage />} />
-              <Route path="/quotations/:id" element={<QuotationDetailPage />} />
-              <Route path="/billing/quotations" element={<QuotationListPage />} />
-              <Route path="/billing/quotations/create" element={<CreateQuotationPage />} />
+                    {/* Reports */}
+                    <Route path="/reports" element={<ReportsPage />} />
+                    <Route path="/reports/gst" element={<GstReportPost />} />
+                    <Route path="/reports/product-gst" element={<ProductGstReportPage />} />
+                    <Route path="/reports/gstr3b" element={<Gstr3bReportPage />} />
+                    <Route path="/reports/itemwise" element={<ItemWiseReport />} />
+                    <Route path="/reports/itemwise-page" element={<ItemWiseReportPage />} />
+                    <Route path="/reports/billwise" element={<BillWiseReportPage />} />
+                    <Route path="/reports/customer" element={<CustomerReportBuilder />} />
+                    <Route path="/reports/partywise" element={<PartyWiseReportPage />} />
+                    <Route path="/reports/profitloss" element={<ProfitLossReportPage />} />
+                    <Route path="/reports/scheme" element={<SchemeReportPage />} />
+                    <Route path="/reports/supplier-ledger" element={<SupplierLedgerPage />} />
+                    <Route path="/reports/daybook" element={<DayBookPage />} />
+                    <Route path="/reports/sitewise" element={<SitewiseReportPage />} />
+                    <Route path="/reports/aging" element={<AgingReportPage />} />
+                    <Route path="/reports/analytics" element={<GraphicalAnalytics />} />
+                    <Route path="/reports/bank-reconciliation" element={<BankReconciliationPage />} />
+                    <Route path="/reports/eway-bill" element={<EWayBillPage />} />
+                    <Route path="/reports/fixed-assets" element={<FixedAssetsPage />} />
+                    <Route path="/reports/tds-tcs" element={<TdsTcsPage />} />
 
-              {/* Salary */}
-              <Route path="/salary" element={<SalaryPage />} />
-              <Route path="/salary/add" element={<AddSalaryPage />} />
-              <Route path="/salary/attendance" element={<MarkAttendancePage />} />
-              <Route path="/salary/statement" element={<StaffStatementPage />} />
-              <Route path="/salary/list" element={<SalaryListPage />} />
+                    {/* Leads */}
+                    <Route path="/leads" element={<LeadListPage />} />
+                    <Route path="/leads/create" element={<CreateLeadPage />} />
+                    <Route path="/leads/:id" element={<LeadDetailPage />} />
 
-              {/* Cash & Bank */}
-              <Route path="/banking" element={<BankReconciliationPage />} />
+                    {/* Quotations */}
+                    <Route path="/quotations" element={<QuotationListPage />} />
+                    <Route path="/quotations/create" element={<CreateQuotationPage />} />
+                    <Route path="/quotations/:id" element={<QuotationDetailPage />} />
+                    <Route path="/billing/quotations" element={<QuotationListPage />} />
+                    <Route path="/billing/quotations/create" element={<CreateQuotationPage />} />
 
-              {/* Late Payments */}
-              <Route path="/laterpad" element={<LaterpadPage />} />
-              <Route path="/laterpad/list" element={<LaterpadListPage />} />
+                    {/* Salary */}
+                    <Route path="/salary" element={<SalaryPage />} />
+                    <Route path="/salary/add" element={<AddSalaryPage />} />
+                    <Route path="/salary/attendance" element={<MarkAttendancePage />} />
+                    <Route path="/salary/statement" element={<StaffStatementPage />} />
+                    <Route path="/salary/list" element={<SalaryListPage />} />
 
-              {/* Warehouse */}
-              <Route path="/warehouse/add" element={<AddWarehousePage />} />
-              <Route path="/warehouse/list" element={<WarehouseListPage />} />
-              <Route path="/warehouse" element={<WarehouseListPage />} />
+                    {/* Cash & Bank */}
+                    <Route path="/banking" element={<BankReconciliationPage />} />
 
-              {/* Settings */}
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/settings/app" element={<AppSettings />} />
-              <Route path="/settings/backup" element={<BackupRestore />} />
-              <Route path="/settings/profile" element={<ProfilePage />} />
-              <Route path="/settings/security" element={<SecurityLogPage />} />
-              <Route path="/settings/web" element={<WebPreferences />} />
-              <Route path="/settings/staff" element={<StaffManagementPage />} />
-              <Route path="/settings/whatsapp" element={<WhatsappSettingsPage />} />
-              <Route path="/settings/units" element={<UnitSettingsPage />} />
-              <Route path="/settings/performance" element={<StaffPerformancePage />} />
+                    {/* Late Payments */}
+                    <Route path="/laterpad" element={<LaterpadPage />} />
+                    <Route path="/laterpad/list" element={<LaterpadListPage />} />
 
-              {/* Additional Settings Routes */}
-              <Route path="/pages/settings" element={<PageSettings />} />
-              <Route path="/pages/settings/app" element={<PageAppSettings />} />
-              <Route path="/pages/settings/cloud-sync" element={<PageCloudSync />} />
-              <Route path="/pages/settings/profile" element={<PageProfile />} />
-              <Route path="/pages/settings/security-log" element={<PageSecurityLog />} />
-            </Route>
-          </Routes>
-        </Suspense>
-      </CompanyProvider>
-      </SettingsProvider>
-    </Router>
-  </ErrorBoundary>
-  </GoogleOAuthProvider>
+                    {/* Warehouse */}
+                    <Route path="/warehouse/add" element={<AddWarehousePage />} />
+                    <Route path="/warehouse/list" element={<WarehouseListPage />} />
+                    <Route path="/warehouse" element={<WarehouseListPage />} />
+
+                    {/* Settings */}
+                    <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="/settings/app" element={<AppSettings />} />
+                    <Route path="/settings/backup" element={<BackupRestore />} />
+                    <Route path="/settings/profile" element={<ProfilePage />} />
+                    <Route path="/settings/security" element={<SecurityLogPage />} />
+                    <Route path="/settings/web" element={<WebPreferences />} />
+                    <Route path="/settings/staff" element={<StaffManagementPage />} />
+                    <Route path="/settings/whatsapp" element={<WhatsappSettingsPage />} />
+                    <Route path="/settings/units" element={<UnitSettingsPage />} />
+                    <Route path="/settings/performance" element={<StaffPerformancePage />} />
+
+                    {/* Additional Settings Routes */}
+                    <Route path="/pages/settings" element={<PageSettings />} />
+                    <Route path="/pages/settings/app" element={<PageAppSettings />} />
+                    <Route path="/pages/settings/cloud-sync" element={<PageCloudSync />} />
+                    <Route path="/pages/settings/profile" element={<PageProfile />} />
+                    <Route path="/pages/settings/security-log" element={<PageSecurityLog />} />
+                  </Route>
+                </Routes>
+              </Suspense>
+            </Router>
+          </CompanyProvider>
+        </SettingsProvider>
+      </ErrorBoundary>
+    </GoogleOAuthProvider>
   );
 };
 

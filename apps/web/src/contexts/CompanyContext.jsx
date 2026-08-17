@@ -28,8 +28,8 @@ export const CompanyProvider = ({ children }) => {
       setCompanies(companyList);
 
       // Restore selected company from localStorage if available
-      const storedCompanyId = localStorage.getItem("companyId");
-      const foundCompany = companyList.find(c => c._id === storedCompanyId);
+      const storedCompanyId = localStorage.getItem("companyId") || localStorage.getItem("selectedCompany");
+      const foundCompany = companyList.find(c => c._id === storedCompanyId || c._id?.toString() === storedCompanyId?.toString());
 
       if (foundCompany) {
         setSelectedCompany(foundCompany);

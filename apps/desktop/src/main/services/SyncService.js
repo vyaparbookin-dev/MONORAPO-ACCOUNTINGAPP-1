@@ -19,26 +19,34 @@ export const startSyncService = () => {
 
 const runSync = async () => {
   try {
+    // सुनिश्चित करें कि db ऑब्जेक्ट मौजूद है
+    if (!db) {
+      console.error('❌ Sync Error: Database connection is not available.');
+      return;
+    }
+
     // --- 1. CUSTOMERS SYNC ---
     // वो कस्टमर ढूँढें जो अभी तक सिंक नहीं हुए (is_synced = 0)
     const unsyncedCustomers = db.prepare('SELECT * FROM customers WHERE is_synced = 0').all();
-    
+
     if (unsyncedCustomers.length > 0) {
       console.log(`🔄 Found ${unsyncedCustomers.length} unsynced customers. Syncing...`);
-      
+
       for (const customer of unsyncedCustomers) {
         try {
           // 1. सर्वर पर नया ग्राहक डेटा भेजें (POST रिक्वेस्ट)
           const response = await api.post('/api/parties', customer);
-          
+
           // 2. अगर सर्वर से सफलता का संकेत मिलता है (status 200-299)
           if (response.status >= 200 && response.status < 300) {
-          // लोकल डेटाबेस को अपडेट करें कि यह सिंक हो चुका है
-          db.prepare('UPDATE customers SET is_synced = 1 WHERE uuid = ?').run(customer.uuid);
-          console.log(`✅ Synced Customer: ${customer.name}`);
+            // लोकल डेटाबेस को अपडेट करें कि यह सिंक हो चुका है
+            db.prepare('UPDATE customers SET is_synced = 1 WHERE uuid = ?').run(customer.uuid);
+            console.log(`✅ Synced Customer: ${customer.name}`);
           }
         } catch (apiError) {
-          console.error(`❌ Failed to sync customer ${customer.name}:`, apiError.message);
+          // अगर सर्वर से कोई एरर आता है (जैसे 400, 500, या नेटवर्क एरर)
+          const errorMessage = apiError.response ? JSON.stringify(apiError.response.data) : apiError.message;
+          console.error(`❌ Failed to sync customer ${customer.name}:`, errorMessage);
         }
       }
     }
@@ -49,6 +57,7 @@ const runSync = async () => {
     // ... logic ...
 
   } catch (error) {
-    console.error('❌ Sync Error:', error.message);
+    // SQLite या अन्य अप्रत्याशित एरर को यहाँ पकड़ें
+    console.error('❌ Uncaught Sync Error:', error);
   }
 };

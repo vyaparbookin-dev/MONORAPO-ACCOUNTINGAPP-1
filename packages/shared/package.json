@@ -2,14 +2,26 @@
   "name": "@repo/shared",
   "version": "1.0.0",
   "main": "src/index.js",
+  "type": "module",
   "exports": {
-    ".": "./src/index.js",
-    "./api": "./src/services/api.js",
-    "./api.native": "./src/services/api.native.js",    
-    "./dbService": "./src/services/dbService.js",
-    "./syncqueue": "./src/services/syncqueue.js",
-    "./syncqueue.native": "./src/services/syncqueue.native.js",
-    "./services/crmApiService": "./src/services/crmApiService.js"
+    ".": {
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./api": {
+      "react-native": "./src/services/api.native.js",
+      "import": "./src/services/api.js",
+      "default": "./src/services/api.js"
+    },
+    "./syncqueue": {
+      "react-native": "./src/services/syncqueue.native.js",
+      "import": "./src/services/syncqueue.js",
+      "default": "./src/services/syncqueue.js"
+    },
+    "./services/crmApiService": {
+      "import": "./src/services/crmApiService.js",
+      "default": "./src/services/crmApiService.js"
+    }
   },
   "dependencies": {
     "crypto-js": "^4.2.0",

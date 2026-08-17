@@ -1,7 +1,6 @@
 import { ipcMain } from 'electron';
 import { db } from '../database/db.js';
-import pkg from 'uuid';
-const { v4: uuidv4 } = pkg;
+import { v4 as uuidv4 } from 'uuid';
 
 // Prevent double registration
 let isRegistered = false;

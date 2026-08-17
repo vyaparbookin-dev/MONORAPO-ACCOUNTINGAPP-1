@@ -30,7 +30,8 @@ import {
   ShieldCheck,
   PenTool,
   Calculator,
-  Landmark
+  Landmark,
+  AlertTriangle
 } from "lucide-react";
 import Footer from "./Footer";
 import { useNavigate, Outlet, useLocation } from "react-router-dom";
@@ -68,6 +69,8 @@ export default function DashboardLayout() {
     localStorage.removeItem("authToken");
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    localStorage.removeItem("companyId");
+    localStorage.removeItem("selectedCompany");
     navigate("/login");
   };
 
@@ -105,7 +108,7 @@ export default function DashboardLayout() {
     ...(!Array.isArray(selectedCompany?.businessType) || selectedCompany?.businessType.length === 0 || selectedCompany?.businessType.some(t => t !== 'service') ? [{ icon: BarChart3, label: "Category Analytics", href: "/inventory/analytics", color: "text-blue-600", roles: ['admin', 'manager'] }] : []),
     ...(!Array.isArray(selectedCompany?.businessType) || selectedCompany?.businessType.length === 0 || selectedCompany?.businessType.some(t => t !== 'service') ? [{ icon: ArrowRightLeft, label: "Transfer", href: "/inventory/transfer", color: "text-indigo-500", roles: ['admin', 'manager'] }] : []),
     { icon: Landmark, label: "Cash & Bank", href: "/banking", color: "text-cyan-600", roles: ['admin', 'manager'] },
-    { icon: PackageWarning, label: "Non-Moving Stock", href: "/reports/non-moving-stock", color: "text-red-500", roles: ['admin', 'manager'] },
+    { icon: AlertTriangle, label: "Non-Moving Stock", href: "/reports/non-moving-stock", color: "text-red-500", roles: ['admin', 'manager'] },
     { icon: DollarSign, label: "Expenses", href: "/expenses", color: "text-orange-600", roles: ['admin', 'manager'] },
     { icon: Building2, label: "Company", href: "/company", color: "text-indigo-600", roles: ['admin'] },
     { icon: Gift, label: "Coupons", href: "/coupons", color: "text-pink-600", roles: ['admin', 'manager'] },

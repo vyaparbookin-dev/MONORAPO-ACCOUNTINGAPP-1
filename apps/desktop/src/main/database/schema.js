@@ -1,6 +1,6 @@
 import { db } from './db.js';
 
-export const initDatabase = () => {
+export const initializeSchema = () => {
   // 1. Customers Table
   db.exec(`
     CREATE TABLE IF NOT EXISTS customers (
@@ -82,5 +82,8 @@ export const initDatabase = () => {
     )
   `);
 
-  console.log('Database tables initialized successfully');
+  console.log('✅ Local Database initialized with all required tables.');
 };
+
+// Export for backward compatibility
+export const initDatabase = initializeSchema;

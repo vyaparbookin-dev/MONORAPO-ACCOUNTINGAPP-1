@@ -30,7 +30,8 @@ import {
   PenTool,
   BookOpen,
   Calculator,
-  Landmark
+  Landmark,
+  AlertTriangle
 } from "lucide-react";
 import { Trash2 } from "lucide-react"; // Import Trash icon
 import Footer from "./Footer";
@@ -118,7 +119,7 @@ export default function DashboardLayout() {
     { icon: Users, label: "Leads", href: "/leads", color: "text-purple-600", roles: ['admin', 'manager'] },
     { icon: FileText, label: "Quotations", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
     ...(!Array.isArray(selectedCompany?.businessType) || selectedCompany?.businessType.length === 0 || selectedCompany?.businessType.some(t => t !== 'service') ? [{ icon: BarChart3, label: "Category Analytics", href: "/inventory/analytics", color: "text-blue-600", roles: ['admin', 'manager'] }] : []),
-    { icon: PackageWarning, label: "Non-Moving Stock", href: "/reports/non-moving-stock", color: "text-red-500", roles: ['admin', 'manager'] },
+    { icon: AlertTriangle, label: "Non-Moving Stock", href: "/reports/non-moving-stock", color: "text-red-500", roles: ['admin', 'manager'] },
     { icon: Landmark, label: "Cash & Bank", href: "/banking", color: "text-cyan-600", roles: ['admin', 'manager'] },
     { icon: DollarSign, label: "Expenses", href: "/expenses", color: "text-orange-600", roles: ['admin', 'manager'] },
     { icon: Building2, label: "Company", href: "/company", color: "text-indigo-600", roles: ['admin'] },

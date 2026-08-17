@@ -25,9 +25,21 @@ export default function LoginScreen() {
         // Store token in localStorage (setting both keys to prevent 401 interceptor loop)
         localStorage.setItem("authToken", token);
         localStorage.setItem("token", token);
-        
+
         if (userObj) {
-          localStorage.setItem("user", JSON.stringify(userObj));
+          const normalizedUser = {
+            ...userObj,
+            _id: userObj._id || userObj.id,
+            companyId: userObj.companyId || userObj.company || userObj.company_id,
+            company: userObj.companyId || userObj.company || userObj.company_id,
+          };
+          localStorage.setItem("user", JSON.stringify(normalizedUser));
+
+          const companyId = normalizedUser.companyId || normalizedUser.company;
+          if (companyId) {
+            localStorage.setItem("companyId", companyId);
+            localStorage.setItem("selectedCompany", companyId);
+          }
         }
 
         // Redirect to dashboard
