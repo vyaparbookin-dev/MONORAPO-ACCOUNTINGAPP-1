@@ -24,11 +24,13 @@ export const protect = asyncHandler(async (req, res, next) => {
 
     // --- SaaS Multi-Tenancy Logic ---
     const companyId = req.headers['x-company-id'];
+    console.log("[Auth Debug] Protected request => user:", reqUserId, "companyHeader:", companyId);
 
     // If a company ID is provided in the header, validate it
     if (companyId) {
       // Validate the companyId using lean for performance
       const company = await Company.findById(companyId).lean();
+      console.log("[Auth Debug] Company lookup for header ID:", companyId, "=>", company ? { _id: company._id.toString(), name: company.name, user: company.user?.toString() } : "NOT_FOUND");
 
       // Check 1: Company exists
       if (!company) {
@@ -38,6 +40,7 @@ export const protect = asyncHandler(async (req, res, next) => {
       // Check 2: User is authorized for this company
       const companyOwnerId = company.user?.toString();
       if (!reqUserId || companyOwnerId !== reqUserId) {
+        console.log("[Auth Debug] Company ownership mismatch:", { reqUserId, companyOwnerId, companyId });
         return res.status(403).json({ success: false, message: "User not authorized for this company." });
       }
 

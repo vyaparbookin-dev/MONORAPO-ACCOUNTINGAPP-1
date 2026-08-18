@@ -16,6 +16,7 @@ export const CompanyProvider = ({ children }) => {
     if (token && token !== "null" && token !== "undefined") {
       fetchCompanies();
     } else {
+      console.log("[Company Debug] No token found, skipping company fetch.");
       setLoading(false); // If no token, stop loading and show children (e.g., Login screen)
     }
   }, []);
@@ -25,17 +26,23 @@ export const CompanyProvider = ({ children }) => {
       const response = await api.get('/api/company');
       // Handle multiple possible response structures: { companies: [] }, { data: [] }, or []
       const companyList = response.companies || response.data || (Array.isArray(response) ? response : []);
+      console.log("[Company Debug] Fetched companies:", companyList.map(c => ({ _id: c._id, name: c.name, user: c.user })));
       setCompanies(companyList);
 
       // Restore selected company from localStorage if available
       const storedCompanyId = localStorage.getItem("companyId") || localStorage.getItem("selectedCompany");
+      console.log("[Company Debug] Stored company ID from localStorage:", storedCompanyId);
       const foundCompany = companyList.find(c => c._id === storedCompanyId || c._id?.toString() === storedCompanyId?.toString());
 
       if (foundCompany) {
+        console.log("[Company Debug] Restored selected company:", { _id: foundCompany._id, name: foundCompany.name });
         setSelectedCompany(foundCompany);
       } else if (companyList.length > 0 && !selectedCompany) {
+        console.log("[Company Debug] No stored company matched. Defaulting to first company:", companyList[0]._id);
         setSelectedCompany(companyList[0]);
         localStorage.setItem("companyId", companyList[0]._id);
+      } else {
+        console.log("[Company Debug] No company found in user account or company list is empty.");
       }
     } catch (error) {
       console.error('Failed to fetch companies:', error);

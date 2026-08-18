@@ -109,6 +109,30 @@ export const login = async (req, res) => {
     console.log("[DEBUG] Password match result:", match);
     if (!match) return res.status(400).json({ message: "Invalid credentials" });
 
+    let userCompanies = await Company.find({ user: user._id }).select('_id name user').lean();
+    console.log("[Auth Debug] Companies owned by this user:", userCompanies.map(c => ({ _id: c._id.toString(), name: c.name, owner: c.user?.toString() })));
+
+    if (!user.companyId && userCompanies.length > 0) {
+      user.companyId = userCompanies[0]._id;
+      await user.save();
+      console.log("[Auth Debug] Repaired missing user.companyId with first company:", user.companyId.toString());
+    }
+
+    if (!user.companyId) {
+      const fallbackCompany = new Company({
+        name: `${user.name || 'My'} Company`,
+        ownerName: user.name || normalizedEmail,
+        ownerEmail: normalizedEmail,
+        user: user._id,
+        email: normalizedEmail,
+      });
+      await fallbackCompany.save();
+      user.companyId = fallbackCompany._id;
+      await user.save();
+      console.log("[Auth Debug] Created fallback company for user:", fallbackCompany._id.toString(), fallbackCompany.name);
+      userCompanies = [{ _id: fallbackCompany._id, name: fallbackCompany.name, user: user._id }];
+    }
+
     // If login is successful, generate a token that includes the companyId
     const token = generateToken(user._id, user.companyId);
 
@@ -118,8 +142,8 @@ export const login = async (req, res) => {
     delete userResponse.otp;
     delete userResponse.otpExpires;
 
-    console.log("[Auth Debug] Login successful for:", normalizedEmail, "Company ID:", user.companyId);
-    res.json({ success: true, user: userResponse, token: token });
+    console.log("[Auth Debug] Login successful for:", normalizedEmail, "Final Company ID:", user.companyId?.toString?.() || user.companyId);
+    res.json({ success: true, user: userResponse, token: token, companies: userCompanies });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 

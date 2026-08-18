@@ -54,6 +54,14 @@ api.interceptors.request.use(async (config) => {
   const token = (await getStorage("authToken")) || (await getStorage("token"));
   const companyId = (await getStorage("companyId")) || (await getStorage("selectedCompany"));
 
+  console.log("[API Debug] Outgoing request:", {
+    url: config.url,
+    method: config.method?.toUpperCase(),
+    tokenPresent: !!token,
+    companyId,
+    hasHeaderCompanyId: !!companyId,
+  });
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
