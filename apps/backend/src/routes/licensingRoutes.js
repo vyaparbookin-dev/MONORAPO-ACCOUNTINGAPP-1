@@ -14,7 +14,8 @@ const router = express.Router();
 router.get('/validate', protect, async (req, res) => {
   try {
     // The user object (req.user) is attached by the 'protect' middleware
-    const user = await User.findById(req.user.id).select('subscriptionStatus subscriptionExpiresAt');
+    const userId = req.user?._id || req.user?.id;
+    const user = await User.findById(userId).select('subscriptionStatus subscriptionExpiresAt');
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });

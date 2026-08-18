@@ -20,6 +20,8 @@ export const protect = asyncHandler(async (req, res, next) => {
       return res.status(401).json({ success: false, message: "Not authorized, user not found" });
     }
 
+    const reqUserId = req.user._id?.toString() || req.user.id?.toString();
+
     // --- SaaS Multi-Tenancy Logic ---
     const companyId = req.headers['x-company-id'];
 
@@ -34,7 +36,8 @@ export const protect = asyncHandler(async (req, res, next) => {
       }
 
       // Check 2: User is authorized for this company
-      if (company.user.toString() !== req.user.id.toString()) {
+      const companyOwnerId = company.user?.toString();
+      if (!reqUserId || companyOwnerId !== reqUserId) {
         return res.status(403).json({ success: false, message: "User not authorized for this company." });
       }
 
