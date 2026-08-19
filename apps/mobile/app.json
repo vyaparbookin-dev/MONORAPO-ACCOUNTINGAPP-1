@@ -24,9 +24,6 @@
       "package": "com.monorapo.accounting",
       "versionCode": 2
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
     "extra": {
       "eas": {
         "projectId": "f64e9e60-5bd8-46f9-9066-26b1e42a04f3"

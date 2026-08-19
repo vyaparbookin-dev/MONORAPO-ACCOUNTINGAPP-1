@@ -1,5 +1,6 @@
 {
   "name": "monorapo-accountingapp",
+  "type": "module",
   "version": "1.0.0",
   "private": true,
   "workspaces": [
@@ -12,7 +13,8 @@
   "scripts": {
     "start": "npm run dev",
     "dev": "npm run dev --workspaces --if-present",
-    "mobile": "npm run start --workspace=apps/mobile -- --lan --clear",
+    "mobile": "npm run start --workspace=apps/mobile -- --clear",
+    "mobile:install-web-deps": "npm install --workspace=apps/mobile react-native-web react-dom",
     "desktop": "npm run electron:dev --workspace=apps/desktop",
     "web": "npm run dev --workspace=apps/web",
     "backend": "npm run dev --workspace=apps/backend",

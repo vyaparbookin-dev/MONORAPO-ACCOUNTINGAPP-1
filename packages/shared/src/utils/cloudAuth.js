@@ -3,7 +3,7 @@ import axios from "axios";
 // Cloud API helper
 const CLOUD_BASE_URL = "https://api.yourapp.com/cloud"; // Backend cloud endpoint
 
-export const uploadToCloud = async (userId, data) => {
+export const uploadAuthToCloud = async (userId, data) => {
   try {
     const response = await axios.post(`${CLOUD_BASE_URL}/upload`, { userId, data });
     return response.data;
@@ -13,7 +13,7 @@ export const uploadToCloud = async (userId, data) => {
   }
 };
 
-export const downloadFromCloud = async (userId) => {
+export const downloadAuthFromCloud = async (userId) => {
   try {
     const response = await axios.get(`${CLOUD_BASE_URL}/download`, { params: { userId } });
     return response.data;
@@ -24,7 +24,7 @@ export const downloadFromCloud = async (userId) => {
 };
 
 // Optional: sync queue for offline mode
-export const syncQueue = [];
-export const addToSyncQueue = (userId, data) => {
-  syncQueue.push({ userId, data, timestamp: new Date().toISOString() });
-};
+export const authSyncQueueList = [];
+export const addToAuthSyncQueue = (userId, data) => {
+  authSyncQueueList.push({ userId, data, timestamp: new Date().toISOString() });
+};

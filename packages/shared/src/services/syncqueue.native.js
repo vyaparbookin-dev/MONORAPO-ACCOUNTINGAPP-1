@@ -68,11 +68,15 @@ export const syncQueue = {
 };
 
 // Auto-Sync: Jaise hi internet chalu hoga, background me data bhejna shuru kar dega
-NetInfo.addEventListener(state => {
-  if (state.isConnected && state.isInternetReachable) {
-    console.log("🌐 Internet is BACK! Triggering Auto-Sync...");
-    syncQueue.processQueue();
-  } else {
-    console.log("🚫 Internet disconnected. App is fully offline.");
-  }
-});
+try {
+  NetInfo.addEventListener(state => {
+    if (state.isConnected && state.isInternetReachable) {
+      console.log("🌐 Internet is BACK! Triggering Auto-Sync...");
+      syncQueue.processQueue();
+    } else {
+      console.log("🚫 Internet disconnected. App is fully offline.");
+    }
+  });
+} catch (e) {
+  console.warn("Could not attach NetInfo listener:", e);
+}

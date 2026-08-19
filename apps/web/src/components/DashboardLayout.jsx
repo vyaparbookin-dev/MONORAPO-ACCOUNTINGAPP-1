@@ -125,6 +125,7 @@ export default function DashboardLayout() {
     { icon: BookOpen, label: "Day Book", href: "/reports/daybook", color: "text-rose-500", roles: ['admin'] },
     { icon: Receipt, label: "Salary", href: "/salary", color: "text-cyan-600", roles: ['admin'] },
     { icon: UserCheck, label: "Attendance", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
+    { icon: Smartphone, label: "Mobile App (Live)", href: "http://localhost:8082", isExternal: true, color: "text-indigo-400", roles: ['admin', 'manager', 'cashier'] },
     { icon: Clock, label: "Laterpad", href: "/laterpad", color: "text-lime-600", roles: ['admin', 'manager', 'cashier'] },
     ...(Array.isArray(selectedCompany?.businessType) && selectedCompany?.businessType.includes('manufacturing') ? [{ icon: Warehouse, label: "Warehouse", href: "/warehouse", color: "text-amber-600", roles: ['admin', 'manager'] }] : []),
   ];
@@ -143,7 +144,7 @@ export default function DashboardLayout() {
         <div className="p-4 border-b border-slate-700 flex items-center justify-between">
           <div className={`flex items-center gap-3 ${!sidebarOpen && "justify-center w-full"}`}>
             <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center font-bold text-white">
-              RA
+              <Building2 size={24} />
             </div>
             {sidebarOpen && (
               <div>
@@ -159,7 +160,13 @@ export default function DashboardLayout() {
           {menuItems.filter(item => !item.roles || item.roles.includes(userRole)).map((item) => (
             <button
               key={item.label}
-              onClick={() => navigate(item.href)}
+              onClick={() => {
+                if (item.isExternal) {
+                  window.open(item.href, '_blank');
+                } else {
+                  navigate(item.href);
+                }
+              }}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition-all duration-200 group text-left"
               title={!sidebarOpen ? item.label : ""}
             >

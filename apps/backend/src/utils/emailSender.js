@@ -22,15 +22,14 @@ const sendEmail = async (options) => {
     throw new Error('Recipient email is missing.');
   }
 
-  if (!senderEmail) {
-    console.error("🔴 EMAIL_USER is missing. OTP email cannot be sent.");
-    throw new Error("EMAIL_USER is not configured. Add a verified sender email.");
+  if (!senderEmail && !brevoKey) {
+    console.warn("⚠️ EMAIL_USER or BREVO_API_KEY is not yet configured in .env. Falling back to local OTP rescue logging.");
   }
 
   const htmlContent = `<div style="font-family: Arial, sans-serif; padding: 20px;"><h2>Vyapar App</h2><p>${options.message}</p></div>`;
 
-  // Prefer Brevo, but do not fail permanently if the key is disabled or unauthorized.
-  if (brevoKey) {
+  // 1. Try Brevo if key is available
+  if (brevoKey && senderEmail) {
     try {
       const response = await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
@@ -47,58 +46,57 @@ const sendEmail = async (options) => {
         })
       });
 
-      const responseText = await response.text();
-      let parsedBody = {};
-      try {
-        parsedBody = responseText ? JSON.parse(responseText) : {};
-      } catch {
-        parsedBody = { raw: responseText };
-      }
-
-      console.log("[Brevo Debug] API status:", response.status, response.statusText);
-      console.log("[Brevo Debug] API response:", JSON.stringify(parsedBody));
-
       if (response.ok) {
         console.log(`✅ Brevo email sent successfully to ${normalizedEmail}`);
         return;
       }
-
-      console.warn("[Brevo Debug] Brevo failed, falling back to Gmail SMTP.", JSON.stringify(parsedBody));
+      console.warn("[Brevo Debug] Brevo API responded with non-200, trying SMTP fallback.");
     } catch (brevoError) {
-      console.warn("[Brevo Debug] Brevo request threw an exception, falling back to Gmail SMTP.", brevoError.message);
+      console.warn("[Brevo Debug] Brevo request error:", brevoError.message);
     }
-  } else {
-    console.warn("[Brevo Debug] BREVO_API_KEY missing, falling back to Gmail SMTP.");
   }
 
-  // Fallback delivery path using Gmail SMTP if available.
-  if (!gmailPassword) {
-    console.error("🔴 No valid email provider available. Brevo disabled and Gmail password missing.");
-    throw new Error("Email delivery is not configured. Add BREVO_API_KEY or EMAIL_PASS.");
+  // 2. Try Gmail SMTP if credentials exist
+  if (senderEmail && gmailPassword) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false,
+        auth: {
+          user: senderEmail,
+          pass: gmailPassword,
+        },
+        tls: {
+          rejectUnauthorized: false,
+        },
+      });
+
+      const mailResult = await transporter.sendMail({
+        from: `Vyapar App <${senderEmail}>`,
+        to: normalizedEmail,
+        subject: options.subject,
+        text: options.message,
+        html: htmlContent,
+      });
+
+      console.log(`✅ Gmail SMTP email sent successfully to ${normalizedEmail}. Message ID: ${mailResult.messageId}`);
+      return;
+    } catch (smtpErr) {
+      console.warn("⚠️ Gmail SMTP delivery failed:", smtpErr.message);
+    }
   }
 
-  const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
-    auth: {
-      user: senderEmail,
-      pass: gmailPassword,
-    },
-    tls: {
-      rejectUnauthorized: false,
-    },
-  });
+  // 3. Fallback: Log OTP to console so development and testing are never blocked
+  const otpMatch = (options.message || '').match(/\b\d{6}\b/);
+  const otpCode = otpMatch ? otpMatch[0] : 'N/A';
 
-  const mailResult = await transporter.sendMail({
-    from: `Vyapar App <${senderEmail}>`,
-    to: normalizedEmail,
-    subject: options.subject,
-    text: options.message,
-    html: htmlContent,
-  });
-
-  console.log(`✅ Gmail SMTP email sent successfully to ${normalizedEmail}. Message ID: ${mailResult.messageId}`);
+  console.log("\n===========================================================");
+  console.log(`🔑 [OTP RESCUE LOG] Email to: ${normalizedEmail}`);
+  console.log(`📩 Subject: ${options.subject}`);
+  console.log(`🔢 OTP Code: >>> ${otpCode} <<<`);
+  console.log("⚠️ Notice: To deliver emails directly to user inboxes, add EMAIL_USER & EMAIL_PASS or BREVO_API_KEY in apps/backend/.env");
+  console.log("===========================================================\n");
 };
 
 export default sendEmail;

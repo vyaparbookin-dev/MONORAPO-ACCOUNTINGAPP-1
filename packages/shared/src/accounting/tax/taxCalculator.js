@@ -1,4 +1,4 @@
-import { roundMoney } from '../money/rounding';
+import { roundMoney } from '../money/rounding.js';
 
 const toValidNumber = (value, fieldName) => {
   const number = Number(value);

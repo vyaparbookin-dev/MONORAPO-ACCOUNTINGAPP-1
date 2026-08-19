@@ -21,8 +21,14 @@ config.resolver.extraNodeModules = {
   '@repo/shared': path.resolve(workspaceRoot, 'packages/shared'),
 };
 
-// 4. यह सुनिश्चित करें कि सिम्लिंक्स (Symlinks) सही से काम करें
-config.resolver.disableHierarchicalLookup = false;
+// 4. Exclude unnecessary directories from Metro bundling
+config.resolver.blockList = [
+  /.*\.brain.*/,
+  /.*\.git.*/,
+  /.*dist_electron.*/,
+  /.*apps\/desktop\/dist.*/,
+  /.*apps\/web\/dist.*/,
+];
 
 // 5. Axios/Crypto Error Fix: Prefer react-native/browser builds over node builds
 config.resolver.resolverMainFields = ['react-native', 'browser', 'main'];

@@ -18,9 +18,11 @@ const IS_PRODUCTION = !__DEV__;
 
 const resolveApiBaseUrl = () => {
   if (IS_PRODUCTION) return PRODUCTION_API;
-  if (ENV_API_URL) return ENV_API_URL;
   if (IS_WEB) return LOCALHOST_API;
-  return LAN_API || LOCALHOST_API;
+  // If Expo hostUri is available (physical device running Expo Go on LAN), dynamically use that IP
+  if (LAN_API) return LAN_API;
+  if (ENV_API_URL) return ENV_API_URL;
+  return LOCALHOST_API;
 };
 
 export const API_BASE_URL = resolveApiBaseUrl();

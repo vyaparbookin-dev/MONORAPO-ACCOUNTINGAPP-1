@@ -1,10 +1,27 @@
 import Company from "../model/company.js";
+import { supabase } from "../config/supabase.js";
 
 export const addCompany = async (req, res) => {
   try {
     const companyData = { ...req.body, user: req.user.id };
     const company = new Company(companyData);
     await company.save();
+
+    // Sync to Supabase
+    try {
+      await supabase.from("companies").insert([{
+        name: company.name,
+        email: company.email || null,
+        phone_number: company.phone || null,
+        gst_number: company.gstNumber || null,
+        address: company.address || null,
+        upi_id: company.upiId || null,
+        is_active: true
+      }]);
+    } catch (sbErr) {
+      console.error("[Supabase Sync] addCompany error:", sbErr.message);
+    }
+
     res.status(201).json({ success: true, company });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -43,10 +60,26 @@ export const updateCompany = async (req, res) => {
 
     const company = await Company.findOneAndUpdate(
       { _id: req.params.id, user: req.user.id }, // Security ke liye user ID check
-      { $set: updateData }, // Frontend se bheji gayi naye details (website, bank, etc.)
+      { $set: updateData },
       { new: true, runValidators: true }
     );
     if (!company) return res.status(404).json({ success: false, message: 'Company not found' });
+
+    // Sync company update to Supabase
+    try {
+      await supabase.from("companies").update({
+        name: company.name,
+        email: company.email || null,
+        phone_number: company.phone || null,
+        gst_number: company.gstNumber || null,
+        address: company.address || null,
+        upi_id: company.upiId || null,
+        updated_at: new Date().toISOString()
+      }).ilike("name", `%${company.name}%`);
+    } catch (sbErr) {
+      console.error("[Supabase Sync] updateCompany error:", sbErr.message);
+    }
+
     res.json({ success: true, company, message: 'Company updated successfully' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

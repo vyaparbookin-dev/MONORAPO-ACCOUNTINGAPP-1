@@ -24,9 +24,11 @@ const LoginScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const { login, googleLogin } = useContext(AuthContext);
 
+  const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB || '673101118579-pcoot5sm15h07bu82iiespljhrnqmnfq.apps.googleusercontent.com';
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID, // Ensure this is in your .env
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS, // Ensure this is in your .env
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID || googleWebClientId,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS || googleWebClientId,
+    webClientId: googleWebClientId,
   });
 
   useEffect(() => {

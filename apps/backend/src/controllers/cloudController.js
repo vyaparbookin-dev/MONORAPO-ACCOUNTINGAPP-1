@@ -6,22 +6,6 @@ import { logActivity } from "../utils/logger.js";
 import { google } from "googleapis";
 import admin from "firebase-admin";
 
-// Initialize Firebase Admin (Sirf tabhi chalega jab .env me keys hongi)
-if (process.env.FIREBASE_PROJECT_ID && !admin.apps.length) {
-  try {
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-      }),
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET
-    });
-  } catch (error) {
-    console.error("Firebase init failed:", error.message);
-  }
-}
-
 export const createBackup = async (req, res) => {
   try {
     const { companyId } = req;

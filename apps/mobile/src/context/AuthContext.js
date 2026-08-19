@@ -5,7 +5,11 @@ import { Platform } from 'react-native';
 
 // Supabase ke liye polyfill, lekin sirf native platforms par (web par nahi)
 if (Platform.OS !== 'web') {
-  require('react-native-url-polyfill/auto');
+  try {
+    require('react-native-url-polyfill/auto');
+  } catch (e) {
+    // Ignore if already polyfilled
+  }
 }
 import { getData, postData } from '../services/ApiService';
 import { initDB } from '../../db';
@@ -145,4 +149,13 @@ const AuthProvider = ({ children }) => {
   );
 };
 
+export const useAuth = () => {
+  const context = React.useContext(AuthContext);
+  if (!context) {
+    return { user: null, token: null, loading: false };
+  }
+  return context;
+};
+
 export { AuthContext, AuthProvider };
+

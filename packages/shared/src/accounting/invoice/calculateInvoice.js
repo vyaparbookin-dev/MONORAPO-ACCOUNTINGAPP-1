@@ -1,5 +1,5 @@
-import { determineGstType } from '../tax/gstRules';
-import { roundMoney } from '../money/rounding';
+import { determineGstType } from '../tax/gstRules.js';
+import { roundMoney } from '../money/rounding.js';
 
 export const INVOICE_CALCULATION_VERSION = '1.0.0';
 

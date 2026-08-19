@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';
 
 export const generateInvoicePdf = async (invoiceData, companyData, res) => {
   const doc = new PDFDocument({ margin: 50 });
@@ -82,89 +83,82 @@ export const generateInvoicePdf = async (invoiceData, companyData, res) => {
 
   } else {
     // --- CLASSIC TEMPLATE (Default) ---
-  doc.fillColor(themeColor)
-     .fontSize(24)
-     .text(companyData.name, { align: 'center' })
-     .moveDown(0.5);
+    doc.fillColor('#333')
+       .fontSize(20)
+       .text(companyData.name || 'Company Name', 50, 50)
+       .fontSize(10)
+       .text(companyData.address || '', 50, 75)
+       .text(`Phone: ${companyData.phone || 'N/A'}`, 50, 90)
+       .text(`GSTIN: ${companyData.gstNumber || 'N/A'}`, 50, 105);
 
-  doc.fillColor('#333')
-     .fontSize(12)
-     .text(companyData.address, { align: 'center' })
-     .text(`GSTIN: ${companyData.gstNumber || 'N/A'}`, { align: 'center' })
-     .moveDown(1);
+    doc.fillColor(themeColor)
+       .fontSize(20)
+       .text("TAX INVOICE", 400, 50, { align: 'right' })
+       .fontSize(10)
+       .fillColor('#333')
+       .text(`Invoice #: ${invoiceData.billNumber}`, 400, 75, { align: 'right' })
+       .text(`Date: ${new Date(invoiceData.date || invoiceData.createdAt).toLocaleDateString()}`, 400, 90, { align: 'right' });
 
-  // --- Invoice Title ---
-  doc.fillColor(themeColor)
-     .fontSize(20)
-     .text(`TAX INVOICE`, { align: 'center' })
-     .moveDown(1);
+    doc.moveDown(2);
+    doc.fontSize(12).text("Billed To:", 50, 140);
+    doc.fontSize(10).text(invoiceData.customerName || 'Cash Customer', 50, 155);
 
-  // --- Invoice Details (Left: Customer, Right: Invoice Info) ---
-  doc.fillColor('#333')
-     .fontSize(10)
-     .text(`Bill No: ${invoiceData.billNumber}`, 50, doc.y)
-     .text(`Date: ${new Date(invoiceData.date || invoiceData.createdAt).toLocaleDateString()}`, 400, doc.y)
-     .moveDown(0.5);
+    const tableTop = 185;
+    doc.lineWidth(1);
+    doc.strokeColor('#ccc');
+    doc.rect(50, tableTop, 515, 20).fillAndStroke('#f0f0f0', '#ccc');
+    doc.fillColor('#333')
+       .fontSize(10)
+       .text('Item', 60, tableTop + 5)
+       .text('Qty', 250, tableTop + 5)
+       .text('Price', 300, tableTop + 5)
+       .text('GST%', 370, tableTop + 5)
+       .text('GST Amt', 420, tableTop + 5)
+       .text('Total', 490, tableTop + 5);
 
-  doc.text(`Customer: ${invoiceData.customerName}`, 50, doc.y)
-     .text(`Due Date: ${invoiceData.dueDate ? new Date(invoiceData.dueDate).toLocaleDateString() : 'N/A'}`, 400, doc.y)
-     .moveDown(1);
+    let y = tableTop + 20;
+    invoiceData.items.forEach(item => {
+      doc.rect(50, y, 515, 20).stroke();
+      doc.fillColor('#333')
+         .fontSize(10)
+         .text(item.productName || 'N/A', 60, y + 5)
+         .text(item.quantity, 250, y + 5)
+         .text(item.price.toFixed(2), 300, y + 5)
+         .text(item.gstRate ? `${item.gstRate}%` : '0%', 370, y + 5)
+         .text((item.gstAmount || 0).toFixed(2), 420, y + 5)
+         .text(item.total.toFixed(2), 490, y + 5);
+      y += 20;
+    });
 
-  // Customer Address (if available)
-  if (invoiceData.partyId && invoiceData.partyId.address) {
-    doc.text(`Address: ${invoiceData.partyId.address}`, 50, doc.y)
+    doc.moveDown(1);
+    doc.fillColor('#333')
+       .fontSize(12)
+       .text(`Subtotal: ₹${invoiceData.total.toFixed(2)}`, { align: 'right' })
+       .text(`Tax: ₹${invoiceData.tax.toFixed(2)}`, { align: 'right' });
+    if (invoiceData.discount || invoiceData.discountAmount) doc.text(`Discount: -₹${(invoiceData.discount || invoiceData.discountAmount).toFixed(2)}`, { align: 'right' });
+    if (invoiceData.freightCharges) doc.text(`Freight: +₹${invoiceData.freightCharges.toFixed(2)}`, { align: 'right' });
+    doc.fillColor(themeColor)
+       .fontSize(15)
+       .text(`Grand Total: ₹${invoiceData.finalAmount.toFixed(2)}`, { align: 'right' })
        .moveDown(1);
   }
 
-  // --- Items Table Header ---
-  const tableTop = doc.y;
-  doc.lineWidth(1);
-  doc.strokeColor('#ccc');
-  doc.rect(50, tableTop, 515, 20).fillAndStroke('#f0f0f0', '#ccc');
-  doc.fillColor('#333')
-     .fontSize(10)
-     .text('Item', 60, tableTop + 5)
-     .text('Qty', 250, tableTop + 5)
-     .text('Price', 300, tableTop + 5)
-     .text('GST%', 370, tableTop + 5)
-     .text('GST Amt', 420, tableTop + 5)
-     .text('Total', 490, tableTop + 5);
-
-  // --- Items Table Rows ---
-  let y = tableTop + 20;
-  invoiceData.items.forEach(item => {
-    doc.rect(50, y, 515, 20).stroke();
-    doc.fillColor('#333')
-       .fontSize(10)
-       .text(item.productName || 'N/A', 60, y + 5)
-       .text(item.quantity, 250, y + 5)
-       .text(item.price.toFixed(2), 300, y + 5)
-       .text(item.gstRate || '0%', 370, y + 5)
-       .text((item.gstAmount || 0).toFixed(2), 420, y + 5)
-       .text(item.total.toFixed(2), 490, y + 5);
-    y += 20;
-  });
-
-  // --- Totals ---
-  doc.moveDown(1);
-  doc.fillColor('#333')
-     .fontSize(12)
-     .text(`Subtotal: ${invoiceData.total.toFixed(2)}`, { align: 'right' })
-     .text(`Tax: ${invoiceData.tax.toFixed(2)}`, { align: 'right' });
-     if (invoiceData.discount || invoiceData.discountAmount) doc.text(`Discount: -₹${(invoiceData.discount || invoiceData.discountAmount).toFixed(2)}`, { align: 'right' });
-     if (invoiceData.freightCharges) doc.text(`Freight/Transport: +₹${invoiceData.freightCharges.toFixed(2)}`, { align: 'right' });
-     if (invoiceData.packingForwardingCharges) doc.text(`P&F Charges: +₹${invoiceData.packingForwardingCharges.toFixed(2)}`, { align: 'right' });
-     if (invoiceData.laborCharges) doc.text(`Labor/Install: +₹${invoiceData.laborCharges.toFixed(2)}`, { align: 'right' });
-  doc.fillColor(themeColor)
-     .fontSize(14)
-     .text(`Grand Total: ₹${invoiceData.finalAmount.toFixed(2)}`, { align: 'right' })
-     .moveDown(2);
+  // --- DYNAMIC UPI PAYMENT QR CODE ---
+  try {
+    const upiId = companyData.upiId || 'vyaparbook.in@gmail.com';
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(companyData.name || 'Ganesh Hardware')}&am=${invoiceData.finalAmount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Bill #${invoiceData.billNumber}`)}`;
+    const qrBuffer = await QRCode.toBuffer(upiUrl, { width: 90, margin: 1 });
+    const qrY = doc.page.height - 150;
+    doc.image(qrBuffer, 50, qrY, { width: 75 });
+    doc.fontSize(8).fillColor('#475569').text('Scan to Pay via UPI (GPay/PhonePe/Paytm)', 50, qrY + 80);
+  } catch (qrErr) {
+    console.warn('QR Code generation notice:', qrErr.message);
   }
 
   // --- Footer ---
   doc.fillColor('#666')
-     .fontSize(10)
-     .text('Thank you for your business!', 50, doc.page.height - 50, { align: 'center' });
+     .fontSize(9)
+     .text('Thank you for your business! This is a computer-generated invoice.', 50, doc.page.height - 40, { align: 'center' });
 
   doc.end();
 };

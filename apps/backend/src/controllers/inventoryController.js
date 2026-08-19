@@ -8,6 +8,7 @@ import Category from "../model/category.js";
 import SubCategory from "../model/subCategory.js";
 import Brand from "../model/brand.js";
 import Unit from "../model/unit.js";
+import { supabase } from "../config/supabase.js";
 
 // Zod schema for robust validation
 const productSchema = z.object({
@@ -58,25 +59,26 @@ export const exportProductsCSV = async (req, res) => {
     
     const csvData = products.map(p => ({
       'Name': p.name || 'Unknown',
-      'SKU': p.sku || 'N/A',
-      'Barcode': p.barcode || 'N/A',
-      'Category': p.category || 'General',
-      'Sub Category': p.subCategory || 'N/A',
+      'SKU': p.sku || '',
+      'Barcode': p.barcode || '',
+      'Category': p.category || '',
+      'Sub Category': p.subCategory || '',
       'Cost Price': p.costPrice || 0,
       'Selling Price': p.sellingPrice || 0,
       'Current Stock': p.currentStock || 0,
       'Minimum Stock': p.minimumStock || 0,
-      'Unit': p.unit || 'pcs'
+      'Unit': p.unit || ''
     }));
 
     const json2csvParser = new Parser({ fields });
     const csv = json2csvParser.parse(csvData);
 
     res.header('Content-Type', 'text/csv');
-    res.attachment(`Products_Export_${Date.now()}.csv`);
+    res.attachment(`products-${Date.now()}.csv`);
     return res.send(csv);
+
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -122,6 +124,30 @@ export const addProduct = async (req, res) => {
       companyId: req.companyId,
       currentStock: Number(currentStock) || Number(stock) || 0,
     });
+
+    // --- SYNC TO SUPABASE ---
+    try {
+      const { data: compList } = await supabase.from('companies').select('id').limit(1);
+      const sbCompanyId = compList?.[0]?.id;
+      if (sbCompanyId) {
+        await supabase.from('products').insert([{
+          company_id: sbCompanyId,
+          name: product.name,
+          sku: product.sku || null,
+          barcode: product.barcode || null,
+          category: product.category || 'General',
+          brand: product.brand || null,
+          unit: product.unit || 'pc',
+          hsn_code: product.hsnCode || '0000',
+          cost_price: Number(product.costPrice) || 0,
+          selling_price: Number(product.sellingPrice) || 0,
+          current_stock: Number(product.currentStock) || 0,
+          is_active: true,
+        }]);
+      }
+    } catch (sbErr) {
+      console.error('[Supabase Sync Product Error]:', sbErr.message);
+    }
 
     res.status(201).json({ 
       success: true, 

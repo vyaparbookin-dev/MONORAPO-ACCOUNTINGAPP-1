@@ -1,5 +1,6 @@
 import "react-native-get-random-values"; // Polyfill for crypto
 import "./ignoreWarnings"; // Import this FIRST to suppress warnings
+import "./src/services/config"; // Initialize API Base URL and dynamic network config
 import "react-native-gesture-handler";
 import { registerRootComponent } from "expo";
 import React from "react";

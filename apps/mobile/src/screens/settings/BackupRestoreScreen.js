@@ -8,11 +8,12 @@ const BackupRestoreScreen = () => {
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [accessToken, setAccessToken] = useState(null);
 
+  const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB || '673101118579-pcoot5sm15h07bu82iiespljhrnqmnfq.apps.googleusercontent.com';
   // Setup Google Auth (Client IDs to be added later from Google Console)
   const [request, response, promptAsync] = Google.useAuthRequest({
-    androidClientId: 'YOUR_ANDROID_CLIENT_ID.apps.googleusercontent.com', // Baad me replace karein
-    iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',         // Baad me replace karein
-    webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',         // Baad me replace karein
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID || googleWebClientId,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS || googleWebClientId,
+    webClientId: googleWebClientId,
     scopes: ['https://www.googleapis.com/auth/drive.file', 'profile', 'email'],
   });
 

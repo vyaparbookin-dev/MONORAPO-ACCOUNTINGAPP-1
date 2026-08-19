@@ -18,6 +18,14 @@
       "import": "./src/services/syncqueue.js",
       "default": "./src/services/syncqueue.js"
     },
+    "./src/services/api.native": {
+      "import": "./src/services/api.native.js",
+      "default": "./src/services/api.native.js"
+    },
+    "./src/services/syncqueue.native": {
+      "import": "./src/services/syncqueue.native.js",
+      "default": "./src/services/syncqueue.native.js"
+    },
     "./services/crmApiService": {
       "import": "./src/services/crmApiService.js",
       "default": "./src/services/crmApiService.js"
@@ -26,5 +34,9 @@
   "dependencies": {
     "crypto-js": "^4.2.0",
     "axios": "^1.7.2"
+  },
+  "peerDependencies": {
+    "@react-native-async-storage/async-storage": "*",
+    "@react-native-community/netinfo": "*"
   }
 }

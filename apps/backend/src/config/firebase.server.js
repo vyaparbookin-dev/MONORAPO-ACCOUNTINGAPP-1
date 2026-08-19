@@ -1,7 +1,12 @@
 import admin from 'firebase-admin';
 
 try {
-  if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+  const isPlaceholder = !process.env.FIREBASE_PROJECT_ID || 
+    process.env.FIREBASE_PROJECT_ID.includes('your_') || 
+    process.env.FIREBASE_PRIVATE_KEY?.includes('your_') ||
+    process.env.FIREBASE_PRIVATE_KEY?.includes('(Full key here)');
+
+  if (!isPlaceholder && process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
     // Render me \n ko sahi se read karne ke liye replace karna padta hai
     // Local .env me extra quotes ko remove karne ka logic
     const privateKey = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^["']|["']$/g, '');
@@ -17,7 +22,7 @@ try {
     });
     console.log("✅ Firebase initialized successfully with individual keys!");
   } else {
-    console.warn("⚠️ Firebase keys (PROJECT_ID, PRIVATE_KEY, CLIENT_EMAIL) are not set. Firebase features disabled.");
+    console.log("ℹ️ Firebase credentials are not set/placeholder. Running in standard local mode.");
   }
 } catch (error) {
   // Ye ab aapko behtar error dega agar koi problem hui toh
