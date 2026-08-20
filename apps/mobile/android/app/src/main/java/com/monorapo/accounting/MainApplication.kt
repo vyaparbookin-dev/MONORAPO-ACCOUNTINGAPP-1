@@ -1,4 +1,4 @@
-package com.yourcompany.accountingapp
+package com.monorapo.accounting
 
 import android.app.Application
 import android.content.res.Configuration
