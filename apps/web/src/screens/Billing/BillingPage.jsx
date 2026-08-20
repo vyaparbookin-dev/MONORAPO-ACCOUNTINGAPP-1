@@ -26,6 +26,7 @@ import BarcodeScanner from "../../components/BarcodeScanner";
 import SchemeApplyModel from "./SchemeApplyModel";
 import WhatsappSender from "../../components/WhatsappSender";
 import UdharReminder from "../../components/UdharReminder";
+import HardwareDimensionModal from "../../components/modals/HardwareDimensionModal";
 import { useCompany } from "../../contexts/CompanyContext";
 
 export default function BillingPage() {
@@ -91,6 +92,7 @@ export default function BillingPage() {
   const [lastRateMsg, setLastRateMsg] = useState("");
   const [saveToInventory, setSaveToInventory] = useState(false);
   const [showQuickProductModal, setShowQuickProductModal] = useState(false);
+  const [showHardwareModal, setShowHardwareModal] = useState(false);
   const [quickProduct, setQuickProduct] = useState({ name: '', itemId: '', barcode: '', hsnCode: '', gstRate: '', mrp: '', mrpDiscount: '', purchaseRate: '', purchaseDiscount: '', retailPrice: '', wholesalePrice: '', specialPrice: '', currentStock: '', unit: 'pcs', category: '', itemType: 'general', expiryDate: '', warrantyMonths: '', size: '', color: '' });
   const [unfoundBarcode, setUnfoundBarcode] = useState(null);
   const [showUnfoundModal, setShowUnfoundModal] = useState(false);
@@ -651,6 +653,30 @@ export default function BillingPage() {
     }
   };
 
+  // NEW: Handle Hardware, Paints & TMT Steel Calculator Item Apply
+  const handleApplyHardwareItem = (hwItem) => {
+    const calculatedTotal = Math.round((parseFloat(hwItem.quantity) || 1) * (parseFloat(hwItem.rate) || 0));
+    setFormData(prev => ({
+      ...prev,
+      items: [
+        ...prev.items,
+        {
+          productId: hwItem.productId || "",
+          name: hwItem.name,
+          category: hwItem.category || "Hardware",
+          quantity: parseFloat(hwItem.quantity) || 1,
+          rate: parseFloat(hwItem.rate) || 0,
+          unit: hwItem.unit || "pcs",
+          total: calculatedTotal,
+          notes: hwItem.notes || "",
+          dimensions: hwItem.dimensions || "",
+          shadeCode: hwItem.shadeCode || "",
+          paintBase: hwItem.paintBase || ""
+        }
+      ]
+    }));
+  };
+
   // NEW: Handle Advanced Tatkal Quick Product Creation
   const handleQuickProductSave = async () => {
     if (!quickProduct.name || !quickProduct.retailPrice) return alert("Product Name and Retail Price are required!");
@@ -1122,9 +1148,12 @@ export default function BillingPage() {
               <div className="space-y-3 bg-gray-50 p-4 rounded-lg mb-4">
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
                   <div className="md:col-span-3">
-                    <div className="flex justify-between items-center mb-1">
+                    <div className="flex justify-between items-center mb-1 flex-wrap gap-1">
                       <label className="text-xs font-medium text-gray-600">Item Name</label>
-                      <button type="button" onClick={() => setShowQuickProductModal(true)} className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"><Plus size={12}/> Advanced Tatkal</button>
+                      <div className="flex items-center gap-1.5">
+                        <button type="button" onClick={() => setShowHardwareModal(true)} className="text-xs text-emerald-700 hover:text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300 font-bold flex items-center gap-1">📐 Hardware/Paint Calc</button>
+                        <button type="button" onClick={() => setShowQuickProductModal(true)} className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"><Plus size={12}/> Advanced Tatkal</button>
+                      </div>
                     </div>
                     <input
                       id="item-name"
@@ -1831,6 +1860,13 @@ export default function BillingPage() {
           </div>
         </div>
       )}
+
+      {/* Hardware & Paints Dimension / Area / Steel / Shade Modal */}
+      <HardwareDimensionModal
+        isOpen={showHardwareModal}
+        onClose={() => setShowHardwareModal(false)}
+        onApplyItem={handleApplyHardwareItem}
+      />
     </div>
   );
 }
