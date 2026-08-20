@@ -1,84 +1,315 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Alert } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableOpacity, 
+  Platform, 
+  StatusBar 
+} from 'react-native';
+import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
 export default function ReportsMenuScreen() {
   const navigation = useNavigation();
   
-  // Available routes are kept to only the screens that are wired in the mobile app navigator.
-  const reportCategories = [
+  const allReports = [
     {
-      title: "Transaction Reports",
-      icon: "receipt-outline",
-      reports: [
-        { name: 'Day Book', route: 'DayBook' },
-        { name: 'Expense Report', route: 'DayBook' },
-        { name: 'Bill-wise Report', route: 'BillList' },
-      ]
+      id: 'party_sales',
+      title: 'Party Wise',
+      subtitle: '(Sales)',
+      icon: 'account-tie',
+      iconBg: '#EEF2FF',
+      iconColor: '#4F46E5',
+      route: 'PartyWise',
+      stack: 'Reports'
     },
     {
-      title: "Party & Item Reports",
-      icon: "people-outline",
-      reports: [
-        { name: 'Supplier Ledger', route: 'SupplierLedger' },
-        { name: 'Inventory Report', route: 'Inventory' },
-        { name: 'Stock Alert', route: 'Inventory' },
-      ]
+      id: 'product_sales',
+      title: 'Product Wise',
+      subtitle: '(Sales)',
+      icon: 'file-document-outline',
+      iconBg: '#ECFDF5',
+      iconColor: '#059669',
+      route: 'ItemWise',
+      stack: 'Reports'
     },
     {
-      title: "Accounting & Financial",
-      icon: "briefcase-outline",
-      reports: [
-        { name: 'Bank Auto-Tally', route: 'GstReport' },
-        { name: 'GST Report', route: 'GstReport' },
-      ]
+      id: 'category_report',
+      title: 'Category Wise',
+      subtitle: 'Sales & Stock',
+      icon: 'view-grid-outline',
+      iconBg: '#FFFBEB',
+      iconColor: '#D97706',
+      route: 'InventoryReport',
+      stack: 'Reports'
+    },
+    {
+      id: 'party_purchase',
+      title: 'Party Wise',
+      subtitle: '(Purchase)',
+      icon: 'account-group',
+      iconBg: '#FFF1F2',
+      iconColor: '#E11D48',
+      route: 'SupplierLedger',
+      stack: 'Inventory'
+    },
+    {
+      id: 'product_purchase',
+      title: 'Product Wise',
+      subtitle: '(Purchase)',
+      icon: 'package-variant-closed',
+      iconBg: '#F0F9FF',
+      iconColor: '#0284C7',
+      route: 'InventoryReport',
+      stack: 'Reports'
+    },
+    {
+      id: 'stock_alert',
+      title: 'Stock Alert',
+      subtitle: 'Low & Zero Stock',
+      icon: 'alert-octagon-outline',
+      iconBg: '#FEF2F2',
+      iconColor: '#DC2626',
+      route: 'StockAlert',
+      stack: 'Reports'
+    },
+    {
+      id: 'gst_sales',
+      title: 'GST Sales Report',
+      subtitle: 'Tax Breakdown',
+      icon: 'calculator-variant',
+      iconBg: '#FDF4FF',
+      iconColor: '#A21CAF',
+      route: 'GSTReport',
+      stack: 'Reports'
+    },
+    {
+      id: 'gst_purchase',
+      title: 'GST Purchase Report',
+      subtitle: 'ITC Claims',
+      icon: 'chart-bar',
+      iconBg: '#F0F9FF',
+      iconColor: '#0284C7',
+      route: 'GSTReport',
+      stack: 'Reports'
+    },
+    {
+      id: 'gstr1',
+      title: 'GSTR-1',
+      subtitle: 'Monthly Sales',
+      icon: 'file-certificate-outline',
+      iconBg: '#ECFDF5',
+      iconColor: '#059669',
+      route: 'GSTReport',
+      stack: 'Reports'
+    },
+    {
+      id: 'gstr2',
+      title: 'GSTR-2',
+      subtitle: 'Purchase Reco',
+      icon: 'file-check-outline',
+      iconBg: '#EEF2FF',
+      iconColor: '#4338CA',
+      route: 'GSTReport',
+      stack: 'Reports'
+    },
+    {
+      id: 'gstr3b',
+      title: 'GSTR-3B',
+      subtitle: 'Summary Return',
+      icon: 'file-percent-outline',
+      iconBg: '#FEF3C7',
+      iconColor: '#D97706',
+      route: 'GSTR3B',
+      stack: 'Reports'
+    },
+    {
+      id: 'daybook',
+      title: 'Day Book & Cash',
+      subtitle: 'Daily Cash In/Out',
+      icon: 'book-open-outline',
+      iconBg: '#F0FDF4',
+      iconColor: '#16A34A',
+      route: 'DayBook',
+      stack: 'Reports'
+    },
+    {
+      id: 'profit_loss',
+      title: 'Profit & Loss',
+      subtitle: 'Net Income',
+      icon: 'trending-up',
+      iconBg: '#ECFDF5',
+      iconColor: '#059669',
+      route: 'ProfitLoss',
+      stack: 'Reports'
+    },
+    {
+      id: 'bank_rec',
+      title: 'Bank Auto-Tally',
+      subtitle: 'Bank Statement Reco',
+      icon: 'bank-outline',
+      iconBg: '#EEF2FF',
+      iconColor: '#4F46E5',
+      route: 'BankReconciliation',
+      stack: 'Reports'
+    },
+    {
+      id: 'aging',
+      title: 'Aging Analysis',
+      subtitle: 'Overdue Udhar',
+      icon: 'calendar-clock',
+      iconBg: '#FFF7ED',
+      iconColor: '#EA580C',
+      route: 'AgingReport',
+      stack: 'Reports'
+    },
+    {
+      id: 'dispatch_challan',
+      title: 'Bill-Wise Report',
+      subtitle: 'Invoices & Challan',
+      icon: 'truck-delivery-outline',
+      iconBg: '#F1F5F9',
+      iconColor: '#475569',
+      route: 'BillWise',
+      stack: 'Reports'
     }
   ];
 
   const handleReportPress = (report) => {
-    if (report.route && navigation.navigate) {
+    try {
+      if (report.stack) {
+        navigation.navigate(report.stack, { screen: report.route });
+      } else {
+        navigation.navigate('Reports', { screen: report.route });
+      }
+    } catch (err) {
+      console.log('Report navigation err:', err);
       navigation.navigate(report.route);
-      return;
     }
-
-    Alert.alert('Coming Soon', 'This report is being prepared for the mobile experience.');
   };
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {reportCategories.map((category, idx) => (
-        <View key={idx} style={styles.categoryContainer}>
-          <View style={styles.categoryHeader}>
-            <Ionicons name={category.icon} size={20} color="#6C4CF1" style={styles.icon} />
-            <Text style={styles.categoryTitle}>{category.title}</Text>
-          </View>
-          <View style={styles.grid}>
-            {category.reports.map((report, rIdx) => (
-              <TouchableOpacity 
-                key={rIdx} 
-                style={styles.card}
-                onPress={() => handleReportPress(report)}
-              >
-                <Text style={styles.reportName}>{report.name}</Text>
-                <Ionicons name="chevron-forward" size={16} color="#CBD5E1" />
-              </TouchableOpacity>
-            ))}
-          </View>
+    <View style={styles.container}>
+      <StatusBar backgroundColor="#F59E0B" barStyle="dark-content" />
+
+      {/* Top Header matching reference (Image 4) */}
+      <View style={styles.topHeader}>
+        <TouchableOpacity 
+          style={styles.backBtn}
+          onPress={() => {
+            if (navigation.canGoBack()) navigation.goBack();
+            else navigation.navigate('Dashboard');
+          }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={22} color="#1E293B" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Reports</Text>
+        <View style={{ width: 22 }} />
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <Text style={styles.subtitle}>Please select the report type</Text>
+
+        {/* 2-Column Grid */}
+        <View style={styles.grid}>
+          {allReports.map((report) => (
+            <TouchableOpacity 
+              key={report.id}
+              style={styles.reportCard}
+              onPress={() => handleReportPress(report)}
+              activeOpacity={0.75}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: report.iconBg }]}>
+                <MaterialCommunityIcons name={report.icon} size={28} color={report.iconColor} />
+              </View>
+              <Text style={styles.reportTitle}>{report.title}</Text>
+              <Text style={styles.reportSub}>{report.subtitle}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
-      ))}
-      <View style={{ height: 40 }} />
-    </ScrollView>
+
+        <View style={{ height: 90 }} />
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F6FA', padding: 16 },
-  categoryContainer: { marginBottom: 20 },
-  categoryHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingHorizontal: 4 },
-  icon: { marginRight: 8 },
-  categoryTitle: { fontSize: 15, fontWeight: 'bold', color: '#34495E', textTransform: 'uppercase', letterSpacing: 0.5 },
-  grid: { backgroundColor: '#FFF', borderRadius: 12, overflow: 'hidden', elevation: 1, ...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } }, android: { elevation: 2 } }) },
-  card: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  reportName: { fontSize: 14, color: '#334155', fontWeight: '500' }
-});
+  container: { 
+    flex: 1, 
+    backgroundColor: '#F8FAFC' 
+  },
+  topHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 44 : 12,
+    paddingBottom: 14,
+  },
+  backBtn: {
+    padding: 4,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  scrollContent: {
+    paddingHorizontal: 14,
+    paddingTop: 16,
+  },
+  subtitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6366F1',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 12,
+  },
+  reportCard: {
+    width: '48.5%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    elevation: 1,
+    shadowColor: '#64748B',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  iconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  reportTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+    textAlign: 'center',
+  },
+  reportSub: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+});

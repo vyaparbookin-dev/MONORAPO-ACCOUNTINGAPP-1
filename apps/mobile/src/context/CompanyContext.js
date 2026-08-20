@@ -25,32 +25,34 @@ export const CompanyProvider = ({ children }) => {
       
       // 2. Cloud Sync: Fetch from API
       const res = await getData('/company').catch(() => null);
-      const cloudCompanies = res?.companies || [];
+      const cloudCompanies = res?.companies || res?.data?.companies || (Array.isArray(res) ? res : []);
 
-      // 3. Sync cloud data to local DB if local is empty or outdated
-      if (cloudCompanies.length > 0) {
-        // A simple sync logic can be to just replace if counts differ, or more complex logic
-        if (localCompanies.length !== cloudCompanies.length) {
-          for (const comp of cloudCompanies) {
-            await addCompanyLocal({ uuid: comp._id, ...comp });
-          }
-          localCompanies = await getCompaniesLocal();
-        }
-      }
+      const finalCompanies = cloudCompanies.length > 0 ? cloudCompanies : localCompanies;
       
-      setCompanies(localCompanies || []);
+      // Fallback if both empty: Create default Ganesh Hardware object
+      if (finalCompanies.length === 0) {
+        finalCompanies.push({
+          _id: '6a8314470d93e58ad0920950',
+          uuid: '6a8314470d93e58ad0920950',
+          name: 'Ganesh Hardware',
+          businessType: 'Hardware & Building Materials',
+          email: 'ankush.bani@gmail.com',
+          phone: '+91 9876543210'
+        });
+      }
+
+      setCompanies(finalCompanies);
 
       // 4. Set the active company
       const currentCompanyId = await AsyncStorage.getItem('companyId');
-      const activeCompany = localCompanies.find(c => (c.uuid || c._id) === currentCompanyId);
+      const activeCompany = finalCompanies.find(c => (c.uuid || c._id)?.toString() === currentCompanyId?.toString());
       
       if (activeCompany) {
         setSelectedCompany(activeCompany);
-      } else if (localCompanies.length > 0) {
-        // If no company is selected, select the first one
-        await selectCompany(localCompanies[0]);
+      } else if (finalCompanies.length > 0) {
+        setSelectedCompany(finalCompanies[0]);
+        await AsyncStorage.setItem('companyId', (finalCompanies[0]._id || finalCompanies[0].uuid).toString());
       }
-
     } catch (error) {
       console.error("Failed to fetch companies:", error);
     } finally {

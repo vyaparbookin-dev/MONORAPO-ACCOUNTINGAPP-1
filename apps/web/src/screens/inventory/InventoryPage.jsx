@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Plus, Search, Download, Edit, Trash2, Package, AlertTriangle, Upload, Scan, ShoppingBag, ClipboardList, Undo2, BookUser, Camera, Barcode, X, Link as LinkIcon, UploadCloud, History } from "lucide-react";
+import { Plus, Search, Download, Edit, Trash2, Package, AlertTriangle, Upload, Scan, ShoppingBag, ClipboardList, Undo2, BookUser, Camera, Barcode, X, Link as LinkIcon, UploadCloud, History, Printer, FileSpreadsheet } from "lucide-react";
+import * as XLSX from "xlsx";
 import { useNavigate } from "react-router-dom";
 import BarcodeScanner from "../../components/BarcodeScanner";
 import DataTable from "../../components/Datatable";
@@ -17,10 +18,14 @@ const InventoryPage = () => {
   const [filteredInventory, setFilteredInventory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("ALL");
+  const [selectedBrandFilter, setSelectedBrandFilter] = useState("ALL");
+  const [selectedStockFilter, setSelectedStockFilter] = useState("ALL");
   const [searchTerm, setSearchTerm] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const [showAuditModal, setShowAuditModal] = useState(false);
   const [selectedProductForBarcode, setSelectedProductForBarcode] = useState(null);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [productToMerge, setProductToMerge] = useState(null);
@@ -91,7 +96,7 @@ const InventoryPage = () => {
 
   useEffect(() => {
     filterInventory();
-  }, [inventory, searchTerm]);
+  }, [inventory, searchTerm, selectedCategoryFilter, selectedBrandFilter, selectedStockFilter]);
 
   const isComposition = String(gstType).toLowerCase() === "composition";
   const isUnregistered = String(gstType).toLowerCase() === "unregistered";
@@ -261,18 +266,105 @@ const InventoryPage = () => {
     }
   };
 
+  const matchCategory = (item, catId) => {
+    if (!item) return false;
+    if (catId === 'ALL') return true;
+    const stock = Number(item.currentStock ?? item.stock ?? item.openingStock ?? 0);
+    const minStock = Number(item.minimumStock ?? 10);
+    if (catId === 'LOW_STOCK') return stock < minStock;
+    if (catId === 'OUT_OF_STOCK') return stock <= 0;
+    if (catId === 'IN_STOCK') return stock > 0;
+
+    const cat = String(item.category || '').toUpperCase();
+    const brand = String(item.brand || '').toUpperCase();
+    const subCat = String(item.subCategory || '').toUpperCase();
+    const name = String(item.name || '').toUpperCase();
+
+    if (catId === 'PLYWOOD_GROUP') {
+      return cat === 'PLYWOOD' || cat === 'BEAT' || cat.includes('PLY') || cat.includes('BEAT') || cat.includes('HARDWOOD') || subCat.includes('PLY') || name.includes('PLYWOOD') || name.includes('18MM') || name.includes('12MM') || name.includes('6MM');
+    }
+    if (catId === 'BERGER_GROUP') {
+      if (brand.includes('KAMDHENU') || cat.includes('KAMDHENU') || name.includes('KAMDHENU') || name.includes('KAMOBLASTER')) return false;
+      return brand.includes('BERGER') || cat.includes('BERGER') || name.includes('BERGER') || name.includes('BISON') || name.includes('LUXOL') || name.includes('WALMASTA') || name.includes('WEATHERCOAT') || name.includes('SILK') || name.includes('RANGOLI') || name.includes('BUTERFLY') || (cat.includes('DISTEMPER') && !brand.includes('KAMDHENU')) || (cat.includes('ACRILIC') && !brand.includes('KAMDHENU'));
+    }
+    if (catId === 'KAMDHENU_GROUP') {
+      return brand.includes('KAMDHENU') || cat.includes('KAMDHENU') || name.includes('KAMDHENU') || name.includes('KAMOBLASTER') || name.includes('KAMOCRETE') || name.includes('KAMODUR');
+    }
+    if (catId === 'ELECTRICALS_GROUP') {
+      return cat.includes('ELE') || cat.includes('ARKAYLITE') || brand.includes('ARKAYLITE') || cat.includes('MODUL') || cat.includes('SWITCH') || cat.includes('WIRE') || cat.includes('COPPER') || cat.includes('ANCHOR') || cat.includes('CONA') || cat.includes('CR') || cat.includes('VINAY') || name.includes('SWITCH') || name.includes('SOCKET') || name.includes('ELEMENT') || name.includes('MCB');
+    }
+    if (catId === 'GI_FITTING') {
+      return cat.includes('GI') || name.includes('GI ') || name.includes('PUMP') || cat.includes('MONOBLOCK') || cat.includes('PRIMING') || name.includes('ELBOW') || name.includes('NIPPLE') || name.includes('UNION') || name.includes('REDUCER');
+    }
+    if (catId === 'PIPES_GROUP') {
+      if (cat.includes('GI')) return false;
+      return cat.includes('UPVC') || cat.includes('SWR') || cat.includes('CPVC') || cat.includes('PIPE') || brand.includes('KISAN') || cat.includes('PRINCE') || cat.includes('PAPULAR') || cat.includes('GARDEN') || cat.includes('SACTION') || cat.includes('FOOTVALVE') || name.includes('UPVC') || name.includes('CPVC') || name.includes('SWR');
+    }
+    return cat.toLowerCase() === catId.toLowerCase();
+  };
+
   const filterInventory = () => {
     const safeInventory = Array.isArray(inventory) ? inventory : [];
     let filtered = [...safeInventory];
-    if (searchTerm) {
-      filtered = filtered.filter(
-        (item) =>
-          (item.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (item.sku || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (item.hsnCode || "").toLowerCase().includes(searchTerm.toLowerCase())
-      );
+
+    // Category / Group Filter
+    if (selectedCategoryFilter !== "ALL") {
+      filtered = filtered.filter(item => matchCategory(item, selectedCategoryFilter));
     }
+
+    // Brand Filter
+    if (selectedBrandFilter !== "ALL") {
+      filtered = filtered.filter(item => (item.brand || "").toLowerCase() === selectedBrandFilter.toLowerCase());
+    }
+
+    // Stock Status Sub-Filter (In Stock / Low Stock / Out of Stock)
+    if (selectedStockFilter === "IN_STOCK") {
+      filtered = filtered.filter(item => (Number(item.currentStock) || 0) > 0);
+    } else if (selectedStockFilter === "LOW_STOCK") {
+      filtered = filtered.filter(item => (Number(item.currentStock) || 0) < (Number(item.minimumStock) || 10));
+    } else if (selectedStockFilter === "OUT_OF_STOCK") {
+      filtered = filtered.filter(item => (Number(item.currentStock) || 0) <= 0);
+    }
+
+    // Multi-word Intelligent Search Filter
+    if (searchTerm && searchTerm.trim()) {
+      const tokens = searchTerm.toLowerCase().trim().split(/\s+/);
+      filtered = filtered.filter(item => {
+        const itemText = `${item.name || ''} ${item.sku || ''} ${item.barcode || ''} ${item.category || ''} ${item.subCategory || ''} ${item.brand || ''} ${item.hsnCode || ''} ${item.unit || ''}`.toLowerCase();
+        return tokens.every(token => itemText.includes(token));
+      });
+    }
+
     setFilteredInventory(filtered);
+  };
+
+  const handleDirectExcelExport = (itemsToExport) => {
+    const list = itemsToExport || filteredInventory;
+    const formattedData = list.map((p, idx) => ({
+      "Sr No": idx + 1,
+      "SKU": p.sku || "",
+      "Item Name": p.name || "",
+      "Brand": p.brand || "",
+      "Category": p.category || "",
+      "Sub Category": p.subCategory || "",
+      "Packing / Size": p.packing || "",
+      "Unit": p.unit || "PC",
+      "Current Stock (Qty)": Number(p.currentStock) || 0,
+      "Cost Price (₹)": Number(p.costPrice) || 0,
+      "Selling Price (₹)": Number(p.sellingPrice || p.price) || 0,
+      "MRP (₹)": Number(p.mrp) || 0,
+      "Stock Value (₹)": (Number(p.currentStock) || 0) * (Number(p.sellingPrice || p.price) || 0),
+      "GST Rate (%)": p.gstRate ? `${p.gstRate}%` : "18%",
+      "HSN Code": p.hsnCode || ""
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(formattedData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventory");
+
+    const categoryName = (selectedCategoryFilter || "All").replace(/[^a-zA-Z0-9]/g, "_");
+    const fileName = `Inventory_${categoryName}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
   };
 
   const handlePriceCalculation = (field, value) => {
@@ -600,70 +692,135 @@ const InventoryPage = () => {
     },
   ];
 
+  // Dynamic Real-time Calculations for Filtered View (Only multiply in-stock units)
+  const filteredTotalValue = filteredInventory.reduce((acc, item) => {
+    const qty = Number(item.currentStock) || 0;
+    const price = Number(item.sellingPrice || item.price || 0);
+    return acc + (qty > 0 ? qty * price : 0);
+  }, 0);
+
+  const filteredTotalUnits = filteredInventory.reduce((acc, item) => acc + (Number(item.currentStock) || 0), 0);
+  const filteredLowStockCount = filteredInventory.filter(item => (Number(item.currentStock) || 0) < (Number(item.minimumStock) || 10)).length;
+  const filteredHighStockCount = filteredInventory.filter(item => (Number(item.currentStock) || 0) >= 50).length;
+
+  // Dynamic SaaS Multi-tenant Category Detection
+  const distinctCats = [...new Set(safeInventoryList.map(p => (p.category || '').trim()).filter(Boolean))];
+  const isHardwareStore = safeInventoryList.some(p => {
+    const c = String(p.category || '').toUpperCase();
+    const n = String(p.name || '').toUpperCase();
+    return c.includes('PLY') || c.includes('PAINT') || c.includes('PIPE') || c.includes('GI') || n.includes('PLY') || n.includes('BERGER');
+  });
+
+  const categoryFilterTabs = isHardwareStore ? [
+    { id: "ALL", label: "All Products", icon: "📦", count: safeInventoryList.length },
+    { id: "PLYWOOD_GROUP", label: "Plywood & Beat", icon: "🪵", count: safeInventoryList.filter(p => matchCategory(p, 'PLYWOOD_GROUP')).length },
+    { id: "BERGER_GROUP", label: "Berger Paints", icon: "🎨", count: safeInventoryList.filter(p => matchCategory(p, 'BERGER_GROUP')).length },
+    { id: "KAMDHENU_GROUP", label: "Kamdhenu Paints", icon: "🎨", count: safeInventoryList.filter(p => matchCategory(p, 'KAMDHENU_GROUP')).length },
+    { id: "ELECTRICALS_GROUP", label: "Electricals", icon: "⚡", count: safeInventoryList.filter(p => matchCategory(p, 'ELECTRICALS_GROUP')).length },
+    { id: "GI_FITTING", label: "GI Fittings & Pumps", icon: "🔩", count: safeInventoryList.filter(p => matchCategory(p, 'GI_FITTING')).length },
+    { id: "PIPES_GROUP", label: "Pipes & UPVC", icon: "🚰", count: safeInventoryList.filter(p => matchCategory(p, 'PIPES_GROUP')).length },
+    { id: "IN_STOCK", label: "All In Stock", icon: "✨", count: safeInventoryList.filter(p => (Number(p.currentStock) || 0) > 0).length },
+  ] : [
+    { id: "ALL", label: "All Products", icon: "📦", count: safeInventoryList.length },
+    ...distinctCats.slice(0, 10).map(cat => ({
+      id: cat,
+      label: cat,
+      icon: "🏷️",
+      count: safeInventoryList.filter(p => (p.category || '').toLowerCase() === cat.toLowerCase()).length
+    })),
+    { id: "IN_STOCK", label: "All In Stock", icon: "✨", count: safeInventoryList.filter(p => (Number(p.currentStock) || 0) > 0).length },
+  ];
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Inventory</h1>
-          <p className="text-gray-600 mt-1">Manage your products and stock levels</p>
+          <h1 className="text-3xl font-bold text-gray-900">Inventory & Stock Master</h1>
+          <p className="text-gray-600 mt-1">Manage products, stock levels, brand & category analytics</p>
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
           <button
-            onClick={() => navigate("/inventory/parse-purchase-bill")}
-            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition"
+            onClick={() => setShowAuditModal(true)}
+            className="flex items-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white font-bold px-4 py-2 rounded-lg hover:from-amber-600 hover:to-amber-700 transition shadow-sm"
           >
-            <Camera size={20} />
-            Scan Purchase Bill
+            <FileSpreadsheet size={18} />
+            📋 Stock Audit & Excel Export
+          </button>
+          <button
+            onClick={() => navigate("/inventory/category-analytics")}
+            className="flex items-center gap-2 bg-purple-50 border border-purple-200 text-purple-700 font-semibold px-3.5 py-2 rounded-lg hover:bg-purple-100 transition shadow-sm"
+          >
+            📊 Category Analytics
+          </button>
+          <button
+            onClick={() => navigate("/inventory/category-management")}
+            className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 text-indigo-700 font-semibold px-3.5 py-2 rounded-lg hover:bg-indigo-100 transition shadow-sm"
+          >
+            🏷️ Category Masters
+          </button>
+          <button
+            onClick={() => navigate("/inventory/parse-purchase-bill")}
+            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-3.5 py-2 rounded-lg hover:bg-gray-50 transition"
+          >
+            <Camera size={18} />
+            Scan Bill
           </button>
            <button
             onClick={() => navigate("/inventory/purchase-return")}
-            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition"
+            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-3.5 py-2 rounded-lg hover:bg-gray-50 transition"
           >
-            <Undo2 size={20} />
+            <Undo2 size={18} />
             Purchase Return
           </button>
           <button
             onClick={() => navigate("/inventory/supplier-ledger")}
-            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition"
+            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-3.5 py-2 rounded-lg hover:bg-gray-50 transition"
           >
-            <BookUser size={20} />
+            <BookUser size={18} />
             Supplier Ledger
           </button>
           <button
             onClick={() => navigate("/inventory/purchase")}
-            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition"
+            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-3.5 py-2 rounded-lg hover:bg-gray-50 transition"
           >
-            <ShoppingBag size={20} />
+            <ShoppingBag size={18} />
             Purchase
           </button>
           <button
             onClick={() => navigate("/inventory/adjust")}
-            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition"
+            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-3.5 py-2 rounded-lg hover:bg-gray-50 transition"
           >
-            <ClipboardList size={20} />
+            <ClipboardList size={18} />
             Adjust Stock
           </button>
           <button
             onClick={() => setShowScanner(!showScanner)}
-            className={`flex items-center gap-2 border px-4 py-2 rounded-lg transition ${showScanner ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+            className={`flex items-center gap-2 border px-3.5 py-2 rounded-lg transition ${showScanner ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
           >
-            <Scan size={20} />
-            {showScanner ? "Close Scanner" : "Scan"}
+            <Scan size={18} />
+            {showScanner ? "Close" : "Barcode Scan"}
           </button>
           <button
             onClick={() => navigate("/inventory/bulk")}
-            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition"
+            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-3.5 py-2 rounded-lg hover:bg-gray-50 transition"
           >
-            <Upload size={20} />
+            <Upload size={18} />
             Bulk Upload
           </button>
           <button
-            onClick={() => navigate("/inventory/add")}
-            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 bg-emerald-600 text-white font-semibold px-3.5 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm"
           >
-            <Plus size={20} />
-            Add Product
+            <Plus size={18} />
+            {showForm ? "Close Form" : "Quick Add"}
+          </button>
+          <button
+            onClick={() => navigate("/inventory/add")}
+            className="flex items-center gap-2 bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-blue-700 transition shadow"
+          >
+            <Plus size={18} />
+            Full Add Page
           </button>
         </div>
       </div>
@@ -678,31 +835,130 @@ const InventoryPage = () => {
         </div>
       )}
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <ReportCard title="Total Products" value={totalProducts} icon="📦" />
-        <ReportCard title="Total Value" value={formatCurrency(totalValue)} icon="💰" />
-        <ReportCard title="Low Stock" value={lowStockCount} icon={<AlertTriangle className="text-orange-600" size={24} />} />
-        <ReportCard title="Categories" value={categories.length} icon="🏷️" />
+      {/* Realtime Stats / Analytics Banner */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Filtered Products</p>
+            <h3 className="text-2xl font-bold text-gray-900 mt-1">{filteredInventory.length} <span className="text-xs text-gray-400 font-normal">/ {safeInventoryList.length} total</span></h3>
+          </div>
+          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl text-xl">📦</div>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Stock Valuation (Selling)</p>
+            <h3 className="text-2xl font-bold text-emerald-600 mt-1">{formatCurrency(filteredTotalValue)}</h3>
+          </div>
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl text-xl">💰</div>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Units in Stock</p>
+            <h3 className="text-2xl font-bold text-indigo-600 mt-1">{filteredTotalUnits.toLocaleString('en-IN')} <span className="text-xs text-gray-400 font-normal">Units/KG</span></h3>
+          </div>
+          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl text-xl">📊</div>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Low Stock Alerts</p>
+            <h3 className="text-2xl font-bold text-orange-600 mt-1">{filteredLowStockCount} <span className="text-xs text-gray-400 font-normal">items</span></h3>
+          </div>
+          <div className="p-3 bg-orange-50 text-orange-600 rounded-xl text-xl">⚠️</div>
+        </div>
       </div>
 
-      {/* Search & Filter */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-        <div className="flex gap-4 flex-wrap">
-          <div className="flex-1 min-w-[200px] relative">
-            <Search className="absolute left-3 top-3 text-gray-400" size={20} />
+      {/* Category Filter Chips Bar */}
+      <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold uppercase text-gray-500 tracking-wider">Category Quick Filters:</span>
+          <span className="text-xs text-blue-600 font-medium cursor-pointer hover:underline" onClick={() => { setSelectedCategoryFilter("ALL"); setSelectedBrandFilter("ALL"); setSearchTerm(""); }}>
+            Reset Filters
+          </span>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+          {categoryFilterTabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setSelectedCategoryFilter(tab.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+                selectedCategoryFilter === tab.id
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+              <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] ${selectedCategoryFilter === tab.id ? 'bg-blue-800 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Search & Stock Filter Bar */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 space-y-3">
+        <div className="flex gap-3 flex-wrap items-center">
+          <div className="flex-1 min-w-[260px] relative">
+            <Search className="absolute left-3 top-3 text-gray-400" size={18} />
             <input
               type="text"
-              placeholder="Search products by name or SKU..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Search by name, size (e.g. 18mm, 6*4, 1LTR), SKU, brand, category..."
+              className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-            <Download size={18} />
-            Export
+
+          {/* Brand Filter Dropdown */}
+          <div className="min-w-[180px]">
+            <select
+              value={selectedBrandFilter}
+              onChange={(e) => setSelectedBrandFilter(e.target.value)}
+              className="w-full py-2 px-3 border border-gray-300 rounded-lg text-sm bg-white text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="ALL">All Brands ({brands.length})</option>
+              {brands.map(b => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Direct Excel Download Button */}
+          <button
+            onClick={() => handleDirectExcelExport(filteredInventory)}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg transition shadow-sm text-sm"
+            title="Download current filtered list to Excel"
+          >
+            <Download size={16} />
+            Download Excel (.xlsx)
           </button>
+        </div>
+
+        {/* Stock Level Sub-Pills (Prevents cross-category mixing) */}
+        <div className="flex items-center gap-2 pt-1 border-t border-gray-100 flex-wrap">
+          <span className="text-xs font-bold text-gray-500 uppercase">Stock Level:</span>
+          {[
+            { id: "ALL", label: "All Items" },
+            { id: "IN_STOCK", label: "✨ In Stock Only (>0)" },
+            { id: "LOW_STOCK", label: "⚠️ Low Stock (<10)" },
+            { id: "OUT_OF_STOCK", label: "🚫 Out of Stock (0)" }
+          ].map(st => (
+            <button
+              key={st.id}
+              onClick={() => setSelectedStockFilter(st.id)}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
+                selectedStockFilter === st.id
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {st.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -1118,10 +1374,18 @@ const InventoryPage = () => {
           allProducts={safeInventoryList}
           onClose={() => setShowMergeModal(false)} 
           onConfirm={async (targetId) => {
-             // Yahan hum API call karenge future mein mapping save karne ke liye
              alert(`Item Merged successfully into selected product! This action has been recorded for future unmerging.`);
              setShowMergeModal(false);
           }}
+        />
+      )}
+
+      {/* Stock Audit & Export Modal */}
+      {showAuditModal && (
+        <StockAuditModal 
+          products={safeInventoryList} 
+          companyName={selectedCompany?.name || "Ganesh Hardware"}
+          onClose={() => setShowAuditModal(false)} 
         />
       )}
 
@@ -1129,10 +1393,306 @@ const InventoryPage = () => {
   );
 };
 
+const StockAuditModal = ({ products, companyName, onClose }) => {
+  const [auditorName, setAuditorName] = useState("");
+  const [selectedCat, setSelectedCat] = useState("ALL");
+  const [selectedBrand, setSelectedBrand] = useState("ALL");
+  const [onlyInStock, setOnlyInStock] = useState(false);
+
+  const categories = [
+    { id: "ALL", label: "All Categories" },
+    { id: "PLYWOOD_GROUP", label: "🪵 Plywood & Beat" },
+    { id: "BERGER_GROUP", label: "🎨 Berger Paints" },
+    { id: "KAMDHENU_GROUP", label: "🎨 Kamdhenu Paints" },
+    { id: "ELECTRICALS_GROUP", label: "⚡ Electricals" },
+    { id: "GI_FITTING", label: "🔩 GI Fittings & Pumps" },
+    { id: "PIPES_GROUP", label: "🚰 Pipes & UPVC" },
+  ];
+
+  const uniqueBrands = ["ALL", ...new Set(products.map(p => p.brand).filter(Boolean))];
+
+  const matchCategoryAudit = (item, catId) => {
+    if (!item) return false;
+    if (catId === 'ALL') return true;
+    const cat = String(item.category || '').toUpperCase();
+    const brand = String(item.brand || '').toUpperCase();
+    const subCat = String(item.subCategory || '').toUpperCase();
+    const name = String(item.name || '').toUpperCase();
+
+    if (catId === 'PLYWOOD_GROUP') {
+      return cat === 'PLYWOOD' || cat === 'BEAT' || cat.includes('PLY') || cat.includes('BEAT') || cat.includes('HARDWOOD') || subCat.includes('PLY') || name.includes('PLYWOOD') || name.includes('18MM') || name.includes('12MM') || name.includes('6MM');
+    }
+    if (catId === 'BERGER_GROUP') {
+      if (brand.includes('KAMDHENU') || cat.includes('KAMDHENU') || name.includes('KAMDHENU')) return false;
+      return brand.includes('BERGER') || cat.includes('BERGER') || name.includes('BERGER') || name.includes('BISON') || name.includes('LUXOL') || name.includes('WALMASTA') || name.includes('WEATHERCOAT') || name.includes('SILK') || name.includes('RANGOLI') || name.includes('BUTERFLY') || (cat.includes('DISTEMPER') && !brand.includes('KAMDHENU')) || (cat.includes('ACRILIC') && !brand.includes('KAMDHENU'));
+    }
+    if (catId === 'KAMDHENU_GROUP') {
+      return brand.includes('KAMDHENU') || cat.includes('KAMDHENU') || name.includes('KAMDHENU') || name.includes('KAMOBLASTER') || name.includes('KAMOCRETE') || name.includes('KAMODUR');
+    }
+    if (catId === 'ELECTRICALS_GROUP') {
+      return cat.includes('ELE') || cat.includes('ARKAYLITE') || brand.includes('ARKAYLITE') || cat.includes('MODUL') || cat.includes('SWITCH') || cat.includes('WIRE') || cat.includes('COPPER') || cat.includes('ANCHOR') || cat.includes('CONA') || cat.includes('CR') || cat.includes('VINAY') || name.includes('SWITCH') || name.includes('SOCKET') || name.includes('ELEMENT') || name.includes('MCB');
+    }
+    if (catId === 'GI_FITTING') {
+      return cat.includes('GI') || name.includes('GI ') || name.includes('PUMP') || cat.includes('MONOBLOCK') || cat.includes('PRIMING') || name.includes('ELBOW') || name.includes('NIPPLE') || name.includes('UNION') || name.includes('REDUCER');
+    }
+    if (catId === 'PIPES_GROUP') {
+      if (cat.includes('GI')) return false;
+      return cat.includes('UPVC') || cat.includes('SWR') || cat.includes('CPVC') || cat.includes('PIPE') || brand.includes('KISAN') || cat.includes('PRINCE') || cat.includes('PAPULAR') || cat.includes('GARDEN') || cat.includes('SACTION') || cat.includes('FOOTVALVE') || name.includes('UPVC') || name.includes('CPVC') || name.includes('SWR');
+    }
+    return cat.toLowerCase() === catId.toLowerCase();
+  };
+
+  const auditItems = products.filter(item => {
+    if (!matchCategoryAudit(item, selectedCat)) return false;
+    if (selectedBrand !== "ALL" && (item.brand || "").toLowerCase() !== selectedBrand.toLowerCase()) return false;
+    if (onlyInStock && (Number(item.currentStock) || 0) <= 0) return false;
+    return true;
+  });
+
+  const totalAuditStock = auditItems.reduce((acc, p) => acc + (Number(p.currentStock) || 0), 0);
+  const totalAuditVal = auditItems.reduce((acc, p) => {
+    const q = Number(p.currentStock) || 0;
+    const rate = Number(p.sellingPrice || p.price || 0);
+    return acc + (q > 0 ? q * rate : 0);
+  }, 0);
+
+  const handleExportExcel = () => {
+    const formattedData = auditItems.map((p, idx) => ({
+      "Sr No": idx + 1,
+      "SKU": p.sku || "",
+      "Item Name": p.name || "",
+      "Brand": p.brand || "",
+      "Category": p.category || "",
+      "Packing / Size": p.packing || "",
+      "Unit": p.unit || "PC",
+      "System Stock (Qty)": Number(p.currentStock) || 0,
+      "Physical Count (Manual Check)": "",
+      "Variance (+/-)": "",
+      "Selling Rate (₹)": Number(p.sellingPrice || p.price || 0),
+      "System Value (₹)": (Number(p.currentStock) || 0) * (Number(p.sellingPrice || p.price || 0)),
+      "Auditor / Staff Name": auditorName || "Staff",
+      "Audit Date": new Date().toLocaleDateString('en-IN'),
+      "Remarks": ""
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(formattedData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Stock Audit");
+
+    const fileName = `Stock_Audit_${(companyName || 'Shop').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  const handlePrintAuditSheet = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Please allow popups to print stock audit sheets.");
+      return;
+    }
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Physical Stock Audit Sheet - ${companyName}</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #1e293b; }
+          .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
+          .header h1 { margin: 0; font-size: 22px; text-transform: uppercase; color: #0f172a; }
+          .header h2 { margin: 4px 0 0 0; font-size: 15px; font-weight: normal; color: #475569; }
+          .meta-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 12px; background: #f8fafc; padding: 10px; border-radius: 6px; margin-bottom: 16px; border: 1px solid #e2e8f0; }
+          table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 20px; }
+          th { background-color: #f1f5f9; color: #0f172a; font-weight: 700; text-align: left; padding: 8px 6px; border: 1px solid #cbd5e1; }
+          td { padding: 6px; border: 1px solid #cbd5e1; vertical-align: middle; }
+          .count-box { width: 60px; height: 22px; border: 1px solid #94a3b8; background: #fff; text-align: center; font-weight: bold; }
+          .text-center { text-align: center; }
+          .text-right { text-align: right; }
+          .footer { margin-top: 30px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; font-size: 12px; text-align: center; }
+          .sig-line { border-top: 1px solid #475569; margin-top: 40px; padding-top: 4px; font-weight: bold; }
+          @media print {
+            body { padding: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${companyName}</h1>
+          <h2>📋 PHYSICAL STOCK AUDIT & VERIFICATION SHEET</h2>
+        </div>
+        <div class="meta-grid">
+          <div><strong>Auditor / Staff:</strong> ${auditorName || 'Godown Incharge'}</div>
+          <div><strong>Audit Date & Time:</strong> ${new Date().toLocaleString('en-IN')}</div>
+          <div><strong>Category Filter:</strong> ${selectedCat} | <strong>Brand:</strong> ${selectedBrand}</div>
+          <div><strong>Total Products:</strong> ${auditItems.length} items</div>
+          <div><strong>System Stock:</strong> ${totalAuditStock} units</div>
+          <div><strong>System Valuation:</strong> ₹${totalAuditVal.toLocaleString('en-IN')}</div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 30px;" class="text-center">#</th>
+              <th>Item / Product Name</th>
+              <th>Brand</th>
+              <th>Category</th>
+              <th class="text-center">System Qty</th>
+              <th class="text-center" style="width: 70px;">Physical Count</th>
+              <th class="text-center" style="width: 60px;">Variance</th>
+              <th class="text-right">Sale Rate</th>
+              <th>Remarks / Damage</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${auditItems.map((p, idx) => `
+              <tr>
+                <td class="text-center font-bold">${idx + 1}</td>
+                <td><strong>${p.name}</strong> ${p.packing ? `(${p.packing})` : ''}</td>
+                <td>${p.brand || '-'}</td>
+                <td>${p.category || '-'}</td>
+                <td class="text-center font-bold" style="background:#f8fafc;">${p.currentStock || 0} ${p.unit || 'PC'}</td>
+                <td class="text-center"><div class="count-box"></div></td>
+                <td class="text-center"><div class="count-box"></div></td>
+                <td class="text-right">₹${Number(p.sellingPrice || p.price || 0).toLocaleString('en-IN')}</td>
+                <td></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <div class="footer">
+          <div>
+            <div class="sig-line">Stock Checker Signature</div>
+            <div>${auditorName || 'Staff Member'}</div>
+          </div>
+          <div>
+            <div class="sig-line">Godown Manager Signature</div>
+            <div>Store In-Charge</div>
+          </div>
+          <div>
+            <div class="sig-line">Owner / Authorized Signatory</div>
+            <div>${companyName}</div>
+          </div>
+        </div>
+        <script>
+          window.onload = function() { window.print(); }
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl relative" onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-full transition"><X size={20} /></button>
+        
+        <div className="flex items-center gap-3 border-b pb-4 mb-4">
+          <div className="p-3 bg-amber-100 text-amber-700 rounded-xl">
+            <FileSpreadsheet size={24} />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-gray-900">Physical Stock Audit & Export</h3>
+            <p className="text-sm text-gray-500">Generate physical verification sheets for staff and export Excel reports</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Auditor / Staff Name (जांचकर्ता का नाम)</label>
+            <input 
+              type="text"
+              placeholder="e.g. Ramesh Sharma / Godown Incharge"
+              className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm font-medium"
+              value={auditorName}
+              onChange={(e) => setAuditorName(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Filter by Category</label>
+              <select 
+                className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"
+                value={selectedCat}
+                onChange={(e) => setSelectedCat(e.target.value)}
+              >
+                {categories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Filter by Brand</label>
+              <select 
+                className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"
+                value={selectedBrand}
+                onChange={(e) => setSelectedBrand(e.target.value)}
+              >
+                {uniqueBrands.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-1">
+            <input 
+              type="checkbox"
+              id="onlyInStockCheck"
+              className="w-4 h-4 text-amber-600 rounded"
+              checked={onlyInStock}
+              onChange={(e) => setOnlyInStock(e.target.checked)}
+            />
+            <label htmlFor="onlyInStockCheck" className="text-sm text-gray-700 font-medium">
+              Only include in-stock products (स्टॉक > 0 वाले आइटम्स)
+            </label>
+          </div>
+
+          {/* Audit Summary Box */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex justify-between items-center text-sm">
+            <div>
+              <p className="text-xs text-amber-800 font-semibold uppercase">Products to Audit</p>
+              <p className="text-xl font-bold text-amber-900">{auditItems.length} Items</p>
+            </div>
+            <div>
+              <p className="text-xs text-amber-800 font-semibold uppercase">Total System Units</p>
+              <p className="text-xl font-bold text-amber-900">{totalAuditStock} Units</p>
+            </div>
+            <div>
+              <p className="text-xs text-amber-800 font-semibold uppercase">Total Stock Valuation</p>
+              <p className="text-xl font-bold text-emerald-700">₹{(totalAuditVal / 100000).toFixed(2)} Lakhs</p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <button
+              onClick={handleExportExcel}
+              disabled={auditItems.length === 0}
+              className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition shadow disabled:opacity-50"
+            >
+              <Download size={18} />
+              Download Excel Sheet (.xlsx)
+            </button>
+            <button
+              onClick={handlePrintAuditSheet}
+              disabled={auditItems.length === 0}
+              className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition shadow disabled:opacity-50"
+            >
+              <Printer size={18} />
+              Print Physical Audit Sheet
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const BarcodeModal = ({ product, onClose }) => {
   useEffect(() => {
     if (product && product.sku) {
-      // Delay generation slightly to ensure canvas is in the DOM
       setTimeout(() => generateBarcode(product.sku, 'barcode-canvas'), 50);
     }
   }, [product]);
@@ -1157,8 +1717,6 @@ const MergeModal = ({ sourceProduct, allProducts, onClose, onConfirm }) => {
   const [targetId, setTargetId] = useState("");
 
   if (!sourceProduct) return null;
-  
-  // Exclude the source product from the target list
   const availableTargets = allProducts.filter(p => p._id !== sourceProduct._id);
 
   return (
@@ -1190,3 +1748,4 @@ const MergeModal = ({ sourceProduct, allProducts, onClose, onConfirm }) => {
 };
 
 export default InventoryPage;
+

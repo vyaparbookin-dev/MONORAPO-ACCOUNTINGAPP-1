@@ -55,15 +55,20 @@ export const syncQueue = {
         await api({ method: req.method, url: req.url, data: req.data, headers: req.headers });
         console.log("✅ [SYNC] Successfully uploaded to cloud:", req.url);
       } catch (err) {
-        console.error("❌ [SYNC] Failed for:", req.url, err.message);
-        if (!err.response || err.response.status >= 500) failedQueue.push(req);
+        console.error("❌ [SYNC] Failed for:", req.url, err.message || err);
+        // If it's a 401/403 or unauthenticated token error, drop the stale request to prevent looping
+        const errMsg = String(err?.message || JSON.stringify(err));
+        const isAuthError = errMsg.includes("401") || errMsg.includes("token") || errMsg.includes("authorized");
+        if (!isAuthError) {
+          failedQueue.push(req);
+        } else {
+          console.warn("⚠️ [SYNC] Dropping invalid/unauthorized offline request:", req.url);
+        }
       }
     }
     
-    // Jo fail ho gaye unhe wapas local storage me save karo
-    if (failedQueue.length !== queue.length) {
-      await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(failedQueue));
-    }
+    // Save only retryable requests
+    await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(failedQueue));
   },
 };
 

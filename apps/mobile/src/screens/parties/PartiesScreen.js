@@ -1,6 +1,17 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator, RefreshControl } from 'react-native';
-import { Ionicons, FontAwesome } from '@expo/vector-icons';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  FlatList, 
+  TouchableOpacity, 
+  TextInput, 
+  ActivityIndicator, 
+  RefreshControl,
+  Linking,
+  Platform
+} from 'react-native';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { getData } from '../../services/ApiService';
 import { getPartiesLocal } from '../../../db';
@@ -14,14 +25,12 @@ export default function PartiesScreen({ navigation }) {
 
   const fetchParties = async () => {
     try {
-      // 1. Offline First: Turant Local SQLite se dikhayein
       const localParties = await getPartiesLocal().catch(() => []);
       if (localParties && localParties.length > 0) {
         setParties(localParties);
         setLoading(false);
       }
 
-      // 2. Background Sync: Cloud API se real-time data laayein
       const res = await getData('/party').catch(() => null);
       if (res) {
         setParties(res.data?.parties || (Array.isArray(res.data) ? res.data : []));
@@ -41,40 +50,22 @@ export default function PartiesScreen({ navigation }) {
     setRefreshing(false);
   }, []);
 
-  const renderParty = ({ item }) => {
-    const bal = item.balance || item.currentBalance || 0;
-    const isToCollect = (item.partyType === 'customer' || item.partyType === 'both') && bal > 0;
-    const isToPay = (item.partyType === 'supplier' || item.partyType === 'both') && bal > 0;
-    const amountStr = bal.toLocaleString('en-IN');
-    const displayType = item.partyType ? item.partyType.charAt(0).toUpperCase() + item.partyType.slice(1) : 'Unknown';
-    const statusColor = isToCollect ? '#2ECC71' : (isToPay ? '#E74C3C' : '#7F8C8D');
-
-    return (
-    <View style={styles.partyCard}>
-      <View style={styles.partyInfo}>
-        <View style={styles.avatar}><Text style={styles.avatarText}>{(item.name || '?').charAt(0).toUpperCase()}</Text></View>
-        <View style={{ flex: 1, paddingRight: 10 }}>
-          <Text style={styles.partyName} numberOfLines={1}>{item.name}</Text>
-          <Text style={styles.partyType}>{displayType} {item.mobileNumber ? `• ${item.mobileNumber}` : ''}</Text>
-        </View>
-      </View>
-      <View style={styles.amountSection}>
-        <Text style={[styles.amountText, { color: statusColor }]}>
-          ₹ {amountStr}
-        </Text>
-        <Text style={styles.amountSubtext}>{isToCollect ? 'To Collect' : (isToPay ? 'To Pay' : 'Settled')}</Text>
-        
-        <TouchableOpacity style={styles.whatsappBtn}>
-          <FontAwesome name="whatsapp" size={14} color="#2ECC71" />
-          <Text style={styles.whatsappText}>Remind</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-    );
+  const handleWhatsAppRemind = (party) => {
+    const bal = party.balance || party.currentBalance || 0;
+    const phone = party.mobileNumber || party.phone || '';
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    const msg = `Namaste ${party.name}, this is a gentle reminder regarding your outstanding balance of ₹${bal.toLocaleString('en-IN')} with Ganesh Hardware. Please let us know if you need any assistance with payment.`;
+    const url = `whatsapp://send?phone=${cleanPhone ? (cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone) : ''}&text=${encodeURIComponent(msg)}`;
+    Linking.openURL(url).catch(() => {
+      alert("WhatsApp is not installed on this device.");
+    });
   };
 
+  const toCollectCount = parties.filter(p => (p.partyType === 'customer' || p.partyType === 'both') && (p.balance || p.currentBalance || 0) > 0).length;
+  const toPayCount = parties.filter(p => (p.partyType === 'supplier' || p.partyType === 'both') && (p.balance || p.currentBalance || 0) > 0).length;
+
   const filteredParties = parties.filter(item => {
-    const matchesSearch = (item.name || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = (item.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (item.mobileNumber || '').includes(searchQuery);
     const bal = item.balance || item.currentBalance || 0;
     const isToCollect = (item.partyType === 'customer' || item.partyType === 'both') && bal > 0;
     const isToPay = (item.partyType === 'supplier' || item.partyType === 'both') && bal > 0;
@@ -85,71 +76,360 @@ export default function PartiesScreen({ navigation }) {
     return true;
   });
 
+  const renderParty = ({ item }) => {
+    const bal = Number(item.balance || item.currentBalance || 0);
+    const isToCollect = (item.partyType === 'customer' || item.partyType === 'both') && bal > 0;
+    const isToPay = (item.partyType === 'supplier' || item.partyType === 'both') && bal > 0;
+    const amountStr = bal.toLocaleString('en-IN');
+    const displayType = item.partyType ? item.partyType.charAt(0).toUpperCase() + item.partyType.slice(1) : 'Customer';
+
+    return (
+      <TouchableOpacity 
+        style={styles.partyCard}
+        onPress={() => navigation.navigate('PartyDetail', { partyId: item._id || item.id })}
+        activeOpacity={0.8}
+      >
+        <View style={styles.partyInfo}>
+          <View style={[styles.avatar, { backgroundColor: isToCollect ? '#ECFDF5' : (isToPay ? '#FFF1F2' : '#EEF2FF') }]}>
+            <Text style={[styles.avatarText, { color: isToCollect ? '#059669' : (isToPay ? '#E11D48' : '#4F46E5') }]}>
+              {(item.name || '?').charAt(0).toUpperCase()}
+            </Text>
+          </View>
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <Text style={styles.partyName} numberOfLines={1}>{item.name}</Text>
+            <Text style={styles.partyMeta}>
+              {displayType} {item.mobileNumber ? `• ${item.mobileNumber}` : ''}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.amountSection}>
+          <Text style={[styles.amountText, { color: isToCollect ? '#059669' : (isToPay ? '#DC2626' : '#64748B') }]}>
+            ₹ {amountStr}
+          </Text>
+          <Text style={styles.amountSubtext}>
+            {isToCollect ? 'To Collect ⬇' : (isToPay ? 'To Pay ⬆' : 'Settled')}
+          </Text>
+          
+          {isToCollect && (
+            <TouchableOpacity style={styles.whatsappBtn} onPress={() => handleWhatsAppRemind(item)}>
+              <FontAwesome5 name="whatsapp" size={12} color="#059669" />
+              <Text style={styles.whatsappText}>Remind</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Parties</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.headerTitle}>Parties & Khata</Text>
+          <Text style={styles.headerSubtitle}>{parties.length} Total Parties</Text>
+        </View>
+
         <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color="#7F8C8D" />
-          <TextInput placeholder="Search party..." style={styles.searchInput} placeholderTextColor="#7F8C8D" value={searchQuery} onChangeText={setSearchQuery} />
+          <Ionicons name="search" size={18} color="#94A3B8" />
+          <TextInput 
+            placeholder="Search party by name or phone..." 
+            style={styles.searchInput} 
+            placeholderTextColor="#94A3B8" 
+            value={searchQuery} 
+            onChangeText={setSearchQuery} 
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabs}>
-        {['All', 'To Collect', 'To Pay'].map(tab => (
-          <TouchableOpacity key={tab} onPress={() => setActiveTab(tab)} style={[styles.tab, activeTab === tab && styles.activeTab]}>
-            <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>{tab}</Text>
+      <View style={styles.quickActionRow}>
+        <TouchableOpacity 
+          style={[styles.paymentActionBtn, styles.paymentInBtn]}
+          onPress={() => navigation.navigate('Billing', { screen: 'CreateBill' })}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="arrow-down-circle" size={20} color="#059669" />
+          <View style={{ marginLeft: 8 }}>
+            <Text style={styles.paymentActionTitle}>+ Payment In</Text>
+            <Text style={styles.paymentActionSub}>रुपये प्राप्त किए</Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.paymentActionBtn, styles.paymentOutBtn]}
+          onPress={() => navigation.navigate('Inventory', { screen: 'PurchaseEntry' })}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="arrow-up-circle" size={20} color="#DC2626" />
+          <View style={{ marginLeft: 8 }}>
+            <Text style={[styles.paymentActionTitle, { color: '#DC2626' }]}>- Payment Out</Text>
+            <Text style={styles.paymentActionSub}>रुपये दिए</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.tabsContainer}>
+        {[
+          { id: 'All', label: 'All Parties', count: parties.length },
+          { id: 'To Collect', label: 'To Collect', count: toCollectCount },
+          { id: 'To Pay', label: 'To Pay', count: toPayCount },
+        ].map(tab => (
+          <TouchableOpacity 
+            key={tab.id} 
+            onPress={() => setActiveTab(tab.id)} 
+            style={[styles.tab, activeTab === tab.id && styles.activeTab]}
+          >
+            <Text style={[styles.tabText, activeTab === tab.id && styles.activeTabText]}>
+              {tab.label} ({tab.count})
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* List */}
       {loading && !refreshing ? (
-        <ActivityIndicator size="large" color="#6C4CF1" style={{ marginTop: 40 }} />
+        <ActivityIndicator size="small" color="#6366F1" style={{ marginTop: 40 }} />
       ) : (
         <FlatList
           data={filteredParties}
-          keyExtractor={item => item._id || Math.random().toString()}
+          keyExtractor={item => item._id || item.id || String(Math.random())}
           renderItem={renderParty}
-          contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#6C4CF1']} />}
-          ListEmptyComponent={<Text style={{textAlign: 'center', color: '#7F8C8D', marginTop: 40}}>No parties found.</Text>}
+          contentContainerStyle={{ padding: 14, paddingBottom: 110 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#6366F1']} />}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="people-outline" size={44} color="#CBD5E1" />
+              <Text style={styles.emptyTitle}>No Parties Found</Text>
+              <Text style={styles.emptySub}>Add customers and suppliers to track khata and udhar</Text>
+            </View>
+          }
         />
       )}
 
-      {/* Bottom Action */}
-      <TouchableOpacity style={styles.createBtn} onPress={() => alert("Add Party Feature Coming Soon")}>
-        <Ionicons name="person-add" size={20} color="#FFF" />
-        <Text style={styles.createBtnText}>Create New Party</Text>
+      <TouchableOpacity 
+        style={styles.floatingAddBtn} 
+        onPress={() => navigation.navigate('CreateParty')}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="person-add" size={18} color="#FFF" />
+        <Text style={styles.floatingAddText}>+ Add Party</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F6FA' },
-  header: { backgroundColor: '#6C4CF1', padding: 16, paddingTop: 40, paddingBottom: 24, borderBottomLeftRadius: 20, borderBottomRightRadius: 20 },
-  headerTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold', marginBottom: 16 },
-  searchBar: { flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 12, paddingHorizontal: 12, alignItems: 'center', height: 44 },
-  searchInput: { flex: 1, marginLeft: 8, fontSize: 15 },
-  tabs: { flexDirection: 'row', padding: 16, paddingBottom: 0 },
-  tab: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, marginRight: 8, backgroundColor: '#EAECEE' },
-  activeTab: { backgroundColor: '#6C4CF1' },
-  tabText: { color: '#7F8C8D', fontWeight: '600', fontSize: 13 },
-  activeTabText: { color: '#FFF' },
-  partyCard: { backgroundColor: '#FFF', padding: 16, borderRadius: 16, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', elevation: 1 },
-  partyInfo: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F4ECF7', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  avatarText: { color: '#9B59B6', fontWeight: 'bold', fontSize: 16 },
-  partyName: { fontSize: 15, fontWeight: 'bold', color: '#2C3E50', marginBottom: 2 },
-  partyType: { fontSize: 12, color: '#7F8C8D' },
-  amountSection: { alignItems: 'flex-end' },
-  amountText: { fontSize: 16, fontWeight: 'bold' },
-  amountSubtext: { fontSize: 10, color: '#7F8C8D', marginBottom: 6 },
-  whatsappBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EAFAF1', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#2ECC71' },
-  whatsappText: { color: '#2ECC71', fontSize: 10, fontWeight: 'bold', marginLeft: 4 },
-  createBtn: { position: 'absolute', bottom: 85, right: 16, backgroundColor: '#6C4CF1', flexDirection: 'row', paddingHorizontal: 20, height: 50, borderRadius: 25, alignItems: 'center', elevation: 5 },
-  createBtnText: { color: '#FFF', fontWeight: 'bold', marginLeft: 8 }
+  container: { 
+    flex: 1, 
+    backgroundColor: '#F8FAFC' 
+  },
+  header: { 
+    backgroundColor: '#FFFFFF', 
+    paddingHorizontal: 16, 
+    paddingTop: Platform.OS === 'ios' ? 44 : 12, 
+    paddingBottom: 12, 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#F1F5F9' 
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  headerTitle: { 
+    color: '#0F172A', 
+    fontSize: 18, 
+    fontWeight: '800' 
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  searchBar: { 
+    flexDirection: 'row', 
+    backgroundColor: '#F1F5F9', 
+    borderRadius: 12, 
+    paddingHorizontal: 12, 
+    alignItems: 'center', 
+    height: 42 
+  },
+  searchInput: { 
+    flex: 1, 
+    marginLeft: 8, 
+    fontSize: 14,
+    color: '#0F172A',
+  },
+  quickActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+  },
+  paymentActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  paymentInBtn: {
+    borderColor: '#A7F3D0',
+    backgroundColor: '#ECFDF5',
+  },
+  paymentOutBtn: {
+    borderColor: '#FECDD3',
+    backgroundColor: '#FFF1F2',
+  },
+  paymentActionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  paymentActionSub: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  tabsContainer: { 
+    flexDirection: 'row', 
+    paddingHorizontal: 14, 
+    paddingTop: 12,
+    gap: 8,
+  },
+  tab: { 
+    paddingVertical: 6, 
+    paddingHorizontal: 12, 
+    borderRadius: 10, 
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  activeTab: { 
+    backgroundColor: '#6366F1',
+    borderColor: '#6366F1',
+  },
+  tabText: { 
+    color: '#64748B', 
+    fontWeight: '700', 
+    fontSize: 12 
+  },
+  activeTabText: { 
+    color: '#FFFFFF' 
+  },
+  partyCard: { 
+    backgroundColor: '#FFFFFF', 
+    padding: 12, 
+    borderRadius: 14, 
+    marginBottom: 8, 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  partyInfo: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    flex: 1 
+  },
+  avatar: { 
+    width: 38, 
+    height: 38, 
+    borderRadius: 12, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginRight: 10 
+  },
+  avatarText: { 
+    fontWeight: '800', 
+    fontSize: 16 
+  },
+  partyName: { 
+    fontSize: 14, 
+    fontWeight: '700', 
+    color: '#1E293B', 
+    marginBottom: 2 
+  },
+  partyMeta: { 
+    fontSize: 11, 
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  amountSection: { 
+    alignItems: 'flex-end' 
+  },
+  amountText: { 
+    fontSize: 15, 
+    fontWeight: '800' 
+  },
+  amountSubtext: { 
+    fontSize: 10, 
+    color: '#94A3B8', 
+    marginBottom: 4,
+    fontWeight: '600',
+  },
+  whatsappBtn: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#ECFDF5', 
+    paddingHorizontal: 8, 
+    paddingVertical: 3, 
+    borderRadius: 6, 
+    borderWidth: 1, 
+    borderColor: '#A7F3D0' 
+  },
+  whatsappText: { 
+    color: '#059669', 
+    fontSize: 10, 
+    fontWeight: '700', 
+    marginLeft: 4 
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+    marginTop: 8,
+  },
+  emptySub: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 4,
+    textAlign: 'center',
+    paddingHorizontal: 30,
+  },
+  floatingAddBtn: { 
+    position: 'absolute', 
+    bottom: 24, 
+    right: 16, 
+    backgroundColor: '#6366F1', 
+    flexDirection: 'row', 
+    paddingHorizontal: 18, 
+    height: 46, 
+    borderRadius: 23, 
+    alignItems: 'center', 
+    elevation: 4,
+    shadowColor: '#6366F1',
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  floatingAddText: { 
+    color: '#FFF', 
+    fontWeight: '700', 
+    marginLeft: 6,
+    fontSize: 13,
+  }
 });

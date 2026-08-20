@@ -32,20 +32,29 @@ const BillDetailScreen = ({ route }) => {
   };
 
   const generateInvoiceHtml = (billData) => {
-    const itemsHtml = billData.items.map((item, index) => `
-      <tr class="item">
-        <td>${index + 1}</td>
-        <td>${item.name}</td>
-        <td class="right">${item.quantity}</td>
-        <td class="right">₹${item.price?.toFixed(2) || item.rate?.toFixed(2) || 0}</td>
-        <td class="right">₹${item.total?.toFixed(2) || 0}</td>
+    const itemsHtml = (billData.items || []).map((item, index) => `
+      <tr style="background-color: ${index % 2 === 0 ? '#FFFFFF' : '#F8FAFC'}; border-bottom: 1px solid #E2E8F0;">
+        <td style="padding: 10px 12px; text-align: left; font-size: 13px; color: #475569;">${index + 1}</td>
+        <td style="padding: 10px 12px; text-align: left; font-size: 13px; font-weight: 600; color: #1E293B;">
+          ${item.name}
+          ${item.hsnCode ? `<div style="font-size: 10px; color: #94A3B8; font-family: monospace;">HSN: ${item.hsnCode}</div>` : ''}
+        </td>
+        <td style="padding: 10px 12px; text-align: center; font-size: 13px; color: #1E293B;">${item.quantity} ${item.unit || ''}</td>
+        <td style="padding: 10px 12px; text-align: right; font-size: 13px; color: #1E293B;">₹${(item.price || item.rate || 0).toFixed(2)}</td>
+        <td style="padding: 10px 12px; text-align: right; font-size: 13px; font-weight: 700; color: #0F172A;">₹${(item.total || (item.quantity * (item.price || item.rate || 0))).toFixed(2)}</td>
       </tr>
     `).join('');
 
+    const subTotal = Number(billData.totalAmount || billData.total || billData.subTotal || 0);
+    const taxAmt = Number(billData.tax || billData.taxAmount || 0);
+    const discountAmt = Number(billData.discountAmount || 0);
+    const grandTotal = Number(billData.finalAmount || billData.totalAmount || billData.total || (subTotal + taxAmt - discountAmt));
+
     const qrCodeHtml = billData.paymentQrCode ? `
-      <div style="text-align: right; margin-top: 20px;">
-        <p style="font-weight: bold; margin-bottom: 5px; font-size: 14px;">Scan & Pay via UPI</p>
-        <img src="${billData.paymentQrCode}" alt="UPI QR Code" style="width: 120px; height: 120px; border: 1px solid #ddd; padding: 5px; border-radius: 8px;" />
+      <div style="text-align: center; border: 1px solid #E2E8F0; padding: 12px; border-radius: 12px; background-color: #F8FAFC; width: 160px;">
+        <p style="font-weight: 800; font-size: 11px; margin: 0 0 6px 0; color: #334155; text-transform: uppercase; letter-spacing: 0.5px;">Scan & Pay via UPI</p>
+        <img src="${billData.paymentQrCode}" alt="UPI QR Code" style="width: 130px; height: 130px; border-radius: 6px; background-color: #FFF;" />
+        <p style="font-size: 10px; color: #64748B; margin: 6px 0 0 0;">GPay, PhonePe, Paytm</p>
       </div>
     ` : '';
 
@@ -53,93 +62,113 @@ const BillDetailScreen = ({ route }) => {
       <!DOCTYPE html>
       <html>
       <head>
-          <meta charset="utf-g">
-          <title>Invoice</title>
+          <meta charset="utf-8">
+          <title>Invoice #${billData.billNumber || '001'}</title>
           <style>
-              body { font-family: 'Helvetica Neue', 'Helvetica', Helvetica, Arial, sans-serif; color: #555; }
-              .invoice-box { max-width: 800px; margin: auto; padding: 30px; border: 1px solid #eee; box-shadow: 0 0 10px rgba(0, 0, 0, 0.15); font-size: 16px; line-height: 24px; }
-              .invoice-box table { width: 100%; line-height: inherit; text-align: left; border-collapse: collapse; }
-              .invoice-box table td { padding: 5px; vertical-align: top; }
-              .invoice-box table tr td:nth-child(n+2) { text-align: right; }
-              .invoice-box table tr.top table td { padding-bottom: 20px; }
-              .invoice-box table tr.top table td.title { font-size: 45px; line-height: 45px; color: #333; }
-              .invoice-box table tr.information table td { padding-bottom: 40px; }
-              .invoice-box table tr.heading td { background: #eee; border-bottom: 1px solid #ddd; font-weight: bold; text-align: left; }
-              .invoice-box table tr.heading td:nth-child(n+3) { text-align: right; }
-              .invoice-box table tr.details td { padding-bottom: 20px; }
-              .invoice-box table tr.item td { border-bottom: 1px solid #eee; text-align: left; }
-              .invoice-box table tr.item td:nth-child(n+3) { text-align: right; }
-              .invoice-box table tr.item.last td { border-bottom: none; }
-              .invoice-box table tr.total td:nth-child(2) { border-top: 2px solid #eee; font-weight: bold; }
-              .right { text-align: right; }
-              .left { text-align: left; }
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #334155; margin: 0; padding: 24px; background-color: #FFF; }
+              .invoice-container { max-width: 800px; margin: auto; border: 1px solid #E2E8F0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.06); }
+              .header-bar { background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); padding: 20px 28px; color: #FFF; display: flex; justify-content: space-between; align-items: center; }
+              .company-title { font-size: 22px; font-weight: 800; letter-spacing: 0.5px; margin: 0; }
+              .doc-badge { background-color: rgba(255,255,255,0.25); padding: 6px 14px; border-radius: 8px; font-size: 14px; font-weight: 800; letter-spacing: 1px; }
+              .meta-section { padding: 24px 28px; display: flex; justify-content: space-between; background-color: #FAFAFA; border-bottom: 1px solid #E2E8F0; }
+              .info-box { font-size: 13px; line-height: 20px; }
+              .info-label { font-size: 11px; font-weight: 700; color: #94A3B8; text-transform: uppercase; margin-bottom: 4px; }
+              .info-val { font-size: 14px; font-weight: 700; color: #0F172A; }
+              .items-table { width: 100%; border-collapse: collapse; text-align: left; }
+              .table-head { background-color: #1E293B; color: #FFFFFF; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+              .table-head th { padding: 12px; font-weight: 700; }
+              .summary-section { padding: 24px 28px; display: flex; justify-content: space-between; align-items: flex-start; }
+              .totals-table { width: 320px; border-collapse: collapse; }
+              .totals-table td { padding: 6px 12px; font-size: 13px; }
+              .grand-total-row { background-color: #F59E0B; color: #FFFFFF; border-radius: 8px; font-size: 16px; font-weight: 800; }
+              .grand-total-row td { padding: 10px 12px; }
+              .footer-section { padding: 16px 28px; background-color: #F8FAFC; border-top: 1px solid #E2E8F0; display: flex; justify-content: space-between; align-items: flex-end; font-size: 11px; color: #64748B; }
           </style>
       </head>
       <body>
-          <div class="invoice-box">
-              <table>
-                  <tr class="top">
-                      <td colspan="5">
-                          <table>
-                              <tr>
-                                  <td class="title">
-                                      {/* You can add a logo here */}
-                                      <p style="font-size: 20px; font-weight: bold;">Your Company Name</p>
-                                  </td>
-                                  <td>
-                                      Invoice #: ${billData.billNumber || 'N/A'}<br>
-                                      Created: ${new Date(billData.date || billData.createdAt).toLocaleDateString()}<br>
-                                      Due: ${billData.dueDate ? new Date(billData.dueDate).toLocaleDateString() : 'N/A'}
-                                  </td>
-                              </tr>
-                          </table>
-                      </td>
-                  </tr>
-                  <tr class="information">
-                      <td colspan="5">
-                          <table>
-                              <tr>
-                                  <td>
-                                      Your Company Address<br>
-                                      City, State, ZIP<br>
-                                      your.email@example.com
-                                  </td>
-                                  <td>
-                                      <b>Bill To:</b><br>
-                                      ${billData.customerName || billData.partyId?.name || 'N/A'}<br>
-                                      ${billData.customerMobile || billData.partyId?.mobileNumber || ''}<br>
-                                      ${billData.customerAddress || billData.partyId?.address || ''}
-                                  </td>
-                              </tr>
-                          </table>
-                      </td>
-                  </tr>
-                  <tr class="heading">
-                      <td class="left">#</td>
-                      <td class="left">Item</td>
-                      <td class="right">Qty</td>
-                      <td class="right">Price</td>
-                      <td class="right">Total</td>
-                  </tr>
-                  ${itemsHtml}
-                  <tr class="total">
-                      <td colspan="4" class="right"><b>Subtotal</b></td>
-                      <td class="right"><b>₹${(billData.totalAmount || billData.total || 0).toFixed(2)}</b></td>
-                  </tr>
-                  <tr class="total">
-                      <td colspan="4" class="right">Tax (${billData.tax > 0 ? 'GST' : '0'}%)</td>
-                      <td class="right">₹${(billData.tax || 0).toFixed(2)}</td>
-                  </tr>
-                   <tr class="total">
-                      <td colspan="4" class="right">Discount</td>
-                      <td class="right">₹${(billData.discountAmount || 0).toFixed(2)}</td>
-                  </tr>
-                  <tr class="total">
-                      <td colspan="4" class="right"><b>Grand Total</b></td>>
-                      <td class="right"><b>₹${(billData.finalAmount || billData.totalAmount || billData.total || 0).toFixed(2)}</b></td>
-                  </tr>
+          <div class="invoice-container">
+              <!-- Accent Header Bar -->
+              <div class="header-bar">
+                  <div>
+                      <h1 class="company-title">GANESH HARDWARE</h1>
+                      <p style="margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;">Building Materials, Plywood, Sariya & Paints</p>
+                  </div>
+                  <div class="doc-badge">
+                      ${billData.billType === 'quotation' ? 'QUOTATION' : 'TAX INVOICE'}
+                  </div>
+              </div>
+
+              <!-- Metadata & Customer Info -->
+              <div class="meta-section">
+                  <div class="info-box">
+                      <div class="info-label">Billed To</div>
+                      <div class="info-val">${billData.customerName || billData.partyId?.name || 'Walk-in Customer'}</div>
+                      <div>${billData.customerMobile || billData.partyId?.mobileNumber || ''}</div>
+                      <div>${billData.customerAddress || billData.partyId?.address || ''}</div>
+                  </div>
+                  <div class="info-box" style="text-align: right;">
+                      <div class="info-label">Invoice Details</div>
+                      <div><b>Invoice #:</b> ${billData.billNumber || '001'}</div>
+                      <div><b>Date:</b> ${new Date(billData.date || billData.createdAt || Date.now()).toLocaleDateString('en-IN')}</div>
+                      <div><b>Payment Status:</b> <span style="color: ${billData.paymentStatus === 'unpaid' ? '#DC2626' : '#059669'}; font-weight: bold;">${(billData.paymentStatus || 'PAID').toUpperCase()}</span></div>
+                  </div>
+              </div>
+
+              <!-- Table -->
+              <table class="items-table">
+                  <thead class="table-head">
+                      <tr>
+                          <th style="width: 40px;">#</th>
+                          <th>Item Description</th>
+                          <th style="text-align: center; width: 90px;">Qty</th>
+                          <th style="text-align: right; width: 110px;">Price</th>
+                          <th style="text-align: right; width: 120px;">Total</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      ${itemsHtml}
+                  </tbody>
               </table>
-              ${qrCodeHtml}
+
+              <!-- Summary & QR Section -->
+              <div class="summary-section">
+                  <div>
+                      ${qrCodeHtml}
+                  </div>
+                  <table class="totals-table">
+                      <tr>
+                          <td style="color: #64748B;">Subtotal:</td>
+                          <td style="text-align: right; font-weight: 600; color: #1E293B;">₹${subTotal.toFixed(2)}</td>
+                      </tr>
+                      ${taxAmt > 0 ? `
+                      <tr>
+                          <td style="color: #64748B;">GST / Tax:</td>
+                          <td style="text-align: right; font-weight: 600; color: #1E293B;">₹${taxAmt.toFixed(2)}</td>
+                      </tr>` : ''}
+                      ${discountAmt > 0 ? `
+                      <tr>
+                          <td style="color: #64748B;">Discount:</td>
+                          <td style="text-align: right; font-weight: 600; color: #DC2626;">-₹${discountAmt.toFixed(2)}</td>
+                      </tr>` : ''}
+                      <tr class="grand-total-row">
+                          <td>Total:</td>
+                          <td style="text-align: right;">₹${grandTotal.toFixed(2)}</td>
+                      </tr>
+                  </table>
+              </div>
+
+              <!-- Footer -->
+              <div class="footer-section">
+                  <div>
+                      <b>Terms & Conditions:</b><br>
+                      1. Goods once sold will not be taken back without bill.<br>
+                      2. Subject to local jurisdiction.
+                  </div>
+                  <div style="text-align: right;">
+                      <p style="margin: 0 0 35px 0;">For <b>GANESH HARDWARE</b></p>
+                      <p style="margin: 0; border-top: 1px solid #CBD5E1; padding-top: 4px;">Authorised Signatory</p>
+                  </div>
+              </div>
           </div>
       </body>
       </html>

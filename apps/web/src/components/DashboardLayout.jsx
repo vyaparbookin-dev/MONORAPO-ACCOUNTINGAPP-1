@@ -57,12 +57,12 @@ export default function DashboardLayout() {
     }
   }, []);
 
-  // Auto-redirect to Add Company if no companies exist
+  // Keep user on dashboard; only suggest adding company if empty without forced navigation
   useEffect(() => {
-    if (!loading && companies.length === 0 && (location.pathname === "/" || location.pathname === "/dashboard")) {
-      navigate("/company/add");
+    if (!selectedCompany && companies.length > 0) {
+      selectCompany(companies[0]);
     }
-  }, [companies, loading, location.pathname, navigate]);
+  }, [companies, selectedCompany]);
 
   const handleLogout = () => {
     SecurityTracker.track('USER_LOGOUT', { userId: user?._id, email: user?.email });
@@ -279,7 +279,7 @@ export default function DashboardLayout() {
                       <div className="p-2 border-t border-gray-200">
                         <button
                           onClick={() => {
-                            navigate("/company/create");
+                            navigate("/company/add");
                             setCompanyMenuOpen(false);
                           }}
                           className="w-full text-left px-3 py-2 text-blue-600 hover:bg-blue-50 rounded-lg transition flex items-center gap-2"

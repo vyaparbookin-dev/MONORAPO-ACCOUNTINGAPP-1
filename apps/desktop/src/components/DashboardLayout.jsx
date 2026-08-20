@@ -21,26 +21,23 @@ import {
   Building2,
   Plus,
   ShoppingCart,
+  Briefcase,
+  ArrowRightLeft,
+  BookOpen,
+  UserCheck,
   CheckCircle,
-  Coffee,
-  Bed,
-  HardHat,
   Smartphone,
   ShieldCheck,
   PenTool,
-  BookOpen,
   Calculator,
   Landmark,
   AlertTriangle
 } from "lucide-react";
-import { Trash2 } from "lucide-react"; // Import Trash icon
 import Footer from "./Footer";
-import { useNavigate, Link, Outlet, useLocation } from "react-router-dom";
+import { useNavigate, Outlet, useLocation } from "react-router-dom";
 import { useCompany } from "../contexts/CompanyContext";
 import { SecurityTracker } from "@repo/shared";
 import CloudSyncToggel from "./CloudSyncToggel";
-import ErrorBoundary from "./ErrorBoundary";
-import { dbService } from "../services/dbService";
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -50,26 +47,30 @@ export default function DashboardLayout() {
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
-  const { companies, selectedCompany, selectCompany, deleteCompany, loading } = useCompany(); // Get deleteCompany from context
+  const { companies, selectedCompany, selectCompany, loading } = useCompany();
 
   useEffect(() => {
-    // Get user securely via dbService
-    const storedUser = dbService.getAuthUser();
+    // Get user from localStorage
+    const storedUser = localStorage.getItem("user");
     if (storedUser) {
-      setUser(storedUser);
+      setUser(JSON.parse(storedUser));
     }
   }, []);
 
-  // Auto-redirect to Add Company if no companies exist
+  // Keep user on dashboard; only suggest adding company if empty without forced navigation
   useEffect(() => {
-    if (!loading && companies.length === 0 && (location.pathname === "/" || location.pathname === "/dashboard")) {
-      navigate("/company/add");
+    if (!selectedCompany && companies.length > 0) {
+      selectCompany(companies[0]);
     }
-  }, [companies, loading, location.pathname, navigate]);
+  }, [companies, selectedCompany]);
 
   const handleLogout = () => {
     SecurityTracker.track('USER_LOGOUT', { userId: user?._id, email: user?.email });
-    dbService.clearAuth();
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("companyId");
+    localStorage.removeItem("selectedCompany");
     navigate("/login");
   };
 
@@ -80,19 +81,14 @@ export default function DashboardLayout() {
     { icon: Home, label: "Dashboard", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
     { icon: FileText, label: "Invoices", href: "/billing", color: "text-green-600", roles: ['admin', 'manager', 'cashier'] },
     { icon: ShoppingCart, label: "Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+    { icon: CheckCircle, label: "Approvals", href: "/approvals", color: "text-emerald-500", roles: ['admin', 'manager'] },
+    { icon: Users, label: "Parties", href: "/parties", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+    { icon: Briefcase, label: "B2B Bills", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
+    { icon: Users, label: "Leads", href: "/leads", color: "text-purple-600", roles: ['admin', 'manager'] },
+    { icon: FileText, label: "Quotations", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
     
     // INDUSTRY SPECIFIC FEATURES
-    // 1. Restaurant / Cafe / Bakery
-    ...(indType.includes('restaurant') || indType.includes('cafe') || indType.includes('bakery')
-      ? [{ icon: Coffee, label: "Table & KOT", href: "/restaurant-pos", color: "text-orange-500", roles: ['admin', 'manager', 'cashier'] }] 
-      : []),
-      
-    // 2. Hotel / Resort
-    ...(indType.includes('hotel') || indType.includes('resort')
-      ? [{ icon: Bed, label: "Room Booking", href: "/hotel-booking", color: "text-indigo-500", roles: ['admin', 'manager', 'cashier'] }] 
-      : []),
-      
-    // 4. Electronics / Mobile
+    // 1. Electronics / Mobile
     ...(indType.includes('electronic') || indType.includes('mobile') || indType.includes('computer')
       ? [
           { icon: Smartphone, label: "IMEI Tracking", href: "/serial-tracking", color: "text-cyan-500", roles: ['admin', 'manager'] },
@@ -100,27 +96,19 @@ export default function DashboardLayout() {
         ] 
       : []),
 
-    // 5. Hardware / Electricals
+    // 2. Hardware / Electricals
     ...(indType.includes('hardware') || indType.includes('electrical') || indType.includes('sanitary') || indType.includes('paint')
       ? [
-          { icon: PenTool, label: "Batch & Stock", href: "/inventory/batch", color: "text-orange-700", roles: ['admin', 'manager'] },
-          { icon: Calculator, label: "Estimates", href: "/billing/b2b", color: "text-purple-500", roles: ['admin', 'manager', 'cashier'] }
+          { icon: PenTool, label: "Batch & Stock", href: "/inventory/batch", color: "text-orange-700", roles: ['admin', 'manager'] }
         ] 
       : []),
 
-    // 3. Builder / Contractor / Construction
-    ...(indType.includes('builder') || indType.includes('contractor') || indType.includes('construction')
-      ? [{ icon: HardHat, label: "Sites / Projects", href: "/projects", color: "text-yellow-600", roles: ['admin', 'manager'] }] 
-      : []),
-
-    { icon: CheckCircle, label: "Approvals", href: "/approvals", color: "text-emerald-500", roles: ['admin', 'manager'] },
-    { icon: Users, label: "Parties", href: "/parties", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+    // If businessType is an array, check if it ONLY contains 'service' or if it includes others. By default, show inventory unless it's strictly service.
     ...(!Array.isArray(selectedCompany?.businessType) || selectedCompany?.businessType.length === 0 || selectedCompany?.businessType.some(t => t !== 'service') ? [{ icon: Package, label: "Inventory", href: "/inventory", color: "text-purple-600", roles: ['admin', 'manager'] }] : []),
-    { icon: Users, label: "Leads", href: "/leads", color: "text-purple-600", roles: ['admin', 'manager'] },
-    { icon: FileText, label: "Quotations", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
     ...(!Array.isArray(selectedCompany?.businessType) || selectedCompany?.businessType.length === 0 || selectedCompany?.businessType.some(t => t !== 'service') ? [{ icon: BarChart3, label: "Category Analytics", href: "/inventory/analytics", color: "text-blue-600", roles: ['admin', 'manager'] }] : []),
-    { icon: AlertTriangle, label: "Non-Moving Stock", href: "/reports/non-moving-stock", color: "text-red-500", roles: ['admin', 'manager'] },
+    ...(!Array.isArray(selectedCompany?.businessType) || selectedCompany?.businessType.length === 0 || selectedCompany?.businessType.some(t => t !== 'service') ? [{ icon: ArrowRightLeft, label: "Transfer", href: "/inventory/transfer", color: "text-indigo-500", roles: ['admin', 'manager'] }] : []),
     { icon: Landmark, label: "Cash & Bank", href: "/banking", color: "text-cyan-600", roles: ['admin', 'manager'] },
+    { icon: AlertTriangle, label: "Non-Moving Stock", href: "/reports/non-moving-stock", color: "text-red-500", roles: ['admin', 'manager'] },
     { icon: DollarSign, label: "Expenses", href: "/expenses", color: "text-orange-600", roles: ['admin', 'manager'] },
     { icon: Building2, label: "Company", href: "/company", color: "text-indigo-600", roles: ['admin'] },
     { icon: Gift, label: "Coupons", href: "/coupons", color: "text-pink-600", roles: ['admin', 'manager'] },
@@ -136,11 +124,13 @@ export default function DashboardLayout() {
     { icon: Clock, label: "Aging Analysis", href: "/reports/aging", color: "text-rose-500", roles: ['admin', 'manager'] },
     { icon: BookOpen, label: "Day Book", href: "/reports/daybook", color: "text-rose-500", roles: ['admin'] },
     { icon: Receipt, label: "Salary", href: "/salary", color: "text-cyan-600", roles: ['admin'] },
+    { icon: UserCheck, label: "Attendance", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
+    { icon: Smartphone, label: "Mobile App (Live)", href: "http://localhost:8082", isExternal: true, color: "text-indigo-400", roles: ['admin', 'manager', 'cashier'] },
     { icon: Clock, label: "Laterpad", href: "/laterpad", color: "text-lime-600", roles: ['admin', 'manager', 'cashier'] },
     ...(Array.isArray(selectedCompany?.businessType) && selectedCompany?.businessType.includes('manufacturing') ? [{ icon: Warehouse, label: "Warehouse", href: "/warehouse", color: "text-amber-600", roles: ['admin', 'manager'] }] : []),
   ];
 
-  const userRole = user?.role || 'owner'; // Default to owner for desktop, can be changed
+  const userRole = user?.role || 'admin'; // Default to admin if no role found
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -151,69 +141,74 @@ export default function DashboardLayout() {
         } bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-40 md:relative overflow-y-auto`}
       >
         {/* Logo */}
-        <div className="p-3 border-b border-slate-700 flex items-center justify-between">
+        <div className="p-4 border-b border-slate-700 flex items-center justify-between">
           <div className={`flex items-center gap-3 ${!sidebarOpen && "justify-center w-full"}`}>
-            <div className="w-8 h-8 text-sm bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center font-bold text-white shadow-sm">
-              RA
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center font-bold text-white">
+              <Building2 size={24} />
             </div>
             {sidebarOpen && (
               <div>
-                <p className="font-bold text-base leading-tight">RedAccounting</p>
-                <p className="text-[10px] text-gray-400 tracking-wider uppercase leading-tight mt-0.5">Business Suite</p>
+                <p className="font-bold text-lg">RedAccounting</p>
+                <p className="text-xs text-gray-400">Business Suite</p>
               </div>
             )}
           </div>
         </div>
 
         {/* Menu Items */}
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {menuItems.filter(item => !item.roles || item.roles.includes(userRole)).map((item) => (
-            <Link
+            <button
               key={item.label}
-              to={item.href}
-              onClick={() => console.log(`👉 SIDEBAR CLICKED: Going to ${item.href}`)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition-all duration-200 group text-left block mb-0.5"
+              onClick={() => {
+                if (item.isExternal) {
+                  window.open(item.href, '_blank');
+                } else {
+                  navigate(item.href);
+                }
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition-all duration-200 group text-left"
               title={!sidebarOpen ? item.label : ""}
             >
-              <item.icon className={`w-[18px] h-[18px] ${item.color} flex-shrink-0`} />
+              <item.icon className={`w-5 h-5 ${item.color} flex-shrink-0`} />
               {sidebarOpen && (
-                <span className="text-[13px] font-medium group-hover:translate-x-1 transition-transform">
+                <span className="text-sm font-medium group-hover:translate-x-1 transition-transform">
                   {item.label}
                 </span>
               )}
-            </Link>
+            </button>
           ))}
         </nav>
 
         {/* Settings & Logout */}
-        <div className="p-3 border-t border-slate-700 space-y-1">
-          {['owner', 'admin', 'manager'].includes(userRole) && (
+        <div className="p-4 border-t border-slate-700 space-y-2">
+          {['admin'].includes(userRole) && (
           <button
             onClick={() => navigate("/settings")}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-slate-700 hover:text-white transition text-left mb-1"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition text-left"
             title={!sidebarOpen ? "Settings" : ""}
           >
-            <Settings className="w-[18px] h-[18px] flex-shrink-0" />
-            {sidebarOpen && <span className="text-[13px] font-medium">Settings</span>}
+            <Settings className="w-5 h-5 flex-shrink-0" />
+            {sidebarOpen && <span className="text-sm font-medium">Settings</span>}
           </button>
           )}
 
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-red-500/10 hover:text-red-400 transition"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-red-600 hover:text-white transition"
             title={!sidebarOpen ? "Logout" : ""}
           >
-            <LogOut className="w-[18px] h-[18px] flex-shrink-0" />
-            {sidebarOpen && <span className="text-[13px] font-medium">Logout</span>}
+            <LogOut className="w-5 h-5 flex-shrink-0" />
+            {sidebarOpen && <span className="text-sm font-medium">Logout</span>}
           </button>
         </div>
 
         {/* Toggle Button */}
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="p-1.5 m-3 hover:bg-slate-700 rounded-lg transition hidden lg:flex w-8 h-8 items-center justify-center text-gray-400 hover:text-white mx-auto"
+          className="p-2 m-4 hover:bg-slate-700 rounded-lg transition hidden lg:block w-12 h-12 flex items-center justify-center"
         >
-          {sidebarOpen ? <ChevronDown size={18} /> : <ChevronDown size={18} className="rotate-90" />}
+          {sidebarOpen ? <ChevronDown size={20} /> : <ChevronDown size={20} className="rotate-90" />}
         </button>
       </div>
 
@@ -221,22 +216,22 @@ export default function DashboardLayout() {
       <div className="flex-1 flex flex-col overflow-hidden md:ml-0" style={{ marginLeft: sidebarOpen ? 0 : 0 }}>
         {/* Top Header */}
         <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-30">
-          <div className="px-4 py-2.5 flex items-center justify-between">
+          <div className="px-6 py-4 flex items-center justify-between">
             {/* Left Side - Menu Button & Search */}
             <div className="flex items-center gap-4 flex-1">
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="lg:hidden p-1.5 hover:bg-gray-100 rounded-lg transition"
+                className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition"
               >
-                {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+                {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
               </button>
 
-              <div className="hidden md:flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 flex-1 max-w-md focus-within:bg-white focus-within:border-blue-400 transition-colors">
-                <Search className="text-gray-400" size={16} />
+              <div className="hidden md:flex items-center gap-2 bg-gray-100 rounded-lg px-4 py-2 flex-1 max-w-md">
+                <Search className="text-gray-400" size={20} />
                 <input
                   type="text"
                   placeholder="Search invoices, products..."
-                  className="bg-transparent outline-none text-gray-700 placeholder-gray-400 w-full text-[13px]"
+                  className="bg-transparent outline-none text-gray-700 placeholder-gray-500 w-full text-sm"
                 />
               </div>
             </div>
@@ -251,10 +246,10 @@ export default function DashboardLayout() {
                 <div className="relative">
                   <button
                     onClick={() => setCompanyMenuOpen(!companyMenuOpen)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition"
+                    className="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
                   >
                     <Building2 size={16} className="text-gray-600" />
-                    <span className="text-[13px] font-medium text-gray-700">
+                    <span className="text-sm font-medium text-gray-700">
                       {selectedCompany ? selectedCompany.name : "Select Company"}
                     </span>
                     <ChevronDown size={14} className="text-gray-500" />
@@ -266,38 +261,25 @@ export default function DashboardLayout() {
                       </div>
                       <div className="space-y-1 p-2 max-h-64 overflow-y-auto">
                         {companies.map((company) => (
-                          <div key={company._id} className="flex items-center justify-between rounded-lg hover:bg-gray-100 group">
-                            <button
-                              onClick={() => {
-                                selectCompany(company);
-                                setCompanyMenuOpen(false);
-                              }}
-                              className={`flex-1 text-left px-3 py-2 rounded-lg transition ${
-                                selectedCompany && selectedCompany._id === company._id ? "bg-blue-50 text-blue-700" : "text-gray-700"
-                              }`}
-                            >
-                              <div className="font-medium">{company.name}</div>
+                          <button
+                            key={company._id}
+                            onClick={() => {
+                              selectCompany(company);
+                              setCompanyMenuOpen(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition ${
+                              selectedCompany && selectedCompany._id === company._id ? "bg-blue-50 text-blue-700" : "text-gray-700"
+                            }`}
+                          >
+                            <div className="font-medium">{company.name}</div>
                             <div className="text-xs text-gray-500 capitalize">{Array.isArray(company.businessType) ? company.businessType.join(', ') : company.businessType}</div>
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (window.confirm(`Are you sure you want to delete "${company.name}"? This action cannot be undone.`)) {
-                                  deleteCompany(company._id);
-                                }
-                              }}
-                              className="p-2 text-gray-400 hover:text-red-600 mr-2"
-                              title={`Delete ${company.name}`}
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
+                          </button>
                         ))}
                       </div>
                       <div className="p-2 border-t border-gray-200">
                         <button
                           onClick={() => {
-                            navigate("/company/create");
+                            navigate("/company/add");
                             setCompanyMenuOpen(false);
                           }}
                           className="w-full text-left px-3 py-2 text-blue-600 hover:bg-blue-50 rounded-lg transition flex items-center gap-2"
@@ -324,10 +306,10 @@ export default function DashboardLayout() {
               <div className="relative">
                 <button
                   onClick={() => setNotificationsOpen(!notificationsOpen)}
-                  className="relative p-1.5 hover:bg-gray-100 rounded-lg transition text-gray-500 hover:text-gray-700"
+                  className="relative p-2 hover:bg-gray-100 rounded-lg transition"
                 >
-                  <Bell size={18} />
-                  <span className="absolute top-1 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+                  <Bell size={20} className="text-gray-600" />
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
                 </button>
 
                 {notificationsOpen && (
@@ -363,23 +345,23 @@ export default function DashboardLayout() {
               <div className="relative">
                 <button
                   onClick={() => setProfileOpen(!profileOpen)}
-                  className="flex items-center gap-2 p-1 hover:bg-gray-50 rounded-lg transition border border-transparent hover:border-gray-200"
+                  className="flex items-center gap-2 p-2 hover:bg-gray-100 rounded-lg transition"
                 >
-                  <div className="w-7 h-7 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm">
-                    {user?.email ? user.email.charAt(0).toUpperCase() : "U"}
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
+                    {user?.email?.charAt(0).toUpperCase() || "U"}
                   </div>
                   <div className="hidden sm:block text-left">
-                    <p className="text-[13px] font-semibold text-gray-900 leading-none">
-                      {user?.email ? user.email.split("@")[0] : "User"}
+                    <p className="text-sm font-semibold text-gray-900">
+                      {user?.email?.split("@")[0] || "User"}
                     </p>
-                    <p className="text-[11px] text-gray-500 capitalize leading-tight mt-0.5">{user?.role || "user"}</p>
+                    <p className="text-xs text-gray-500 capitalize">{user?.role || "user"}</p>
                   </div>
                 </button>
 
                 {profileOpen && (
                   <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 p-0 z-50">
                     <div className="p-4 border-b border-gray-200">
-                      <p className="font-semibold text-gray-900 truncate">{user?.email || "Offline User"}</p>
+                      <p className="font-semibold text-gray-900">{user?.email}</p>
                       <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
                     </div>
                     <a
@@ -409,10 +391,8 @@ export default function DashboardLayout() {
 
         {/* Page Content */}
         <main className="flex-1 overflow-auto">
-          <div className="p-4 lg:p-6">
-            <ErrorBoundary>
-              <Outlet />
-            </ErrorBoundary>
+          <div className="p-6 lg:p-8">
+            <Outlet />
           </div>
           <Footer />
         </main>

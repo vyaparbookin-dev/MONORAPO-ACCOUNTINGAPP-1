@@ -30,7 +30,13 @@ export const addCompany = async (req, res) => {
 
 export const listCompanies = async (req, res) => {
   try {
-    const companies = await Company.find({ user: req.user.id });
+    const userEmail = req.user.email?.toLowerCase();
+    const companies = await Company.find({
+      $or: [
+        { user: req.user.id },
+        ...(userEmail ? [{ ownerEmail: userEmail }, { email: userEmail }] : [])
+      ]
+    });
     res.json({ success: true, companies });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -39,7 +45,14 @@ export const listCompanies = async (req, res) => {
 
 export const getCompany = async (req, res) => {
   try {
-    const company = await Company.findOne({ _id: req.params.id, user: req.user.id });
+    const userEmail = req.user.email?.toLowerCase();
+    const company = await Company.findOne({
+      _id: req.params.id,
+      $or: [
+        { user: req.user.id },
+        ...(userEmail ? [{ ownerEmail: userEmail }, { email: userEmail }] : [])
+      ]
+    });
     if (!company) return res.status(404).json({ success: false, message: 'Company not found' });
     res.json({ success: true, company });
   } catch (error) {
