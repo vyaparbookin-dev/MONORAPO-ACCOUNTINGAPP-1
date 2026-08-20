@@ -138,6 +138,7 @@ export default function ElectricalWireModal({ isOpen, onClose, onApplyWireItem, 
                     <option value="Green">हरा (Green)</option>
                     <option value="Blue">नीला (Blue)</option>
                     <option value="Yellow">पीला (Yellow)</option>
+                    <option value="White">सफेद (White)</option>
                   </select>
                 </div>
 
