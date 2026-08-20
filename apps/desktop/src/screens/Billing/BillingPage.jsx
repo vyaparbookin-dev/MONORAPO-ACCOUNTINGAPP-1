@@ -29,6 +29,8 @@ import HardwareDimensionModal from "../../components/modals/HardwareDimensionMod
 import GarmentsMatrixModal from "../../components/modals/GarmentsMatrixModal";
 import PharmaBatchModal from "../../components/modals/PharmaBatchModal";
 import RestaurantKotModal from "../../components/modals/RestaurantKotModal";
+import RestaurantRecipeModal from "../../components/modals/RestaurantRecipeModal";
+import BanquetCateringModal from "../../components/modals/BanquetCateringModal";
 import { getBusinessMode } from "../../utils/businessMode";
 import { useCompany } from "../../contexts/CompanyContext";
 
@@ -99,6 +101,8 @@ export default function BillingPage() {
   const [showGarmentsModal, setShowGarmentsModal] = useState(false);
   const [showPharmaModal, setShowPharmaModal] = useState(false);
   const [showRestaurantModal, setShowRestaurantModal] = useState(false);
+  const [showRecipeModal, setShowRecipeModal] = useState(false);
+  const [showBanquetModal, setShowBanquetModal] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
   const [quickProduct, setQuickProduct] = useState({ name: '', itemId: '', barcode: '', hsnCode: '', gstRate: '', mrp: '', mrpDiscount: '', purchaseRate: '', purchaseDiscount: '', retailPrice: '', wholesalePrice: '', specialPrice: '', currentStock: '', unit: 'pcs', category: '', itemType: 'general', expiryDate: '', warrantyMonths: '', size: '', color: '' });
   const [unfoundBarcode, setUnfoundBarcode] = useState(null);
@@ -702,6 +706,17 @@ export default function BillingPage() {
     setFormData(prev => ({
       ...prev,
       items: [...prev.items, ...kotData.items.map(i => ({ ...i, id: Date.now() + Math.random() }))]
+    }));
+  };
+
+  
+  // NEW: Handle Banquet Catering Apply
+  const handleApplyBanquetItem = (banquetItem, details) => {
+    setFormData(prev => ({
+      ...prev,
+      customerName: banquetItem.customerName || prev.customerName,
+      customerMobile: banquetItem.customerMobile || prev.customerMobile,
+      items: [...prev.items, { ...banquetItem, id: Date.now() }]
     }));
   };
 
@@ -1941,6 +1956,22 @@ export default function BillingPage() {
         onClose={() => setShowRestaurantModal(false)}
         onApplyKot={handleApplyRestaurantKot}
         inventory={inventory}
+      />
+
+      
+      {/* Restaurant Recipe BOM Modal */}
+      <RestaurantRecipeModal
+        isOpen={showRecipeModal}
+        onClose={() => setShowRecipeModal(false)}
+        inventory={inventory}
+        onRecipeSaved={() => loadInventory()}
+      />
+
+      {/* Banquet & Catering Modal */}
+      <BanquetCateringModal
+        isOpen={showBanquetModal}
+        onClose={() => setShowBanquetModal(false)}
+        onApplyBanquet={handleApplyBanquetItem}
       />
 
       {/* Design Image Preview Popup (Screen Only - Not Printed) */}
