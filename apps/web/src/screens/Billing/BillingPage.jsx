@@ -31,6 +31,8 @@ import PharmaBatchModal from "../../components/modals/PharmaBatchModal";
 import RestaurantKotModal from "../../components/modals/RestaurantKotModal";
 import RestaurantRecipeModal from "../../components/modals/RestaurantRecipeModal";
 import BanquetCateringModal from "../../components/modals/BanquetCateringModal";
+import ElectronicsImeiModal from "../../components/modals/ElectronicsImeiModal";
+import ElectricalWireModal from "../../components/modals/ElectricalWireModal";
 import { getBusinessMode } from "../../utils/businessMode";
 import { useCompany } from "../../contexts/CompanyContext";
 
@@ -103,6 +105,8 @@ export default function BillingPage() {
   const [showRestaurantModal, setShowRestaurantModal] = useState(false);
   const [showRecipeModal, setShowRecipeModal] = useState(false);
   const [showBanquetModal, setShowBanquetModal] = useState(false);
+  const [showImeiModal, setShowImeiModal] = useState(false);
+  const [showWireModal, setShowWireModal] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
   const [quickProduct, setQuickProduct] = useState({ name: '', itemId: '', barcode: '', hsnCode: '', gstRate: '', mrp: '', mrpDiscount: '', purchaseRate: '', purchaseDiscount: '', retailPrice: '', wholesalePrice: '', specialPrice: '', currentStock: '', unit: 'pcs', category: '', itemType: 'general', expiryDate: '', warrantyMonths: '', size: '', color: '' });
   const [unfoundBarcode, setUnfoundBarcode] = useState(null);
@@ -720,6 +724,23 @@ export default function BillingPage() {
     }));
   };
 
+  
+  // NEW: Handle Electronics IMEI Item Apply
+  const handleApplyImeiItem = (imeiItem) => {
+    setFormData(prev => ({
+      ...prev,
+      items: [...prev.items, { ...imeiItem, id: Date.now() }]
+    }));
+  };
+
+  // NEW: Handle Electrical Wire Item Apply
+  const handleApplyWireItem = (wireItem) => {
+    setFormData(prev => ({
+      ...prev,
+      items: [...prev.items, { ...wireItem, id: Date.now() }]
+    }));
+  };
+
   // NEW: Handle Advanced Tatkal Quick Product Creation
   const handleQuickProductSave = async () => {
     if (!quickProduct.name || !quickProduct.retailPrice) return alert("Product Name and Retail Price are required!");
@@ -1205,6 +1226,12 @@ export default function BillingPage() {
                         )}
                         {business.isRestaurant && (
                           <button type="button" onClick={() => setShowRestaurantModal(true)} className="text-xs text-amber-700 hover:text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-300 font-bold flex items-center gap-1">🍽️ Table KOT</button>
+                        )}
+                        {business.isElectronics && (
+                          <>
+                            <button type="button" onClick={() => setShowImeiModal(true)} className="text-xs text-blue-700 hover:text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-300 font-bold flex items-center gap-1">📱 Mobile & IMEI</button>
+                            <button type="button" onClick={() => setShowWireModal(true)} className="text-xs text-amber-700 hover:text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-300 font-bold flex items-center gap-1">⚡ Wire & Electricals</button>
+                          </>
                         )}
                         <button type="button" onClick={() => setShowQuickProductModal(true)} className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"><Plus size={12}/> Advanced Tatkal</button>
                       </div>
@@ -1972,6 +1999,23 @@ export default function BillingPage() {
         isOpen={showBanquetModal}
         onClose={() => setShowBanquetModal(false)}
         onApplyBanquet={handleApplyBanquetItem}
+      />
+
+      
+      {/* Electronics IMEI & Warranty Modal */}
+      <ElectronicsImeiModal
+        isOpen={showImeiModal}
+        onClose={() => setShowImeiModal(false)}
+        onApplyImeiItem={handleApplyImeiItem}
+        inventory={inventory}
+      />
+
+      {/* Electricals Wire & LED Warranty Modal */}
+      <ElectricalWireModal
+        isOpen={showWireModal}
+        onClose={() => setShowWireModal(false)}
+        onApplyWireItem={handleApplyWireItem}
+        inventory={inventory}
       />
 
       {/* Design Image Preview Popup (Screen Only - Not Printed) */}
