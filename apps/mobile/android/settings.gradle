@@ -38,4 +38,3 @@ rootProject.name = 'mobile-inventory-app'
 expoAutolinking.useExpoVersionCatalog()
 
 include ':app'
-includeBuild(expoAutolinking.reactNativeGradlePlugin)
