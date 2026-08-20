@@ -133,11 +133,11 @@ export default function ElectricalWireModal({ isOpen, onClose, onApplyWireItem, 
                     onChange={(e) => setWireColor(e.target.value)}
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold bg-white"
                   >
-                    <option value="Red">लाल (Phase / Red)</option>
-                    <option value="Black">काला (Neutral / Black)</option>
-                    <option value="Green">हरा (Earthing / Green)</option>
-                    <option value="Blue">नीला (Phase 2 / Blue)</option>
-                    <option value="Yellow">पीला (Phase 3 / Yellow)</option>
+                    <option value="Red">लाल (Red)</option>
+                    <option value="Black">काला (Black)</option>
+                    <option value="Green">हरा (Green)</option>
+                    <option value="Blue">नीला (Blue)</option>
+                    <option value="Yellow">पीला (Yellow)</option>
                   </select>
                 </div>
 

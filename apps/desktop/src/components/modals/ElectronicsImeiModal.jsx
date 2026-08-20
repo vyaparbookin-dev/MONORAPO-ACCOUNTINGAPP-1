@@ -22,6 +22,8 @@ export default function ElectronicsImeiModal({ isOpen, onClose, onApplyImeiItem,
   const [needsInstallation, setNeedsInstallation] = useState(false);
   const [installationDate, setInstallationDate] = useState("");
   const [technicianNotes, setTechnicianNotes] = useState("");
+  const [installationChargeType, setInstallationChargeType] = useState("free"); // "free", "paid", "company"
+  const [installationFee, setInstallationFee] = useState(0);
 
   if (!isOpen) return null;
 

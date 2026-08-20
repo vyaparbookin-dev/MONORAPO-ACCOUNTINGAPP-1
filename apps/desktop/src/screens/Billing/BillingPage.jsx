@@ -33,6 +33,8 @@ import RestaurantRecipeModal from "../../components/modals/RestaurantRecipeModal
 import BanquetCateringModal from "../../components/modals/BanquetCateringModal";
 import ElectronicsImeiModal from "../../components/modals/ElectronicsImeiModal";
 import ElectricalWireModal from "../../components/modals/ElectricalWireModal";
+import SalonSpaModal from "../../components/modals/SalonSpaModal";
+import AutomobileJobCardModal from "../../components/modals/AutomobileJobCardModal";
 import { getBusinessMode } from "../../utils/businessMode";
 import { useCompany } from "../../contexts/CompanyContext";
 
@@ -107,6 +109,8 @@ export default function BillingPage() {
   const [showBanquetModal, setShowBanquetModal] = useState(false);
   const [showImeiModal, setShowImeiModal] = useState(false);
   const [showWireModal, setShowWireModal] = useState(false);
+  const [showSalonModal, setShowSalonModal] = useState(false);
+  const [showAutoModal, setShowAutoModal] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
   const [quickProduct, setQuickProduct] = useState({ name: '', itemId: '', barcode: '', hsnCode: '', gstRate: '', mrp: '', mrpDiscount: '', purchaseRate: '', purchaseDiscount: '', retailPrice: '', wholesalePrice: '', specialPrice: '', currentStock: '', unit: 'pcs', category: '', itemType: 'general', expiryDate: '', warrantyMonths: '', size: '', color: '' });
   const [unfoundBarcode, setUnfoundBarcode] = useState(null);
@@ -738,6 +742,23 @@ export default function BillingPage() {
     setFormData(prev => ({
       ...prev,
       items: [...prev.items, { ...wireItem, id: Date.now() }]
+    }));
+  };
+
+  
+  // NEW: Handle Salon Spa Service Apply
+  const handleApplySalonService = (salonItem) => {
+    setFormData(prev => ({
+      ...prev,
+      items: [...prev.items, { ...salonItem, id: Date.now() }]
+    }));
+  };
+
+  // NEW: Handle Automobile Job Card Apply
+  const handleApplyJobCard = (autoItem) => {
+    setFormData(prev => ({
+      ...prev,
+      items: [...prev.items, { ...autoItem, id: Date.now() }]
     }));
   };
 
@@ -2015,6 +2036,23 @@ export default function BillingPage() {
         isOpen={showWireModal}
         onClose={() => setShowWireModal(false)}
         onApplyWireItem={handleApplyWireItem}
+        inventory={inventory}
+      />
+
+      
+      {/* Salon & Spa Modal */}
+      <SalonSpaModal
+        isOpen={showSalonModal}
+        onClose={() => setShowSalonModal(false)}
+        onApplySalonService={handleApplySalonService}
+        inventory={inventory}
+      />
+
+      {/* Automobile Job Card Modal */}
+      <AutomobileJobCardModal
+        isOpen={showAutoModal}
+        onClose={() => setShowAutoModal(false)}
+        onApplyJobCard={handleApplyJobCard}
         inventory={inventory}
       />
 
