@@ -148,8 +148,11 @@ export default function MainDashboard({ navigation }) {
     }
   };
 
+  const referralCode = `${(selectedCompany?.name || 'SHOP').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase()}-20OFF`;
+
   const handleShareReferral = () => {
-    const msg = `Namaste! Try Ganesh Hardware ERP & Accounting App for billing, GST reports, inventory and khata management. Use referral code GANESH-CASH-100 to get ₹100 Cash Tokens discount on your account! Download now: https://ganeshhardware.in`;
+    const shareUrl = `https://vyaparbook.in/join?ref=${referralCode}`;
+    const msg = `नमस्ते! मैं अपनी दुकान के लिए Red Accounting Book ERP सॉफ्टवेयर इस्तेमाल कर रहा हूँ। इसमें फास्ट बिलिंग, स्टॉक मैनेजमेंट, बारकोड और ऑटोमैटिक हिसाब-किताब बहुत आसान है।\n\nमेरे रेफरल कोड *${referralCode}* से जुड़ें और किसी भी पैकेज पर तुरंत फ्लैट 20% का डिस्काउंट पाएं!\nलिंक: ${shareUrl}`;
     Share.share({ message: msg });
   };
 
@@ -430,41 +433,43 @@ export default function MainDashboard({ navigation }) {
         onRequestClose={() => setReferralModalVisible(false)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { maxHeight: '85%' }]}>
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Ionicons name="gift" size={22} color="#6366F1" style={{ marginRight: 6 }} />
-                <Text style={styles.modalTitle}>Refer & Earn Cash Tokens</Text>
+                <Text style={styles.modalTitle}>Refer & Earn (Flat 20% Off)</Text>
               </View>
               <TouchableOpacity onPress={() => setReferralModalVisible(false)}>
                 <Ionicons name="close-circle" size={24} color="#94A3B8" />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.referralBanner}>
-              <Text style={styles.referralBannerTag}>EARN ₹100 PER REFERRAL</Text>
-              <Text style={styles.referralBannerHeadline}>Share Ganesh Hardware App with your Merchant Friends</Text>
-              <Text style={styles.referralBannerSub}>When a friend downloads and signs up, you both get ₹100 Cash Tokens to use as a direct discount on your next subscription renewal!</Text>
-            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.referralBanner}>
+                <Text style={styles.referralBannerTag}>EARN 20% DISCOUNT + TOKENS</Text>
+                <Text style={styles.referralBannerHeadline}>Share with Merchant Friends & Get Flat 20% Off</Text>
+                <Text style={styles.referralBannerSub}>When a friend downloads and signs up with your code, you both get a Flat 20% Direct Discount on any subscription package (Mobile Offline, Mobile Cloud, or All-in-One Pro)!</Text>
+              </View>
 
-            <View style={styles.codeBox}>
-              <Text style={styles.codeLabel}>YOUR REFERRAL CODE</Text>
-              <Text style={styles.codeVal}>GANESH-CASH-100</Text>
-            </View>
+              <View style={styles.codeBox}>
+                <Text style={styles.codeLabel}>YOUR UNIQUE REFERRAL CODE</Text>
+                <Text style={styles.codeVal}>{referralCode}</Text>
+              </View>
 
-            <TouchableOpacity 
-              style={styles.whatsappShareBtn}
-              onPress={handleShareReferral}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="logo-whatsapp" size={20} color="#FFF" style={{ marginRight: 8 }} />
-              <Text style={styles.whatsappShareText}>Share on WhatsApp & Earn ₹100</Text>
-            </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.whatsappShareBtn}
+                onPress={handleShareReferral}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="logo-whatsapp" size={20} color="#FFF" style={{ marginRight: 8 }} />
+                <Text style={styles.whatsappShareText}>Share on WhatsApp & Earn 20%</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {/* 10. MULTI-PLATFORM ECOSYSTEM & FEATURES MODAL */}
+      {/* 10. MULTI-PLATFORM ECOSYSTEM & 3-TIER PRICING MODAL */}
       <Modal 
         visible={ecosystemModalVisible} 
         animationType="fade" 
@@ -472,11 +477,11 @@ export default function MainDashboard({ navigation }) {
         onRequestClose={() => setEcosystemModalVisible(false)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { maxHeight: '85%' }]}>
+          <View style={[styles.modalCard, { maxHeight: '88%' }]}>
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Ionicons name="tv" size={22} color="#059669" style={{ marginRight: 6 }} />
-                <Text style={styles.modalTitle}>Ganesh Hardware Ecosystem</Text>
+                <Text style={styles.modalTitle}>SaaS Plans & Multi-Platform</Text>
               </View>
               <TouchableOpacity onPress={() => setEcosystemModalVisible(false)}>
                 <Ionicons name="close-circle" size={24} color="#94A3B8" />
@@ -485,39 +490,57 @@ export default function MainDashboard({ navigation }) {
 
             <ScrollView showsVerticalScrollIndicator={false}>
               <View style={styles.earlyAccessBadge}>
-                <Text style={styles.earlyAccessText}>✨ Multi-Device Live Sync Active (Early Access)</Text>
+                <Text style={styles.earlyAccessText}>⏱️ 15 Days Free Trial • First 50 Users: Extra 30% OFF</Text>
               </View>
 
-              {/* 1. Mobile */}
-              <View style={styles.ecosystemCard}>
-                <View style={[styles.ecosystemIcon, { backgroundColor: '#EEF2FF' }]}>
-                  <Ionicons name="phone-portrait" size={22} color="#4F46E5" />
+              {/* 1. Mobile Offline */}
+              <View style={[styles.ecosystemCard, { borderColor: '#BFDBFE' }]}>
+                <View style={[styles.ecosystemIcon, { backgroundColor: '#EFF6FF' }]}>
+                  <Ionicons name="phone-portrait" size={22} color="#2563EB" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.ecosystemTitle}>📱 Android Mobile App</Text>
-                  <Text style={styles.ecosystemDesc}>• Fast 1-tap billing & offline pos sale{'\n'}• 1-Click WhatsApp bill & PDF sharing{'\n'}• Barcode scanner & instant khata entry</Text>
+                  <Text style={styles.ecosystemTitle}>📱 Mobile Offline Edition</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#1E293B', marginBottom: 2 }}>
+                    ₹299/yr <Text style={{ fontSize: 11, color: '#059669', fontWeight: '700' }}>(3-Yr: ₹672 → ₹224/yr)</Text>
+                  </Text>
+                  <Text style={{ fontSize: 10, color: '#D97706', fontWeight: '700', marginBottom: 4 }}>
+                    First 50 Users: ₹209/yr (30% Launch Discount)
+                  </Text>
+                  <Text style={styles.ecosystemDesc}>• 100% Offline POS billing without internet{'\n'}• Local SQLite zero-lag database{'\n'}• Bluetooth thermal 2"/3" printing & barcode scan</Text>
                 </View>
               </View>
 
-              {/* 2. Desktop */}
-              <View style={styles.ecosystemCard}>
+              {/* 2. Mobile Cloud Hybrid */}
+              <View style={[styles.ecosystemCard, { borderColor: '#DDD6FE' }]}>
+                <View style={[styles.ecosystemIcon, { backgroundColor: '#F5F3FF' }]}>
+                  <Ionicons name="cloud-outline" size={22} color="#7C3AED" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.ecosystemTitle}>☁️ Mobile Cloud Hybrid Edition</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#1E293B', marginBottom: 2 }}>
+                    ₹599/yr <Text style={{ fontSize: 11, color: '#059669', fontWeight: '700' }}>(3-Yr: ₹1,348 → ₹449/yr)</Text>
+                  </Text>
+                  <Text style={{ fontSize: 10, color: '#D97706', fontWeight: '700', marginBottom: 4 }}>
+                    First 50 Users: ₹419/yr (30% Launch Discount)
+                  </Text>
+                  <Text style={styles.ecosystemDesc}>• Mobile Offline + Auto Cloud Backup{'\n'}• 1-Click data restore on phone change/loss{'\n'}• WhatsApp PDF bills with QR & godown stock</Text>
+                </View>
+              </View>
+
+              {/* 3. Enterprise Pro (All 3) */}
+              <View style={[styles.ecosystemCard, { borderColor: '#A7F3D0', backgroundColor: '#F0FDF4' }]}>
                 <View style={[styles.ecosystemIcon, { backgroundColor: '#ECFDF5' }]}>
                   <Ionicons name="laptop-outline" size={22} color="#059669" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.ecosystemTitle}>💻 Windows Desktop App</Text>
-                  <Text style={styles.ecosystemDesc}>• Wholesale high-speed billing with F1-F12 shortcuts{'\n'}• Thermal printer & barcode printer support{'\n'}• Bulk Excel import with zero lag</Text>
-                </View>
-              </View>
-
-              {/* 3. Cloud Web */}
-              <View style={styles.ecosystemCard}>
-                <View style={[styles.ecosystemIcon, { backgroundColor: '#FFFBEB' }]}>
-                  <Ionicons name="cloud-outline" size={22} color="#D97706" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.ecosystemTitle}>☁️ Cloud Web Dashboard</Text>
-                  <Text style={styles.ecosystemDesc}>• 20+ GSTR & audit accounting reports{'\n'}• Multi-user roles (Admin, Cashier, Billing){'\n'}• Real-time stock valuation & inventory ledger</Text>
+                  <Text style={styles.ecosystemTitle}>🚀 Enterprise Pro (Web + Desktop + Mobile)</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#0F172A', marginBottom: 2 }}>
+                    ₹2,999/yr <Text style={{ fontSize: 11, color: '#059669', fontWeight: '700' }}>(3-Yr: ₹6,749 → ₹2,249/yr)</Text>
+                  </Text>
+                  <Text style={{ fontSize: 10, color: '#D97706', fontWeight: '700', marginBottom: 4 }}>
+                    First 50 Users: ₹2,099/yr (Save ₹2,248 on 3-Yr!)
+                  </Text>
+                  <Text style={styles.ecosystemDesc}>• 3-Device Real-time Sync (Mobile + Desktop + Web){'\n'}• Lightning keyboard counter POS & Barcode label print{'\n'}• Remote live profit dashboard & 20+ GSTR reports</Text>
                 </View>
               </View>
 
@@ -525,7 +548,7 @@ export default function MainDashboard({ navigation }) {
                 style={styles.closeEcosystemBtn}
                 onPress={() => setEcosystemModalVisible(false)}
               >
-                <Text style={styles.closeEcosystemText}>Got It</Text>
+                <Text style={styles.closeEcosystemText}>Start 15-Day Free Trial</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>

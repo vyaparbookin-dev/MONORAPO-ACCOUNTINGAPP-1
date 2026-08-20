@@ -7,19 +7,51 @@ import Salary from "../model/salary.js";
 export const getDayBook = async (req, res) => {
   try {
     const { companyId } = req;
-    const { date } = req.query; // Client se date aayegi (e.g., "2023-10-25")
+    const { date, startDate: reqStartDate, endDate: reqEndDate, period } = req.query;
 
     // Pagination setup
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
+    const limit = parseInt(req.query.limit) || 100;
     const skip = (page - 1) * limit;
 
     if (!companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
 
-    // Calculate Start and End of the given Date
-    const targetDate = date ? new Date(date) : new Date();
-    const startOfDay = new Date(targetDate.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(targetDate.setHours(23, 59, 59, 999));
+    // Calculate Start and End range based on parameters
+    let startOfDay;
+    let endOfDay;
+
+    const now = new Date();
+
+    if (reqStartDate && reqEndDate) {
+      startOfDay = new Date(new Date(reqStartDate).setHours(0, 0, 0, 0));
+      endOfDay = new Date(new Date(reqEndDate).setHours(23, 59, 59, 999));
+    } else if (period === 'yesterday') {
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+      startOfDay = new Date(yesterday.setHours(0, 0, 0, 0));
+      endOfDay = new Date(yesterday.setHours(23, 59, 59, 999));
+    } else if (period === 'week') {
+      const startOfWeek = new Date(now);
+      const day = now.getDay();
+      const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday
+      startOfWeek.setDate(diff);
+      startOfDay = new Date(startOfWeek.setHours(0, 0, 0, 0));
+      endOfDay = new Date(now.setHours(23, 59, 59, 999));
+    } else if (period === 'month') {
+      startOfDay = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      endOfDay = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else if (period === 'quarter') {
+      const currentQuarter = Math.floor(now.getMonth() / 3);
+      startOfDay = new Date(now.getFullYear(), currentQuarter * 3, 1, 0, 0, 0, 0);
+      endOfDay = new Date(now.getFullYear(), (currentQuarter + 1) * 3, 0, 23, 59, 59, 999);
+    } else if (period === 'year') {
+      startOfDay = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+      endOfDay = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    } else {
+      const targetDate = date ? new Date(date) : now;
+      startOfDay = new Date(new Date(targetDate).setHours(0, 0, 0, 0));
+      endOfDay = new Date(new Date(targetDate).setHours(23, 59, 59, 999));
+    }
 
     // Common time query logic
     const timeQuery = { $gte: startOfDay, $lte: endOfDay };
@@ -87,6 +119,14 @@ export const getDayBook = async (req, res) => {
       }
     }
 
+    // Categorize expenses for clean P&L separation vs Daybook cash flow
+    const operatingExpenses = expenses.filter(e => !e.expenseType || e.expenseType === 'operating');
+    const ownerDrawings = expenses.filter(e => e.expenseType === 'drawings');
+    const ownerInvestments = expenses.filter(e => e.expenseType === 'personal_investment');
+    const securityDeposits = expenses.filter(e => e.expenseType === 'security_deposit');
+    const bankInterestPaid = expenses.filter(e => e.expenseType === 'bank_interest_paid');
+    const bankInterestReceived = expenses.filter(e => e.expenseType === 'bank_interest_received');
+
     // Combine and send everything back
     res.status(200).json({
       success: true,
@@ -95,6 +135,12 @@ export const getDayBook = async (req, res) => {
         bills: billsWithCustomerStatus,
         purchases,
         expenses,
+        operatingExpenses,
+        ownerDrawings,
+        ownerInvestments,
+        securityDeposits,
+        bankInterestPaid,
+        bankInterestReceived,
         partyTransactions,
         salaries,
         pagination: {

@@ -11,15 +11,235 @@ import {
   DollarSign,
   Receipt,
   RefreshCw,
+  Search,
+  FileText,
+  Boxes,
+  Users,
+  ShieldCheck,
+  Building,
+  ArrowRight,
+  Sparkles,
+  Layers,
+  BookOpen
 } from "lucide-react";
 import api from "../../services/api";
 
 const ReportsPage = () => {
   const [reportType, setReportType] = useState("income");
   const [dateRange, setDateRange] = useState("month");
+  const [reportCategoryTab, setReportCategoryTab] = useState("all");
+  const [reportSearchQuery, setReportSearchQuery] = useState("");
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  const reportDirectory = [
+    // 1. Sales & Revenue
+    {
+      id: "daybook",
+      category: "sales",
+      title: "Day Book (Daily Sales)",
+      desc: "Today's cash, credit, UPI sales & expenses in a single register",
+      path: "/reports/daybook",
+      icon: Calendar,
+      color: "bg-blue-50 text-blue-700 border-blue-200",
+      badge: "Essential"
+    },
+    {
+      id: "billwise",
+      category: "sales",
+      title: "Bill-wise Sales Register",
+      desc: "Detailed bill-by-bill invoice history with payment status",
+      path: "/reports/billwise",
+      icon: FileText,
+      color: "bg-indigo-50 text-indigo-700 border-indigo-200",
+      badge: "Invoices"
+    },
+    {
+      id: "profitloss",
+      category: "sales",
+      title: "Profit & Loss Statement",
+      desc: "Net business profit/loss, total revenue vs operating expenses",
+      path: "/reports/profitloss",
+      icon: TrendingUp,
+      color: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      badge: "Financial"
+    },
+    {
+      id: "sitewise",
+      category: "sales",
+      title: "Sitewise Project Sales",
+      desc: "Track supplies and billings for specific construction sites",
+      path: "/reports/sitewise",
+      icon: Building,
+      color: "bg-purple-50 text-purple-700 border-purple-200",
+      badge: "Projects"
+    },
+    {
+      id: "analytics",
+      category: "sales",
+      title: "Graphical Analytics",
+      desc: "Visual charts of monthly revenue, top categories & trends",
+      path: "/reports/analytics",
+      icon: BarChart3,
+      color: "bg-cyan-50 text-cyan-700 border-cyan-200",
+      badge: "Visual"
+    },
+
+    // 2. Stock & Inventory
+    {
+      id: "itemwise",
+      category: "inventory",
+      title: "Item-wise Sales & Stock",
+      desc: "Item sales volume, remaining inventory balance & margin",
+      path: "/reports/itemwise",
+      icon: Boxes,
+      color: "bg-amber-50 text-amber-700 border-amber-200",
+      badge: "Stock"
+    },
+    {
+      id: "supplier-ledger",
+      category: "inventory",
+      title: "Supplier / Purchase Ledger",
+      desc: "Vendor purchases, payments made, goods received & balance",
+      path: "/reports/supplier-ledger",
+      icon: Layers,
+      color: "bg-orange-50 text-orange-700 border-orange-200",
+      badge: "Vendors"
+    },
+    {
+      id: "audit-sheet",
+      category: "inventory",
+      title: "Physical Stock Audit Sheet",
+      desc: "A4 print-ready sheet with variance box for physical godown count",
+      path: "/inventory",
+      icon: BookOpen,
+      color: "bg-teal-50 text-teal-700 border-teal-200",
+      badge: "Excel Export"
+    },
+    {
+      id: "scheme",
+      category: "inventory",
+      title: "Scheme & Loyalty Report",
+      desc: "Active trade discount schemes, reward points & customer benefits",
+      path: "/reports/scheme",
+      icon: Sparkles,
+      color: "bg-pink-50 text-pink-700 border-pink-200",
+      badge: "Rewards"
+    },
+
+    // 3. GST & Tax
+    {
+      id: "gstr1",
+      category: "gst",
+      title: "GSTR-1 Sales Report",
+      desc: "B2B, B2CL, B2CS sales invoices with CGST, SGST & IGST breakdown",
+      path: "/reports/gst",
+      icon: Receipt,
+      color: "bg-green-50 text-green-700 border-green-200",
+      badge: "GSTR-1"
+    },
+    {
+      id: "gstr3b",
+      category: "gst",
+      title: "GSTR-3B Summary",
+      desc: "Monthly outward taxable supplies & Input Tax Credit (ITC) claim summary",
+      path: "/reports/gstr3b",
+      icon: ShieldCheck,
+      color: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      badge: "GSTR-3B"
+    },
+    {
+      id: "product-gst",
+      category: "gst",
+      title: "Product GST / HSN Summary",
+      desc: "HSN-code wise tax rate breakup (0%, 5%, 12%, 18%, 28%)",
+      path: "/reports/product-gst",
+      icon: Receipt,
+      color: "bg-lime-50 text-lime-700 border-lime-200",
+      badge: "HSN Tax"
+    },
+    {
+      id: "eway-bill",
+      category: "gst",
+      title: "E-Way Bill Register",
+      desc: "E-Way bills generated for inter-state & local cargo movement",
+      path: "/reports/eway-bill",
+      icon: FileText,
+      color: "bg-slate-50 text-slate-700 border-slate-200",
+      badge: "E-Way"
+    },
+    {
+      id: "tds-tcs",
+      category: "gst",
+      title: "TDS / TCS Tax Register",
+      desc: "Tax Deducted / Collected at Source ledger for high-value sales",
+      path: "/reports/tds-tcs",
+      icon: DollarSign,
+      color: "bg-yellow-50 text-yellow-700 border-yellow-200",
+      badge: "TDS/TCS"
+    },
+
+    // 4. Parties & Ledgers
+    {
+      id: "partywise",
+      category: "parties",
+      title: "Party-wise Khata Ledger",
+      desc: "Complete customer statement, debit/credit entries & pending balance",
+      path: "/reports/partywise",
+      icon: Users,
+      color: "bg-violet-50 text-violet-700 border-violet-200",
+      badge: "Khata"
+    },
+    {
+      id: "aging",
+      category: "parties",
+      title: "Aging & Overdue Khata",
+      desc: "Credit aging analysis (0-30 days, 30-60 days, 90+ days overdue)",
+      path: "/reports/aging",
+      icon: Calendar,
+      color: "bg-rose-50 text-rose-700 border-rose-200",
+      badge: "Overdue"
+    },
+    {
+      id: "staff-statement",
+      category: "parties",
+      title: "Staff Salary & Statement",
+      desc: "Staff attendance, monthly wages, advance taken & balance payable",
+      path: "/salary/statement",
+      icon: Users,
+      color: "bg-sky-50 text-sky-700 border-sky-200",
+      badge: "Payroll"
+    },
+    {
+      id: "bank-recon",
+      category: "parties",
+      title: "Bank Reconciliation",
+      desc: "Match bank statement with ERP cash & UPI transaction entries",
+      path: "/reports/bank-reconciliation",
+      icon: Building,
+      color: "bg-gray-50 text-gray-700 border-gray-200",
+      badge: "Banking"
+    },
+    {
+      id: "capital-assets",
+      category: "parties",
+      title: "Capital & Fixed Assets Hub",
+      desc: "Opening capital, shop racks/counters, computer assets & startup renovation costs",
+      path: "/capital",
+      icon: Landmark,
+      color: "bg-blue-50 text-blue-700 border-blue-200",
+      badge: "Capital & Assets"
+    }
+  ];
+
+  const filteredDirectory = reportDirectory.filter(r => {
+    const matchesCategory = reportCategoryTab === "all" || r.category === reportCategoryTab;
+    const matchesSearch = !reportSearchQuery || 
+      r.title.toLowerCase().includes(reportSearchQuery.toLowerCase()) ||
+      r.desc.toLowerCase().includes(reportSearchQuery.toLowerCase());
+    return matchesCategory && matchesSearch;
+  });
   
   // Real data states
   const [chartData, setChartData] = useState({
@@ -361,13 +581,102 @@ const ReportsPage = () => {
         </div>
       </div>
 
-      {/* Last Updated */}
-      {lastUpdated && (
-        <div className="flex items-center gap-2 text-sm text-gray-500 bg-gray-100 px-4 py-2 rounded-lg w-fit">
-          <Calendar size={14} />
-          <span>Last updated: {lastUpdated.toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit' })}</span>
+      {/* Last Updated & Quick Stats */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        {lastUpdated && (
+          <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 bg-gray-100 px-3.5 py-1.5 rounded-lg w-fit">
+            <Calendar size={14} />
+            <span>Last updated: {lastUpdated.toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+        )}
+      </div>
+
+      {/* 🌟 MASTER REPORT DIRECTORY & CATEGORY HUB */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-gray-100 pb-4">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <Boxes size={20} className="text-indigo-600" />
+              <span>All Business & Accounting Reports</span>
+              <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-full">
+                {filteredDirectory.length} Reports
+              </span>
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">Click any report to view detailed statements and export to Excel/PDF</p>
+          </div>
+
+          {/* Search Input */}
+          <div className="relative w-full md:w-72">
+            <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search reports (GST, Ledger, DayBook)..."
+              value={reportSearchQuery}
+              onChange={(e) => setReportSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none transition"
+            />
+          </div>
         </div>
-      )}
+
+        {/* Category Filter Pills */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          {[
+            { id: "all", label: "🌟 All Reports" },
+            { id: "sales", label: "📊 Sales & Revenue" },
+            { id: "inventory", label: "📦 Stock & Inventory" },
+            { id: "gst", label: "📑 GST & Tax Reports" },
+            { id: "parties", label: "👥 Parties & Ledgers" }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setReportCategoryTab(tab.id)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+                reportCategoryTab === tab.id
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Report Cards Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pt-2">
+          {filteredDirectory.map(report => {
+            const Icon = report.icon;
+            return (
+              <Link
+                key={report.id}
+                to={report.path}
+                className={`p-3.5 rounded-xl border transition group hover:shadow-md hover:scale-[1.01] flex flex-col justify-between ${report.color}`}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="p-2 bg-white rounded-lg shadow-sm">
+                      <Icon size={18} />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 bg-white/80 rounded-md shadow-xs">
+                      {report.badge}
+                    </span>
+                  </div>
+                  <h3 className="font-extrabold text-sm text-gray-900 group-hover:text-indigo-600 transition">
+                    {report.title}
+                  </h3>
+                  <p className="text-[11px] text-gray-600 mt-1 leading-snug">
+                    {report.desc}
+                  </p>
+                </div>
+
+                <div className="mt-3 pt-2 border-t border-black/5 flex items-center justify-between text-xs font-bold text-gray-700 group-hover:text-indigo-600">
+                  <span>Open Report</span>
+                  <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">

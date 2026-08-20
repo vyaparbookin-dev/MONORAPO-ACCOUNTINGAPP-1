@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import api from "../../services/api";
-import { Calendar, ArrowDownCircle, ArrowUpCircle, Download } from "lucide-react";
+import { Calendar, ArrowDownCircle, ArrowUpCircle, Download, RefreshCw, FileSpreadsheet } from "lucide-react";
 import CustomerSummaryModal from "../../components/modals/CustomerSummaryModal";
 
 export default function DayBookPage() {
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
+  const [period, setPeriod] = useState("today"); // today, yesterday, week, month, quarter, year, custom
+  const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
   const [loading, setLoading] = useState(false);
   const [rawdata, setRawData] = useState(null);
   const [summary, setSummary] = useState({
@@ -19,12 +21,18 @@ export default function DayBookPage() {
   
   useEffect(() => {
     fetchDayBook();
-  }, [selectedDate]);
+  }, [period, startDate, endDate]);
 
   const fetchDayBook = async () => {
     setLoading(true);
     try {
-      const res = await api.get(`/api/daybook?date=${selectedDate}`);
+      let url = `/api/daybook?period=${period}`;
+      if (period === "custom") {
+        url = `/api/daybook?startDate=${startDate}&endDate=${endDate}`;
+      } else if (period === "today") {
+        url = `/api/daybook?date=${startDate}`;
+      }
+      const res = await api.get(url);
       const data = res.data?.data;
       if (data) {
         setRawData(data);
@@ -37,17 +45,53 @@ export default function DayBookPage() {
     }
   };
 
+  const handlePeriodChange = (newPeriod) => {
+    setPeriod(newPeriod);
+    const now = new Date();
+    if (newPeriod === "today") {
+      const todayStr = now.toISOString().split("T")[0];
+      setStartDate(todayStr);
+      setEndDate(todayStr);
+    } else if (newPeriod === "yesterday") {
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+      const yStr = yesterday.toISOString().split("T")[0];
+      setStartDate(yStr);
+      setEndDate(yStr);
+    } else if (newPeriod === "week") {
+      const startOfWeek = new Date(now);
+      const day = now.getDay();
+      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+      startOfWeek.setDate(diff);
+      setStartDate(startOfWeek.toISOString().split("T")[0]);
+      setEndDate(now.toISOString().split("T")[0]);
+    } else if (newPeriod === "month") {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      setStartDate(startOfMonth.toISOString().split("T")[0]);
+      setEndDate(now.toISOString().split("T")[0]);
+    } else if (newPeriod === "quarter") {
+      const currentQuarter = Math.floor(now.getMonth() / 3);
+      const startOfQuarter = new Date(now.getFullYear(), currentQuarter * 3, 1);
+      setStartDate(startOfQuarter.toISOString().split("T")[0]);
+      setEndDate(now.toISOString().split("T")[0]);
+    } else if (newPeriod === "year") {
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+      setStartDate(startOfYear.toISOString().split("T")[0]);
+      setEndDate(now.toISOString().split("T")[0]);
+    }
+  };
+
   const calculateSummary = (data) => {
     let tIn = 0, tOut = 0;
 
-    const cashSales = data.bills.filter(b => b.paymentMethod !== 'credit').reduce((sum, b) => sum + (b.finalAmount || b.total || 0), 0);
-    const partyIn = data.partyTransactions.reduce((sum, t) => sum + (t.credit || 0), 0);
+    const cashSales = (data.bills || []).filter(b => b.paymentMethod !== 'credit').reduce((sum, b) => sum + (b.finalAmount || b.total || 0), 0);
+    const partyIn = (data.partyTransactions || []).reduce((sum, t) => sum + (t.credit || 0), 0);
     tIn = cashSales + partyIn;
 
-    const cashPurchases = data.purchases.reduce((sum, p) => sum + (p.amountPaid || 0), 0);
-    const expenses = data.expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-    const salaries = data.salaries.reduce((sum, s) => sum + (s.amount || 0), 0);
-    const partyOut = data.partyTransactions.reduce((sum, t) => sum + (t.debit || 0), 0);
+    const cashPurchases = (data.purchases || []).reduce((sum, p) => sum + (p.amountPaid || 0), 0);
+    const expenses = (data.expenses || []).reduce((sum, e) => sum + (e.amount || 0), 0);
+    const salaries = (data.salaries || []).reduce((sum, s) => sum + (s.amount || 0), 0);
+    const partyOut = (data.partyTransactions || []).reduce((sum, t) => sum + (t.debit || 0), 0);
     tOut = cashPurchases + expenses + salaries + partyOut;
 
     setSummary({
@@ -59,13 +103,12 @@ export default function DayBookPage() {
 
   const handleTallyExport = async () => {
     try {
-      const res = await api.get(`/api/tally/export?date=${selectedDate}`, { responseType: 'blob' });
-      // Api response can be inside res.data or direct res depending on axios interceptors
+      const res = await api.get(`/api/tally/export?startDate=${startDate}&endDate=${endDate}`, { responseType: 'blob' });
       const blob = new Blob([res.data || res], { type: 'application/xml' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Tally_Daybook_${selectedDate}.xml`;
+      a.download = `Tally_Daybook_${startDate}_to_${endDate}.xml`;
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
@@ -81,27 +124,84 @@ export default function DayBookPage() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto bg-gray-50 min-h-screen">
-      <div className="flex flex-col md:flex-row justify-between items-center mb-8 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">Day Book / Cash Book</h1>
-          <p className="text-gray-500 text-sm">View daily cash flow and transactions</p>
+    <div className="p-6 max-w-6xl mx-auto bg-gray-50 min-h-screen space-y-6">
+      {/* Header & Preset Filter Bar */}
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2">
+              <Calendar className="text-blue-600" size={24} />
+              Day Book / Cash Register
+            </h1>
+            <p className="text-gray-500 text-xs mt-0.5">Track daily cash flow, party collections, purchases & expenses</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleTallyExport}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition shadow-sm"
+            >
+              <Download size={15} /> Tally XML
+            </button>
+            <button 
+              onClick={fetchDayBook}
+              className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition"
+              title="Refresh Daybook"
+            >
+              <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-3 mt-4 md:mt-0">
-          <Calendar className="text-blue-600" />
-          <input 
-            type="date" 
-            className="border p-2 rounded-lg bg-gray-50 font-medium outline-none focus:ring-2 focus:ring-blue-500"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-          />
-          <button 
-            onClick={handleTallyExport}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 transition"
-          >
-            <Download size={18} /> Tally XML
-          </button>
+
+        {/* 1-Click Multi-Period Pills */}
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100">
+          {[
+            { id: "today", label: "📅 Today" },
+            { id: "yesterday", label: "⏮️ Yesterday" },
+            { id: "week", label: "📆 This Week" },
+            { id: "month", label: "🗓️ This Month" },
+            { id: "quarter", label: "📊 This Quarter" },
+            { id: "year", label: "📈 This Year" },
+            { id: "custom", label: "⚙️ Custom Range" },
+          ].map(p => (
+            <button
+              key={p.id}
+              onClick={() => handlePeriodChange(p.id)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
+                period === p.id 
+                  ? "bg-blue-600 text-white shadow-sm" 
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
         </div>
+
+        {/* Custom Date Pickers */}
+        {period === "custom" && (
+          <div className="flex flex-wrap items-center gap-3 p-3 bg-blue-50/60 border border-blue-200 rounded-xl text-xs font-medium">
+            <span className="text-blue-900 font-bold">Select Date Range:</span>
+            <div className="flex items-center gap-2">
+              <label className="text-gray-600">From:</label>
+              <input 
+                type="date" 
+                className="border p-1.5 rounded-lg bg-white font-medium outline-none focus:ring-2 focus:ring-blue-500"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-gray-600">To:</label>
+              <input 
+                type="date" 
+                className="border p-1.5 rounded-lg bg-white font-medium outline-none focus:ring-2 focus:ring-blue-500"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {loading ? (

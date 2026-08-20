@@ -1645,7 +1645,7 @@ const StockAuditModal = ({ products, companyName, onClose }) => {
               onChange={(e) => setOnlyInStock(e.target.checked)}
             />
             <label htmlFor="onlyInStockCheck" className="text-sm text-gray-700 font-medium">
-              Only include in-stock products (स्टॉक > 0 वाले आइटम्स)
+              Only include in-stock products (स्टॉक 0 से अधिक वाले आइटम्स)
             </label>
           </div>
 

@@ -31,7 +31,8 @@ import {
   PenTool,
   Calculator,
   Landmark,
-  AlertTriangle
+  AlertTriangle,
+  Bot
 } from "lucide-react";
 import Footer from "./Footer";
 import { useNavigate, Outlet, useLocation } from "react-router-dom";
@@ -44,6 +45,9 @@ export default function DashboardLayout() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
+  const [calcModalOpen, setCalcModalOpen] = useState(false);
+  const [referralModalOpen, setReferralModalOpen] = useState(false);
+  const [ecosystemModalOpen, setEcosystemModalOpen] = useState(false);
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -125,6 +129,8 @@ export default function DashboardLayout() {
     { icon: BookOpen, label: "Day Book", href: "/reports/daybook", color: "text-rose-500", roles: ['admin'] },
     { icon: Receipt, label: "Salary", href: "/salary", color: "text-cyan-600", roles: ['admin'] },
     { icon: UserCheck, label: "Attendance", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
+    { icon: Bot, label: "AI मुनीम जी", href: "/ai-advisor", color: "text-purple-500", roles: ['admin', 'manager', 'cashier'] },
+    { icon: ShieldCheck, label: "Super Admin Hub", href: "/admin", color: "text-red-500", roles: ['admin'] },
     { icon: Smartphone, label: "Mobile App (Live)", href: "http://localhost:8082", isExternal: true, color: "text-indigo-400", roles: ['admin', 'manager', 'cashier'] },
     { icon: Clock, label: "Laterpad", href: "/laterpad", color: "text-lime-600", roles: ['admin', 'manager', 'cashier'] },
     ...(Array.isArray(selectedCompany?.businessType) && selectedCompany?.businessType.includes('manufacturing') ? [{ icon: Warehouse, label: "Warehouse", href: "/warehouse", color: "text-amber-600", roles: ['admin', 'manager'] }] : []),
@@ -236,8 +242,49 @@ export default function DashboardLayout() {
               </div>
             </div>
 
-            {/* Right Side - Company Selector, Notifications & Profile */}
-            <div className="flex items-center gap-4">
+            {/* Right Side - Header Tools, Company Selector, Notifications & Profile */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* 1. Fast Calculator Button */}
+              <button
+                onClick={() => setCalcModalOpen(true)}
+                className="p-2 bg-gray-100 hover:bg-blue-50 text-gray-700 hover:text-blue-600 rounded-xl transition border border-gray-200 flex items-center gap-1.5 shadow-sm"
+                title="Open Fast Calculator"
+              >
+                <Calculator size={18} />
+                <span className="hidden xl:inline text-xs font-bold">Calculator</span>
+              </button>
+
+              {/* 2. Refer & Earn Cash Tokens (Gift Icon) */}
+              <button
+                onClick={() => setReferralModalOpen(true)}
+                className="px-3 py-2 bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 text-indigo-700 rounded-xl transition border border-indigo-200 flex items-center gap-1.5 shadow-sm"
+                title="Refer & Earn Cash Tokens"
+              >
+                <Gift size={18} className="text-indigo-600 animate-bounce" />
+                <span className="hidden md:inline text-xs font-extrabold text-indigo-900">Refer & Earn</span>
+                <span className="text-[10px] font-black bg-indigo-600 text-white px-1.5 py-0.5 rounded-full">₹500</span>
+              </button>
+
+              {/* 3. Multi-Platform Ecosystem Showcase (Phone & Screen Icon) */}
+              <button
+                onClick={() => setEcosystemModalOpen(true)}
+                className="px-3 py-2 bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 text-emerald-800 rounded-xl transition border border-emerald-200 flex items-center gap-1.5 shadow-sm"
+                title="Mobile, Desktop & Web Features"
+              >
+                <Smartphone size={17} className="text-emerald-600" />
+                <span className="hidden lg:inline text-xs font-extrabold text-emerald-900">All Apps</span>
+              </button>
+
+              {/* 4. AI Munim Ji (Copilot Button) */}
+              <button
+                onClick={() => navigate('/ai-advisor')}
+                className="px-3 py-2 bg-gradient-to-r from-purple-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 text-purple-800 rounded-xl transition border border-purple-200 flex items-center gap-1.5 shadow-sm"
+                title="Ask AI Munim Ji (Smart Business Advisor)"
+              >
+                <Bot size={17} className="text-purple-600" />
+                <span className="hidden md:inline text-xs font-black text-purple-900">AI मुनीम जी</span>
+              </button>
+
               {/* Cloud Sync Toggle */}
               <CloudSyncToggel />
 
@@ -397,6 +444,470 @@ export default function DashboardLayout() {
           <Footer />
         </main>
       </div>
+
+      {/* 1. Quick Calculator Modal */}
+      {calcModalOpen && (
+        <QuickCalculatorModal onClose={() => setCalcModalOpen(false)} />
+      )}
+
+      {/* 2. Refer & Earn Cash Tokens Modal */}
+      {referralModalOpen && (
+        <ReferralCashTokensModal 
+          company={selectedCompany} 
+          onClose={() => setReferralModalOpen(false)} 
+        />
+      )}
+
+      {/* 3. Multi-Platform Ecosystem Showcase Modal */}
+      {ecosystemModalOpen && (
+        <EcosystemShowcaseModal onClose={() => setEcosystemModalOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// SUB-COMPONENTS & MODALS
+// ==========================================
+
+function QuickCalculatorModal({ onClose }) {
+  const [calcInput, setCalcInput] = useState("0");
+  const [calcHistory, setCalcHistory] = useState("");
+
+  const handleDigit = (val) => {
+    setCalcInput((prev) => (prev === "0" ? String(val) : prev + String(val)));
+  };
+
+  const handleOp = (op) => {
+    setCalcHistory(`${calcInput} ${op}`);
+    setCalcInput("0");
+  };
+
+  const handleClear = () => {
+    setCalcInput("0");
+    setCalcHistory("");
+  };
+
+  const handleEqual = () => {
+    try {
+      if (!calcHistory) return;
+      const parts = calcHistory.split(" ");
+      const prevNum = parseFloat(parts[0]);
+      const op = parts[1];
+      const currNum = parseFloat(calcInput);
+      let res = 0;
+      if (op === "+") res = prevNum + currNum;
+      else if (op === "-") res = prevNum - currNum;
+      else if (op === "×" || op === "*") res = prevNum * currNum;
+      else if (op === "÷" || op === "/") res = currNum !== 0 ? prevNum / currNum : 0;
+      else if (op === "%") res = (prevNum * currNum) / 100;
+      setCalcInput(String(Math.round(res * 100) / 100));
+      setCalcHistory("");
+    } catch {
+      setCalcInput("Error");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="bg-slate-900 text-white p-4 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Calculator size={18} className="text-blue-400" />
+            <h3 className="font-bold text-sm">Fast Billing Calculator</h3>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-slate-800 rounded-lg text-gray-400 hover:text-white">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="bg-slate-950 p-4 text-right">
+          <div className="text-xs text-gray-400 h-4 font-mono">{calcHistory}</div>
+          <div className="text-3xl font-extrabold text-emerald-400 font-mono tracking-tight overflow-x-auto">{calcInput}</div>
+        </div>
+        <div className="p-4 grid grid-cols-4 gap-2 bg-slate-50">
+          <button onClick={handleClear} className="col-span-2 p-3 bg-red-100 hover:bg-red-200 text-red-700 font-bold rounded-xl text-sm transition">C</button>
+          <button onClick={() => handleOp("%")} className="p-3 bg-gray-200 hover:bg-gray-300 font-bold rounded-xl text-sm transition">%</button>
+          <button onClick={() => handleOp("÷")} className="p-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition">÷</button>
+
+          {["7", "8", "9"].map(d => (
+            <button key={d} onClick={() => handleDigit(d)} className="p-3 bg-white hover:bg-gray-100 border border-gray-200 font-bold rounded-xl text-sm shadow-sm transition">{d}</button>
+          ))}
+          <button onClick={() => handleOp("×")} className="p-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition">×</button>
+
+          {["4", "5", "6"].map(d => (
+            <button key={d} onClick={() => handleDigit(d)} className="p-3 bg-white hover:bg-gray-100 border border-gray-200 font-bold rounded-xl text-sm shadow-sm transition">{d}</button>
+          ))}
+          <button onClick={() => handleOp("-")} className="p-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition">−</button>
+
+          {["1", "2", "3"].map(d => (
+            <button key={d} onClick={() => handleDigit(d)} className="p-3 bg-white hover:bg-gray-100 border border-gray-200 font-bold rounded-xl text-sm shadow-sm transition">{d}</button>
+          ))}
+          <button onClick={() => handleOp("+")} className="p-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition">+</button>
+
+          <button onClick={() => handleDigit("0")} className="col-span-2 p-3 bg-white hover:bg-gray-100 border border-gray-200 font-bold rounded-xl text-sm shadow-sm transition">0</button>
+          <button onClick={() => handleDigit(".")} className="p-3 bg-white hover:bg-gray-100 border border-gray-200 font-bold rounded-xl text-sm shadow-sm transition">.</button>
+          <button onClick={handleEqual} className="p-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm shadow-sm transition">=</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReferralCashTokensModal({ company, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const [selectedPlanPreview, setSelectedPlanPreview] = useState("pro");
+  const referralCode = company?.referralCode || `${(company?.name || 'SHOP').replace(/[^a-zA-Z]/g, '').slice(0, 6).toUpperCase()}-20OFF`;
+  const shareUrl = `https://vyaparbook.in/join?ref=${referralCode}`;
+  const shareMessage = `नमस्ते! मैं अपनी दुकान के लिए Red Accounting Book ERP सॉफ्टवेयर इस्तेमाल कर रहा हूँ। इसमें फास्ट बिलिंग, स्टॉक मैनेजमेंट, बारकोड और ऑटोमैटिक हिसाब-किताब बहुत आसान है।\n\nमेरे रेफरल कोड *${referralCode}* से जुड़ें और किसी भी पैकेज पर तुरंत फ्लैट 20% का डिस्काउंट पाएं!\nलिंक: ${shareUrl}`;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  const handleWhatsAppShare = () => {
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(shareMessage)}`, '_blank');
+  };
+
+  const planPricing = {
+    offline: { name: "Mobile Offline", original: 299, discounted: 239, save: 60 },
+    online: { name: "Mobile Cloud Hybrid", original: 599, discounted: 479, save: 120 },
+    pro: { name: "Enterprise Pro (Web+Desktop+Mobile)", original: 2999, discounted: 2399, save: 600 }
+  };
+
+  const currentPreview = planPricing[selectedPlanPreview];
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white p-5 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+              <Gift size={22} className="text-yellow-300" />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-base">Refer & Earn (Flat 20% Off + Cash Tokens)</h3>
+              <p className="text-xs text-indigo-100">Earn tokens & 20% discount on every successful referral</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-white/20 rounded-lg text-white/80 hover:text-white transition">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+          {/* Balance & 20% Benefit Card */}
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-amber-800 uppercase tracking-wider">Your Referral Balance</span>
+              <div className="text-2xl font-black text-amber-900 mt-0.5 flex items-center gap-1.5">
+                <span>🪙 500 Tokens</span>
+                <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">Flat 20% Off</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="text-xs text-amber-700 block font-medium">Valid on</span>
+              <span className="text-xs font-bold text-amber-900">All 3 SaaS Plans</span>
+            </div>
+          </div>
+
+          {/* Referral Code Box */}
+          <div>
+            <label className="text-xs font-bold text-gray-600 block mb-1.5 uppercase">Your Unique Referral Code & Link</label>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 bg-gray-50 border-2 border-dashed border-indigo-300 rounded-xl px-4 py-2.5 text-center font-mono font-black text-lg text-indigo-700 tracking-wider">
+                {referralCode}
+              </div>
+              <button 
+                onClick={handleCopy}
+                className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition border border-gray-200"
+              >
+                {copied ? <CheckCircle size={15} className="text-green-600" /> : <BookOpen size={15} />}
+                {copied ? "Copied!" : "Copy Link"}
+              </button>
+            </div>
+          </div>
+
+          {/* 1-Click WhatsApp Share */}
+          <button
+            onClick={handleWhatsAppShare}
+            className="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition"
+          >
+            <span className="text-lg">💬</span>
+            <span>Share on WhatsApp (Code: {referralCode})</span>
+          </button>
+
+          {/* Live 20% Discount Calculator Preview */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+            <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider block mb-2">
+              💡 20% Discount Calculator Preview:
+            </span>
+            <div className="grid grid-cols-3 gap-1.5 mb-3">
+              {[
+                { id: "offline", label: "📱 Offline" },
+                { id: "online", label: "☁️ Cloud" },
+                { id: "pro", label: "🚀 Pro (All 3)" }
+              ].map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => setSelectedPlanPreview(p.id)}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-bold transition ${
+                    selectedPlanPreview === p.id 
+                      ? "bg-indigo-600 text-white shadow-sm" 
+                      : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center justify-between text-xs bg-white p-2.5 rounded-lg border border-slate-200 font-medium">
+              <div>
+                <span className="text-slate-500 line-through">₹{currentPreview.original}</span>
+                <span className="ml-2 font-extrabold text-indigo-700 text-sm">₹{currentPreview.discounted}/yr</span>
+              </div>
+              <span className="bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full text-[11px]">
+                You Save ₹{currentPreview.save} (20% OFF)
+              </span>
+            </div>
+          </div>
+
+          {/* 3-Step Guide */}
+          <div className="border-t border-gray-100 pt-3">
+            <h4 className="text-xs font-extrabold text-gray-700 uppercase tracking-wider mb-2.5">How It Works:</h4>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-slate-50 p-2 rounded-xl border border-gray-100">
+                <span className="w-5 h-5 bg-indigo-100 text-indigo-700 font-bold rounded-full inline-flex items-center justify-center text-[10px] mb-1">1</span>
+                <p className="text-xs font-bold text-gray-800">Share Code</p>
+                <p className="text-[10px] text-gray-500 mt-0.5">Send your code to merchant friends</p>
+              </div>
+              <div className="bg-slate-50 p-2 rounded-xl border border-gray-100">
+                <span className="w-5 h-5 bg-purple-100 text-purple-700 font-bold rounded-full inline-flex items-center justify-center text-[10px] mb-1">2</span>
+                <p className="text-xs font-bold text-gray-800">They Sign Up</p>
+                <p className="text-[10px] text-gray-500 mt-0.5">They get 20% off on first purchase</p>
+              </div>
+              <div className="bg-slate-50 p-2 rounded-xl border border-gray-100">
+                <span className="w-5 h-5 bg-emerald-100 text-emerald-700 font-bold rounded-full inline-flex items-center justify-center text-[10px] mb-1">3</span>
+                <p className="text-xs font-bold text-gray-800">You Get 20% Off</p>
+                <p className="text-[10px] text-gray-500 mt-0.5">Direct 20% discount on your renewal</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EcosystemShowcaseModal({ onClose }) {
+  const [billingPeriod, setBillingPeriod] = useState("3year"); // "1year" or "3year"
+
+  const plans = [
+    {
+      id: "offline",
+      badge: "📱 Mobile Offline Edition",
+      highlight: "Basic / 100% Offline POS",
+      color: "from-blue-600 to-indigo-700",
+      borderColor: "border-blue-200",
+      headerBg: "bg-blue-50 text-blue-900",
+      // Pricing
+      price1Year: 299,
+      first50_1Year: 209,
+      price3Year: 672, // 25% cheaper: 299*3=897 -> 672 (224/yr)
+      first50_3Year: 470, // 30% off on 672
+      pricePerYear3Yr: 224,
+      features: [
+        "⚡ 100% Offline POS Billing: Generate bills anywhere without internet.",
+        "💾 Local SQLite Engine: Zero-lag instant database performance on phone.",
+        "🖨️ Wireless Bluetooth Thermal Printing: 2-inch & 3-inch receipt printing.",
+        "📷 Barcode Camera Scanner: Instant item addition via phone camera.",
+        "📄 Professional PDF Invoices: Clean bills ready to print/save."
+      ]
+    },
+    {
+      id: "online",
+      badge: "☁️ Mobile Cloud Hybrid Edition",
+      highlight: "Single Store + Auto Cloud Backup",
+      color: "from-purple-600 to-indigo-800",
+      borderColor: "border-purple-200",
+      headerBg: "bg-purple-50 text-purple-900",
+      // Pricing
+      price1Year: 599,
+      first50_1Year: 419,
+      price3Year: 1348, // 25% cheaper: 599*3=1797 -> 1348 (449/yr)
+      first50_3Year: 943, // 30% off on 1348
+      pricePerYear3Yr: 449,
+      features: [
+        "☁️ Mobile Offline + Automatic Cloud Backup: 100% data safety.",
+        "🔄 1-Click Cloud Restore: Phone change/chori hone par data kabhi nahi khoyega.",
+        "💬 WhatsApp Invoice Sharing: Send professional PDF bills with payment QR.",
+        "📦 Godown Stock Audit: Check & update stock directly in warehouse.",
+        "⚡ Auto-sync when internet connects + Instant offline speed."
+      ]
+    },
+    {
+      id: "pro",
+      badge: "🚀 Enterprise Pro (Web + Desktop + Mobile)",
+      highlight: "Universal 3-Way Realtime Sync (Recommended)",
+      color: "from-emerald-600 to-teal-800",
+      borderColor: "border-emerald-300 ring-2 ring-emerald-500",
+      headerBg: "bg-emerald-50 text-emerald-900",
+      isPopular: true,
+      // Pricing
+      price1Year: 2999,
+      first50_1Year: 2099,
+      price3Year: 6749, // 25% cheaper: 2999*3=8997 -> 6749 (2249/yr, Save 2248!)
+      first50_3Year: 4724, // 30% off on 6749
+      pricePerYear3Yr: 2249,
+      features: [
+        "🌐💻📱 3-Device Real-time Sync: Mobile + Windows/Mac Desktop + Web Browser.",
+        "⌨️ 100% Keyboard-Driven Desktop POS: Counter billing at lightning speed.",
+        "🌍 Web Live Owner Analytics: Check sales, profits & cashflow from anywhere.",
+        "📊 20+ GSTR Accounting Reports: Tally & CA Excel 1-click export.",
+        "👥 Multi-User Roles & Permissions: Cashier, Manager, Admin controls.",
+        "🏬 Multi-Branch Management: Manage multiple shops under 1 account."
+      ]
+    }
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 flex justify-between items-center">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/30 uppercase tracking-wide">
+                ⏱️ 15 Days Free Trial Active
+              </span>
+              <span className="bg-amber-500/20 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30 uppercase tracking-wide">
+                🎉 First 50 Users: Extra 30% OFF
+              </span>
+            </div>
+            <h3 className="font-extrabold text-lg mt-1">SaaS Plans & Multi-Platform Ecosystem</h3>
+            <p className="text-xs text-gray-300">Choose the perfect edition for your store — Mobile, Desktop & Web</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-800 rounded-lg text-gray-400 hover:text-white transition">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Duration Selector & Launch Banner */}
+        <div className="p-4 bg-slate-50 border-b border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-gray-300 shadow-sm">
+            <button
+              onClick={() => setBillingPeriod("1year")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-extrabold transition ${
+                billingPeriod === "1year" 
+                  ? "bg-slate-900 text-white shadow-sm" 
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              1 Year Plan
+            </button>
+            <button
+              onClick={() => setBillingPeriod("3year")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 ${
+                billingPeriod === "3year" 
+                  ? "bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-sm" 
+                  : "text-emerald-700 hover:text-emerald-900"
+              }`}
+            >
+              <span>3 Years Plan</span>
+              <span className="text-[10px] bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded font-black">25% Cheaper 🔥</span>
+            </button>
+          </div>
+
+          <div className="text-xs text-emerald-800 font-bold bg-emerald-100/70 border border-emerald-200 px-3 py-1.5 rounded-lg">
+            ✨ First 50 Stores: Extra 30% Launch Discount Applied!
+          </div>
+        </div>
+
+        {/* 3 Pricing Cards Grid */}
+        <div className="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
+          {plans.map(plan => {
+            const is3Yr = billingPeriod === "3year";
+            const normalRate = is3Yr ? plan.price3Year : plan.price1Year;
+            const specialRate = is3Yr ? plan.first50_3Year : plan.first50_1Year;
+            const perYearCost = is3Yr ? plan.pricePerYear3Yr : plan.price1Year;
+
+            return (
+              <div 
+                key={plan.id} 
+                className={`bg-white border rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between transition hover:shadow-md ${plan.borderColor}`}
+              >
+                <div>
+                  {/* Card Header */}
+                  <div className={`bg-gradient-to-r ${plan.color} text-white p-4`}>
+                    {plan.isPopular && (
+                      <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider mb-2 inline-block">
+                        ★ Most Powerful
+                      </span>
+                    )}
+                    <h4 className="font-extrabold text-sm leading-tight">{plan.badge}</h4>
+                    <p className="text-[11px] text-white/80 mt-1">{plan.highlight}</p>
+                  </div>
+
+                  {/* Pricing Box */}
+                  <div className="p-4 border-b border-gray-100 bg-slate-50/50">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-2xl font-black text-slate-900">₹{specialRate.toLocaleString()}</span>
+                      <span className="text-xs text-gray-400 line-through">₹{normalRate.toLocaleString()}</span>
+                    </div>
+
+                    <div className="text-[11px] font-bold text-emerald-700 mt-1">
+                      {is3Yr ? (
+                        <span>₹{perYearCost}/year (25% + 30% Cheaper)</span>
+                      ) : (
+                        <span>₹{specialRate}/year (30% Launch Offer)</span>
+                      )}
+                    </div>
+
+                    <div className="text-[10px] text-gray-500 mt-0.5">
+                      {is3Yr ? "Billed for 3 Years (₹" + specialRate + " total)" : "Billed Annually"}
+                    </div>
+                  </div>
+
+                  {/* Feature List */}
+                  <div className="p-4 space-y-2">
+                    <span className="text-[11px] font-extrabold text-gray-700 uppercase tracking-wider block mb-2">Key Features:</span>
+                    {plan.features.map((f, idx) => (
+                      <div key={idx} className="text-xs text-gray-600 flex items-start gap-2 leading-snug">
+                        <span className="text-emerald-600 font-bold mt-0.5">✓</span>
+                        <span>{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Card Footer CTA */}
+                <div className="p-4 pt-0">
+                  <button 
+                    onClick={() => {
+                      alert(`आपने "${plan.badge}" चुना है। आपका 15 दिन का Free Trial एक्टिव है!`);
+                      onClose();
+                    }}
+                    className={`w-full py-2.5 rounded-xl font-extrabold text-xs transition shadow-sm ${
+                      plan.isPopular 
+                        ? "bg-emerald-600 hover:bg-emerald-700 text-white" 
+                        : "bg-slate-900 hover:bg-slate-800 text-white"
+                    }`}
+                  >
+                    Start 15-Day Free Trial →
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer Note */}
+        <div className="p-3 bg-slate-100 border-t border-gray-200 text-center text-xs text-gray-600 font-medium">
+          🔒 100% Data Privacy & Encryption • Free Customer Support on WhatsApp • Cancel Anytime
+        </div>
+      </div>
     </div>
   );
 }
@@ -420,3 +931,4 @@ function NotificationItem({ title, desc, time, color }) {
     </div>
   );
 }
+

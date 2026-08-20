@@ -58,7 +58,9 @@ import brandRoutes from "./src/routes/brandRoutes.js";
 import subCategoryRoutes from "./src/routes/subCategoryRoutes.js";
 import { startCronJobs } from "./src/utils/cronJobs.js";
 import tallyRoutes from "./src/routes/tallyRoutes.js";
-import leadRoutes from "./src/routes/leadRoutes.js";
+import capitalRoutes from "./src/routes/capitalRoutes.js";
+import adminRoutes from "./src/routes/adminRoutes.js";
+import aiAdvisorRoutes from "./src/routes/aiAdvisorRoutes.js";
 import { getProductAnalytics } from "./src/controllers/productAnalyticsController.js";
 import quotationRoutes from "./src/routes/quotationRoutes.js";
 
@@ -152,6 +154,8 @@ app.get("/", (req, res) => res.send("Vyapar Backend Running ✅"));
 const PORT = process.env.PORT || 5001;
 
 app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/ai-advisor", aiAdvisorRoutes);
 app.use("/api/billing", billingRoutes);
 app.use("/api/branch", branchRoutes);
 app.use("/api/company", companyRoutes);
@@ -161,6 +165,7 @@ app.use("/api/attendance", attendanceRoutes);
 app.use("/api/b2b", b2bRoutes);
 app.use("/api/bank-rec", bankRecRoutes);
 app.use("/api/category", categoryRoutes);
+app.use("/api/capital", capitalRoutes);
 app.use("/api/subcategory", subCategoryRoutes);
 app.use("/api/brand", brandRoutes);
 app.use("/api/cloud", cloudRoutes);

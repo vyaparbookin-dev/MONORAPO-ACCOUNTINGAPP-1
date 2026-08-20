@@ -1,38 +1,74 @@
 # Node
 node_modules
-npm-debug.log
-yarn-error.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Environment variables
+# Environment variables & secrets (CRITICAL: NEVER COMMIT)
 .env
 .env.local
+.env.development.local
+.env.test.local
+.env.production.local
 .env.*.local
+*.env
+*.env.backup
 
-# Build output
+# Build outputs
 dist
+dist-ssr
 build
+out
 .next/
 .vercel/
+apps/desktop/dist_electron/
+apps/desktop/dist/
+apps/web/dist/
 
-# Migration & Temporary Folders (As requested)
+# Mobile / Expo
+apps/mobile/.expo/
+apps/mobile/.expo-shared/
+.expo/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Logs & crash reports
+*.log
+logs
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local SQLite & Databases
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Zipped & Archive files
+apps/web/web-src-zip.zip
+apps/backend/src/model-zip.zip
+*.zip
+*.tar.gz
+*.rar
+
+# Migration & Temporary Folders
 migration-cloade-zip-extract/
 mongo-to-supabase-migration-script/
 apps/backend/supabase/
-
-# Build artifacts and logs
-apps/desktop/dist_electron/
-apps/mobile/.expo/
-.expo/
-*.log
-
-# Zipped files
-apps/web/web-src-zip.zip
-apps/backend/src/model-zip.zip
-
-# Local Supabase files
 supabase/
+scratch/
 
-# Scan outputs and temporary files
+# Scan outputs, audit logs and temporary reference files
 audit-report/
 md_all_files/
 scan-output.txt
@@ -41,3 +77,10 @@ script_archive_unused/
 scripts-all/scripts/bulkDelete.txt
 FULL_PROJECT_TREE.txt
 MOBILE_APP_TREE.txt
+*.tmp
+*.bak
+*.backup
+
+# OS files
+.DS_Store
+Thumbs.db

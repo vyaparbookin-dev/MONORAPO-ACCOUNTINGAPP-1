@@ -10,6 +10,7 @@ import CustomerSummaryModal from '../../components/modals/CustomerSummaryModal';
 
 const DayBookScreen = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [period, setPeriod] = useState('today'); // today, yesterday, week, month
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
@@ -28,13 +29,17 @@ const DayBookScreen = () => {
   
   useEffect(() => {
     fetchDayBook();
-  }, [selectedDate]);
+  }, [selectedDate, period]);
 
   const fetchDayBook = async () => {
     setLoading(true);
     try {
-      const dateStr = selectedDate.toISOString().split('T')[0];
-      const response = await getData(`/daybook?date=${dateStr}`);
+      let endpoint = `/daybook?period=${period}`;
+      if (period === 'today') {
+        const dateStr = selectedDate.toISOString().split('T')[0];
+        endpoint = `/daybook?date=${dateStr}`;
+      }
+      const response = await getData(endpoint);
       const data = response.data?.data;
       
       if (data) {
@@ -199,14 +204,26 @@ const DayBookScreen = () => {
         </View>
       </View>
 
-      {showDatePicker && (
-        <DateTimePicker
-          value={selectedDate}
-          mode="date"
-          display="default"
-          onChange={handleDateChange}
-        />
-      )}
+      {/* 1-Click Multi-Period Filter Pills */}
+      <View style={styles.periodPillsContainer}>
+        {[
+          { id: 'today', label: 'Today' },
+          { id: 'yesterday', label: 'Yesterday' },
+          { id: 'week', label: 'This Week' },
+          { id: 'month', label: 'This Month' },
+        ].map(p => (
+          <TouchableOpacity
+            key={p.id}
+            style={[styles.periodPill, period === p.id && styles.activePeriodPill]}
+            onPress={() => setPeriod(p.id)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.periodPillText, period === p.id && styles.activePeriodPillText]}>
+              {p.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
       {loading ? (
         <ActivityIndicator size="large" color="#2563eb" style={{ flex: 1 }} />
@@ -342,6 +359,11 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 10, fontWeight: 'bold' },
   badgeTextNew: { color: '#16a34a' },
   badgeTextReturning: { color: '#2563eb' },
+  periodPillsContainer: { flexDirection: 'row', backgroundColor: '#FFFFFF', padding: 8, borderBottomWidth: 1, borderBottomColor: '#E5E7EB', gap: 6, justifyContent: 'space-around' },
+  periodPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
+  activePeriodPill: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  periodPillText: { fontSize: 12, fontWeight: '700', color: '#4B5563' },
+  activePeriodPillText: { color: '#FFFFFF' }
 });
 
 export default DayBookScreen;

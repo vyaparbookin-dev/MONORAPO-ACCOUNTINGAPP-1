@@ -140,6 +140,10 @@ const QuotationListPage = React.lazy(() => import("./screens/quotation/Quotation
 const CreateQuotationPage = React.lazy(() => import("./screens/quotation/CreateQuotationPage"));
 const QuotationDetailPage = React.lazy(() => import("./screens/quotation/QuotationDetailPage"));
 
+// Super Admin & AI Advisor
+const SuperAdminDashboardPage = React.lazy(() => import("./screens/admin/SuperAdminDashboardPage"));
+const AIBusinessAdvisorPage = React.lazy(() => import("./screens/ai/AIBusinessAdvisorPage"));
+
 const ComingSoonPage = () => (
   <div className="flex items-center justify-center h-full min-h-[400px]">
     <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 text-center">
@@ -294,6 +298,9 @@ const App = () => {
                     <Route path="/reports/bank-reconciliation" element={<BankReconciliationPage />} />
                     <Route path="/reports/eway-bill" element={<EWayBillPage />} />
                     <Route path="/reports/fixed-assets" element={<FixedAssetsPage />} />
+                    <Route path="/capital" element={<FixedAssetsPage />} />
+                    <Route path="/admin" element={<SuperAdminDashboardPage />} />
+                    <Route path="/ai-advisor" element={<AIBusinessAdvisorPage />} />
                     <Route path="/reports/tds-tcs" element={<TdsTcsPage />} />
 
                     {/* Leads */}

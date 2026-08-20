@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Search, Download, Edit, Trash2, DollarSign, Calendar, Tag, PieChart } from "lucide-react";
-import { syncQueue } from "@repo/shared";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
+import api from "../../services/api";
 
 const ExpensesPage = () => {
   const [expenses, setExpenses] = useState([]);
@@ -13,13 +11,9 @@ const ExpensesPage = () => {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
-
-  const defaultCategories = ["rent", "utilities", "supplies", "salary", "travel", "marketing", "other"];
-  const [availableCategories, setAvailableCategories] = useState(defaultCategories);
-
   const [formData, setFormData] = useState({
     title: "",
-    amount: "",
+    amount: 0,
     category: "other",
     description: "",
     date: new Date().toISOString().split('T')[0],
@@ -36,27 +30,11 @@ const ExpensesPage = () => {
   const fetchExpenses = async () => {
     try {
       setLoading(true);
-      let expensesList = [];
-
-      // STRICT OFFLINE FIRST: Only read from SQLite
-      try {
-        expensesList = await dbService.getExpenses();
-      } catch(e) { 
-        console.error("SQLite Read Error:", e); 
-      }
-      
-      // Extremely Safe Sorting to prevent Invalid Date crashes
-      expensesList.sort((a, b) => {
-        const timeA = new Date(a.date || a.createdAt || 0).getTime() || 0;
-        const timeB = new Date(b.date || b.createdAt || 0).getTime() || 0;
-        return timeB - timeA;
-      });
-
+      const response = await api.get("/api/expenses");
+      const expensesList = Array.isArray(response) 
+        ? response 
+        : (Array.isArray(response?.data) ? response.data : (response?.expenses || []));
       setExpenses(expensesList);
-
-      // Update dynamic categories from existing data
-      const uniqueCategories = [...new Set([...defaultCategories, ...(expensesList || []).map(e => e.category?.toLowerCase()).filter(Boolean)])];
-      setAvailableCategories(uniqueCategories);
     } catch (err) {
       console.error("Failed to fetch expenses:", err);
       setExpenses([]); // Error आने पर खाली Array सेट करें ताकि पेज क्रैश ना हो
@@ -83,7 +61,7 @@ const ExpensesPage = () => {
     setEditingId(expense._id);
     setFormData({
       title: expense.title,
-      amount: expense.amount || "",
+      amount: expense.amount,
       category: expense.category,
       description: expense.description,
       date: new Date(expense.date).toISOString().split("T")[0],
@@ -95,7 +73,7 @@ const ExpensesPage = () => {
     setEditingId(null);
     setFormData({
       title: "",
-      amount: "",
+      amount: 0,
       category: "other",
       description: "",
       date: new Date().toISOString().split("T")[0],
@@ -106,68 +84,25 @@ const ExpensesPage = () => {
   const handleAddExpense = async (e) => {
     e.preventDefault();
     try {
-      const expenseAmount = parseFloat(formData.amount) || 0;
-      if (isNaN(expenseAmount) || expenseAmount <= 0) {
-        alert("Please enter a valid expense amount!");
-        return;
-      }
-
-      const payload = { 
-        ...formData, 
-        amount: expenseAmount, 
-        price: expenseAmount, // Safety fallback for SQLite Schema
-        category: formData.category?.toLowerCase() || "other" 
-      };
-
       if (editingId) {
-        const oldExpense = expenses.find(x => x._id === editingId);
-        
-        // 1. Update SQLite
-        await dbService.updateExpense(editingId, payload);
-        
-        // 2. Audit Log
-        await auditService.logAction('UPDATE', 'expense', oldExpense, payload);
-
-        // 3. Sync Queue (Uses entityId for deduplication)
-        await syncQueue.enqueue({ entityId: editingId, entity: 'expense', method: "PUT", url: `/api/expenses/${editingId}`, data: payload });
-        
-        alert("Expense Updated Successfully!");
+        await api.put(`/api/expenses/${editingId}`, formData);
+        alert("Expense updated successfully!");
       } else {
-        const newId = crypto.randomUUID ? crypto.randomUUID() : `EXP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-        const finalPayload = { ...payload, _id: newId, uuid: newId, createdAt: new Date().toISOString() };
-
-        // 1. SQLite Save
-        await dbService.saveExpense(finalPayload);
-        
-        // 2. Audit Log
-        await auditService.logAction('CREATE', 'expense', null, finalPayload);
-
-        // 3. Sync Queue (Cloud me bhejte waqt _id hata dein taaki MongoDB crash na ho)
-        const cloudPayload = { ...payload, uuid: newId, createdAt: finalPayload.createdAt };
-        await syncQueue.enqueue({ entityId: newId, entity: 'expense', method: "POST", url: "/api/expenses", data: cloudPayload });
-        
-        alert("Expense Recorded Successfully!");
+        await api.post("/api/expenses", formData);
+        alert("Expense recorded successfully!");
       }
-      
       fetchExpenses();
       resetForm();
     } catch (err) {
-      console.error("Critical Error saving expense:", err);
-      alert("Something went wrong: " + err.message);
+      console.error("Error saving expense:", err);
+      alert("Error saving expense. Please check connection.");
     }
   };
 
   const handleDelete = async (id) => {
     if (window.confirm("Delete this expense?")) {
       try {
-        const oldExpense = expenses.find(x => x._id === id);
-        
-        await dbService.deleteExpense(id);
-        
-        await auditService.logAction('DELETE', 'expense', oldExpense, null);
-
-        await syncQueue.enqueue({ entityId: id, entity: 'expense', method: "DELETE", url: `/api/expenses/${id}` });
-        
+        await api.delete(`/api/expenses/${id}`);
         fetchExpenses();
       } catch (err) {
         console.error("Error deleting expense:", err);
@@ -186,15 +121,11 @@ const ExpensesPage = () => {
     other: "bg-gray-100 text-gray-800",
   };
 
-  const getCategoryStyle = (cat) => {
-    return categoryColors[cat?.toLowerCase()] || "bg-indigo-100 text-indigo-800";
-  };
-
-  const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+  const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
   const expensesByCategory = {};
   const safeExpenses = Array.isArray(expenses) ? expenses : [];
   safeExpenses.forEach((exp) => {
-    expensesByCategory[exp.category] = (expensesByCategory[exp.category] || 0) + (Number(exp.amount) || Number(exp.price) || 0);
+    expensesByCategory[exp.category] = (expensesByCategory[exp.category] || 0) + (exp.amount || 0);
   });
 
   return (
@@ -240,7 +171,7 @@ const ExpensesPage = () => {
             onChange={(e) => setCategoryFilter(e.target.value)}
           >
             <option value="all">All Categories</option>
-            {availableCategories.map((cat) => (
+            {categories.map((cat) => (
               <option key={cat} value={cat}>
                 {cat.charAt(0).toUpperCase() + cat.slice(1)}
               </option>
@@ -267,40 +198,39 @@ const ExpensesPage = () => {
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={formData.title}
                 onChange={(e) =>
-                  setFormData(prev => ({ ...prev, title: e.target.value }))
+                  setFormData({ ...formData, title: e.target.value })
                 }
                 required
               />
               <input
                 type="number"
                 placeholder="Amount"
-                name="amount"
-                step="any"
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={formData.amount}
                 onChange={(e) =>
-                  setFormData(prev => ({ ...prev, amount: e.target.value }))
+                  setFormData({ ...formData, amount: parseFloat(e.target.value) })
                 }
                 required
               />
-              <div className="relative">
-                <input
-                  list="expense-categories"
-                  placeholder="Category (Select or type new)"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 capitalize"
-                  value={formData.category}
-                  onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-                />
-                <datalist id="expense-categories">
-                  {availableCategories.map((cat) => <option key={cat} value={cat} />)}
-                </datalist>
-              </div>
+              <select
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 capitalize"
+                value={formData.category}
+                onChange={(e) =>
+                  setFormData({ ...formData, category: e.target.value })
+                }
+              >
+                {categories.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                  </option>
+                ))}
+              </select>
               <input
                 type="date"
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={formData.date}
                 onChange={(e) =>
-                  setFormData(prev => ({ ...prev, date: e.target.value }))
+                  setFormData({ ...formData, date: e.target.value })
                 }
               />
               <textarea
@@ -308,7 +238,7 @@ const ExpensesPage = () => {
                 className="col-span-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={formData.description}
                 onChange={(e) =>
-                  setFormData(prev => ({ ...prev, description: e.target.value }))
+                  setFormData({ ...formData, description: e.target.value })
                 }
                 rows="3"
               />
@@ -384,14 +314,15 @@ const ExpensesPage = () => {
                       <td className="px-6 py-4">
                         <span
                           className={`inline-block px-3 py-1 rounded-full text-xs font-semibold capitalize ${
-                            getCategoryStyle(expense.category)
+                            categoryColors[expense.category] ||
+                            categoryColors.other
                           }`}
                         >
-                          {expense.category || 'Other'}
+                          {expense.category}
                         </span>
                       </td>
                       <td className="px-6 py-4 font-bold text-gray-900">
-                        ₹{(Number(expense.amount) || Number(expense.price) || 0).toLocaleString()}
+                        ₹{expense.amount?.toLocaleString()}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2 text-gray-700">
