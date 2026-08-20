@@ -58,6 +58,7 @@ import brandRoutes from "./src/routes/brandRoutes.js";
 import subCategoryRoutes from "./src/routes/subCategoryRoutes.js";
 import { startCronJobs } from "./src/utils/cronJobs.js";
 import tallyRoutes from "./src/routes/tallyRoutes.js";
+import leadRoutes from "./src/routes/leadRoutes.js";
 import capitalRoutes from "./src/routes/capitalRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
 import aiAdvisorRoutes from "./src/routes/aiAdvisorRoutes.js";
