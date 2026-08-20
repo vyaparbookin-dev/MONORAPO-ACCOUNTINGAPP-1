@@ -914,7 +914,7 @@ function EcosystemShowcaseModal({ onClose }) {
 
           <div className="flex items-center gap-2">
             <a
-              href="https://github.com/redaccounting/red-accounting/releases/download/v1.2.0/RedAccounting-Setup-1.2.0.exe"
+              href="https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/download/v1.2.0/Red.Accounting.Book.Setup.1.2.0.exe"
               target="_blank"
               rel="noreferrer"
               className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
@@ -924,7 +924,7 @@ function EcosystemShowcaseModal({ onClose }) {
             </a>
 
             <a
-              href="https://github.com/redaccounting/red-accounting/releases/download/v1.2.0/RedAccounting-1.2.0.apk"
+              href="https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/download/v1.2.0/RedAccounting-1.2.0.apk"
               target="_blank"
               rel="noreferrer"
               className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
