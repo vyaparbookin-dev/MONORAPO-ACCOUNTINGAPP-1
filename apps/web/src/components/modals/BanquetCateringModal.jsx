@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X, Calendar, Users, DollarSign, Plus, CheckCircle, Gift, Sparkles, Building } from "lucide-react";
+import { X, Calendar, Users, DollarSign, Plus, CheckCircle, Gift, Sparkles, Building, Percent, Calculator } from "lucide-react";
 
 export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet }) {
   const [eventName, setEventName] = useState("");
@@ -7,12 +7,18 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet }
   const [customerMobile, setCustomerMobile] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [hallZone, setHallZone] = useState("Main Banquet Hall (AC)");
-  const [totalPax, setTotalPax] = useState(250); // Total Guests
-  const [ratePerPlate, setRatePerPlate] = useState(550); // Per plate rate
+  const [totalPax, setTotalPax] = useState(100); // Total Guests
+  const [ratePerPlate, setRatePerPlate] = useState(700); // Per plate rate
   const [hallRent, setHallRent] = useState(25000); // Hall Rent
   const [decorationCharges, setDecorationCharges] = useState(15000);
   const [djMusicCharges, setDjMusicCharges] = useState(8000);
   const [advanceToken, setAdvanceToken] = useState(20000);
+  
+  // GST Mode: 'itemized' (5% on Food, 18% on Hall/Decor/DJ), 'composite_5' (Flat 5%), 'composite_18' (Flat 18%), 'none' (0%)
+  const [gstMode, setGstMode] = useState("itemized");
+  const [foodGstRate, setFoodGstRate] = useState(5); // 5% for Food / Catering
+  const [servicesGstRate, setServicesGstRate] = useState(18); // 18% for Hall, Decor, DJ
+
   const [menuNotes, setMenuNotes] = useState("Welcome Drink, 3 Starters, 2 Paneer Sabzi, Dal Makhani, 4 Breads, Gulab Jamun & Ice Cream");
 
   if (!isOpen) return null;
@@ -23,7 +29,26 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet }
     (parseFloat(decorationCharges) || 0) +
     (parseFloat(djMusicCharges) || 0);
 
-  const grandTotal = totalFoodAmount + totalExtraCharges;
+  const baseAmount = totalFoodAmount + totalExtraCharges;
+
+  // Calculate GST
+  let foodGst = 0;
+  let servicesGst = 0;
+  let totalGst = 0;
+
+  if (gstMode === "itemized") {
+    foodGst = Math.round((totalFoodAmount * foodGstRate) / 100);
+    servicesGst = Math.round((totalExtraCharges * servicesGstRate) / 100);
+    totalGst = foodGst + servicesGst;
+  } else if (gstMode === "composite_5") {
+    totalGst = Math.round((baseAmount * 5) / 100);
+  } else if (gstMode === "composite_18") {
+    totalGst = Math.round((baseAmount * 18) / 100);
+  } else {
+    totalGst = 0;
+  }
+
+  const grandTotal = baseAmount + totalGst;
   const balancePending = grandTotal - (parseFloat(advanceToken) || 0);
 
   const handleApplyToBill = () => {
@@ -40,16 +65,19 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet }
       total: totalFoodAmount,
       customerName: customerName.trim(),
       customerMobile: customerMobile.trim(),
-      notes: `Event Date: ${eventDate} | Hall: ${hallZone} | Hall Rent: ₹${hallRent} | Decor: ₹${decorationCharges} | DJ: ₹${djMusicCharges} | Advance Paid: ₹${advanceToken} | Balance: ₹${balancePending} | Menu: ${menuNotes}`
+      tax: totalGst,
+      notes: `Event Date: ${eventDate} | Hall: ${hallZone} | Food: ₹${totalFoodAmount} (GST ${gstMode === 'itemized' ? '5%' : gstMode}) | Hall Rent: ₹${hallRent} | Decor: ₹${decorationCharges} | DJ: ₹${djMusicCharges} | Total GST: ₹${totalGst} | Advance Paid: ₹${advanceToken} | Balance: ₹${balancePending} | Menu: ${menuNotes}`
     };
 
     onApplyBanquet(banquetItem, {
       hallRent,
       decorationCharges,
       djMusicCharges,
+      totalGst,
       advanceToken,
       grandTotal,
-      balancePending
+      balancePending,
+      gstMode
     });
     onClose();
   };
@@ -65,11 +93,11 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet }
             </div>
             <div>
               <h2 className="text-lg font-black tracking-wide flex items-center gap-2">
-                <span>बैंक्वेट हॉल व कैटरिंग प्रति प्लेट बुकिंग सिस्टम</span>
+                <span>बैंक्वेट हॉल व कैटरिंग प्रति प्लेट बुकिंग एवं GST सिस्टम</span>
                 <span className="text-[10px] bg-rose-500 text-white px-2 py-0.5 rounded-full font-bold">Banquet & Catering</span>
               </h2>
               <p className="text-xs text-rose-200 font-medium">
-                मेहमानों की संख्या (Pax), प्रति प्लेट रेट, हॉल किराया, डेकोरेशन व एडवांस टोकन
+                मेहमान (Pax) × प्रति प्लेट रेट + हॉल किराया + डेकोरेशन + अलग-अलग GST गणना
               </p>
             </div>
           </div>
@@ -81,8 +109,8 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet }
         {/* Body */}
         <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
           {/* Event & Customer Info */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div className="sm:col-span-2">
               <label className="block text-xs font-bold text-slate-700 mb-1">इवेंट का नाम (Event Name) *</label>
               <input
                 type="text"
@@ -128,7 +156,7 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet }
                   type="number"
                   value={totalPax}
                   onChange={(e) => setTotalPax(e.target.value)}
-                  placeholder="250"
+                  placeholder="100"
                   className="w-full px-3 py-2 text-sm rounded-xl border border-slate-300 font-black text-rose-800 bg-white"
                 />
               </div>
@@ -139,13 +167,13 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet }
                   type="number"
                   value={ratePerPlate}
                   onChange={(e) => setRatePerPlate(e.target.value)}
-                  placeholder="550"
+                  placeholder="700"
                   className="w-full px-3 py-2 text-sm rounded-xl border border-slate-300 font-black text-rose-800 bg-white"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">कुल कैटरिंग रकम (Food Amount)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">कुल खाना रकम (Food Amount)</label>
                 <div className="w-full px-3 py-2 text-sm rounded-xl border border-rose-200 font-black text-rose-900 bg-rose-100 font-mono">
                   ₹{totalFoodAmount.toLocaleString()}
                 </div>
@@ -212,24 +240,106 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet }
             </div>
           </div>
 
+          {/* 3. GST Calculation Settings */}
+          <div className="bg-amber-50/70 p-4 rounded-xl border border-amber-200 space-y-3">
+            <div className="flex justify-between items-center flex-wrap gap-2">
+              <label className="text-xs font-black text-amber-950 uppercase tracking-wide flex items-center gap-1.5">
+                <Percent size={14} className="text-amber-700" />
+                <span>3. GST गणना का प्रकार (GST Calculation Mode)</span>
+              </label>
+
+              <div className="flex items-center gap-1.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setGstMode("itemized")}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                    gstMode === "itemized" ? "bg-amber-600 text-white shadow-sm" : "bg-white text-slate-700 border"
+                  }`}
+                >
+                  अलग-अलग दर (5% खाना + 18% हॉल/सजावट)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGstMode("composite_5")}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                    gstMode === "composite_5" ? "bg-amber-600 text-white shadow-sm" : "bg-white text-slate-700 border"
+                  }`}
+                >
+                  फ्लैट 5% पैकेज
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGstMode("composite_18")}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                    gstMode === "composite_18" ? "bg-amber-600 text-white shadow-sm" : "bg-white text-slate-700 border"
+                  }`}
+                >
+                  फ्लैट 18% पैकेज
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGstMode("none")}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                    gstMode === "none" ? "bg-amber-600 text-white shadow-sm" : "bg-white text-slate-700 border"
+                  }`}
+                >
+                  बिना GST (0%)
+                </button>
+              </div>
+            </div>
+
+            {/* GST Breakdown Table */}
+            {gstMode !== "none" && (
+              <div className="bg-white p-3 rounded-xl border border-amber-200 text-xs space-y-1.5">
+                {gstMode === "itemized" ? (
+                  <>
+                    <div className="flex justify-between text-slate-700">
+                      <span>• खाना कैटरिंग (₹{totalFoodAmount.toLocaleString()}) पर 5% GST:</span>
+                      <span className="font-bold font-mono">₹{foodGst.toLocaleString()} (CGST: ₹{(foodGst/2).toFixed(0)} + SGST: ₹{(foodGst/2).toFixed(0)})</span>
+                    </div>
+                    <div className="flex justify-between text-slate-700">
+                      <span>• हॉल किराया, डेकोरेशन व DJ (₹{totalExtraCharges.toLocaleString()}) पर 18% GST:</span>
+                      <span className="font-bold font-mono">₹{servicesGst.toLocaleString()} (CGST: ₹{(servicesGst/2).toFixed(0)} + SGST: ₹{(servicesGst/2).toFixed(0)})</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex justify-between text-slate-700">
+                    <span>• कुल पैकेज (₹{baseAmount.toLocaleString()}) पर {gstMode === 'composite_5' ? '5%' : '18%'} GST:</span>
+                    <span className="font-bold font-mono">₹{totalGst.toLocaleString()}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-amber-900 font-bold border-t pt-1">
+                  <span>कुल GST टैक्स:</span>
+                  <span className="font-mono">₹{totalGst.toLocaleString()}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Grand Total Summary */}
-          <div className="grid grid-cols-3 gap-3 bg-slate-900 text-white p-4 rounded-xl">
+          <div className="grid grid-cols-4 gap-2 bg-slate-900 text-white p-4 rounded-xl">
             <div className="border-r border-slate-700 pr-2">
-              <p className="text-[11px] text-slate-400 font-medium">कुल बुकिंग बजट (Grand Total)</p>
-              <p className="text-lg font-black text-rose-400 font-mono">₹{grandTotal.toLocaleString()}</p>
-              <p className="text-[10px] text-slate-500">खाना: ₹{totalFoodAmount} + हॉल/एक्स्ट्रा: ₹{totalExtraCharges}</p>
+              <p className="text-[10px] text-slate-400 font-medium">मूल राशि (Base)</p>
+              <p className="text-base font-black text-white font-mono">₹{baseAmount.toLocaleString()}</p>
+              <p className="text-[9px] text-slate-500">खाना + हॉल + DJ</p>
             </div>
 
             <div className="border-r border-slate-700 pr-2">
-              <p className="text-[11px] text-slate-400 font-medium">एडवांस टोकन (Advance Paid)</p>
-              <p className="text-lg font-black text-emerald-400 font-mono">₹{(parseFloat(advanceToken) || 0).toLocaleString()}</p>
-              <p className="text-[10px] text-slate-500">रसीद में कटेगा</p>
+              <p className="text-[10px] text-slate-400 font-medium">कुल GST</p>
+              <p className="text-base font-black text-amber-400 font-mono">₹{totalGst.toLocaleString()}</p>
+              <p className="text-[9px] text-slate-500">{gstMode === 'itemized' ? '5% + 18%' : gstMode}</p>
+            </div>
+
+            <div className="border-r border-slate-700 pr-2">
+              <p className="text-[10px] text-slate-400 font-medium">कुल बिल (Total)</p>
+              <p className="text-base font-black text-rose-400 font-mono">₹{grandTotal.toLocaleString()}</p>
+              <p className="text-[9px] text-slate-500">टैक्स सहित</p>
             </div>
 
             <div>
-              <p className="text-[11px] text-slate-400 font-medium">बाकी रकम (Balance Due)</p>
-              <p className="text-lg font-black text-amber-400 font-mono">₹{balancePending.toLocaleString()}</p>
-              <p className="text-[10px] text-slate-500">इवेंट के दिन देय</p>
+              <p className="text-[10px] text-slate-400 font-medium">बाकी देय (Due)</p>
+              <p className="text-base font-black text-emerald-400 font-mono">₹{balancePending.toLocaleString()}</p>
+              <p className="text-[9px] text-slate-500">टोकन कटकर</p>
             </div>
           </div>
 
