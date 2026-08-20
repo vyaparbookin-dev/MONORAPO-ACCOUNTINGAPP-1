@@ -25,8 +25,9 @@ import { useNavigate } from "react-router-dom";
 import BarcodeScanner from "../../components/BarcodeScanner";
 import SchemeApplyModel from "./SchemeApplyModel";
 import WhatsappSender from "../../components/WhatsappSender";
-import UdharReminder from "../../components/UdharReminder";
 import HardwareDimensionModal from "../../components/modals/HardwareDimensionModal";
+import GarmentsMatrixModal from "../../components/modals/GarmentsMatrixModal";
+import { getBusinessMode } from "../../utils/businessMode";
 import { useCompany } from "../../contexts/CompanyContext";
 
 export default function BillingPage() {
@@ -93,6 +94,8 @@ export default function BillingPage() {
   const [saveToInventory, setSaveToInventory] = useState(false);
   const [showQuickProductModal, setShowQuickProductModal] = useState(false);
   const [showHardwareModal, setShowHardwareModal] = useState(false);
+  const [showGarmentsModal, setShowGarmentsModal] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
   const [quickProduct, setQuickProduct] = useState({ name: '', itemId: '', barcode: '', hsnCode: '', gstRate: '', mrp: '', mrpDiscount: '', purchaseRate: '', purchaseDiscount: '', retailPrice: '', wholesalePrice: '', specialPrice: '', currentStock: '', unit: 'pcs', category: '', itemType: 'general', expiryDate: '', warrantyMonths: '', size: '', color: '' });
   const [unfoundBarcode, setUnfoundBarcode] = useState(null);
   const [showUnfoundModal, setShowUnfoundModal] = useState(false);
@@ -110,6 +113,7 @@ export default function BillingPage() {
   const [loadingMore, setLoadingMore] = useState(false);
 
   const { selectedCompany } = useCompany();
+  const business = getBusinessMode(selectedCompany);
   const gstType = selectedCompany?.gstType || "regular";
   const isComposition = String(gstType).toLowerCase() === "composition";
 
@@ -439,10 +443,13 @@ export default function BillingPage() {
       }
     }
 
+    const matched = inventory.find(p => p.name.toLowerCase() === newItem.name.toLowerCase() || p._id === newItem.productId);
+    const itemImage = newItem.image || matched?.image || "";
+
     const itemTotal = newItem.quantity * (newItem.rate ?? 0);
     const updatedItems = [
       ...formData.items,
-      { ...newItem, total: itemTotal, id: Date.now() },
+      { ...newItem, image: itemImage, total: itemTotal, id: Date.now() },
     ];
 
     const newTotal = updatedItems.reduce((sum, item) => sum + (item.total || 0), 0);
@@ -1150,8 +1157,13 @@ export default function BillingPage() {
                   <div className="md:col-span-3">
                     <div className="flex justify-between items-center mb-1 flex-wrap gap-1">
                       <label className="text-xs font-medium text-gray-600">Item Name</label>
-                      <div className="flex items-center gap-1.5">
-                        <button type="button" onClick={() => setShowHardwareModal(true)} className="text-xs text-emerald-700 hover:text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300 font-bold flex items-center gap-1">📐 Hardware/Paint Calc</button>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {business.isHardware && (
+                          <button type="button" onClick={() => setShowHardwareModal(true)} className="text-xs text-emerald-700 hover:text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300 font-bold flex items-center gap-1">📐 Hardware/Paint Calc</button>
+                        )}
+                        {business.isGarments && (
+                          <button type="button" onClick={() => setShowGarmentsModal(true)} className="text-xs text-purple-700 hover:text-purple-900 bg-purple-50 px-2 py-0.5 rounded border border-purple-300 font-bold flex items-center gap-1">👗 Size/Color Matrix</button>
+                        )}
                         <button type="button" onClick={() => setShowQuickProductModal(true)} className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"><Plus size={12}/> Advanced Tatkal</button>
                       </div>
                     </div>
@@ -1344,12 +1356,24 @@ export default function BillingPage() {
                       {formData.items.map((item) => (
                         <tr key={item.id} className="border-t hover:bg-gray-50">
                           <td className="px-4 py-2">
-                            <input
-                              type="text"
-                              value={item.name}
-                              onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
-                              className="w-full font-medium bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none px-1 py-1"
-                            />
+                            <div className="flex items-center gap-2">
+                              {item.image && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewImage(item.image)}
+                                  className="w-8 h-8 rounded-lg overflow-hidden border border-purple-300 hover:scale-110 transition shrink-0 bg-slate-100 shadow-sm"
+                                  title="डिजाइन फोटो देखें (स्क्रीन पर - बिल पर प्रिंट नहीं होगी)"
+                                >
+                                  <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                                </button>
+                              )}
+                              <input
+                                type="text"
+                                value={item.name}
+                                onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
+                                className="w-full font-medium bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none px-1 py-1"
+                              />
+                            </div>
                             <div className="flex gap-2 mt-1">
                               <input
                                 type="text"
@@ -1867,6 +1891,44 @@ export default function BillingPage() {
         onClose={() => setShowHardwareModal(false)}
         onApplyItem={handleApplyHardwareItem}
       />
+
+      {/* Garments & Footwear Size-Color Matrix Modal */}
+      <GarmentsMatrixModal
+        isOpen={showGarmentsModal}
+        onClose={() => setShowGarmentsModal(false)}
+        onCreated={() => loadInventory()}
+      />
+
+      {/* Design Image Preview Popup (Screen Only - Not Printed) */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div
+            className="bg-white p-4 rounded-2xl max-w-sm w-full shadow-2xl relative border border-slate-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setPreviewImage(null)}
+              className="absolute top-3 right-3 p-1.5 rounded-full bg-slate-900/70 text-white hover:bg-slate-900 transition"
+            >
+              <X size={16} />
+            </button>
+            <div className="w-full h-72 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center border border-slate-200">
+              <img src={previewImage} alt="Design Preview" className="w-full h-full object-contain" />
+            </div>
+            <div className="mt-3 text-center">
+              <span className="text-xs font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-full border border-purple-200">
+                👗 Visual Design Preview
+              </span>
+              <p className="text-[11px] text-slate-500 mt-1 font-medium">
+                (स्क्रीन देखने के लिए — बिल प्रिंट में नहीं छपेगा)
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

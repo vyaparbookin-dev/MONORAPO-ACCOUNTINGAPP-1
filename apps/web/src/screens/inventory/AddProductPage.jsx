@@ -399,8 +399,9 @@ const AddProductPage = () => {
   const showRawMaterial = ['restaurant', 'food', 'cafe', 'bakery', 'manufacturing'].some(i => industry.includes(i));
   const showJewellery = ['jewellery', 'jewelry', 'goldsmith'].some(i => industry.includes(i));
   const showHardware = ['hardware', 'builder', 'construction', 'real estate', 'paint'].some(i => industry.includes(i));
+  const showGarments = ['garment', 'textile', 'cloth', 'fashion', 'footwear', 'shoe', 'apparel', 'boutique', 'saree'].some(i => industry.includes(i));
   const showScienceSports = ['sports', 'science', 'medical', 'pharma', 'gym'].some(i => industry.includes(i));
-  const showAnySpecific = showRawMaterial || showJewellery || showHardware || showScienceSports;
+  const showAnySpecific = showRawMaterial || showJewellery || showHardware || showGarments || showScienceSports;
 
   return (
     <div className="p-6 max-w-2xl mx-auto bg-white rounded-xl shadow">
@@ -763,6 +764,18 @@ const AddProductPage = () => {
                   <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Hardware & Builder</label>
                   <input type="text" placeholder="Brand Name (e.g. Asian Paints)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={form.brand} onChange={(e) => setForm({...form, brand: e.target.value})} />
                   <input type="text" placeholder="Dimensions (e.g. 8x4 ft)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={form.dimensions} onChange={(e) => setForm({...form, dimensions: e.target.value})} />
+                </div>
+              )}
+
+              {/* Garments & Footwear */}
+              {showGarments && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-purple-700 uppercase tracking-wider">👗 Garments & Footwear</label>
+                  <input type="text" placeholder="Size (e.g. M, L, XL, 38, 40 / 7, 8, 9)" className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white" value={form.size || ''} onChange={(e) => setForm({...form, size: e.target.value})} />
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="Color (e.g. Navy Blue)" className="w-1/2 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white" value={form.color || ''} onChange={(e) => setForm({...form, color: e.target.value})} />
+                    <input type="text" placeholder="Style Code" className="w-1/2 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white" value={form.styleCode || ''} onChange={(e) => setForm({...form, styleCode: e.target.value})} />
+                  </div>
                 </div>
               )}
 
