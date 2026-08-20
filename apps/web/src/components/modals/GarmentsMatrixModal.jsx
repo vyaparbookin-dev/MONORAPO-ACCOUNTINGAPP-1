@@ -1,26 +1,35 @@
 import React, { useState } from "react";
-import { X, Sparkles, Shirt, Plus, CheckCircle2, Image as ImageIcon, Trash2 } from "lucide-react";
+import { X, Sparkles, Shirt, Plus, CheckCircle2, Image as ImageIcon, Trash2, Tag } from "lucide-react";
 import api from "../../services/api";
 
-const SIZE_PRESETS = {
-  standard: ["S", "M", "L", "XL", "XXL", "3XL"],
-  waist: ["28", "30", "32", "34", "36", "38", "40", "42"],
-  footwear: ["6", "7", "8", "9", "10", "11"],
-  kids: ["2-3Y", "4-5Y", "6-7Y", "8-9Y", "10-11Y", "12-13Y"],
+const INITIAL_SIZE_PRESETS = {
+  standard: ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL", "Free Size"],
+  waist: ["26", "28", "30", "32", "34", "36", "38", "40", "42", "44", "46"],
+  footwear: ["5", "6", "7", "8", "9", "10", "11", "12"],
+  kids: ["0-1Y", "2-3Y", "4-5Y", "6-7Y", "8-9Y", "10-11Y", "12-13Y", "14-15Y"],
 };
 
-const POPULAR_COLORS = [
+const INITIAL_POPULAR_COLORS = [
   "Black", "White", "Navy Blue", "Sky Blue", "Red", "Maroon",
-  "Olive Green", "Beige", "Grey", "Pink", "Yellow", "Mustard"
+  "Olive Green", "Beige", "Grey", "Pink", "Yellow", "Mustard",
+  "Rani Pink", "Teal", "Pista Green", "Wine", "Mehndi", "Lavender"
 ];
 
 export default function GarmentsMatrixModal({ isOpen, onClose, onCreated }) {
   const [baseName, setBaseName] = useState("");
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("Men's Wear");
+  const [unit, setUnit] = useState("pcs");
   const [sizeType, setSizeType] = useState("standard");
+  const [sizePresets, setSizePresets] = useState(INITIAL_SIZE_PRESETS);
+  const [colorList, setColorList] = useState(INITIAL_POPULAR_COLORS);
   const [selectedSizes, setSelectedSizes] = useState(["M", "L", "XL"]);
   const [selectedColors, setSelectedColors] = useState(["Black", "Navy Blue"]);
+  
+  // Custom Inputs
+  const [customSizeInput, setCustomSizeInput] = useState("");
+  const [customColorInput, setCustomColorInput] = useState("");
+  
   const [costPrice, setCostPrice] = useState("");
   const [sellingPrice, setSellingPrice] = useState("");
   const [mrp, setMrp] = useState("");
@@ -44,6 +53,35 @@ export default function GarmentsMatrixModal({ isOpen, onClose, onCreated }) {
     } else {
       setSelectedColors([...selectedColors, color]);
     }
+  };
+
+  const handleAddCustomSize = (e) => {
+    if (e) e.preventDefault();
+    const trimmed = customSizeInput.trim().toUpperCase();
+    if (!trimmed) return;
+    if (!sizePresets[sizeType].includes(trimmed)) {
+      setSizePresets(prev => ({
+        ...prev,
+        [sizeType]: [...prev[sizeType], trimmed]
+      }));
+    }
+    if (!selectedSizes.includes(trimmed)) {
+      setSelectedSizes(prev => [...prev, trimmed]);
+    }
+    setCustomSizeInput("");
+  };
+
+  const handleAddCustomColor = (e) => {
+    if (e) e.preventDefault();
+    const trimmed = customColorInput.trim();
+    if (!trimmed) return;
+    if (!colorList.some(c => c.toLowerCase() === trimmed.toLowerCase())) {
+      setColorList(prev => [...prev, trimmed]);
+    }
+    if (!selectedColors.includes(trimmed)) {
+      setSelectedColors(prev => [...prev, trimmed]);
+    }
+    setCustomColorInput("");
   };
 
   const handleImageChange = (e) => {
@@ -83,7 +121,7 @@ export default function GarmentsMatrixModal({ isOpen, onClose, onCreated }) {
           sellingPrice: parseFloat(sellingPrice) || 0,
           mrp: parseFloat(mrp) || parseFloat(sellingPrice) || 0,
           currentStock: parseInt(stockPerVariant) || 0,
-          unit: "pcs",
+          unit: unit || "pcs",
           sku: autoSku,
           image: image || undefined,
           isActive: true,
@@ -108,7 +146,7 @@ export default function GarmentsMatrixModal({ isOpen, onClose, onCreated }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
         <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 p-5 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -121,7 +159,7 @@ export default function GarmentsMatrixModal({ isOpen, onClose, onCreated }) {
                 <span className="text-[10px] bg-purple-500 text-white px-2 py-0.5 rounded-full font-bold">1-Click Auto Batch</span>
               </h2>
               <p className="text-xs text-purple-200 font-medium">
-                1-क्लिक में सभी साइज (S, M, L, XL / 38, 40 / 6-10) और कलर वेरिएंट्स बनाएं
+                1-क्लिक में सभी साइज, कलर्स और कस्टम साइज के वेरिएंट्स बनाएं
               </p>
             </div>
           </div>
@@ -136,15 +174,15 @@ export default function GarmentsMatrixModal({ isOpen, onClose, onCreated }) {
         {/* Modal Body */}
         <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
           {/* Base Product Info */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-slate-700 mb-1">प्रोडक्ट का मुख्य नाम</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">प्रोडक्ट का मुख्य नाम *</label>
               <input
                 type="text"
                 value={baseName}
                 onChange={(e) => setBaseName(e.target.value)}
                 placeholder="e.g. Raymond Men's Slim Fit Cotton Shirt"
-                className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 focus:ring-2 focus:ring-purple-500 font-bold text-slate-800"
+                className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-300 focus:ring-2 focus:ring-purple-500 font-bold text-slate-800"
               />
             </div>
 
@@ -155,23 +193,34 @@ export default function GarmentsMatrixModal({ isOpen, onClose, onCreated }) {
                 value={brand}
                 onChange={(e) => setBrand(e.target.value)}
                 placeholder="e.g. Raymond, Zara, Puma"
-                className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 font-medium"
+                className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-300 font-medium"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">इकाई (Unit)</label>
+              <input
+                type="text"
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+                placeholder="pcs, pair, set, thaan"
+                className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-300 font-bold uppercase"
               />
             </div>
           </div>
 
-          {/* Size Set Selection */}
+          {/* Size Set Selection & Custom Size Input */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-black text-slate-900 uppercase tracking-wide">1. साइज सेट चुनें (Sizes)</label>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <label className="text-xs font-black text-slate-900 uppercase tracking-wide">1. साइज सेट चुनें या नया साइज जोड़ें</label>
               <div className="flex items-center gap-1 text-xs">
-                {Object.keys(SIZE_PRESETS).map((key) => (
+                {Object.keys(sizePresets).map((key) => (
                   <button
                     key={key}
                     type="button"
                     onClick={() => {
                       setSizeType(key);
-                      setSelectedSizes(SIZE_PRESETS[key].slice(0, 4));
+                      setSelectedSizes(sizePresets[key].slice(0, 4));
                     }}
                     className={`px-2.5 py-1 rounded-lg font-bold capitalize transition ${
                       sizeType === key ? "bg-purple-600 text-white shadow-sm" : "bg-slate-200 text-slate-700 hover:bg-slate-300"
@@ -183,15 +232,15 @@ export default function GarmentsMatrixModal({ isOpen, onClose, onCreated }) {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              {SIZE_PRESETS[sizeType].map((size) => {
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {sizePresets[sizeType].map((size) => {
                 const isSelected = selectedSizes.includes(size);
                 return (
                   <button
                     key={size}
                     type="button"
                     onClick={() => toggleSize(size)}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-black border transition ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black border transition ${
                       isSelected
                         ? "bg-purple-600 text-white border-purple-600 shadow-sm"
                         : "bg-white text-slate-700 border-slate-300 hover:border-purple-400"
@@ -202,13 +251,32 @@ export default function GarmentsMatrixModal({ isOpen, onClose, onCreated }) {
                 );
               })}
             </div>
+
+            {/* In-Place Custom Size Add */}
+            <div className="flex items-center gap-2 pt-2 border-t border-slate-200/60">
+              <input
+                type="text"
+                value={customSizeInput}
+                onChange={(e) => setCustomSizeInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddCustomSize(e)}
+                placeholder="+ अपना नया साइज लिखें (e.g. 44, 46, Free Size, XXS)"
+                className="px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white flex-1 focus:ring-2 focus:ring-purple-500 font-bold"
+              />
+              <button
+                type="button"
+                onClick={handleAddCustomSize}
+                className="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-800 text-xs font-bold rounded-xl border border-purple-300 flex items-center gap-1"
+              >
+                <Plus size={14} /> साइज जोड़ें
+              </button>
+            </div>
           </div>
 
-          {/* Colors Selection */}
+          {/* Colors Selection & Custom Color Input */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-            <label className="text-xs font-black text-slate-900 uppercase tracking-wide block">2. रंग चुनें (Colors)</label>
-            <div className="flex flex-wrap gap-2">
-              {POPULAR_COLORS.map((color) => {
+            <label className="text-xs font-black text-slate-900 uppercase tracking-wide block">2. रंग चुनें या नया रंग जोड़ें (Colors)</label>
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {colorList.map((color) => {
                 const isSelected = selectedColors.includes(color);
                 return (
                   <button
@@ -226,6 +294,25 @@ export default function GarmentsMatrixModal({ isOpen, onClose, onCreated }) {
                 );
               })}
             </div>
+
+            {/* In-Place Custom Color Add */}
+            <div className="flex items-center gap-2 pt-2 border-t border-slate-200/60">
+              <input
+                type="text"
+                value={customColorInput}
+                onChange={(e) => setCustomColorInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddCustomColor(e)}
+                placeholder="+ अपना नया रंग लिखें (e.g. Teal, Rani Pink, Mehndi, Pista, Wine)"
+                className="px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white flex-1 focus:ring-2 focus:ring-indigo-500 font-bold"
+              />
+              <button
+                type="button"
+                onClick={handleAddCustomColor}
+                className="px-3 py-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-xs font-bold rounded-xl border border-indigo-300 flex items-center gap-1"
+              >
+                <Plus size={14} /> रंग जोड़ें
+              </button>
+            </div>
           </div>
 
           {/* Pricing & Stock Grid */}
@@ -242,7 +329,7 @@ export default function GarmentsMatrixModal({ isOpen, onClose, onCreated }) {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">बिक्री रेट (Sell ₹)</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">बिक्री रेट (Sell ₹) *</label>
               <input
                 type="number"
                 value={sellingPrice}

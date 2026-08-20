@@ -27,6 +27,8 @@ import SchemeApplyModel from "./SchemeApplyModel";
 import WhatsappSender from "../../components/WhatsappSender";
 import HardwareDimensionModal from "../../components/modals/HardwareDimensionModal";
 import GarmentsMatrixModal from "../../components/modals/GarmentsMatrixModal";
+import PharmaBatchModal from "../../components/modals/PharmaBatchModal";
+import RestaurantKotModal from "../../components/modals/RestaurantKotModal";
 import { getBusinessMode } from "../../utils/businessMode";
 import { useCompany } from "../../contexts/CompanyContext";
 
@@ -95,6 +97,8 @@ export default function BillingPage() {
   const [showQuickProductModal, setShowQuickProductModal] = useState(false);
   const [showHardwareModal, setShowHardwareModal] = useState(false);
   const [showGarmentsModal, setShowGarmentsModal] = useState(false);
+  const [showPharmaModal, setShowPharmaModal] = useState(false);
+  const [showRestaurantModal, setShowRestaurantModal] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
   const [quickProduct, setQuickProduct] = useState({ name: '', itemId: '', barcode: '', hsnCode: '', gstRate: '', mrp: '', mrpDiscount: '', purchaseRate: '', purchaseDiscount: '', retailPrice: '', wholesalePrice: '', specialPrice: '', currentStock: '', unit: 'pcs', category: '', itemType: 'general', expiryDate: '', warrantyMonths: '', size: '', color: '' });
   const [unfoundBarcode, setUnfoundBarcode] = useState(null);
@@ -684,6 +688,23 @@ export default function BillingPage() {
     }));
   };
 
+  
+  // NEW: Handle Pharma Batch Item Apply
+  const handleApplyPharmaItem = (pharmaItem) => {
+    setFormData(prev => ({
+      ...prev,
+      items: [...prev.items, { ...pharmaItem, id: Date.now() }]
+    }));
+  };
+
+  // NEW: Handle Restaurant KOT Apply
+  const handleApplyRestaurantKot = (kotData) => {
+    setFormData(prev => ({
+      ...prev,
+      items: [...prev.items, ...kotData.items.map(i => ({ ...i, id: Date.now() + Math.random() }))]
+    }));
+  };
+
   // NEW: Handle Advanced Tatkal Quick Product Creation
   const handleQuickProductSave = async () => {
     if (!quickProduct.name || !quickProduct.retailPrice) return alert("Product Name and Retail Price are required!");
@@ -1163,6 +1184,12 @@ export default function BillingPage() {
                         )}
                         {business.isGarments && (
                           <button type="button" onClick={() => setShowGarmentsModal(true)} className="text-xs text-purple-700 hover:text-purple-900 bg-purple-50 px-2 py-0.5 rounded border border-purple-300 font-bold flex items-center gap-1">👗 Size/Color Matrix</button>
+                        )}
+                        {business.isPharma && (
+                          <button type="button" onClick={() => setShowPharmaModal(true)} className="text-xs text-teal-700 hover:text-teal-900 bg-teal-50 px-2 py-0.5 rounded border border-teal-300 font-bold flex items-center gap-1">💊 Batch & Expiry</button>
+                        )}
+                        {business.isRestaurant && (
+                          <button type="button" onClick={() => setShowRestaurantModal(true)} className="text-xs text-amber-700 hover:text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-300 font-bold flex items-center gap-1">🍽️ Table KOT</button>
                         )}
                         <button type="button" onClick={() => setShowQuickProductModal(true)} className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"><Plus size={12}/> Advanced Tatkal</button>
                       </div>
@@ -1897,6 +1924,23 @@ export default function BillingPage() {
         isOpen={showGarmentsModal}
         onClose={() => setShowGarmentsModal(false)}
         onCreated={() => loadInventory()}
+      />
+
+      
+      {/* Pharma Batch & Expiry Modal */}
+      <PharmaBatchModal
+        isOpen={showPharmaModal}
+        onClose={() => setShowPharmaModal(false)}
+        onApplyItem={handleApplyPharmaItem}
+        inventory={inventory}
+      />
+
+      {/* Restaurant Table & KOT Modal */}
+      <RestaurantKotModal
+        isOpen={showRestaurantModal}
+        onClose={() => setShowRestaurantModal(false)}
+        onApplyKot={handleApplyRestaurantKot}
+        inventory={inventory}
       />
 
       {/* Design Image Preview Popup (Screen Only - Not Printed) */}
