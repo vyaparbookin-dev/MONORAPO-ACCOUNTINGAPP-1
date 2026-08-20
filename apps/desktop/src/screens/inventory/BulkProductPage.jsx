@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { Upload, Download, ArrowRight, Settings2, FileSpreadsheet, History, Undo2, X, Trash2, AlertCircle } from "lucide-react";
 import api from "../../services/api";
 import * as XLSX from "xlsx";
-import { dbService } from "../../services/dbService";
 
 const SYSTEM_FIELDS = [
   { key: "name", label: "Item Name (*Required)" },
@@ -12,10 +11,10 @@ const SYSTEM_FIELDS = [
   { key: "subCategory", label: "Sub Category" },
   { key: "brand", label: "Company / Brand" },
   { key: "hsnCode", label: "HSN Code" },
-  { key: "packing", label: "Packing (e.g. 1x10)" },
-  { key: "unit", label: "Unit (e.g. PCS)" },
-  { key: "secondaryUnit", label: "Unit-2 (Alt Unit)" },
-  { key: "conversionRate", label: "Conversion Rate" },
+  { key: "packing", label: "Packing (e.g. ML, 10x10)" },
+  { key: "unit", label: "Unit 1 (e.g. PCS)" },
+  { key: "secondaryUnit", label: "Unit 2 (e.g. CRT, BOX)" },
+  { key: "conversionRate", label: "Conversion (e.g. 12)" },
   { key: "dpl", label: "DPL (Company Rate)" },
   { key: "costPrice", label: "P.Cost (Without GST)" },
   { key: "costPriceWithTax", label: "P.Cost (With GST)" },
@@ -41,7 +40,6 @@ const BulkProductPage = () => {
   const [uploading, setUploading] = useState(false);
   const [warnings, setWarnings] = useState([]);
 
-  // Undo Upload States
   const [showUndoModal, setShowUndoModal] = useState(false);
   const [undoTimeframe, setUndoTimeframe] = useState("1");
   const [recentProducts, setRecentProducts] = useState([]);
@@ -49,11 +47,8 @@ const BulkProductPage = () => {
 
   const fetchRecentProducts = async (timeframe) => {
     try {
-      let allProds = await dbService.getInventory?.();
-      if(!allProds || allProds.length === 0) {
-        const res = await api.get('/api/inventory').catch(()=>({data:[]}));
-        allProds = res.data?.products || res.data || [];
-      }
+      const res = await api.get('/api/inventory').catch(()=>({data:[]}));
+      const allProds = res.data?.products || res.data || [];
       const safeProds = Array.isArray(allProds) ? allProds : [];
       const hours = parseFloat(timeframe);
       const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
@@ -71,7 +66,6 @@ const BulkProductPage = () => {
     try {
       for (let i = 0; i < recentProducts.length; i += 20) {
         const chunk = recentProducts.slice(i, i + 20);
-        for (const item of chunk) await dbService.deleteProduct?.(item._id || item.uuid).catch(()=>{});
         await Promise.all(chunk.map(item => api.delete(`/api/inventory/${item._id}`).catch(() => null)));
       }
       alert(`Successfully deleted ${recentProducts.length} products!`);
@@ -94,11 +88,14 @@ const BulkProductPage = () => {
       const wb = XLSX.read(bstr, { type: "binary" });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
+      
+      // Use header: "A" to force Excel column letters (A, B, C) as keys
       const rawData = XLSX.utils.sheet_to_json(ws, { header: "A", defval: "" });
       
       if (rawData.length > 1) {
         const excelHeaders = rawData[0]; // Row 1 (Headers)
         const firstDataRow = rawData[1]; // Row 2 (Sample Data)
+        // Empty rows ko ignore karne ka bulletproof logic
         const actualData = rawData.slice(1).filter(row => Object.values(row).some(val => val !== "")); 
         
         const fileColumns = Object.keys(excelHeaders);
@@ -110,7 +107,8 @@ const BulkProductPage = () => {
 
         setHeaders(enhancedHeaders);
         setData(actualData);
-        
+
+        // Smart auto-guess initial mapping
         const initialMapping = {};
         const usedColumns = new Set();
         SYSTEM_FIELDS.forEach(field => {
@@ -118,14 +116,11 @@ const BulkProductPage = () => {
             if (usedColumns.has(col)) return false;
             const hText = String(excelHeaders[col]).toLowerCase().trim();
             
-            // Exact matches first
             if (hText === field.key.toLowerCase()) return true;
-            
-            // Field-specific patterns with multiple variations
             if (field.key === 'name' && ((hText.includes('item') && hText.includes('name')) || hText === 'product' || hText === 'product name')) return true;
             if (field.key === 'category' && (hText.includes('category') || hText.includes('group'))) return true;
             if (field.key === 'brand' && (hText.includes('brand') || hText.includes('company') || hText.includes('manufacturer'))) return true;
-            if (field.key === 'unit' && (hText.includes('unit') || hText === 'uom')) return true;
+            if (field.key === 'unit' && (hText.includes('unit') && (!hText.includes('2') && !hText.includes('secondary')) || hText === 'uom')) return true;
             if (field.key === 'mrp' && (hText.includes('mrp') || hText.includes('maximum retail price'))) return true;
             if (field.key === 'gstRate' && (hText.includes('gst') || hText.includes('tax') || hText === 'gst %' || hText === 'gst%')) return true;
             if (field.key === 'costPriceWithTax' && (hText.includes('cost') || hText.includes('landing') || hText.includes('purchase rate')) && (hText.includes('with gst') || hText.includes('inc') || hText.includes('tax') || hText.includes('+'))) return true;
@@ -133,20 +128,19 @@ const BulkProductPage = () => {
             if (field.key === 'sellingPrice' && (hText.includes('selling') || hText.includes('rate 1') || hText.includes('sale price') || hText.includes('selling price') || hText === 'rate1' || hText.includes('retail price'))) return true;
             if (field.key === 'wholesalePrice' && (hText.includes('wholesale') || hText.includes('rate 2') || hText === 'rate2')) return true;
             if (field.key === 'dealerPrice' && (hText.includes('dealer') || hText.includes('rate 3') || hText === 'rate3')) return true;
-            if (field.key === 'currentStock' && (hText.includes('stock') || hText.includes('opening') || hText.includes('current stock') || hText.includes('opening balance') || hText.includes('initial stock') || hText.includes('starting stock') || hText.includes('physical stock'))) return true;
-            if (field.key === 'minimumStock' && (hText.includes('min') || hText.includes('minimum') || hText.includes('safety stock') || hText.includes('reorder level'))) return true;
-            if (field.key === 'maximumStock' && (hText.includes('max') || hText.includes('maximum') || hText.includes('reorder max') || hText.includes('maximum stock'))) return true;
-            if (field.key === 'secondaryUnit' && ((hText.includes('unit') && (hText.includes('2') || hText.includes('secondary'))) || hText.includes('alt'))) return true;
+            if (field.key === 'currentStock' && (hText.includes('stock') || hText.includes('opening') || hText.includes('current stock'))) return true;
+            if (field.key === 'minimumStock' && (hText.includes('min') || hText.includes('minimum') || hText.includes('safety stock'))) return true;
+            if (field.key === 'maximumStock' && (hText.includes('max') || hText.includes('maximum'))) return true;
+            if (field.key === 'secondaryUnit' && (hText.includes('unit') && (hText.includes('2') || hText.includes('secondary')) || hText.includes('alt'))) return true;
             if (field.key === 'conversionRate' && (hText.includes('conversion') || hText.includes('conversion rate'))) return true;
             if (field.key === 'hsnCode' && (hText.includes('hsn') || hText.includes('code'))) return true;
-            if (field.key === 'sku' && (hText.includes('sku') || hText.includes('code') || hText.includes('item code') || hText.includes('product code'))) return true;
+            if (field.key === 'sku' && (hText.includes('sku') || hText.includes('code') || hText.includes('item code'))) return true;
             if (field.key === 'barcode' && hText.includes('barcode')) return true;
             if (field.key === 'dpl' && hText.includes('dpl')) return true;
-            if (field.key === 'packing' && (hText.includes('pack') || hText.includes('packing') || hText.includes('carton'))) return true;
+            if (field.key === 'packing' && hText.includes('pack')) return true;
             if (field.key === 'discount' && hText.includes('discount') && !hText.includes('scheme') && !hText.includes('cash') && !hText.includes('cd')) return true;
             if (field.key === 'secondaryDiscount' && (hText.includes('scheme') || hText.includes('secondary') || hText.includes('+'))) return true;
             if (field.key === 'cashDiscount' && (hText.includes('cash') || hText.includes('cd'))) return true;
-            
             return false;
           });
           if (matchedCol) {
@@ -156,7 +150,7 @@ const BulkProductPage = () => {
         });
         
         setMapping(initialMapping);
-        setStep(2); // Step 2 (Mapping) pe le jao
+        setStep(2);
       } else {
         alert("No data found in the Excel file!");
       }
@@ -166,14 +160,19 @@ const BulkProductPage = () => {
 
   const handleUpload = async () => {
     if (data.length === 0) return;
+    
     if (!mapping.name) {
       alert("Error: 'Item Name (*Required)' must be mapped. Please select a column for Item Name.");
       return;
     }
+
     setUploading(true);
     try {
       const res = await api.post("/inventory/import", { products: data, mapping });
-      // Backend se aane wala proper message show karega (Count ke sath)
+      
+      console.log("✅ [BULK UPLOAD SUCCESS] API Response:", res.data);
+
+      if (res.data?.warnings?.length > 0) setWarnings(res.data.warnings);
       alert(res.data?.message || `Successfully processed ${data.length} products!`);
       setStep(1);
       setFile(null);
@@ -196,32 +195,10 @@ const BulkProductPage = () => {
 
   const downloadTemplate = () => {
     const templateData = [
-      {
-        "Item Name": "Example Product",
-        "Item Code": "ITM-001",
-        "Barcode": "890123456789",
-        "Category": "Electronics",
-        "Sub Category": "Mobile Phones",
-        "Brand": "Samsung",
-        "HSN Code": "8517",
-        "Unit": "pcs",
-        "Unit-2": "box",
-        "Conversion Rate": 10,
-        "DPL (Company Rate)": 900,
-        "P.Cost (Without GST)": 1000,
-        "P.Cost (With GST)": 1180,
-        "Selling Price": 1500,
-        "Wholesale Price": 1400,
-        "Dealer Price": 1350,
-        "MRP": 1999,
-        "GST %": 18,
-        "Discount": 5,
-        "Scheme Discount": 2,
-        "Cash Discount": 1,
-        "Opening Stock": 50,
-        "Minimum Stock": 5,
-        "Maximum Stock": 100
-      }
+      {"Item Name": "Example Product", "Item Code": "ITM-001", "Barcode": "890123456789", "Category": "Electronics", "Sub Category": "Accessories",
+      "Brand": "Samsung", "HSN Code": "8517", "Packing": "10x10", "Unit": "pcs", "Unit-2": "box", "Conversion Rate": 10, "DPL (Company Rate)": 900,
+      "P.Cost (Without GST)": 1000, "P.Cost (With GST)": 1180, "Selling Price": 1500, "Wholesale Price": 1400, "Dealer Price": 1350, "MRP": 1999, "Discount": 5, "Scheme Discount": 2, "Cash Discount": 1, "GST %": 18,
+      "Opening Stock": 50, "Minimum Stock": 5, "Maximum Stock": 100}
     ];
     const ws = XLSX.utils.json_to_sheet(templateData);
     const wb = XLSX.utils.book_new();
@@ -233,8 +210,10 @@ const BulkProductPage = () => {
     <div className="p-6 max-w-4xl mx-auto bg-gray-50 min-h-screen">
       <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">Bulk Product Upload</h2>
-          <p className="text-sm text-gray-500">Upload and map your Excel/CSV data manually.</p>
+          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <FileSpreadsheet className="text-green-600" /> Bulk Product Upload
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">Upload and map your Excel/CSV data manually.</p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => { setShowUndoModal(true); fetchRecentProducts("1"); }} className="flex items-center gap-2 text-orange-600 bg-orange-50 px-3 py-2 rounded-lg hover:bg-orange-100 text-sm font-semibold border border-orange-200 transition">
@@ -270,9 +249,8 @@ const BulkProductPage = () => {
             <h3 className="font-bold text-gray-800">Map Your Columns</h3>
           </div>
           <div className="p-6">
-            <p className="text-sm text-gray-600 mb-6">
-              Please match your Excel column names to our System fields. Skip the ones you don't have.
-            </p>
+            <p className="text-sm text-gray-600 mb-2">System ne automatically columns match karne ki koshish ki hai.</p>
+            <p className="text-sm text-red-600 font-medium mb-6">* Agar koi field galat map hui hai (e.g. Duplicate names ki wajah se), toh aap use Dropdown se manually sahi kar sakte hain.</p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[50vh] overflow-y-auto pr-2 mb-6">
               {SYSTEM_FIELDS.map((field) => (
@@ -290,31 +268,6 @@ const BulkProductPage = () => {
                   </select>
                 </div>
               ))}
-            </div>
-            
-            {/* Data Preview Section */}
-            <div className="mt-6 border-t pt-4">
-              <h4 className="font-bold text-gray-800 mb-3">Data Preview (First 5 Rows)</h4>
-              <div className="overflow-x-auto rounded-lg border border-gray-200 bg-gray-50">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      {SYSTEM_FIELDS.filter(f => mapping[f.key]).map(field => (
-                        <th key={field.key} className="p-2 font-semibold text-gray-600 text-left whitespace-nowrap">{field.label.replace(' (*Required)', '')}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white">
-                    {data.slice(0, 5).map((row, rowIndex) => (
-                      <tr key={rowIndex} className="border-b last:border-0">
-                        {SYSTEM_FIELDS.filter(f => mapping[f.key]).map(field => (
-                          <td key={field.key} className="p-2 text-gray-700 whitespace-nowrap">{String(row[mapping[field.key]] ?? '')}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             </div>
 
             <div className="flex justify-between items-center border-t pt-4 mt-6">

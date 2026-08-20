@@ -903,8 +903,40 @@ function EcosystemShowcaseModal({ onClose }) {
           })}
         </div>
 
+        {/* Direct Download Action Bar */}
+        <div className="p-4 bg-slate-900 text-white border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="text-left">
+            <div className="text-xs font-black text-amber-400 flex items-center gap-1.5">
+              <span>🚀 Download Native Apps (v1.2.0)</span>
+            </div>
+            <p className="text-[11px] text-slate-300">Download for Windows PC or Android smartphone</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <a
+              href="https://github.com/redaccounting/red-accounting/releases/download/v1.2.0/RedAccounting-Setup-1.2.0.exe"
+              target="_blank"
+              rel="noreferrer"
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+              title="Download Windows PC Installer"
+            >
+              <span>💻 Download Desktop (.exe)</span>
+            </a>
+
+            <a
+              href="https://github.com/redaccounting/red-accounting/releases/download/v1.2.0/RedAccounting-1.2.0.apk"
+              target="_blank"
+              rel="noreferrer"
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+              title="Download Android APK"
+            >
+              <span>📱 Download Android (.apk)</span>
+            </a>
+          </div>
+        </div>
+
         {/* Footer Note */}
-        <div className="p-3 bg-slate-100 border-t border-gray-200 text-center text-xs text-gray-600 font-medium">
+        <div className="p-2.5 bg-slate-950 border-t border-slate-800 text-center text-[11px] text-gray-400 font-medium">
           🔒 100% Data Privacy & Encryption • Free Customer Support on WhatsApp • Cancel Anytime
         </div>
       </div>

@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Settings2, Save, ArrowDown, ArrowUp } from "lucide-react";
-import { dbService } from "../../services/dbService";
-import { syncQueue } from "@repo/shared";
-import { auditService } from "../../services/auditService";
+import api from "../../services/api";
 
 export default function StockAdjustmentPage() {
   const [products, setProducts] = useState([]);
@@ -23,15 +21,14 @@ export default function StockAdjustmentPage() {
 
   const fetchInitialData = async () => {
     try {
-      setLoading(true);
-      const localProducts = await dbService.getInventory();
-      const localAdjs = await dbService.getAdjustments();
-      setProducts((localProducts || []).map(p => ({...p, _id: p._id || p.uuid})));
-      setAdjustments(localAdjs || []);
+      const [prodRes, adjRes] = await Promise.all([
+        api.get("/api/inventory"),
+        api.get("/api/inventory/adjustments")
+      ]);
+      setProducts(prodRes.data?.products || []);
+      setAdjustments(adjRes.data?.adjustments || []);
     } catch (err) {
       console.error(err);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -41,24 +38,12 @@ export default function StockAdjustmentPage() {
 
     setLoading(true);
     try {
-      const selectedProductInfo = products.find(p => p._id === formData.productId);
-      const newId = crypto.randomUUID ? crypto.randomUUID() : `ADJ-${Date.now()}`;
-      
-      const payload = { ...formData, date: new Date().toISOString(), productName: selectedProductInfo?.name };
-      const finalPayload = { ...payload, _id: newId, uuid: newId };
-
-      // 1. Save Locally (Updates adjustment table AND products table immediately)
-      await dbService.saveAdjustment(finalPayload);
-      await auditService.logAction('CREATE', 'stock_adjustment', null, finalPayload);
-
-      // 2. Queue for Cloud Sync
-      await syncQueue.enqueue({ entityId: newId, entity: 'stock_adjustment', method: 'POST', url: '/api/inventory/adjust', data: finalPayload });
-
-      alert("Stock Adjusted Offline Successfully!");
+      await api.post("/api/inventory/adjust", formData);
+      alert("Stock Adjusted Successfully!");
       setFormData({ productId: "", type: "reduction", quantity: "", reason: "damaged", notes: "" });
       fetchInitialData(); // Refresh list
     } catch (err) {
-      alert(err.message || "Failed to adjust stock");
+      alert(err.response?.data?.message || "Failed to adjust stock");
     } finally {
       setLoading(false);
     }
@@ -149,7 +134,7 @@ export default function StockAdjustmentPage() {
                 {adjustments.map(adj => (
                   <tr key={adj._id} className="border-b hover:bg-gray-50 text-sm">
                     <td className="p-3">{new Date(adj.date).toLocaleDateString()}</td>
-                    <td className="p-3 font-medium text-gray-800">{adj.product_name || adj.productName || "Unknown"}</td>
+                    <td className="p-3 font-medium text-gray-800">{adj.productId?.name || "Unknown"}</td>
                     <td className="p-3">
                       {adj.type === 'addition' 
                         ? <span className="text-green-600 font-bold bg-green-100 px-2 py-1 rounded">Added (+)</span> 

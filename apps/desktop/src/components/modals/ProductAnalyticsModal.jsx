@@ -3,13 +3,10 @@ import api from '../../services/api';
 import { X, Package, TrendingUp, DollarSign, History, ShoppingCart } from 'lucide-react';
 import Loader from '../Loader';
 
-// Dummy auth context hook - replace with your actual implementation
-const useAuth = () => ({ user: { role: 'owner' } }); // DUMMY: 'owner', 'manager', or 'staff'
-
 export default function ProductAnalyticsModal({ productId, onClose }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const { user } = useAuth(); // Get user from auth context
+  const userRole = 'owner'; // DUMMY: Replace with actual user role from context, e.g., const { user } = useAuth(); user.role;
 
   useEffect(() => {
     const fetchAnalytics = async () => {
@@ -56,8 +53,8 @@ export default function ProductAnalyticsModal({ productId, onClose }) {
               <p className="text-sm text-blue-500 font-medium">Current Stock</p>
               <p className="text-2xl font-bold text-blue-600">{product.currentStock} <span className="text-base font-normal">{product.unit}</span></p>
             </div>
-            {/* Show profitability only to owner or manager */}
-            {(user.role === 'owner' || user.role === 'manager') && (
+            {/* Show profitability only to owner */}
+            {userRole === 'owner' && (
               <>
                 <div className="bg-green-50 p-4 rounded-lg">
                   <p className="text-sm text-green-500 font-medium">Profit Margin</p>

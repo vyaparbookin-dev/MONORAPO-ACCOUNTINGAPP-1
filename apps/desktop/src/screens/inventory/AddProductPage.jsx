@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
-import { syncQueue } from "@repo/shared";
-import { dbService } from "../../services/dbService";
 import { Camera as CameraIcon, UploadCloud, X } from "lucide-react";
 import { getGstFlags, normalizeGstType } from "../../utils/gst";
 import { useCompany } from "../../contexts/CompanyContext";
@@ -12,15 +10,16 @@ const AddProductPage = () => {
   const [form, setForm] = useState({
     name: "",
     sku: "",
-    barcode: `ITM${Date.now().toString().slice(-6)}`,
+    barcode: "",
     description: "",
     category: "",
     subCategory: "",
     hsnCode: "",
-    image: "", // Added Image Field
+    image: "",
+    dpl: "",
     costPrice: "",
     costPriceWithTax: "",
-    profitMargin: "",
+    profitMargin: "", // NEW: Profit Margin %
     sellingPrice: "",
     sellingPriceWithTax: "",
     wholesalePrice: "",
@@ -38,12 +37,12 @@ const AddProductPage = () => {
     minimumStock: 10,
     maximumStock: "",
     supplier: "",
-    // Business Specific Fields
+    // New Business Specific Fields
     isRawMaterial: false,
     weight: "",
     purity: "",
     makingChargeType: "fixed",
-    makingCharge: 0,
+    makingCharge: "",
     brand: "",
     dimensions: "",
     materialType: "",
@@ -52,7 +51,6 @@ const AddProductPage = () => {
     warrantyPeriod: "",
   });
   const [inventory, setInventory] = useState([]);
-  const [isSaving, setIsSaving] = useState(false); // State to handle save button disabling
 
   const gstRates = [0, 5, 12, 18, 28];
 
@@ -74,54 +72,46 @@ const AddProductPage = () => {
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        let [localCats, localSubCats, localBrands, localProducts, localUnits] = await Promise.all([
-          dbService.getCategories?.() || Promise.resolve([]),
-          dbService.getSubCategories?.() || Promise.resolve([]),
-          dbService.getBrands?.() || Promise.resolve([]),
-          dbService.getInventory?.() || Promise.resolve([]),
-          dbService.getUnits?.() || Promise.resolve([])
+        const [invRes, catRes, subCatRes, brandRes, unitRes] = await Promise.all([
+          api.get('/api/inventory').catch(() => ({ data: { products: [] } })),
+          api.get('/api/category').catch(() => ({ data: [] })),
+          api.get('/api/subcategory').catch(() => ({ data: [] })),
+          api.get('/api/brand').catch(() => ({ data: [] })),
+          api.get('/api/unit').catch(() => null)
         ]);
+
+        const inventoryList = invRes.data?.products || invRes.data || [];
+        setInventory(inventoryList);
+        const productCats = inventoryList.map(p => p.category).filter(Boolean);
+        const productSubCats = inventoryList.map(p => p.subCategory).filter(Boolean);
+        const productBrands = inventoryList.map(p => p.brand).filter(Boolean);
         
-        // Fallback to Cloud API if local DB is empty
-        if (!localCats.length) {
-          const res = await api.get('/api/category').catch(() => null);
-          if (res) localCats = res.data?.categories || res.data || [];
-        }
-        if (!localSubCats.length) {
-          const res = await api.get('/api/subcategory').catch(() => null);
-          if (res) localSubCats = res.data?.subCategories || res.data || [];
-        }
-        if (!localBrands.length) {
-          const res = await api.get('/api/brand').catch(() => null);
-          if (res) localBrands = res.data?.brands || res.data || [];
-        }
-        if (!localProducts.length) {
-          const res = await api.get('/api/inventory').catch(() => null);
-          if (res) localProducts = res.data?.products || res.data || [];
-        }
-        setInventory(localProducts);
+        // Robust data extractor to prevent crashes
+        const extractNames = (resData, key) => {
+          if (!resData) return [];
+          let list = [];
+          if (Array.isArray(resData[key])) list = resData[key];
+          else if (Array.isArray(resData.data)) list = resData.data;
+          else if (Array.isArray(resData)) list = resData;
+          return list.map(c => typeof c === 'string' ? c : c?.name).filter(Boolean);
+        };
 
-        const masterCats = (Array.isArray(localCats) ? localCats : []).map(c => c.name);
-        const masterSubCats = (Array.isArray(localSubCats) ? localSubCats : []).map(c => c.name);
-        const masterBrands = (Array.isArray(localBrands) ? localBrands : []).map(c => c.name);
-
-        const productCats = (Array.isArray(localProducts) ? localProducts : []).map(p => p.category).filter(Boolean);
-        const productSubCats = (Array.isArray(localProducts) ? localProducts : []).map(p => p.subCategory).filter(Boolean);
-        const productBrands = (Array.isArray(localProducts) ? localProducts : []).map(p => p.brand).filter(Boolean);
+        const masterCats = extractNames(catRes.data, 'categories');
+        const masterSubCats = extractNames(subCatRes.data, 'subCategories');
+        const masterBrands = extractNames(brandRes.data, 'brands');
 
         setCategories([...new Set([...masterCats, ...productCats])]);
         setSubCategories([...new Set([...masterSubCats, ...productSubCats])]);
         setBrands([...new Set([...masterBrands, ...productBrands])]);
+        
         localStorage.removeItem("categories");
         localStorage.removeItem("subCategories");
 
-        if (!localUnits.length) {
-          const unitRes = await api.get('/api/unit').catch(() => null);
-          if (unitRes) localUnits = unitRes.data?.units || unitRes.data || [];
+        if (unitRes) {
+          const fetchedUnits = Array.isArray(unitRes.data?.units) ? unitRes.data.units.map(u => u.name) : Array.isArray(unitRes.data) ? unitRes.data.map(u => u.name) : [];
+          const defaultUnits = ["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"];
+          setUnits([...new Set([...defaultUnits, ...fetchedUnits])]); // Merge defaults so old items don't break
         }
-        const fetchedUnitNames = Array.isArray(localUnits) ? localUnits.map(u => u.name) : [];
-        const defaultUnits = ["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"];
-        setUnits([...new Set([...defaultUnits, ...fetchedUnitNames])]); // Merge defaults so old items don't break
 
       } catch (err) { console.warn("Failed to load dynamic dropdowns", err); }
     };
@@ -234,6 +224,7 @@ const AddProductPage = () => {
         updatedForm.dealerPrice = ""; updatedForm.dealerPriceWithTax = "";
       }
     }
+
     setForm(updatedForm);
   };
 
@@ -280,114 +271,127 @@ const AddProductPage = () => {
     return () => { if (isCameraOpen) stopCamera(); };
   }, [isCameraOpen]);
 
-  // Helper to Cache Categories Locally
-  const cacheCategories = () => {
-    if (form.category) {
-      const prevCat = JSON.parse(localStorage.getItem("categories") || "[]");
-      localStorage.setItem("categories", JSON.stringify([...new Set([...prevCat, form.category])]));
-    }
-    if (form.subCategory) {
-      const prevSub = JSON.parse(localStorage.getItem("subCategories") || "[]");
-      localStorage.setItem("subCategories", JSON.stringify([...new Set([...prevSub, form.subCategory])]));
-    }
-  };
-
   const resetForm = () => {
     setForm({
       name: "", sku: "", barcode: `ITM${Date.now().toString().slice(-6)}`, description: "", category: "", subCategory: "", image: "",
-      hsnCode: "", costPrice: "", costPriceWithTax: "", profitMargin: "", sellingPrice: "",
+      hsnCode: "", dpl: "", costPrice: "", costPriceWithTax: "", profitMargin: "", sellingPrice: "",
       sellingPriceWithTax: "", mrp: "", gstRate: "", unit: "pcs", stock: "",
       secondaryUnit: "", conversionRate: "",
       wholesalePrice: "", wholesalePriceWithTax: "", wholesaleMargin: "",
       dealerPrice: "", dealerPriceWithTax: "", dealerMargin: "",
       minimumStock: 10, maximumStock: "", supplier: "", isRawMaterial: false, weight: "", purity: "",
-      makingChargeType: "fixed", makingCharge: 0, brand: "", dimensions: "",
+      makingChargeType: "fixed", makingCharge: "", brand: "", dimensions: "",
       materialType: "", ageGroup: "", certification: "", warrantyPeriod: "",
     });
-  };
-
-  const saveProductLogic = async () => {
-    if (!form.name || !form.category || (showHSN && !form.hsnCode) || form.costPrice === "" || form.sellingPrice === "") {
-      // HSN Code is now optional, so removed from the required check
-      throw new Error("Please fill all required fields (Name, Category, Cost, Selling Price)");
-    }
-
-    let cleanName = form.name.trim();
-    if (isSaving) return; // Prevent double-submission
-    const extras = [];
-    const nameLower = cleanName.toLowerCase();
-    
-    if (form.dimensions && !nameLower.includes(form.dimensions.trim().toLowerCase())) extras.push(form.dimensions.trim());
-    if (form.purity && !nameLower.includes(form.purity.trim().toLowerCase())) extras.push(form.purity.trim());
-    if (form.weight && !nameLower.includes(String(form.weight).trim().toLowerCase())) extras.push(`${form.weight}g`);
-    
-    if (extras.length > 0) {
-      cleanName = `${cleanName} (${extras.join(' ')})`;
-    }
-
-    const safeInventory = Array.isArray(inventory) ? inventory : [];
-    if (safeInventory.some(p => p.name.toLowerCase().trim() === cleanName.toLowerCase())) {
-      throw new Error(`A product with the name "${cleanName}" already exists!`);
-    }
-
-    setIsSaving(true); // Disable button on save
-    const formatMasterValue = (val, list) => {
-      if (!val) return "";
-      const cleanVal = val.trim();
-      const existing = list.find(item => typeof item === 'string' && item.toLowerCase() === cleanVal.toLowerCase());
-      return existing || (cleanVal.charAt(0).toUpperCase() + cleanVal.slice(1));
-    };
-
-    const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
-    const finalBarcode = form.barcode || `BAR-${finalSku}`;
-    const payload = { ...form, name: cleanName, category: formatMasterValue(form.category, categories) || "General", subCategory: formatMasterValue(form.subCategory, subCategories), brand: formatMasterValue(form.brand, brands), sku: finalSku, barcode: finalBarcode, hsnCode: form.hsnCode || "0000" };
-
-    // 1. Offline First: Local SQLite me turant save karein
-    await dbService.saveProduct({
-        ...payload,
-        name: payload.name,
-        price: parseFloat(payload.sellingPrice) || 0,
-        quantity: parseFloat(payload.stock) || 0,
-        category: payload.category || 'General',
-      });
-
-    // 2. Cloud Sync: Backend par bhejein
-    try {
-      await api.post("/api/inventory", payload);
-    } catch (apiErr) {
-      // Agar Internet nahi hai ya server down hai, toh queue me daal do
-      if (!navigator.onLine || apiErr.message === "Network Error") {
-        syncQueue.enqueue({ method: "POST", url: "/api/inventory", data: payload });
-        console.log("Offline mode: Product queued for sync.");
-      } else {
-        throw apiErr;
-      }
-    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await saveProductLogic();
-      alert("Product added successfully!");
-      navigate("/inventory"); // Using correct path based on common routing
+      if (!form.name || !form.category || (showPurchaseGST && !form.hsnCode) || form.costPrice === "" || form.sellingPrice === "") {
+        return alert("Please fill all required fields (Name, Category, Cost, Selling Price" + (showHSN ? ", and HSN Code" : "") + ")");
+      }
+
+      let cleanName = form.name.trim();
+      const extras = [];
+      const nameLower = cleanName.toLowerCase();
+      
+      if (form.dimensions && !nameLower.includes(form.dimensions.trim().toLowerCase())) extras.push(form.dimensions.trim());
+      if (form.purity && !nameLower.includes(form.purity.trim().toLowerCase())) extras.push(form.purity.trim());
+      if (form.weight && !nameLower.includes(String(form.weight).trim().toLowerCase())) extras.push(`${form.weight}g`);
+      
+      if (extras.length > 0) {
+        cleanName = `${cleanName} (${extras.join(' ')})`;
+      }
+
+      if (inventory.some(p => p.name.toLowerCase().trim() === cleanName.toLowerCase())) {
+        return alert(`Error: A product with the name "${cleanName}" already exists!`);
+      }
+
+      const formatMasterValue = (val, list) => {
+        if (!val) return "";
+        const cleanVal = val.trim();
+        const existing = list.find(item => typeof item === 'string' && item.toLowerCase() === cleanVal.toLowerCase());
+        return existing || (cleanVal.charAt(0).toUpperCase() + cleanVal.slice(1));
+      };
+      
+      const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
+      const finalBarcode = form.barcode || `BAR-${finalSku}`;
+      const payload = { ...form, name: cleanName, dpl: parseFloat(form.dpl) || 0, category: formatMasterValue(form.category, categories) || "General", subCategory: formatMasterValue(form.subCategory, subCategories), brand: formatMasterValue(form.brand, brands), sku: finalSku, barcode: finalBarcode, hsnCode: form.hsnCode || "0000" };
+
+      // Desktop: Local SQLite Offline Guarantee
+      if (window.electron && window.electron.db) {
+        await window.electron.db.saveProduct({
+          ...payload,
+          name: payload.name,
+          price: parseFloat(payload.sellingPrice) || 0,
+          quantity: parseFloat(payload.stock) || 0,
+          category: payload.category || "General",
+          subCategory: payload.subCategory || ""
+        });
+      }
+
+      await api.post("/api/inventory", payload).catch(() => {}); // Catch silent for offline
+      alert("Product saved successfully!");
+      navigate("/inventory");
     } catch (err) {
       console.error(err);
-      alert("Error adding product: " + (err.response?.data?.message || err.message));
+      if (!navigator.onLine) navigate("/inventory"); // Go back even if offline
     }
   };
 
   const handleSaveAndAddAnother = async (e) => {
     e.preventDefault();
     try {
-      await saveProductLogic();
+      if (!form.name || !form.category || (showPurchaseGST && !form.hsnCode) || form.costPrice === "" || form.sellingPrice === "") {
+        return alert("Please fill all required fields (Name, Category, Cost, Selling Price" + (showHSN ? ", and HSN Code" : "") + ")");
+      }
+
+      let cleanName = form.name.trim();
+      const extras = [];
+      const nameLower = cleanName.toLowerCase();
+      
+      if (form.dimensions && !nameLower.includes(form.dimensions.trim().toLowerCase())) extras.push(form.dimensions.trim());
+      if (form.purity && !nameLower.includes(form.purity.trim().toLowerCase())) extras.push(form.purity.trim());
+      if (form.weight && !nameLower.includes(String(form.weight).trim().toLowerCase())) extras.push(`${form.weight}g`);
+      
+      if (extras.length > 0) {
+        cleanName = `${cleanName} (${extras.join(' ')})`;
+      }
+
+      if (inventory.some(p => p.name.toLowerCase().trim() === cleanName.toLowerCase())) {
+        return alert(`Error: A product with the name "${cleanName}" already exists!`);
+      }
+
+      const formatMasterValue = (val, list) => {
+        if (!val) return "";
+        const cleanVal = val.trim();
+        const existing = list.find(item => typeof item === 'string' && item.toLowerCase() === cleanVal.toLowerCase());
+        return existing || (cleanVal.charAt(0).toUpperCase() + cleanVal.slice(1));
+      };
+      
+      const finalSku = form.sku || form.hsnCode || `SKU-${Date.now().toString().slice(-6)}`;
+      const finalBarcode = form.barcode || `BAR-${finalSku}`;
+      const payload = { ...form, name: cleanName, category: formatMasterValue(form.category, categories) || "General", subCategory: formatMasterValue(form.subCategory, subCategories), brand: formatMasterValue(form.brand, brands), sku: finalSku, barcode: finalBarcode, hsnCode: form.hsnCode || "0000" };
+
+      // Desktop: Local SQLite Offline Guarantee
+      if (window.electron && window.electron.db) {
+        await window.electron.db.saveProduct({
+          ...payload,
+          name: payload.name,
+          price: parseFloat(payload.sellingPrice) || 0,
+          quantity: parseFloat(payload.stock) || 0,
+          category: payload.category || "General",
+          subCategory: payload.subCategory || ""
+        });
+      }
+
+      await api.post("/api/inventory", payload).catch(() => {}); // Catch silent for offline
       alert("Product saved! You can now add another one.");
       resetForm();
     } catch (err) {
       console.error(err);
       alert("Error adding product: " + (err.response?.data?.message || err.message));
-    } finally {
-      setIsSaving(false); // Re-enable button
     }
   };
 
@@ -482,14 +486,13 @@ const AddProductPage = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Category *</label>
+            <label className="block text-sm font-medium text-gray-700">Category</label>
             <input
               list="category-list"
               className="w-full border p-2 rounded mt-1 focus:ring-2 focus:ring-blue-500 outline-none"
               value={form.category}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
               placeholder="Type or select a category"
-              required
             />
             <datalist id="category-list">
               {categories.map(c => <option key={c} value={c} />)}
@@ -540,7 +543,16 @@ const AddProductPage = () => {
           )}
 
           {/* Base Costs & GST */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">DPL (Company Rate)</label>
+              <input
+                type="number"
+                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                value={form.dpl}
+                onChange={(e) => setForm({ ...form, dpl: e.target.value })}
+              />
+            </div>
             {showPurchaseGST && (
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">GST Rate (%)</label>
@@ -774,11 +786,11 @@ const AddProductPage = () => {
           <button type="button" onClick={() => navigate(-1)} className="flex-1 bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200">
             Cancel
           </button>
-          <button type="button" onClick={handleSaveAndAddAnother} disabled={isSaving} className="flex-1 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-medium disabled:opacity-50">
-            {isSaving ? 'Saving...' : 'Save & Add Another'}
+          <button type="button" onClick={handleSaveAndAddAnother} className="flex-1 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-medium">
+            Save & Add Another
           </button>
-          <button type="submit" disabled={isSaving} className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-medium disabled:opacity-50">
-          {isSaving ? 'Saving...' : 'Save Product'}
+          <button type="submit" className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-medium">
+          Save Product
         </button>
         </div>
       </form>

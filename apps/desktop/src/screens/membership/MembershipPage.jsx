@@ -27,6 +27,7 @@ const MembershipPage = () => {
       resetForm();
     } catch (err) {
       console.error("Error saving membership:", err);
+      alert("Error saving membership. Please check connection.");
     }
   };
 
@@ -76,6 +77,7 @@ const MembershipPage = () => {
       setMemberships(response.data || []);
     } catch (err) {
       console.error("Failed to fetch memberships:", err);
+      // क्रैश होने से बचाएं
       setMemberships([]);
     } finally {
       setLoading(false);

@@ -1,6 +1,6 @@
 {
   "name": "red-accounting-desktop",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Desktop client for Red Accounting",
   "author": "Red Accounting Team",
   "main": "main.cjs",
@@ -74,6 +74,6 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
-    "asar": false
+    "asar": true
   }
 }

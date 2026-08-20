@@ -2,12 +2,14 @@ import React, { useState, useEffect } from "react";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
 import { ShoppingCart, RefreshCw } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const LowStockReportPage = () => {
   const [lowStockItems, setLowStockItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
+  const navigate = useNavigate();
+  
   const fetchLowStockReport = async () => {
     setLoading(true);
     setError(null);
@@ -27,8 +29,7 @@ const LowStockReportPage = () => {
   }, []);
 
   const handleCreatePurchaseOrder = (item) => {
-    // This will be implemented in the next feature (Quick Purchase Order)
-    alert(`Creating Purchase Order for: ${item.name}`);
+    navigate('/inventory/purchase-orders/create', { state: { item } });
   };
 
   return (

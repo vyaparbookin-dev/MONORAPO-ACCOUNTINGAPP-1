@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Edit, Trash2, Search, ChevronDown, Settings, Users, Shield, Globe, Database, Scale, MessageCircle } from "lucide-react";
+import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
-import { syncQueue } from "@repo/shared";
 import ImportHistoryManager from "../../components/ImportHistoryManager";
 
 export default function SettingsPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("parties");
   const [parties, setParties] = useState([]);
+  const [units, setUnits] = useState([]);
   const [categories, setCategories] = useState([]);
   const [subCategories, setSubCategories] = useState([]);
   const [brands, setBrands] = useState([]);
@@ -33,12 +32,6 @@ export default function SettingsPage() {
     address: "",
     gstNumber: "",
     contactPerson: "",
-  });
-
-  const [unitForm, setUnitForm] = useState({
-    name: "",
-    shortCode: "",
-    description: "",
   });
 
   const [categoryForm, setCategoryForm] = useState({
@@ -66,15 +59,11 @@ export default function SettingsPage() {
   const loadParties = async () => {
     try {
       setLoading(true);
-      let res = dbService.getCustomers ? await dbService.getCustomers().catch(() => null) : null;
-      if (!res || !Array.isArray(res) || res.length === 0) {
-        const apiRes = await api.get("/api/party").catch(() => null);
-        res = apiRes?.data?.parties || apiRes?.parties || apiRes?.data || [];
-      }
-      setParties((Array.isArray(res) ? res : []).map(p => ({ ...p, _id: p.uuid || p._id })));
+      const response = await api.get("/api/party");
+      const data = response?.data?.parties || response?.parties || response?.data;
+      setParties(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Error loading parties:", err);
-      setParties([]);
     } finally {
       setLoading(false);
     }
@@ -83,15 +72,11 @@ export default function SettingsPage() {
   const loadCategories = async () => {
     try {
       setLoading(true);
-      let res = dbService.getCategories ? await dbService.getCategories().catch(() => null) : null;
-      if (!res || !Array.isArray(res) || res.length === 0) {
-        const apiRes = await api.get("/api/category").catch(() => null);
-        res = apiRes?.data?.categories || apiRes?.categories || apiRes?.data || [];
-      }
-      setCategories((Array.isArray(res) ? res : []).map(c => ({ ...c, _id: c.uuid || c._id })));
+      const response = await api.get("/api/category");
+      const data = response?.data?.categories || response?.categories || response?.data;
+      setCategories(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Error loading categories:", err);
-      setCategories([]);
     } finally {
       setLoading(false);
     }
@@ -100,51 +85,39 @@ export default function SettingsPage() {
   const loadSubCategories = async () => {
     try {
       setLoading(true);
-      let res = dbService.getSubCategories ? await dbService.getSubCategories().catch(() => null) : null;
-      if (!res || !Array.isArray(res) || res.length === 0) {
-        const apiRes = await api.get("/api/subcategory").catch(() => null);
-        res = apiRes?.data?.subCategories || apiRes?.subCategories || apiRes?.data || [];
-      }
-      setSubCategories((Array.isArray(res) ? res : []).map(c => ({ ...c, _id: c.uuid || c._id })));
+      const response = await api.get("/api/subcategory");
+      const data = response?.data?.subCategories || response?.subCategories || response?.data;
+      setSubCategories(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error("Error loading subCategories:", err);
-      setSubCategories([]);
-    } finally { setLoading(false); }
+      console.error("Error loading sub-categories:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const loadBrands = async () => {
     try {
       setLoading(true);
-      let res = dbService.getBrands ? await dbService.getBrands().catch(() => null) : null;
-      if (!res || !Array.isArray(res) || res.length === 0) {
-        const apiRes = await api.get("/api/brand").catch(() => null);
-        res = apiRes?.data?.brands || apiRes?.brands || apiRes?.data || [];
-      }
-      setBrands((Array.isArray(res) ? res : []).map(c => ({ ...c, _id: c.uuid || c._id })));
+      const response = await api.get("/api/brand");
+      const data = response?.data?.brands || response?.brands || response?.data;
+      setBrands(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Error loading brands:", err);
-      setBrands([]);
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAddParty = async (e) => {
     e.preventDefault();
     try {
       if (editingPartyId) {
-        if (dbService.updateCustomer) await dbService.updateCustomer(editingPartyId, partyForm);
-        await auditService.logAction('UPDATE', 'party', { _id: editingPartyId }, partyForm);
-        await syncQueue.enqueue({ entityId: editingPartyId, entity: 'party', method: 'PUT', url: `/api/party/${editingPartyId}`, data: partyForm });
-        alert("Party updated offline successfully!");
+        await api.put(`/api/party/${editingPartyId}`, partyForm);
+        alert("Party updated successfully!");
       } else {
-        const newId = crypto.randomUUID ? crypto.randomUUID() : `PARTY-${Date.now()}`;
-        const payload = { ...partyForm, _id: newId, uuid: newId };
-        
-        await dbService.addCustomer(payload);
-        await auditService.logAction('CREATE', 'party', null, payload);
-        await syncQueue.enqueue({ entityId: newId, entity: 'party', method: 'POST', url: '/api/party', data: payload });
-        alert("Party added offline successfully!");
+        await api.post("/api/party", partyForm);
+        alert("Party added successfully!");
       }
-
       setPartyForm({
         name: "",
         partyType: "both",
@@ -157,7 +130,7 @@ export default function SettingsPage() {
       setShowPartyForm(false);
       loadParties();
     } catch (err) {
-      alert(err.message || "Error adding party");
+      alert(err.error || err.response?.data?.message || "Error saving party");
     }
   };
 
@@ -178,23 +151,18 @@ export default function SettingsPage() {
     e.preventDefault();
     try {
       if (editingCategoryId) {
-        if (dbService.updateCategory) await dbService.updateCategory(editingCategoryId, categoryForm);
-        await syncQueue.enqueue({ entityId: editingCategoryId, entity: 'category', method: 'PUT', url: `/api/category/${editingCategoryId}`, data: categoryForm });
-        alert("Category updated offline successfully!");
+        await api.put(`/api/category/${editingCategoryId}`, categoryForm);
+        alert("Category updated successfully!");
       } else {
-        const newId = crypto.randomUUID ? crypto.randomUUID() : `CAT-${Date.now()}`;
-        const payload = { ...categoryForm, _id: newId, uuid: newId };
-        if (dbService.saveCategory) await dbService.saveCategory(payload);
-        await syncQueue.enqueue({ entityId: newId, entity: 'category', method: 'POST', url: '/api/category', data: payload });
-        alert("Category added offline successfully!");
+        await api.post("/api/category", categoryForm);
+        alert("Category added successfully!");
       }
-
       setCategoryForm({ name: "", description: "" });
       setEditingCategoryId(null);
       setShowCategoryForm(false);
       loadCategories();
     } catch (err) {
-      alert(err.message || "Error adding category");
+      alert(err.error || err.response?.data?.message || "Error saving category");
     }
   };
 
@@ -208,21 +176,19 @@ export default function SettingsPage() {
     e.preventDefault();
     try {
       if (editingSubCategoryId) {
-        if (dbService.updateSubCategory) await dbService.updateSubCategory(editingSubCategoryId, subCategoryForm);
-        await syncQueue.enqueue({ entityId: editingSubCategoryId, entity: 'subCategory', method: 'PUT', url: `/api/subcategory/${editingSubCategoryId}`, data: subCategoryForm });
-        alert("Sub-Category updated offline successfully!");
+        await api.put(`/api/subcategory/${editingSubCategoryId}`, subCategoryForm);
+        alert("Sub-Category updated successfully!");
       } else {
-        const newId = crypto.randomUUID ? crypto.randomUUID() : `SUBCAT-${Date.now()}`;
-        const payload = { ...subCategoryForm, _id: newId, uuid: newId };
-        if (dbService.saveSubCategory) await dbService.saveSubCategory(payload);
-        await syncQueue.enqueue({ entityId: newId, entity: 'subCategory', method: 'POST', url: '/api/subcategory', data: payload });
-        alert("Sub-Category added offline successfully!");
+        await api.post("/api/subcategory", subCategoryForm);
+        alert("Sub-Category added successfully!");
       }
       setSubCategoryForm({ name: "", description: "" });
       setEditingSubCategoryId(null);
       setShowSubCategoryForm(false);
       loadSubCategories();
-    } catch (err) { alert(err.message || "Error adding sub-category"); }
+    } catch (err) {
+      alert(err.error || err.response?.data?.message || "Error adding sub-category");
+    }
   };
 
   const handleEditSubCategory = (sub) => {
@@ -235,21 +201,19 @@ export default function SettingsPage() {
     e.preventDefault();
     try {
       if (editingBrandId) {
-        if (dbService.updateBrand) await dbService.updateBrand(editingBrandId, brandForm);
-        await syncQueue.enqueue({ entityId: editingBrandId, entity: 'brand', method: 'PUT', url: `/api/brand/${editingBrandId}`, data: brandForm });
-        alert("Brand updated offline successfully!");
+        await api.put(`/api/brand/${editingBrandId}`, brandForm);
+        alert("Brand updated successfully!");
       } else {
-        const newId = crypto.randomUUID ? crypto.randomUUID() : `BRAND-${Date.now()}`;
-        const payload = { ...brandForm, _id: newId, uuid: newId };
-        if (dbService.saveBrand) await dbService.saveBrand(payload);
-        await syncQueue.enqueue({ entityId: newId, entity: 'brand', method: 'POST', url: '/api/brand', data: payload });
-        alert("Brand added offline successfully!");
+        await api.post("/api/brand", brandForm);
+        alert("Brand added successfully!");
       }
       setBrandForm({ name: "", description: "" });
       setEditingBrandId(null);
       setShowBrandForm(false);
       loadBrands();
-    } catch (err) { alert(err.message || "Error adding brand"); }
+    } catch (err) {
+      alert(err.error || err.response?.data?.message || "Error adding brand");
+    }
   };
 
   const handleEditBrand = (brand) => {
@@ -261,10 +225,7 @@ export default function SettingsPage() {
   const handleDeleteParty = async (id) => {
     if (window.confirm("Delete this party?")) {
       try {
-        const old = parties.find(p => p._id === id);
-        await dbService.deleteCustomer(id);
-        await auditService.logAction('DELETE', 'party', old, null);
-        await syncQueue.enqueue({ entityId: id, entity: 'party', method: 'DELETE', url: `/api/party/${id}` });
+        await api.delete(`/api/party/${id}`);
         loadParties();
       } catch (err) {
         alert("Error deleting party");
@@ -275,8 +236,7 @@ export default function SettingsPage() {
   const handleDeleteCategory = async (id) => {
     if (window.confirm("Delete this category?")) {
       try {
-        await dbService.deleteCategory(id);
-        await syncQueue.enqueue({ entityId: id, entity: 'category', method: 'DELETE', url: `/api/category/${id}` });
+        await api.delete(`/api/category/${id}`);
         loadCategories();
       } catch (err) {
         alert("Error deleting category");
@@ -287,20 +247,22 @@ export default function SettingsPage() {
   const handleDeleteSubCategory = async (id) => {
     if (window.confirm("Delete this sub-category?")) {
       try {
-        if (dbService.deleteSubCategory) await dbService.deleteSubCategory(id);
-        await syncQueue.enqueue({ entityId: id, entity: 'subCategory', method: 'DELETE', url: `/api/subcategory/${id}` });
+        await api.delete(`/api/subcategory/${id}`);
         loadSubCategories();
-      } catch (err) { alert("Error deleting sub-category"); }
+      } catch (err) {
+        alert("Error deleting sub-category");
+      }
     }
   };
 
   const handleDeleteBrand = async (id) => {
     if (window.confirm("Delete this brand?")) {
       try {
-        if (dbService.deleteBrand) await dbService.deleteBrand(id);
-        await syncQueue.enqueue({ entityId: id, entity: 'brand', method: 'DELETE', url: `/api/brand/${id}` });
+        await api.delete(`/api/brand/${id}`);
         loadBrands();
-      } catch (err) { alert("Error deleting brand"); }
+      } catch (err) {
+        alert("Error deleting brand");
+      }
     }
   };
 
@@ -329,7 +291,7 @@ export default function SettingsPage() {
         <button onClick={() => navigate("/settings/backup")} className="p-4 bg-white border rounded-xl shadow-sm hover:shadow-md transition flex flex-col items-center gap-2 text-center">
           <div className="p-2 bg-orange-50 rounded-full text-orange-600"><Database size={24} /></div>
           <span className="font-medium text-gray-700">Backup & Restore</span>
-        </button>        
+        </button>
         <button onClick={() => navigate("/inventory/masters")} className="p-4 bg-white border rounded-xl shadow-sm hover:shadow-md transition flex flex-col items-center gap-2 text-center">
           <div className="p-2 bg-indigo-50 rounded-full text-indigo-600"><Scale size={24} /></div>
           <span className="font-medium text-gray-700">Unit Settings</span>

@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from "react";
 import api from "../../services/api";
 import { X, Gift, Percent, CheckCircle, AlertCircle, Plus, Search, Scan } from "lucide-react";
 import BarcodeScanner from "../../components/BarcodeScanner";
-import { dbService } from "../../services/dbService";
 
 const ScheemApplyModel = ({ isOpen, onClose, cartItems, onApply }) => {
   const [activeTab, setActiveTab] = useState("schemes"); // 'schemes' or 'custom'
@@ -31,21 +30,16 @@ const ScheemApplyModel = ({ isOpen, onClose, cartItems, onApply }) => {
   const fetchSchemes = async () => {
     setLoading(true);
     try {
-      // Offline First: Load Schemes from DB
-      let localSchemes = await dbService.getSchemes?.() || [];
-      
-      if (!localSchemes || localSchemes.length === 0) {
-        const response = await api.get("/api/schemes/active").catch(() => ({ data: [] }));
-        localSchemes = response.data || response || [];
-      }
-      
-      // Fallback mock data if both are empty
+      // Fetch active schemes from backend
+      const response = await api.get("/api/schemes/active");
+      const data = response.data || response;
+      // Fallback mock data if API is empty for demonstration
       const mockSchemes = [
         { _id: "1", name: "Diwali Dhamaka", type: "flat", minAmount: 5000, discountPercent: 10, description: "Flat 10% off on bill above ₹5000" },
         { _id: "2", name: "Buy 1 Get 1 Rice", type: "bogo", triggerProduct: "Rice", freeProduct: "Rice", description: "Buy 1kg Rice get 1kg Free" },
         { _id: "3", name: "Combo Offer", type: "combo", triggerProduct: "Sugar", freeProduct: "Tea", description: "Free Tea packet with 5kg Sugar" }
       ];
-      setSchemes(Array.isArray(localSchemes) && localSchemes.length > 0 ? localSchemes : mockSchemes);
+      setSchemes(Array.isArray(data) && data.length > 0 ? data : mockSchemes);
     } catch (error) {
       console.error("Error fetching schemes:", error);
     } finally {
@@ -55,13 +49,9 @@ const ScheemApplyModel = ({ isOpen, onClose, cartItems, onApply }) => {
 
   const fetchInventory = async () => {
     try {
-      let localInventory = await dbService.getInventory?.() || [];
-      
-      if (!localInventory || localInventory.length === 0) {
-        const response = await api.get("/api/inventory").catch(() => ({ data: { products: [] } }));
-        localInventory = response.data?.products || response.data || [];
-      }
-      setInventory(Array.isArray(localInventory) ? localInventory : []);
+      const response = await api.get("/api/inventory");
+      const data = response.data?.products || response.data || [];
+      setInventory(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Error fetching inventory:", error);
     }

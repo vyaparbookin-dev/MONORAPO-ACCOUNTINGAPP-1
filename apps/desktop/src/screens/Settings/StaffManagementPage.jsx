@@ -1,9 +1,6 @@
 import React, { useState, useEffect } from "react";
 import api from "../../services/api";
-import { UserPlus, Trash2, Shield, Calendar, Clock, FileText, CheckCircle, XCircle, Edit, Save, Lock, Plus, TrendingUp, Target, UploadCloud, User } from "lucide-react";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
-import { syncQueue } from "@repo/shared";
+import { UserPlus, Trash2, Shield, Calendar, Clock, FileText, CheckCircle, XCircle, Edit, Save, Lock, Plus } from "lucide-react";
 
 export default function StaffManagementPage() {
   const [activeTab, setActiveTab] = useState("staff");
@@ -11,8 +8,7 @@ export default function StaffManagementPage() {
   const [loading, setLoading] = useState(false);
   
   // Staff Form
-  const [showStaffForm, setShowStaffForm] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", password: "", role: "cashier", mobileNumber: "", address: "", aadharNumber: "", image: null, baseSalary: "", workingHours: "9", salesTarget: "", incentivePercentage: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", role: "cashier" });
 
   // Attendance State
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split("T")[0]);
@@ -32,9 +28,6 @@ export default function StaffManagementPage() {
   ]);
   const [showRoleForm, setShowRoleForm] = useState(false);
   const [roleForm, setRoleForm] = useState({ name: "", permissions: [] });
-
-  // Performance & Incentives
-  const [performanceStats, setPerformanceStats] = useState([]);
 
   const AVAILABLE_PERMISSIONS = [
     { id: 'dashboard', label: 'Dashboard Access' },
@@ -59,9 +52,6 @@ export default function StaffManagementPage() {
     if (activeTab === 'leaves') {
         loadLeaves(); // Reload leaves when tab is clicked
     }
-    if (activeTab === 'performance' && staff.length > 0) {
-        loadPerformance();
-    }
   }, [activeTab, attendanceDate, staff]);
 
   const loadRoles = async () => {
@@ -77,15 +67,9 @@ export default function StaffManagementPage() {
   const loadStaff = async () => {
     setLoading(true);
     try {
-      // Offline First: Load local users
-      let localStaff = await dbService.getUsers?.() || [];
-      
-      if (!localStaff || localStaff.length === 0) {
-        const res = await api.get("/api/user").catch(() => ({ data: { data: [] } })); 
-        localStaff = res.data?.data || [];
-      }
-      
-      setStaff(localStaff);
+      // Using the correct backend role/user API
+      const res = await api.get("/api/user"); 
+      setStaff(res.data?.data || []);
     } catch (err) {
       console.error("Failed to load staff:", err);
     } finally {
@@ -93,33 +77,13 @@ export default function StaffManagementPage() {
     }
   };
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) return alert("Image size should be less than 2MB");
-      const reader = new FileReader();
-      reader.onloadend = () => setForm({ ...form, image: reader.result });
-      reader.readAsDataURL(file);
-    }
-  };
-
   const handleAddStaff = async (e) => {
     e.preventDefault();
     try {
-      const newId = crypto.randomUUID ? crypto.randomUUID() : `USER-${Date.now()}`;
-      const payload = { ...form, _id: newId, uuid: newId };
-
-      // 1. Save locally
-      if (dbService.saveUser) await dbService.saveUser(payload);
-      
-      await auditService.logAction('CREATE', 'user', null, payload);
-
-      // 2. Queue for Cloud Sync
-      await syncQueue.enqueue({ entityId: newId, entity: 'user', method: "POST", url: "/api/auth/register", data: payload });
-
+      // Using register endpoint to create new user with role
+      await api.post("/api/auth/register", form);
       alert(`Staff member ${form.name} added as ${form.role}!`);
-      setForm({ name: "", email: "", password: "", role: "cashier", mobileNumber: "", address: "", aadharNumber: "", image: null, baseSalary: "", workingHours: "9", salesTarget: "", incentivePercentage: "" });
-      setShowStaffForm(false);
+      setForm({ name: "", email: "", password: "", role: "cashier" });
       loadStaff(); // Refresh the list
     } catch (err) {
       console.error(err);
@@ -130,13 +94,8 @@ export default function StaffManagementPage() {
   const handleDeleteStaff = async (staffId) => {
     if (window.confirm("Are you sure you want to delete this staff member?")) {
       try {
-        const oldStaff = staff.find(s => s._id === staffId);
-        
-        if (dbService.deleteUser) await dbService.deleteUser(staffId);
-        await auditService.logAction('DELETE', 'user', oldStaff, null);
-        await syncQueue.enqueue({ entityId: staffId, entity: 'user', method: "DELETE", url: `/api/user/${staffId}` });
-
-        alert("Staff member deleted offline.");
+        await api.delete(`/api/user/${staffId}`);
+        alert("Staff member deleted.");
         loadStaff(); // Refresh the list
       } catch (err) {
         console.error("Failed to delete staff:", err);
@@ -149,10 +108,7 @@ export default function StaffManagementPage() {
     if (!window.confirm(`Are you sure you want to change this user's role to ${newRole.toUpperCase()}?`)) return;
     setLoading(true);
     try {
-      if (dbService.updateUser) await dbService.updateUser(userId, { role: newRole });
-      await auditService.logAction('UPDATE', 'user_role', { _id: userId }, { role: newRole });
-      await syncQueue.enqueue({ entityId: userId, entity: 'user', method: 'PUT', url: `/api/user/${userId}/role`, data: { role: newRole } });
-      
+      await api.put(`/api/user/${userId}/role`, { role: newRole });
       alert("Role updated successfully!");
       loadStaff();
     } catch (err) {
@@ -163,50 +119,19 @@ export default function StaffManagementPage() {
     }
   };
 
-  const loadPerformance = async () => {
-    setLoading(true);
-    try {
-      const bills = await dbService.getInvoices?.() || [];
-      const stats = staff.map(st => {
-        // Find all bills generated by this staff
-        const staffBills = bills.filter(b => b.salesmanId === st._id);
-        const totalSales = staffBills.reduce((sum, b) => sum + (Number(b.finalAmount) || Number(b.totalAmount) || Number(b.total) || 0), 0);
-        const target = Number(st.salesTarget) || 0;
-        const incentivePct = Number(st.incentivePercentage) || 0;
-        let incentiveEarned = 0;
-        
-        // If target is met (or no target set), calculate % incentive
-        if (target > 0) {
-          if (totalSales >= target) incentiveEarned = (totalSales * incentivePct) / 100;
-        } else {
-           incentiveEarned = (totalSales * incentivePct) / 100;
-        }
-
-        return { ...st, totalSales, incentiveEarned, billsCount: staffBills.length };
-      });
-      setPerformanceStats(stats);
-    } catch (err) {
-      console.error("Failed to load performance", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // --- Attendance Functions ---
   const loadAttendance = async () => {
     setLoading(true);
     try {
-      let fetchedData = await dbService.getAttendance?.(attendanceDate);
-      
-      if (!fetchedData || Object.keys(fetchedData).length === 0) {
-        const res = await api.get(`/api/attendance?date=${attendanceDate}`).catch(() => ({ data: {} }));
-        fetchedData = res.data || {};
-      }
+      // Fetch attendance for selected date
+      // Note: Backend endpoint assumed. If not exists, it will return empty or error which we catch.
+      const res = await api.get(`/api/attendance?date=${attendanceDate}`).catch(() => ({ data: {} }));
+      const fetchedData = res.data || {};
 
       // Default to 'present' for any staff member without a record
       const defaults = {};
-      (staff || []).forEach(s => {
-        if (!fetchedData[s._id] && !fetchedData[s.uuid]) {
+      staff.forEach(s => {
+        if (!fetchedData[s._id]) {
           defaults[s._id] = 'present';
         }
       });
@@ -225,12 +150,7 @@ export default function StaffManagementPage() {
 
   const saveAttendance = async () => {
     try {
-      const payload = { _id: `ATT-${attendanceDate}`, date: attendanceDate, records: attendanceData };
-      
-      if (dbService.saveAttendance) await dbService.saveAttendance(payload);
-      await auditService.logAction('CREATE', 'attendance', null, payload);
-      await syncQueue.enqueue({ entityId: payload._id, entity: 'attendance', method: 'POST', url: '/api/attendance', data: payload });
-
+      await api.post("/api/attendance", { date: attendanceDate, records: attendanceData });
       alert("Attendance saved successfully!");
     } catch (err) {
       console.error(err);
@@ -240,7 +160,7 @@ export default function StaffManagementPage() {
 
   const markAllPresent = () => {
     const newData = {};
-    (staff || []).forEach(s => {
+    staff.forEach(s => {
       newData[s._id] = 'present';
     });
     setAttendanceData(newData);
@@ -249,32 +169,21 @@ export default function StaffManagementPage() {
   // --- Leave Functions ---
   const loadLeaves = async () => {
     try {
-      let localLeaves = await dbService.getLeaves?.() || [];
-      
-      if (localLeaves.length === 0) {
-        const res = await api.get("/api/leaves").catch(() => ({ data: [] }));
-        localLeaves = res.data || [];
-      }
-      setLeaves(localLeaves);
+      const res = await api.get("/api/leaves").catch(() => ({ data: [] }));
+      setLeaves(res.data || []);
     } catch(err) { console.error(err); }
   };
 
   const handleLeaveSubmit = async (e) => {
     e.preventDefault();
     try {
-      const newId = editingLeaveId || (crypto.randomUUID ? crypto.randomUUID() : `LEAVE-${Date.now()}`);
-      const payload = { ...leaveForm, _id: newId, uuid: newId };
-
       if (editingLeaveId) {
-        if (dbService.updateLeave) await dbService.updateLeave(newId, payload);
-        await syncQueue.enqueue({ entityId: newId, entity: 'leave', method: 'PUT', url: `/api/leaves/${newId}`, data: payload });
-        alert("Leave updated offline successfully!");
+        await api.put(`/api/leaves/${editingLeaveId}`, leaveForm);
+        alert("Leave updated successfully!");
       } else {
-        if (dbService.saveLeave) await dbService.saveLeave(payload);
-        await syncQueue.enqueue({ entityId: newId, entity: 'leave', method: 'POST', url: '/api/leaves', data: payload });
-        alert("Leave applied offline successfully!");
+        await api.post("/api/leaves", leaveForm);
+        alert("Leave applied successfully!");
       }
-      
       setShowLeaveForm(false);
       setEditingLeaveId(null);
       setLeaveForm({ staffId: "", startDate: "", endDate: "", reason: "" });
@@ -299,9 +208,7 @@ export default function StaffManagementPage() {
   const handleDeleteLeave = async (id) => {
     if(window.confirm("Cancel this leave?")) {
       try {
-        if (dbService.deleteLeave) await dbService.deleteLeave(id);
-        await syncQueue.enqueue({ entityId: id, entity: 'leave', method: 'DELETE', url: `/api/leaves/${id}` });
-        
+        await api.delete(`/api/leaves/${id}`);
         loadLeaves();
       } catch(err) { alert("Failed to delete leave"); }
     }
@@ -352,94 +259,62 @@ export default function StaffManagementPage() {
         <button onClick={() => setActiveTab('attendance')} className={`px-4 py-2 border-b-2 font-medium ${activeTab === 'attendance' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-600'}`}>Attendance</button>
         <button onClick={() => setActiveTab('leaves')} className={`px-4 py-2 border-b-2 font-medium ${activeTab === 'leaves' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-600'}`}>Leave Management</button>
         <button onClick={() => setActiveTab('roles')} className={`px-4 py-2 border-b-2 font-medium ${activeTab === 'roles' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-600'}`}>Roles & Permissions</button>
-        <button onClick={() => setActiveTab('performance')} className={`px-4 py-2 border-b-2 font-medium ${activeTab === 'performance' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-600'}`}>Performance & Incentives</button>
       </div>
 
       {/* STAFF TAB */}
       {activeTab === 'staff' && (
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h2 className="text-lg font-semibold text-gray-800">Staff Members Directory</h2>
-          <button onClick={() => setShowStaffForm(!showStaffForm)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 transition">
-            {showStaffForm ? "Close Form" : <><UserPlus size={18} /> Add New Staff</>}
+      <>
+      <div className="bg-white p-6 rounded-xl shadow-md mb-8">
+        <h2 className="text-lg font-semibold mb-4">Add New Staff Member</h2>
+        <form onSubmit={handleAddStaff} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <input
+            type="text"
+            placeholder="Full Name"
+            className="border p-2 rounded"
+            value={form.name}
+            onChange={e => setForm({...form, name: e.target.value})}
+            required
+          />
+          <input
+            type="email"
+            placeholder="Email Address"
+            className="border p-2 rounded"
+            value={form.email}
+            onChange={e => setForm({...form, email: e.target.value})}
+            required
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            className="border p-2 rounded"
+            value={form.password}
+            onChange={e => setForm({...form, password: e.target.value})}
+            required
+          />
+          <select
+            className="border p-2 rounded"
+            value={form.role}
+            onChange={e => setForm({...form, role: e.target.value})}
+          >
+            {roles.map(role => (
+              <option key={role._id} value={role.name.toLowerCase()}>{role.name}</option>
+            ))}
+          </select>
+          <button type="submit" className="md:col-span-2 bg-blue-600 text-white py-2 rounded hover:bg-blue-700 flex justify-center items-center gap-2">
+            <UserPlus size={18} /> Create Account
           </button>
-        </div>
-
-      {showStaffForm && (
-        <div className="bg-white p-6 rounded-xl shadow-md border border-blue-100 transition-all">
-          <h3 className="font-semibold mb-4 text-gray-800 border-b pb-2">Register Employee</h3>
-          <form onSubmit={handleAddStaff} className="space-y-6">
-            
-            <div>
-              <h4 className="text-sm font-bold text-gray-500 uppercase mb-3">1. Basic & Login Info</h4>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <input type="text" placeholder="Full Name *" className="border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={form.name} onChange={e => setForm({...form, name: e.target.value})} required />
-                <input type="email" placeholder="Email / Username *" className="border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={form.email} onChange={e => setForm({...form, email: e.target.value})} required />
-                <input type="password" placeholder="Password *" className="border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={form.password} onChange={e => setForm({...form, password: e.target.value})} required />
-                <select className="border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
-                  {roles.map(role => <option key={role._id} value={role.name.toLowerCase()}>{role.name}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <h4 className="text-sm font-bold text-gray-500 uppercase mb-3">2. Identity & Contact Details</h4>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
-                <input type="text" placeholder="Mobile Number" className="border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={form.mobileNumber} onChange={e => setForm({...form, mobileNumber: e.target.value})} />
-                <input type="text" placeholder="Aadhar Card Number" className="border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={form.aadharNumber} onChange={e => setForm({...form, aadharNumber: e.target.value})} />
-                <input type="text" placeholder="Full Address" className="border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none md:col-span-2" value={form.address} onChange={e => setForm({...form, address: e.target.value})} />
-                <div className="md:col-span-4 flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden border border-gray-300">
-                    {form.image ? <img src={form.image} alt="Profile" className="w-full h-full object-cover" /> : <User className="text-gray-400" />}
-                  </div>
-                  <label className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-300 rounded cursor-pointer hover:bg-gray-100 transition text-sm">
-                    <UploadCloud size={16} /> Upload Photo
-                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <h4 className="text-sm font-bold text-gray-500 uppercase mb-3">3. Payroll & Performance Targets</h4>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <label className="text-xs text-gray-500">Base Salary (₹)</label>
-                  <input type="number" placeholder="e.g. 15000" className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={form.baseSalary} onChange={e => setForm({...form, baseSalary: e.target.value})} />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-500">Working Hours/Day</label>
-                  <input type="number" placeholder="e.g. 9" className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={form.workingHours} onChange={e => setForm({...form, workingHours: e.target.value})} />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-500">Monthly Sales Target (₹)</label>
-                  <input type="number" placeholder="e.g. 500000" className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={form.salesTarget} onChange={e => setForm({...form, salesTarget: e.target.value})} />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-500">Incentive on Target (%)</label>
-                  <input type="number" step="0.1" placeholder="e.g. 2.5" className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={form.incentivePercentage} onChange={e => setForm({...form, incentivePercentage: e.target.value})} />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end border-t pt-4">
-              <button type="submit" className="bg-green-600 text-white px-8 py-2.5 rounded-lg hover:bg-green-700 flex justify-center items-center gap-2 font-bold shadow-sm">
-                <Save size={18} /> Save Employee Data
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+        </form>
+      </div>
 
       <div className="bg-white p-6 rounded-xl shadow-md">
+        <h2 className="text-lg font-semibold mb-4">Staff List</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead className="bg-gray-50">
               <tr>
-                <th className="p-3 font-semibold">Profile</th>
-                <th className="p-3 font-semibold">Contact & ID</th>
-                <th className="p-3 font-semibold">Role & Duty</th>
-                <th className="p-3 font-semibold">Salary & Limits</th>
+                <th className="p-3 font-semibold">Name</th>
+                <th className="p-3 font-semibold">Email</th>
+                <th className="p-3 font-semibold">Role</th>
                 <th className="p-3 font-semibold text-center">Actions</th>
               </tr>
             </thead>
@@ -449,24 +324,11 @@ export default function StaffManagementPage() {
               ) : staff.length > 0 ? (
                 staff.map(member => (
                   <tr key={member._id} className="border-b hover:bg-gray-50">
-                    <td className="p-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden border border-blue-200">
-                          {member.image ? <img src={member.image} className="w-full h-full object-cover"/> : <span className="text-blue-600 font-bold">{member.name.charAt(0)}</span>}
-                        </div>
-                        <div>
-                          <p className="font-bold text-gray-800">{member.name}</p>
-                          <p className="text-xs text-gray-500">{member.email}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="p-3 text-sm">
-                      <p className="text-gray-700">📞 {member.mobileNumber || "N/A"}</p>
-                      {member.aadharNumber && <p className="text-xs text-gray-500 mt-1">🆔 Aadhar: {member.aadharNumber}</p>}
-                    </td>
+                    <td className="p-3">{member.name}</td>
+                    <td className="p-3">{member.email}</td>
                     <td className="p-3">
                       <select 
-                        className="border border-gray-300 p-1 rounded bg-white text-xs outline-none focus:border-blue-500 font-semibold uppercase"
+                        className="border border-gray-300 p-1 rounded bg-white text-sm outline-none focus:border-blue-500"
                         value={member.role || 'user'}
                         onChange={(e) => handleRoleChange(member._id, e.target.value)}
                         disabled={loading}
@@ -474,17 +336,11 @@ export default function StaffManagementPage() {
                         <option value="admin">Admin</option>
                         <option value="manager">Manager</option>
                         <option value="cashier">Cashier</option>
-                        <option value="salesman">Salesman</option>
                         <option value="user">User</option>
                       </select>
-                      <p className="text-xs text-gray-500 mt-1">⏱️ {member.workingHours || 9} Hrs / Day</p>
-                    </td>
-                    <td className="p-3 text-sm">
-                      <p className="font-semibold text-gray-800">₹{member.baseSalary || 0} / mo</p>
-                      {member.salesTarget > 0 && <p className="text-xs text-purple-600 mt-1">🎯 Target: ₹{member.salesTarget}</p>}
                     </td>
                     <td className="p-3 text-center">
-                      <button onClick={() => handleDeleteStaff(member._id)} className="text-red-500 hover:bg-red-50 p-2 rounded transition" title="Delete Staff">
+                      <button onClick={() => handleDeleteStaff(member._id)} className="text-red-500 hover:text-red-700 p-1">
                         <Trash2 size={18} />
                       </button>
                     </td>
@@ -496,7 +352,8 @@ export default function StaffManagementPage() {
             </tbody>
           </table>
         </div>
-      </div></div>
+      </div>
+      </>
       )}
 
       {/* ATTENDANCE TAB */}
@@ -740,53 +597,6 @@ export default function StaffManagementPage() {
                         <button onClick={() => handleDeleteRole(role._id)} className="text-red-600 hover:bg-red-50 p-1 rounded"><Trash2 size={18} /></button>
                       )}
                       {role.isSystem && <span className="text-xs text-gray-400 italic">System Default</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* PERFORMANCE & INCENTIVES TAB */}
-      {activeTab === 'performance' && (
-        <div className="space-y-6">
-          <div className="flex justify-between items-center bg-purple-50 p-4 rounded-xl border border-purple-100">
-            <div>
-              <h2 className="text-lg font-bold text-purple-800 flex items-center gap-2"><TrendingUp /> Sales Performance & Incentives</h2>
-              <p className="text-sm text-purple-600">Track which staff sold what, targets, and automatic calculated commissions.</p>
-            </div>
-            <button onClick={loadPerformance} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium shadow-sm transition">Refresh Data</button>
-          </div>
-          
-          <div className="bg-white rounded-xl shadow-md overflow-hidden">
-            <table className="w-full text-left">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="p-4 font-semibold text-gray-600">Salesman</th>
-                  <th className="p-4 font-semibold text-gray-600 text-center">Invoices Generated</th>
-                  <th className="p-4 font-semibold text-gray-600 text-right">Total Sales Done (₹)</th>
-                  <th className="p-4 font-semibold text-gray-600 text-right">Monthly Target (₹)</th>
-                  <th className="p-4 font-semibold text-purple-700 text-right">Incentive Earned (₹)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? <tr><td colSpan="5" className="p-8 text-center text-gray-500">Calculating Performance...</td></tr> : null}
-                {!loading && performanceStats.map(stat => (
-                  <tr key={stat._id} className="border-b hover:bg-gray-50 transition">
-                    <td className="p-4 font-bold text-gray-800">{stat.name}</td>
-                    <td className="p-4 text-center">
-                      <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-bold">{stat.billsCount} Bills</span>
-                    </td>
-                    <td className="p-4 text-right font-semibold text-gray-800">₹{stat.totalSales.toLocaleString()}</td>
-                    <td className="p-4 text-right">
-                      {stat.salesTarget > 0 ? (
-                         <span className={stat.totalSales >= stat.salesTarget ? "text-green-600 font-bold" : "text-orange-500 font-medium"}>₹{Number(stat.salesTarget).toLocaleString()}</span>
-                      ) : <span className="text-gray-400 text-sm italic">No Target</span>}
-                    </td>
-                    <td className="p-4 text-right">
-                       <span className="bg-purple-100 text-purple-800 px-3 py-1.5 rounded-lg font-black text-lg">₹{stat.incentiveEarned.toFixed(2)}</span>
                     </td>
                   </tr>
                 ))}

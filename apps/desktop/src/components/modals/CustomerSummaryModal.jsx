@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import api from '../../services/api';
-import { User, ShoppingBag, X, History } from 'lucide-react';
+import api from '../../services/api'; // Assuming api service is correctly configured
+import { User, ShoppingBag, X, ArrowLeftRight, RotateCcw, History } from 'lucide-react';
 
 // Dummy auth context hook - replace with your actual implementation
 const useAuth = () => ({ user: { role: 'owner' } }); // DUMMY: 'owner', 'manager', or 'staff'
@@ -15,15 +15,8 @@ export default function CustomerSummaryModal({ partyId, onClose }) {
       if (!partyId) return;
       setLoading(true);
       try {
-        // For desktop, always try to fetch latest from API if online
-        if (navigator.onLine) {
-            const res = await api.get(`/api/parties/${partyId}/summary`);
-            setCustomer(res.data.summary);
-        } else {
-            // Offline logic can be added here if needed, e.g., from dbService
-            alert("You are offline. Cannot fetch customer summary.");
-            onClose();
-        }
+        const res = await api.get(`/api/party/${partyId}/summary`); // Corrected API endpoint
+        setCustomer(res.data.summary);
       } catch (err) {
         console.error("Failed to fetch customer summary", err);
         alert("Could not load customer data.");
@@ -66,7 +59,7 @@ export default function CustomerSummaryModal({ partyId, onClose }) {
                 <p className="text-2xl font-bold text-blue-600">{customer.visitCount}</p>
               </div>
               <div className="bg-red-50 p-4 rounded-lg">
-                <p className="text-sm text-red-500 font-medium">Returns ({customer.returnCount})</p>
+                <p className="text-sm text-red-500 font-medium">Returns ({customer.returnCount || 0})</p>
                 <p className="text-2xl font-bold text-red-600">₹{customer.totalReturnValue?.toFixed(2)}</p>
               </div>
               <div className="bg-gray-50 p-4 rounded-lg">

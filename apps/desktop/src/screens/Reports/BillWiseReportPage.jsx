@@ -17,6 +17,8 @@ const BillWiseReportPage = () => {
     } catch (err) {
       console.error(err);
       setError(err.message || "Failed to fetch report");
+      // क्रैश होने से बचाएं
+      setData([]);
     } finally {
       setLoading(false);
     }

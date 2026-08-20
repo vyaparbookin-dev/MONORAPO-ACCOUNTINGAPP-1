@@ -2,52 +2,16 @@ import React, { useEffect, useState } from "react";
 import api from "../../services/api";
 import { Link } from "react-router-dom";
 import { Plus } from "lucide-react";
-import { dbService } from "../../services/dbService";
 
 const ProductListPage = () => {
   const [products, setProducts] = useState([]);
 
   useEffect(() => {
-    fetchProducts();
+    api.get("/api/inventory").then((res) => {
+      const data = res.data?.products || res.data || [];
+      setProducts(Array.isArray(data) ? data : []);
+    }).catch(err => console.error("Failed to load products", err));
   }, []);
-
-  const fetchProducts = async () => {
-    try {
-      let productList = [];
-
-      // 1. Offline First: Local Desktop DB se products lo
-      productList = await dbService.getInventory();
-
-      // 2. Sync-Down: Agar DB khali hai, toh cloud se laao
-      if (!productList || productList.length === 0) {
-        const res = await api.get("/api/inventory");
-        const cloudProducts = res.data?.products || res.data || [];
-        const safeProducts = Array.isArray(cloudProducts) ? cloudProducts : [];
-
-        if (safeProducts.length > 0) {
-          for (const prod of safeProducts) {
-            await dbService.saveProduct({
-              ...prod,
-              uuid: prod._id,
-              name: prod.name,
-              sku: prod.sku || `SKU-${Date.now()}`,
-              price: prod.sellingPrice || prod.price || 0,
-              quantity: prod.currentStock || prod.stock || 0,
-              category: prod.category || 'General',
-              subCategory: prod.subCategory || '',
-              costPrice: prod.costPrice || 0
-            });
-          }
-          productList = await dbService.getInventory();
-        } else {
-          productList = safeProducts;
-        }
-      }
-      setProducts(productList);
-    } catch (err) {
-      console.error("Error loading products:", err);
-    }
-  };
 
   return (
     <div className="p-6 space-y-6">
@@ -79,8 +43,8 @@ const ProductListPage = () => {
                 <td className="p-4 text-gray-600">{p.sku || "-"}</td>
                 <td className="p-4">₹{((p.sellingPrice || p.price || 0) * (1 + (p.gstRate || 0) / 100)).toFixed(2)}</td>
                 <td className="p-4">
-                  <span className={`px-2 py-1 rounded text-xs font-semibold ${p.stock > 10 ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                    {p.stock}
+                  <span className={`px-2 py-1 rounded text-xs font-semibold ${(p.currentStock || p.stock || 0) > 10 ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                    {p.currentStock || p.stock || 0}
                   </span>
                 </td>
               </tr>

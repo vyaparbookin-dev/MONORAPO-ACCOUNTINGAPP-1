@@ -1,9 +1,6 @@
 import React, { useState } from "react";
-import api from "../../services/api";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
-import { syncQueue } from "@repo/shared";
 import { useNavigate } from "react-router-dom";
+import api from "../../services/api";
 import { useCompany } from "../../contexts/CompanyContext";
 
 export default function AddCompanyPage({ onAdded }) {
@@ -59,34 +56,21 @@ export default function AddCompanyPage({ onAdded }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const newId = crypto.randomUUID ? crypto.randomUUID() : `COMP-${Date.now()}`;
-      const payload = { ...form, _id: newId, uuid: newId };
-
-      // 1. Save Locally
-      if (dbService.saveCompany) await dbService.saveCompany(payload);
+      const res = await api.post("/api/company", form);
+      const newCompany = res.company || res.data || res;
       
-      // 2. Audit Log
-      await auditService.logAction('CREATE', 'company', null, payload);
-
-      // 3. Queue Sync
-      await syncQueue.enqueue({ entityId: newId, entity: 'company', method: 'POST', url: '/api/company', data: payload });
-
-      alert("Company added offline successfully!");
-      setForm({ 
-        name: "", email: "", phone: "", address: "", gstNumber: "", gstType: "regular", 
-        website: "", panNumber: "", businessType: ["retail"], ownershipType: "Proprietorship", 
-        industryType: "", businessDescription: "", bankName: "", accountName: "", customQrCode: "",
-        accountNumber: "", ifscCode: "", upiId: "", caName: "", caPhone: "" 
-      });
+      alert("Company added successfully!");
       onAdded && onAdded();
       
-      // Set local DB company and hard reload to completely clear previous cache
-      if (dbService.setCompanyId) dbService.setCompanyId(newId);
-      navigate("/dashboard");
-      window.location.reload();
+      // Update LocalStorage and hard reload to completely prevent ghost inventory data
+      if (newCompany?._id) {
+        localStorage.setItem("companyId", newCompany._id);
+        localStorage.setItem("companyName", newCompany.name);
+      }
+      window.location.href = "/dashboard";
     } catch (err) {
       console.error(err);
-      alert("Error adding company!");
+      alert(err.response?.data?.message || "Error adding company!");
     }
   };
 

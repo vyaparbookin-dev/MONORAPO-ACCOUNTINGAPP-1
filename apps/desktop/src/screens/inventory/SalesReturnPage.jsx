@@ -3,9 +3,6 @@ import { Undo2, Save, Trash2, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import Button from "../../components/Button";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
-import { syncQueue } from "@repo/shared";
 
 const SalesReturnPage = () => {
   const navigate = useNavigate();
@@ -18,18 +15,13 @@ const SalesReturnPage = () => {
     items: [],
   });
 
-  const [newItem, setNewItem] = useState({ productId: "", searchName: "", name: "", quantity: 1, price: 0 });
+  const [newItem, setNewItem] = useState({ productId: "", quantity: 1, price: 0 });
 
   useEffect(() => {
-    const loadProducts = async () => {
-      let localProducts = await dbService.getInventory();
-      if (!localProducts || localProducts.length === 0) {
-          const res = await api.get("/api/inventory").catch(()=>({data:[]}));
-          localProducts = res.data?.products || res.data || [];
-      }
-      setProducts(Array.isArray(localProducts) ? localProducts : []);
-    };
-    loadProducts();
+    api.get("/api/inventory").then((res) => {
+      const data = res.data?.products || res.data || [];
+      setProducts(Array.isArray(data) ? data : []);
+    }).catch(err => console.error(err));
   }, []);
 
   const handleAddItem = () => {
@@ -47,37 +39,19 @@ const SalesReturnPage = () => {
         },
       ],
     }));
-    setNewItem({ productId: "", searchName: "", name: "", quantity: 1, price: 0 });
+    setNewItem({ productId: "", quantity: 1, price: 0 });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const newId = crypto.randomUUID ? crypto.randomUUID() : `RET-${Date.now()}`;
-      const payload = { ...formData, _id: newId, uuid: newId, type: "purchase_return" };
-      
-      // Save locally
-      if (dbService.saveReturn) await dbService.saveReturn(payload);
-
-      // Update Local Stock (Reduce Stock because it's purchase return)
-      for (const item of payload.items) {
-          const product = products.find(p => p._id === item.productId);
-          if (product) {
-              const updatedProduct = { ...product, currentStock: (parseFloat(product.currentStock) || 0) - item.quantity };
-              await dbService.updateProduct(product._id, updatedProduct);
-          }
-      }
-
-      await auditService.logAction('CREATE', 'purchase_return', null, payload);
-      
-      // Queue for sync
-      await syncQueue.enqueue({ entityId: newId, entity: 'purchase_return', method: "POST", url: "/api/inventory/purchase-return", data: payload });
-      
-      alert("Purchase Return (Debit Note) created offline successfully!");
+      // API endpoint for purchase return (Debit Note)
+      await api.post("/inventory/purchase-return", formData);
+      alert("Purchase Return (Debit Note) created successfully!");
       navigate("/inventory");
     } catch (error) {
       console.error(error);
-      alert("Failed to create return entry: " + error.message);
+      alert("Failed to create return entry.");
     }
   };
 
@@ -114,22 +88,20 @@ const SalesReturnPage = () => {
           <h3 className="font-semibold mb-3">Items to Return</h3>
           <div className="flex gap-2 items-end mb-4 bg-gray-50 p-3 rounded">
             <div className="flex-1">
-              <label className="text-xs text-gray-500">Search Product</label>
-              <input
+              <label className="text-xs text-gray-500">Product</label>
+              <select
                 className="w-full border p-2 rounded"
-                list="product-list-return"
-                placeholder="Type to search product..."
-                value={newItem.searchName || ""}
+                value={newItem.productId}
                 onChange={(e) => {
-                  const val = e.target.value;
-                  const p = products.find(prod => prod.name === val || prod.barcode === val || prod.sku === val);
-                  if (p) setNewItem({...newItem, productId: p._id, searchName: p.name, name: p.name, price: p.costPrice || 0});
-                  else setNewItem({...newItem, searchName: val, productId: ""});
+                  const p = products.find((prod) => prod._id === e.target.value);
+                  setNewItem({ ...newItem, productId: e.target.value, price: p?.costPrice || 0 });
                 }}
-              />
-              <datalist id="product-list-return">
-                {products.map(p => <option key={p._id} value={p.name}>{p.sku ? `SKU: ${p.sku}` : ''}</option>)}
-              </datalist>
+              >
+                <option value="">Select Product</option>
+                {products.map((p) => (
+                  <option key={p._id} value={p._id}>{p.name}</option>
+                ))}
+              </select>
             </div>
             <div className="w-24">
               <label className="text-xs text-gray-500">Qty</label>

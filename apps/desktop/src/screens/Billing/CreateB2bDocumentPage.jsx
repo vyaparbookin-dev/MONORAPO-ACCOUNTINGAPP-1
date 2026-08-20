@@ -2,9 +2,6 @@ import React, { useState, useEffect } from "react";
 import { Plus, Trash2, Save, FileText } from "lucide-react";
 import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
-import { syncQueue } from "@repo/shared";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
 
 export default function CreateB2bDocumentPage() {
   const navigate = useNavigate();
@@ -29,23 +26,13 @@ export default function CreateB2bDocumentPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Party Offline/Online
-        let allParties = [];
-        allParties = await dbService.getCustomers();
-        if (!allParties.length) {
-          const partyRes = await api.get("/api/party").catch(() => null);
-          if (partyRes) allParties = partyRes.data?.parties || [];
-        }
+        const [partyRes, invRes] = await Promise.all([
+          api.get("/api/party"),
+          api.get("/api/inventory")
+        ]);
+        const allParties = partyRes.data?.parties || [];
         setParties(allParties.filter(p => p.partyType === 'customer' || p.partyType === 'both'));
-        
-        // Products Offline/Online
-        let allProducts = [];
-        allProducts = await dbService.getInventory();
-        if (!allProducts.length) {
-          const invRes = await api.get("/api/inventory").catch(() => null);
-          if (invRes) allProducts = invRes.data?.products || [];
-        }
-        setProducts(allProducts);
+        setProducts(invRes.data?.products || []);
       } catch (err) {
         console.error("Error fetching data", err);
       }
@@ -80,32 +67,12 @@ export default function CreateB2bDocumentPage() {
     if (!formData.partyId || formData.items.length === 0) return alert("Please select a Customer and add items.");
     setLoading(true);
     try {
-      const newId = crypto.randomUUID ? crypto.randomUUID() : `B2B-${Date.now()}`;
       const payload = {
         ...formData,
-        _id: newId,
-        uuid: newId,
-        finalAmount: formData.totalAmount + (formData.freightCharges || 0) + (formData.packingForwardingCharges || 0),
+        finalAmount: formData.totalAmount + (formData.freightCharges || 0) + (formData.packingForwardingCharges || 0)
       };
-      
-      // 1. Save Locally
-      if (dbService.saveB2bDocument) await dbService.saveB2bDocument(payload);
-
-      // 2. Reduce Stock if Delivery Challan
-      if (formData.type === 'delivery_challan') {
-        for (const item of payload.items) {
-          const product = products.find(p => p._id === item.productId);
-          if (product) {
-            const updatedProduct = { ...product, currentStock: (parseFloat(product.currentStock) || 0) - item.quantity };
-            await dbService.updateProduct(product._id, updatedProduct);
-          }
-        }
-      }
-
-      await auditService.logAction('CREATE', 'b2b_document', null, payload);
-      await syncQueue.enqueue({ entityId: newId, entity: 'b2b_document', method: "POST", url: "/api/b2b", data: payload });
-
-      alert(`${formData.type.replace('_', ' ').toUpperCase()} created offline successfully!`);
+      await api.post("/api/b2b", payload);
+      alert(`${formData.type.replace('_', ' ').toUpperCase()} created successfully!`);
       window.location.reload(); 
     } catch (err) {
       console.error(err);

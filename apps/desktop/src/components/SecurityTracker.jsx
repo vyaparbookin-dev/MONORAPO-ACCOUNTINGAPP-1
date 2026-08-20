@@ -1,15 +1,14 @@
 import api from '../services/api';
-import { syncQueue } from '@repo/shared';
 
 export const SecurityTracker = {
-    track: async (event, details) => {
+    track: (event, details) => {
         console.log(`[Security Event]: ${event}`, details);
 
         // Check for token synchronously to avoid race conditions on app start.
-        const token = localStorage.getItem('authToken') || localStorage.getItem('token');
-        if (!token || token === "null" || token === "undefined") return; // Prevents 401
+        const token = typeof localStorage !== 'undefined' ? (localStorage.getItem('authToken') || localStorage.getItem('token')) : null;
+        if (!token || token === "null" || token === "undefined") return; // Prevents 401 on app load
 
-        // Push to Sync Queue for offline-first support
-        await syncQueue.enqueue({ entityId: `sec-${Date.now()}`, entity: 'security', method: 'POST', url: '/api/security/log', data: { action: event, details } });
+        // This will only run if a token exists.
+        api.post('/api/security/log', { action: event, details }).catch(err => console.error("SecurityTracker API call failed:", err.message));
     }
 };

@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Search, Download, Edit, Trash2, Users, DollarSign, CheckCircle, Clock } from "lucide-react";
-import { dbService } from "../../services/dbService";
-import { syncQueue } from "@repo/shared";
-import { auditService } from "../../services/auditService";
+import api from "../../services/api";
 
 const SalaryPage = () => {
   const [salaries, setSalaries] = useState([]);
@@ -32,11 +30,12 @@ const SalaryPage = () => {
   const fetchSalaries = async () => {
     try {
       setLoading(true);
-      const localSalaries = await dbService.getSalaries();
-      setSalaries((localSalaries || []).map(s => ({ ...s, _id: s.uuid || s._id })));
-      setError(null);
+      const response = await api.get("/api/salary");
+      const salariesList = Array.isArray(response) 
+        ? response 
+        : (Array.isArray(response?.data) ? response.data : (response?.salaries || []));
+      setSalaries(salariesList);
     } catch (err) {
-      setError(err.message);
       console.error("Failed to fetch salaries:", err);
       setSalaries([]); // Set empty array on error to prevent crash
     } finally {
@@ -84,34 +83,25 @@ const SalaryPage = () => {
   const handleAddSalary = async (e) => {
     e.preventDefault();
     try {
-      const payload = { ...formData, amount: Number(formData.amount) };
       if (editingId) {
-        const oldSalary = salaries.find(s => s._id === editingId);
-        await dbService.updateSalary(editingId, payload);
-        await auditService.logAction('UPDATE', 'salary', oldSalary, payload);
-        await syncQueue.enqueue({ entityId: editingId, entity: 'salary', method: "PUT", url: `/api/salary/${editingId}`, data: payload });
+        await api.put(`/api/salary/${editingId}`, formData);
+        alert("Salary updated successfully!");
       } else {
-        const newId = crypto.randomUUID ? crypto.randomUUID() : `SAL-${Date.now()}`;
-        const finalPayload = { ...payload, _id: newId, uuid: newId };
-        await dbService.saveSalary(finalPayload);
-        await auditService.logAction('CREATE', 'salary', null, finalPayload);
-        await syncQueue.enqueue({ entityId: newId, entity: 'salary', method: "POST", url: "/api/salary", data: finalPayload });
+        await api.post("/api/salary", formData);
+        alert("Salary recorded successfully!");
       }
       fetchSalaries();
       resetForm();
-      alert("Salary record saved offline successfully!");
     } catch (err) {
       console.error("Error saving salary:", err);
+      alert("Error saving salary. Please check connection.");
     }
   };
 
   const handleDelete = async (id) => {
     if (window.confirm("Delete this salary record?")) {
       try {
-        const oldSalary = salaries.find(s => s._id === id);
-        await dbService.deleteSalary(id);
-        await auditService.logAction('DELETE', 'salary', oldSalary, null);
-        await syncQueue.enqueue({ entityId: id, entity: 'salary', method: "DELETE", url: `/api/salary/${id}` });
+        await api.delete(`/api/salary/${id}`);
         fetchSalaries();
       } catch (err) {
         console.error("Error deleting salary:", err);
@@ -124,8 +114,6 @@ const SalaryPage = () => {
   const paidCount = safeSalaries.filter((sal) => sal.status === "paid").length;
   const unpaidCount = safeSalaries.filter((sal) => sal.status === "unpaid").length;
   const employeeCount = new Set(safeSalaries.map((s) => s.employeeName)).size;
-
-  if (error) return <div className="p-4 text-red-500">Error: {error}</div>;
 
   return (
     <div className="space-y-6">

@@ -2,9 +2,6 @@ import React, { useState } from "react";
 import * as XLSX from "xlsx";
 import api from "../../services/api";
 import { Upload, Download, ArrowRight, Settings2, FileSpreadsheet, CheckCircle, AlertCircle, History, Undo2, X, Trash2 } from "lucide-react";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
-import { syncQueue } from "@repo/shared";
 
 const SYSTEM_FIELDS = [
   { key: "name", label: "Item Name (*Required)" },
@@ -14,10 +11,10 @@ const SYSTEM_FIELDS = [
   { key: "subCategory", label: "Sub Category" },
   { key: "brand", label: "Company / Brand" },
   { key: "hsnCode", label: "HSN Code" },
-  { key: "packing", label: "Packing (e.g. 1x10)" },
-  { key: "unit", label: "Unit (e.g. PCS)" },
-  { key: "secondaryUnit", label: "Unit-2 (Alt Unit)" },
-  { key: "conversionRate", label: "Conversion Rate" },
+  { key: "packing", label: "Packing (e.g. ML, 10x10)" },
+  { key: "unit", label: "Unit 1 (e.g. PCS)" },
+  { key: "secondaryUnit", label: "Unit 2 (e.g. CRT, BOX)" },
+  { key: "conversionRate", label: "Conversion (e.g. 12)" },
   { key: "dpl", label: "DPL (Company Rate)" },
   { key: "costPrice", label: "P.Cost (Without GST)" },
   { key: "costPriceWithTax", label: "P.Cost (With GST)" },
@@ -44,7 +41,6 @@ export default function BulkUploadPage() {
   const [message, setMessage] = useState(null);
   const [warnings, setWarnings] = useState([]);
 
-  // Undo Upload States
   const [showUndoModal, setShowUndoModal] = useState(false);
   const [undoTimeframe, setUndoTimeframe] = useState("1");
   const [recentProducts, setRecentProducts] = useState([]);
@@ -52,11 +48,8 @@ export default function BulkUploadPage() {
 
   const fetchRecentProducts = async (timeframe) => {
     try {
-      let allProds = await dbService.getInventory?.();
-      if(!allProds || allProds.length === 0) {
-        const res = await api.get('/api/inventory').catch(()=>({data:[]}));
-        allProds = res.data?.products || res.data || [];
-      }
+      const res = await api.get('/api/inventory').catch(()=>({data:[]}));
+      const allProds = res.data?.products || res.data || [];
       const safeProds = Array.isArray(allProds) ? allProds : [];
       const hours = parseFloat(timeframe);
       const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
@@ -74,13 +67,12 @@ export default function BulkUploadPage() {
     try {
       for (let i = 0; i < recentProducts.length; i += 20) {
         const chunk = recentProducts.slice(i, i + 20);
-        for (const item of chunk) await dbService.deleteProduct?.(item._id || item.uuid).catch(()=>{});
         await Promise.all(chunk.map(item => api.delete(`/api/inventory/${item._id}`).catch(() => null)));
       }
-      setMessage({ type: "success", text: `Successfully deleted ${recentProducts.length} products!` });
+      alert(`Successfully deleted ${recentProducts.length} products!`);
       setShowUndoModal(false);
     } catch(err) {
-      setMessage({ type: "error", text: "Error undoing products." });
+      alert("Error undoing products.");
     } finally {
       setUndoLoading(false);
     }
@@ -103,7 +95,8 @@ export default function BulkUploadPage() {
       if (rawData.length > 1) {
         const excelHeaders = rawData[0]; // Row 1 (Headers)
         const firstDataRow = rawData[1]; // Row 2 (Sample Data)
-        const actualData = rawData.slice(1); // Data starting from Row 2
+        // Empty rows ko ignore karne ka bulletproof logic
+        const actualData = rawData.slice(1).filter(row => Object.values(row).some(val => val !== "")); 
         
         const fileColumns = Object.keys(excelHeaders);
         const enhancedHeaders = fileColumns.map(col => ({
@@ -132,7 +125,7 @@ export default function BulkUploadPage() {
             if (field.key === 'name' && ((hText.includes('item') && hText.includes('name')) || hText === 'product' || hText === 'product name')) return true;
             if (field.key === 'category' && (hText.includes('category') || hText.includes('group'))) return true;
             if (field.key === 'brand' && (hText.includes('brand') || hText.includes('company') || hText.includes('manufacturer'))) return true;
-            if (field.key === 'unit' && (hText.includes('unit') || hText === 'uom')) return true;
+            if (field.key === 'unit' && (hText.includes('unit') && (!hText.includes('2') && !hText.includes('secondary')) || hText === 'uom')) return true;
             if (field.key === 'mrp' && (hText.includes('mrp') || hText.includes('maximum retail price'))) return true;
             if (field.key === 'gstRate' && (hText.includes('gst') || hText.includes('tax') || hText === 'gst %' || hText === 'gst%')) return true;
             if (field.key === 'costPriceWithTax' && (hText.includes('cost') || hText.includes('landing') || hText.includes('purchase rate')) && (hText.includes('with gst') || hText.includes('inc') || hText.includes('tax') || hText.includes('+'))) return true;
@@ -196,6 +189,7 @@ export default function BulkUploadPage() {
     console.groupEnd();
     setUploading(true);
     try {
+      // Backend API endpoint for bulk upload
       const res = await api.post("/api/inventory/import", { products: data, mapping });
       
       console.log("✅ [BULK UPLOAD SUCCESS] API Response:", res.data);
@@ -205,6 +199,7 @@ export default function BulkUploadPage() {
       setStep(1);
       setData([]);
       setMapping({});
+      setMappingSource({});
     } catch (err) {
       console.error("Detailed API Error:", err.response?.data || err);
       const errData = err.response?.data;
@@ -219,9 +214,9 @@ export default function BulkUploadPage() {
 
   const downloadTemplate = () => {
     const templateData = [{
-      "Item Name": "Example Product", "Item Code": "ITM-001", "Barcode": "890123456789", "Packing": "1x10", "Category": "Electronics", "Sub Category": "Accessories",
-      "Brand": "Samsung", "HSN Code": "8517", "Unit": "pcs", "Unit-2": "box", "Conversion Rate": 10, "DPL (Company Rate)": 900,
-      "P.Cost (Without GST)": 1000, "P.Cost (With GST)": 1180, "Selling Price": 1500, "Wholesale Price": 1400, "Dealer Price": 1350, "MRP": 1999, "Discount": 5, "Scheme Discount": 2, "Cash Discount": 1, "GST %": 18,
+      "Item Name": "Example Product", "Item Code": "ITM-001", "Barcode": "890123456789", "Packing": "10x10", "Category": "Electronics", "Sub Category": "Accessories",
+      "Brand": "Samsung", "HSN Code": "8517", "Unit": "pcs", "Unit-2": "box", "Conversion Rate": 10,
+      "DPL (Company Rate)": 900, "Cost Price": 1000, "Cost Price (With GST)": 1180, "Selling Price": 1500, "Selling Price (With GST)": 1770, "Wholesale Price": 1400, "Dealer Price": 1350, "MRP": 1999, "Discount": 5, "Scheme Discount": 2, "Cash Discount": 1, "GST %": 18,
       "Opening Stock": 50, "Minimum Stock": 5, "Maximum Stock": 100
     }];
     const ws = XLSX.utils.json_to_sheet(templateData);
@@ -267,8 +262,10 @@ export default function BulkUploadPage() {
             <h3 className="font-bold text-gray-800">Map Your Columns</h3>
           </div>
           <div className="p-6">
-            <p className="text-sm text-gray-600 mb-2">Please match your Excel column names to our System fields. Skip the ones you don't have.</p>
-            <p className="text-sm text-blue-700 mb-4">Opening Stock should be entered in Unit 1. If Unit 2 is a carton/box, Conversion Rate should be 'how many Unit 1 are in one Unit 2'.</p>
+            <p className="text-sm text-gray-600 mb-2">System ne automatically columns match karne ki koshish ki hai.</p>
+            <p className="text-sm text-blue-700 mb-3">Opening Stock ko hamesha Unit 1 mein bharein. Agar aap Unit 2 (Carton/Box) use kar rahe hain toh Conversion Rate mein Unit 2 ke andar kitne Unit 1 aate hain, wo dalein.</p>
+            <p className="text-sm text-red-600 font-medium mb-6">* Agar koi field galat map hui hai (e.g. Duplicate names ki wajah se), toh aap use Dropdown se manually sahi kar sakte hain.</p>
+            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[50vh] overflow-y-auto pr-2 mb-6">
               {SYSTEM_FIELDS.map((field) => (
                 <div key={field.key} className="flex items-center justify-between bg-gray-50 p-3 rounded border border-gray-100">
@@ -316,7 +313,7 @@ export default function BulkUploadPage() {
                   );
                 })}
                 {Object.keys(mapping).length === 0 && (
-                  <p className="text-sm text-gray-600">No mappings selected yet. The system may have auto-filled columns above.</p>
+                  <p className="text-sm text-gray-600">No mappings selected yet. System may have auto-filled columns above.</p>
                 )}
               </div>
             </div>
@@ -344,6 +341,7 @@ export default function BulkUploadPage() {
               <button onClick={() => { 
                 setStep(1); 
                 if (document.getElementById('fileUpload')) document.getElementById('fileUpload').value = null; 
+                setMappingSource({});
               }} className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 font-medium">Cancel & Back</button>
               <button onClick={handleUpload} disabled={uploading} className="px-8 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-2 disabled:bg-gray-400">
                 {uploading ? "Importing..." : "Confirm & Import Data"} <ArrowRight size={18} />

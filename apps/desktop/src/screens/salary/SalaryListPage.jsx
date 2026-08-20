@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { dbService } from "../../services/dbService";
+import axios from "axios";
+import Loader from "../../components/Loader";
 
 const SalaryList = () => {
   const [salaries, setSalaries] = useState([]);
@@ -11,7 +12,9 @@ const SalaryList = () => {
 
   const fetchSalaries = async () => {
     try {
-      con
+      const response = await axios.get("/api/salary");
+      setSalaries(response.data);
+    } catch (error) {
       console.error("Error fetching salaries:", error);
     } finally {
       setLoading(false);

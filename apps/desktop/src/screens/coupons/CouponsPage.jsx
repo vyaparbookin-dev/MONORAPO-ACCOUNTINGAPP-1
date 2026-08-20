@@ -19,13 +19,16 @@ const CouponsPage = () => {
     try {
       if (editingId) {
         await api.put(`/api/coupon/${editingId}`, formData);
+        alert("Coupon updated successfully!");
       } else {
         await api.post("/api/coupon", formData);
+        alert("Coupon created successfully!");
       }
       fetchCoupons();
       resetForm();
     } catch (err) {
       console.error("Error saving coupon:", err);
+      alert("Error saving coupon. Please check connection.");
     }
   };
 
@@ -74,7 +77,8 @@ const CouponsPage = () => {
       setCoupons(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to fetch coupons:", err);
-      setCoupons([]); // क्रैश होने से बचाएं
+      // क्रैश होने से बचाएं
+      setCoupons([]);
     } finally {
       setLoading(false);
     }

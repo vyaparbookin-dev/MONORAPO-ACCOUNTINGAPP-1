@@ -2,9 +2,6 @@ import React, { useState } from "react";
 import { Search, Save, ArrowLeft } from "lucide-react";
 import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
-import { syncQueue } from "@repo/shared";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
 
 export default function SalesReturnPage() {
   const navigate = useNavigate();
@@ -19,20 +16,10 @@ export default function SalesReturnPage() {
     if (!billNumber) return;
     setLoading(true);
     try {
-      let foundBill = null;
+      // Search for the bill
+      const res = await api.get(`/api/billing?search=${billNumber}`);
+      const foundBill = res.bills?.find(b => b.billNumber === billNumber) || res.bills?.[0];
       
-      // Try offline first
-      const localBills = await dbService.getInvoices?.() || [];
-      foundBill = localBills.find(b => b.billNumber === billNumber || b.invoice_number === billNumber);
-
-      // Fallback to API if not found locally and online
-      if (!foundBill && navigator.onLine) {
-        const res = await api.get(`/api/billing?search=${billNumber}`).catch(() => null);
-        if (res) {
-            foundBill = res.bills?.find(b => b.billNumber === billNumber) || res.bills?.[0];
-        }
-      }
-
       if (foundBill) {
         setBill(foundBill);
         // Initialize return items with 0 quantity
@@ -75,40 +62,19 @@ export default function SalesReturnPage() {
       return;
     }
 
-    const newId = crypto.randomUUID ? crypto.randomUUID() : `RET-SALES-${Date.now()}`;
-    const payload = {
-      _id: newId,
-      uuid: newId,
-      type: "sales_return",
-      originalBillId: bill._id,
-      items: itemsToReturn.map(i => ({
-        itemId: i._id || i.id,
-        name: i.name,
-        quantity: i.returnQty,
-        rate: i.rate || i.price
-      })),
-      totalRefund: calculateTotalRefund(),
-      reason
-    };
-
     try {
-      // Save locally
-      if (dbService.saveReturn) await dbService.saveReturn(payload);
-
-      // Increase local stock since it's a sales return
-      const localProducts = await dbService.getInventory?.() || [];
-      for (const item of itemsToReturn) {
-        const product = localProducts.find(p => p._id === (item._id || item.id));
-        if (product) {
-          const updatedProduct = { ...product, currentStock: (parseFloat(product.currentStock) || 0) + item.quantity };
-          await dbService.updateProduct(product._id, updatedProduct);
-        }
-      }
-
-      await auditService.logAction('CREATE', 'sales_return', null, payload);
-      await syncQueue.enqueue({ entityId: newId, entity: 'sales_return', method: "POST", url: "/api/billing/return", data: payload });
-
-      alert("Sales return processed offline successfully (Credit Note Created)");
+      await api.post("/api/billing/return", {
+        originalBillId: bill._id,
+        items: itemsToReturn.map(i => ({
+          itemId: i._id || i.id,
+          name: i.name,
+          quantity: i.returnQty,
+          rate: i.rate || i.price
+        })),
+        totalRefund: calculateTotalRefund(),
+        reason
+      });
+      alert("Sales return processed successfully (Credit Note Created)");
       navigate("/billing");
     } catch (err) {
       console.error(err);

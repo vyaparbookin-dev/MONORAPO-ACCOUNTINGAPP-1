@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from "react";
+import axios from "axios";
 import Loader from "../../components/Loader";
-import api from "../../services/api";
-import { dbService } from "../../services/dbService";
-import { syncQueue } from "@repo/shared";
 
 const ReminderPage = () => {
   const [reminders, setReminders] = useState([]);
@@ -15,17 +13,11 @@ const ReminderPage = () => {
   const fetchReminders = async () => {
     try {
       setLoading(true);
-      
-      let localReminders = await dbService.getReminders?.() || [];
-      
-      if (!localReminders || localReminders.length === 0) {
-        const response = await api.get("/api/reminders").catch(() => ({ data: [] }));
-        localReminders = response.data || [];
-      }
-      
-      setReminders(localReminders);
+      const response = await axios.get("/api/reminders"); // Backend endpoint
+      setReminders(response.data || []);
     } catch (error) {
       console.error("Failed to fetch reminders", error);
+      setReminders([]);
     } finally {
       setLoading(false);
     }
@@ -33,10 +25,7 @@ const ReminderPage = () => {
 
   const markAsDone = async (id) => {
     try {
-      // Offline support
-      if (dbService.updateReminder) await dbService.updateReminder(id, { status: 'done' });
-      await syncQueue.enqueue({ entityId: id, entity: 'reminder', method: 'PUT', url: `/api/reminders/${id}/done` });
-      
+      await axios.put(`/api/reminders/${id}/done`);
       setReminders(reminders.filter((r) => r._id !== id));
     } catch (error) {
       console.error("Failed to mark reminder as done", error);

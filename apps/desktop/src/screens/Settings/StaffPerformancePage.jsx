@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { TrendingUp, Users, Award, DollarSign } from "lucide-react";
 import api from "../../services/api";
-import { dbService } from "../../services/dbService";
 import Loader from "../../components/Loader";
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6366f1'];
@@ -16,15 +15,8 @@ export default function StaffPerformancePage() {
     const fetchPerformanceData = async () => {
       setLoading(true);
       try {
-        let performanceData = [];
-        // Try fetching from API first, fallback to local DB for offline
-        const res = await api.get("/api/reports/staff-performance").catch(() => null);
-        if (res && res.data) {
-          performanceData = res.data;
-        } else if (dbService.getStaffPerformance) {
-          // Fallback to local calculation if API fails or offline
-          performanceData = await dbService.getStaffPerformance();
-        }
+        const res = await api.get("/api/reports/staff-performance");
+        const performanceData = res.data || [];
         setStaffData(performanceData);
 
         // Calculate KPIs

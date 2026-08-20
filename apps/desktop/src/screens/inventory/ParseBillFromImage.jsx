@@ -3,9 +3,6 @@ import { Upload, FileText, Check, Loader2, ArrowRight, AlertTriangle, CheckCircl
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import Button from "../../components/Button";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
-import { syncQueue } from "@repo/shared";
 
 const ParseBillFromImage = () => {
   const navigate = useNavigate();
@@ -21,13 +18,13 @@ const ParseBillFromImage = () => {
 
   useEffect(() => {
     const loadProducts = async () => {
-      const products = await dbService.getInventory?.() || [];
-      setLocalProducts(products);
+      const res = await api.get('/api/inventory').catch(() => ({ data: { products: [] } }));
+      setLocalProducts(res.data?.products || res.data || []);
     };
     loadProducts();
   }, []);
 
-  // Smart Word Matching Algorithm (Fuzzy Logic)
+  // Smart Word Matching Algorithm
   const calculateSimilarity = (str1, str2) => {
     const s1 = str1.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
     const s2 = str2.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
@@ -36,7 +33,7 @@ const ParseBillFromImage = () => {
     const set2 = new Set(s2);
     const intersection = new Set([...set1].filter(x => set2.has(x)));
     const union = new Set([...set1, ...set2]);
-    return intersection.size / union.size; // Returns 0 to 1
+    return intersection.size / union.size;
   };
 
   const handleImageChange = (e) => {
@@ -72,9 +69,9 @@ const ParseBillFromImage = () => {
       canvasRef.current.height = videoRef.current.videoHeight;
       context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
       
-      const dataUrl = canvasRef.current.toDataURL("image/jpeg", 0.7); // 0.7 for compression
+      const dataUrl = canvasRef.current.toDataURL("image/jpeg", 0.7);
       setPreview(dataUrl);
-      setImage(dataUrl); // Use Data URL
+      setImage(dataUrl);
       setParsedData(null);
       stopCamera();
     }
@@ -108,32 +105,13 @@ const ParseBillFromImage = () => {
   const handleConfirm = async () => {
     if (!parsedData) return;
     try {
-      const newId = crypto.randomUUID ? crypto.randomUUID() : `PUR-OCR-${Date.now()}`;
-      const payload = { ...parsedData, _id: newId, uuid: newId, paymentMethod: 'credit' };
-
-      // 1. Save Locally
-      if (dbService.savePurchase) await dbService.savePurchase(payload);
-
-      // 2. Try to update stock locally if products match by name
-      const localProducts = await dbService.getInventory?.() || [];
-      for (const item of payload.items) {
-        const matchedProduct = localProducts.find(p => p.name.toLowerCase() === item.name.toLowerCase());
-        if (matchedProduct) {
-          const updatedProduct = { ...matchedProduct, currentStock: (parseFloat(matchedProduct.currentStock) || 0) + item.quantity };
-          await dbService.updateProduct(matchedProduct._id, updatedProduct);
-        }
-      }
-
-      await auditService.logAction('CREATE', 'purchase', null, payload);
-
-      // 3. Queue for Cloud Sync
-      await syncQueue.enqueue({ entityId: newId, entity: 'purchase', method: "POST", url: "/api/purchase", data: payload });
-
-      alert("Purchase Entry Scanned & Saved Offline Successfully!");
+      // Save as a purchase entry
+      await api.post("/inventory/purchase", parsedData);
+      alert("Purchase Entry Created Successfully!");
       navigate("/inventory");
     } catch (error) {
       console.error("Failed to save:", error);
-      alert("Failed to save purchase entry: " + error.message);
+      alert("Failed to save purchase entry.");
     }
   };
 
@@ -229,34 +207,25 @@ const ParseBillFromImage = () => {
                 <p className="text-xl font-bold text-green-700">₹{parsedData.totalAmount}</p>
               </div>
               
-              {/* Smart Items List UI */}
               <div className="mt-4">
-                <h4 className="font-semibold text-sm mb-2 text-gray-700">Items Scanned ({parsedData.items.length})</h4>
+                <h4 className="font-semibold text-sm mb-2 text-gray-700">Items Scanned</h4>
                 <div className="space-y-3">
                   {parsedData.items.map((item, idx) => (
                     <div key={idx} className={`p-3 rounded border text-sm ${item.matchStatus === 'exact' ? 'bg-green-50 border-green-200' : item.matchStatus === 'partial' ? 'bg-yellow-50 border-yellow-300' : 'bg-blue-50 border-blue-200'}`}>
-                      
-                      <div className="flex justify-between items-start mb-1">
+                      <div className="flex justify-between mb-1">
                         <span className="font-medium text-gray-800">{item.name}</span>
                         <span className="font-bold text-gray-700">x{item.quantity}</span>
                       </div>
                       
-                      {item.matchStatus === 'exact' && (
-                        <p className="text-xs text-green-600 flex items-center gap-1 mt-1"><CheckCircle size={14}/> Matched perfectly with inventory</p>
-                      )}
-                      
-                      {item.matchStatus === 'new' && (
-                        <p className="text-xs text-blue-600 flex items-center gap-1 mt-1"><Plus size={14}/> Will be added as a NEW product</p>
-                      )}
+                      {item.matchStatus === 'exact' && <p className="text-xs text-green-600 flex items-center gap-1"><CheckCircle size={14}/> Matched with inventory</p>}
+                      {item.matchStatus === 'new' && <p className="text-xs text-blue-600 flex items-center gap-1"><Plus size={14}/> Will be added as NEW</p>}
 
                       {item.matchStatus === 'partial' && (
                         <div className="mt-2 pt-2 border-t border-yellow-200">
-                          <p className="text-xs text-yellow-800 flex items-center gap-1 mb-2">
-                            <AlertTriangle size={14}/> {item.similarity}% Match Found: <strong>{item.suggestedProduct.name}</strong>
-                          </p>
+                          <p className="text-xs text-yellow-800 mb-2"><AlertTriangle size={14} className="inline mr-1"/> {item.similarity}% Match: <strong>{item.suggestedProduct.name}</strong></p>
                           <div className="flex gap-2">
-                            <button onClick={() => resolveItemConflict(idx, 'merge')} className="px-3 py-1 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700 font-medium">Merge to this</button>
-                            <button onClick={() => resolveItemConflict(idx, 'keep_new')} className="px-3 py-1 bg-white border border-yellow-600 text-yellow-700 rounded text-xs hover:bg-yellow-50 font-medium">Add as New Instead</button>
+                            <button onClick={() => resolveItemConflict(idx, 'merge')} className="px-3 py-1 bg-yellow-600 text-white rounded text-xs">Merge</button>
+                            <button onClick={() => resolveItemConflict(idx, 'keep_new')} className="px-3 py-1 border border-yellow-600 text-yellow-700 rounded text-xs">Add as New</button>
                           </div>
                         </div>
                       )}

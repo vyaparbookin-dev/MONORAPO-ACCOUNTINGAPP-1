@@ -1,6 +1,6 @@
 import React, { useState } from "react";
+import axios from "axios";
 import Loader from "../../components/Loader";
-import { dbService } from "../../services/dbService";
 
 const AddScreen = () => {
   const [employee, setEmployee] = useState("");
@@ -11,8 +11,7 @@ const AddScreen = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      const newId = `SAL-${Date.now()}`;
-      await dbService.saveSalary({ uuid: newId, employeeName: employee, amount: Number(amount), date: new Date().toISOString() });
+      await axios.post("/api/salary", { employee, amount });
       alert("Salary added successfully");
       setEmployee("");
       setAmount("");

@@ -14,6 +14,7 @@ const MembershipListPage = () => {
         setMembers(res.data || []);
       } catch (err) {
         console.error("Failed to load members", err);
+        setMembers([]);
       }
     };
     fetchMembers();

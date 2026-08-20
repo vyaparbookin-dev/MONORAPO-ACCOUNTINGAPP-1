@@ -1,8 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import api from "../../services/api";
-import { dbService } from "../../services/dbService";
 import { Eye, EyeOff } from "lucide-react";
+import api from "../../services/api";
 import { GoogleLogin } from '@react-oauth/google';
 
 export default function LoginScreen() {
@@ -14,25 +13,29 @@ export default function LoginScreen() {
   const navigate = useNavigate();
 
   const handleGoogleSuccess = async (credentialResponse) => {
+    const viteGoogleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    console.log("[Auth Debug] Google Success. Credential received:", !!credentialResponse.credential);
+    console.log("[Auth Debug] Using Google Client ID from Vite env:", viteGoogleClientId ? 'Loaded' : 'MISSING!');
     setLoading(true);
     setError("");
     try {
       const response = await api.post("/api/auth/google", { credential: credentialResponse.credential });
       const { token, user } = response.data || response;
       if (token && user) {
-        const normalizedUser = {
-          ...user,
-          _id: user._id || user.id,
-          companyId: user.companyId || user.company || user.company_id,
-          company: user.companyId || user.company || user.company_id,
-        };
-        dbService.setAuthData(token, normalizedUser);
+        localStorage.setItem("authToken", token);
+        localStorage.setItem("token", token);
+        localStorage.setItem("user", JSON.stringify(user));
+        if (user.companyId) {
+          localStorage.setItem("companyId", user.companyId);
+          localStorage.setItem("selectedCompany", user.companyId);
+        }
         navigate("/");
       } else {
         setError("Google login failed. Please try again.");
       }
     } catch (err) {
-      setError(err.response?.data?.message || "Google login failed.");
+      console.error("Google Login API Error:", err.response?.data || err);
+      setError(err.response?.data?.message || "Google login failed. Check console & backend logs.");
     } finally {
       setLoading(false);
     }
@@ -43,17 +46,21 @@ export default function LoginScreen() {
     setError("");
     setLoading(true);
 
-    const cleanEmail = email.trim().toLowerCase();
-    console.log("[Auth Debug] desktop login attempt for:", cleanEmail);
+    const normalizedEmail = email.trim().toLowerCase();
+    console.log("[Auth Debug] Email/Pass login attempt for:", normalizedEmail);
 
     try {
-      const response = await api.post("/api/auth/login", { email: cleanEmail, password });
+      const response = await api.post("/api/auth/login", { email: normalizedEmail, password });
       
-      // Safely extract token and user
+      // Safely extract token and user from deeply nested backend responses
       const token = response?.token || response?.data?.token || response?.data?.data?.token;
       const userObj = response?.user || response?.data?.user || response?.data?.data?.user;
       
       if (token) {
+        // Store token in localStorage (setting both keys to prevent 401 interceptor loop)
+        localStorage.setItem("authToken", token);
+        localStorage.setItem("token", token);
+
         if (userObj) {
           const normalizedUser = {
             ...userObj,
@@ -61,16 +68,13 @@ export default function LoginScreen() {
             companyId: userObj.companyId || userObj.company || userObj.company_id,
             company: userObj.companyId || userObj.company || userObj.company_id,
           };
-          dbService.setAuthData(token, normalizedUser);
+          localStorage.setItem("user", JSON.stringify(normalizedUser));
 
           const companyId = normalizedUser.companyId || normalizedUser.company;
           if (companyId) {
-            // Manually set companyId in the underlying storage for desktop
-            dbService.setItem('companyId', companyId);
+            localStorage.setItem("companyId", companyId);
+            localStorage.setItem("selectedCompany", companyId);
           }
-        } else {
-          // Fallback if user object is not returned
-          dbService.setAuthData(token, { email: cleanEmail, name: cleanEmail.split('@')[0] });
         }
 
         // Redirect to dashboard
@@ -80,8 +84,13 @@ export default function LoginScreen() {
       }
     } catch (err) {
       const errData = err.response?.data || err;
+      if (errData.requiresVerification && errData.userId) {
+        alert("Account not verified. Redirecting to OTP verification page...");
+        navigate("/verify-otp", { state: { userId: errData.userId } });
+        return;
+      }
       setError(errData.message || "Invalid email or password");
-      console.error("Login error:", err);
+      console.error("🔴 Email/Pass Login Error:", err.response?.data || err);
     } finally {
       setLoading(false);
     }
@@ -108,21 +117,22 @@ export default function LoginScreen() {
 
           <div className="mb-6">
             <label className="block text-gray-700 font-semibold mb-2">Password</label>
-            <div className="relative mb-1">
+            <div className="relative">
               <input
                 type={showPassword ? "text" : "password"}
                 placeholder="Enter your password"
-                className="border border-gray-300 w-full p-3 pr-12 rounded-lg focus:outline-none focus:border-blue-600"
+                className="border border-gray-300 w-full p-3 pr-12 mb-1 rounded-lg focus:outline-none focus:border-blue-600"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
               <button
                 type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 transition z-10"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
               >
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { dbService } from "../../services/dbService";
+import api from "../../services/api";
 import { Package, AlertTriangle, TrendingUp, Eye, BarChart3, ShoppingCart, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -25,7 +25,8 @@ export default function CategoryAnalyticsPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const products = await dbService.getProducts() || [];
+      const res = await api.get("/api/inventory").catch(() => ({ data: { products: [] } }));
+      const products = res.data?.products || res.data || [];
       const safe = Array.isArray(products) ? products : [];
       setInventory(safe);
       processData(safe, groupBy);

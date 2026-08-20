@@ -13,9 +13,8 @@ export default function SupplierLedgerPage() {
     const fetchSuppliers = async () => {
         try {
             const res = await api.get("/api/inventory");
-            const data = res.data?.products || res.data || [];
-            const inventoryItems = Array.isArray(data) ? data : [];
-            const uniqueSuppliers = [...new Set(inventoryItems.map(i => i.supplier).filter(Boolean))];
+            const items = res.data?.products || res.data || [];
+            const uniqueSuppliers = [...new Set(items.map(i => i.supplier).filter(Boolean))];
             setSuppliers(uniqueSuppliers);
         } catch (e) {
             console.error(e);

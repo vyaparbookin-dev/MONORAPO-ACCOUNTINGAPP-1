@@ -1,9 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { ArrowRightLeft, Plus, Trash2, Save } from "lucide-react";
 import api from "../../services/api";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
-import { syncQueue } from "@repo/shared";
 
 export default function StockTransferPage() {
   const [branches, setBranches] = useState([]);
@@ -20,31 +17,19 @@ export default function StockTransferPage() {
     items: [],
   });
 
-  const [newItem, setNewItem] = useState({ productId: "", searchName: "", name: "", quantity: 1 });
+  const [newItem, setNewItem] = useState({ productId: "", name: "", quantity: 1 });
 
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        let localBranches = await dbService.getBranches?.() || [];
-        let localWarehouses = await dbService.getWarehouses?.() || [];
-        let localProducts = await dbService.getInventory?.() || [];
-
-        if (localBranches.length === 0) {
-            const branchRes = await api.get("/api/branch").catch(()=>({data:{}}));
-            localBranches = branchRes.data?.branches || branchRes.data?.data || [];
-        }
-        if (localWarehouses.length === 0) {
-            const whRes = await api.get("/api/warehouse").catch(()=>({data:{}}));
-            localWarehouses = whRes.data?.warehouses || whRes.data?.data || [];
-        }
-        if (localProducts.length === 0) {
-            const prodRes = await api.get("/api/inventory").catch(()=>({data:{}}));
-            localProducts = prodRes.data?.products || [];
-        }
-
-        setBranches(localBranches);
-        setWarehouses(localWarehouses);
-        setProducts(localProducts);
+        const [branchRes, whRes, prodRes] = await Promise.all([
+          api.get("/api/branch"),
+          api.get("/api/warehouse"),
+          api.get("/api/inventory"),
+        ]);
+        setBranches(branchRes.data?.branches || branchRes.data?.data || []);
+        setWarehouses(whRes.data?.warehouses || whRes.data?.data || []);
+        setProducts(prodRes.data?.products || []);
       } catch (err) {
         console.error("Failed to load initial data", err);
       }
@@ -60,7 +45,7 @@ export default function StockTransferPage() {
       ...prev,
       items: [...prev.items, { productId: newItem.productId, name: product.name, quantity: parseFloat(newItem.quantity) }],
     }));
-    setNewItem({ productId: "", searchName: "", name: "", quantity: 1 });
+    setNewItem({ productId: "", name: "", quantity: 1 });
   };
 
   const handleRemoveItem = (index) => {
@@ -77,20 +62,13 @@ export default function StockTransferPage() {
 
     setLoading(true);
     try {
-      const newId = crypto.randomUUID ? crypto.randomUUID() : `TRF-${Date.now()}`;
-      const payload = { ...formData, _id: newId, uuid: newId, date: new Date().toISOString() };
-
-      if (dbService.saveStockTransfer) await dbService.saveStockTransfer(payload);
-      
-      await auditService.logAction('CREATE', 'stock_transfer', null, payload);
-      await syncQueue.enqueue({ entityId: newId, entity: 'stock_transfer', method: "POST", url: "/api/stock-transfer", data: payload });
-
-      alert("Stock Transfer Initiated Offline Successfully!");
+      await api.post("/api/stock-transfer", formData);
+      alert("Stock Transfer Initiated Successfully!");
       // Reset form after success
       setFormData({ ...formData, notes: "", items: [] });
     } catch (err) {
       console.error(err);
-      alert("Failed to transfer stock: " + err.message);
+      alert(err.response?.data?.message || "Failed to transfer stock");
     } finally {
       setLoading(false);
     }
@@ -149,22 +127,11 @@ export default function StockTransferPage() {
           <h3 className="font-semibold mb-2">Items to Transfer</h3>
           <div className="flex gap-2 items-end mb-4">
             <div className="flex-1">
-              <label className="text-xs text-gray-500">Search Product</label>
-              <input
-                className="w-full border p-2 rounded"
-                list="product-list-transfer"
-                placeholder="Type to search product..."
-                value={newItem.searchName || ""}
-                onChange={e => {
-                  const val = e.target.value;
-                  const p = products.find(prod => prod.name === val || prod.barcode === val || prod.sku === val);
-                  if (p) setNewItem({...newItem, productId: p._id, searchName: p.name, name: p.name});
-                  else setNewItem({...newItem, searchName: val, productId: ""});
-                }}
-              />
-              <datalist id="product-list-transfer">
-                {products.map(p => <option key={p._id} value={p.name}>In Stock: {p.currentStock}</option>)}
-              </datalist>
+              <label className="text-xs text-gray-500">Product</label>
+              <select className="w-full border p-2 rounded" value={newItem.productId} onChange={e => setNewItem({...newItem, productId: e.target.value})}>
+                <option value="">Select Product</option>
+                {products.map(p => <option key={p._id} value={p._id}>{p.name} (In Stock: {p.currentStock})</option>)}
+              </select>
             </div>
             <div className="w-32">
               <label className="text-xs text-gray-500">Transfer Qty</label>

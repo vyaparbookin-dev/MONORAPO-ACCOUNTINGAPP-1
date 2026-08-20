@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
-import { dbService } from "../../services/dbService";
 import { useCompany } from "../../contexts/CompanyContext";
 
 export default function BillDetailPage({ bill: propBill, onBack }) {
@@ -25,17 +24,8 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
   const fetchBill = async (billId) => {
     try {
       setLoading(true);
-      
-      // Offline First
-      const localBills = await dbService.getInvoices?.() || [];
-      let foundBill = localBills.find(b => b._id === billId || b.uuid === billId || b.id === billId || b.billNumber === billId);
-      
-      if (!foundBill && navigator.onLine) {
-        const res = await api.get(`/api/billing/${billId}`).catch(() => null);
-        if (res) foundBill = res.bill || res.data || res;
-      }
-      
-      setBill(foundBill);
+      const res = await api.get(`/api/billing/${billId}`);
+      setBill(res.bill || res);
     } catch (err) {
       console.error(err);
       setError("Failed to load bill details");
@@ -46,21 +36,15 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
 
   const handleDownload = async () => {
     if (!bill) return;
-    if (!navigator.onLine) {
-      alert("PDF download requires an active internet connection as it is generated on the server.");
-      return;
-    }
     try {
-      // Fixed API Route to match backend
-      const res = await api.get(`/api/billing/pdf/${bill._id}`, {
+      const res = await api.get(`/api/billing/${bill._id}/pdf`, {
         responseType: "blob",
       });
-      const url = window.URL.createObjectURL(new Blob([res], { type: 'application/pdf' }));
+      const url = window.URL.createObjectURL(new Blob([res]));
       const a = document.createElement("a");
       a.href = url;
       a.download = `${bill.billNumber || bill.billNo || 'invoice'}.pdf`;
       a.click();
-      window.URL.revokeObjectURL(url);
     } catch (e) {
       alert("Failed to download PDF");
     }

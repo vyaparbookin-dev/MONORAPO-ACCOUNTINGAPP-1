@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
+import api from "../../services/api";
 import { ShoppingCart, Save, Search, Trash2, Monitor } from "lucide-react";
-import { syncQueue } from "@repo/shared";
-import { dbService } from "../../services/dbService";
 
 export default function FastPOSPage() {
   const [cart, setCart] = useState([]);
@@ -17,7 +16,7 @@ export default function FastPOSPage() {
   useEffect(() => {
     fetchProducts();
   }, []); // Run ONCE on mount
-
+    
   useEffect(() => {
     // Global Keyboard Shortcuts
     const handleKeyDown = (e) => {
@@ -37,21 +36,13 @@ export default function FastPOSPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [cart, barcode]); // Keyboard listeners depend on these states
+  }, [cart, barcode]);
 
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      let productList = [];
-      
-      // 1. Local Offline DB First
-      const rawProducts = await dbService.getInventory();
-
-      // ULTIMATE ARRAY CHECK
-      if (Array.isArray(rawProducts)) productList = rawProducts;
-      else if (rawProducts && Array.isArray(rawProducts.products)) productList = rawProducts.products;
-      else if (rawProducts && Array.isArray(rawProducts.data)) productList = rawProducts.data;
-
+      const res = await api.get("/api/inventory").catch(() => ({ data: [] }));
+      const productList = res.data?.products || res.data || [];
       setProducts(productList.filter(Boolean));
     } catch (err) {
       console.error(err);
@@ -151,37 +142,17 @@ export default function FastPOSPage() {
         date: new Date().toISOString()
       };
 
-      // 1. Offline Save (Local SQLite DB)
-      await dbService.saveInvoice({
-          invoice: {
-            invoice_number: payload.billNumber,
-            customer_uuid: "walk-in",
-            customerName: payload.customerName,
-            customerAddress: payload.customerAddress,
-            date: payload.date,
-            total_amount: payload.total,
-            tax_amount: 0,
-            status: payload.status
-          },
-          items: cart.map(i => ({
-            item_name: i.name,
-            quantity: i.quantity,
-            price: i.rate,
-            tax_rate: 0,
-            total: i.total
-          }))
-        });
-
-      // 2. Cloud Sync
-      await syncQueue.enqueue({ entityId: payload.billNumber, entity: 'invoice', method: "POST", url: "/api/billing", data: payload });
+      // API Call for Cloud Only (Web version doesn't use SQLite)
+      await api.post("/api/billing", payload);
       
-      alert("Bill Generated Offline Successfully!");
+      alert("Bill Generated Successfully!");
       setCart([]);
       setCustomerName("");
       setCustomerMobile("");
       setCustomerAddress("");
       searchInputRef.current?.focus(); // Focus back to scanner
     } catch (err) {
+      console.error(err);
       alert("Error generating bill.");
     } finally {
       setLoading(false);
@@ -229,9 +200,9 @@ export default function FastPOSPage() {
                 onChange={(e) => setBarcode(e.target.value)}
                 onKeyDown={handleSearch}
               />
-          <button onClick={handleManualAddBtn} className="bg-blue-600 hover:bg-blue-700 text-white px-6 rounded-lg font-bold shadow-sm transition">
-            Enter
-          </button>
+              <button onClick={handleManualAddBtn} className="absolute right-2 top-2 bottom-2 bg-blue-600 hover:bg-blue-700 text-white px-6 rounded-lg font-bold shadow-sm transition">
+                Enter
+              </button>
             </div>
           </div>
 
@@ -248,13 +219,13 @@ export default function FastPOSPage() {
               </thead>
               <tbody>
                 {cart.length === 0 ? (
-                <tr>
-                  <td colSpan="5" className="p-12 text-center text-gray-400">
-                    <p className="text-xl font-medium text-gray-500 mb-2">Cart is empty</p>
-                    <p className="text-sm mb-4">Scan an item barcode or type the product name</p>
+                  <tr>
+                    <td colSpan="5" className="p-12 text-center text-gray-400">
+                      <p className="text-xl font-medium text-gray-500 mb-2">Cart is empty</p>
+                      <p className="text-sm mb-4">Scan an item barcode or type the product name</p>
                       <button onClick={() => searchInputRef.current?.focus()} className="px-6 py-2 border-2 border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-medium transition">Start Scanning (F2)</button>
-                  </td>
-                </tr>
+                    </td>
+                  </tr>
                 ) : (
                   cart.filter(Boolean).map((item, idx) => (
                     <tr key={idx} className="border-b hover:bg-blue-50">
@@ -280,7 +251,7 @@ export default function FastPOSPage() {
             </table>
           </div>
           
-          {/* NEW: Quick Add Products Grid */}
+          {/* Quick Add Products Grid */}
           <div className="p-4 bg-gray-50 border-t border-gray-200 h-64 overflow-y-auto">
             <h3 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wide">Quick Select Items</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -304,7 +275,7 @@ export default function FastPOSPage() {
         {/* Checkout Summary Section */}
         <div className="w-80 bg-slate-900 text-white rounded-xl shadow-lg flex flex-col shrink-0">
           <div className="p-5 border-b border-slate-700 bg-slate-800 rounded-t-xl shadow-inner">
-            <h3 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wide">Customer Info (F4)</h3>
+            <h3 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wide">Customer Info</h3>
             <input 
               ref={customerNameInputRef}
               type="text" 

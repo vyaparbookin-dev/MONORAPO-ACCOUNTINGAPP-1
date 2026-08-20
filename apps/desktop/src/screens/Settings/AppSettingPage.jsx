@@ -1,9 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useCompany } from "../../contexts/CompanyContext";
 import api from "../../services/api";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
-import { syncQueue } from "@repo/shared";
 import { useNavigate } from "react-router-dom";
 import ImportHistoryManager from "../../components/ImportHistoryManager";
 
@@ -27,10 +24,6 @@ const AppSettingPage = () => {
     sms: false,
     push: true,
   });
-  
-  // WhatsApp States
-  const [waStatus, setWaStatus] = useState('disconnected');
-  const [waQrCode, setWaQrCode] = useState('');
 
   useEffect(() => {
     if (selectedCompany?.logo) {
@@ -41,20 +34,11 @@ const AppSettingPage = () => {
     setPlan(selectedCompany?.plan || 'free');
     setFreeBillCount(selectedCompany?.freeBillCount || 0);
     setMaxFreeBills(selectedCompany?.maxFreeBills || 50);
+    setSubscriptionExpiresAt(selectedCompany?.subscriptionExpiresAt ? new Date(selectedCompany.subscriptionExpiresAt) : null);
     setEnableGst(
       selectedCompany?.enableGst === true || 
       String(selectedCompany?.enableGst).toLowerCase() === "true"
     );
-    setSubscriptionExpiresAt(selectedCompany?.subscriptionExpiresAt ? new Date(selectedCompany.subscriptionExpiresAt) : null);
-
-    // WhatsApp Status Setup (Listens to Electron Main Process)
-    if (window.electron && window.electron.whatsapp) {
-      window.electron.whatsapp.getStatus().then(setWaStatus);
-      window.electron.whatsapp.onStatusChange((status, data) => {
-        setWaStatus(status);
-        if (status === 'qr') setWaQrCode(data); // data will be base64 image URL of QR
-      });
-    }
   }, [selectedCompany]);
 
   const handleLogoUpload = (e) => {
@@ -100,17 +84,16 @@ const AppSettingPage = () => {
     if (!selectedCompany) return alert("No company selected.");
     setSaving(true);
     try {
-      // Payload for local DB and sync queue
-      const payload = { logo: logoPreview, theme, notifications, invoiceThemeColor, invoiceTemplateType, enableGst, gstActionPreference };
-      const syncPayload = { logo: logoPreview, invoiceThemeColor, invoiceTemplateType, enableGst, gstActionPreference };
-      
-      // 1. Save Locally
-      if (dbService.updateCompany) await dbService.updateCompany(selectedCompany._id, payload);
-      
-      // 2. Audit & Sync
-      await auditService.logAction('UPDATE', 'company_settings', { _id: selectedCompany._id }, { logo: logoPreview ? 'Updated' : 'Unchanged', theme, invoiceThemeColor, invoiceTemplateType, enableGst });
-      await syncQueue.enqueue({ entityId: selectedCompany._id, entity: 'company', method: 'PUT', url: `/api/company/${selectedCompany._id}`, data: syncPayload });
-
+      await api.put(`/api/company/${selectedCompany._id}`, {
+        logo: logoPreview, 
+        invoiceThemeColor, 
+        invoiceTemplateType,
+        theme,
+        notifications,
+        enableGst,
+        gstActionPreference,
+        // Note: plan, freeBillCount, etc. are updated via payment flow, not directly here.
+      });
       alert("Settings saved successfully!");
       refetchCompanies();
     } catch (error) {
@@ -121,18 +104,57 @@ const AppSettingPage = () => {
     }
   };
 
-  const handleLinkWhatsapp = () => {
-    if (!window.electron?.whatsapp) {
-      alert("WhatsApp background integration requires the Electron Main Process to be configured.");
-      return;
-    }
-    setWaStatus('initializing');
-    window.electron.whatsapp.link();
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      if (document.getElementById('razorpay-checkout-script')) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement('script');
+      script.id = 'razorpay-checkout-script';
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
   };
 
-  const handleUnlinkWhatsapp = () => {
-    if (window.electron?.whatsapp) {
-      window.electron.whatsapp.unlink();
+  const handleUpgradeToPremium = async () => {
+    if (!selectedCompany) return alert("Please select a company first.");
+    
+    const amount = 99900; // Example: ₹999.00 (in paisa) for 1 year premium
+    const planName = "Premium Plan (1 Year)";
+
+    try {
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded) {
+        alert("Razorpay SDK could not be loaded. Please check your internet connection.");
+        return;
+      }
+
+      const orderRes = await api.post('/api/payment/order', { amount, currency: 'INR', receipt: `subscription_${selectedCompany._id}` });
+      const order = orderRes.order;
+
+      const options = {
+        key: process.env.RAZORPAY_KEY_ID || 'YOUR_RAZORPAY_KEY_ID', // **IMPORTANT: Replace with your actual Razorpay Key ID**
+        amount: order.amount,
+        currency: order.currency,
+        name: "RedAccounting App",
+        description: planName,
+        order_id: order.id,
+        handler: async (response) => {
+          await api.post('/api/payment/verify', { ...response, billId: null, companyId: selectedCompany._id }); // billId is null for subscription
+          alert("Payment Successful! Your plan has been upgraded.");
+          refetchCompanies(); // Fetch updated company details
+        },
+        prefill: { name: selectedCompany.name, email: selectedCompany.email, contact: selectedCompany.phone },
+        theme: { color: invoiceThemeColor || '#007bff' }
+      };
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (error) {
+      console.error("Payment failed:", error);
+      alert("Payment failed. Please try again.");
     }
   };
 
@@ -156,44 +178,6 @@ const AppSettingPage = () => {
             <input type="file" accept="image/*" onChange={handleLogoUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
             <p className="text-xs text-gray-500 mt-2">Recommended: Square image, max 2MB.</p>
           </div>
-        </div>
-      </div>
-
-      {/* WhatsApp Auto-Send Integration */}
-      <div className="mb-6 border-b pb-6">
-        <h3 className="text-lg font-semibold mb-2">WhatsApp Auto-Send (Vyapar Style)</h3>
-        <p className="text-gray-600 mb-4 text-sm">Link your WhatsApp to send bills automatically in the background without opening the app.</p>
-        
-        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-          <div className="flex justify-between items-center mb-4">
-            <span className="text-sm font-medium text-gray-700">Status: 
-              <span className={`ml-2 px-2 py-1 rounded text-xs font-bold ${
-                waStatus === 'connected' ? 'bg-green-100 text-green-700' :
-                waStatus === 'qr' ? 'bg-yellow-100 text-yellow-700' :
-                waStatus === 'initializing' ? 'bg-blue-100 text-blue-700' :
-                'bg-gray-200 text-gray-700'
-              }`}>
-                {waStatus.toUpperCase()}
-              </span>
-            </span>
-            
-            {waStatus === 'connected' ? (
-              <button onClick={handleUnlinkWhatsapp} className="px-4 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 text-sm font-medium border border-red-200">
-                Unlink WhatsApp
-              </button>
-            ) : (
-              <button onClick={handleLinkWhatsapp} disabled={waStatus === 'initializing'} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50">
-                {waStatus === 'initializing' ? 'Loading QR...' : 'Link WhatsApp'}
-              </button>
-            )}
-          </div>
-          
-          {waStatus === 'qr' && waQrCode && (
-            <div className="mt-4 p-4 bg-white border rounded-lg flex flex-col items-center">
-              <p className="text-sm text-gray-600 mb-3 font-semibold">Scan this QR code using your WhatsApp (Linked Devices)</p>
-              <img src={waQrCode} alt="WhatsApp QR Code" className="w-48 h-48 border p-2 rounded-lg shadow-sm" />
-            </div>
-          )}
         </div>
       </div>
 

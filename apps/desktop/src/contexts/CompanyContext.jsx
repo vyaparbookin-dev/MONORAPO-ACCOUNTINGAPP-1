@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
-import { dbService } from '../services/dbService';
 
 const CompanyContext = createContext();
 
@@ -17,56 +16,33 @@ export const CompanyProvider = ({ children }) => {
     if (token && token !== "null" && token !== "undefined") {
       fetchCompanies();
     } else {
+      console.log("[Company Debug] No token found, skipping company fetch.");
       setLoading(false); // If no token, stop loading and show children (e.g., Login screen)
     }
-  }, []); // This should run only once on app startup. Login flow should handle refetching.
+  }, []);
 
   const fetchCompanies = async () => {
     try {
-      let companyList = [];
-
-      // 1. Offline First: Try to fetch from Local SQLite DB via Electron IPC
-      if (window.electron && window.electron.db) {
-        companyList = await window.electron.db.getCompanies();
-      }
-
-      // 2. Sync-Down: If local DB is empty, fetch from Cloud API and save locally
-      if (!companyList || companyList.length === 0) {
-        const response = await api.get('/api/company');
-        const cloudCompanies = response.companies || response.data || (Array.isArray(response) ? response : []);
-        
-        if (cloudCompanies.length > 0) {
-          if (window.electron && window.electron.db) {
-            for (const comp of cloudCompanies) {
-              await window.electron.db.saveCompany({
-                uuid: comp._id,
-                name: comp.name,
-                email: comp.email,
-                phone: comp.phone,
-                address: comp.address,
-                gstNumber: comp.gstNumber,
-                website: comp.website
-              });
-            }
-            // Reload from local DB to get consistent structure
-            companyList = await window.electron.db.getCompanies();
-          } else {
-            companyList = cloudCompanies;
-          }
-        }
-      }
-
+      const response = await api.get('/api/company');
+      // Handle multiple possible response structures: { companies: [] }, { data: [] }, or []
+      const companyList = response.companies || response.data || (Array.isArray(response) ? response : []);
+      console.log("[Company Debug] Fetched companies:", companyList.map(c => ({ _id: c._id, name: c.name, user: c.user })));
       setCompanies(companyList);
 
-      // Restore selected company securely
-      const storedCompanyId = dbService.getCompanyId();
-      const foundCompany = companyList.find(c => (c._id === storedCompanyId || c.uuid === storedCompanyId));
+      // Restore selected company from localStorage if available
+      const storedCompanyId = localStorage.getItem("companyId") || localStorage.getItem("selectedCompany");
+      console.log("[Company Debug] Stored company ID from localStorage:", storedCompanyId);
+      const foundCompany = companyList.find(c => c._id === storedCompanyId || c._id?.toString() === storedCompanyId?.toString());
 
       if (foundCompany) {
+        console.log("[Company Debug] Restored selected company:", { _id: foundCompany._id, name: foundCompany.name });
         setSelectedCompany(foundCompany);
       } else if (companyList.length > 0 && !selectedCompany) {
+        console.log("[Company Debug] No stored company matched. Defaulting to first company:", companyList[0]._id);
         setSelectedCompany(companyList[0]);
-        dbService.setCompanyId(companyList[0]._id || companyList[0].uuid);
+        localStorage.setItem("companyId", companyList[0]._id);
+      } else {
+        console.log("[Company Debug] No company found in user account or company list is empty.");
       }
     } catch (error) {
       console.error('Failed to fetch companies:', error);
@@ -77,7 +53,7 @@ export const CompanyProvider = ({ children }) => {
 
   const selectCompany = (company) => {
     setSelectedCompany(company);
-    dbService.setCompanyId(company._id || company.uuid);
+    localStorage.setItem("companyId", company._id);
   };
 
   const addCompany = (company) => {
@@ -135,7 +111,7 @@ export const CompanyProvider = ({ children }) => {
           selectCompany(remainingCompanies[0]);
         } else {
           setSelectedCompany(null);
-          dbService.clearCompanyId();
+          localStorage.removeItem("companyId");
         }
       }
     } catch (error) {

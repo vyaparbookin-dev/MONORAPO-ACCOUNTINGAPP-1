@@ -20,15 +20,12 @@ import {
   X,
   PauseCircle
 } from "lucide-react";
-import { syncQueue } from "@repo/shared";
 import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
 import BarcodeScanner from "../../components/BarcodeScanner";
 import SchemeApplyModel from "./SchemeApplyModel";
 import WhatsappSender from "../../components/WhatsappSender";
 import UdharReminder from "../../components/UdharReminder";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
 import { useCompany } from "../../contexts/CompanyContext";
 
 export default function BillingPage() {
@@ -52,14 +49,17 @@ export default function BillingPage() {
     items: [],
     total: 0,
     tax: 0,
+    freightCharges: 0,
+    laborCharges: 0,
+    packingForwardingCharges: 0, // NEW: P&F
     status: "draft",
+    priceLevel: "retail", // Support for 3 Rates: retail, wholesale, special
     discount: 0, // Added discount field
-    freightCharges: 0, // Added freight charges
-    laborCharges: 0, // Added labor charges
-    priceLevel: "retail", // Multi-Price List Feature
     dueDate: "",
     siteName: "", // New field for sitewise reporting
-    termsAndConditions: "", // NEW
+    termsAndConditions: "", // NEW: Terms and conditions
+    agentName: "", // NEW: Broker/Plumber/Painter Name
+    agentCommission: 0, // NEW: Broker Commission Amount
   });
   const [newItem, setNewItem] = useState({
     productId: "",
@@ -83,33 +83,29 @@ export default function BillingPage() {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedHistoryBill, setSelectedHistoryBill] = useState(null);
   
-  // Advanced Barcode/Smart Unfound States
+  // NEW: Missing States for Advanced Features
   const [inventory, setInventory] = useState([]);
+  const [staff, setStaff] = useState([]);
+  const [heldBills, setHeldBills] = useState([]);
+  const [showHeldBillsModal, setShowHeldBillsModal] = useState(false);
+  const [lastRateMsg, setLastRateMsg] = useState("");
+  const [saveToInventory, setSaveToInventory] = useState(false);
+  const [showQuickProductModal, setShowQuickProductModal] = useState(false);
+  const [quickProduct, setQuickProduct] = useState({ name: '', itemId: '', barcode: '', hsnCode: '', gstRate: '', mrp: '', mrpDiscount: '', purchaseRate: '', purchaseDiscount: '', retailPrice: '', wholesalePrice: '', specialPrice: '', currentStock: '', unit: 'pcs', category: '', itemType: 'general', expiryDate: '', warrantyMonths: '', size: '', color: '' });
   const [unfoundBarcode, setUnfoundBarcode] = useState(null);
   const [showUnfoundModal, setShowUnfoundModal] = useState(false);
-  const [unfoundAction, setUnfoundAction] = useState('link'); // 'link' or 'create'
+  const [unfoundAction, setUnfoundAction] = useState('link');
   const [unfoundSearchQuery, setUnfoundSearchQuery] = useState('');
   const [unfoundFilteredInventory, setUnfoundFilteredInventory] = useState([]);
   const [unfoundSelectedProduct, setUnfoundSelectedProduct] = useState(null);
   const [newProdData, setNewProdData] = useState({ name: '', rate: '', unit: 'pcs' });
+  const [quickInsight, setQuickInsight] = useState(null); // Phase 5: Live Customer Insights
   const [isSavingProduct, setIsSavingProduct] = useState(false);
-  
-  // NEW: Save to Inventory & Tatkal Create States
-  const [saveToInventory, setSaveToInventory] = useState(false);
-  const [showQuickProductModal, setShowQuickProductModal] = useState(false);
-  const [quickProduct, setQuickProduct] = useState({ name: '', itemId: '', barcode: '', hsnCode: '', gstRate: '', mrp: '', mrpDiscount: '', purchaseRate: '', purchaseDiscount: '', retailPrice: '', wholesalePrice: '', specialPrice: '', currentStock: '', unit: 'pcs', category: '', expiryDate: '', warrantyMonths: '', size: '', color: '', weight: '', purity: '', brand: '' });
-  
-  // NEW: Hold Bill & Customer Last Rate States
-  const [heldBills, setHeldBills] = useState([]);
-  const [showHeldBillsModal, setShowHeldBillsModal] = useState(false);
-  const [lastRateMsg, setLastRateMsg] = useState("");
-  const [staff, setStaff] = useState([]);
 
   // Pagination states
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-
 
   const { selectedCompany } = useCompany();
   const gstType = selectedCompany?.gstType || "regular";
@@ -117,7 +113,7 @@ export default function BillingPage() {
 
   useEffect(() => {
     // Check if company is selected, otherwise redirect
-    const companyId = dbService.getCompanyId();
+    const companyId = localStorage.getItem("companyId");
     if (!companyId) {
       navigate("/company/list");
       return;
@@ -155,34 +151,9 @@ export default function BillingPage() {
 
   const loadParties = async () => {
     try {
-      let partyList = [];
-      
-      // 1. Offline First: Local Desktop DB se customers lo
-      partyList = await dbService.getCustomers();
-
-      // 2. Sync-Down: Agar local DB khali hai, toh cloud se laao
-      if (!partyList || partyList.length === 0) {
-        if (navigator.onLine) {
-          try {
-            const response = await api.get('/api/party');
-            const cloudParties = response.parties || response.data?.parties || response;
-            const safeParties = Array.isArray(cloudParties) ? cloudParties : [];
-
-            if (safeParties.length > 0) {
-              for (const p of safeParties) {
-                await dbService.addCustomer({ name: p.name, gstin: p.gstin || p.gstNumber || '', phone: p.phone || p.mobileNumber || '', address: p.address || '' });
-              }
-              partyList = await dbService.getCustomers();
-            } else {
-              partyList = safeParties;
-            }
-          } catch (apiErr) {
-            console.warn("Offline: Could not fetch parties from API");
-          }
-        }
-      }
-      // Map SQLite id/uuid to _id for consistency
-      setParties(partyList.map(p => ({...p, _id: p._id || p.uuid})));
+      const response = await api.get('/api/party');
+      const data = response.parties || response.data?.parties || response;
+      setParties(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Error loading parties:", err);
     }
@@ -190,18 +161,9 @@ export default function BillingPage() {
 
   const loadStaff = async () => {
     try {
-      let localStaff = await dbService.getStaff?.() || [];
-      if (!localStaff || localStaff.length === 0) {
-        if (navigator.onLine) {
-          try {
-            const res = await api.get('/api/staff');
-            localStaff = res.data?.staff || res.data || [];
-          } catch (e) {
-            console.warn("Offline: Could not fetch staff");
-          }
-        }
-      }
-      setStaff(Array.isArray(localStaff) ? localStaff : []);
+      const response = await api.get('/api/staff');
+      const data = response.staff || response.data?.staff || response.data || [];
+      setStaff(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Error loading staff:", err);
     }
@@ -209,33 +171,22 @@ export default function BillingPage() {
 
   const loadUnits = async () => {
     try {
-      if (navigator.onLine) {
-        const response = await api.get("/api/unit");
-        const dbUnits = response.units || response.data?.units || [];
-        if (dbUnits.length > 0) {
-          const unitNames = dbUnits.map(u => u.name.toLowerCase());
-          setUnitsList(prev => Array.from(new Set([...prev, ...unitNames])));
-        }
+      const response = await api.get("/api/unit");
+      const dbUnits = response.units || response.data?.units || [];
+      if (dbUnits.length > 0) {
+        const unitNames = dbUnits.map(u => u.name.toLowerCase());
+        setUnitsList(prev => Array.from(new Set([...prev, ...unitNames])));
       }
     } catch (err) {
-      console.warn("Offline: Could not load units from API.");
+      console.error("Error loading units:", err);
     }
   };
 
   const loadInventory = async () => {
     try {
-      let invList = await dbService.getInventory();
-      if (!invList || invList.length === 0) {
-        if (navigator.onLine) {
-          try {
-            const response = await api.get("/api/inventory");
-            invList = response.data?.products || response.data || [];
-          } catch (apiErr) {
-            console.warn("Offline: Could not load inventory from API.");
-          }
-        }
-      }
-      setInventory(Array.isArray(invList) ? invList : []);
+      const response = await api.get("/api/inventory");
+      const data = response.data?.products || response.data || [];
+      setInventory(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Error loading inventory:", err);
     }
@@ -246,36 +197,20 @@ export default function BillingPage() {
       if (pageNumber === 1) setLoading(true);
       else setLoadingMore(true);
 
-      let fetchedBills = [];
-
-      // STRICT OFFLINE FIRST: Only read from SQLite via dbService
-      const localBills = await dbService.getInvoices();
-      fetchedBills = localBills.map(b => ({
-        _id: b.uuid || b.id || b._id,
-        billNumber: b.invoice_number || b.billNumber,
-        partyId: b.customer_uuid === 'walk-in' ? '' : b.customer_uuid,
-        customerName: b.customer_uuid === 'walk-in' ? 'Cash' : (b.customerName || 'Customer'), 
-        total: b.total_amount || b.total || b.finalAmount || 0,
-        tax: b.tax_amount || b.tax || 0,
-        status: b.status || 'draft',
-        date: b.date || b.createdAt,
-        items: b.items || []
-      }));
-
-      // Sort by newest first
-      fetchedBills.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).reverse();
-
-      setHasMore(false); // All data is loaded from SQLite locally instantly
+      const response = await api.get(`/api/billing?page=${pageNumber}&limit=20`);
+      const fetchedBills = response?.bills || [];
+      const totalPages = response?.pagination?.totalPages || 1;
 
       if (pageNumber === 1) {
         setBills(Array.isArray(fetchedBills) ? fetchedBills : []);
       } else {
         setBills(prev => [...prev, ...(Array.isArray(fetchedBills) ? fetchedBills : [])]);
       }
+
+      setHasMore(pageNumber < totalPages);
       setPage(pageNumber);
     } catch (err) {
       console.error("Error loading bills:", err);
-      if (pageNumber === 1) setBills([]); // क्रैश से बचाने के लिए खाली एरे सेट करें
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -314,17 +249,6 @@ export default function BillingPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Frontend Validation: Agar customer select nahi kiya aur naam bhi nahi dala, toh 'Cash' set kar do
-    let finalCustomerName = formData.customerName?.trim();
-    if (!formData.partyId && !finalCustomerName) {
-      finalCustomerName = "Cash";
-    }
-
-    if (formData.items.length === 0) {
-      alert("Validation Error: Please add at least one item to the bill.");
-      return;
-    }
-
     // --- CREDIT LIMIT & BLOCKING CHECK ---
     if (formData.status === "issued" && formData.partyId) {
       const party = parties.find(p => p._id === formData.partyId);
@@ -339,133 +263,45 @@ export default function BillingPage() {
     }
     
     try {
-      // Prepare items correctly for BOTH Create and Update
-      const payload = { 
-        ...formData, 
-        customerName: finalCustomerName,
-        finalAmount: formData.total + (parseFloat(formData.tax) || 0) - (parseFloat(formData.discount) || 0) + (parseFloat(formData.freightCharges) || 0) + (parseFloat(formData.laborCharges) || 0)
-      };
-      payload.items = payload.items.map((it) => ({
-        productId: it.productId || "",
-        name: it.name,
-        category: it.category || "",
-        quantity: it.quantity,
-        rate: it.rate ?? it.price ?? 0,
-        unit: it.unit || "pcs",
-        hsnCode: it.hsnCode || "",
-        serialNumber: it.serialNumber || "",
-        warranty: it.warranty || "",
-        batchNumber: it.batchNumber || "",
-        mfgDate: it.mfgDate || "",
-        expiryDate: it.expiryDate || "",
-        total: it.total ?? (it.quantity * (it.rate ?? it.price ?? 0)),
-      }));
-
-      const localInvoiceData = {
-        invoice: {
-          invoice_number: payload.billNumber,
-          customer_uuid: payload.partyId || "walk-in",
-          date: payload.dueDate || new Date().toISOString(),
-          total_amount: payload.finalAmount,
-          tax_amount: payload.tax,
-          status: payload.status
-        },
-        items: payload.items.map(i => ({
-        item_name: i.name || i.item_name || "Unknown Item",
-          hsn_code: i.hsnCode || "",
-          serial_number: i.serialNumber || "",
-          warranty: i.warranty || "",
-          batch_number: i.batchNumber || "",
-          mfg_date: i.mfgDate || "",
-          expiry_date: i.expiryDate || "",
-          quantity: i.quantity,
-          price: i.rate,
-          tax_rate: 0,
-          total: i.total
-        }))
-      };
-
       if (editingId) {
-        // --- UPDATE LOGIC ---
-        const oldBill = bills.find(x => x._id === editingId);
-
-        // 1. SQLite Update
-        await dbService.updateInvoice(editingId, localInvoiceData);
-
-        // 2. Audit Log
-        await auditService.logAction('UPDATE', 'invoice', oldBill, payload);
-
-        // 3. Sync Queue Deduplication
-        await syncQueue.enqueue({ entityId: editingId, entity: 'invoice', method: "PUT", url: `/api/billing/${editingId}`, data: payload });
-        
-        alert("Bill updated successfully!");
+        await api.put(`/api/billing/${editingId}`, formData);
       } else {
-        // --- CREATE LOGIC ---
-        const newId = crypto.randomUUID ? crypto.randomUUID() : `INV-UUID-${Date.now()}`;
-        const finalPayload = { ...payload, _id: newId, uuid: newId };
-        localInvoiceData.invoice.uuid = newId;
-
-        // 1. SQLite Save
-        await dbService.saveInvoice(localInvoiceData);
-
-        // 2. Audit Log
-        await auditService.logAction('CREATE', 'invoice', null, finalPayload);
-
-        // 3. Sync Queue
-        await syncQueue.enqueue({ entityId: newId, entity: 'invoice', method: "POST", url: "/api/billing", data: finalPayload });
-
-        // --- LOCAL INVENTORY STOCK REDUCTION ---
-        for (const item of payload.items) {
-          if (item.productId) {
-            const product = inventory.find(p => p._id === item.productId || p.uuid === item.productId);
-            if (product && dbService.updateProduct) {
-               const newStock = (parseFloat(product.currentStock) || 0) - item.quantity;
-               await dbService.updateProduct(product._id || product.uuid, { ...product, currentStock: newStock });
-            }
-          }
-        }
-
-        // --- LOCAL CUSTOMER LEDGER (UDHAR) UPDATE ---
-        if (payload.status === "issued" && payload.partyId) {
-          const party = parties.find(p => p._id === payload.partyId);
-          if (party && dbService.updateCustomer) {
-            const updatedBal = (parseFloat(party.currentBalance ?? party.balance ?? 0)) + payload.finalAmount;
-            await dbService.updateCustomer(party._id || party.uuid, { ...party, currentBalance: updatedBal, balance: updatedBal });
-            
-            // Create offline transaction record
-            if (dbService.saveTransaction) {
-              await dbService.saveTransaction({
-                uuid: `TX-${Date.now()}`, partyId: party._id || party.uuid, type: 'bill', debit: payload.finalAmount, credit: 0, date: payload.dueDate || new Date().toISOString(), details: `Invoice #${payload.billNumber}`, status: 'completed'
-              });
-            }
-          }
-        }
-        alert("Bill saved securely offline and queued for sync!");
+        // ensure items use `rate` and `total` fields expected by backend
+        const payload = { 
+          ...formData,
+          finalAmount: formData.total + (parseFloat(formData.tax) || 0) - (parseFloat(formData.discount) || 0) + (parseFloat(formData.freightCharges) || 0) + (parseFloat(formData.laborCharges) || 0) + (parseFloat(formData.packingForwardingCharges) || 0)
+        };
+        payload.items = payload.items.map((it) => ({
+          productId: it.productId || "",
+          name: it.name,
+          category: it.category || "",
+          quantity: it.quantity,
+          rate: it.rate ?? it.price ?? 0,
+          unit: it.unit || "pcs",
+          hsnCode: it.hsnCode || "",
+          serialNumber: it.serialNumber || "",
+          warranty: it.warranty || "",
+          batchNumber: it.batchNumber || "",
+          mfgDate: it.mfgDate || "",
+          expiryDate: it.expiryDate || "",
+          total: it.total ?? (it.quantity * (it.rate ?? it.price ?? 0)),
+        }));
+        await api.post("/api/billing", payload);
       }
       loadBills(1);
       resetForm();
     } catch (err) {
       console.error("Error saving bill:", err);
-      alert("Error: " + (err.response?.data?.message || err.response?.data?.error || "Failed to create invoice. Check required fields."));
     }
   };
 
   const handleDelete = async (id) => {
     if (window.confirm("Are you sure you want to delete this bill?")) {
       try {
-        const oldBill = bills.find(x => x._id === id);
-
-        await dbService.deleteInvoice(id);
-        
-        await auditService.logAction('DELETE', 'invoice', oldBill, null);
-        
-        await syncQueue.enqueue({ entityId: id, entity: 'invoice', method: 'DELETE', url: `/api/billing/${id}` });
-
+        await api.delete(`/api/billing/${id}`);
         loadBills(1);
-        alert("Bill deleted successfully!");
       } catch (err) {
         console.error("Error deleting bill:", err);
-        alert("Failed to delete bill.");
       }
     }
   };
@@ -512,6 +348,9 @@ export default function BillingPage() {
       priceLevel: "retail",
       dueDate: new Date().toISOString().split("T")[0],
       termsAndConditions: "1. Goods once sold will not be taken back.\n2. Warranty/Guarantee applicable as per company policy.",
+      packingForwardingCharges: 0,
+      agentName: "",
+      agentCommission: 0,
     });
     setNewItem({ productId: "", name: "", category: "", quantity: 1, rate: 0, unit: "pcs", hsnCode: "", serialNumber: "", warranty: "", batchNumber: "", mfgDate: "", expiryDate: "" });
     setEditingId(null);
@@ -524,9 +363,6 @@ export default function BillingPage() {
       billNumber: `INV-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`,
       customerName: "",
       customerMobile: "",
-      customerGst: "",
-      customerAddress: "",
-      salesmanId: "",
       items: [],
       total: 0,
       tax: 0,
@@ -534,21 +370,18 @@ export default function BillingPage() {
       freightCharges: 0,
       laborCharges: 0,
       status: "draft",
+      salesmanId: "",
       priceLevel: "retail",
       dueDate: "",
       termsAndConditions: "",
+      packingForwardingCharges: 0,
+      agentName: "",
+      agentCommission: 0,
     });
     setNewItem({ productId: "", name: "", category: "", quantity: 1, rate: 0, unit: "pcs", hsnCode: "", serialNumber: "", warranty: "", batchNumber: "", mfgDate: "", expiryDate: "" });
     setEditingId(null);
     setShowForm(false);
     setSelectedPartyBalance(null);
-  };
-
-  const handleAppendTc = (text) => {
-    setFormData(prev => ({
-      ...prev,
-      termsAndConditions: prev.termsAndConditions ? prev.termsAndConditions + "\n\n" + text : text
-    }));
   };
 
   // NEW: Hold Bill Logic
@@ -571,10 +404,8 @@ export default function BillingPage() {
     setShowHeldBillsModal(false);
   };
 
-  const addItem = async () => {
-    const qty = parseFloat(newItem.quantity) || 0;
-    const rateVal = parseFloat(newItem.rate) || 0;
-    if (!newItem.name.trim() || qty <= 0 || rateVal <= 0) {
+  const addItem = () => {
+    if (!newItem.name.trim() || newItem.quantity <= 0 || (newItem.rate ?? 0) <= 0) {
       alert("Please fill all item fields with valid values");
       return;
     }
@@ -588,33 +419,28 @@ export default function BillingPage() {
       setUnitsList(prev => [...prev, currentUnit]);
     }
 
-    // NEW: Auto Save to Inventory Checkbox Logic
+    // NEW: Auto Save to Inventory Checkbox Logic via API
     if (saveToInventory) {
-      try {
-        const exists = inventory.find(p => p.name.toLowerCase() === newItem.name.toLowerCase());
-        if (!exists) {
-          const newId = crypto.randomUUID ? crypto.randomUUID() : `PROD-${Date.now()}`;
-          const newProd = {
-            _id: newId,
-            uuid: newId,
-            name: newItem.name,
-            category: newItem.category || "General",
-            sellingPrice: rateVal,
-            unit: currentUnit,
-            hsnCode: newItem.hsnCode || "",
-            currentStock: 0
-          };
-          if (dbService.addProduct) await dbService.addProduct(newProd);
-          await syncQueue.enqueue({ entityId: newId, entity: 'product', method: 'POST', url: '/api/inventory', data: newProd });
+      const exists = inventory.find(p => p.name.toLowerCase() === newItem.name.toLowerCase());
+      if (!exists) {
+        api.post('/api/inventory', {
+          name: newItem.name,
+          category: newItem.category || "General",
+          sellingPrice: newItem.rate,
+          unit: currentUnit,
+          hsnCode: newItem.hsnCode || "",
+          currentStock: 0
+        }).then(res => {
+          const newProd = res.data?.product || res.data;
           setInventory(prev => [...prev, newProd]);
-        }
-      } catch (e) { console.error("Failed to auto-save to inventory", e); }
+        }).catch(err => console.error("Failed to auto-save to inventory", err));
+      }
     }
 
-    const itemTotal = qty * rateVal;
+    const itemTotal = newItem.quantity * (newItem.rate ?? 0);
     const updatedItems = [
       ...formData.items,
-      { ...newItem, quantity: qty, rate: rateVal, total: itemTotal, id: Date.now() + Math.random() },
+      { ...newItem, total: itemTotal, id: Date.now() },
     ];
 
     const newTotal = updatedItems.reduce((sum, item) => sum + (item.total || 0), 0);
@@ -626,26 +452,6 @@ export default function BillingPage() {
     });
 
     setNewItem({ productId: "", name: "", category: "", quantity: 1, rate: 0, unit: "pcs", hsnCode: "", serialNumber: "", warranty: "", batchNumber: "", mfgDate: "", expiryDate: "" });
-  };
-
-  const handleItemChange = (itemId, field, value) => {
-    setFormData((prev) => {
-      const updatedItems = prev.items.map(item => {
-        if (item.id === itemId) {
-          const updatedItem = { ...item, [field]: value };
-          if (field === 'quantity' || field === 'rate') {
-             const qty = parseFloat(updatedItem.quantity) || 0;
-               // Fallback: Agar edit mode me "rate" na hokar purana "price" ho, to calculate sahi se ho
-               const rate = parseFloat(updatedItem.rate ?? updatedItem.price) || 0;
-             updatedItem.total = qty * rate;
-          }
-          return updatedItem;
-        }
-        return item;
-      });
-      const newTotal = updatedItems.reduce((sum, item) => sum + (item.total || 0), 0);
-      return { ...prev, items: updatedItems, total: newTotal };
-    });
   };
 
   const removeItem = (itemId) => {
@@ -661,41 +467,39 @@ export default function BillingPage() {
 
   const handleEdit = (bill) => {
     setEditingId(bill._id);
-    
-    // IMPORTANT: Map local DB items to frontend expected keys to prevent undefined errors when adding new items
-    const mappedItems = (bill.items || []).map((it, idx) => ({
-      id: it.id || it._id || `item-${Date.now()}-${idx}`,
-      productId: it.productId || "",
-      name: it.name || it.item_name || "",
-      category: it.category || "",
-      quantity: parseFloat(it.quantity) || 1,
-      rate: parseFloat(it.rate ?? it.price ?? 0),
-      unit: it.unit || "pcs",
-      hsnCode: it.hsnCode || it.hsn_code || "",
-      serialNumber: it.serialNumber || "",
-      warranty: it.warranty || "",
-      batchNumber: it.batchNumber || "",
-      mfgDate: it.mfgDate || "",
-      expiryDate: it.expiryDate || "",
-      total: parseFloat(it.total) || (parseFloat(it.quantity) * parseFloat(it.rate ?? it.price ?? 0)),
-      isFree: it.isFree || false
-    }));
-
     setFormData({
-      billNumber: bill.billNumber || "",
-      partyId: bill.partyId || "",
+      billNumber: bill.billNumber,
+      partyId: bill.partyId,
       salesmanId: bill.salesmanId || "",
-      customerName: bill.customerName || "",
-      customerMobile: bill.customerMobile || "",
-      customerAddress: bill.customerAddress || "",
-      customerGst: bill.customerGst || "",
-      items: mappedItems, 
-      total: bill.total || 0,
-      tax: bill.tax || 0,
+      customerName: bill.customerName,
+      customerMobile: bill.customerMobile,
+      customerAddress: bill.customerAddress,
+      customerGst: bill.customerGst,
+      items: (bill.items || []).map((it, idx) => ({
+        id: it.id || it._id || `item-${Date.now()}-${idx}`,
+        productId: it.productId || "",
+        name: it.name || it.item_name || "",
+        category: it.category || "",
+        quantity: parseFloat(it.quantity) || 1,
+        rate: parseFloat(it.rate ?? it.price ?? 0),
+        unit: it.unit || "pcs",
+        hsnCode: it.hsnCode || it.hsn_code || "",
+        serialNumber: it.serialNumber || "",
+        warranty: it.warranty || "",
+        batchNumber: it.batchNumber || "",
+        mfgDate: it.mfgDate || "",
+        expiryDate: it.expiryDate || "",
+        total: parseFloat(it.total) || (parseFloat(it.quantity) * parseFloat(it.rate ?? it.price ?? 0)),
+      })),
+      total: bill.total,
+      tax: bill.tax,
       discount: bill.discount || 0,
       freightCharges: bill.freightCharges || 0,
       laborCharges: bill.laborCharges || 0,
-      status: bill.status || "issued",
+      packingForwardingCharges: bill.packingForwardingCharges || 0,
+      agentName: bill.agentName || "",
+      agentCommission: bill.agentCommission || 0,
+      status: bill.status,
       priceLevel: bill.priceLevel || "retail",
       dueDate: bill.dueDate ? new Date(bill.dueDate).toISOString().split("T")[0] : "",
       termsAndConditions: bill.termsAndConditions || "",
@@ -708,6 +512,7 @@ export default function BillingPage() {
     if (!partyId) {
       setFormData({ ...formData, partyId: "", customerName: "", customerMobile: "", customerAddress: "", customerGst: "" });
       setSelectedPartyBalance(null);
+      setQuickInsight(null); // Clear insights
       return;
     }
     const party = parties.find((p) => p._id === partyId);
@@ -725,6 +530,18 @@ export default function BillingPage() {
       // Positive value usually means Udhar (Debit), Negative means Advance (Credit) depending on your backend logic
       // Here assuming > 0 is Udhar (Receivable)
       setSelectedPartyBalance(party.currentBalance ?? party.balance ?? 0);
+
+      // --- PHASE 5: LIVE CUSTOMER INSIGHTS ---
+      // Fetch quick summary for the selected party
+      api.get(`/api/party/${partyId}/quick-summary`)
+        .then(res => {
+          if (res.data?.success && res.data.summary) {
+            setQuickInsight(res.data.summary);
+          }
+        })
+        .catch(err => {
+          console.log("Could not fetch party quick summary.");
+        });
     }
   };
 
@@ -738,13 +555,15 @@ export default function BillingPage() {
       );
 
       if (product) {
-        const appliedRate = formData.priceLevel === 'wholesale' && product.wholesalePrice ? product.wholesalePrice : product.sellingPrice;
+        let appliedRate = product.sellingPrice || 0;
+        if (formData.priceLevel === 'wholesale' && product.wholesalePrice) appliedRate = product.wholesalePrice;
+        if (formData.priceLevel === 'special' && product.specialPrice) appliedRate = product.specialPrice;
         setNewItem({
-          productId: product._id || product.uuid,
+          productId: product._id,
           name: product.name,
           category: product.category || "",
           quantity: 1,
-          rate: appliedRate || 0,
+          rate: appliedRate,
           unit: product.unit || "pcs",
           hsnCode: product.hsnCode || "",
           warranty: product.warrantyMonths ? `${product.warrantyMonths} Months` : "",
@@ -779,13 +598,15 @@ export default function BillingPage() {
       setInventory(prev => prev.map(p => p._id === unfoundSelectedProduct._id ? { ...p, barcode: unfoundBarcode } : p));
       
       // Add to bill form
-      const appliedRate = formData.priceLevel === 'wholesale' && unfoundSelectedProduct.wholesalePrice ? unfoundSelectedProduct.wholesalePrice : (unfoundSelectedProduct.sellingPrice || unfoundSelectedProduct.price);
+      let appliedRate = unfoundSelectedProduct.sellingPrice || unfoundSelectedProduct.price || 0;
+      if (formData.priceLevel === 'wholesale' && unfoundSelectedProduct.wholesalePrice) appliedRate = unfoundSelectedProduct.wholesalePrice;
+      if (formData.priceLevel === 'special' && unfoundSelectedProduct.specialPrice) appliedRate = unfoundSelectedProduct.specialPrice;
       setNewItem({
-        productId: unfoundSelectedProduct._id || unfoundSelectedProduct.uuid,
+        productId: unfoundSelectedProduct._id,
         name: unfoundSelectedProduct.name,
         category: unfoundSelectedProduct.category || "",
         quantity: 1,
-        rate: appliedRate || 0,
+        rate: appliedRate,
         unit: unfoundSelectedProduct.unit || "pcs",
         hsnCode: unfoundSelectedProduct.hsnCode || "",
         warranty: unfoundSelectedProduct.warrantyMonths ? `${unfoundSelectedProduct.warrantyMonths} Months` : "",
@@ -820,7 +641,7 @@ export default function BillingPage() {
       const createdProd = res.data?.product || res.data;
       
       setInventory(prev => [...prev, createdProd]);
-      setNewItem({ productId: createdProd._id || createdProd.uuid, name: createdProd.name, category: createdProd.category || "", quantity: 1, rate: createdProd.sellingPrice || 0, unit: createdProd.unit || "pcs", hsnCode: createdProd.hsnCode || "", warranty: "", serialNumber: "", batchNumber: "", mfgDate: "", expiryDate: "" });
+      setNewItem({ productId: createdProd._id, name: createdProd.name, category: createdProd.category || "", quantity: 1, rate: createdProd.sellingPrice || 0, unit: createdProd.unit || "pcs", hsnCode: createdProd.hsnCode || "", serialNumber: "", warranty: "", batchNumber: "", mfgDate: "", expiryDate: "" });
       setShowUnfoundModal(false);
       setTimeout(() => document.getElementById('item-qty')?.focus(), 100);
     } catch (err) {
@@ -830,58 +651,50 @@ export default function BillingPage() {
     }
   };
 
-  // NEW: Handle Tatkal Quick Product Creation
+  // NEW: Handle Advanced Tatkal Quick Product Creation
   const handleQuickProductSave = async () => {
-    if (!quickProduct.name || !quickProduct.sellingPrice) return alert("Product Name and Selling Price are required!");
+    if (!quickProduct.name || !quickProduct.retailPrice) return alert("Product Name and Retail Price are required!");
     try {
-      const newId = crypto.randomUUID ? crypto.randomUUID() : `PROD-${Date.now()}`;
-      const newProd = {
-        ...quickProduct,
-        _id: newId,
-        uuid: newId,
-        sellingPrice: parseFloat(quickProduct.retailPrice || quickProduct.sellingPrice || 0),
-        wholesalePrice: parseFloat(quickProduct.wholesalePrice || 0),
-        specialPrice: parseFloat(quickProduct.specialPrice || 0),
-        costPrice: parseFloat(quickProduct.costPrice || quickProduct.purchaseRate || 0),
-        currentStock: parseFloat(quickProduct.currentStock || 0),
+      // Final purchase rate after less
+      const finalPurchaseRate = parseFloat(quickProduct.purchaseRate || 0) - parseFloat(quickProduct.purchaseDiscount || 0);
+      
+      const payload = {
+        name: quickProduct.name,
+        category: quickProduct.category || "General",
+        sellingPrice: parseFloat(quickProduct.retailPrice), 
+        wholesalePrice: parseFloat(quickProduct.wholesalePrice || quickProduct.retailPrice),
+        specialPrice: parseFloat(quickProduct.specialPrice || quickProduct.retailPrice),
         mrp: parseFloat(quickProduct.mrp || 0),
+        costPrice: finalPurchaseRate,
+        currentStock: parseFloat(quickProduct.currentStock || 0),
+        unit: quickProduct.unit || "pcs",
+        barcode: quickProduct.barcode || "",
+        itemId: quickProduct.itemId || "",
+        hsnCode: quickProduct.hsnCode || "",
+        gstRate: parseFloat(quickProduct.gstRate || 0),
         expiryDate: quickProduct.expiryDate || null,
         warrantyMonths: quickProduct.warrantyMonths || "",
         size: quickProduct.size || "",
-        color: quickProduct.color || "",
-        weight: quickProduct.weight || "",
-        purity: quickProduct.purity || "",
-        brand: quickProduct.brand || ""
+        color: quickProduct.color || ""
       };
-      if (dbService.addProduct) await dbService.addProduct(newProd);
-      await syncQueue.enqueue({ entityId: newId, entity: 'product', method: 'POST', url: '/api/inventory', data: newProd });
+      
+      const res = await api.post('/api/inventory', payload);
+      const newProd = res.data?.product || res.data;
       
       setInventory(prev => [...prev, newProd]);
       
-      let appliedRate = newProd.sellingPrice;
-      if (formData.priceLevel === 'wholesale' && newProd.wholesalePrice) appliedRate = newProd.wholesalePrice;
-      if (formData.priceLevel === 'special' && newProd.specialPrice) appliedRate = newProd.specialPrice;
+      let appliedRate = payload.sellingPrice;
+      if (formData.priceLevel === 'wholesale') appliedRate = payload.wholesalePrice;
+      if (formData.priceLevel === 'special') appliedRate = payload.specialPrice;
 
-      // Auto-fill the billing form with this new product
-      setNewItem({
-        productId: newProd._id || newProd.uuid,
-        name: newProd.name,
-        category: newProd.category || "",
-        quantity: 1,
-        rate: appliedRate,
-        unit: newProd.unit || "pcs",
-        hsnCode: newProd.hsnCode || "",
-        warranty: newProd.warrantyMonths ? `${newProd.warrantyMonths} Months` : "",
-        serialNumber: "",
-        batchNumber: "",
-        mfgDate: "",
-        expiryDate: newProd.expiryDate || "",
-      });
+      setNewItem({ productId: newProd._id, name: newProd.name, category: newProd.category || "", quantity: 1, rate: appliedRate, unit: newProd.unit || "pcs", hsnCode: newProd.hsnCode || "", serialNumber: "", warranty: newProd.warrantyMonths ? `${newProd.warrantyMonths} Months` : "", batchNumber: "", mfgDate: "", expiryDate: newProd.expiryDate || "" });
       
       setShowQuickProductModal(false);
-      setQuickProduct({ name: '', itemId: '', barcode: '', hsnCode: '', gstRate: '', mrp: '', mrpDiscount: '', purchaseRate: '', purchaseDiscount: '', retailPrice: '', wholesalePrice: '', specialPrice: '', currentStock: '', unit: 'pcs', category: '', expiryDate: '', warrantyMonths: '', size: '', color: '', weight: '', purity: '', brand: '' });
+      setQuickProduct({ name: '', itemId: '', barcode: '', hsnCode: '', gstRate: '', mrp: '', mrpDiscount: '', purchaseRate: '', purchaseDiscount: '', retailPrice: '', wholesalePrice: '', specialPrice: '', currentStock: '', unit: 'pcs', category: '', itemType: 'general', expiryDate: '', warrantyMonths: '', size: '', color: '' });
       setTimeout(() => document.getElementById('item-qty')?.focus(), 100);
-    } catch (error) { alert("Failed to save product"); }
+    } catch (error) { 
+      alert('Failed to create new product: ' + (error.response?.data?.message || error.message));
+    }
   };
 
   const handleHandheldScan = async (e) => {
@@ -933,9 +746,7 @@ export default function BillingPage() {
     }
   };
 
-  const totalRevenue = filteredBills.reduce((sum, b) => {
-    return sum + Number(b.finalAmount || b.total_amount || b.total || 0);
-  }, 0);
+  const totalRevenue = filteredBills.reduce((sum, b) => sum + ((b.total || 0) - (b.discount || 0)), 0);
   const totalPending = filteredBills.filter((b) => b.status !== "paid").length;
 
   return (
@@ -1072,6 +883,11 @@ export default function BillingPage() {
                     )}
                   </div>
                 )}
+                {quickInsight && (
+                  <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 font-medium">
+                    ⚡ Last Purchase: <span className="font-bold">{new Date(quickInsight.lastPurchaseDate).toLocaleDateString()}</span> for <span className="font-bold">₹{quickInsight.lastPurchaseAmount}</span>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Number</label>
@@ -1090,12 +906,13 @@ export default function BillingPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
               <input
                 type="text"
-                placeholder="Customer Name (Defaults to 'Cash')"
+                placeholder="Customer Name"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={formData.customerName}
                 onChange={(e) =>
                   setFormData({ ...formData, customerName: e.target.value })
                 }
+                required
               />
               </div>
               <div>
@@ -1107,18 +924,6 @@ export default function BillingPage() {
                   value={formData.customerMobile}
                   onChange={(e) =>
                     setFormData({ ...formData, customerMobile: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Customer GST (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="e.g. 27AADCB2230M1Z2"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
-                  value={formData.customerGst}
-                  onChange={(e) =>
-                    setFormData({ ...formData, customerGst: e.target.value.toUpperCase() })
                   }
                 />
               </div>
@@ -1187,6 +992,18 @@ export default function BillingPage() {
                   <option value="cancelled">Cancelled</option>
                 </select>
               </div>
+              
+              {/* Agent / Broker Details */}
+              <div className="md:col-span-2 flex gap-4 bg-orange-50 p-3 rounded-lg border border-orange-100 mt-2">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-orange-800 uppercase tracking-wide mb-1">Broker / Agent / Plumber Name</label>
+                  <input type="text" placeholder="e.g. Ramesh Painter" className="w-full px-3 py-2 border border-orange-200 rounded focus:outline-none focus:ring-2 focus:ring-orange-500" value={formData.agentName} onChange={(e) => setFormData({ ...formData, agentName: e.target.value })} />
+                </div>
+                <div className="w-1/3">
+                  <label className="block text-xs font-bold text-orange-800 uppercase tracking-wide mb-1">Agent Commission (₹)</label>
+                  <input type="number" placeholder="0.00" className="w-full px-3 py-2 border border-orange-200 rounded focus:outline-none focus:ring-2 focus:ring-orange-500 text-right" value={formData.agentCommission || ""} onChange={(e) => setFormData({ ...formData, agentCommission: parseFloat(e.target.value) || 0 })} />
+                </div>
+              </div>
             </div>
 
             {/* Add Items Section */}
@@ -1227,7 +1044,7 @@ export default function BillingPage() {
               {showUnfoundModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
                   <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 relative">
-                    <button type="button" onClick={() => setShowUnfoundModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-700">
+                    <button onClick={() => setShowUnfoundModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-700">
                       <X size={24} />
                     </button>
                     <h2 className="text-xl font-bold text-gray-900 mb-1">Barcode Not Found!</h2>
@@ -1307,7 +1124,7 @@ export default function BillingPage() {
                   <div className="md:col-span-3">
                     <div className="flex justify-between items-center mb-1">
                       <label className="text-xs font-medium text-gray-600">Item Name</label>
-                      <button type="button" onClick={() => setShowQuickProductModal(true)} className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"><Plus size={12}/> Adv. Tatkal</button>
+                      <button type="button" onClick={() => setShowQuickProductModal(true)} className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"><Plus size={12}/> Advanced Tatkal</button>
                     </div>
                     <input
                       id="item-name"
@@ -1320,9 +1137,11 @@ export default function BillingPage() {
                         const val = e.target.value;
                         const matchedProd = inventory.find(p => p.name.toLowerCase() === val.toLowerCase());
                         if (matchedProd) {
-                          const appliedRate = formData.priceLevel === 'wholesale' && matchedProd.wholesalePrice ? matchedProd.wholesalePrice : (matchedProd.sellingPrice || matchedProd.price || 0);
+                          let appliedRate = matchedProd.sellingPrice || matchedProd.price || 0;
+                          if (formData.priceLevel === 'wholesale' && matchedProd.wholesalePrice) appliedRate = matchedProd.wholesalePrice;
+                          if (formData.priceLevel === 'special' && matchedProd.specialPrice) appliedRate = matchedProd.specialPrice;
                           setNewItem({
-                            ...newItem, name: matchedProd.name, productId: matchedProd._id || matchedProd.uuid, category: matchedProd.category || "",
+                            ...newItem, name: matchedProd.name, productId: matchedProd._id, category: matchedProd.category || "",
                             rate: appliedRate, unit: matchedProd.unit || "pcs", hsnCode: matchedProd.hsnCode || "",
                             warranty: matchedProd.warrantyMonths ? `${matchedProd.warrantyMonths} Months` : "", expiryDate: matchedProd.expiryDate || "",
                           });
@@ -1334,7 +1153,7 @@ export default function BillingPage() {
                       onKeyDown={(e) => handleEnterNavigation(e, 'item-category')}
                     />
                     <datalist id="inventory-options">
-                      {inventory.map(p => <option key={p._id || p.uuid} value={p.name} />)}
+                      {inventory.map(p => <option key={p._id} value={p.name} />)}
                     </datalist>
                     <div className="flex gap-2 mt-1">
                       <input
@@ -1415,12 +1234,11 @@ export default function BillingPage() {
                       inputMode="decimal"
                       placeholder="Qty"
                       className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      onFocus={(e) => e.target.select()}
                       value={newItem.quantity}
                       onChange={(e) =>
                         setNewItem({
                           ...newItem,
-                          quantity: e.target.value,
+                          quantity: parseFloat(e.target.value) || 0,
                         })
                       }
                       onKeyDown={(e) => handleEnterNavigation(e, 'item-unit')}
@@ -1449,12 +1267,11 @@ export default function BillingPage() {
                       inputMode="decimal"
                       placeholder="Price"
                       className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      onFocus={(e) => e.target.select()}
                       value={newItem.rate}
                       onChange={(e) =>
                         setNewItem({
                           ...newItem,
-                          rate: e.target.value,
+                          rate: parseFloat(e.target.value) || 0,
                         })
                       }
                       onKeyDown={(e) => handleEnterNavigation(e, 'submit-item')}
@@ -1545,59 +1362,18 @@ export default function BillingPage() {
                             </div>
                             {item.isFree && <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">FREE</span>}
                           </td>
-                          <td className="px-4 py-2 text-gray-600 text-sm">
-                            <input
-                              type="text"
-                              value={item.category || ''}
-                              onChange={(e) => handleItemChange(item.id, 'category', e.target.value)}
-                              className="w-full bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none px-1 py-1 text-sm"
-                              placeholder="-"
-                            />
-                          </td>
-                          <td className="px-4 py-2 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                value={item.quantity}
-                                onChange={(e) => handleItemChange(item.id, 'quantity', e.target.value)}
-                                className="w-20 border border-gray-300 rounded px-2 py-1 text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                onFocus={(e) => e.target.select()}
-                              />
-                              <span className="text-sm text-gray-600">{item.unit || 'pcs'}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-2 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              <span className="text-gray-500">₹</span>
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                value={item.rate ?? item.price ?? 0}
-                                onChange={(e) => handleItemChange(item.id, 'rate', e.target.value)}
-                                className="w-24 border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                onFocus={(e) => e.target.select()}
-                              />
-                            </div>
-                          </td>
-                          <td className="px-4 py-2 text-center">
-                             <input
-                              type="text"
-                              value={item.hsnCode || ''}
-                              onChange={(e) => handleItemChange(item.id, 'hsnCode', e.target.value)}
-                              className="w-full bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none px-1 py-1 text-center text-sm"
-                              placeholder="-"
-                            />
-                          </td>
+                          <td className="px-4 py-2 text-gray-600 text-sm">{item.category || '-'}</td>
+                          <td className="px-4 py-2 text-center">{item.quantity} {item.unit || 'pcs'}</td>
+                          <td className="px-4 py-2 text-center">₹{(item.rate ?? item.price ?? 0).toFixed(2)}</td>
+                          <td className="px-4 py-2 text-center">{item.hsnCode || '-'}</td>
                           <td className="px-4 py-2 text-center font-semibold">₹{(item.total ?? (item.quantity * (item.rate ?? item.price ?? 0))).toFixed(2)}</td>
                           <td className="px-4 py-2 text-center">
                             <button
                               type="button"
                               onClick={() => removeItem(item.id)}
-                              className="p-2 bg-red-50 text-red-600 rounded hover:bg-red-100 transition"
-                              title="Remove Item"
+                              className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
                             >
-                              <Trash2 size={16} />
+                              Remove
                             </button>
                           </td>
                         </tr>
@@ -1651,6 +1427,18 @@ export default function BillingPage() {
                  />
               </div>
               <div className="flex justify-end items-center gap-4">
+                 <label className="text-sm font-medium text-gray-700">Packing & Forwarding (₹):</label>
+                 <input 
+                   type="text" 
+                   inputMode="decimal"
+                   className="w-32 px-3 py-1 border border-gray-300 rounded focus:ring-blue-500 text-right"
+                   value={formData.packingForwardingCharges || ""}
+                   onChange={(e) => setFormData({...formData, packingForwardingCharges: parseFloat(e.target.value) || 0})}
+                   onFocus={(e) => e.target.select()}
+                   placeholder="0"
+                 />
+              </div>
+              <div className="flex justify-end items-center gap-4">
                  <label className="text-sm font-medium text-gray-700">Labor / Installation (₹):</label>
                  <input 
                    type="text" 
@@ -1665,18 +1453,18 @@ export default function BillingPage() {
               <div className="flex justify-end items-center gap-4 border-t pt-3 mt-1">
                  <span className="text-lg font-bold">Grand Total:</span>
                  <span className="text-2xl font-bold text-blue-600 w-32 text-right">
-                   ₹{(formData.total + (parseFloat(formData.tax) || 0) - (parseFloat(formData.discount) || 0) + (parseFloat(formData.freightCharges) || 0) + (parseFloat(formData.laborCharges) || 0)).toFixed(2)}
+                   ₹{(formData.total + (parseFloat(formData.tax) || 0) - (parseFloat(formData.discount) || 0) + (parseFloat(formData.freightCharges) || 0) + (parseFloat(formData.laborCharges) || 0) + (parseFloat(formData.packingForwardingCharges) || 0)).toFixed(2)}
                  </span>
               </div>
             </div>
 
             {/* Terms & Conditions */}
             <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Terms &amp; Conditions (Auto-fetched from Settings)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Terms &amp; Conditions / Note</label>
               <textarea
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 rows="2"
-                placeholder="Global Terms & Conditions..."
+                placeholder="e.g., Goods once sold will not be taken back. 1 year warranty applicable."
                 value={formData.termsAndConditions || ""}
                 onChange={(e) => setFormData({...formData, termsAndConditions: e.target.value})}
               />
@@ -1710,7 +1498,7 @@ export default function BillingPage() {
         </div>
       )}
 
-      {/* Tatkal Quick Product Create Modal */}
+      {/* Advanced Tatkal Quick Product Create Modal */}
       {showQuickProductModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl p-6 relative max-h-[90vh] overflow-y-auto">
@@ -1720,13 +1508,22 @@ export default function BillingPage() {
             <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2"><Plus size={20} className="text-blue-600"/> Advanced Tatkal Item</h2>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Basic Details */}
+              <div className="col-span-3 border-b pb-3 mb-2"><h3 className="font-semibold text-gray-700">Basic Info</h3></div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-gray-600 mb-1">Item Name <span className="text-red-500">*</span></label>
-                <input type="text" autoFocus className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={quickProduct.name} onChange={e => setQuickProduct({...quickProduct, name: e.target.value})} placeholder="e.g. Parle G 50g"/>
+                <input type="text" autoFocus className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={quickProduct.name} onChange={e => setQuickProduct({...quickProduct, name: e.target.value})} placeholder="Item Name"/>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
                 <input type="text" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={quickProduct.category} onChange={e => setQuickProduct({...quickProduct, category: e.target.value})} placeholder="General"/>
+              </div>
+
+              {/* Identifiers & Taxes */}
+              <div className="col-span-3 border-b pb-3 mb-2 mt-2"><h3 className="font-semibold text-gray-700">Codes & Taxes</h3></div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Item ID / Code</label>
+                <input type="text" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={quickProduct.itemId} onChange={e => setQuickProduct({...quickProduct, itemId: e.target.value})} placeholder="ITM-001"/>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Barcode / SKU</label>
@@ -1736,19 +1533,38 @@ export default function BillingPage() {
                 <label className="block text-xs font-medium text-gray-600 mb-1">HSN Code</label>
                 <input type="text" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={quickProduct.hsnCode} onChange={e => setQuickProduct({...quickProduct, hsnCode: e.target.value})} placeholder="HSN"/>
               </div>
-              
-              {/* Selling Rates */}
-              <div className="col-span-3 border-b pb-3 mb-2 mt-2"><h3 className="font-semibold text-gray-700">Rates & Stock</h3></div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Rate A: Retail <span className="text-red-500">*</span></label>
-                <input type="number" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none bg-blue-50 font-bold" value={quickProduct.retailPrice || quickProduct.sellingPrice} onChange={e => setQuickProduct({...quickProduct, retailPrice: e.target.value, sellingPrice: e.target.value})} placeholder="0.00"/>
+                <label className="block text-xs font-medium text-gray-600 mb-1">GST Rate (%)</label>
+                <input type="number" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={quickProduct.gstRate} onChange={e => setQuickProduct({...quickProduct, gstRate: e.target.value})} placeholder="e.g. 18"/>
+              </div>
+
+              {/* Purchasing & MRP */}
+              <div className="col-span-3 border-b pb-3 mb-2 mt-2"><h3 className="font-semibold text-gray-700">Purchase & MRP (Kharidi)</h3></div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Purchase Rate (₹)</label>
+                <input type="number" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={quickProduct.purchaseRate} onChange={e => setQuickProduct({...quickProduct, purchaseRate: e.target.value})} placeholder="0.00"/>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Rate B: Wholesale</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Less (Purchase Discount ₹)</label>
+                <input type="number" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none text-red-600" value={quickProduct.purchaseDiscount} onChange={e => setQuickProduct({...quickProduct, purchaseDiscount: e.target.value})} placeholder="0.00"/>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">MRP (₹)</label>
+                <input type="number" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={quickProduct.mrp} onChange={e => setQuickProduct({...quickProduct, mrp: e.target.value})} placeholder="0.00"/>
+              </div>
+
+              {/* Selling Rates */}
+              <div className="col-span-3 border-b pb-3 mb-2 mt-2"><h3 className="font-semibold text-gray-700">Selling Rates (3 Levels) & Stock</h3></div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Rate 1: Retail Price <span className="text-red-500">*</span></label>
+                <input type="number" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none bg-blue-50 font-bold" value={quickProduct.retailPrice} onChange={e => setQuickProduct({...quickProduct, retailPrice: e.target.value})} placeholder="0.00"/>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Rate 2: Wholesale Price</label>
                 <input type="number" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none bg-green-50" value={quickProduct.wholesalePrice} onChange={e => setQuickProduct({...quickProduct, wholesalePrice: e.target.value})} placeholder="0.00"/>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Rate C: Special</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Rate 3: Special Price</label>
                 <input type="number" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none bg-purple-50" value={quickProduct.specialPrice} onChange={e => setQuickProduct({...quickProduct, specialPrice: e.target.value})} placeholder="0.00"/>
               </div>
               <div>
@@ -1759,22 +1575,46 @@ export default function BillingPage() {
                 </div>
               </div>
               
-              {/* Additional Item Properties (Optional) */}
-              <div className="col-span-3 border-b pb-3 mb-2 mt-2">
-                <h3 className="font-semibold text-gray-700">Additional Properties (Optional)</h3>
+              {/* Industry Specific (Business Segregation) */}
+              <div className="col-span-3 border-b pb-3 mb-2 mt-2 flex justify-between items-center">
+                <h3 className="font-semibold text-gray-700">Industry Specific Details</h3>
+                <select 
+                  className="px-3 py-1.5 border border-purple-300 text-purple-700 rounded bg-purple-50 text-sm focus:ring-purple-500 font-medium"
+                  value={quickProduct.itemType || 'general'}
+                  onChange={e => setQuickProduct({...quickProduct, itemType: e.target.value})}
+                >
+                  <option value="general">General Product</option>
+                  <option value="pharma">Pharma / Grocery (Expiry)</option>
+                  <option value="electronics">Electronics (Warranty)</option>
+                  <option value="clothing">Clothing / Footwear (Variants)</option>
+                </select>
               </div>
-              
-              <div><label className="block text-xs font-medium text-gray-600 mb-1">Warranty (Months)</label><input type="number" className="w-full px-3 py-2 border rounded outline-none" value={quickProduct.warrantyMonths} onChange={e => setQuickProduct({...quickProduct, warrantyMonths: e.target.value})} placeholder="12"/></div>
-              <div><label className="block text-xs font-medium text-gray-600 mb-1">Expiry Date</label><input type="date" className="w-full px-3 py-2 border rounded outline-none" value={quickProduct.expiryDate} onChange={e => setQuickProduct({...quickProduct, expiryDate: e.target.value})} /></div>
-              <div><label className="block text-xs font-medium text-gray-600 mb-1">Brand / Model</label><input type="text" className="w-full px-3 py-2 border rounded outline-none" value={quickProduct.brand} onChange={e => setQuickProduct({...quickProduct, brand: e.target.value})} placeholder="e.g. Samsung"/></div>
-              <div><label className="block text-xs font-medium text-gray-600 mb-1">Size</label><input type="text" className="w-full px-3 py-2 border rounded outline-none" value={quickProduct.size} onChange={e => setQuickProduct({...quickProduct, size: e.target.value})} placeholder="S, M, L..."/></div>
-              <div><label className="block text-xs font-medium text-gray-600 mb-1">Color</label><input type="text" className="w-full px-3 py-2 border rounded outline-none" value={quickProduct.color} onChange={e => setQuickProduct({...quickProduct, color: e.target.value})} placeholder="Red, Blue..."/></div>
-              <div><label className="block text-xs font-medium text-gray-600 mb-1">Weight / Purity</label><input type="text" className="w-full px-3 py-2 border rounded outline-none" value={quickProduct.weight} onChange={e => setQuickProduct({...quickProduct, weight: e.target.value})} placeholder="e.g. 10g / 22K"/></div>
+
+              {quickProduct.itemType === 'pharma' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Expiry Date</label>
+                  <input type="date" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={quickProduct.expiryDate} onChange={e => setQuickProduct({...quickProduct, expiryDate: e.target.value})} />
+                </div>
+              )}
+              {quickProduct.itemType === 'electronics' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Warranty / Guarantee (Months)</label>
+                  <input type="number" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={quickProduct.warrantyMonths} onChange={e => setQuickProduct({...quickProduct, warrantyMonths: e.target.value})} placeholder="e.g. 12"/>
+                </div>
+              )}
+              {quickProduct.itemType === 'clothing' && (
+                <>
+                  <div><label className="block text-xs font-medium text-gray-600 mb-1">Size</label>
+                  <input type="text" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={quickProduct.size} onChange={e => setQuickProduct({...quickProduct, size: e.target.value})} placeholder="S, M, L, XL, 42..."/></div>
+                  <div><label className="block text-xs font-medium text-gray-600 mb-1">Color</label>
+                  <input type="text" className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none" value={quickProduct.color} onChange={e => setQuickProduct({...quickProduct, color: e.target.value})} placeholder="Red, Blue..."/></div>
+                </>
+              )}
             </div>
             
             <div className="mt-6 flex justify-end gap-3 border-t pt-4">
               <button type="button" onClick={() => setShowQuickProductModal(false)} className="px-4 py-2 border rounded hover:bg-gray-50 font-medium">Cancel</button>
-              <button type="button" onClick={handleQuickProductSave} className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium shadow-sm">Save & Use in Bill</button>
+              <button type="button" onClick={handleQuickProductSave} className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium shadow-sm">Save Advanced Item</button>
             </div>
           </div>
         </div>
@@ -2027,4 +1867,4 @@ function StatusBadge({ status }) {
       {style.label}
     </span>
   );
-}        
+}

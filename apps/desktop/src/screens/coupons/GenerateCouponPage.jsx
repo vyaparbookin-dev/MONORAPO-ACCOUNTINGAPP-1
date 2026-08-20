@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
 
-const GenerateCoupanPage = () => {
+const GenerateCouponPage = () => {
   const navigate = useNavigate();
   const [form, setForm] = useState({ code: "", discount: "", validTill: "" });
 
@@ -42,4 +42,4 @@ const GenerateCoupanPage = () => {
   );
 };
 
-export default GenerateCoupanPage;
+export default GenerateCouponPage;

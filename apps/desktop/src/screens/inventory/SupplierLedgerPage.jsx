@@ -1,14 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Download } from "lucide-react";
-import api from "../../services/api";
-import { dbService } from "../../services/dbService";
-
-// Local format date helper in case shared one is inaccessible offline
-const formatDate = (dateString) => {
-  if (!dateString) return "-";
-  const d = new Date(dateString);
-  return d.toLocaleDateString();
-};
+import { api, formatDate } from "@repo/shared";
 
 export default function SupplierLedgerPage() {
   const [suppliers, setSuppliers] = useState([]);
@@ -17,17 +9,13 @@ export default function SupplierLedgerPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Fetch unique suppliers from inventory
     const fetchSuppliers = async () => {
         try {
-            // Offline First: Try loading from local DB
-            let localParties = await dbService.getCustomers?.() || [];
-            if (!localParties || localParties.length === 0) {
-                const res = await api.get("/api/party").catch(() => ({ data: { parties: [] } }));
-                localParties = res.data?.parties || [];
-            }
-            // Filter only suppliers
-            const supps = localParties.filter(p => p.partyType === 'supplier' || p.partyType === 'both');
-            setSuppliers(supps);
+            const res = await api.get("/api/inventory");
+            const items = res.data?.products || res.data || [];
+            const uniqueSuppliers = [...new Set(items.map(i => i.supplier).filter(Boolean))];
+            setSuppliers(uniqueSuppliers);
         } catch (e) {
             console.error(e);
         }
@@ -39,27 +27,11 @@ export default function SupplierLedgerPage() {
     if (!selectedSupplier) return;
     setLoading(true);
     try {
-      // Try to fetch from API first if online
-      const res = await api.get(`/api/party/${selectedSupplier}/ledger`).catch(() => null);
-      
-      if (res && res.data && (res.data.ledger || Array.isArray(res.data))) {
-         setLedgerData(res.data.ledger || res.data || []);
-      } else {
-         // Offline Fallback: Construct ledger from local purchases
-         const localPurchases = await dbService.getPurchases?.() || [];
-         const supplierPurchases = localPurchases.filter(p => p.partyId === selectedSupplier);
-         
-         const ledger = supplierPurchases.map(p => ({
-             date: p.date,
-             type: 'purchase',
-             refNo: p.purchaseNumber || p._id,
-             debit: p.amountPaid || 0,
-             credit: p.finalAmount || 0,
-             balance: (p.finalAmount || 0) - (p.amountPaid || 0)
-         }));
-         
-         setLedgerData(ledger);
-      }
+      // Fetch purchase history for supplier
+      // Note: This assumes backend has a filter or we filter client side if needed
+      // For now, we'll try to hit a purchase endpoint or mock empty
+      const res = await api.get(`/api/inventory/purchase?supplier=${selectedSupplier}`);
+      setLedgerData(res.data || []); 
     } catch (err) {
       console.error("Failed to fetch ledger", err);
       setLedgerData([]);
@@ -86,8 +58,8 @@ export default function SupplierLedgerPage() {
             onChange={(e) => setSelectedSupplier(e.target.value)}
           >
             <option value="">-- Choose Supplier --</option>
-            {suppliers.map((s) => (
-              <option key={s._id} value={s._id}>{s.name}</option>
+            {suppliers.map((s, i) => (
+              <option key={i} value={s}>{s}</option>
             ))}
           </select>
         </div>

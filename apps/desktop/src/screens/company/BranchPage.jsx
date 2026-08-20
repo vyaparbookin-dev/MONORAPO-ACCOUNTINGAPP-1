@@ -1,9 +1,6 @@
 import React, { useState, useEffect } from "react";
 import api from "../../services/api";
 import { Building2, Save, MapPin } from "lucide-react";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
-import { syncQueue } from "@repo/shared";
 
 export default function BranchPage() {
   const [branches, setBranches] = useState([]);
@@ -21,15 +18,8 @@ export default function BranchPage() {
 
   const fetchBranches = async () => {
     try {
-      // Offline First
-      let localBranches = await dbService.getBranches?.() || [];
-      
-      if (!localBranches || localBranches.length === 0) {
-        const res = await api.get("/api/branch").catch(() => ({ data: { branches: [] } }));
-        localBranches = res.data?.branches || res.data?.data || [];
-      }
-      
-      setBranches(localBranches);
+      const res = await api.get("/api/branch");
+      setBranches(res.data?.branches || res.data?.data || []);
     } catch (err) {
       console.error("Failed to load branches", err);
     }
@@ -41,17 +31,8 @@ export default function BranchPage() {
 
     setLoading(true);
     try {
-      const newId = crypto.randomUUID ? crypto.randomUUID() : `BRANCH-${Date.now()}`;
-      const payload = { ...formData, _id: newId, uuid: newId };
-
-      // Save Locally
-      if (dbService.saveBranch) await dbService.saveBranch(payload);
-      
-      // Audit & Sync
-      await auditService.logAction('CREATE', 'branch', null, payload);
-      await syncQueue.enqueue({ entityId: newId, entity: 'branch', method: 'POST', url: '/api/branch', data: payload });
-
-      alert("Branch Added Offline Successfully!");
+      await api.post("/api/branch", formData);
+      alert("Branch Added Successfully!");
       setFormData({ name: "", address: "", contactNumber: "", isMainBranch: false });
       fetchBranches();
     } catch (err) {

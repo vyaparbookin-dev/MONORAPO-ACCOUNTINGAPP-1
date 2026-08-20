@@ -9,7 +9,7 @@ export default function ForgotPasswordScreen() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const normalizedEmail = email.trim().toLowerCase();
-    console.log("[Auth Debug] desktop forgot-password attempt for:", normalizedEmail);
+    console.log("[Auth Debug] forgot-password attempt for:", normalizedEmail);
 
     if (!normalizedEmail) {
       setMessage("Please enter your email first.");

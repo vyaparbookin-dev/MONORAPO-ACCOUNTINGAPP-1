@@ -2,9 +2,6 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import Button from "../../components/Button"; // Assuming you have a Button component
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
-import { syncQueue } from "@repo/shared";
 
 const LaterpadListPage = () => {
   const [notes, setNotes] = useState([]);
@@ -12,14 +9,8 @@ const LaterpadListPage = () => {
 
   const fetchNotes = async () => {
     try {
-      let localNotes = await dbService.getNotes?.() || [];
-      
-      if (!localNotes || localNotes.length === 0) {
-        const res = await api.get("/api/laterpad").catch(() => ({ data: [] }));
-        localNotes = res.data || [];
-      }
-      
-      setNotes(localNotes);
+      const res = await api.get("/laterpad");
+      setNotes(res.data || []);
     } catch (err) {
       console.error("Failed to load notes:", err);
     }
@@ -27,18 +18,8 @@ const LaterpadListPage = () => {
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this note?")) return;
-    try {
-      const oldNote = notes.find(n => n._id === id);
-      
-      if (dbService.deleteNote) await dbService.deleteNote(id);
-      await auditService.logAction('DELETE', 'note', oldNote, null);
-      await syncQueue.enqueue({ entityId: id, entity: 'note', method: "DELETE", url: `/api/laterpad/${id}` });
-      
-      alert("Note deleted offline!");
-      fetchNotes();
-    } catch (error) {
-      console.error("Failed to delete note:", error);
-    }
+    await api.delete(`/laterpad/${id}`);
+    fetchNotes();
   };
 
   useEffect(() => {

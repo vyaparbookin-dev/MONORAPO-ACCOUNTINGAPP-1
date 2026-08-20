@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
+import api from "../../services/api";
 import { FileText, ArrowDownCircle, ArrowUpCircle, Printer, MessageCircle } from "lucide-react";
-import { dbService } from "../../services/dbService";
 
 export default function StaffStatementPage() {
   const [staffList, setStaffList] = useState([]);
@@ -11,8 +11,8 @@ export default function StaffStatementPage() {
   useEffect(() => {
     const fetchStaff = async () => {
       try {
-        const localStaff = await dbService.getStaff();
-        setStaffList((localStaff || []).map(s => ({ ...s, _id: s._id || s.uuid })));
+        const res = await api.get("/api/staff");
+        setStaffList(res.data?.staff || []);
       } catch (err) {
         console.error("Failed to load staff", err);
       }
@@ -24,8 +24,8 @@ export default function StaffStatementPage() {
     if (!selectedStaff) return;
     setLoading(true);
     try {
-      const localTx = await dbService.getTransactions(selectedStaff);
-      setTransactions(localTx || []);
+      const res = await api.get(`/api/staff/${selectedStaff}/statement`);
+      setTransactions(res.data?.transactions || []);
     } catch (err) {
       console.error("Failed to fetch statement", err);
       setTransactions([]);

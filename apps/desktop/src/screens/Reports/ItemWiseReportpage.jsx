@@ -64,7 +64,7 @@ const ItemWiseReportPage = () => {
             <tbody>
               {reportData.map((item) => (
                 <tr key={item.productId} className="border-b hover:bg-gray-50">
-                  <td className="p-3 font-medium text-gray-800">
+                  <td className="p-3 font-medium text-gray-800 cursor-pointer">
                     <button onClick={() => handleProductClick(item.productId)} className="text-blue-600 hover:underline text-left">
                       {item.productName}
                     </button>

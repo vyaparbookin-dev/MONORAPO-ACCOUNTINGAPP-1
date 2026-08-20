@@ -2,9 +2,6 @@ import React, { useState, useRef } from "react";
 import { Printer, FileText, AlignJustify, Type, Save } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
-import { syncQueue } from "@repo/shared";
 
 const LaterpadPage = () => {
   const [title, setTitle] = useState("");
@@ -25,17 +22,9 @@ const LaterpadPage = () => {
     }
 
     try {
-      const newId = crypto.randomUUID ? crypto.randomUUID() : `NOTE-${Date.now()}`;
-      const payload = { _id: newId, uuid: newId, title, content, date };
-
-      // Save locally
-      if (dbService.saveNote) await dbService.saveNote(payload);
-      await auditService.logAction('CREATE', 'note', null, payload);
-      
-      // Queue for sync
-      await syncQueue.enqueue({ entityId: newId, entity: 'note', method: "POST", url: "/api/laterpad", data: payload });
-
-      alert("Note Saved Offline Successfully!");
+      // Saving title, content and date
+      await api.post("/laterpad", { title, content, date });
+      alert("Note Saved Successfully!");
       navigate("/laterpad/list"); // Redirect to list page
     } catch (error) {
       console.error("Failed to save note:", error);

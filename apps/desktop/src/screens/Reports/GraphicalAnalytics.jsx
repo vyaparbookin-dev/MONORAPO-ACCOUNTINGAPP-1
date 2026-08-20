@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { BarChart3, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
-import { dbService } from "../../services/dbService"; // Use dbService for desktop
+import api from "../../services/api";
 
 export default function GraphicalAnalytics() {
   const [chartData, setChartData] = useState([]);
@@ -12,9 +12,14 @@ export default function GraphicalAnalytics() {
     const generateReport = async () => {
       setLoading(true);
       try {
-        // OFFLINE-FIRST: Fetch from local SQLite DB for Desktop
-        const bills = await dbService.getInvoices();
-        const expenses = await dbService.getExpenses();
+        // Fetch from Cloud API for Web
+        const [billsRes, expRes] = await Promise.all([
+          api.get("/api/billing").catch(() => ({ data: [] })),
+          api.get("/api/expenses").catch(() => ({ data: [] }))
+        ]);
+
+        const bills = billsRes?.bills || [];
+        const expenses = expRes?.expenses || [];
 
         const months = [];
         const today = new Date();

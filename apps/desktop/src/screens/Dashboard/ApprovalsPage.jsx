@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { CheckCircle, XCircle, Clock, FileText, Truck, Receipt } from 'lucide-react';
-import { dbService } from '../../services/dbService';
-import { syncQueue } from '@repo/shared';
 
 export default function ApprovalsPage() {
   const [pendingData, setPendingData] = useState({ bills: [], expenses: [], stockTransfers: [] });
@@ -12,22 +10,15 @@ export default function ApprovalsPage() {
   const fetchApprovals = async () => {
     try {
       setLoading(true);
-      let localData = await dbService.getApprovals?.();
-      
-      if ((!localData || Object.keys(localData).length === 0) && navigator.onLine) {
-        try {
-          const res = await api.get('/api/approvals');
-          if (res.data && res.data.success) localData = res.data.data;
-        } catch (e) {
-          console.warn("Could not fetch approvals from API");
-        }
-      }
+      let data = {};
+      const res = await api.get('/api/approvals').catch(() => ({ data: {} }));
+      data = res.data?.data || res.data || {};
       
       // Strictly enforce arrays to prevent .map crashes
       const safeData = {
-        bills: (localData && Array.isArray(localData.bills) ? localData.bills : []).filter(Boolean),
-        expenses: (localData && Array.isArray(localData.expenses) ? localData.expenses : []).filter(Boolean),
-        stockTransfers: (localData && Array.isArray(localData.stockTransfers) ? localData.stockTransfers : []).filter(Boolean)
+        bills: (Array.isArray(data.bills) ? data.bills : []).filter(Boolean),
+        expenses: (Array.isArray(data.expenses) ? data.expenses : []).filter(Boolean),
+        stockTransfers: (Array.isArray(data.stockTransfers) ? data.stockTransfers : []).filter(Boolean)
       };
       setPendingData(safeData);
     } catch (error) {
@@ -44,16 +35,11 @@ export default function ApprovalsPage() {
     if (!window.confirm(`Are you sure you want to ${status} this ?`)) return;
     
     try {
-      // Try to update locally if dbService supports it
-      if (dbService.updateApproval) {
-         await dbService.updateApproval(id, status);
-      }
-      
-      await syncQueue.enqueue({ entityId: id, entity: 'approval', method: "POST", url: "/api/approvals/update", data: { type, id, status } });
-      alert(`Offline: ${status} action recorded safely!`);
+      await api.post("/api/approvals/update", { type, id, status });
+      alert(`${status} action recorded successfully!`);
       fetchApprovals(); // Refresh list after action
     } catch (error) {
-      alert('Action failed: ' + error.message);
+      alert('Action failed: ' + (error.response?.data?.message || error.message));
     }
   };
 

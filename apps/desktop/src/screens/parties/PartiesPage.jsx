@@ -1,13 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { Plus, Search, User, Phone } from 'lucide-react';
-import { dbService } from '../../services/dbService';
-import { auditService } from '../../services/auditService';
-import { syncQueue } from '@repo/shared';
+import { syncQueue } from "@repo/shared";
 
 export default function PartiesPage() {
-  console.log("🔥 DEBUG: PARTIES PAGE COMPONENT MOUNTED / RENDERED");
-
   const [parties, setParties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -25,30 +21,18 @@ export default function PartiesPage() {
   const fetchParties = async () => {
     try {
       setLoading(true);
-      let partyList = [];
-      if (dbService && dbService.getCustomers) {
-        partyList = await dbService.getCustomers();
+      // Local-First: डेस्कटॉप ऐप के लिए लोकल SQLite से डेटा लें
+      if (window.electron && window.electron.db) {
+        const localParties = await window.electron.db.getCustomers();
+        setParties(localParties || []);
+      } else {
+        const res = await api.get('/api/party');
+        setParties(res.data?.parties || res.parties || (Array.isArray(res) ? res : []));
       }
-      
-      if (!partyList || partyList.length === 0) {
-        const res = await api.get('/api/party').catch(() => null);
-        partyList = res?.data?.parties || res?.parties || res?.data || [];
-      }
-
-      // ULTIMATE ARRAY CHECK (Prevents White Screen)
-      let safeParties = [];
-      if (Array.isArray(partyList)) safeParties = partyList;
-      else if (partyList && Array.isArray(partyList.parties)) safeParties = partyList.parties;
-      else if (partyList && Array.isArray(partyList.data)) safeParties = partyList.data;
-
-      setParties(safeParties.filter(Boolean).map(p => ({
-        ...p, 
-        _id: p._id || p.uuid,
-        mobileNumber: p.mobileNumber || p.phone || '', // Crash prevention
-        currentBalance: p.currentBalance || p.balance || 0
-      })));
     } catch (error) {
       console.error("Error fetching parties", error);
+      // क्रैश होने से बचाएं
+      if (!window.electron) setParties([]);
     } finally {
       setLoading(false);
     }
@@ -65,42 +49,40 @@ export default function PartiesPage() {
         creditLimit: parseFloat(formData.creditLimit) || 0
       };
 
-      const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `PARTY-${Date.now()}`;
-      const finalPayload = { ...payload, _id: newId, uuid: newId };
+      // Desktop: लोकल SQLite में तुरंत सेव करें (Offline Guarantee)
+      if (window.electron && window.electron.db) {
+        await window.electron.db.addCustomer({
+          name: payload.name,
+          gstin: '', // अगर GST है तो यहाँ पास कर सकते हैं
+          phone: payload.mobileNumber,
+          email: '',
+          address: payload.address
+        });
+      }
 
-      // 1. Save Locally (SQLite)
-      await dbService.addCustomer(finalPayload);
+      try {
+        await api.post('/api/party', payload);
+        alert('Party added successfully!');
+      } catch (apiErr) {
+        if (!navigator.onLine || apiErr.message === "Network Error") {
+          syncQueue.enqueue({ method: "POST", url: "/api/party", data: payload });
+          alert("You are offline. Party saved safely locally and will sync automatically!");
+        } else throw apiErr;
+      }
 
-      // 2. Audit Log
-      await auditService.logAction('CREATE', 'party', null, finalPayload);
-
-      // 3. Sync Queue
-      await syncQueue.enqueue({ entityId: newId, entity: 'party', method: 'POST', url: '/api/party', data: finalPayload });
-
-      alert('Party added securely offline!');
       setShowModal(false);
       setFormData({ name: '', mobileNumber: '', address: '', partyType: 'customer', openingBalance: '', creditLimit: '' });
       fetchParties();
     } catch (error) {
-      alert('Error adding party: ' + error.message);
+      alert('Error adding party: ' + (error.response?.data?.error || error.message));
     }
   };
 
-  const filteredParties = parties.filter(p => {
-    if (!p) return false;
-    const s = searchTerm.toLowerCase();
-    const nMatch = String(p.name || '').toLowerCase().includes(s);
-    const mMatch = String(p.mobileNumber || '').includes(s);
-    return nMatch || mMatch;
-  });
+  // CRASH FIX: Agar customer ka naam null hoga to app crash nahi hogi
+  const filteredParties = parties.filter(p => String(p?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || String(p?.mobileNumber || '').includes(searchTerm));
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
-      {/* JABARDASTI DEBUG BANNER */}
-      <div className="bg-red-600 text-white p-4 font-bold text-xl text-center mb-6 rounded-lg animate-pulse shadow-lg border-4 border-red-800">
-        🚨 DEBUG MODE: Parties Page is ALIVE and RENDERED! Agar data nahi aaya toh API/DB me dikkat hai. 🚨
-      </div>
-
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex justify-between items-center">
           <div>
@@ -134,22 +116,15 @@ export default function PartiesPage() {
               {loading ? (
                 <tr><td colSpan="5" className="text-center py-8 text-gray-500">Loading...</td></tr>
               ) : filteredParties.length === 0 ? (
-                <tr>
-                  <td colSpan="5" className="text-center py-12 text-gray-500">
-                    <p className="text-lg font-medium mb-3">No parties found.</p>
-                    <button onClick={() => setShowModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold inline-flex items-center gap-2 transition-all">
-                      <Plus size={18} /> Create Your First Party
-                    </button>
-                  </td>
-                </tr>
+                <tr><td colSpan="5" className="text-center py-8 text-gray-500">No parties found.</td></tr>
               ) : (
-                (filteredParties || []).map(p => (
+                filteredParties.map(p => (
                   <tr key={p._id} className="border-b hover:bg-gray-50">
-                    <td className="px-6 py-4 font-medium text-gray-900 flex items-center gap-2"><User size={16} className="text-gray-400"/> {p?.name || 'Unknown'}</td>
-                    <td className="px-6 py-4 capitalize"><span className={`px-2 py-1 rounded-full text-xs font-bold ${p?.partyType === 'supplier' ? 'bg-purple-100 text-purple-700' : p?.partyType === 'customer' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>{p?.partyType || 'customer'}</span></td>
-                    <td className="px-6 py-4 text-gray-600 flex items-center gap-2"><Phone size={14}/> {p?.mobileNumber || 'N/A'}</td>
+                    <td className="px-6 py-4 font-medium text-gray-900 flex items-center gap-2"><User size={16} className="text-gray-400"/> {p.name}</td>
+                    <td className="px-6 py-4 capitalize"><span className={`px-2 py-1 rounded-full text-xs font-bold ${p.partyType === 'supplier' ? 'bg-purple-100 text-purple-700' : p.partyType === 'customer' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>{p.partyType}</span></td>
+                    <td className="px-6 py-4 text-gray-600 flex items-center gap-2"><Phone size={14}/> {p.mobileNumber}</td>
                     <td className={`px-6 py-4 font-bold ${(p.currentBalance ?? p.balance ?? 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>₹{p.currentBalance ?? p.balance ?? 0}</td>
-                    <td className="px-6 py-4 font-medium text-gray-600">{(p?.creditLimit || 0) > 0 ? `₹${p.creditLimit}` : 'No Limit'}</td>
+                    <td className="px-6 py-4 font-medium text-gray-600">{p.creditLimit > 0 ? `₹${p.creditLimit}` : 'No Limit'}</td>
                   </tr>
                 ))
               )}

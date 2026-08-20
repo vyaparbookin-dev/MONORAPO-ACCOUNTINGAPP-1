@@ -2,9 +2,6 @@ import React, { useEffect, useState } from "react";
 import { FileText, RefreshCw, CheckCircle } from "lucide-react";
 import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
-import { dbService } from "../../services/dbService";
-import { syncQueue } from "@repo/shared";
-import { auditService } from "../../services/auditService";
 
 export default function B2bDocumentListPage() {
   const [documents, setDocuments] = useState([]);
@@ -18,15 +15,8 @@ export default function B2bDocumentListPage() {
   const fetchDocuments = async () => {
     setLoading(true);
     try {
-      // Offline first fetch
-      let localDocs = await dbService.getB2bDocuments?.() || [];
-      
-      if (!localDocs || localDocs.length === 0) {
-          const res = await api.get("/api/b2b").catch(() => ({ data: { data: [] } }));
-          localDocs = res.data?.data || [];
-      }
-      
-      setDocuments(localDocs);
+      const res = await api.get("/api/b2b");
+      setDocuments(res.data?.data || []);
     } catch (err) {
       console.error(err);
       alert("Failed to load documents");
@@ -39,12 +29,8 @@ export default function B2bDocumentListPage() {
     if (!window.confirm("Are you sure you want to convert this to a final Invoice/Bill?")) return;
     
     try {
-      // Offline support for conversion
-      if (dbService.updateB2bDocument) await dbService.updateB2bDocument(id, { status: "converted" });
-      await auditService.logAction('UPDATE', 'b2b_document_convert', { _id: id }, { status: "converted" });
-      await syncQueue.enqueue({ entityId: id, entity: 'b2b_document', method: 'POST', url: `/api/b2b/${id}/convert` });
-      
-      alert("Successfully converted to Final Invoice (Offline Queued)!");
+      await api.post(`/api/b2b/${id}/convert`);
+      alert("Successfully converted to Final Invoice!");
       fetchDocuments(); // Refresh list
     } catch (err) {
       console.error(err);

@@ -1,9 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Edit, Save, X, Building2, Mail, Phone, MapPin, FileText, Plus, Trash2, Briefcase, CreditCard, UserCheck, Share2, Globe, QrCode } from "lucide-react";
+import { Edit, Save, X, Building2, Mail, Phone, MapPin, FileText, Plus, Trash2, Briefcase, CreditCard, UserCheck, Share2, QrCode } from "lucide-react";
 import api from "../../services/api";
-import { dbService } from "../../services/dbService";
-import { auditService } from "../../services/auditService";
-import { syncQueue } from "@repo/shared";
 import { useCompany } from "../../contexts/CompanyContext";
 
 const CompanyPage = () => {
@@ -20,9 +17,12 @@ const CompanyPage = () => {
     address: company?.address || "",
     gstNumber: company?.gstNumber || "",
     gstType: company?.gstType || "regular",
-    website: company?.website || "",
     panNumber: company?.panNumber || "",
-    businessType: company?.businessType || "retail",
+    businessType: Array.isArray(company?.businessType) 
+      ? company.businessType 
+      : company?.businessType 
+        ? [company.businessType] 
+        : ["retail"],
     industryType: company?.industryType || "",
     businessDescription: company?.businessDescription || "",
     bankName: company?.bankName || "",
@@ -48,6 +48,17 @@ const CompanyPage = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleBusinessTypeChange = (type) => {
+    setFormData((prev) => {
+      const currentTypes = Array.isArray(prev.businessType) ? prev.businessType : [];
+      if (currentTypes.includes(type)) {
+        return { ...prev, businessType: currentTypes.filter((t) => t !== type) };
+      } else {
+        return { ...prev, businessType: [...currentTypes, type] };
+      }
+    });
+  };
+
   const handleQrUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -61,26 +72,15 @@ const CompanyPage = () => {
   const handleSave = async () => {
     try {
       if (isAdding) {
-        const newId = crypto.randomUUID ? crypto.randomUUID() : `COMP-${Date.now()}`;
-        const payload = { ...formData, _id: newId, uuid: newId };
-        
-        if (dbService.saveCompany) await dbService.saveCompany(payload);
-        await auditService.logAction('CREATE', 'company', null, payload);
-        await syncQueue.enqueue({ entityId: newId, entity: 'company', method: 'POST', url: '/api/company', data: payload });
-        
-        addCompany(payload);
+        const response = await api.post("/api/company", formData);
+        addCompany(response.company || response);
         setIsAdding(false);
-        alert("Company added offline successfully!");
+        alert("Company added successfully!");
       } else {
-        const payload = { ...formData };
-        
-        if (dbService.updateCompany) await dbService.updateCompany(selectedCompany._id, payload);
-        await auditService.logAction('UPDATE', 'company', selectedCompany, payload);
-        await syncQueue.enqueue({ entityId: selectedCompany._id, entity: 'company', method: 'PUT', url: `/api/company/${selectedCompany._id}`, data: payload });
-
-        updateCompany({ ...selectedCompany, ...payload });
+        const response = await api.put(`/api/company/${selectedCompany._id}`, formData);
+        updateCompany(response.company || response);
         setIsEditing(false);
-        alert("Company updated offline successfully!");
+        alert("Company updated successfully!");
       }
     } catch (err) {
       console.error("Failed to save company:", err);
@@ -114,7 +114,7 @@ const CompanyPage = () => {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
@@ -136,54 +136,45 @@ const CompanyPage = () => {
 
       {/* Company List */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {companies.length > 0 ? (
-          companies.map((company) => (
-            <div
-              key={company._id}
-              onClick={() => {
-                selectCompany(company);
-                if (dbService.setCompanyId) dbService.setCompanyId(company._id);
-                // Flush stale cache and hard reload to prevent ghost data
-                localStorage.setItem("companyId", company._id);
-                localStorage.setItem("companyName", company.name);
-                localStorage.removeItem("categories");
-                localStorage.removeItem("subCategories");
-                window.location.href = "#/dashboard";
-                window.location.reload();
+        {companies.map((company) => (
+          <div
+            key={company._id}
+            onClick={() => {
+              selectCompany(company);
+              // Flush stale cache and hard reload to prevent ghost data
+              localStorage.setItem("companyId", company._id);
+              localStorage.setItem("companyName", company.name);
+              localStorage.removeItem("categories");
+              localStorage.removeItem("subCategories");
+              window.location.href = "/dashboard";
+            }}
+            className={`p-4 border rounded-lg cursor-pointer transition relative group ${
+              selectedCompany && selectedCompany._id === company._id
+                ? "border-blue-500 bg-blue-50"
+                : "border-gray-200 hover:border-gray-300"
+            }`}
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm(`Are you sure you want to delete "${company.name}"?`)) {
+                  deleteCompany(company._id);
+                }
               }}
-              className={`p-4 border rounded-lg cursor-pointer transition relative group ${
-                selectedCompany && selectedCompany._id === company._id
-                  ? "border-blue-500 bg-blue-50"
-                  : "border-gray-200 hover:border-gray-300"
-              }`}
+              className="absolute top-2 right-2 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full z-10"
+              title="Delete Company"
             >
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (window.confirm(`Are you sure you want to delete "${company.name}"?`)) {
-                    deleteCompany(company._id);
-                  }
-                }}
-                className="absolute top-2 right-2 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full z-10"
-                title="Delete Company"
-              >
-                <Trash2 size={18} />
-              </button>
-              <h3 className="font-semibold text-lg pr-8">{company.name}</h3>
-              <p className="text-sm text-gray-600">{company.businessType}</p>
-              <p className="text-sm text-gray-500">{company.address}</p>
-            </div>
-          ))
-        ) : (
-          <div className="col-span-full text-center py-10 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-            <Building2 className="mx-auto text-gray-400 mb-2" size={40} />
-            <p className="text-gray-500">No companies found. Create one to get started.</p>
+              <Trash2 size={18} />
+            </button>
+            <h3 className="font-semibold text-lg pr-8">{company.name}</h3>
+            <p className="text-sm text-gray-600 capitalize">{Array.isArray(company.businessType) ? company.businessType.join(', ') : company.businessType}</p>
+            <p className="text-sm text-gray-500">{company.address}</p>
           </div>
-        )}
+        ))}
       </div>
 
       {/* Selected Company Details */}
-      {selectedCompany && !isAdding && companies.length > 0 && (
+      {selectedCompany && !isAdding && (
         <div className="bg-white border border-gray-200 rounded-xl p-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold">Company Details</h2>
@@ -216,12 +207,8 @@ const CompanyPage = () => {
                     <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Website (Optional)</label>
-                    <input type="url" name="website" value={formData.website} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="https://www.example.com" />
-                  </div>
-                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Full Address</label>
-                    <textarea name="address" rows="2" value={formData.address} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <textarea name="address" rows="1" value={formData.address} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                 </div>
               </div>
@@ -229,24 +216,24 @@ const CompanyPage = () => {
               {/* Business & Tax */}
               <div>
                 <h3 className="text-lg font-medium border-b pb-2 mb-3 text-gray-800">Business & Tax Details</h3>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Trade Type (Select multiple)</label>
+                <div className="flex flex-wrap gap-3">
+                  {[
+                    { id: "retail", label: "Retail" },
+                    { id: "wholesale", label: "Wholesale" },
+                    { id: "manufacturing", label: "Manufacturing" },
+                    { id: "service", label: "Services" },
+                    { id: "trading", label: "Trading" }
+                  ].map((type) => (
+                    <label key={type.id} className="flex items-center gap-2 bg-gray-50 border px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100">
+                      <input type="checkbox" checked={Array.isArray(formData.businessType) && formData.businessType.includes(type.id)} onChange={() => handleBusinessTypeChange(type.id)} className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm font-medium text-gray-700">{type.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Trade Type</label>
-                    <select name="businessType" value={formData.businessType} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                      <option value="retail">Retail</option>
-                      <option value="wholesale">Wholesale</option>
-                      <option value="manufacturing">Manufacturing</option>
-                      <option value="service">Services</option>
-                      <option value="jewellery">Jewellery</option>
-                      <option value="clothes">Clothes / Garments</option>
-                      <option value="hardware">Hardware & Builder</option>
-                      <option value="electronic">Electronics</option>
-                      <option value="restaurant">Restaurant / Cafe</option>
-                      <option value="hotel">Hotel / Resort</option>
-                      <option value="science">Science Equipment</option>
-                      <option value="sports">Sports & Fitness</option>
-                    </select>
-                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Industry / Sector</label>
                     <input type="text" name="industryType" list="industry-options" placeholder="e.g. Hardware, Paints or Custom" value={formData.industryType} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
@@ -375,39 +362,30 @@ const CompanyPage = () => {
                     <Briefcase className="text-gray-400" size={20} />
                     <div>
                       <p className="text-sm text-gray-500">Business Type</p>
-                      <p className="font-medium text-gray-800 capitalize">{selectedCompany.businessType?.replace('_', ' & ')} {selectedCompany.industryType && `- ${selectedCompany.industryType}`}</p>
+                    <p className="font-medium text-gray-800 capitalize">{(Array.isArray(selectedCompany.businessType) ? selectedCompany.businessType.join(' & ') : selectedCompany.businessType)} {selectedCompany.industryType && `- ${selectedCompany.industryType}`}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <MapPin className="text-gray-400" size={20} />
                     <div>
                       <p className="text-sm text-gray-500">Address</p>
-                      <p className="font-medium text-gray-800">{selectedCompany.address || "N/A"}</p>
+                      <p className="font-medium text-gray-800">{selectedCompany.address || "Not provided"}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <Phone className="text-gray-400" size={20} />
                     <div>
                       <p className="text-sm text-gray-500">Phone</p>
-                      <p className="font-medium text-gray-800">{selectedCompany.phone || "N/A"}</p>
+                      <p className="font-medium text-gray-800">{selectedCompany.phone || "Not provided"}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <Mail className="text-gray-400" size={20} />
                     <div>
                       <p className="text-sm text-gray-500">Email</p>
-                      <p className="font-medium text-gray-800">{selectedCompany.email || "N/A"}</p>
+                      <p className="font-medium text-gray-800">{selectedCompany.email || "Not provided"}</p>
                     </div>
                   </div>
-                  {selectedCompany.website && (
-                  <div className="flex items-center gap-3">
-                    <Globe className="text-gray-400" size={20} />
-                    <div>
-                      <p className="text-sm text-gray-500">Website</p>
-                      <a href={selectedCompany.website} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:underline">{selectedCompany.website}</a>
-                    </div>
-                  </div>
-                  )}
                 </div>
 
                 {/* Tax & Bank Details */}
@@ -437,7 +415,7 @@ const CompanyPage = () => {
                     <div>
                       <p className="text-sm text-gray-500">Bank Account Details</p>
                       <p className="font-medium text-gray-800">
-                        {selectedCompany.bankName ? `${selectedCompany.bankName} - ${selectedCompany.accountNumber}` : "N/A"}
+                        {selectedCompany.bankName ? `${selectedCompany.bankName} - ${selectedCompany.accountNumber}` : "Not provided"}
                       </p>
                       {selectedCompany.ifscCode && <p className="text-xs text-gray-500">IFSC: {selectedCompany.ifscCode.toUpperCase()}</p>}
                     </div>
@@ -449,20 +427,35 @@ const CompanyPage = () => {
                         <p className="text-sm text-gray-500 mb-2">Payment QR Code</p>
                         <img src={selectedCompany.customQrCode} alt="Payment QR" className="w-32 h-32 border rounded-lg shadow-sm" />
                       </div>
+                      <div className="flex items-center gap-3 pt-2">
+                        <FileText size={16} className="text-gray-400" />
+                        <div className="flex flex-wrap gap-2">
+                          <span className={`text-xs uppercase px-2 py-1 border rounded font-bold tracking-wider ${
+                            selectedCompany.gstType === 'composition' ? 'bg-orange-900 border-orange-700 text-orange-300' :
+                            selectedCompany.gstType === 'unregistered' ? 'bg-gray-800 border-gray-600 text-gray-300' :
+                            'bg-green-900 border-green-700 text-green-300'
+                          }`}>
+                            {selectedCompany.gstType === 'composition' ? 'COMPOSITION' : selectedCompany.gstType === 'unregistered' ? 'UNREGISTERED' : 'REGULAR GST'}
+                          </span>
+                          {selectedCompany.gstNumber && (
+                            <span className="text-xs uppercase bg-gray-800 px-2 py-1 border border-gray-600 rounded font-medium tracking-wider text-gray-200">GST: {selectedCompany.gstNumber}</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )}
                   <div className="flex items-center gap-3">
                     <UserCheck className="text-gray-400" size={20} />
                     <div>
                       <p className="text-sm text-gray-500">CA Details</p>
-                      <p className="font-medium text-gray-800">{selectedCompany.caName || "N/A"}</p>
+                      <p className="font-medium text-gray-800">{selectedCompany.caName || "Not provided"}</p>
                       {selectedCompany.caPhone && <p className="text-xs text-gray-500">{selectedCompany.caPhone}</p>}
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Digital Visiting Card Preview */}
+              {/* Digital Visiting Card Preview - ONLY MAIN DETAILS */}
               <div className="mt-8 pt-6 border-t border-gray-200">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-bold text-gray-800">Digital Visiting Card Preview</h3>
@@ -497,27 +490,6 @@ const CompanyPage = () => {
                         <MapPin size={16} className="text-gray-400 mt-1" />
                         <span className="leading-tight pr-4">{selectedCompany.address || "Company Address Details"}</span>
                       </div>
-                      {selectedCompany.website && (
-                        <div className="flex items-center gap-3">
-                          <Globe size={16} className="text-gray-400" />
-                          <span>{selectedCompany.website}</span>
-                        </div>
-                      )}
-                      <div className="flex items-center gap-3 pt-2">
-                        <FileText size={16} className="text-gray-400" />
-                        <div className="flex flex-wrap gap-2">
-                          <span className={`text-xs uppercase px-2 py-1 border rounded font-bold tracking-wider ${
-                            selectedCompany.gstType === 'composition' ? 'bg-orange-900 border-orange-700 text-orange-300' :
-                            selectedCompany.gstType === 'unregistered' ? 'bg-gray-800 border-gray-600 text-gray-300' :
-                            'bg-green-900 border-green-700 text-green-300'
-                          }`}>
-                            {selectedCompany.gstType === 'composition' ? 'COMPOSITION' : selectedCompany.gstType === 'unregistered' ? 'UNREGISTERED' : 'REGULAR GST'}
-                          </span>
-                          {selectedCompany.gstNumber && (
-                            <span className="text-xs uppercase bg-gray-800 px-2 py-1 border border-gray-600 rounded font-medium tracking-wider text-gray-200">GST: {selectedCompany.gstNumber}</span>
-                          )}
-                        </div>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -529,7 +501,7 @@ const CompanyPage = () => {
 
       {/* Add Company Form */}
       {isAdding && (
-        <div className="bg-white border border-gray-200 rounded-xl p-6 mt-6">
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
           <h2 className="text-xl font-semibold mb-4">Add New Company</h2>
           <form className="space-y-6">
               {/* Basic Info */}
@@ -549,12 +521,8 @@ const CompanyPage = () => {
                     <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Website (Optional)</label>
-                    <input type="url" name="website" value={formData.website} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="https://www.example.com" />
-                  </div>
-                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Full Address</label>
-                    <textarea name="address" rows="2" value={formData.address} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <textarea name="address" rows="1" value={formData.address} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                 </div>
               </div>
@@ -562,24 +530,24 @@ const CompanyPage = () => {
               {/* Business & Tax */}
               <div>
                 <h3 className="text-lg font-medium border-b pb-2 mb-3 text-gray-800">Business & Tax Details</h3>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Trade Type (Select multiple)</label>
+                <div className="flex flex-wrap gap-3">
+                  {[
+                    { id: "retail", label: "Retail" },
+                    { id: "wholesale", label: "Wholesale" },
+                    { id: "manufacturing", label: "Manufacturing" },
+                    { id: "service", label: "Services" },
+                    { id: "trading", label: "Trading" }
+                  ].map((type) => (
+                    <label key={type.id} className="flex items-center gap-2 bg-gray-50 border px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100">
+                      <input type="checkbox" checked={Array.isArray(formData.businessType) && formData.businessType.includes(type.id)} onChange={() => handleBusinessTypeChange(type.id)} className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm font-medium text-gray-700">{type.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Trade Type</label>
-                    <select name="businessType" value={formData.businessType} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                      <option value="retail">Retail</option>
-                      <option value="wholesale">Wholesale</option>
-                      <option value="manufacturing">Manufacturing</option>
-                      <option value="service">Services</option>
-                      <option value="jewellery">Jewellery</option>
-                      <option value="clothes">Clothes / Garments</option>
-                      <option value="hardware">Hardware & Builder</option>
-                      <option value="electronic">Electronics</option>
-                      <option value="restaurant">Restaurant / Cafe</option>
-                      <option value="hotel">Hotel / Resort</option>
-                      <option value="science">Science Equipment</option>
-                      <option value="sports">Sports & Fitness</option>
-                    </select>
-                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Industry / Sector</label>
                     <input type="text" name="industryType" list="industry-options" placeholder="e.g. Hardware, Paints or Custom" value={formData.industryType} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />

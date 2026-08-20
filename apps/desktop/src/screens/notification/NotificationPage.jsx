@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from "react";
 import api from "../../services/api";
-import { dbService } from "../../services/dbService";
-import { syncQueue } from "@repo/shared";
 
 const NotificationPage = () => {
   const [notifications, setNotifications] = useState([]);
@@ -15,17 +13,11 @@ const NotificationPage = () => {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      
-      let localNotifs = await dbService.getNotifications?.() || [];
-      
-      if (!localNotifs || localNotifs.length === 0) {
-        const response = await api.get("/api/notification").catch(() => ({ data: [] }));
-        localNotifs = response.data || [];
-      }
-      
-      setNotifications(localNotifs);
+      const response = await api.get("/api/notification");
+      setNotifications(response.data || []);
     } catch (err) {
       console.error("Failed to fetch notifications:", err);
+      // क्रैश होने से बचाएं
       setNotifications([]);
     } finally {
       setLoading(false);
@@ -34,10 +26,7 @@ const NotificationPage = () => {
 
   const markAsRead = async (id) => {
     try {
-      // Offline support
-      if (dbService.updateNotification) await dbService.updateNotification(id, { isRead: true });
-      await syncQueue.enqueue({ entityId: id, entity: 'notification', method: 'PUT', url: `/api/notification/${id}`, data: { isRead: true } });
-      
+      await api.put(`/api/notification/${id}`, { isRead: true });
       fetchNotifications();
     } catch (err) {
       console.error("Failed to mark as read:", err);

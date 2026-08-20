@@ -2,11 +2,11 @@
   "expo": {
     "name": "Mono Rapo",
     "slug": "mono-rapo",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "runtimeVersion": "1.0.0",
+    "runtimeVersion": "1.2.0",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -22,7 +22,7 @@
         "backgroundColor": "#2563eb"
       },
       "package": "com.monorapo.accounting",
-      "versionCode": 2
+      "versionCode": 3
     },
     "extra": {
       "eas": {

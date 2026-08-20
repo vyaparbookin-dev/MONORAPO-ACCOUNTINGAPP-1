@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Edit, Trash2, X, ListTree, Scale, ListMinus, Tag } from "lucide-react";
 import api from "../../services/api";
-import { dbService } from "../../services/dbService";
-import { syncQueue } from "@repo/shared";
 
 const CategoryManagementPage = () => {
   const [activeTab, setActiveTab] = useState("categories");
@@ -25,37 +23,21 @@ const CategoryManagementPage = () => {
     setLoading(true);
     try {
       if (activeTab === "categories") {
-        // Offline First
-        let localCats = await dbService.getCategories?.() || [];
-        if (!localCats || localCats.length === 0) {
-          const res = await api.get("/api/category").catch(() => ({ data: [] }));
-          localCats = res.data?.categories || res.data || [];
-        }
-        setCategories(Array.isArray(localCats) ? localCats : []);
+        const res = await api.get("/api/category");
+        const data = res?.data?.categories || res?.data?.data || res?.data;
+        setCategories(Array.isArray(data) ? data : []);
       } else if (activeTab === "subCategories") {
-        // Offline First
-        let localSubCats = await dbService.getSubCategories?.() || [];
-        if (!localSubCats || localSubCats.length === 0) {
-          const res = await api.get("/api/subcategory").catch(() => ({ data: [] }));
-          localSubCats = res.data?.subCategories || res.data || [];
-        }
-        setSubCategories(Array.isArray(localSubCats) ? localSubCats : []);
+        const res = await api.get("/api/subcategory");
+        const data = res?.data?.subCategories || res?.data?.data || res?.data;
+        setSubCategories(Array.isArray(data) ? data : []);
       } else if (activeTab === "brands") {
-        // Offline First
-        let localBrands = await dbService.getBrands?.() || [];
-        if (!localBrands || localBrands.length === 0) {
-          const res = await api.get("/api/brand").catch(() => ({ data: [] }));
-          localBrands = res.data?.brands || res.data || [];
-        }
-        setBrands(Array.isArray(localBrands) ? localBrands : []);
+        const res = await api.get("/api/brand");
+        const data = res?.data?.brands || res?.data?.data || res?.data;
+        setBrands(Array.isArray(data) ? data : []);
       } else {
-        // Offline First
-        let localUnits = await dbService.getUnits?.() || [];
-        if (!localUnits || localUnits.length === 0) {
-          const res = await api.get("/api/unit").catch(() => ({ data: [] }));
-          localUnits = res.data?.units || res.data || [];
-        }
-        setUnits(Array.isArray(localUnits) ? localUnits : []);
+        const res = await api.get("/api/unit");
+        const data = res?.data?.units || res?.data?.data || res?.data;
+        setUnits(Array.isArray(data) ? data : []);
       }
     } catch (error) {
       console.error(`Failed to fetch ${activeTab}:`, error);
@@ -85,49 +67,21 @@ const CategoryManagementPage = () => {
     e.preventDefault();
     try {
       let endpoint = "";
-      let entity = "";
-      if (activeTab === "categories") { endpoint = "/api/category"; entity = "category"; }
-      else if (activeTab === "subCategories") { endpoint = "/api/subcategory"; entity = "subCategory"; }
-      else if (activeTab === "brands") { endpoint = "/api/brand"; entity = "brand"; }
-      else { endpoint = "/api/unit"; entity = "unit"; }
-      
-      let payload = { ...formData };
-      let method = editingItem ? "PUT" : "POST";
-      let url = editingItem ? `${endpoint}/${editingItem._id}` : endpoint;
+      if (activeTab === "categories") endpoint = "/api/category";
+      else if (activeTab === "subCategories") endpoint = "/api/subcategory";
+      else if (activeTab === "brands") endpoint = "/api/brand";
+      else endpoint = "/api/unit";
 
-      if (!editingItem) {
-        payload._id = crypto.randomUUID ? crypto.randomUUID() : `${entity}-${Date.now()}`;
-        payload.uuid = payload._id;
-        payload.isActive = true;
-      }
-
-      // Optimistic UI Update (Instant reflection)
-      if (activeTab === "categories") {
-        if (editingItem) setCategories(prev => prev.map(c => c._id === editingItem._id ? {...c, ...payload} : c));
-        else setCategories(prev => [...prev, payload]);
-      } else if (activeTab === "subCategories") {
-        if (editingItem) setSubCategories(prev => prev.map(c => c._id === editingItem._id ? {...c, ...payload} : c));
-        else setSubCategories(prev => [...prev, payload]);
-      } else if (activeTab === "brands") {
-        if (editingItem) setBrands(prev => prev.map(c => c._id === editingItem._id ? {...c, ...payload} : c));
-        else setBrands(prev => [...prev, payload]);
+      if (editingItem) {
+        await api.put(`${endpoint}/${editingItem._id}`, formData);
       } else {
-        if (editingItem) setUnits(prev => prev.map(u => u._id === editingItem._id ? {...u, ...payload} : u));
-        else setUnits(prev => [...prev, payload]);
+        await api.post(endpoint, formData);
       }
-
-      // Local DB Save (If functions exist)
-      if (activeTab === "categories" && dbService.saveCategory && !editingItem) await dbService.saveCategory(payload);
-      if (activeTab === "subCategories" && dbService.saveSubCategory && !editingItem) await dbService.saveSubCategory(payload);
-      if (activeTab === "brands" && dbService.saveBrand && !editingItem) await dbService.saveBrand(payload);
-      if (activeTab === "units" && dbService.saveUnit && !editingItem) await dbService.saveUnit(payload);
-
-      // Queue for Cloud Sync
-      await syncQueue.enqueue({ entityId: payload._id, entity, method, url, data: payload });
       
+      fetchData();
       closeModal();
     } catch (error) {
-      alert(error.message || "Operation failed");
+      alert(error.response?.data?.error || error.response?.data?.message || "Operation failed");
     }
   };
 
@@ -135,27 +89,14 @@ const CategoryManagementPage = () => {
     if (!window.confirm("Are you sure you want to delete this item?")) return;
     try {
       let endpoint = "";
-      let entity = "";
-      if (activeTab === "categories") { endpoint = "/api/category"; entity = "category"; }
-      else if (activeTab === "subCategories") { endpoint = "/api/subcategory"; entity = "subCategory"; }
-      else if (activeTab === "brands") { endpoint = "/api/brand"; entity = "brand"; }
-      else { endpoint = "/api/unit"; entity = "unit"; }
+      if (activeTab === "categories") endpoint = "/api/category";
+      else if (activeTab === "subCategories") endpoint = "/api/subcategory";
+      else if (activeTab === "brands") endpoint = "/api/brand";
+      else endpoint = "/api/unit";
 
-      // Optimistic UI Update
-      if (activeTab === "categories") setCategories(prev => prev.filter(c => c._id !== id));
-      else if (activeTab === "subCategories") setSubCategories(prev => prev.filter(u => u._id !== id));
-      else if (activeTab === "brands") setBrands(prev => prev.filter(u => u._id !== id));
-      else setUnits(prev => prev.filter(u => u._id !== id));
-
-      // Local DB Delete (If functions exist)
-      if (activeTab === "categories" && dbService.deleteCategory) await dbService.deleteCategory(id);
-      if (activeTab === "subCategories" && dbService.deleteSubCategory) await dbService.deleteSubCategory(id);
-      if (activeTab === "brands" && dbService.deleteBrand) await dbService.deleteBrand(id);
-      if (activeTab === "units" && dbService.deleteUnit) await dbService.deleteUnit(id);
-
-      // Queue for Cloud Sync
-      await syncQueue.enqueue({ entityId: id, entity, method: "DELETE", url: `${endpoint}/${id}` });
+      await api.delete(`${endpoint}/${id}`);
       
+      fetchData();
     } catch (error) {
       alert("Failed to delete. It might be in use.");
     }

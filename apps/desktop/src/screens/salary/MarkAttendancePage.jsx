@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
+import api from "../../services/api";
 import { Users, CalendarCheck, HandCoins, Scan, Settings, MapPin, Fingerprint, Wifi } from "lucide-react";
-import { dbService } from "../../services/dbService";
-import { syncQueue } from "@repo/shared";
 import BarcodeScanner from "../../components/BarcodeScanner";
 
 export default function MarkAttendancePage() {
@@ -27,13 +26,12 @@ export default function MarkAttendancePage() {
 
   // Scanner State
   const [showScanner, setShowScanner] = useState(false);
-  const [shopLocation, setShopLocation] = useState({ lat: "", lng: "" });
 
   useEffect(() => {
     const fetchStaff = async () => {
       try {
-        const localStaff = await dbService.getStaff();
-        setStaffList((localStaff || []).map(s => ({...s, _id: s._id || s.uuid})));
+        const res = await api.get("/api/staff");
+        setStaffList(res.data?.staff || []);
       } catch (err) {
         console.error("Failed to load staff", err);
       }
@@ -41,28 +39,12 @@ export default function MarkAttendancePage() {
     fetchStaff();
   }, []);
 
-  const autoDetectLocation = () => {
-    if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition((position) => {
-      setShopLocation({
-        lat: position.coords.latitude,
-        lng: position.coords.longitude
-      });
-      alert("Shop location detected and saved successfully!");
-    }, () => {
-      alert("Unable to retrieve location. Please allow location permissions in your browser.");
-    });
-  };
-
-  // 🚀 Auto-Attendance via Barcode/QR Scan (Offline First)
+  // 🚀 Auto-Attendance via Barcode/QR Scan
   const handleScanSuccess = async (decodedText) => {
+    // Assume ID Card Barcode contains Staff's Mobile Number, ID, or Name
     const scannedStaff = staffList.find(s => 
       s._id === decodedText || 
-      s.uuid === decodedText ||
-      s.mobile === decodedText || 
+      s.mobileNumber === decodedText || 
       s.name.toLowerCase() === decodedText.toLowerCase()
     );
 
@@ -73,16 +55,14 @@ export default function MarkAttendancePage() {
 
     try {
       setLoading(true);
+      // Automatically mark present for today
       const today = new Date().toISOString().split("T")[0];
-      const newId = `ATT-${Date.now()}`;
-      const payload = { 
-        uuid: newId, staff_uuid: scannedStaff._id, staffId: scannedStaff._id, 
-        type: 'attendance', status: 'present', date: today, notes: 'Auto-scanned ID' 
-      };
-      
-      await dbService.saveTransaction(payload);
-      await syncQueue.enqueue({ entityId: newId, entity: 'attendance', method: "POST", url: "/api/staff/attendance", data: payload });
-
+      await api.post("/api/staff/attendance", { 
+        staffId: scannedStaff._id, 
+        status: "present", 
+        startDate: today, 
+        endDate: today 
+      });
       alert(`✅ Automated Attendance: ${scannedStaff.name} marked Present!`);
     } catch (err) {
       alert("Failed to mark auto attendance");
@@ -97,21 +77,11 @@ export default function MarkAttendancePage() {
     
     setLoading(true);
     try {
-      const newId = `ATT-${Date.now()}`;
-      const payload = { 
-        uuid: newId, staff_uuid: selectedStaff, staffId: selectedStaff, 
-        type: 'attendance', status: attForm.status, date: attForm.startDate, notes: attForm.notes 
-      };
-      
-      // Save locally
-      await dbService.saveTransaction(payload);
-      // Sync
-      await syncQueue.enqueue({ entityId: newId, entity: 'attendance', method: "POST", url: "/api/staff/attendance", data: payload });
-
-      alert("Attendance Marked Offline Successfully!");
+      await api.post("/api/staff/attendance", { ...attForm, staffId: selectedStaff });
+      alert("Attendance Marked Successfully!");
       setAttForm({ ...attForm, notes: "" });
     } catch (err) {
-      alert(err.message || "Failed to mark attendance");
+      alert(err.response?.data?.message || "Failed to mark attendance");
     } finally {
       setLoading(false);
     }
@@ -123,23 +93,11 @@ export default function MarkAttendancePage() {
 
     setLoading(true);
     try {
-      const newId = `PAY-${Date.now()}`;
-      const amount = Number(payForm.amount);
-      const isDebit = ['advance', 'salary_settlement', 'deduction'].includes(payForm.paymentType);
-      
-      const payload = {
-        uuid: newId, staff_uuid: selectedStaff, staffId: selectedStaff,
-        type: payForm.paymentType, debit: isDebit ? amount : 0, credit: !isDebit ? amount : 0,
-        notes: payForm.notes, date: new Date().toISOString(), status: 'completed'
-      };
-
-      await dbService.saveTransaction(payload);
-      await syncQueue.enqueue({ entityId: newId, entity: 'payment', method: "POST", url: "/api/staff/payment", data: payload });
-
-      alert("Payment Recorded Offline Successfully!");
+      await api.post("/api/staff/payment", { ...payForm, staffId: selectedStaff, amount: Number(payForm.amount) });
+      alert("Payment Recorded Successfully!");
       setPayForm({ ...payForm, amount: "", notes: "" });
     } catch (err) {
-      alert(err.message || "Failed to record payment");
+      alert(err.response?.data?.message || "Failed to record payment");
     } finally {
       setLoading(false);
     }
@@ -299,10 +257,10 @@ export default function MarkAttendancePage() {
               </label>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input type="text" value={shopLocation.lat} onChange={e => setShopLocation({...shopLocation, lat: e.target.value})} placeholder="Shop Latitude (e.g. 28.704060)" className="w-full border p-2 rounded bg-gray-50 focus:bg-white outline-none" />
-              <input type="text" value={shopLocation.lng} onChange={e => setShopLocation({...shopLocation, lng: e.target.value})} placeholder="Shop Longitude (e.g. 77.102493)" className="w-full border p-2 rounded bg-gray-50 focus:bg-white outline-none" />
+              <input type="text" placeholder="Shop Latitude (e.g. 28.704060)" className="w-full border p-2 rounded bg-gray-50 focus:bg-white" />
+              <input type="text" placeholder="Shop Longitude (e.g. 77.102493)" className="w-full border p-2 rounded bg-gray-50 focus:bg-white" />
             </div>
-            <button onClick={autoDetectLocation} className="mt-4 px-4 py-2 border border-red-200 bg-red-50 text-red-700 rounded-lg font-bold hover:bg-red-100 transition shadow-sm">
+            <button className="mt-4 px-4 py-2 border border-red-200 bg-red-50 text-red-700 rounded-lg font-bold hover:bg-red-100 transition">
               Auto-Detect Current Location
             </button>
           </div>
