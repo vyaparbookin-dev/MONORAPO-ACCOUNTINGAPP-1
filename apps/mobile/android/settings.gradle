@@ -5,18 +5,20 @@ pluginManagement {
     mavenCentral()
   }
 
-  def pluginDir = new File(settingsDir, "../../../node_modules/@react-native/gradle-plugin")
+  def monorepoRoot = settingsDir.getParentFile().getParentFile().getParentFile()
+  def pluginDir = new File(monorepoRoot, "node_modules/@react-native/gradle-plugin")
   if (!pluginDir.exists()) {
-    pluginDir = new File(settingsDir, "../node_modules/@react-native/gradle-plugin")
+    pluginDir = new File(settingsDir.getParentFile(), "node_modules/@react-native/gradle-plugin")
   }
   includeBuild(pluginDir)
 }
 
 rootProject.name = 'mobile-inventory-app'
 
-def autolinkingScript = new File(settingsDir, "../../../node_modules/expo/scripts/autolinking.gradle")
+def monorepoRoot = settingsDir.getParentFile().getParentFile().getParentFile()
+def autolinkingScript = new File(monorepoRoot, "node_modules/expo/scripts/autolinking.gradle")
 if (!autolinkingScript.exists()) {
-  autolinkingScript = new File(settingsDir, "../node_modules/expo/scripts/autolinking.gradle")
+  autolinkingScript = new File(settingsDir.getParentFile(), "node_modules/expo/scripts/autolinking.gradle")
 }
 apply from: autolinkingScript
 useExpoModules()
