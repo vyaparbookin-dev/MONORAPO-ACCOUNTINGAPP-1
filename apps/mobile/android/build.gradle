@@ -39,5 +39,5 @@ subprojects {
   }
 }
 
-apply plugin: "expo-root-project"
+// expo-root-project removed (not needed in Expo 51)
 apply plugin: "com.facebook.react.rootproject"
