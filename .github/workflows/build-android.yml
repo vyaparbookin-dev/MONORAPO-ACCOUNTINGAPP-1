@@ -31,14 +31,12 @@ jobs:
         with:
           node-version: 20
 
-      - name: 📦 Install all dependencies
+      - name: 📦 Install root dependencies
         run: npm install --legacy-peer-deps
 
-      - name: 🔗 Link apps/mobile node_modules
-        run: |
-          rm -rf apps/mobile/node_modules
-          ln -sf ${{ github.workspace }}/node_modules apps/mobile/node_modules
-          ls -la apps/mobile/node_modules/react-native/cli.js
+      - name: 📦 Install mobile dependencies
+        working-directory: apps/mobile
+        run: npm install --legacy-peer-deps
 
       - name: 📦 Pre-bundle JavaScript Assets
         working-directory: apps/mobile
