@@ -40,13 +40,12 @@ jobs:
       - name: 🔑 Make Gradlew Executable
         run: chmod +x apps/mobile/android/gradlew
 
-      - name: 🏗️ Build Android APK (Debug & Release)
+      - name: 🏗️ Build Android APK
         working-directory: apps/mobile/android
-        run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace
-          ./gradlew assembleRelease --no-daemon --stacktrace || true
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
       - name: 📤 Upload APK Artifacts
         uses: actions/upload-artifact@v4
