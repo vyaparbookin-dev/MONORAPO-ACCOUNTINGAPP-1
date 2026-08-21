@@ -38,6 +38,9 @@ jobs:
         working-directory: apps/mobile
         run: npm install --legacy-peer-deps
 
+      - name: 🩹 Patch Expo Native Modules
+        run: node scripts/patch-expo-modules.cjs
+
       - name: 📦 Pre-bundle JavaScript Assets
         working-directory: apps/mobile
         run: |
