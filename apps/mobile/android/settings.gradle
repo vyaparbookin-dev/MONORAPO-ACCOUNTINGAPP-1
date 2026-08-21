@@ -4,30 +4,15 @@ pluginManagement {
     google()
     mavenCentral()
   }
-
-  def pluginDir = new File(settingsDir, "../../../node_modules/@react-native/gradle-plugin")
-  if (!pluginDir.exists()) {
-    pluginDir = new File(settingsDir, "../node_modules/@react-native/gradle-plugin")
-  }
-  includeBuild(pluginDir)
 }
-
-plugins {
-  id("com.facebook.react.settings")
-  id("expo-autolinking-settings")
-}
-
-extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
-  if (System.getenv('EXPO_USE_COMMUNITY_AUTOLINKING') == '1') {
-    ex.autolinkLibrariesFromCommand()
-  } else {
-    ex.autolinkLibrariesFromCommand(expoAutolinking.rnConfigCommand)
-  }
-}
-expoAutolinking.useExpoModules()
 
 rootProject.name = 'mobile-inventory-app'
 
-expoAutolinking.useExpoVersionCatalog()
+def autolinkingScript = new File(settingsDir, "../../../node_modules/expo/scripts/autolinking.gradle")
+if (!autolinkingScript.exists()) {
+  autolinkingScript = new File(settingsDir, "../node_modules/expo/scripts/autolinking.gradle")
+}
+apply from: autolinkingScript
+useExpoModules()
 
 include ':app'
