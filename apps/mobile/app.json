@@ -22,8 +22,29 @@
         "backgroundColor": "#2563eb"
       },
       "package": "com.monorapo.accounting",
-      "versionCode": 3
+      "versionCode": 3,
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
     },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Mono Rapo to access your camera for barcode scanning."
+        }
+      ],
+      "expo-secure-store",
+      "expo-document-picker",
+      "expo-image-picker",
+      "expo-location",
+      "expo-font",
+      "expo-sqlite"
+    ],
     "extra": {
       "eas": {
         "projectId": "f64e9e60-5bd8-46f9-9066-26b1e42a04f3"
