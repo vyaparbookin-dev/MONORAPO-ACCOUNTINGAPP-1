@@ -32,6 +32,15 @@ allprojects {
       url cameraMaven.toString()
     }
   }
+
+  configurations.all {
+    exclude group: 'com.android.support', module: 'support-compat'
+    exclude group: 'com.android.support', module: 'support-media-compat'
+    exclude group: 'com.android.support', module: 'support-core-utils'
+    exclude group: 'com.android.support', module: 'support-core-ui'
+    exclude group: 'com.android.support', module: 'support-fragment'
+    exclude group: 'com.android.support', module: 'support-v4'
+  }
 }
 
 subprojects {
