@@ -72,14 +72,14 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
-        packagingOptions {
+            packagingOptions {
         jniLibs {
-            def enableLegacyPackaging = findProperty('expo.useLegacyPackaging') ?: 'false'
-            useLegacyPackaging enableLegacyPackaging.toBoolean()
-            pickFirsts += ['**/libhermes.so', '**/libc++_shared.so', '**/libfbjni.so', '**/libreactnativejni.so']
+            useLegacyPackaging false
+            pickFirsts += ['**/*.so']
         }
         resources {
             excludes += ['/META-INF/{AL2.0,LGPL2.1}', 'META-INF/DEPENDENCIES', 'META-INF/LICENSE*', 'META-INF/NOTICE*', 'META-INF/*.kotlin_module']
+            pickFirsts += ['**/*']
         }
     }
     androidResources {
