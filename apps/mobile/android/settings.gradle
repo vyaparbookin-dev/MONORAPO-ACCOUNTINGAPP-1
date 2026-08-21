@@ -4,6 +4,12 @@ pluginManagement {
     google()
     mavenCentral()
   }
+
+  def pluginDir = new File(settingsDir, "../../../node_modules/@react-native/gradle-plugin")
+  if (!pluginDir.exists()) {
+    pluginDir = new File(settingsDir, "../node_modules/@react-native/gradle-plugin")
+  }
+  includeBuild(pluginDir)
 }
 
 rootProject.name = 'mobile-inventory-app'
