@@ -34,11 +34,11 @@ jobs:
       - name: 📦 Install all dependencies
         run: npm install --legacy-peer-deps
 
-      - name: 🔗 Link monorepo node_modules for Android
+      - name: 🔗 Link apps/mobile node_modules
         run: |
-          mkdir -p apps/mobile/android
-          ln -sfn ${{ github.workspace }}/node_modules apps/mobile/node_modules
-          ln -sfn ${{ github.workspace }}/node_modules apps/mobile/android/node_modules
+          rm -rf apps/mobile/node_modules
+          ln -sf ${{ github.workspace }}/node_modules apps/mobile/node_modules
+          ls -la apps/mobile/node_modules/react-native/cli.js
 
       - name: 📦 Pre-bundle JavaScript Assets
         working-directory: apps/mobile
