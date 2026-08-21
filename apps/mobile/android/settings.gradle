@@ -1,16 +1,24 @@
 pluginManagement {
-  def getPluginPath = { String relativePathRoot, String relativePathLocal ->
-    def fRoot = new File(settingsDir, relativePathRoot)
-    if (fRoot.exists()) return fRoot.absolutePath
-    def fLocal = new File(settingsDir, relativePathLocal)
-    if (fLocal.exists()) return fLocal.absolutePath
-    return fRoot.absolutePath
+  def getPluginPath = { String pluginSubpath ->
+    // 1. Check in apps/mobile/node_modules (1 level up from android)
+    def p1 = new File(settingsDir, "../node_modules/" + pluginSubpath)
+    if (p1.exists()) return p1.absolutePath
+
+    // 2. Check in root monorepo node_modules (3 levels up: android -> mobile -> apps -> root)
+    def p2 = new File(settingsDir, "../../../node_modules/" + pluginSubpath)
+    if (p2.exists()) return p2.absolutePath
+
+    // 3. Fallback 2 levels up
+    def p3 = new File(settingsDir, "../../node_modules/" + pluginSubpath)
+    if (p3.exists()) return p3.absolutePath
+
+    return p2.absolutePath
   }
 
-  def reactNativeGradlePlugin = getPluginPath("../../node_modules/@react-native/gradle-plugin", "../node_modules/@react-native/gradle-plugin")
+  def reactNativeGradlePlugin = getPluginPath("@react-native/gradle-plugin")
   includeBuild(reactNativeGradlePlugin)
 
-  def expoPluginsPath = getPluginPath("../../node_modules/expo-modules-core/android/expo-gradle-plugin", "../node_modules/expo-modules-core/android/expo-gradle-plugin")
+  def expoPluginsPath = getPluginPath("expo-modules-core/android/expo-gradle-plugin")
   includeBuild(expoPluginsPath)
 }
 
