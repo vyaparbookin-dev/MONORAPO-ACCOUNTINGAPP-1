@@ -38,12 +38,18 @@
           "cameraPermission": "Allow Mono Rapo to access your camera for barcode scanning."
         }
       ],
-      "expo-secure-store",
-      "expo-document-picker",
-      "expo-image-picker",
-      "expo-location",
-      "expo-font",
-      "expo-sqlite"
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Mono Rapo to access your photos to attach invoices."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Mono Rapo to access your location."
+        }
+      ]
     ],
     "extra": {
       "eas": {

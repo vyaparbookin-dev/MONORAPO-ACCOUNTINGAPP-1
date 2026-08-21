@@ -37,16 +37,21 @@ jobs:
       - name: 📦 Install mobile workspace dependencies
         run: npm install --legacy-peer-deps --workspace=apps/mobile
 
-      - name: ⚙️ Generate Native Android Project (Expo Prebuild)
+      - name: ⚙️ Generate Clean Android Native Project (Expo Prebuild)
         working-directory: apps/mobile
-        run: npx expo prebuild --platform android --clean --no-install
+        run: |
+          rm -rf android
+          npx expo prebuild --platform android --no-install
+        env:
+          CI: "true"
+          EXPO_NO_TELEMETRY: "1"
 
       - name: 🔑 Make Gradlew Executable
         run: chmod +x apps/mobile/android/gradlew
 
-      - name: 🏗️ Build Android APK (Release)
+      - name: 🏗️ Build Android APK (Release & Debug)
         working-directory: apps/mobile/android
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+        run: ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
