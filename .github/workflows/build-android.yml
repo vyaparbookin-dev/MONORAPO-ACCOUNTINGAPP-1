@@ -34,8 +34,9 @@ jobs:
       - name: 📦 Install root dependencies
         run: npm install --legacy-peer-deps
 
-      - name: 📦 Install mobile workspace dependencies
-        run: npm install --legacy-peer-deps --workspace=apps/mobile
+      - name: 📦 Install mobile dependencies
+        working-directory: apps/mobile
+        run: npm install --legacy-peer-deps
 
       - name: 📦 Pre-bundle JavaScript Assets
         working-directory: apps/mobile
@@ -54,6 +55,12 @@ jobs:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
         run: |
           ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: 📋 Capture and Print Exact Error
+        if: failure()
+        run: |
+          echo "==================== FULL GRADLE DIAGNOSTICS ===================="
+          find apps/mobile/android/app/build/ -name "*.txt" -o -name "*.log" -o -name "*.html" | head -n 30 || true
 
       - name: 🔍 Verify APK File Generation
         run: |
