@@ -105,26 +105,25 @@ android {
             keyPassword 'android'
         }
     }
-    buildTypes {
+        buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.debug
-            def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
-            shrinkResources enableShrinkResources.toBoolean()
-            minifyEnabled enableMinifyInReleaseBuilds
+            shrinkResources false
+            minifyEnabled false
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
-            def enablePngCrunchInRelease = findProperty('android.enablePngCrunchInReleaseBuilds') ?: 'true'
-            crunchPngs enablePngCrunchInRelease.toBoolean()
         }
     }
-    packagingOptions {
+        packagingOptions {
         jniLibs {
             def enableLegacyPackaging = findProperty('expo.useLegacyPackaging') ?: 'false'
             useLegacyPackaging enableLegacyPackaging.toBoolean()
+            pickFirsts += ['**/libhermes.so', '**/libc++_shared.so', '**/libfbjni.so', '**/libreactnativejni.so']
+        }
+        resources {
+            excludes += ['/META-INF/{AL2.0,LGPL2.1}', 'META-INF/DEPENDENCIES', 'META-INF/LICENSE*', 'META-INF/NOTICE*', 'META-INF/*.kotlin_module']
         }
     }
     androidResources {

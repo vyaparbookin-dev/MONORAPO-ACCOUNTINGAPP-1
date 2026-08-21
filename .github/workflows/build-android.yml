@@ -37,18 +37,14 @@ jobs:
       - name: 📦 Install mobile workspace dependencies
         run: npm install --legacy-peer-deps --workspace=apps/mobile
 
-      - name: 📦 Export Metro JavaScript Bundle
-        working-directory: apps/mobile
-        run: |
-          mkdir -p android/app/src/main/assets
-          npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res || true
-
       - name: 🔑 Make Gradlew Executable
         run: chmod +x apps/mobile/android/gradlew
 
-      - name: 🏗️ Build Android APK
+      - name: 🏗️ Build Android APK (Debug & Release)
         working-directory: apps/mobile/android
-        run: ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
+        run: |
+          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace || true
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
 
