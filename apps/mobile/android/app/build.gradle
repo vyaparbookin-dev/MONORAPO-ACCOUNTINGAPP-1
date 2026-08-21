@@ -146,3 +146,11 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+
+def expoAutolinkingScript = new File(rootDir.getParentFile().getParentFile(), "node_modules/expo/scripts/autolinking.gradle")
+if (!expoAutolinkingScript.exists()) {
+    expoAutolinkingScript = new File(rootDir.getParentFile(), "node_modules/expo/scripts/autolinking.gradle")
+}
+apply from: expoAutolinkingScript
+useExpoModules()
