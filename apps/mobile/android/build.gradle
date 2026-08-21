@@ -23,6 +23,14 @@ allprojects {
     google()
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
+    maven {
+      def monorepoRoot = rootDir.getParentFile().getParentFile().getParentFile()
+      def cameraMaven = new File(monorepoRoot, "node_modules/expo-camera/android/maven")
+      if (!cameraMaven.exists()) {
+        cameraMaven = new File(rootDir.getParentFile(), "node_modules/expo-camera/android/maven")
+      }
+      url cameraMaven.toString()
+    }
   }
 }
 
