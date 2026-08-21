@@ -13,9 +13,6 @@ react {
     reactNativeDir = file(new File(rootDir, "../../../node_modules/react-native").exists() ? "../../../node_modules/react-native" : "../node_modules/react-native")
     codegenDir = file(new File(rootDir, "../../../node_modules/@react-native/codegen").exists() ? "../../../node_modules/@react-native/codegen" : "../node_modules/@react-native/codegen")
     entryFile = file("../index.js")
-
-    /* Autolinking */
-    autolinkLibrariesWithApp()
 }
 
 /**
