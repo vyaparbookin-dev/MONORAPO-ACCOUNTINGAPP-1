@@ -148,7 +148,8 @@ dependencies {
 }
 
 
-def expoAutolinkingScript = new File(rootDir.getParentFile().getParentFile(), "node_modules/expo/scripts/autolinking.gradle")
+def trueMonorepoRoot = rootDir.getParentFile().getParentFile().getParentFile()
+def expoAutolinkingScript = new File(trueMonorepoRoot, "node_modules/expo/scripts/autolinking.gradle")
 if (!expoAutolinkingScript.exists()) {
     expoAutolinkingScript = new File(rootDir.getParentFile(), "node_modules/expo/scripts/autolinking.gradle")
 }
