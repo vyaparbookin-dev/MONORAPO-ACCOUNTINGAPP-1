@@ -31,10 +31,17 @@ jobs:
         with:
           node-version: 20
 
-      - name: 📦 Install all dependencies
+      - name: 📦 Install root dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: 📦 Install mobile workspace dependencies
+        run: npm install --legacy-peer-deps --workspace=apps/mobile
+
+      - name: 📦 Pre-bundle JavaScript Assets
+        working-directory: apps/mobile
         run: |
-          npm install --legacy-peer-deps
-          cd apps/mobile && npm install --legacy-peer-deps
+          mkdir -p android/app/src/main/assets
+          npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res || true
 
       - name: 🔑 Make Gradlew Executable
         run: chmod +x apps/mobile/android/gradlew
@@ -46,28 +53,26 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=4096"
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
         run: |
-          echo "=== Starting Gradle Compilation ==="
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle-build.log
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: 📋 Print Diagnostic on Failure
-        if: failure()
+      - name: 🔍 Verify APK File Generation
         run: |
-          echo "=== 🔴 LAST 100 LINES OF BUILD FAILURE ==="
-          tail -n 100 apps/mobile/android/gradle-build.log || true
+          echo "=== Checking Output Directory ==="
+          ls -la apps/mobile/android/app/build/outputs/apk/debug/
+          test -f apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          echo "✅ APK file successfully verified!"
 
       - name: 📤 Upload APK Artifacts
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Red-Accounting-Book-Mobile-APK
-          path: |
-            apps/mobile/android/app/build/outputs/apk/**/*.apk
-            apps/mobile/android/gradle-build.log
+          path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
 
       - name: 🚀 Release to GitHub (if tagged)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: apps/mobile/android/app/build/outputs/apk/**/*.apk
+          files: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
