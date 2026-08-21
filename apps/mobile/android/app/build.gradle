@@ -154,4 +154,3 @@ if (!expoAutolinkingScript.exists()) {
     expoAutolinkingScript = new File(rootDir.getParentFile(), "node_modules/expo/scripts/autolinking.gradle")
 }
 apply from: expoAutolinkingScript
-useExpoModules()
