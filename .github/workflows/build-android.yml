@@ -31,28 +31,38 @@ jobs:
         with:
           node-version: 20
 
-      - name: 📦 Install root dependencies
-        run: npm install --legacy-peer-deps
-
-      - name: 📦 Install mobile workspace dependencies
-        run: npm install --legacy-peer-deps --workspace=apps/mobile
+      - name: 📦 Install all dependencies
+        run: |
+          npm install --legacy-peer-deps
+          cd apps/mobile && npm install --legacy-peer-deps
 
       - name: 🔑 Make Gradlew Executable
         run: chmod +x apps/mobile/android/gradlew
 
-      - name: 🏗️ Build Android APK (Debug & Release)
+      - name: 🏗️ Build Android APK
         working-directory: apps/mobile/android
-        run: ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
         env:
+          NODE_PATH: ${{ github.workspace }}/node_modules:${{ github.workspace }}/apps/mobile/node_modules
           NODE_OPTIONS: "--max-old-space-size=4096"
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+        run: |
+          echo "=== Starting Gradle Compilation ==="
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle-build.log
+
+      - name: 📋 Print Diagnostic on Failure
+        if: failure()
+        run: |
+          echo "=== 🔴 LAST 100 LINES OF BUILD FAILURE ==="
+          tail -n 100 apps/mobile/android/gradle-build.log || true
 
       - name: 📤 Upload APK Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Red-Accounting-Book-Mobile-APK
-          path: apps/mobile/android/app/build/outputs/apk/**/*.apk
+          path: |
+            apps/mobile/android/app/build/outputs/apk/**/*.apk
+            apps/mobile/android/gradle-build.log
 
       - name: 🚀 Release to GitHub (if tagged)
         if: startsWith(github.ref, 'refs/tags/v')
