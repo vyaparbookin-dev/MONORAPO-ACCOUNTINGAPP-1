@@ -31,12 +31,14 @@ jobs:
         with:
           node-version: 20
 
-      - name: 📦 Install root dependencies
+      - name: 📦 Install all dependencies
         run: npm install --legacy-peer-deps
 
-      - name: 📦 Install mobile dependencies
-        working-directory: apps/mobile
-        run: npm install --legacy-peer-deps
+      - name: 🔗 Link monorepo node_modules for Android
+        run: |
+          mkdir -p apps/mobile/android
+          ln -sfn ${{ github.workspace }}/node_modules apps/mobile/node_modules
+          ln -sfn ${{ github.workspace }}/node_modules apps/mobile/android/node_modules
 
       - name: 📦 Pre-bundle JavaScript Assets
         working-directory: apps/mobile
