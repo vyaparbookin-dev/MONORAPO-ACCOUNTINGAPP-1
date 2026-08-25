@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, shell } = require('electron');
 const path = require('path');
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
@@ -7,6 +7,11 @@ const log = require('electron-log');
 autoUpdater.logger = log;
 autoUpdater.logger.transports.file.level = 'info';
 log.info('App starting...');
+
+// Auto-download को बंद रखें ताकि user की permission के बाद ही download हो
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -69,28 +74,55 @@ app.on('window-all-closed', () => {
   }
 });
 
-// --- Auto Updater Events (लॉगिंग के लिए) ---
+// --- Auto Updater Events (User-friendly dialogs) ---
 autoUpdater.on('checking-for-update', () => {
   log.info('Checking for update...');
 });
 
 autoUpdater.on('update-available', (info) => {
-  log.info('Update available.');
+  log.info('Update available: ' + info.version);
+  dialog.showMessageBox({
+    type: 'info',
+    title: '🆕 नया अपडेट उपलब्ध है!',
+    message: `Red Accounting Book v${info.version} तैयार है!`,
+    detail: 'नया version अभी download करें। Download होते ही App अपने-आप update हो जाएगी।',
+    buttons: ['✅ अभी Download करें', '⏰ बाद में'],
+    defaultId: 0,
+    cancelId: 1,
+  }).then((result) => {
+    if (result.response === 0) {
+      autoUpdater.downloadUpdate();
+    }
+  });
 });
 
 autoUpdater.on('update-not-available', (info) => {
-  log.info('Update not available.');
+  log.info('Update not available. Current version is latest.');
 });
 
 autoUpdater.on('error', (err) => {
-  log.info('Error in auto-updater. ' + err);
+  log.error('Error in auto-updater: ' + err);
 });
 
 autoUpdater.on('download-progress', (progressObj) => {
-  log.info("Download speed: " + progressObj.bytesPerSecond + " - Downloaded " + progressObj.percent + "%");
+  let msg = `Download Speed: ${Math.round(progressObj.bytesPerSecond / 1024)} KB/s`;
+  msg += ` | Downloaded: ${Math.round(progressObj.percent)}%`;
+  log.info(msg);
 });
 
 autoUpdater.on('update-downloaded', (info) => {
-  log.info('Update downloaded! Restarting the app...');
-  autoUpdater.quitAndInstall();  
+  log.info('Update downloaded! Version: ' + info.version);
+  dialog.showMessageBox({
+    type: 'info',
+    title: '✅ अपडेट Download हो गया!',
+    message: `v${info.version} install करने के लिए App restart होगी।`,
+    detail: 'App अभी restart होगी और नया version install हो जाएगा। सभी data safe रहेगा।',
+    buttons: ['🔄 अभी Restart करें', '⏰ बाद में (App बंद करने पर)'],
+    defaultId: 0,
+    cancelId: 1,
+  }).then((result) => {
+    if (result.response === 0) {
+      autoUpdater.quitAndInstall();
+    }
+  });
 });
