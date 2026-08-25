@@ -298,7 +298,10 @@ const InventoryPage = () => {
     }
     if (catId === 'PIPES_GROUP') {
       if (cat.includes('GI')) return false;
-      return cat.includes('UPVC') || cat.includes('SWR') || cat.includes('CPVC') || cat.includes('PIPE') || brand.includes('KISAN') || cat.includes('PRINCE') || cat.includes('PAPULAR') || cat.includes('GARDEN') || cat.includes('SACTION') || cat.includes('FOOTVALVE') || name.includes('UPVC') || name.includes('CPVC') || name.includes('SWR');
+      return cat.includes('UPVC') || cat.includes('SWR') || cat.includes('CPVC') || cat.includes('PIPE') || cat.includes('PLASTO') || brand.includes('PLASTO') || brand.includes('KISAN') || cat.includes('PRINCE') || cat.includes('PAPULAR') || cat.includes('GARDEN') || cat.includes('SACTION') || cat.includes('FOOTVALVE') || name.includes('UPVC') || name.includes('CPVC') || name.includes('SWR');
+    }
+    if (catId === 'PLASTO_GROUP') {
+      return cat.includes('PLASTO') || brand.toUpperCase() === 'PLASTO';
     }
     return cat.toLowerCase() === catId.toLowerCase();
   };
@@ -629,8 +632,23 @@ const InventoryPage = () => {
       ),
     },
     {
-      header: "Category",
+      header: "Category / Sub",
       accessor: "category",
+      cell: (row) => (
+        <div className="text-xs">
+          <p className="font-semibold text-gray-800">{row.category || "—"}</p>
+          {row.subCategory && <p className="text-gray-500 mt-0.5">↳ {row.subCategory}</p>}
+        </div>
+      ),
+    },
+    {
+      header: "Brand / Company",
+      accessor: "brand",
+      cell: (row) => (
+        <span className="inline-block bg-blue-50 border border-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-semibold">
+          {row.brand || "—"}
+        </span>
+      ),
     },
     {
       header: "Unit",
@@ -713,12 +731,13 @@ const InventoryPage = () => {
 
   const categoryFilterTabs = isHardwareStore ? [
     { id: "ALL", label: "All Products", icon: "📦", count: safeInventoryList.length },
+    { id: "PLASTO_GROUP", label: "PLASTO", icon: "🚰", count: safeInventoryList.filter(p => matchCategory(p, 'PLASTO_GROUP')).length },
     { id: "PLYWOOD_GROUP", label: "Plywood & Beat", icon: "🪵", count: safeInventoryList.filter(p => matchCategory(p, 'PLYWOOD_GROUP')).length },
     { id: "BERGER_GROUP", label: "Berger Paints", icon: "🎨", count: safeInventoryList.filter(p => matchCategory(p, 'BERGER_GROUP')).length },
     { id: "KAMDHENU_GROUP", label: "Kamdhenu Paints", icon: "🎨", count: safeInventoryList.filter(p => matchCategory(p, 'KAMDHENU_GROUP')).length },
     { id: "ELECTRICALS_GROUP", label: "Electricals", icon: "⚡", count: safeInventoryList.filter(p => matchCategory(p, 'ELECTRICALS_GROUP')).length },
     { id: "GI_FITTING", label: "GI Fittings & Pumps", icon: "🔩", count: safeInventoryList.filter(p => matchCategory(p, 'GI_FITTING')).length },
-    { id: "PIPES_GROUP", label: "Pipes & UPVC", icon: "🚰", count: safeInventoryList.filter(p => matchCategory(p, 'PIPES_GROUP')).length },
+    { id: "PIPES_GROUP", label: "All Pipes & UPVC", icon: "🔧", count: safeInventoryList.filter(p => matchCategory(p, 'PIPES_GROUP')).length },
     { id: "IN_STOCK", label: "All In Stock", icon: "✨", count: safeInventoryList.filter(p => (Number(p.currentStock) || 0) > 0).length },
   ] : [
     { id: "ALL", label: "All Products", icon: "📦", count: safeInventoryList.length },
