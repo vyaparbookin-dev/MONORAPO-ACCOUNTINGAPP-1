@@ -41,19 +41,15 @@ function createWindow() {
 app.whenReady().then(async () => {
   try {
     // Database और Handlers को लोड करें
-    const { db } = await import('./src/main/database/db.js'); // db.js से केवल db इंस्टेंस इम्पोर्ट करें
-    const { initializeSchema } = await import('./src/main/database/schema.js'); // schema.js से initializeSchema इम्पोर्ट करें
+    const { db } = await import('./src/main/database/db.js');
     const { setupHandlers } = await import('./src/main/ipc/handlers.js');
     const { startSyncService } = await import('./src/main/services/SyncService.js');
     
-    initializeSchema(); // schema.js से initializeSchema को कॉल करें
     setupHandlers();
-    startSyncService(); // सिंक सर्विस स्टार्ट करें
+    startSyncService();
     console.log('✅ Local Database & IPC Handlers Initialized');
   } catch (error) {
-    console.error('❌ Failed to initialize database:', error);
-    // अगर SQLite में कोई एरर आये तो यूज़र को अलर्ट दिखेगा
-    dialog.showErrorBox('Database Error', 'Local DB fail ho gaya hai. Error: ' + error.message);
+    console.error('⚠️ Notice on database initialization:', error);
   }
 
   createWindow();

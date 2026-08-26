@@ -1,6 +1,6 @@
 {
   "name": "red-accounting-desktop",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Desktop client for Red Accounting",
   "author": "Red Accounting Team",
   "main": "main.cjs",
@@ -75,6 +75,9 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
-    "asar": true
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**/*"
+    ]
   }
 }
