@@ -23,6 +23,7 @@ const InventoryPage = () => {
   const [selectedStockFilter, setSelectedStockFilter] = useState("ALL");
   const [searchTerm, setSearchTerm] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [hideRatesForStaff, setHideRatesForStaff] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -601,6 +602,48 @@ const InventoryPage = () => {
     setShowMergeModal(true);
   };
 
+  const handleExportStaffStockSheet = () => {
+    if (!filteredInventory || filteredInventory.length === 0) {
+      alert("No products available to export!");
+      return;
+    }
+
+    const exportRows = filteredInventory.map((item, index) => ({
+      "S.No": index + 1,
+      "Item Code / SKU": item.sku || "",
+      "Barcode": item.barcode || "",
+      "Product Name": item.name || "",
+      "Brand / Company": item.brand || "",
+      "Category": item.category || "",
+      "Packing / Size": item.packing || item.dimensions || "",
+      "Primary Unit": item.unit || "PC",
+      "Secondary Unit": item.secondaryUnit || "",
+      "Conversion Rate": item.conversionRate || 1,
+      "Current Stock (System)": item.currentStock || 0,
+      "Physical Count (Stock Entry)": ""
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportRows);
+    worksheet["!cols"] = [
+      { wch: 6 },
+      { wch: 15 },
+      { wch: 15 },
+      { wch: 35 },
+      { wch: 18 },
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 12 },
+      { wch: 14 },
+      { wch: 12 },
+      { wch: 14 },
+      { wch: 22 }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Staff Stock Sheet");
+    XLSX.writeFile(workbook, `Staff_Stock_Audit_Sheet_${new Date().toISOString().split("T")[0]}.xlsx`);
+  };
+
   const lowStockCount = safeInventoryList.filter((item) => item.currentStock < (item.minimumStock || 10)).length;
   const totalValue = safeInventoryList.reduce((sum, item) => sum + ((item.currentStock || 0) * (item.sellingPrice || 0)), 0);
   const totalProducts = safeInventoryList.length;
@@ -662,6 +705,9 @@ const InventoryPage = () => {
     {
       header: showSalesGST ? "Retail Price (Inc. GST)" : "Retail Price",
       cell: (row) => {
+        if (hideRatesForStaff) {
+          return <span className="text-gray-400 font-mono text-xs">••••••</span>;
+        }
         const gst = showSalesGST ? (parseFloat(row.gstRate) || 0) : 0;
         const spWithGst = (parseFloat(row.sellingPrice) || parseFloat(row.price) || 0) * (1 + gst / 100);
         return (
@@ -746,6 +792,22 @@ const InventoryPage = () => {
           >
             <FileSpreadsheet size={18} />
             📋 Stock Audit & Excel Export
+          </button>
+          <button
+            onClick={handleExportStaffStockSheet}
+            className="flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-900 font-semibold px-3.5 py-2 rounded-lg hover:bg-amber-100 transition shadow-sm"
+            title="Download product list for staff without showing any prices/rates"
+          >
+            📝 Staff Stock Sheet (No Rates)
+          </button>
+          <button
+            onClick={() => setHideRatesForStaff(!hideRatesForStaff)}
+            className={`flex items-center gap-2 border px-3.5 py-2 rounded-lg font-semibold transition ${
+              hideRatesForStaff ? 'bg-amber-600 text-white border-amber-600' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+            }`}
+            title="Toggle Rates Visibility (Staff Privacy Mode)"
+          >
+            {hideRatesForStaff ? "👁️ Show Rates" : "🙈 Staff View (Hide Rates)"}
           </button>
           <button
             onClick={() => navigate("/inventory/category-analytics")}

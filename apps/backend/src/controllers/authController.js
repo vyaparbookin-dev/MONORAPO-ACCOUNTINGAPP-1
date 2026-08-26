@@ -301,3 +301,37 @@ export const googleAuth = async (req, res) => {
     res.status(500).json({ message: "Server error during Google authentication. Check your GOOGLE_CLIENT_ID." });
   }
 };
+
+// Change Password for logged in user
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user?._id;
+
+    if (!newPassword || newPassword.length < 4) {
+      return res.status(400).json({ success: false, message: "New password must be at least 4 characters long." });
+    }
+
+    const user = await User.findById(userId).select('+password');
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found." });
+    }
+
+    if (currentPassword && user.password) {
+      const match = await bcryptjs.compare(currentPassword, user.password);
+      if (!match) {
+        return res.status(400).json({ success: false, message: "Current password does not match." });
+      }
+    }
+
+    const hashedPassword = await bcryptjs.hash(newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    console.log(`[Auth Debug] Password changed successfully for user: ${user.email}`);
+    return res.status(200).json({ success: true, message: "Password updated successfully!" });
+  } catch (err) {
+    console.error("🔴 Change Password Error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
