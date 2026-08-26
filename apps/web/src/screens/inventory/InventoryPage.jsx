@@ -708,22 +708,21 @@ const InventoryPage = () => {
       },
     },
     {
-      header: showSalesGST ? "Price & Rates (Inc. GST)" : "Price & Rates",
+      header: "Price & Rates",
       cell: (row) => {
         if (hideRatesForStaff) {
           return <span className="text-gray-400 font-mono text-xs">••••••</span>;
         }
-        const gst = showSalesGST ? (parseFloat(row.gstRate) || 0) : 0;
-        const spWithGst = (parseFloat(row.sellingPrice) || parseFloat(row.price) || 0) * (1 + gst / 100);
+        const sp = parseFloat(row.sellingPrice) || parseFloat(row.price) || 0;
         const conv = Number(row.conversionRate) || 1;
         const hasSecondary = row.secondaryUnit && row.secondaryUnit !== row.unit && conv > 1;
-        const perSecRate = conv > 1 ? (spWithGst / conv) : 0;
+        const perSecRate = conv > 1 ? (sp / conv) : 0;
 
         return (
           <div className="text-xs space-y-0.5">
             <div className="flex items-center gap-1.5">
               <span className="font-extrabold text-green-700 text-sm">
-                {formatCurrency(spWithGst)}
+                {formatCurrency(sp)}
               </span>
               <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-1 py-0.5 rounded">
                 Sale A /{row.unit}
