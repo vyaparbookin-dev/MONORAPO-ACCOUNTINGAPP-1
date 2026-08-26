@@ -708,7 +708,7 @@ const InventoryPage = () => {
       },
     },
     {
-      header: showSalesGST ? "Retail Price (Inc. GST)" : "Retail Price",
+      header: showSalesGST ? "Price & Rates (Inc. GST)" : "Price & Rates",
       cell: (row) => {
         if (hideRatesForStaff) {
           return <span className="text-gray-400 font-mono text-xs">••••••</span>;
@@ -720,18 +720,36 @@ const InventoryPage = () => {
         const perSecRate = conv > 1 ? (spWithGst / conv) : 0;
 
         return (
-          <div className="text-xs">
-            <p className="font-bold text-green-700 text-sm">
-              {formatCurrency(spWithGst)} <span className="text-[10px] font-normal text-gray-500">/{row.unit}</span>
-            </p>
+          <div className="text-xs space-y-0.5">
+            <div className="flex items-center gap-1.5">
+              <span className="font-extrabold text-green-700 text-sm">
+                {formatCurrency(spWithGst)}
+              </span>
+              <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-1 py-0.5 rounded">
+                Sale A /{row.unit}
+              </span>
+            </div>
+
             {hasSecondary && perSecRate > 0 && (
               <p className="text-[11px] font-semibold text-blue-600">
                 ₹{perSecRate.toFixed(2)} /{row.secondaryUnit}
               </p>
             )}
-            {row.costPrice > 0 && (
-              <p className="text-[10px] text-gray-500 mt-0.5">Cost: {formatCurrency(row.costPrice)}</p>
-            )}
+
+            <div className="flex flex-wrap gap-x-2 text-[10px] text-gray-500 pt-0.5">
+              {row.wholesalePrice > 0 && row.wholesalePrice !== row.sellingPrice && (
+                <span>B: {formatCurrency(row.wholesalePrice)}</span>
+              )}
+              {row.dealerPrice > 0 && row.dealerPrice !== row.wholesalePrice && (
+                <span>C: {formatCurrency(row.dealerPrice)}</span>
+              )}
+              {row.costPrice > 0 && (
+                <span className="text-amber-700 font-medium">Cost: {formatCurrency(row.costPrice)}</span>
+              )}
+              {row.mrp > 0 && (
+                <span className="text-gray-400">MRP: {formatCurrency(row.mrp)}</span>
+              )}
+            </div>
           </div>
         );
       },
