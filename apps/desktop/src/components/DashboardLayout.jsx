@@ -411,21 +411,27 @@ export default function DashboardLayout() {
                       <p className="font-semibold text-gray-900">{user?.email}</p>
                       <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
                     </div>
-                    <a
-                      href="/settings"
-                      className="block px-4 py-2 text-gray-700 hover:bg-gray-100 text-sm"
+                    <button
+                      onClick={() => { setProfileOpen(false); navigate("/settings/profile"); }}
+                      className="w-full text-left px-4 py-2.5 text-gray-700 hover:bg-gray-100 text-sm flex items-center gap-2"
                     >
-                      Settings
-                    </a>
-                    <a
-                      href="/profile"
-                      className="block px-4 py-2 text-gray-700 hover:bg-gray-100 text-sm border-b border-gray-200"
+                      👤 प्रोफाइल (My Profile)
+                    </button>
+                    <button
+                      onClick={() => { setProfileOpen(false); navigate("/settings/profile"); }}
+                      className="w-full text-left px-4 py-2.5 text-blue-600 hover:bg-blue-50 text-sm font-bold flex items-center gap-2"
                     >
-                      Profile
-                    </a>
+                      🔑 पासवर्ड बदलें (Change Password)
+                    </button>
+                    <button
+                      onClick={() => { setProfileOpen(false); navigate("/settings"); }}
+                      className="w-full text-left px-4 py-2.5 text-gray-700 hover:bg-gray-100 text-sm border-b border-gray-200 flex items-center gap-2"
+                    >
+                      ⚙️ सेटिंग्स (App Settings)
+                    </button>
                     <button
                       onClick={handleLogout}
-                      className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 text-sm font-medium"
+                      className="w-full text-left px-4 py-2.5 text-red-600 hover:bg-red-50 text-sm font-medium"
                     >
                       Logout
                     </button>

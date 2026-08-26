@@ -85,62 +85,7 @@ export default function StaffManagementPage() {
         ? res.data.staff
         : [];
       
-      // If empty in backend, provide standard staff placeholders so UI is always fully interactive
-      if (list.length === 0) {
-        const defaultStaff = [
-          {
-            _id: "staff-1",
-            name: "Ramesh Sharma",
-            mobileNumber: "9826011223",
-            role: "staff",
-            department: "Sales & Counter",
-            wageType: "monthly",
-            wageAmount: 16000,
-            shiftStartTime: "09:00 AM",
-            shiftEndTime: "07:00 PM",
-            incentiveType: "percentage",
-            incentiveValue: 2.0,
-            monthlySalesTarget: 150000,
-            currentMonthSales: 135000,
-            balance: -2000 // 2000 advance taken
-          },
-          {
-            _id: "staff-2",
-            name: "Suresh Patel",
-            mobileNumber: "9425574211",
-            role: "staff",
-            department: "Godown & Stock",
-            wageType: "monthly",
-            wageAmount: 14000,
-            shiftStartTime: "09:30 AM",
-            shiftEndTime: "07:30 PM",
-            incentiveType: "fixed",
-            incentiveValue: 1000,
-            monthlySalesTarget: 80000,
-            currentMonthSales: 92000,
-            balance: 0
-          },
-          {
-            _id: "staff-3",
-            name: "Vikram Soni",
-            mobileNumber: "7828289412",
-            role: "cashier",
-            department: "Billing & POS",
-            wageType: "monthly",
-            wageAmount: 18000,
-            shiftStartTime: "09:00 AM",
-            shiftEndTime: "08:00 PM",
-            incentiveType: "percentage",
-            incentiveValue: 1.0,
-            monthlySalesTarget: 200000,
-            currentMonthSales: 215000,
-            balance: 18000
-          }
-        ];
-        setStaffList(defaultStaff);
-      } else {
-        setStaffList(list);
-      }
+      setStaffList(list);
     } catch (err) {
       console.error("Failed to load staff list:", err);
       setStaffList([]);

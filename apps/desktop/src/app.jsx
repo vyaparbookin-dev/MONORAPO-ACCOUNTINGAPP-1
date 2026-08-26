@@ -339,6 +339,8 @@ const App = () => {
                     <Route path="/settings/app" element={<AppSettings />} />
                     <Route path="/settings/backup" element={<BackupRestore />} />
                     <Route path="/settings/profile" element={<ProfilePage />} />
+                    <Route path="/profile" element={<ProfilePage />} />
+                    <Route path="/change-password" element={<ProfilePage />} />
                     <Route path="/settings/security" element={<SecurityLogPage />} />
                     <Route path="/settings/web" element={<WebPreferences />} />
                     <Route path="/settings/staff" element={<StaffManagementPage />} />
