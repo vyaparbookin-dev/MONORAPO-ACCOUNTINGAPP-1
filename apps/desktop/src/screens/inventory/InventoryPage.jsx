@@ -713,6 +713,33 @@ const InventoryPage = () => {
         return (
           <div className="text-xs">
             <p className="font-bold text-green-700 text-sm">{formatCurrency(spWithGst)}</p>
+            {row.costPrice > 0 && (
+              <p className="text-[10px] text-gray-500">Cost: {formatCurrency(row.costPrice)}</p>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: "Total Value (₹)",
+      headerClassName: "text-right",
+      cellClassName: "text-right",
+      cell: (row) => {
+        if (hideRatesForStaff) {
+          return <span className="text-gray-400 font-mono text-xs">••••••</span>;
+        }
+        const qty = parseFloat(row.currentStock) || 0;
+        const sp = parseFloat(row.sellingPrice) || parseFloat(row.price) || 0;
+        const cp = parseFloat(row.costPrice) || 0;
+        const totalVal = qty * sp;
+        const totalCost = qty * cp;
+
+        return (
+          <div className="text-right">
+            <p className="font-extrabold text-blue-900 text-sm">{formatCurrency(totalVal)}</p>
+            {totalCost > 0 && (
+              <p className="text-[10px] text-gray-500 font-medium">Cost Val: {formatCurrency(totalCost)}</p>
+            )}
           </div>
         );
       },
@@ -729,10 +756,10 @@ const InventoryPage = () => {
       cellClassName: "text-center",
       cell: (row) => (
         <div className="flex justify-center gap-1">
-          <button onClick={(e) => { e.stopPropagation(); handleEdit(row); }} className="p-1.5 hover:bg-green-100 rounded text-green-600 transition text-xs"><Edit size={16} /></button>
+          <button onClick={(e) => { e.stopPropagation(); handleEdit(row); }} className="p-1.5 hover:bg-green-100 rounded text-green-600 transition text-xs" title="Edit Product"><Edit size={16} /></button>
           <button onClick={(e) => { e.stopPropagation(); handleMergeClick(row); }} className="p-1.5 hover:bg-purple-100 rounded text-purple-600 transition text-xs" title="Merge Item"><LinkIcon size={16} /></button>
-          <button onClick={(e) => { e.stopPropagation(); handleShowBarcode(row); }} className="p-1.5 hover:bg-blue-100 rounded text-blue-600 transition text-xs"><Barcode size={16} /></button>
-          <button onClick={(e) => { e.stopPropagation(); handleDelete(row._id); }} className="p-1.5 hover:bg-red-100 rounded text-red-600 transition text-xs"><Trash2 size={16} /></button>
+          <button onClick={(e) => { e.stopPropagation(); handleShowBarcode(row); }} className="p-1.5 hover:bg-blue-100 rounded text-blue-600 transition text-xs" title="Barcode"><Barcode size={16} /></button>
+          <button onClick={(e) => { e.stopPropagation(); handleDelete(row._id); }} className="p-1.5 hover:bg-red-100 rounded text-red-600 transition text-xs" title="Delete"><Trash2 size={16} /></button>
         </div>
       ),
     },

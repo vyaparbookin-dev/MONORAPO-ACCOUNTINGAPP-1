@@ -275,10 +275,14 @@ export default function SettingsPage() {
       </div>
 
       {/* Quick Links */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-4">
+        <button onClick={() => navigate("/settings/profile")} className="p-4 bg-gradient-to-br from-blue-50 to-indigo-100 border border-blue-200 rounded-xl shadow-sm hover:shadow-md transition flex flex-col items-center gap-2 text-center group">
+          <div className="p-2.5 bg-blue-600 rounded-full text-white shadow-sm group-hover:scale-110 transition"><Users size={22} /></div>
+          <span className="font-bold text-blue-900 text-sm">👤 Profile & Password</span>
+        </button>
         <button onClick={() => navigate("/settings/app")} className="p-4 bg-white border rounded-xl shadow-sm hover:shadow-md transition flex flex-col items-center gap-2 text-center">
           <div className="p-2 bg-blue-50 rounded-full text-blue-600"><Settings size={24} /></div>
-          <span className="font-medium text-gray-700">App Settings</span>
+          <span className="font-medium text-gray-700 text-sm">App Settings</span>
         </button>
         <button onClick={() => navigate("/settings/staff")} className="p-4 bg-white border rounded-xl shadow-sm hover:shadow-md transition flex flex-col items-center gap-2 text-center">
           <div className="p-2 bg-green-50 rounded-full text-green-600"><Users size={24} /></div>
