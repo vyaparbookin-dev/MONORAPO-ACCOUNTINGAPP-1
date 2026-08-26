@@ -711,9 +711,6 @@ const InventoryPage = () => {
     {
       header: "Price & Rates",
       cell: (row) => {
-        if (hideRatesForStaff) {
-          return <span className="text-gray-400 font-mono text-xs">••••••</span>;
-        }
         const sp = parseFloat(row.sellingPrice) || parseFloat(row.price) || 0;
         const conv = Number(row.conversionRate) || 1;
         const hasSecondary = row.secondaryUnit && row.secondaryUnit !== row.unit && conv > 1;
@@ -761,9 +758,6 @@ const InventoryPage = () => {
       headerClassName: "text-right",
       cellClassName: "text-right",
       cell: (row) => {
-        if (hideRatesForStaff) {
-          return <span className="text-gray-400 font-mono text-xs">••••••</span>;
-        }
         const qty = parseFloat(row.currentStock) || 0;
         const sp = parseFloat(row.sellingPrice) || parseFloat(row.price) || 0;
         const cp = parseFloat(row.costPrice) || 0;
@@ -864,13 +858,15 @@ const InventoryPage = () => {
             📝 Staff Stock Sheet (No Rates)
           </button>
           <button
-            onClick={() => setHideRatesForStaff(!hideRatesForStaff)}
-            className={`flex items-center gap-2 border px-3.5 py-2 rounded-lg font-semibold transition ${
-              hideRatesForStaff ? 'bg-amber-600 text-white border-amber-600' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+            onClick={() => setShowCostPrice(!showCostPrice)}
+            className={`flex items-center gap-1.5 border px-3.5 py-2 rounded-lg text-xs font-bold transition shadow-sm ${
+              showCostPrice
+                ? 'bg-amber-600 text-white border-amber-600'
+                : 'bg-white border-amber-300 text-amber-900 hover:bg-amber-50'
             }`}
-            title="Toggle Rates Visibility (Staff Privacy Mode)"
+            title="Owner Security Mode: Show or Hide Purchase Cost (P.COST)"
           >
-            {hideRatesForStaff ? "👁️ Show Rates" : "🙈 Staff View (Hide Rates)"}
+            {showCostPrice ? "🔒 Hide Purchase Cost (P.COST)" : "🔑 Show P.Cost (Owner Only)"}
           </button>
           <button
             onClick={() => navigate("/inventory/category-analytics")}
