@@ -24,6 +24,7 @@ const InventoryPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [hideRatesForStaff, setHideRatesForStaff] = useState(false);
+  const [showCostPrice, setShowCostPrice] = useState(false); // Confidential: Owner only
   const [showScanner, setShowScanner] = useState(false);
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -742,8 +743,10 @@ const InventoryPage = () => {
               {row.dealerPrice > 0 && row.dealerPrice !== row.wholesalePrice && (
                 <span>C: {formatCurrency(row.dealerPrice)}</span>
               )}
-              {row.costPrice > 0 && (
-                <span className="text-amber-700 font-medium">Cost: {formatCurrency(row.costPrice)}</span>
+              {showCostPrice && row.costPrice > 0 && (
+                <span className="text-amber-800 font-bold bg-amber-50 px-1 py-0.5 rounded border border-amber-200">
+                  Cost: {formatCurrency(row.costPrice)}
+                </span>
               )}
               {row.mrp > 0 && (
                 <span className="text-gray-400">MRP: {formatCurrency(row.mrp)}</span>
@@ -770,8 +773,8 @@ const InventoryPage = () => {
         return (
           <div className="text-right">
             <p className="font-extrabold text-blue-900 text-sm">{formatCurrency(totalVal)}</p>
-            {totalCost > 0 && (
-              <p className="text-[10px] text-gray-500 font-medium">Cost Val: {formatCurrency(totalCost)}</p>
+            {showCostPrice && totalCost > 0 && (
+              <p className="text-[10px] text-amber-700 font-medium">Cost Val: {formatCurrency(totalCost)}</p>
             )}
           </div>
         );
