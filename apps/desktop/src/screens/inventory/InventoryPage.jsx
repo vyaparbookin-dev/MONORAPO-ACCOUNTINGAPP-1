@@ -684,17 +684,22 @@ const InventoryPage = () => {
       header: "Stock",
       cell: (row) => {
         const isLowStock = row.currentStock < (row.minimumStock || 10);
+        const qty = Number(row.currentStock) || 0;
+        const conv = Number(row.conversionRate) || 1;
+        const hasSecondary = row.secondaryUnit && row.secondaryUnit !== row.unit && conv > 1;
+        const totalSecondary = (qty * conv).toLocaleString('en-IN');
+
         return (
           <div className={isLowStock ? 'bg-orange-50 p-2 rounded-md' : ''}>
             <div className="flex items-center gap-1">
               <span className={`font-bold text-sm ${isLowStock ? 'text-orange-600' : 'text-gray-900'}`}>
-                {row.currentStock} {row.unit}
+                {qty} {row.unit}
               </span>
               {isLowStock && <AlertTriangle className="text-orange-600" size={14} />}
             </div>
-            {row.secondaryUnit && row.conversionRate && row.conversionRate !== 0 && (
-              <p className="text-xs font-bold text-blue-600 mt-0.5">
-                {Number((row.currentStock / row.conversionRate).toFixed(2))} {row.secondaryUnit}
+            {hasSecondary && (
+              <p className="text-xs font-bold text-blue-700 mt-0.5 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 inline-block">
+                = {totalSecondary} {row.secondaryUnit}
               </p>
             )}
             <p className="text-[10px] text-gray-500 mt-0.5">Min: {row.minimumStock}</p>
@@ -710,11 +715,22 @@ const InventoryPage = () => {
         }
         const gst = showSalesGST ? (parseFloat(row.gstRate) || 0) : 0;
         const spWithGst = (parseFloat(row.sellingPrice) || parseFloat(row.price) || 0) * (1 + gst / 100);
+        const conv = Number(row.conversionRate) || 1;
+        const hasSecondary = row.secondaryUnit && row.secondaryUnit !== row.unit && conv > 1;
+        const perSecRate = conv > 1 ? (spWithGst / conv) : 0;
+
         return (
           <div className="text-xs">
-            <p className="font-bold text-green-700 text-sm">{formatCurrency(spWithGst)}</p>
+            <p className="font-bold text-green-700 text-sm">
+              {formatCurrency(spWithGst)} <span className="text-[10px] font-normal text-gray-500">/{row.unit}</span>
+            </p>
+            {hasSecondary && perSecRate > 0 && (
+              <p className="text-[11px] font-semibold text-blue-600">
+                ₹{perSecRate.toFixed(2)} /{row.secondaryUnit}
+              </p>
+            )}
             {row.costPrice > 0 && (
-              <p className="text-[10px] text-gray-500">Cost: {formatCurrency(row.costPrice)}</p>
+              <p className="text-[10px] text-gray-500 mt-0.5">Cost: {formatCurrency(row.costPrice)}</p>
             )}
           </div>
         );
