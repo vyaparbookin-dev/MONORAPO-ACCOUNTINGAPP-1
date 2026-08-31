@@ -1,17 +1,36 @@
 # 👑 ENTERPRISE 5-STAR LUXURY HOTEL, RESORT & MEGA-BANQUET CHAIN ERP
-## Architectural Blueprint & System Specifications (Taj / Oberoi / Marriott / Oracle Opera & IDS Next Benchmark)
+## Complete Architectural Blueprint, Industry Competitive Benchmark & Operational Specifications
+### Benchmarked against: Oracle OPERA Cloud, Amadeus Delphi, IDS Next FX, ShawMan POS & Petpooja Enterprise
 
 ---
 
-## 📌 Executive Summary
+## 📌 1. Executive Summary & Industry Scope
 
-Modern high-end luxury hospitality operations (5-Star Hotels, Luxury Resorts, Destination Wedding Venues, Mega-Banquets) operate on a multi-million rupee scale (₹15 Lakhs to ₹1 Crore+ per event). Managing a 3 to 5 day destination wedding or grand corporate summit involves coordinating hundreds of rooms, complex multi-meal schedules, outsourced specialized vendors, temporary event manpower, rapid venue turnarounds, and cross-departmental billing.
+High-end 5-Star Hotel Chains, Luxury Heritage Resorts, and Mega-Banquet Lawns operate in a high-stakes, multi-million rupee environment (₹15 Lakhs to ₹1 Crore+ per event). A 3 to 5 day destination wedding or grand international convention requires real-time orchestration across 6 core operational departments:
+1. **Sales & Banqueting (Catering & Space)**
+2. **Front Office & Rooms (PMS & Group Check-in)**
+3. **Food & Beverage Production (Kitchen BOM & Bulk Catering)**
+4. **Housekeeping & Venue Turnover**
+5. **Engineering, AV & Outsourced Vendors**
+6. **Finance, Night Audit & Consolidated Master Billing**
 
-This document outlines the **End-to-End Enterprise Architecture Blueprint** for integrating this capability into our Monorepo ERP through a modular, pluggable engine (`isLuxuryHotelChain`).
+This document provides a **comprehensive competitive analysis of the world's leading hotel ERPs** and outlines the **modular system architecture** for embedding these enterprise capabilities into our Monorepo Accounting App (`isLuxuryHotelChain`).
 
 ---
 
-## 🏛️ System Architecture Overview
+## 🔬 2. Competitive Deep-Dive: Top Global & Indian Hospitality ERPs
+
+| System | Primary Market & Core Strength | BEO & Event Management Depth | PMS & Room Inventory Sync | F&B, Recipe & Inventory | Key Limitations / Gaps |
+|---|---|---|---|---|---|
+| **Oracle OPERA Cloud PMS** | Global 5-Star Hotel Chains (Marriott, Taj, Oberoi, Hyatt). Industry standard single-database PMS. | **High (Integrated)**. Native Sales & Event Management, 1/2-column BEO Stationery editor, auto-distribute to departments. | **World Best**. Real-time room blocks, dynamic rate matrices, guest 360 profiles, keyless RFID integration. | **Moderate**. Strong POS integration via Micros Simphony, but complex raw material recipe BOM costing. | Very expensive ($10,000s/mo), steep learning curve, heavy infrastructure requirements. |
+| **Amadeus Delphi** | Specialized Sales & Catering CRM for Mega MICE (Meetings, Incentives, Conferences, Exhibitions) & Weddings. | **Gold Standard**. Deep lead qualification, multi-year pipeline, dynamic space blocking, interactive e-proposals. | **Integrated with Opera**. Relies on PMS APIs for room folios and guest check-ins. | **Low/Moderate**. Focuses on menu pricing and package margins rather than kitchen store inventory. | Standalone catering tool; requires separate PMS and Accounting software. |
+| **IDS Next (Fortune Anywhere / FX Suite)** | Asia's #1 Enterprise Hotel ERP (300+ Indian & SE Asian Hotel Chains & Luxury Resorts). | **High**. Full banquet lifecycle, hall space management, token deposits, multi-slot bookings. | **Very High**. Full-stack cloud PMS, guest mobile check-in, housekeeping mobile app, multi-tax GST engine. | **High**. Deep back-office material management, central purchasing, F&B store indents. | Traditional UI; can be cumbersome for quick mobile changes or on-the-fly client customizations. |
+| **ShawMan Software** | Indian F&B, High-End Banqueting & Club Management Specialist. | **High (F&B-Centric)**. BEO generation, KOT kitchen routing, course pacing, banquet bill splitting. | **Moderate**. Property management available, but primary strength is in food, beverage & clubs. | **Very High**. Granular recipe BOM, raw material shrinkage tracking, portion control formulas. | Less focus on multi-day hotel room blocks or global channel manager OTA synchronization. |
+| **Petpooja Enterprise / Posist (Restroworks)** | Modern Cloud POS & Kitchen Automation for Multi-Outlet F&B and Cloud Kitchens. | **Moderate**. Focuses on restaurant KOT, Table management, and quick event billing. | **None**. No native PMS or hotel room inventory system. | **World Class**. AI demand prediction, live KDS timers, automated vendor grocery indents. | Not designed for 5-star hotel room management or multi-day residential wedding itineraries. |
+
+---
+
+## 🏛️ 3. End-to-End Enterprise System Architecture
 
 ```
                                   ┌────────────────────────────────────────────────────────┐
@@ -21,158 +40,121 @@ This document outlines the **End-to-End Enterprise Architecture Blueprint** for 
         ┌───────────────────┬───────────────────┬─────────────┴─────┬───────────────────┬───────────────────┐
         ▼                   ▼                   ▼                   ▼                   ▼                   ▼
 ┌───────────────┐   ┌───────────────┐   ┌───────────────┐   ┌───────────────┐   ┌───────────────┐   ┌───────────────┐
-│ 📅 MULTI-DAY  │   │ 🛏️ PMS & ROOM │   │ 🛎️ IN-ROOM    │   │ 🤝 OUTSOURCED │   │ 👥 EVENT      │   │ 🧹 VENUE      │
-│ RESIDENTIAL   │   │ ALLOTMENT     │   │ DINING &      │   │ VENDORS &     │   │ MANPOWER &    │   │ TURNOVER &    │
-│ ITINERARY     │   │ GRID (GROUP)  │   │ SERVICE LOG   │   │ SPECIAL ITEMS │   │ STAKEHOLDERS  │   │ HOUSEKEEPING  │
+│ 📅 MULTI-DAY  │   │ 🛏️ PMS & ROOM │   │ 🛎️ IN-ROOM    │   │ 📜 BEO MASTER │   │ 🤝 OUTSOURCED │   │ 🧹 VENUE      │
+│ RESIDENTIAL   │   │ ALLOTMENT     │   │ DINING &      │   │ LIFECYCLE &   │   │ VENDORS &     │   │ TURNOVER &    │
+│ ITINERARY     │   │ GRID (GROUP)  │   │ SERVICE LOG   │   │ REALTIME KDS  │   │ EVENT ROSTER  │   │ BREAKAGE AUDIT│
 └───────────────┘   └───────────────┘   └───────────────┘   └───────────────┘   └───────────────┘   └───────────────┘
         │                   │                   │                   │                   │                   │
         └───────────────────┴───────────────────┴─────────────┬─────┴───────────────────┴───────────────────┘
                                                               ▼
                                             ┌───────────────────────────────────┐
-                                            │ 💳 MASTER WEDDING FOLIO / INVOICE │
-                                            │ (GST, Advance Token, Settlement)  │
+                                            │ 💳 MASTER WEDDING FOLIO & NIGHT   │
+                                            │ AUDIT RECONCILIATION ENGINE       │
                                             └───────────────────────────────────┘
 ```
 
 ---
 
-## 🌟 Core Modules Breakdown
+## 🌟 4. Deep Operational Workflows & Secret Sauces (Extracted from Research)
 
-### 1. 📅 Multi-Day Residential Wedding & Event Itinerary Engine
-Handles multi-day programs spanning 2 to 5 consecutive days with changing venues, guest counts, and meal profiles.
+### 📜 A. The BEO (Banquet Event Order) Master Operational Lifecycle
+The **BEO** is the single most critical contract and operational document in 5-star hospitality. Once signed by the host, it is digitally broadcast to 6 departments simultaneously:
 
-- **Day-Wise Schedule Builder:**
-  - **Day 1 (Arrival & Mehendi):** Poolside Lawn (4 PM - 8 PM) • 150 Pax • High Tea & Live Chaat Counter.
-  - **Day 2 (Sangeet & Cocktail Night):** Grand Ballroom AC Hall (7 PM - 3 AM) • 300 Pax • 8 Starters, Mocktail Bar, DJ & LED Truss.
-  - **Day 3 (Haldi, Mandap Pheras & Royal Reception):** Main Royal Lawn (11 AM - 12 AM) • 600 Pax • 12-Course Royal Thali.
-- **Combined Daily Raw Material Indent:** Aggregates required groceries, dairy, cooking fuel, and bakery requirements across all sub-events per day.
-- **Master Wedding Contract & Guaranteed Plate Minimums:** Locks minimum guaranteed plates per sub-event with automated over-consumption billing.
+```
+                                      ┌─────────────────────────────────┐
+                                      │   📜 SIGNED BEO (MASTER BLUEPRINT│
+                                      └────────────────┬────────────────┘
+                                                       │
+        ┌──────────────────┬───────────────────┼───────────────────┬───────────────────┐
+        ▼                  ▼                   ▼                   ▼                   ▼
+┌───────────────┐  ┌───────────────┐   ┌───────────────┐   ┌───────────────┐   ┌───────────────┐
+│ 👨‍🍳 KITCHEN & │  │ 🤵 BANQUET    │   │ 🧹 HOUSE-     │   │ 🔌 AV, SOUND  │   │ 💰 ACCOUNTS   │
+│ STORES        │  │ SERVICE       │   │ KEEPING       │   │ & ENGINEERING │   │ & BILLING     │
+│ • Raw Indents │  │ • Buffet setup│   │ • Deep clean  │   │ • Stage Truss │   │ • Tax Matrix  │
+│ • Recipe BOM  │  │ • Plate count │   │ • Linen & AC  │   │ • Power / Gen │   │ • Advance Log │
+│ • Course Pace │  │ • Staff Roster│   │ • Restrooms   │   │ • Temperature │   │ • Night Audit │
+└───────────────┘  └───────────────┘   └───────────────┘   └───────────────┘   └───────────────┘
+```
 
----
-
-### 2. 🛏️ Property Management System (PMS) & Room Grid
-Manages total room inventory, group blockings, check-in flows, and billing folios.
-
-- **Interactive Room Grid:** Visual color-coded matrix of all rooms (Deluxe, Executive Suites, Presidential Villas):
-  - 🟢 **Available / Clean**
-  - 🔴 **Occupied (Linked to Guest / Event)**
-  - 🟡 **Dirty / Cleaning in Progress**
-  - 🔵 **Reserved / Group Blocked**
-  - 🟣 **Maintenance / Out of Order**
-- **Group Wedding Room Block:** One-click block of 50 to 150 rooms for a specific host (e.g. *Sharma Wedding, 10th - 14th Dec*).
-- **Guest KYC & Fast Check-in:** Aadhaar/Passport photo capture, room keycard assignment, luggage tag tracker.
-- **Individual Room Folios:** Each room maintains its own sub-ledger for personal expenses (extra bed, laundry, minibar, phone calls).
+- **Live Change Notification Engine:** If the host increases guest count from 250 to 320 at 3:00 PM, all departmental tablets instantly flash **Yellow/Red Change Alerts** with the exact delta highlighted.
 
 ---
 
-### 3. 🛎️ In-Room Dining (IRD) & Room Service Posting
-Seamless ordering and ledger routing for food, beverages, and amenities delivered to guest rooms.
-
-- **Room Order Dispatch:** Food/tea ordered from room phone or QR code sent directly to Kitchen Display System (KDS).
-- **Flexible Billing Routing:**
-  - Option A: **Post to Room Folio** (Paid by guest at personal checkout).
-  - Option B: **Post to Master Wedding Bill** (Covered by host as part of all-inclusive wedding package).
-  - Option C: **Instant Cash / UPI on Delivery**.
-- **Steward & Delivery Audit:** Records which steward delivered the order, delivery time, and guest signature slip.
+### 🛏️ B. PMS Group Room Blocking & Multi-Guest Split Folios
+- **Group Master Block:** 50 to 150 rooms blocked exclusively for the event (e.g. *Singhania Destination Wedding, 15th-18th Nov*).
+- **Multi-Guest Split Billing Rules (Corporate & Luxury Wedding Standard):**
+  - **Master Folio:** Receives all Room Tariffs + Banquet Food + Stage Decor + Applicable GST.
+  - **Individual Room Folio:** Receives personal minibar, laundry, salon, and personal a-la-carte drinks settled by the guest at individual checkout.
 
 ---
 
-### 4. 🤝 Outsourced Vendors, Special Guest Requests & Payouts
-Manages third-party vendors, on-demand luxury items, and advance settlement workflows.
+### 🍴 C. Crockery, Cutlery, Glassware & Linen Loss/Breakage Shrinkage Audit
+At large events with 500+ guests, breakage and loss of imported glassware, bone china plates, and brass chafing dishes can cause huge profit leakage:
 
-- **Outsourced Vendor Categories:**
-  - 🌸 **Floral & Theme Stage Decorators** (Stage setup, flower chandeliers, carpet walkways).
-  - 🎵 **DJ, Sound, Laser & LED Wall Providers**.
-  - 🎂 **Specialty Wedding Cake Bakers** (Multi-tier fondant/truffle designer cakes).
-  - 🚗 **Luxury & Vintage Car Rentals** (Groom entry vintage cars, luxury guest shuttles).
-  - 🎆 **Cold Fire & Pyro Technicians**.
-  - 🐎 **Baraat Brass Band & Ghodi / Elephant Arrangements**.
-- **Guest On-Demand Procurement:** If a VIP guest requests a specific brand of cigar, exotic fruits, baby food, or special medicine, staff can procure it from outside and post with markup to the master ledger.
-- **Vendor Payment Ledger:**
-  - Total Contract Value.
-  - Advance Token Paid.
-  - Retention Amount (paid after post-event venue inspection).
-  - Vendor Commission / Markup Tracking.
+1. **Pre-Event Issue Count:** Kitchen store issues 600 Dinner Plates, 500 Wine Goblets, 600 Dessert Spoons.
+2. **Post-Event Return Count:** Dishwashing team counts 588 Dinner Plates returned (12 Missing/Broken), 485 Wine Goblets (15 Broken).
+3. **Loss & Breakage Entry:** 
+   - 15 Wine Glasses @ ₹200 = ₹3,000.
+   - Billed to Host as **"Incidental Breakage Recovery"** or absorbed under **"Authorized Event Shrinkage Allowance"**.
+4. **RFID / QR Linen Tag Tracker:** Prevents 15–20% annual loss of premium tablecloths and satin chair wraps sent to commercial dry cleaners.
 
 ---
 
-### 5. 👥 Temporary Event Manpower & Service Staffing Roster
-Coordinates freelance and agency staff hired specifically for large events.
-
-- **Manpower Categories:**
-  - 👨‍🍳 Extra Chefs & Specialty Halwais (Sweets/Tandoor).
-  - 🤵 Freelance Banquet Stewards & Uniformed Waitstaff.
-  - 🛡️ Bouncers, VIP Bodyguards & Gate Security.
-  - 🚗 Valet Parking Drivers.
-  - 🧹 Heavy-Duty Cleaning & Dishwashing Teams.
-- **Shift & Wage Tracker:** Shift hours (Morning / Evening / Full Night), hourly or per-shift pay rate, cash voucher / bank payout logging.
-- **Duty Location Allocation:** Assigns staff to specific zones (e.g. *Bar Counter: 4 Stewards, Buffet Line: 8 Stewards, Entrance: 2 Valets*).
+### 🌙 D. 2:00 AM Night Audit & Revenue Reconciliation Engine
+Every luxury hotel runs a rigorous **Night Audit** before rolling the business date:
+- Verifies that all POS bills, In-Room Dining slips, Banquet Hall rentals, and Spa sessions are posted to the correct guest folios.
+- Reconciles cash drawers, card terminal batches, and bank advance NEFTs.
+- Generates the **Manager's Flash Report** (Total Room Revenue, Total F&B Banquet Revenue, ADR - Average Daily Rate, RevPAR - Revenue Per Available Room, and Net Profit Margin).
 
 ---
 
-### 6. 🧹 Venue Turnover, Cleaning & Inspection Management
-Controls rapid venue turnover between consecutive morning and evening events.
-
-- **Venue Timeline Tracking:**
-  - 10:00 AM - 03:00 PM: Event 1 (Morning Corporate Lunch in Hall A).
-  - 03:00 PM - 05:30 PM: **Mandatory Turnover Window** (Deep Cleaning, Tablecloth Change, Carpet Vacuum, AC Sanitization, Trash Clearance).
-  - 05:30 PM - 06:30 PM: Decorator Setup for Event 2.
-  - 07:00 PM - 12:00 AM: Event 2 (Evening Sangeet in Hall A).
-- **Inspection Checklist & Gate Pass:** Supervisor digitally checks off cleanliness, fragrance, lighting, and sound check before handing over the venue key to the next host.
+### 🤝 E. Outsourced Vendor Procurement, Retention & Commission Split
+- **Vendor Contract Tracker:** Tracks contracts for Stage Florists, DJ & Laser Shows, 3-Tier Designer Cakes, Drone Videographers, and Vintage Groom Cars.
+- **Advance vs Retention Payout:**
+  - 50% Advance Token on booking.
+  - 40% on event setup inspection.
+  - 10% **Retention Amount** released only after post-event venue inspection (checking for wall damage, fire safety, or carpet burns).
+- **Hotel Commission Cuts:** Automatically deducts hotel commission (e.g. 15% on external DJ/Decor) before releasing vendor payout.
 
 ---
 
-### 7. 📸 Event Stakeholders & VIP CRM Directory
-Maintains a complete contact and credential database of all parties involved in an event.
-
-- **Host & Family Hierarchy:** Primary Host, Bride's Father, Groom's Father, Decision Maker for Extra Orders.
-- **Media & Artists Directory:** Official Photographers, Videographers, Drone Operators, Anchor/MC, Makeup Artists, Mehendi Artists.
-- **VIP Guest List & Preferences:** Specific dietary restrictions (Jain food, Vegan, Gluten-Free), VIP room requests, airport pickup schedules.
+### 👥 F. Temporary Event Manpower & Shift Wage Disbursal
+- Coordinates agency-supplied Banquet Stewards, Bouncers, Halwais, Bartenders, and Valet Drivers.
+- Logs check-in/out biometric or QR badge times.
+- Generates instant **Daily Shift Cash Vouchers / Bank Payout Summaries**.
 
 ---
 
-### 8. 📈 Dynamic Room Tariff & Surge Pricing Algorithm
-Optimizes hotel room revenues based on market demand and real-time occupancy.
-
-- **Occupancy-Based Rate Escalation:**
-  $$\text{Current Room Tariff} = \text{Base Price} \times \left(1 + \frac{\text{Occupancy \%} - 50\%}{100}\right) \times \text{Seasonal Multiplier}$$
-- **Wedding / Peak Season Locks:** Blocks standard discount rates during wedding dates (Nov-Feb) and enforces minimum 2-night stay packages.
-
----
-
-### 9. 🏢 Multi-Property & Chain Management (Head Office Dashboard)
-Centralized oversight for hotel chains with properties across multiple cities (e.g. *Bhopal, Indore, Goa, Jaipur*).
-
-- **Global Super-Admin View:**
-  - Property-wise Daily Occupancy & ADR (Average Daily Rate).
-  - Banquet Sales vs Food Cost Ratios.
-  - Outstanding Host Receivables.
-  - Centralized Vendor Master & Purchasing Power.
+### 📐 G. Function Space Layout & 2D Floor Plan Visualizer
+- Visual seating setup templates:
+  - **Cluster / Round Table Style:** 8-seater round tables with dance floor and buffet perimeter.
+  - **Theater Style:** 500 chairs facing stage for keynote or ring ceremony.
+  - **U-Shape / Classroom Style:** For high-level corporate board retreats.
+- Real-time table capacity verification against venue square footage.
 
 ---
 
-## 💳 The Master Wedding Folio (Single Grand Invoice)
+## 💳 5. The Consolidated Master Wedding Folio (Grand ₹35 Lakhs+ Invoice)
 
-At the conclusion of a ₹25,00,000 multi-day wedding, the ERP merges all fragmented transactions into one crystal-clear **Master Settlement Folio**:
-
-| Item / Department | Details | Amount (₹) |
-|---|---|---|
-| **Residential Rooms** | 40 Deluxe Rooms × 3 Nights @ ₹4,500/night | ₹5,40,000 |
-| **Luxury Suites** | 4 Presidential Suites × 3 Nights @ ₹12,000/night | ₹1,44,000 |
-| **Day 1: Mehendi Catering** | 150 Pax @ ₹450/Plate | ₹67,500 |
-| **Day 2: Sangeet Dinner** | 300 Pax @ ₹750/Plate + Hall Rent | ₹2,75,000 |
-| **Day 3: Royal Reception** | 600 Pax @ ₹950/Plate + Main Lawn Rent | ₹6,70,000 |
-| **In-Room Dining (IRD)** | Guest Room Tea/Snacks Consolidated | ₹38,400 |
-| **Outsourced Decor & DJ** | Floral Decor, Stage Truss & DJ Sound | ₹3,20,000 |
-| **Add-ons & Overtime** | 2-Tier Designer Cake, 3h Late Night Hall Overtime | ₹45,000 |
-| **Applicable Taxes (GST)** | Food (5%) + Rooms (12%) + Services (18%) | ₹2,85,500 |
-| **Gross Total Value** | | **₹23,85,400** |
-| **Advance Tokens Paid** | Booking Token + Pre-Event Instalment | -₹10,00,000 |
-| **Final Balance Due** | **Settled at Checkout** | **₹13,85,400** |
+| Department / Service | Quantities & Billing Parameters | Applicable GST Rate | Gross Amount (₹) |
+|---|---|---|---|
+| **Luxury Suite Accommodations** | 4 Presidential Villas × 3 Nights @ ₹18,000 | 18% | ₹2,16,000 |
+| **Deluxe Guest Rooms** | 45 Deluxe Rooms × 3 Nights @ ₹5,500 | 12% | ₹7,42,500 |
+| **Day 1: Welcome High Tea & Mehendi** | 150 Pax @ ₹450 + Poolside Lawn Fee | 5% (Food) + 18% (Lawn) | ₹1,12,500 |
+| **Day 2: Sangeet Dinner & Cocktail** | 320 Pax @ ₹850 + Grand Ballroom Rent | 5% (Food) + 18% (Hall) | ₹3,72,000 |
+| **Day 3: Royal Wedding Feast (12-Course)** | 650 Pax @ ₹1,100 + Main Royal Lawn Rent | 5% (Food) + 18% (Lawn) | ₹8,65,000 |
+| **Consolidated In-Room Dining (IRD)** | Guest Room Tea/Coffee/Snacks Ledger | 5% | ₹54,200 |
+| **Outsourced Stage Decor & DJ Truss** | Complete Floral Setup + LED Wall + DJ | 18% | ₹4,50,000 |
+| **Event Add-ons & Overtime Extension** | 4-Tier Cake + 4h Late Night Overtime | 18% | ₹72,000 |
+| **Breakage & Loss Audit Settlement** | 18 Crystal Goblets + 2 Tablecloth Damages | 18% | ₹6,400 |
+| **Total Event Taxes (Consolidated GST)** | Food (5%) + Rooms (12%/18%) + Services (18%) | Mixed GST | **₹4,12,300** |
+| **GRAND TOTAL EVENT VALUE** | | | **₹33,02,900** |
+| **Advance Tokens & Pre-Payments** | Booking Token + 2nd Advance Instalment | | -₹15,00,000 |
+| **NET FINAL BALANCE DUE (SETTLED AT CHECKOUT)** | | | **₹18,02,900** |
 
 ---
 
-## 🛠️ Monorepo Implementation Architecture
+## 🛠️ 6. Monorepo Technical Implementation Architecture
 
 ```
 monorapo-accountingapp-1/
@@ -180,25 +162,27 @@ monorapo-accountingapp-1/
 │   ├── web/
 │   │   └── src/
 │   │       ├── screens/
-│   │       │   ├── HospitalityPMS/          # 🏨 Dedicated Hotel & PMS Screen
-│   │       │   │   ├── RoomGridPage.jsx     # Visual Color-Coded Room Inventory
-│   │       │   │   ├── EventItineraryPage.jsx # Multi-Day Wedding Timeline
-│   │       │   │   ├── MasterFolioPage.jsx  # Consolidated Grand Wedding Folio
-│   │       │   │   └── VendorManpowerPage.jsx # Outsourced Vendors & Roster
+│   │       │   ├── HospitalityPMS/               # 🏨 Luxury Hotel & Mega-Banquet Suite
+│   │       │   │   ├── RoomGridPage.jsx          # Color-Coded Room PMS & Group Blocks
+│   │       │   │   ├── EventItineraryPage.jsx    # Multi-Day Wedding Timeline Builder
+│   │       │   │   ├── BeoManagerPage.jsx        # Digital Banquet Event Order (BEO)
+│   │       │   │   ├── MasterFolioPage.jsx       # Consolidated Grand Wedding Folio
+│   │       │   │   ├── BreakageAuditPage.jsx     # Crockery & Linen Loss Audit
+│   │       │   │   ├── NightAuditPage.jsx        # 2:00 AM Revenue & Cash Drop Audit
+│   │       │   │   └── VendorManpowerPage.jsx    # Outsourced Vendors & Roster
 │   │       │   └── Billing/
-│   │       │       └── BillingPage.jsx      # Core Invoicing Engine (Linked)
+│   │       │       └── BillingPage.jsx           # Core Accounting & Invoicing Engine
 │   │       └── components/modals/
-│   │           ├── BanquetCateringModal.jsx # Single Event Banquet & Menu Planner
-│   │           ├── InRoomDiningModal.jsx    # Room Service & Delivery Tracker
-│   │           └── PlateHandoverSlipModal.jsx # Dual-Signature Plate Count Slip
-│   └── desktop/                             # 100% Synced Offline SQLite App
+│   │           ├── BanquetCateringModal.jsx      # Menu Packages, Rates & Plate Handover
+│   │           ├── InRoomDiningModal.jsx         # Room Service & Delivery Tracker
+│   │           └── PlateHandoverSlipModal.jsx    # Dual-Signature Plate Count Slip
+│   └── desktop/                                  # 100% Offline Local SQLite Sync
 ```
 
 ---
 
-## 🎯 Strategic Conclusion
+## 🎯 7. Strategic Advantage for our ERP
 
-By housing this capability inside our **Monorepo Accounting Architecture**, we achieve the ultimate balance:
-1. **Zero Bloat for Small Retailers:** Regular kirana, garments, and cafe users get a super-fast, clean interface without seeing room grids or wedding itineraries.
-2. **Enterprise Power for Luxury Chains:** Luxury resorts and 5-star banquet chains get an enterprise-grade ERP rivaling systems that cost tens of lakhs of rupees.
-3. **Rock-Solid Financial Core:** Every room charge, catering plate, vendor advance, and steward tip ties seamlessly into the core **GST, Ledger, Balance Sheet, and P&L Engine**.
+1. **Unrivaled Scalability:** A single codebase powers everything from a single-counter Kirana or Cafe up to a ₹50-Lakh destination wedding resort chain.
+2. **Zero Code Duplication:** Utilizes our existing rock-solid core engines (Multi-Tax GST, Party Ledgers, Inventory Sync, Offline SQLite, Role-based Access).
+3. **Enterprise Market Value:** Positions our product as a direct competitor to multimillion-dollar systems like Oracle OPERA, Amadeus Delphi, and IDS Next at a fraction of the deployment complexity.
