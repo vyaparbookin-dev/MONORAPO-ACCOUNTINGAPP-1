@@ -383,35 +383,19 @@ const ReportsPage = () => {
         }))
         .sort((a, b) => b.amount - a.amount);
       
-      // If no expenses, add dummy breakdown for demo
-      if (breakdown.length === 0) {
-        breakdown.push(
-          { label: "Rent", amount: 50000, percentage: 45 },
-          { label: "Salary", amount: 75000, percentage: 68 },
-          { label: "Supplies", amount: 15000, percentage: 13 },
-          { label: "Utilities", amount: 5000, percentage: 5 }
-        );
-        // Adjust for demo
-        setMetrics({
-          totalIncome: totalIncome || 337000,
-          totalExpenses: totalExpenses || 145000,
-          totalProfit: totalProfit || 192000,
-          profitMargin: profitMargin || 57.0
-        });
-      } else {
-        setMetrics({
-          totalIncome,
-          totalExpenses,
-          totalProfit,
-          profitMargin: parseFloat(profitMargin)
-        });
-      }
+      // Real Metrics Only - No Dummy Data
+      setMetrics({
+        totalIncome: totalIncome || 0,
+        totalExpenses: totalExpenses || 0,
+        totalProfit: totalProfit || 0,
+        profitMargin: parseFloat(profitMargin) || 0
+      });
       
       setChartData({
-        income: incomeByMonth.length > 0 && incomeByMonth.some(v => v > 0) ? incomeByMonth : [45000, 52000, 48000, 61000, 55000, 67000],
-        expenses: expensesByMonth.length > 0 && expensesByMonth.some(v => v > 0) ? expensesByMonth : [30000, 35000, 28000, 32000, 27000, 38000],
-        profit: profitByMonth.length > 0 ? profitByMonth : [15000, 17000, 20000, 29000, 28000, 29000],
-        months
+        income: incomeByMonth.length > 0 ? incomeByMonth : [0, 0, 0, 0, 0, 0],
+        expenses: expensesByMonth.length > 0 ? expensesByMonth : [0, 0, 0, 0, 0, 0],
+        profit: profitByMonth.length > 0 ? profitByMonth : [0, 0, 0, 0, 0, 0],
+        months: months.length > 0 ? months : ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]
       });
       
       setExpenseBreakdown(breakdown);

@@ -20,7 +20,7 @@ const SitewiseReportPage = () => {
 
   // Dummy list of sites for filter dropdown
   // In a real app, this would come from an API or be dynamically generated from existing bills
-  const dummySites = ["Main Branch", "Construction Site A", "Remote Project X", "Warehouse Y", "Unknown Site"];
+  const [availableSites, setAvailableSites] = useState([]);
 
 
   const fetchReport = async () => {
@@ -37,7 +37,10 @@ const SitewiseReportPage = () => {
       
       const res = await api.post("/report/generate", payload);
       const d = res.reports || res.data || res;
-      setData(Array.isArray(d) ? d : []);
+      const list = Array.isArray(d) ? d : [];
+      setData(list);
+      const uniqueSites = Array.from(new Set(list.map(item => item.siteName || item.site || item._id).filter(Boolean)));
+      if (uniqueSites.length > 0) setAvailableSites(uniqueSites);
     } catch (err) {
       console.error(err);
       setError(err.message || "Failed to fetch sitewise report");
@@ -90,7 +93,7 @@ const SitewiseReportPage = () => {
               onChange={(e) => setSelectedSite(e.target.value)}
             >
               <option value="">All Sites</option>
-              {dummySites.map(site => <option key={site} value={site}>{site}</option>)}
+              {availableSites.map(site => <option key={site} value={site}>{site}</option>)}
             </select>
           </div>
         </div>
