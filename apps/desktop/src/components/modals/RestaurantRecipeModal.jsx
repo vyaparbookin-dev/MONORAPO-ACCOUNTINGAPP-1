@@ -16,7 +16,8 @@ import {
   ArrowDownRight,
   RefreshCw,
   Sliders,
-  CheckCircle2
+  CheckCircle2,
+  Wrench
 } from "lucide-react";
 import api from "../../services/api";
 
@@ -42,14 +43,19 @@ export default function RestaurantRecipeModal({ isOpen, onClose, inventory = [],
   const [rawUnit, setRawUnit] = useState("KG");
   const [rawRate, setRawRate] = useState("");
 
-  // Overheads per dish (Gas, Chef Labor, Electricity, Packaging)
-  const [gasCost, setGasCost] = useState(8);
-  const [chefLaborCost, setChefLaborCost] = useState(18);
-  const [electricityCost, setElectricityCost] = useState(5);
-  const [packagingCost, setPackagingCost] = useState(10);
+  // Dynamic Operational Overheads per dish (LPG Gas, Electricity, Chef, Packaging + Custom Addons)
+  const [overheads, setOverheads] = useState([
+    { id: "OVH-1", name: "Commercial LPG Gas Cylinder", cost: 8, icon: "flame" },
+    { id: "OVH-2", name: "Chef & Karigar Labor / Prep", cost: 18, icon: "chef" },
+    { id: "OVH-3", name: "Kitchen Electricity & Cold Storage", cost: 5, icon: "zap" },
+    { id: "OVH-4", name: "Container, Foil & Packaging", cost: 10, icon: "box" },
+    { id: "OVH-5", name: "Deep Fryer Oil & Shrinkage Allowance", cost: 4, icon: "oil" },
+  ]);
+  const [newOverheadName, setNewOverheadName] = useState("");
+  const [newOverheadCost, setNewOverheadCost] = useState("");
 
   // Target Profit Margin % Slider
-  const [targetMarginPercent, setTargetMarginPercent] = useState(55); // Default 55% gross margin
+  const [targetMarginPercent, setTargetMarginPercent] = useState(55);
 
   const [saving, setSaving] = useState(false);
 
@@ -115,15 +121,38 @@ export default function RestaurantRecipeModal({ isOpen, onClose, inventory = [],
     setIngredients(ingredients.filter((i) => i.id !== id));
   };
 
+  // Overheads Handlers
+  const handleUpdateOverheadCost = (id, newCost) => {
+    const cost = Math.max(0, parseFloat(newCost) || 0);
+    setOverheads((prev) =>
+      prev.map((o) => (o.id === id ? { ...o, cost } : o))
+    );
+  };
+
+  const handleAddCustomOverhead = () => {
+    if (!newOverheadName.trim()) return;
+    const cost = parseFloat(newOverheadCost) || 5;
+    setOverheads((prev) => [
+      ...prev,
+      {
+        id: `OVH-${Date.now()}`,
+        name: newOverheadName.trim(),
+        cost,
+        icon: "wrench"
+      }
+    ]);
+    setNewOverheadName("");
+    setNewOverheadCost("");
+  };
+
+  const handleRemoveOverhead = (id) => {
+    setOverheads((prev) => prev.filter((o) => o.id !== id));
+  };
+
   // Calculations
   const baseRawMaterialCost = ingredients.reduce((sum, i) => sum + (i.quantity * (i.baseCost || i.costPerUnit)), 0);
   const currentRawMaterialCost = ingredients.reduce((sum, i) => sum + i.totalCost, 0);
-
-  const totalOverheadCost =
-    (parseFloat(gasCost) || 0) +
-    (parseFloat(chefLaborCost) || 0) +
-    (parseFloat(electricityCost) || 0) +
-    (parseFloat(packagingCost) || 0);
+  const totalOverheadCost = overheads.reduce((sum, o) => sum + (parseFloat(o.cost) || 0), 0);
 
   const baseTotalDishCost = Math.round((baseRawMaterialCost + totalOverheadCost) * 100) / 100;
   const currentTotalDishCost = Math.round((currentRawMaterialCost + totalOverheadCost) * 100) / 100;
@@ -165,10 +194,8 @@ export default function RestaurantRecipeModal({ isOpen, onClose, inventory = [],
           costPerUnit: i.costPerUnit
         })),
         customFields: {
-          gasCost,
-          chefLaborCost,
-          electricityCost,
-          packagingCost,
+          overheads,
+          totalOverheadCost,
           foodCost: currentRawMaterialCost,
           baseDishCost: baseTotalDishCost,
           inflationPercent: costInflationPercentage
@@ -220,10 +247,10 @@ export default function RestaurantRecipeModal({ isOpen, onClose, inventory = [],
             </div>
             <div>
               <h2 className="text-lg font-black tracking-wide flex items-center gap-2">
-                🥘 DYNAMIC RESTAURANT RECIPE BOM & INFLATION ADVISOR
+                🥘 DYNAMIC RESTAURANT RECIPE BOM & OVERHEAD COST ADVISOR
               </h2>
               <p className="text-xs text-amber-200">
-                कच्चा माल महंगाई ट्रैकर • लाइव रेसिपी लागत व प्रॉफिट मार्जिन लीकेज अलर्ट
+                कच्चा माल + गैस/बिजली/लेबर ऑपरेटिंग ओवरहेड्स • लाइव प्रॉफिट मार्जिन व महंगाई ट्रैकर
               </p>
             </div>
           </div>
@@ -293,13 +320,13 @@ export default function RestaurantRecipeModal({ isOpen, onClose, inventory = [],
                 </div>
                 <div>
                   <h4 className="text-sm font-black text-amber-950 flex items-center gap-2">
-                    ⚠️ RAW MATERIAL PRICE INFLATION DETECTED (+{costInflationPercentage}% Cost Jump)
+                    ⚠️ RAW MATERIAL & OVERHEAD INFLATION DETECTED (+{costInflationPercentage}% Cost Jump)
                   </h4>
                   <p className="text-xs text-amber-900 mt-0.5">
-                    किचन का कच्चा माल (पनीर, मक्खन, तेल) महंगा होने से इस डिश की लागत <strong>₹{baseTotalDishCost}</strong> से बढ़कर <strong>₹{currentTotalDishCost}</strong> हो गई है (+₹{costInflationAmount.toFixed(1)} प्रति प्लेट)।
+                    कच्चा माल व गैस/बिजली महंगी होने से इस डिश की कुल लागत <strong>₹{baseTotalDishCost}</strong> से बढ़कर <strong>₹{currentTotalDishCost}</strong> हो गई है (+₹{costInflationAmount.toFixed(1)} प्रति प्लेट)।
                   </p>
                   <p className="text-xs text-red-700 font-bold mt-1">
-                    आपका पुराना मार्जिन घटकर <strong>{currentProfitMarginPercent}%</strong> रह गया है।
+                    आपका शुद्ध मुनाफा घटकर <strong>{currentProfitMarginPercent}%</strong> रह गया है।
                   </p>
                 </div>
               </div>
@@ -461,50 +488,86 @@ export default function RestaurantRecipeModal({ isOpen, onClose, inventory = [],
             </div>
           </div>
 
-          {/* Overheads & Production Cost */}
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-3">
-            <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-2 border-b pb-2">
-              <Flame size={18} className="text-orange-600" />
-              Kitchen Operational Overheads per Dish (₹{totalOverheadCost})
-            </h3>
+          {/* Dynamic Operational Overheads & Utilities (Gas, Electricity, Labor, Oil, Maintenance) */}
+          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+            <div className="flex justify-between items-center border-b pb-2 flex-wrap gap-2">
+              <div>
+                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-2">
+                  <Flame size={18} className="text-orange-600" />
+                  Kitchen Operational Utilities & Overheads per Dish (Total: ₹{totalOverheadCost.toFixed(2)})
+                </h3>
+                <p className="text-xs text-gray-500">
+                  गैस सिलेंडर, बिजली बिल, शेफ मजदूरी, पैकेजिंग व तेल का खर्च प्रति प्लेट में स्वतः जोड़ें
+                </p>
+              </div>
+            </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-2.5 bg-slate-50 rounded-lg border">
-                <span className="text-[10px] font-bold text-gray-500">Commercial Gas (LPG)</span>
+            {/* Overheads Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {overheads.map((ovh) => (
+                <div key={ovh.id} className="p-3 bg-slate-50 rounded-xl border border-gray-200 flex justify-between items-center hover:bg-orange-50/40 transition group">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-orange-100 text-orange-800 rounded-lg text-xs">
+                      {ovh.icon === "flame" ? "🔥" : ovh.icon === "zap" ? "⚡" : ovh.icon === "chef" ? "👨‍🍳" : ovh.icon === "box" ? "📦" : "🔧"}
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-gray-900 text-xs">{ovh.name}</h5>
+                      <span className="text-[10px] text-gray-500">Per Plate Cost</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-gray-400">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={ovh.cost}
+                      onChange={(e) => handleUpdateOverheadCost(ovh.id, e.target.value)}
+                      className="w-16 text-xs font-black text-center px-1.5 py-1 border-2 border-orange-300 rounded-lg bg-white text-gray-900 focus:outline-none"
+                    />
+                    {ovh.id.startsWith("OVH-") && ovh.id.length > 7 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveOverhead(ovh.id)}
+                        className="text-gray-400 hover:text-red-600 p-0.5"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Add Custom Overhead Row */}
+            <div className="bg-orange-50/60 p-3 rounded-xl border border-orange-200 flex flex-col md:flex-row gap-2.5 items-end">
+              <div className="flex-1">
+                <label className="text-[11px] font-bold text-orange-950">Add Custom Operating Overhead (e.g. Tandoor Coal / RO Water / AC Maintenance)</label>
                 <input
-                  type="number"
-                  value={gasCost}
-                  onChange={(e) => setGasCost(e.target.value)}
-                  className="w-full text-xs font-bold px-2 py-1 border rounded mt-1 bg-white"
+                  type="text"
+                  placeholder="e.g. Tandoor Wood & Coal / Maintenance Sinking Fund"
+                  value={newOverheadName}
+                  onChange={(e) => setNewOverheadName(e.target.value)}
+                  className="w-full text-xs px-3 py-1.5 border border-orange-300 rounded-lg bg-white mt-0.5"
                 />
               </div>
-              <div className="p-2.5 bg-slate-50 rounded-lg border">
-                <span className="text-[10px] font-bold text-gray-500">Chef & Karigar Labor</span>
+              <div className="w-32">
+                <label className="text-[11px] font-bold text-orange-950">Cost / Plate (₹)</label>
                 <input
                   type="number"
-                  value={chefLaborCost}
-                  onChange={(e) => setChefLaborCost(e.target.value)}
-                  className="w-full text-xs font-bold px-2 py-1 border rounded mt-1 bg-white"
+                  placeholder="₹ 5.0"
+                  value={newOverheadCost}
+                  onChange={(e) => setNewOverheadCost(e.target.value)}
+                  className="w-full text-xs px-3 py-1.5 border border-orange-300 rounded-lg bg-white mt-0.5 font-bold text-center"
                 />
               </div>
-              <div className="p-2.5 bg-slate-50 rounded-lg border">
-                <span className="text-[10px] font-bold text-gray-500">Kitchen Electricity</span>
-                <input
-                  type="number"
-                  value={electricityCost}
-                  onChange={(e) => setElectricityCost(e.target.value)}
-                  className="w-full text-xs font-bold px-2 py-1 border rounded mt-1 bg-white"
-                />
-              </div>
-              <div className="p-2.5 bg-slate-50 rounded-lg border">
-                <span className="text-[10px] font-bold text-gray-500">Container & Packaging</span>
-                <input
-                  type="number"
-                  value={packagingCost}
-                  onChange={(e) => setPackagingCost(e.target.value)}
-                  className="w-full text-xs font-bold px-2 py-1 border rounded mt-1 bg-white"
-                />
-              </div>
+              <button
+                type="button"
+                onClick={handleAddCustomOverhead}
+                className="bg-orange-600 hover:bg-orange-700 text-white font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-1 shadow shrink-0"
+              >
+                <Plus size={15} /> Add Overhead
+              </button>
             </div>
           </div>
         </div>
@@ -513,7 +576,7 @@ export default function RestaurantRecipeModal({ isOpen, onClose, inventory = [],
         <div className="bg-slate-900 text-white p-4 px-6 border-t flex flex-col md:flex-row justify-between items-center gap-4 shrink-0">
           <div className="flex items-center gap-6">
             <div>
-              <span className="text-[11px] text-gray-400 block">Total Dish Cost (Raw + Overheads):</span>
+              <span className="text-[11px] text-gray-400 block">Total Dish Cost (Raw ₹{currentRawMaterialCost.toFixed(1)} + Overheads ₹{totalOverheadCost.toFixed(1)}):</span>
               <span className="text-xl font-black text-yellow-400">₹{currentTotalDishCost.toFixed(2)}</span>
             </div>
             <div className="border-l border-gray-700 pl-6">
