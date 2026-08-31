@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ChefHat,
   Calculator,
@@ -12,14 +12,16 @@ import {
   Plus,
   Trash2,
   Users,
+  Sliders,
+  Edit3,
   X
 } from "lucide-react";
 
 export default function KitchenProductionPlannerModal({ isOpen, onClose, inventory = [] }) {
   if (!isOpen) return null;
 
-  // Standard Recipe Bill of Materials (BOM) per 1 plate/portion
-  const standardRecipes = [
+  // Load custom restaurant recipes from localStorage or fallback to standard
+  const defaultStandardRecipes = [
     {
       id: "REC-1",
       dishName: "Shahi Paneer (Special Gravy)",
@@ -93,6 +95,19 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
     }
   ];
 
+  const [standardRecipes, setStandardRecipes] = useState(() => {
+    try {
+      const saved = localStorage.getItem("restaurant_recipes");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return defaultStandardRecipes;
+  });
+
   const [guestCount, setGuestCount] = useState(40);
   const [selectedDishes, setSelectedDishes] = useState([
     { recipeId: "REC-1", plates: 40 },
@@ -103,6 +118,10 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
   ]);
 
   const [bufferPercentage, setBufferPercentage] = useState(10); // 10% safety buffer
+  const [servingMode, setServingMode] = useState("buffet"); // 'buffet' (60% ratio per multi-curry dish) | 'alacarte' (100% full single plate)
+  
+  // User manually edited order quantities map { "Paneer (Fresh Malai)": 5.0 }
+  const [editedQuantities, setEditedQuantities] = useState({});
 
   // Toggle or Update Dish in Menu
   const toggleDishInMenu = (recipe) => {
@@ -127,21 +146,25 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
     setSelectedDishes((prev) => prev.map((d) => ({ ...d, plates: val })));
   };
 
+  // Portion Scaling Factor:
+  // If buffet mode and multiple main course dishes exist, reduce portion per head to 60%-70% to prevent food wastage
+  const buffetRatio = servingMode === "buffet" && selectedDishes.length >= 3 ? 0.65 : 1.0;
+
   // Calculate Aggregated Raw Material Requirements
   const rawMaterialRequirements = {};
 
   selectedDishes.forEach((item) => {
-    const recipe = standardRecipes.find((r) => r.id === item.recipeId);
+    const recipe = standardRecipes.find((r) => r.id === item.recipeId) || defaultStandardRecipes.find((r) => r.id === item.recipeId);
     if (recipe) {
       recipe.ingredients.forEach((ing) => {
         const key = ing.name;
-        const totalQtyNeeded = ing.qtyPerPortion * item.plates * (1 + bufferPercentage / 100);
+        const totalQtyNeeded = ing.qtyPerPortion * item.plates * buffetRatio * (1 + bufferPercentage / 100);
 
         if (!rawMaterialRequirements[key]) {
           // Look up in actual inventory
           const matchedInv = inventory.find(
             (p) =>
-              (p.name || "").toUpperCase().includes(ing.matchedInvName) ||
+              (p.name || "").toUpperCase().includes(ing.matchedInvName || "") ||
               (p.name || "").toUpperCase().includes(ing.name.toUpperCase())
           );
 
@@ -161,30 +184,42 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
   const ingredientList = Object.values(rawMaterialRequirements).map((ing) => {
     const req = parseFloat(ing.requiredQty.toFixed(2));
     const stock = ing.inStockQty;
-    const shortage = Math.max(0, parseFloat((req - stock).toFixed(2)));
-    const estimatedCost = Math.round(shortage * ing.costPerUnit);
-    return { ...ing, requiredQty: req, shortage, estimatedCost };
+    const calculatedShortage = Math.max(0, parseFloat((req - stock).toFixed(2)));
+    
+    // Check if user manually edited the purchase quantity (e.g. rounded 3.6 to 4 or 5)
+    const finalOrderQty = editedQuantities[ing.name] !== undefined ? editedQuantities[ing.name] : calculatedShortage;
+    const estimatedCost = Math.round(finalOrderQty * ing.costPerUnit);
+
+    return { ...ing, requiredQty: req, shortage: calculatedShortage, finalOrderQty, estimatedCost };
   });
 
-  const totalShortageCost = ingredientList.reduce((sum, item) => sum + item.estimatedCost, 0);
-  const itemsToPurchase = ingredientList.filter((item) => item.shortage > 0);
+  const handleEditQtyChange = (name, val) => {
+    const num = parseFloat(val);
+    setEditedQuantities((prev) => ({
+      ...prev,
+      [name]: isNaN(num) ? 0 : Math.max(0, num)
+    }));
+  };
 
-  // WhatsApp Grocery List Generator
+  const totalShortageCost = ingredientList.reduce((sum, item) => sum + item.estimatedCost, 0);
+  const itemsToPurchase = ingredientList.filter((item) => item.finalOrderQty > 0);
+
+  // WhatsApp Grocery List Generator with exact edited quantities
   const shareGroceryListWhatsApp = () => {
     if (itemsToPurchase.length === 0) {
-      alert("All ingredients are already in stock! No purchase needed.");
+      alert("All ingredients are in stock or quantity is 0. No purchase needed.");
       return;
     }
-    let msg = `*📋 KITCHEN PURCHASE / GROCERY LIST*` + "\n";
-    msg += `*Party / Event Size:* ${guestCount} Guests (+ ${bufferPercentage}% Buffer)` + "\n";
-    msg += `*Date:* ${new Date().toLocaleDateString()}` + "\n";
-    msg += "----------------------------------" + "\n";
+    let msg = `*📋 KITCHEN PURCHASE / GROCERY ORDER*\n`;
+    msg += `*Event / Party Size:* ${guestCount} Guests (${servingMode === "buffet" ? "Buffet Balanced" : "A-la-carte"} + ${bufferPercentage}% Buffer)\n`;
+    msg += `*Date:* ${new Date().toLocaleDateString()}\n`;
+    msg += `----------------------------------\n`;
     itemsToPurchase.forEach((it, idx) => {
-      msg += `${idx + 1}. *${it.name}*: ${it.shortage} ${it.unit} (Need: ${it.requiredQty}, Stock: ${it.inStockQty})` + "\n";
+      msg += `${idx + 1}. *${it.name}*: *${it.finalOrderQty} ${it.unit}* (Need: ${it.requiredQty}, Kitchen Stock: ${it.inStockQty})\n`;
     });
-    msg += "----------------------------------" + "\n";
-    msg += `*Estimated Purchase Cost:* ₹${totalShortageCost.toLocaleString('en-IN')}` + "\n";
-    msg += "*Please deliver to Kitchen as soon as possible.*";
+    msg += `----------------------------------\n`;
+    msg += `*Est. Order Total:* ₹${totalShortageCost.toLocaleString('en-IN')}\n`;
+    msg += `*Please pack and deliver to Kitchen as soon as possible.*`;
 
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
   };
@@ -203,7 +238,7 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
                 🥘 KITCHEN PRODUCTION & RAW MATERIAL INDENT PLANNER
               </h2>
               <p className="text-xs text-emerald-200">
-                Party / Banquet Order Breakdown • Live Raw Stock Check • Grocery Shortage & Purchase List
+                Restaurant BOM Recipes • Live Stock Check • Editable Final Quantities before WhatsApp
               </p>
             </div>
           </div>
@@ -230,6 +265,19 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
                 />
               </div>
 
+              {/* Serving Mode (Buffet vs A-la-carte) */}
+              <div className="flex items-center gap-2 text-xs font-semibold bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+                <span>Serving Mode:</span>
+                <select
+                  value={servingMode}
+                  onChange={(e) => setServingMode(e.target.value)}
+                  className="bg-white border rounded px-2 py-0.5 font-bold text-emerald-800"
+                >
+                  <option value="buffet">Buffet Party (Portion Balanced 65%)</option>
+                  <option value="alacarte">Full Single A-la-carte (100%)</option>
+                </select>
+              </div>
+
               <div className="flex items-center gap-2 text-xs font-semibold text-gray-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
                 <span>Kitchen Buffer:</span>
                 <select
@@ -251,7 +299,7 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
                 onClick={shareGroceryListWhatsApp}
                 className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow transition"
               >
-                <Share2 size={16} /> WhatsApp Grocery List ({itemsToPurchase.length} Items)
+                <Share2 size={16} /> WhatsApp Order ({itemsToPurchase.length} Items)
               </button>
             </div>
           </div>
@@ -312,7 +360,7 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
                       <div className="mt-2 text-[10px] text-gray-500 border-t pt-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
                         {recipe.ingredients.map((ing, idx) => (
                           <span key={idx}>
-                            • {ing.name} ({ing.qtyPerPortion} {ing.unit})
+                            • {ing.name} ({(ing.qtyPerPortion * buffetRatio).toFixed(2)} {ing.unit})
                           </span>
                         ))}
                       </div>
@@ -322,26 +370,26 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
               </div>
             </div>
 
-            {/* Right Column: Aggregated Raw Material Shortage Table */}
+            {/* Right Column: Aggregated Raw Material Shortage Table with EDITABLE Quantities */}
             <div className="lg:col-span-7 bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between">
               <div>
                 <div className="flex justify-between items-center border-b pb-2 mb-3">
                   <div>
                     <h3 className="font-black text-gray-900 text-sm flex items-center gap-1.5">
-                      <Calculator className="text-emerald-700" size={18} /> Raw Material Requirement & Kitchen Stock Check
+                      <Calculator className="text-emerald-700" size={18} /> Raw Material Indent & Final Order Adjustment
                     </h3>
                     <p className="text-[11px] text-gray-500">
-                      Calculated automatically from recipes based on {guestCount} plates
+                      💡 You can edit or round-up quantities directly in the "Order Qty" box before sending WhatsApp
                     </p>
                   </div>
 
                   {itemsToPurchase.length > 0 ? (
                     <span className="px-2.5 py-1 bg-red-100 text-red-700 font-extrabold text-xs rounded-full flex items-center gap-1">
-                      <AlertTriangle size={12} /> {itemsToPurchase.length} Items Shortage
+                      <AlertTriangle size={12} /> {itemsToPurchase.length} Items to Order
                     </span>
                   ) : (
                     <span className="px-2.5 py-1 bg-green-100 text-green-700 font-extrabold text-xs rounded-full flex items-center gap-1">
-                      <CheckCircle2 size={12} /> Full Stock Available
+                      <CheckCircle2 size={12} /> Stock Sufficient
                     </span>
                   )}
                 </div>
@@ -352,9 +400,11 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
                     <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 border-b">
                       <tr>
                         <th className="p-2.5">Raw Material</th>
-                        <th className="p-2.5 text-center">Required (40p)</th>
+                        <th className="p-2.5 text-center">Required ({guestCount}p)</th>
                         <th className="p-2.5 text-center">Kitchen Stock</th>
-                        <th className="p-2.5 text-center">To Purchase</th>
+                        <th className="p-2.5 text-center bg-yellow-50 text-amber-900 border-x">
+                          ✏️ Final Order Qty (Editable)
+                        </th>
                         <th className="p-2.5 text-right">Est. Cost</th>
                       </tr>
                     </thead>
@@ -362,7 +412,7 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
                       {ingredientList.map((ing, idx) => {
                         const hasShortage = ing.shortage > 0;
                         return (
-                          <tr key={idx} className={`hover:bg-slate-50 ${hasShortage ? "bg-red-50/40" : ""}`}>
+                          <tr key={idx} className={`hover:bg-slate-50 ${hasShortage ? "bg-red-50/30" : ""}`}>
                             <td className="p-2.5 font-bold text-gray-900">
                               {ing.name}
                             </td>
@@ -372,19 +422,21 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
                             <td className="p-2.5 text-center font-medium text-gray-600">
                               {ing.inStockQty} {ing.unit}
                             </td>
-                            <td className="p-2.5 text-center font-black">
-                              {hasShortage ? (
-                                <span className="text-red-600 bg-red-100 px-2 py-0.5 rounded">
-                                  + {ing.shortage} {ing.unit}
-                                </span>
-                              ) : (
-                                <span className="text-green-700 bg-green-100 px-2 py-0.5 rounded">
-                                  ✓ In Stock
-                                </span>
-                              )}
+                            <td className="p-2.5 text-center bg-yellow-50/50 border-x">
+                              <div className="flex items-center justify-center gap-1">
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  value={ing.finalOrderQty}
+                                  onChange={(e) => handleEditQtyChange(ing.name, e.target.value)}
+                                  className="w-20 px-2 py-1 text-center font-black text-xs border-2 border-amber-400 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                />
+                                <span className="text-[10px] font-bold text-gray-500">{ing.unit}</span>
+                              </div>
                             </td>
                             <td className="p-2.5 text-right font-extrabold text-gray-900">
-                              {hasShortage ? `₹${ing.estimatedCost.toLocaleString('en-IN')}` : "₹0"}
+                              {ing.finalOrderQty > 0 ? `₹${ing.estimatedCost.toLocaleString('en-IN')}` : "₹0"}
                             </td>
                           </tr>
                         );
@@ -409,7 +461,7 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
                     onClick={shareGroceryListWhatsApp}
                     className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-1.5 shadow"
                   >
-                    <ShoppingCart size={14} /> Send Grocery Order to Vendor
+                    <ShoppingCart size={14} /> Send Edited List to Vendor
                   </button>
                   <button
                     type="button"
