@@ -27,6 +27,8 @@ import {
   FileCheck,
   TrendingUp,
   FileSpreadsheet,
+  Wine,
+  ShieldAlert,
   X
 } from "lucide-react";
 
@@ -132,8 +134,21 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
     { id: "ADD-5", name: "Dedicated Party Service Staff & Cleaning", price: 1500, isIncluded: false, provider: "In-House" },
   ]);
 
+  // Crockery, Glassware, Linen & Cutlery Breakage / Damage Recovery Tracker
+  const [breakageItems, setBreakageItems] = useState([
+    { id: "BRK-1", name: "Glassware / Wine / Mocktail Glass", unitCost: 150, count: 0, category: "Glassware" },
+    { id: "BRK-2", name: "Melamine / Bone-China Dinner Plate", unitCost: 200, count: 0, category: "Crockery" },
+    { id: "BRK-3", name: "Soup / Dessert / Sweet Bowl", unitCost: 80, count: 0, category: "Crockery" },
+    { id: "BRK-4", name: "Chafing Dish Glass Lid / Buffet Warmer", unitCost: 850, count: 0, category: "Buffet Equipment" },
+    { id: "BRK-5", name: "Satin Tablecloth / Carpet Burn Damage", unitCost: 500, count: 0, category: "Linen & Decor" },
+    { id: "BRK-6", name: "Stainless Steel Cutlery Spoon/Fork (Lost)", unitCost: 40, count: 0, category: "Cutlery" },
+  ]);
+  const [customBreakageName, setCustomBreakageName] = useState("");
+  const [customBreakageRate, setCustomBreakageRate] = useState("");
+  const [customBreakageQty, setCustomBreakageQty] = useState(1);
+
   const [advanceToken, setAdvanceToken] = useState(2000);
-  const [activeTab, setActiveTab] = useState("booking"); // 'booking' | 'menu' | 'addons' | 'grocery' | 'actual_costing' | 'settlement_slip'
+  const [activeTab, setActiveTab] = useState("booking"); // 'booking' | 'menu' | 'addons' | 'breakage' | 'actual_costing' | 'settlement_slip'
 
   // Post-Event Actual Kitchen Raw Material Consumption Log
   const [actualConsumptionLog, setActualConsumptionLog] = useState([
@@ -206,6 +221,42 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
     );
   };
 
+  // Breakage Handlers
+  const updateBreakageCount = (id, count) => {
+    const num = Math.max(0, parseInt(count) || 0);
+    setBreakageItems((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, count: num } : b))
+    );
+  };
+
+  const updateBreakageUnitCost = (id, cost) => {
+    const num = Math.max(0, parseFloat(cost) || 0);
+    setBreakageItems((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, unitCost: num } : b))
+    );
+  };
+
+  const addCustomBreakageItem = () => {
+    if (!customBreakageName.trim()) return;
+    const cost = parseFloat(customBreakageRate) || 100;
+    const qty = parseInt(customBreakageQty) || 1;
+    const newItem = {
+      id: `BRK-${Date.now()}`,
+      name: customBreakageName.trim(),
+      unitCost: cost,
+      count: qty,
+      category: "Custom Incident"
+    };
+    setBreakageItems((prev) => [...prev, newItem]);
+    setCustomBreakageName("");
+    setCustomBreakageRate("");
+    setCustomBreakageQty(1);
+  };
+
+  const removeBreakageItem = (id) => {
+    setBreakageItems((prev) => prev.filter((b) => b.id !== id));
+  };
+
   // Financial Calculations (Settled on higher of Guaranteed or Actual count)
   const billedPlates = Math.max(minGuaranteedPax, actualCountedPax);
   const extraPlates = Math.max(0, actualCountedPax - minGuaranteedPax);
@@ -215,12 +266,16 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
   const activeAddonsTotal = addons.filter((a) => a.isIncluded).reduce((sum, a) => sum + a.price, 0);
   const totalExtraCharges = hallRent + overtimeTotal + activeAddonsTotal;
 
-  // 5% GST on Catering + 18% on Services
+  // Total Breakage & Damage Recovery
+  const totalBreakageAmount = breakageItems.reduce((sum, b) => sum + (b.count * b.unitCost), 0);
+  const activeBreakages = breakageItems.filter((b) => b.count > 0);
+
+  // 5% GST on Catering + 18% on Services & Damage Recovery
   const foodGst = Math.round((foodAmount * 5) / 100);
-  const servicesGst = Math.round((totalExtraCharges * 18) / 100);
+  const servicesGst = Math.round(((totalExtraCharges + totalBreakageAmount) * 18) / 100);
   const totalGst = foodGst + servicesGst;
 
-  const grandTotal = foodAmount + totalExtraCharges + totalGst;
+  const grandTotal = foodAmount + totalExtraCharges + totalBreakageAmount + totalGst;
   const balancePending = grandTotal - (parseFloat(advanceToken) || 0);
 
   // Actual Food Cost Calculation
@@ -255,6 +310,7 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
     msg += `----------------------------------\n`;
     msg += `*Food Total (${billedPlates} Pax):* ₹${foodAmount.toLocaleString('en-IN')}\n`;
     if (totalExtraCharges > 0) msg += `*Hall & Addons Total:* ₹${totalExtraCharges.toLocaleString('en-IN')}\n`;
+    if (totalBreakageAmount > 0) msg += `*Breakage / Damage Recovery:* ₹${totalBreakageAmount.toLocaleString('en-IN')}\n`;
     msg += `*Total GST:* ₹${totalGst.toLocaleString('en-IN')}\n`;
     msg += `*Grand Total:* ₹${grandTotal.toLocaleString('en-IN')}\n`;
     msg += `*Advance Paid:* ₹${advanceToken.toLocaleString('en-IN')}\n`;
@@ -269,7 +325,7 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
   };
 
   const sendWhatsAppPlateSettlement = () => {
-    let msg = `*🧾 EVENT PLATE HANDOVER & SETTLEMENT SLIP*\n`;
+    let msg = `*🧾 EVENT SETTLEMENT & PLATE HANDOVER SLIP*\n`;
     msg += `*Event:* ${eventName} | *Date:* ${eventDate}\n`;
     msg += `*Host:* ${customerName} (${primaryPhone})\n`;
     msg += `----------------------------------\n`;
@@ -278,11 +334,18 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
     if (extraPlates > 0) msg += `• *Extra Plates (@ ₹${ratePerPlate}/p):* +${extraPlates} Pax (= ₹${(extraPlates * ratePerPlate).toLocaleString('en-IN')})\n`;
     msg += `• *Total Billed Pax:* ${billedPlates} Pax\n`;
     msg += `----------------------------------\n`;
-    msg += `• *Food Amount:* ₹${foodAmount.toLocaleString('en-IN')}\n`;
-    msg += `• *Hall & Addons:* ₹${totalExtraCharges.toLocaleString('en-IN')}\n`;
-    msg += `• *Net Payable:* ₹${grandTotal.toLocaleString('en-IN')}\n`;
+    msg += `• *Food Catering:* ₹${foodAmount.toLocaleString('en-IN')}\n`;
+    if (totalExtraCharges > 0) msg += `• *Hall & Addons:* ₹${totalExtraCharges.toLocaleString('en-IN')}\n`;
+    if (totalBreakageAmount > 0) {
+      msg += `• *Breakage / Damage Recovery:* ₹${totalBreakageAmount.toLocaleString('en-IN')}\n`;
+      activeBreakages.forEach(b => {
+        msg += `   - ${b.name}: ${b.count} Pcs @ ₹${b.unitCost} = ₹${b.count * b.unitCost}\n`;
+      });
+    }
+    msg += `• *GST Applicable:* ₹${totalGst.toLocaleString('en-IN')}\n`;
+    msg += `• *Net Total Amount:* ₹${grandTotal.toLocaleString('en-IN')}\n`;
     msg += `• *Advance Token Adjusted:* -₹${advanceToken.toLocaleString('en-IN')}\n`;
-    msg += `• *Final Balance Paid / Due:* ₹${balancePending.toLocaleString('en-IN')}\n`;
+    msg += `• *Final Balance Due / Paid:* ₹${balancePending.toLocaleString('en-IN')}\n`;
     msg += `----------------------------------\n`;
     msg += `*Verified & Handed over by Banquet Supervisor & Host.*\n`;
     msg += `Thank you for hosting your celebration with us!`;
@@ -294,6 +357,11 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
     if (!customerName.trim()) return alert("Please enter Customer / Host Name.");
     if (!primaryPhone.trim()) return alert("Please enter Primary Mobile Number.");
 
+    let breakageSummary = "";
+    if (totalBreakageAmount > 0) {
+      breakageSummary = ` | Breakage Recovery: ₹${totalBreakageAmount} (${activeBreakages.map(b => `${b.name} x${b.count}`).join(", ")})`;
+    }
+
     const banquetBillItem = {
       name: `${eventName} (${billedPlates} Pax @ ₹${ratePerPlate}/Plate) - ${customerName}`,
       category: "Banquet & Catering",
@@ -304,13 +372,14 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
       customerName,
       customerMobile: primaryPhone,
       tax: totalGst,
-      notes: `Event Date: ${eventDate} | Slot: ${timeSlot} | Venue: ${hallZone} | Guaranteed: ${minGuaranteedPax}p, Actual Count: ${actualCountedPax}p | Hall Rent: ₹${hallRent} | Overtime: ${overtimeHours}h (₹${overtimeTotal}) | Addons: ₹${activeAddonsTotal} | GST: ₹${totalGst} | Advance: ₹${advanceToken} | Balance: ₹${balancePending} | Actual Raw Food Cost: ₹${totalActualFoodCost} (Food Cost %: ${foodCostPercentage}%) | Menu: ${customMenuItems.join(", ")}`
+      notes: `Event Date: ${eventDate} | Slot: ${timeSlot} | Venue: ${hallZone} | Guaranteed: ${minGuaranteedPax}p, Actual Count: ${actualCountedPax}p | Hall Rent: ₹${hallRent} | Overtime: ${overtimeHours}h (₹${overtimeTotal}) | Addons: ₹${activeAddonsTotal}${breakageSummary} | GST: ₹${totalGst} | Advance: ₹${advanceToken} | Balance: ₹${balancePending} | Actual Raw Food Cost: ₹${totalActualFoodCost} (Food Cost %: ${foodCostPercentage}%) | Menu: ${customMenuItems.join(", ")}`
     };
 
     onApplyBanquet(banquetBillItem, {
       hallRent,
       overtimeTotal,
       activeAddonsTotal,
+      totalBreakageAmount,
       grandTotal,
       advanceToken,
       balancePending,
@@ -335,7 +404,7 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
                 🏰 BANQUET, CAFE & HOTEL PARTY EVENT SUITE
               </h2>
               <p className="text-xs text-rose-200">
-                Guaranteed vs Handover Plate Count • Post-Event Kitchen Costing • Printable Settlement Slip
+                Guaranteed vs Handover Plate Count • Breakage & Damage Recovery • Post-Event Kitchen Costing
               </p>
             </div>
           </div>
@@ -361,6 +430,12 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
                 🎂 Addons
               </button>
               <button
+                onClick={() => setActiveTab("breakage")}
+                className={`px-2.5 py-1 rounded-md transition ${activeTab === "breakage" ? "bg-red-500 text-white shadow" : "text-rose-200 hover:bg-white/10"}`}
+              >
+                🍷 Breakage / Damage {totalBreakageAmount > 0 ? `(₹${totalBreakageAmount})` : ""}
+              </button>
+              <button
                 onClick={() => setActiveTab("settlement_slip")}
                 className={`px-2.5 py-1 rounded-md transition ${activeTab === "settlement_slip" ? "bg-amber-400 text-slate-900 shadow" : "text-amber-200 hover:bg-white/10"}`}
               >
@@ -370,7 +445,7 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
                 onClick={() => setActiveTab("actual_costing")}
                 className={`px-2.5 py-1 rounded-md transition ${activeTab === "actual_costing" ? "bg-emerald-400 text-slate-900 shadow" : "text-emerald-200 hover:bg-white/10"}`}
               >
-                📊 Kitchen Costing & Profit ({foodCostPercentage}%)
+                📊 Kitchen Costing ({foodCostPercentage}%)
               </button>
             </div>
 
@@ -555,8 +630,14 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
                       <span>₹{totalExtraCharges.toLocaleString('en-IN')}</span>
                     </div>
                   )}
+                  {totalBreakageAmount > 0 && (
+                    <div className="flex justify-between text-xs text-red-300 font-bold">
+                      <span>Breakage / Damage Recovery ({activeBreakages.length} Items):</span>
+                      <span>₹{totalBreakageAmount.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-xs text-gray-300">
-                    <span>GST (Food 5% + Services 18%):</span>
+                    <span>GST (Food 5% + Services/Damage 18%):</span>
                     <span>₹{totalGst.toLocaleString('en-IN')}</span>
                   </div>
                   <div className="flex justify-between font-black text-base text-yellow-300 border-t border-gray-700 pt-1.5">
@@ -782,7 +863,144 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
             </div>
           )}
 
-          {/* NEW TAB: Plate Handover & Settlement Slip with Signatures */}
+          {/* NEW TAB: Crockery, Glassware, Linen & Cutlery Breakage / Damage Recovery */}
+          {activeTab === "breakage" && (
+            <div className="bg-white p-5 rounded-xl border border-red-300 shadow-sm space-y-5">
+              <div className="flex justify-between items-center border-b pb-3 flex-wrap gap-2">
+                <div>
+                  <h3 className="font-black text-gray-900 text-base flex items-center gap-2">
+                    <Wine className="text-red-600" size={22} />
+                    CROCKERY, GLASSWARE & BANQUET DAMAGE RECOVERY
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    इवेंट के दौरान टूटे हुए कांच के ग्लास, प्लेट्स, कटलरी या सजावट के नुकसान की वसूली
+                  </p>
+                </div>
+
+                <div className="text-right bg-red-50 p-2 px-4 rounded-xl border border-red-200">
+                  <span className="text-[11px] font-bold text-red-900 uppercase">Total Damage Recovery</span>
+                  <p className="text-xl font-black text-red-700">₹{totalBreakageAmount.toLocaleString('en-IN')}</p>
+                </div>
+              </div>
+
+              {/* Add Custom Incident Input */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-gray-200 flex flex-col md:flex-row gap-3 items-end">
+                <div className="flex-1">
+                  <label className="text-xs font-bold text-gray-700">Add Custom Damage / Loss Item</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Flower Vase Broken / LED Light Damage..."
+                    value={customBreakageName}
+                    onChange={(e) => setCustomBreakageName(e.target.value)}
+                    className="w-full text-xs px-3 py-2 border rounded-lg focus:ring-1 focus:ring-red-500 mt-1"
+                  />
+                </div>
+                <div className="w-28">
+                  <label className="text-xs font-bold text-gray-700">Fine Rate (₹)</label>
+                  <input
+                    type="number"
+                    placeholder="₹ Rate"
+                    value={customBreakageRate}
+                    onChange={(e) => setCustomBreakageRate(e.target.value)}
+                    className="w-full text-xs px-3 py-2 border rounded-lg focus:ring-1 focus:ring-red-500 mt-1"
+                  />
+                </div>
+                <div className="w-24">
+                  <label className="text-xs font-bold text-gray-700">Broken Qty</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={customBreakageQty}
+                    onChange={(e) => setCustomBreakageQty(e.target.value)}
+                    className="w-full text-xs px-3 py-2 border rounded-lg focus:ring-1 focus:ring-red-500 mt-1 text-center font-bold"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={addCustomBreakageItem}
+                  className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-1 shadow"
+                >
+                  <Plus size={16} /> Add Damage
+                </button>
+              </div>
+
+              {/* Breakage Items Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-100 text-slate-700 font-bold border-b">
+                    <tr>
+                      <th className="p-2.5">Category</th>
+                      <th className="p-2.5">Item / Equipment Name</th>
+                      <th className="p-2.5 text-center">Fine Rate / Unit</th>
+                      <th className="p-2.5 text-center bg-red-50 text-red-900 border-x">
+                        Broken / Missing Count
+                      </th>
+                      <th className="p-2.5 text-right">Total Fine (₹)</th>
+                      <th className="p-2.5 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {breakageItems.map((item) => {
+                      const itemTotal = item.count * item.unitCost;
+                      const hasCount = item.count > 0;
+                      return (
+                        <tr key={item.id} className={`hover:bg-slate-50 ${hasCount ? "bg-red-50/40" : ""}`}>
+                          <td className="p-2.5 text-gray-500 font-medium">
+                            <span className="px-2 py-0.5 rounded bg-gray-100 border text-[10px]">
+                              {item.category}
+                            </span>
+                          </td>
+                          <td className="p-2.5 font-bold text-gray-900">{item.name}</td>
+                          <td className="p-2.5 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <span>₹</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.unitCost}
+                                onChange={(e) => updateBreakageUnitCost(item.id, e.target.value)}
+                                className="w-16 px-1.5 py-0.5 text-center font-bold text-xs border rounded bg-white"
+                              />
+                            </div>
+                          </td>
+                          <td className="p-2.5 text-center bg-red-50/60 border-x">
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.count}
+                                onChange={(e) => updateBreakageCount(item.id, e.target.value)}
+                                className={`w-16 px-2 py-1 text-center font-black text-xs border-2 rounded-lg bg-white ${
+                                  hasCount ? "border-red-500 text-red-700" : "border-gray-300"
+                                }`}
+                              />
+                              <span className="text-[10px] font-bold text-gray-500">Pcs</span>
+                            </div>
+                          </td>
+                          <td className="p-2.5 text-right font-black text-gray-900">
+                            {itemTotal > 0 ? `₹${itemTotal.toLocaleString('en-IN')}` : "₹0"}
+                          </td>
+                          <td className="p-2.5 text-center">
+                            {item.id.startsWith("BRK-") && item.id.length > 6 && (
+                              <button
+                                type="button"
+                                onClick={() => removeBreakageItem(item.id)}
+                                className="text-gray-400 hover:text-red-600 p-1 rounded"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: Plate Handover & Settlement Slip with Signatures and Breakage Recovery */}
           {activeTab === "settlement_slip" && (
             <div className="bg-white p-6 rounded-xl border border-amber-300 shadow-md space-y-6 max-w-4xl mx-auto">
               <div className="flex justify-between items-center border-b pb-4">
@@ -858,6 +1076,14 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
                         <td className="py-2 text-right font-bold">₹{totalExtraCharges.toLocaleString('en-IN')}</td>
                       </tr>
                     )}
+                    {totalBreakageAmount > 0 && (
+                      <tr className="border-b bg-red-50/50">
+                        <td className="py-2 font-bold text-red-900">
+                          Breakage & Damage Recovery ({activeBreakages.map(b => `${b.name} x${b.count}`).join(", ")})
+                        </td>
+                        <td className="py-2 text-right font-black text-red-700">₹{totalBreakageAmount.toLocaleString('en-IN')}</td>
+                      </tr>
+                    )}
                     <tr className="border-b">
                       <td className="py-2 font-medium">Applicable Taxes (GST)</td>
                       <td className="py-2 text-right font-bold">₹{totalGst.toLocaleString('en-IN')}</td>
@@ -881,18 +1107,18 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
                 <div className="grid grid-cols-2 gap-8 pt-8 mt-6 border-t-2 border-gray-300">
                   <div className="border-t border-gray-400 pt-2 text-center">
                     <p className="text-xs font-bold text-gray-800 uppercase">Host / Customer Signature</p>
-                    <p className="text-[10px] text-gray-500">I confirm the plate count of {actualCountedPax} and final settlement.</p>
+                    <p className="text-[10px] text-gray-500">I confirm the plate count of {actualCountedPax}, damage settlements, and final amount.</p>
                   </div>
                   <div className="border-t border-gray-400 pt-2 text-center">
                     <p className="text-xs font-bold text-gray-800 uppercase">Banquet Manager Signature</p>
-                    <p className="text-[10px] text-gray-500">Handed over with complete service delivery.</p>
+                    <p className="text-[10px] text-gray-500">Handed over with complete service and inspection delivery.</p>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* NEW TAB: Post-Event Kitchen Raw Material Costing & Profitability */}
+          {/* TAB: Post-Event Kitchen Raw Material Costing & Profitability */}
           {activeTab === "actual_costing" && (
             <div className="bg-white p-5 rounded-xl border border-emerald-300 shadow-sm space-y-5">
               <div className="flex justify-between items-center border-b pb-3">
@@ -999,7 +1225,7 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
         {/* Bottom Footer Actions */}
         <div className="bg-white p-4 px-6 border-t flex justify-between items-center shrink-0">
           <div>
-            <span className="text-xs text-gray-500 font-semibold">Total Billed ({billedPlates} Pax):</span>
+            <span className="text-xs text-gray-500 font-semibold">Total Billed ({billedPlates} Pax + Extras):</span>
             <p className="text-xl font-black text-rose-900">₹{grandTotal.toLocaleString('en-IN')}</p>
           </div>
 
