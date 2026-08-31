@@ -18,7 +18,10 @@ import {
   Gift,
   Clock,
   X,
-  PauseCircle
+  PauseCircle,
+  Gamepad2,
+  ChefHat,
+  Sparkles
 } from "lucide-react";
 import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
@@ -29,12 +32,11 @@ import HardwareDimensionModal from "../../components/modals/HardwareDimensionMod
 import GarmentsMatrixModal from "../../components/modals/GarmentsMatrixModal";
 import PharmaBatchModal from "../../components/modals/PharmaBatchModal";
 import RestaurantKotModal from "../../components/modals/RestaurantKotModal";
-import RestaurantRecipeModal from "../../components/modals/RestaurantRecipeModal";
-import BanquetCateringModal from "../../components/modals/BanquetCateringModal";
-import ElectronicsImeiModal from "../../components/modals/ElectronicsImeiModal";
-import ElectricalWireModal from "../../components/modals/ElectricalWireModal";
 import SalonSpaModal from "../../components/modals/SalonSpaModal";
 import AutomobileJobCardModal from "../../components/modals/AutomobileJobCardModal";
+import GamezoneStationModal from "../../components/modals/GamezoneStationModal";
+import KitchenProductionPlannerModal from "../../components/modals/KitchenProductionPlannerModal";
+import KitchenPrepPredictionModal from "../../components/modals/KitchenPrepPredictionModal";
 import { getBusinessMode } from "../../utils/businessMode";
 import { useCompany } from "../../contexts/CompanyContext";
 
@@ -107,6 +109,9 @@ export default function BillingPage() {
   const [showRestaurantModal, setShowRestaurantModal] = useState(false);
   const [showRecipeModal, setShowRecipeModal] = useState(false);
   const [showBanquetModal, setShowBanquetModal] = useState(false);
+  const [showGamezoneModal, setShowGamezoneModal] = useState(false);
+  const [showPlannerModal, setShowPlannerModal] = useState(false);
+  const [showPrepPredictionModal, setShowPrepPredictionModal] = useState(false);
   const [showImeiModal, setShowImeiModal] = useState(false);
   const [showWireModal, setShowWireModal] = useState(false);
   const [showSalonModal, setShowSalonModal] = useState(false);
@@ -728,6 +733,18 @@ export default function BillingPage() {
     }));
   };
 
+  // NEW: Handle Gamezone Stations & Tokens Apply
+  const handleApplyGamezoneItems = (gzItems) => {
+    setFormData(prev => {
+      const updated = [
+        ...prev.items,
+        ...gzItems.map(i => ({ ...i, id: Date.now() + Math.random() }))
+      ];
+      const newTotal = updated.reduce((sum, item) => sum + (item.total || 0), 0);
+      return { ...prev, items: updated, total: newTotal };
+    });
+  };
+
   
   // NEW: Handle Electronics IMEI Item Apply
   const handleApplyImeiItem = (imeiItem) => {
@@ -1227,6 +1244,201 @@ export default function BillingPage() {
                   placeholder="Click here & scan barcode with handheld scanner..."
                   className="w-full px-3 py-2 border border-blue-300 bg-white rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                   onKeyDown={handleHandheldScan}
+                  value={formData.customerMobile}
+                  onChange={(e) =>
+                    setFormData({ ...formData, customerMobile: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
+                <input
+                  type="date"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={formData.dueDate}
+                  onChange={(e) =>
+                    setFormData({ ...formData, dueDate: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Site Name (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g., Construction Site A"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={formData.siteName}
+                  onChange={(e) =>
+                    setFormData({ ...formData, siteName: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Price Level / Category</label>
+                <select
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-purple-700 bg-purple-50"
+                  value={formData.priceLevel}
+                  onChange={(e) =>
+                    setFormData({ ...formData, priceLevel: e.target.value })
+                  }
+                >
+                  <option value="retail">Rate A (Retail)</option>
+                  <option value="wholesale">Rate B (Wholesale)</option>
+                  <option value="special">Rate C (Special)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Salesman / Staff</label>
+                <select
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={formData.salesmanId || ""}
+                  onChange={(e) => setFormData({ ...formData, salesmanId: e.target.value })}
+                >
+                  <option value="">-- Select Salesman --</option>
+                  {staff.map((s) => (
+                    <option key={s._id} value={s._id}>{s.name} {s.role ? `(${s.role})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={formData.status}
+                  onChange={(e) =>
+                    setFormData({ ...formData, status: e.target.value })
+                  }
+                >
+                  <option value="draft">Draft</option>
+                  <option value="issued">Credit (Udhar)</option>
+                  <option value="paid">Cash</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+              
+              {/* Agent / Broker Details */}
+              <div className="md:col-span-2 flex gap-4 bg-orange-50 p-3 rounded-lg border border-orange-100 mt-2">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-orange-800 uppercase tracking-wide mb-1">Broker / Agent / Plumber Name</label>
+                  <input type="text" placeholder="e.g. Ramesh Painter" className="w-full px-3 py-2 border border-orange-200 rounded focus:outline-none focus:ring-2 focus:ring-orange-500" value={formData.agentName} onChange={(e) => setFormData({ ...formData, agentName: e.target.value })} />
+                </div>
+                <div className="w-1/3">
+                  <label className="block text-xs font-bold text-orange-800 uppercase tracking-wide mb-1">Agent Commission (₹)</label>
+                  <input type="number" placeholder="0.00" className="w-full px-3 py-2 border border-orange-200 rounded focus:outline-none focus:ring-2 focus:ring-orange-500 text-right" value={formData.agentCommission || ""} onChange={(e) => setFormData({ ...formData, agentCommission: parseFloat(e.target.value) || 0 })} />
+                </div>
+              </div>
+            </div>
+
+            {/* Add Items Section */}
+            <div className="border-t pt-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-gray-800">Product Details</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowScanner(!showScanner)}
+                  className="flex items-center gap-2 text-blue-600 hover:bg-blue-50 px-3 py-1 rounded-lg transition"
+                >
+                  <Scan size={18} />
+                  {showScanner ? "Close Scanner" : "Scan Product"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSchemeModal(true)}
+                  className="flex items-center gap-2 text-purple-600 hover:bg-purple-50 px-3 py-1 rounded-lg transition ml-2"
+                >
+                  <Gift size={18} /> Apply Scheme
+                </button>
+              </div>
+
+              {showScanner && (
+                <div className="mb-4">
+                  <BarcodeScanner onScanSuccess={handleScanSuccess} onScanFailure={(err) => console.log(err)} />
+                </div>
+              )}
+
+              <SchemeApplyModel 
+                isOpen={showSchemeModal} 
+                onClose={() => setShowSchemeModal(false)}
+                cartItems={formData.items}
+                onApply={handleSchemeApplied}
+              />
+
+              {/* Smart Unfound Barcode Modal */}
+              {showUnfoundModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 relative">
+                    <button onClick={() => setShowUnfoundModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-700">
+                      <X size={24} />
+                    </button>
+                    <h2 className="text-xl font-bold text-gray-900 mb-1">Barcode Not Found!</h2>
+                    <p className="text-gray-600 mb-4 text-sm">Scanned Code: <span className="font-mono bg-gray-100 border border-gray-200 px-2 py-1 rounded text-blue-600">{unfoundBarcode}</span></p>
+
+                    <div className="flex border-b border-gray-200 mb-5">
+                      <button
+                        type="button"
+                        className={`flex-1 py-2 font-medium text-sm transition ${unfoundAction === 'link' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                        onClick={() => setUnfoundAction('link')}
+                      >
+                        Link to Existing
+                      </button>
+                      <button
+                        type="button"
+                        className={`flex-1 py-2 font-medium text-sm transition ${unfoundAction === 'create' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                        onClick={() => setUnfoundAction('create')}
+                      >
+                        Create New
+                      </button>
+                    </div>
+
+                    {unfoundAction === 'link' ? (
+                      <div className="space-y-4">
+                        <input
+                          type="text"
+                          placeholder="Search your inventory (e.g. Parle G)..."
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                          value={unfoundSearchQuery}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setUnfoundSearchQuery(val);
+                            if (val.length > 0) setUnfoundFilteredInventory(inventory.filter(p => p.name.toLowerCase().includes(val.toLowerCase())));
+                            else setUnfoundFilteredInventory([]);
+                          }}
+                        />
+                        {unfoundFilteredInventory.length > 0 && (
+                          <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto bg-gray-50">
+                            {unfoundFilteredInventory.map(item => (
+                              <div key={item._id} onClick={() => { setUnfoundSelectedProduct(item); setUnfoundSearchQuery(item.name); setUnfoundFilteredInventory([]); }} className={`p-3 border-b border-gray-200 last:border-0 cursor-pointer hover:bg-blue-50 transition ${unfoundSelectedProduct?._id === item._id ? 'bg-blue-100 text-blue-800 font-medium' : 'text-gray-700'}`}>
+                                {item.name} <span className="text-xs text-gray-500 float-right">₹{item.sellingPrice || item.price}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <button type="button" onClick={handleLinkProduct} disabled={isSavingProduct || !unfoundSelectedProduct} className="w-full bg-blue-600 text-white font-bold py-2.5 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition">
+                          {isSavingProduct ? "Linking..." : "Link Barcode & Add to Bill"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <input type="text" placeholder="Product Name" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={newProdData.name} onChange={e => setNewProdData({...newProdData, name: e.target.value})} />
+                        <input type="number" placeholder="Selling Price (₹)" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={newProdData.rate} onChange={e => setNewProdData({...newProdData, rate: e.target.value})} />
+                        <input type="text" placeholder="Unit (pcs, kg, ltr...)" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={newProdData.unit} onChange={e => setNewProdData({...newProdData, unit: e.target.value})} />
+                        <button type="button" onClick={handleCreateProduct} disabled={isSavingProduct || !newProdData.name || !newProdData.rate} className="w-full bg-green-600 text-white font-bold py-2.5 rounded-lg hover:bg-green-700 disabled:bg-gray-400 transition">
+                          {isSavingProduct ? "Saving..." : "Save Product & Add to Bill"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Handheld Scanner Input */}
+              <div className="mb-4 bg-blue-50 p-3 rounded-lg border border-blue-100">
+                <label className="text-xs font-bold text-blue-800 mb-1 block uppercase tracking-wide">⚡ Supermarket Quick Scan</label>
+                <input
+                  type="text"
+                  placeholder="Click here & scan barcode with handheld scanner..."
+                  className="w-full px-3 py-2 border border-blue-300 bg-white rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onKeyDown={handleHandheldScan}
                 />
               </div>
 
@@ -1245,8 +1457,18 @@ export default function BillingPage() {
                         {business.isPharma && (
                           <button type="button" onClick={() => setShowPharmaModal(true)} className="text-xs text-teal-700 hover:text-teal-900 bg-teal-50 px-2 py-0.5 rounded border border-teal-300 font-bold flex items-center gap-1">💊 Batch & Expiry</button>
                         )}
+                        {business.isGamezone && (
+                          <button type="button" onClick={() => setShowGamezoneModal(true)} className="text-xs text-purple-700 hover:text-purple-900 bg-purple-50 px-2 py-0.5 rounded border border-purple-300 font-bold flex items-center gap-1">🎮 Gamezone Timers & Tokens</button>
+                        )}
                         {business.isRestaurant && (
-                          <button type="button" onClick={() => setShowRestaurantModal(true)} className="text-xs text-amber-700 hover:text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-300 font-bold flex items-center gap-1">🍽️ Table KOT</button>
+                          <>
+                            <button type="button" onClick={() => setShowRestaurantModal(true)} className="text-xs text-amber-700 hover:text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-300 font-bold flex items-center gap-1">🍽️ Table KOT</button>
+                            <button type="button" onClick={() => setShowPlannerModal(true)} className="text-xs text-emerald-700 hover:text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300 font-bold flex items-center gap-1">🥘 Party / Event Planner</button>
+                            <button type="button" onClick={() => setShowPrepPredictionModal(true)} className="text-xs text-orange-700 hover:text-orange-900 bg-orange-50 px-2 py-0.5 rounded border border-orange-300 font-bold flex items-center gap-1">🤖 AI Prep Prediction</button>
+                          </>
+                        )}
+                        {business.isBanquet && (
+                          <button type="button" onClick={() => setShowBanquetModal(true)} className="text-xs text-indigo-700 hover:text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-300 font-bold flex items-center gap-1">🏰 Banquet & Catering</button>
                         )}
                         {business.isElectronics && (
                           <>
@@ -1254,12 +1476,6 @@ export default function BillingPage() {
                             <button type="button" onClick={() => setShowWireModal(true)} className="text-xs text-amber-700 hover:text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-300 font-bold flex items-center gap-1">⚡ Wire & Electricals</button>
                           </>
                         )}
-                        <button type="button" onClick={() => setShowQuickProductModal(true)} className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"><Plus size={12}/> Advanced Tatkal</button>
-                      </div>
-                    </div>
-                    <input
-                      id="item-name"
-                      list="inventory-options"
                       type="text"
                       placeholder="Product Name"
                       className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1507,7 +1723,58 @@ export default function BillingPage() {
                           </td>
                           <td className="px-4 py-2 text-gray-600 text-sm">{item.category || '-'}</td>
                           <td className="px-4 py-2 text-center">{item.quantity} {item.unit || 'pcs'}</td>
-                          <td className="px-4 py-2 text-center">₹{(item.rate ?? item.price ?? 0).toFixed(2)}</td>
+                          <td className="px-4 py-2 text-center">
+  <div className="flex flex-col items-center gap-1">
+    <input
+      type="number"
+      value={item.rate ?? 0}
+      onChange={(e) => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)}
+      className="w-24 px-1.5 py-0.5 text-center font-bold text-gray-900 border rounded focus:ring-1 focus:ring-blue-500 text-xs"
+    />
+    {(() => {
+      const matchedProd = inventory.find(p => p._id === item.productId || p.name?.toLowerCase() === item.name?.toLowerCase());
+      if (!matchedProd) return null;
+      const rateA = matchedProd.sellingPrice || matchedProd.price || 0;
+      const rateB = matchedProd.wholesalePrice || rateA;
+      const rateC = matchedProd.dealerPrice || matchedProd.specialPrice || rateB;
+
+      return (
+        <div className="flex items-center gap-1 mt-0.5">
+          <button
+            type="button"
+            onClick={() => handleItemChange(item.id, 'rate', rateA)}
+            className={`px-1.5 py-0.5 text-[10px] font-bold rounded border transition ${
+              item.rate === rateA ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-300'
+            }`}
+            title={`Rate A: ₹${rateA}`}
+          >
+            A
+          </button>
+          <button
+            type="button"
+            onClick={() => handleItemChange(item.id, 'rate', rateB)}
+            className={`px-1.5 py-0.5 text-[10px] font-bold rounded border transition ${
+              item.rate === rateB ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-300'
+            }`}
+            title={`Rate B: ₹${rateB}`}
+          >
+            B
+          </button>
+          <button
+            type="button"
+            onClick={() => handleItemChange(item.id, 'rate', rateC)}
+            className={`px-1.5 py-0.5 text-[10px] font-bold rounded border transition ${
+              item.rate === rateC ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-300'
+            }`}
+            title={`Rate C: ₹${rateC}`}
+          >
+            C
+          </button>
+        </div>
+      );
+    })()}
+  </div>
+</td>
                           <td className="px-4 py-2 text-center">{item.hsnCode || '-'}</td>
                           <td className="px-4 py-2 text-center font-semibold">₹{(item.total ?? (item.quantity * (item.rate ?? item.price ?? 0))).toFixed(2)}</td>
                           <td className="px-4 py-2 text-center">

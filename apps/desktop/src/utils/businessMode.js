@@ -50,7 +50,39 @@ export const getBusinessMode = (selectedCompany) => {
     ind.includes('kitchen') ||
     ind.includes('dhaba') ||
     ind.includes('bakery') ||
-    ind.includes('sweet');
+    ind.includes('sweet') ||
+    ind.includes('fast food');
+
+  const isCafe =
+    ind.includes('cafe') ||
+    ind.includes('coffee') ||
+    ind.includes('bakery') ||
+    ind.includes('tea') ||
+    ind.includes('bistro') ||
+    ind.includes('lounge');
+
+  const isGamezone =
+    ind.includes('game') ||
+    ind.includes('arcade') ||
+    ind.includes('play') ||
+    ind.includes('snooker') ||
+    ind.includes('pool') ||
+    ind.includes('bowling') ||
+    ind.includes('vr') ||
+    ind.includes('ps5') ||
+    ind.includes('gaming') ||
+    ind.includes('trampoline') ||
+    ind.includes('amusement') ||
+    ind.includes('soft play');
+
+  const isBanquet =
+    ind.includes('banquet') ||
+    ind.includes('event') ||
+    ind.includes('marriage') ||
+    ind.includes('catering') ||
+    ind.includes('lawn') ||
+    ind.includes('party hall') ||
+    ind.includes('function');
 
   const isElectronics =
     ind.includes('electronic') ||
@@ -80,10 +112,13 @@ export const getBusinessMode = (selectedCompany) => {
     isGarments,
     isHardware,
     isPharma,
-    isRestaurant,
+    isRestaurant: isRestaurant || isCafe,
+    isCafe,
+    isGamezone,
+    isBanquet,
     isElectronics,
     isService,
     isKirana,
-    isGeneral: !isGarments && !isHardware && !isPharma && !isRestaurant && !isElectronics && !isService && !isKirana,
+    isGeneral: !isGarments && !isHardware && !isPharma && !isRestaurant && !isGamezone && !isBanquet && !isElectronics && !isService && !isKirana,
   };
 };
