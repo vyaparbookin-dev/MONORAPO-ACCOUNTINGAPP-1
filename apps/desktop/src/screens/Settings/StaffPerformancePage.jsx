@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { TrendingUp, Users, Award, DollarSign } from "lucide-react";
+import { TrendingUp, Users, Award, DollarSign, Star, HeartHandshake } from "lucide-react";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
 
@@ -65,6 +65,10 @@ export default function StaffPerformancePage() {
           <div className="p-3 bg-orange-100 text-orange-600 rounded-lg"><Award size={24} /></div>
           <div><p className="text-sm text-gray-500 font-medium">Top Performer</p><p className="text-lg font-bold text-gray-900">{kpis.topPerformer}</p></div>
         </div>
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-amber-100 flex items-center gap-4">
+          <div className="p-3 bg-amber-100 text-amber-600 rounded-lg"><Star size={24} className="fill-amber-500 text-amber-500" /></div>
+          <div><p className="text-sm text-gray-500 font-medium">Avg Customer CSAT</p><p className="text-2xl font-black text-amber-600">4.8 / 5 ⭐</p></div>
+        </div>
       </div>
 
       {!loading && staffData.length > 0 && <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -114,6 +118,7 @@ export default function StaffPerformancePage() {
               <th className="p-4 font-semibold text-gray-600 text-center">Bills Created</th>
               <th className="p-4 font-semibold text-gray-600 text-right">Revenue Generated</th>
               <th className="p-4 font-semibold text-gray-600 text-center">Target Achieved</th>
+              <th className="p-4 font-semibold text-gray-600 text-center">Customer Rating (CSAT)</th>
             </tr>
           </thead>
           <tbody>
