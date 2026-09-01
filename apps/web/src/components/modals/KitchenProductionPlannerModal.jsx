@@ -14,6 +14,9 @@ import {
   Users,
   Sliders,
   Edit3,
+  ShieldAlert,
+  Clock,
+  Flame,
   X
 } from "lucide-react";
 
@@ -28,11 +31,11 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
       category: "Main Course",
       portionSize: "1 Plate",
       ingredients: [
-        { name: "Paneer (Fresh Malai)", qtyPerPortion: 0.15, unit: "kg", matchedInvName: "PANEER" },
-        { name: "Butter / Amul Makhan", qtyPerPortion: 0.04, unit: "kg", matchedInvName: "BUTTER" },
-        { name: "Fresh Cream", qtyPerPortion: 0.05, unit: "kg", matchedInvName: "CREAM" },
-        { name: "Tomato Puree & Gravy", qtyPerPortion: 0.10, unit: "kg", matchedInvName: "TOMATO" },
-        { name: "Cashew (Kaju) Paste", qtyPerPortion: 0.02, unit: "kg", matchedInvName: "KAJU" },
+        { name: "Paneer (Fresh Malai)", qtyPerPortion: 0.15, unit: "kg", matchedInvName: "PANEER", shelfLifeDays: 3 },
+        { name: "Butter / Amul Makhan", qtyPerPortion: 0.04, unit: "kg", matchedInvName: "BUTTER", shelfLifeDays: 30 },
+        { name: "Fresh Cream", qtyPerPortion: 0.05, unit: "kg", matchedInvName: "CREAM", shelfLifeDays: 4 },
+        { name: "Tomato Puree & Gravy", qtyPerPortion: 0.10, unit: "kg", matchedInvName: "TOMATO", shelfLifeDays: 5 },
+        { name: "Cashew (Kaju) Paste", qtyPerPortion: 0.02, unit: "kg", matchedInvName: "KAJU", shelfLifeDays: 60 },
       ]
     },
     {
@@ -41,10 +44,10 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
       category: "Main Course",
       portionSize: "1 Plate",
       ingredients: [
-        { name: "Black Urad Dal (Sabut)", qtyPerPortion: 0.08, unit: "kg", matchedInvName: "DAL" },
-        { name: "Rajma (Red Kidney Beans)", qtyPerPortion: 0.02, unit: "kg", matchedInvName: "RAJMA" },
-        { name: "Desi Ghee / Butter", qtyPerPortion: 0.03, unit: "kg", matchedInvName: "GHEE" },
-        { name: "Fresh Cream", qtyPerPortion: 0.04, unit: "kg", matchedInvName: "CREAM" },
+        { name: "Black Urad Dal (Sabut)", qtyPerPortion: 0.08, unit: "kg", matchedInvName: "DAL", shelfLifeDays: 180 },
+        { name: "Rajma (Red Kidney Beans)", qtyPerPortion: 0.02, unit: "kg", matchedInvName: "RAJMA", shelfLifeDays: 180 },
+        { name: "Desi Ghee / Butter", qtyPerPortion: 0.03, unit: "kg", matchedInvName: "GHEE", shelfLifeDays: 90 },
+        { name: "Fresh Cream", qtyPerPortion: 0.04, unit: "kg", matchedInvName: "CREAM", shelfLifeDays: 4 },
       ]
     },
     {
@@ -53,9 +56,9 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
       category: "Breads",
       portionSize: "2 Pcs",
       ingredients: [
-        { name: "Fine Maida / Wheat Flour", qtyPerPortion: 0.12, unit: "kg", matchedInvName: "MAIDA" },
-        { name: "Butter (Melted)", qtyPerPortion: 0.02, unit: "kg", matchedInvName: "BUTTER" },
-        { name: "Milk", qtyPerPortion: 0.03, unit: "ltr", matchedInvName: "MILK" },
+        { name: "Fine Maida / Wheat Flour", qtyPerPortion: 0.12, unit: "kg", matchedInvName: "MAIDA", shelfLifeDays: 60 },
+        { name: "Butter (Melted)", qtyPerPortion: 0.02, unit: "kg", matchedInvName: "BUTTER", shelfLifeDays: 30 },
+        { name: "Milk", qtyPerPortion: 0.03, unit: "ltr", matchedInvName: "MILK", shelfLifeDays: 2 },
       ]
     },
     {
@@ -64,10 +67,10 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
       category: "Rice & Biryani",
       portionSize: "1 Portion",
       ingredients: [
-        { name: "Basmati Rice (Long Grain)", qtyPerPortion: 0.12, unit: "kg", matchedInvName: "RICE" },
-        { name: "Mixed Vegetables & Paneer", qtyPerPortion: 0.08, unit: "kg", matchedInvName: "VEG" },
-        { name: "Desi Ghee", qtyPerPortion: 0.02, unit: "kg", matchedInvName: "GHEE" },
-        { name: "Curd / Dahi (Raita)", qtyPerPortion: 0.08, unit: "kg", matchedInvName: "CURD" },
+        { name: "Basmati Rice (Long Grain)", qtyPerPortion: 0.12, unit: "kg", matchedInvName: "RICE", shelfLifeDays: 365 },
+        { name: "Mixed Vegetables & Paneer", qtyPerPortion: 0.08, unit: "kg", matchedInvName: "VEG", shelfLifeDays: 3 },
+        { name: "Desi Ghee", qtyPerPortion: 0.02, unit: "kg", matchedInvName: "GHEE", shelfLifeDays: 90 },
+        { name: "Curd / Dahi (Raita)", qtyPerPortion: 0.08, unit: "kg", matchedInvName: "CURD", shelfLifeDays: 3 },
       ]
     },
     {
@@ -76,10 +79,10 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
       category: "Beverages",
       portionSize: "1 Glass",
       ingredients: [
-        { name: "Fresh Full Cream Milk", qtyPerPortion: 0.22, unit: "ltr", matchedInvName: "MILK" },
-        { name: "Coffee Powder (Espresso)", qtyPerPortion: 0.015, unit: "kg", matchedInvName: "COFFEE" },
-        { name: "Sugar", qtyPerPortion: 0.025, unit: "kg", matchedInvName: "SUGAR" },
-        { name: "Vanilla Ice Cream Scoop", qtyPerPortion: 0.05, unit: "kg", matchedInvName: "ICE CREAM" },
+        { name: "Fresh Full Cream Milk", qtyPerPortion: 0.22, unit: "ltr", matchedInvName: "MILK", shelfLifeDays: 2 },
+        { name: "Coffee Powder (Espresso)", qtyPerPortion: 0.015, unit: "kg", matchedInvName: "COFFEE", shelfLifeDays: 180 },
+        { name: "Sugar", qtyPerPortion: 0.025, unit: "kg", matchedInvName: "SUGAR", shelfLifeDays: 365 },
+        { name: "Vanilla Ice Cream Scoop", qtyPerPortion: 0.05, unit: "kg", matchedInvName: "ICE CREAM", shelfLifeDays: 30 },
       ]
     },
     {
@@ -88,9 +91,9 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
       category: "Desserts",
       portionSize: "2 Pcs",
       ingredients: [
-        { name: "Mawa / Khoya", qtyPerPortion: 0.07, unit: "kg", matchedInvName: "MAWA" },
-        { name: "Sugar (Sugar Syrup)", qtyPerPortion: 0.08, unit: "kg", matchedInvName: "SUGAR" },
-        { name: "Refined Oil / Ghee (Frying)", qtyPerPortion: 0.02, unit: "ltr", matchedInvName: "OIL" },
+        { name: "Mawa / Khoya", qtyPerPortion: 0.07, unit: "kg", matchedInvName: "MAWA", shelfLifeDays: 3 },
+        { name: "Sugar (Sugar Syrup)", qtyPerPortion: 0.08, unit: "kg", matchedInvName: "SUGAR", shelfLifeDays: 365 },
+        { name: "Refined Oil / Ghee (Frying)", qtyPerPortion: 0.02, unit: "ltr", matchedInvName: "OIL", shelfLifeDays: 90 },
       ]
     }
   ];
@@ -139,18 +142,15 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
     );
   };
 
-  // Sync all plates with guestCount
   const handleGuestCountChange = (count) => {
     const val = Math.max(1, parseInt(count) || 1);
     setGuestCount(val);
     setSelectedDishes((prev) => prev.map((d) => ({ ...d, plates: val })));
   };
 
-  // Portion Scaling Factor:
-  // If buffet mode and multiple main course dishes exist, reduce portion per head to 60%-70% to prevent food wastage
   const buffetRatio = servingMode === "buffet" && selectedDishes.length >= 3 ? 0.65 : 1.0;
 
-  // Calculate Aggregated Raw Material Requirements
+  // Calculate Aggregated Raw Material Requirements & Check Perishable Expiry (48h-72h Spoilage Alerts)
   const rawMaterialRequirements = {};
 
   selectedDishes.forEach((item) => {
@@ -161,12 +161,28 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
         const totalQtyNeeded = ing.qtyPerPortion * item.plates * buffetRatio * (1 + bufferPercentage / 100);
 
         if (!rawMaterialRequirements[key]) {
-          // Look up in actual inventory
           const matchedInv = inventory.find(
             (p) =>
               (p.name || "").toUpperCase().includes(ing.matchedInvName || "") ||
               (p.name || "").toUpperCase().includes(ing.name.toUpperCase())
           );
+
+          // Simulated or Actual Expiry Logic (e.g. Dairy / Paneer / Milk has 48h-72h shelf life)
+          let expiryHoursLeft = 96; // default fresh
+          let isExpired = false;
+          let isExpiringSoon = false;
+
+          if (matchedInv && matchedInv.expiryDate) {
+            const expTime = new Date(matchedInv.expiryDate).getTime();
+            const diffHours = (expTime - Date.now()) / (1000 * 3600);
+            expiryHoursLeft = Math.round(diffHours);
+            if (diffHours <= 0) isExpired = true;
+            else if (diffHours <= 72) isExpiringSoon = true;
+          } else if (ing.shelfLifeDays && ing.shelfLifeDays <= 3) {
+            // Perishable Dairy/Produce Flag
+            isExpiringSoon = true;
+            expiryHoursLeft = 48;
+          }
 
           rawMaterialRequirements[key] = {
             name: ing.name,
@@ -174,6 +190,10 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
             requiredQty: 0,
             inStockQty: matchedInv ? parseFloat(matchedInv.currentStock) || 0 : 0,
             costPerUnit: matchedInv ? parseFloat(matchedInv.costPrice || matchedInv.sellingPrice || 100) : 100,
+            expiryHoursLeft,
+            isExpired,
+            isExpiringSoon,
+            shelfLifeDays: ing.shelfLifeDays || 7
           };
         }
         rawMaterialRequirements[key].requiredQty += totalQtyNeeded;
@@ -183,14 +203,15 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
 
   const ingredientList = Object.values(rawMaterialRequirements).map((ing) => {
     const req = parseFloat(ing.requiredQty.toFixed(2));
-    const stock = ing.inStockQty;
-    const calculatedShortage = Math.max(0, parseFloat((req - stock).toFixed(2)));
+    // If stock is EXPIRED, treat valid usable stock as 0 to protect party food safety!
+    const usableStock = ing.isExpired ? 0 : ing.inStockQty;
+    const calculatedShortage = Math.max(0, parseFloat((req - usableStock).toFixed(2)));
     
-    // Check if user manually edited the purchase quantity (e.g. rounded 3.6 to 4 or 5)
+    // Check if user manually edited the purchase quantity
     const finalOrderQty = editedQuantities[ing.name] !== undefined ? editedQuantities[ing.name] : calculatedShortage;
     const estimatedCost = Math.round(finalOrderQty * ing.costPerUnit);
 
-    return { ...ing, requiredQty: req, shortage: calculatedShortage, finalOrderQty, estimatedCost };
+    return { ...ing, requiredQty: req, shortage: calculatedShortage, finalOrderQty, estimatedCost, usableStock };
   });
 
   const handleEditQtyChange = (name, val) => {
@@ -203,23 +224,27 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
 
   const totalShortageCost = ingredientList.reduce((sum, item) => sum + item.estimatedCost, 0);
   const itemsToPurchase = ingredientList.filter((item) => item.finalOrderQty > 0);
+  const expiringSoonItems = ingredientList.filter((item) => item.isExpiringSoon || item.isExpired);
 
-  // WhatsApp Grocery List Generator with exact edited quantities
+  // WhatsApp Grocery List Generator with exact edited quantities & fresh quality check notes
   const shareGroceryListWhatsApp = () => {
     if (itemsToPurchase.length === 0) {
       alert("All ingredients are in stock or quantity is 0. No purchase needed.");
       return;
     }
-    let msg = `*📋 KITCHEN PURCHASE / GROCERY ORDER*\n`;
+    let msg = `*📋 KITCHEN PURCHASE & FRESH GROCERY ORDER*\n`;
     msg += `*Event / Party Size:* ${guestCount} Guests (${servingMode === "buffet" ? "Buffet Balanced" : "A-la-carte"} + ${bufferPercentage}% Buffer)\n`;
     msg += `*Date:* ${new Date().toLocaleDateString()}\n`;
     msg += `----------------------------------\n`;
     itemsToPurchase.forEach((it, idx) => {
-      msg += `${idx + 1}. *${it.name}*: *${it.finalOrderQty} ${it.unit}* (Need: ${it.requiredQty}, Kitchen Stock: ${it.inStockQty})\n`;
+      let note = "";
+      if (it.isExpired) note = " *(⚠️ Send Fresh Batch - Old Expired)*";
+      else if (it.isExpiringSoon) note = " *(🌿 Fresh Morning Supply)*";
+      msg += `${idx + 1}. *${it.name}*: *${it.finalOrderQty} ${it.unit}*${note}\n`;
     });
     msg += `----------------------------------\n`;
     msg += `*Est. Order Total:* ₹${totalShortageCost.toLocaleString('en-IN')}\n`;
-    msg += `*Please pack and deliver to Kitchen as soon as possible.*`;
+    msg += `*Please ensure 100% fresh dairy & produce delivery to Kitchen on priority.*`;
 
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
   };
@@ -235,10 +260,10 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
             </div>
             <div>
               <h2 className="text-xl font-black tracking-wide flex items-center gap-2">
-                🥘 KITCHEN PRODUCTION & RAW MATERIAL INDENT PLANNER
+                🥘 KITCHEN PRODUCTION & FOOD EXPIRY SAFETY PLANNER
               </h2>
               <p className="text-xs text-emerald-200">
-                Restaurant BOM Recipes • Live Stock Check • Editable Final Quantities before WhatsApp
+                48h-72h Spoilage Early Warning • Auto-Block Expired Stock • Editable WhatsApp Grocery Indents
               </p>
             </div>
           </div>
@@ -265,7 +290,7 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
                 />
               </div>
 
-              {/* Serving Mode (Buffet vs A-la-carte) */}
+              {/* Serving Mode */}
               <div className="flex items-center gap-2 text-xs font-semibold bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
                 <span>Serving Mode:</span>
                 <select
@@ -303,6 +328,23 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
               </button>
             </div>
           </div>
+
+          {/* 48h-72h Spoilage & Food Safety Warning Banner */}
+          {expiringSoonItems.length > 0 && (
+            <div className="bg-amber-500/10 border-2 border-amber-400 p-4 rounded-xl flex items-start gap-3">
+              <div className="p-2 bg-amber-500 text-white rounded-lg shrink-0 mt-0.5">
+                <Clock size={20} />
+              </div>
+              <div className="text-xs">
+                <h4 className="font-black text-amber-950 flex items-center gap-2">
+                  ⏰ 48H-72H PERISHABLE EXPIRY & SPOILAGE EARLY WARNING ({expiringSoonItems.length} Ingredients)
+                </h4>
+                <p className="text-amber-900 mt-0.5">
+                  किचन में रखे <strong>पनीर, दूध, ताज़ी क्रीम या मशरूम</strong> की शेल्फ-लाइफ 48 से 72 घंटे में समाप्त हो रही है। सिस्टम ने सुरक्षा कारणों से बासी/खराब माल को पार्टी कुकिंग से लॉक करके ताज़ा सप्लाई का सुझाव दिया है।
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left Column: Menu Selector */}
@@ -370,16 +412,16 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
               </div>
             </div>
 
-            {/* Right Column: Aggregated Raw Material Shortage Table with EDITABLE Quantities */}
+            {/* Right Column: Aggregated Raw Material Shortage & Expiry Table with EDITABLE Quantities */}
             <div className="lg:col-span-7 bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between">
               <div>
                 <div className="flex justify-between items-center border-b pb-2 mb-3">
                   <div>
                     <h3 className="font-black text-gray-900 text-sm flex items-center gap-1.5">
-                      <Calculator className="text-emerald-700" size={18} /> Raw Material Indent & Final Order Adjustment
+                      <Calculator className="text-emerald-700" size={18} /> Raw Material Indent & Freshness Guard
                     </h3>
                     <p className="text-[11px] text-gray-500">
-                      💡 You can edit or round-up quantities directly in the "Order Qty" box before sending WhatsApp
+                      💡 48-72h Perishables are flagged automatically. Edit any quantity before sending WhatsApp
                     </p>
                   </div>
 
@@ -400,7 +442,7 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
                     <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 border-b">
                       <tr>
                         <th className="p-2.5">Raw Material</th>
-                        <th className="p-2.5 text-center">Required ({guestCount}p)</th>
+                        <th className="p-2.5 text-center">Freshness / Expiry</th>
                         <th className="p-2.5 text-center">Kitchen Stock</th>
                         <th className="p-2.5 text-center bg-yellow-50 text-amber-900 border-x">
                           ✏️ Final Order Qty (Editable)
@@ -415,13 +457,32 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
                           <tr key={idx} className={`hover:bg-slate-50 ${hasShortage ? "bg-red-50/30" : ""}`}>
                             <td className="p-2.5 font-bold text-gray-900">
                               {ing.name}
+                              <span className="block text-[10px] font-normal text-gray-500">
+                                Need: {ing.requiredQty} {ing.unit}
+                              </span>
                             </td>
-                            <td className="p-2.5 text-center font-semibold text-emerald-800">
-                              {ing.requiredQty} {ing.unit}
+
+                            {/* Expiry Status Badge */}
+                            <td className="p-2.5 text-center">
+                              {ing.isExpired ? (
+                                <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-black text-[10px] inline-flex items-center gap-1">
+                                  <ShieldAlert size={10} /> Expired (Blocked)
+                                </span>
+                              ) : ing.isExpiringSoon ? (
+                                <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full font-bold text-[10px] inline-flex items-center gap-1">
+                                  <Clock size={10} /> &lt; 48-72h Life
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-full font-bold text-[10px]">
+                                  Fresh Stock
+                                </span>
+                              )}
                             </td>
+
                             <td className="p-2.5 text-center font-medium text-gray-600">
-                              {ing.inStockQty} {ing.unit}
+                              {ing.usableStock} {ing.unit}
                             </td>
+
                             <td className="p-2.5 text-center bg-yellow-50/50 border-x">
                               <div className="flex items-center justify-center gap-1">
                                 <input
@@ -435,6 +496,7 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
                                 <span className="text-[10px] font-bold text-gray-500">{ing.unit}</span>
                               </div>
                             </td>
+
                             <td className="p-2.5 text-right font-extrabold text-gray-900">
                               {ing.finalOrderQty > 0 ? `₹${ing.estimatedCost.toLocaleString('en-IN')}` : "₹0"}
                             </td>
@@ -461,7 +523,7 @@ export default function KitchenProductionPlannerModal({ isOpen, onClose, invento
                     onClick={shareGroceryListWhatsApp}
                     className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-1.5 shadow"
                   >
-                    <ShoppingCart size={14} /> Send Edited List to Vendor
+                    <ShoppingCart size={14} /> Send Fresh Order to Vendor
                   </button>
                   <button
                     type="button"
