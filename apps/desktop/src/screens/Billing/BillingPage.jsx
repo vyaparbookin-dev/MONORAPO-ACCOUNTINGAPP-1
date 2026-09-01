@@ -109,6 +109,7 @@ export default function BillingPage() {
   const [showRestaurantModal, setShowRestaurantModal] = useState(false);
   const [showRecipeModal, setShowRecipeModal] = useState(false);
   const [showBanquetModal, setShowBanquetModal] = useState(false);
+  const [showAggregatorModal, setShowAggregatorModal] = useState(false);
   const [showGamezoneModal, setShowGamezoneModal] = useState(false);
   const [showPlannerModal, setShowPlannerModal] = useState(false);
   const [showPrepPredictionModal, setShowPrepPredictionModal] = useState(false);
@@ -1270,6 +1271,7 @@ export default function BillingPage() {
                             <button type="button" onClick={() => setShowRestaurantModal(true)} className="text-xs text-amber-700 hover:text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-300 font-bold flex items-center gap-1">🍽️ Table KOT</button>
                             <button type="button" onClick={() => setShowPlannerModal(true)} className="text-xs text-emerald-700 hover:text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300 font-bold flex items-center gap-1">🥘 Party / Event Planner</button>
                             <button type="button" onClick={() => setShowPrepPredictionModal(true)} className="text-xs text-orange-700 hover:text-orange-900 bg-orange-50 px-2 py-0.5 rounded border border-orange-300 font-bold flex items-center gap-1">🤖 AI Prep Prediction</button>
+                            <button type="button" onClick={() => setShowAggregatorModal(true)} className="text-xs text-orange-700 hover:text-orange-900 bg-orange-50 px-2 py-0.5 rounded border border-orange-300 font-bold flex items-center gap-1">🛵 Swiggy/Zomato Payout</button>
                           </>
                         )}
                         {business.isBanquet && (
