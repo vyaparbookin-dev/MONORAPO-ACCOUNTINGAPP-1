@@ -7,6 +7,10 @@ import { SecurityTracker } from "./components/SecurityTracker";
 import DashboardLayout from "./components/DashboardLayout";
 import Loader from "./components/Loader"; // Assuming a loader component exists
 
+// Landing & Gamezone
+const LandingPage = React.lazy(() => import("./screens/Landing/LandingPage"));
+const GamezoneOperationsPage = React.lazy(() => import("./screens/gamezone/GamezoneOperationsPage"));
+
 // Auth Screens
 const LoginScreen = React.lazy(() => import("./screens/Auth/LoginScreen"));
 const RegisterScreen = React.lazy(() => import("./screens/Auth/RegisterScreen"));
@@ -201,6 +205,8 @@ const App = () => {
               <Suspense fallback={<Loader />}>
                 <Routes>
                   {/* Auth Routes - No Layout */}
+                  <Route path="/landing" element={<LandingPage />} />
+                  <Route path="/welcome" element={<LandingPage />} />
                   <Route path="/login" element={<LoginScreen />} />
                   <Route path="/register" element={<RegisterScreen />} />
                   <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
@@ -223,7 +229,8 @@ const App = () => {
                     <Route path="/fast-pos" element={<FastPOSPage />} />
 
                     {/* Billing */}
-                    <Route path="/billing" element={<BillingPage />} />
+                    <Route path="/gamezone-operations" element={<GamezoneOperationsPage />} />
+            <Route path="/billing" element={<BillingPage />} />
                     <Route path="/billing/list" element={<BillListPage />} />
                     <Route path="/billing/import" element={<ImportBillPage />} />
                     <Route path="/billing/parse" element={<ParseBillFromImage />} />
