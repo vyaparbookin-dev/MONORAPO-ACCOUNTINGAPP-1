@@ -41,6 +41,24 @@ import { getBusinessMode } from "../../utils/businessMode";
 import { useCompany } from "../../contexts/CompanyContext";
 
 export default function BillingPage() {
+
+  // Smart Dual-IMEI & Serial Number Auto-Split Parser
+  const parseSmartImeiString = (inputStr) => {
+    if (!inputStr) return { imei1: "", imei2: "", serial: "" };
+    const text = String(inputStr).trim();
+    
+    // Check if contains IMEI1/IMEI2 or delimited by / or , or ; or newline
+    const numbers = text.match(/\b\d{14,16}\b/g) || [];
+    const imei1 = numbers[0] || "";
+    const imei2 = numbers[1] || "";
+    
+    // Look for SN or Serial
+    const snMatch = text.match(/(?:SN|S\/N|Serial)[:\s]+([A-Za-z0-9]+)/i);
+    const serial = snMatch ? snMatch[1] : (numbers.length > 2 ? numbers[2] : "");
+    
+    return { imei1, imei2, serial, raw: text };
+  };
+
   const navigate = useNavigate();
   const [bills, setBills] = useState([]);
   const [filteredBills, setFilteredBills] = useState([]);

@@ -11,6 +11,37 @@ const TABLES_LIST = [
   { id: "SW", name: "Swiggy / Zomato", zone: "Delivery", capacity: 1, status: "vacant" },
 ];
 
+
+  // Web Audio API Kitchen Bell / Chime Synthesizer
+  const playKitchenChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.type = "sine";
+      // Dual tone ding-dong (880Hz -> 1320Hz)
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.exponentialRampToValueAtTime(1320, now + 0.1);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.3);
+      
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.start(now);
+      osc.stop(now + 0.8);
+    } catch (e) {
+      console.warn("Audio chime error:", e);
+    }
+  };
+
 export default function RestaurantKotModal({ isOpen, onClose, onApplyKot, inventory = [] }) {
   const [selectedTable, setSelectedTable] = useState(TABLES_LIST[0]);
   const [waiterName, setWaiterName] = useState("");
@@ -54,6 +85,7 @@ export default function RestaurantKotModal({ isOpen, onClose, onApplyKot, invent
     if (kotItems.length === 0) return alert("KOT में कम से कम 1 आइटम होना चाहिए!");
     
     // Add all KOT items to main bill
+    playKitchenChime();
     onApplyKot({
       table: selectedTable.name,
       waiter: waiterName || "Counter",

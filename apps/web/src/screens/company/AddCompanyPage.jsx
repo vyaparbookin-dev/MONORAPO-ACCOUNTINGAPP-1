@@ -2,10 +2,14 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import { useCompany } from "../../contexts/CompanyContext";
+import { Building2, CheckCircle2, ArrowRight, ShieldCheck, Landmark, Sparkles } from "lucide-react";
 
 export default function AddCompanyPage({ onAdded }) {
   const navigate = useNavigate();
   const { selectCompany, refetchCompanies } = useCompany();
+  const [activeStep, setActiveStep] = useState(1); // 1 = Essential Details (30s), 2 = Optional Tax & Bank
+  const [loading, setLoading] = useState(false);
+
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -17,7 +21,7 @@ export default function AddCompanyPage({ onAdded }) {
     panNumber: "",
     businessType: ["retail"],
     ownershipType: "Proprietorship",
-    industryType: "",
+    industryType: "multi-industry",
     businessDescription: "",
     bankName: "",
     accountName: "",
@@ -43,26 +47,31 @@ export default function AddCompanyPage({ onAdded }) {
     });
   };
 
-  const handleQrUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) return alert("File size should be less than 2MB");
-      const reader = new FileReader();
-      reader.onloadend = () => setForm({ ...form, customQrCode: reader.result });
-      reader.readAsDataURL(file);
-    }
-  };
-
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+    if (!form.name.trim()) return alert("कृपया दुकान या कंपनी का नाम दर्ज करें!");
+
+    setLoading(true);
     try {
-      const res = await api.post("/api/company", form);
+      const userStr = localStorage.getItem("user");
+      let userObj = null;
+      try { userObj = JSON.parse(userStr); } catch (err) {}
+
+      // Clean, bulletproof payload
+      const payload = {
+        ...form,
+        name: form.name.trim(),
+        gstType: (form.gstType || "regular").toLowerCase(),
+        user: userObj?._id || userObj?.id || undefined,
+        enableGst: Boolean(form.gstNumber?.trim())
+      };
+
+      const res = await api.post("/api/company", payload);
       const newCompany = res.company || res.data || res;
       
-      alert("Company added successfully!");
+      alert("🎉 कंपनी सफलतापूर्वक बन गई है!");
       onAdded && onAdded();
       
-      // Update LocalStorage and hard reload to completely prevent ghost inventory data
       if (newCompany?._id) {
         localStorage.setItem("companyId", newCompany._id);
         localStorage.setItem("companyName", newCompany.name);
@@ -70,114 +79,263 @@ export default function AddCompanyPage({ onAdded }) {
       window.location.href = "/dashboard";
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || "Error adding company!");
+      alert(err.response?.data?.message || err.response?.data?.error || "कंपनी बनाने में त्रुटि हुई!");
+    } finally {
+      setLoading(false);
     }
   };
 
+  const industriesList = [
+    { id: "restaurant", label: "🍽️ Restaurant & Cafe" },
+    { id: "banquet", label: "🏰 Banquet & Catering" },
+    { id: "gamezone", label: "🎮 Gamezone & FEC Hub" },
+    { id: "supermarket", label: "🛒 Supermarket & Grocery" },
+    { id: "electronics", label: "📱 Mobile & Electronics" },
+    { id: "garments", label: "👗 Garments & Fashion" },
+    { id: "hardware", label: "📐 Hardware & Sanitary" },
+    { id: "wholesale", label: "📦 Wholesale & Distribution" }
+  ];
+
   return (
-    <div className="bg-white shadow-md rounded-xl p-8 max-w-4xl mx-auto mt-6">
-      <h2 className="text-2xl font-bold mb-6 text-gray-800">Add New Company</h2>
-      <form onSubmit={handleSubmit} className="space-y-8">
-        {/* Basic Info */}
-        <div>
-          <h3 className="text-lg font-medium border-b pb-2 mb-4 text-gray-700">Basic Information</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input name="name" placeholder="Company Name *" value={form.name} onChange={handleChange} className="border p-2.5 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none" required />
-            <input name="phone" placeholder="Phone Number" value={form.phone} onChange={handleChange} className="border p-2.5 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none" />
-            <input name="email" placeholder="Email Address" type="email" value={form.email} onChange={handleChange} className="border p-2.5 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none" />
-            <input name="website" placeholder="Website URL (Optional)" type="url" value={form.website} onChange={handleChange} className="border p-2.5 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none" />
-            <textarea name="address" placeholder="Full Address" value={form.address} onChange={handleChange} className="border p-2.5 rounded-lg w-full md:col-span-2 focus:ring-2 focus:ring-blue-500 outline-none" rows="2" />
+    <div className="bg-white shadow-xl rounded-2xl p-6 md:p-8 max-w-3xl mx-auto mt-6 border border-slate-200">
+      {/* Header */}
+      <div className="border-b border-slate-200 pb-4 mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md">
+            <Building2 size={24} />
+          </div>
+          <div>
+            <h2 className="text-xl md:text-2xl font-black text-slate-900">नई कंपनी या दुकान जोड़ें</h2>
+            <p className="text-xs text-slate-500 font-medium">
+              30 सेकंड में आसान ऑनबोर्डिंग • बैंक व CA डिटेल्स बाद में भी भर सकते हैं
+            </p>
           </div>
         </div>
 
-        {/* Business & Tax */}
-        <div>
-          <h3 className="text-lg font-medium border-b pb-2 mb-4 text-gray-700">Business & Tax Details</h3>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Trade Type (Select multiple if applicable)</label>
-            <div className="flex flex-wrap gap-3">
-              {[
-                { id: "retail", label: "Retail" },
-                { id: "wholesale", label: "Wholesale" },
-                { id: "manufacturing", label: "Manufacturing" },
-                { id: "service", label: "Services" },
-                { id: "trading", label: "Trading" }
-              ].map((type) => (
-                <label key={type.id} className="flex items-center gap-2 bg-gray-50 border px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100">
-                  <input type="checkbox" checked={Array.isArray(form.businessType) && form.businessType.includes(type.id)} onChange={() => handleBusinessTypeChange(type.id)} className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm font-medium text-gray-700">{type.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <select name="ownershipType" value={form.ownershipType} onChange={handleChange} className="border p-2.5 rounded-lg w-full bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-              <option value="Proprietorship">Proprietorship (एकल स्वामित्व)</option>
-              <option value="Partnership">Partnership</option>
-              <option value="Private Limited">Private Limited (Pvt Ltd)</option>
-              <option value="LLC / LLP">LLC / LLP</option>
-              <option value="HUF">HUF</option>
-              <option value="Other">Other</option>
-            </select>
-            <input name="industryType" placeholder="Industry (e.g. Hardware)" value={form.industryType} onChange={handleChange} className="border p-2.5 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none" />
-            <input name="businessDescription" placeholder="What does your firm do?" value={form.businessDescription} onChange={handleChange} className="border p-2.5 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none" />
-            <input name="gstNumber" placeholder="GST Number" value={form.gstNumber} onChange={handleChange} className="border p-2.5 rounded-lg w-full uppercase focus:ring-2 focus:ring-blue-500 outline-none" />
-            <select name="gstType" value={form.gstType} onChange={handleChange} className="border p-2.5 rounded-lg w-full bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-              <option value="regular">Regular</option>
-              <option value="composition">Composition</option>
-              <option value="unregistered">Unregistered</option>
-            </select>
-            <input name="panNumber" placeholder="PAN Number" value={form.panNumber} onChange={handleChange} className="border p-2.5 rounded-lg w-full uppercase focus:ring-2 focus:ring-blue-500 outline-none" />
-          </div>
-        </div>
-
-        {/* Bank Details */}
-        <div>
-          <h3 className="text-lg font-medium border-b pb-2 mb-4 text-gray-700">Bank Details</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input name="bankName" placeholder="Bank Name" value={form.bankName} onChange={handleChange} className="border p-2.5 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none" />
-            <input name="accountName" placeholder="Account Holder Name" value={form.accountName} onChange={handleChange} className="border p-2.5 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none" />
-            <input name="accountNumber" placeholder="Account Number" value={form.accountNumber} onChange={handleChange} className="border p-2.5 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none" />
-            <input name="ifscCode" placeholder="IFSC Code" value={form.ifscCode} onChange={handleChange} className="border p-2.5 rounded-lg w-full uppercase focus:ring-2 focus:ring-blue-500 outline-none" />
-            <input name="upiId" placeholder="UPI ID (For Bill QR)" value={form.upiId} onChange={handleChange} className="border p-2.5 rounded-lg w-full md:col-span-2 focus:ring-2 focus:ring-blue-500 outline-none" />
-            
-            <div className="md:col-span-2 mt-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Custom Payment QR Code (GPay/PhonePe) *Optional</label>
-              <div className="flex items-center gap-4">
-                <div className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-gray-50 overflow-hidden">
-                  {form.customQrCode ? (
-                    <img src={form.customQrCode} alt="QR Code" className="w-full h-full object-contain" />
-                  ) : (
-                    <span className="text-xs text-gray-400 text-center px-1">No QR</span>
-                  )}
-                </div>
-                <div>
-                  <input type="file" accept="image/*" onChange={handleQrUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
-                  <p className="text-xs text-gray-500 mt-1">Upload your shop's fixed QR code (Max 2MB)</p>
-                  {form.customQrCode && <button type="button" onClick={() => setForm({ ...form, customQrCode: "" })} className="text-xs text-red-600 mt-1 hover:underline">Remove QR</button>}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* CA Details */}
-        <div>
-          <h3 className="text-lg font-medium border-b pb-2 mb-4 text-gray-700">CA / Accountant Details</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input name="caName" placeholder="CA Name" value={form.caName} onChange={handleChange} className="border p-2.5 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none" />
-            <input name="caPhone" placeholder="CA Phone" value={form.caPhone} onChange={handleChange} className="border p-2.5 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none" />
-          </div>
-        </div>
-
-        <div className="pt-4 border-t border-gray-200">
+        {/* Step Indicator */}
+        <div className="flex items-center gap-1.5 text-xs font-black">
           <button
-            type="submit"
-            className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 font-bold transition shadow-sm w-full md:w-auto"
+            type="button"
+            onClick={() => setActiveStep(1)}
+            className={`px-3 py-1.5 rounded-lg transition ${activeStep === 1 ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}
           >
-            Create Company
+            Step 1: बुनियादी जानकारी
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveStep(2)}
+            className={`px-3 py-1.5 rounded-lg transition ${activeStep === 2 ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}
+          >
+            Step 2: टैक्स व बैंक (Optional)
           </button>
         </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* STEP 1: ESSENTIAL DETAILS (30 Seconds Fast Onboarding) */}
+        {activeStep === 1 && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            <div>
+              <label className="block text-xs font-black text-slate-900 uppercase tracking-wide mb-1.5">
+                दुकान / कंपनी का नाम <span className="text-red-500">*</span>
+              </label>
+              <input
+                name="name"
+                placeholder="e.g. Shree Ganesh Supermarket / Royal Restro"
+                value={form.name}
+                onChange={handleChange}
+                className="border-2 border-slate-300 focus:border-blue-500 p-3 rounded-xl w-full text-sm font-bold text-slate-800 outline-none transition"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-black text-slate-900 uppercase tracking-wide mb-1.5">
+                  मोबाइल नंबर (व्हाट्सएप) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  name="phone"
+                  placeholder="e.g. 9876543210"
+                  value={form.phone}
+                  onChange={handleChange}
+                  className="border border-slate-300 p-2.5 rounded-xl w-full text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-900 uppercase tracking-wide mb-1.5">
+                  ईमेल एड्रेस
+                </label>
+                <input
+                  name="email"
+                  placeholder="e.g. business@gmail.com"
+                  type="email"
+                  value={form.email}
+                  onChange={handleChange}
+                  className="border border-slate-300 p-2.5 rounded-xl w-full text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Business Types Selection */}
+            <div>
+              <label className="block text-xs font-black text-slate-900 uppercase tracking-wide mb-2">
+                बिज़नेस का प्रकार (Select all that apply)
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {industriesList.map((ind) => {
+                  const isSelected = form.businessType.includes(ind.id);
+                  return (
+                    <button
+                      key={ind.id}
+                      type="button"
+                      onClick={() => handleBusinessTypeChange(ind.id)}
+                      className={`p-2.5 rounded-xl text-xs font-bold text-left border transition flex items-center justify-between ${
+                        isSelected
+                          ? "bg-blue-50 border-blue-600 text-blue-700 shadow-sm"
+                          : "bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-400"
+                      }`}
+                    >
+                      <span>{ind.label}</span>
+                      {isSelected && <CheckCircle2 size={14} className="text-blue-600" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-black text-slate-900 uppercase tracking-wide mb-1.5">
+                दुकान / गोदाम का पता
+              </label>
+              <textarea
+                name="address"
+                placeholder="e.g. Shop No. 12, Main Market, Raipur (CG)"
+                value={form.address}
+                onChange={handleChange}
+                className="border border-slate-300 p-2.5 rounded-xl w-full text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500"
+                rows="2"
+              />
+            </div>
+
+            {/* Buttons */}
+            <div className="flex justify-between items-center pt-4 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setActiveStep(2)}
+                className="text-xs font-bold text-slate-500 hover:text-blue-600 flex items-center gap-1"
+              >
+                टैक्स व बैंक डिटेल्स जोड़ें (Optional) →
+              </button>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-xs rounded-xl shadow-lg flex items-center gap-2 transition"
+              >
+                {loading ? "कंपनी बनाई जा रही है..." : "कंपनी बनाएँ और शुरू करें →"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 2: OPTIONAL TAX & BANK DETAILS */}
+        {activeStep === 2 && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800 flex items-center gap-2">
+              <Sparkles size={16} className="text-blue-600 shrink-0" />
+              <span>यह सभी डिटेल्स वैकल्पिक (Optional) हैं। आप इन्हें कभी भी ऐप सेटिंग्स से बदल सकते हैं।</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">GSTIN Number</label>
+                <input
+                  name="gstNumber"
+                  placeholder="e.g. 22AAAAA0000A1Z5"
+                  value={form.gstNumber}
+                  onChange={handleChange}
+                  className="border border-slate-300 p-2.5 rounded-xl w-full text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">PAN Number</label>
+                <input
+                  name="panNumber"
+                  placeholder="e.g. ABCDE1234F"
+                  value={form.panNumber}
+                  onChange={handleChange}
+                  className="border border-slate-300 p-2.5 rounded-xl w-full text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">बैंक का नाम</label>
+                <input
+                  name="bankName"
+                  placeholder="e.g. HDFC Bank"
+                  value={form.bankName}
+                  onChange={handleChange}
+                  className="border border-slate-300 p-2.5 rounded-xl w-full text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">खाता नंबर (Account No.)</label>
+                <input
+                  name="accountNumber"
+                  placeholder="e.g. 50200012345678"
+                  value={form.accountNumber}
+                  onChange={handleChange}
+                  className="border border-slate-300 p-2.5 rounded-xl w-full text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">IFSC Code</label>
+                <input
+                  name="ifscCode"
+                  placeholder="e.g. HDFC0001234"
+                  value={form.ifscCode}
+                  onChange={handleChange}
+                  className="border border-slate-300 p-2.5 rounded-xl w-full text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">UPI ID (QR Payment)</label>
+                <input
+                  name="upiId"
+                  placeholder="e.g. mybusiness@upi"
+                  value={form.upiId}
+                  onChange={handleChange}
+                  className="border border-slate-300 p-2.5 rounded-xl w-full text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Navigation Buttons */}
+            <div className="flex justify-between items-center pt-4 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setActiveStep(1)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
+              >
+                ← Step 1 पर वापस जाएँ
+              </button>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-xs rounded-xl shadow-lg flex items-center gap-2 transition"
+              >
+                {loading ? "कंपनी बनाई जा रही है..." : "सहेजें और डैशबोर्ड खोलें →"}
+              </button>
+            </div>
+          </div>
+        )}
       </form>
     </div>
   );
