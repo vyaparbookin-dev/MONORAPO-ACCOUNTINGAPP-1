@@ -32,7 +32,8 @@ import {
   Calculator,
   Landmark,
   AlertTriangle,
-  Bot
+  Bot,
+  Sparkles
 } from "lucide-react";
 import Footer from "./Footer";
 import { useNavigate, Outlet, useLocation } from "react-router-dom";
