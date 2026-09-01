@@ -414,3 +414,88 @@ CREATE INDEX IF NOT EXISTS idx_parties_phone ON public.parties(mobile_number);
 CREATE INDEX IF NOT EXISTS idx_parties_rfid ON public.parties(rfid_card_uid);
 CREATE INDEX IF NOT EXISTS idx_playcards_uid ON public.gamezone_playcards(card_uid);
 CREATE INDEX IF NOT EXISTS idx_kitchen_expiry ON public.kitchen_prep_batches(expiry_date, spoilage_status);
+
+
+-- ============================================================================
+-- 15. MASTER DATA HIERARCHY (GROUPS, CATEGORIES, SUB-CATEGORIES, BRANDS, UNITS)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.item_groups (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.categories (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    group_id UUID REFERENCES public.item_groups(id) ON DELETE SET NULL,
+    name VARCHAR(255) NOT NULL,
+    short_code VARCHAR(50),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.sub_categories (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    category_id UUID REFERENCES public.categories(id) ON DELETE SET NULL,
+    name VARCHAR(255) NOT NULL,
+    short_code VARCHAR(50),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.brands (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.units (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    name VARCHAR(50) NOT NULL,
+    short_code VARCHAR(20),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- 16. 2-TIER CUSTOMER FEEDBACK, STAFF CSAT & GOOGLE REVIEW LOGS
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.customer_reviews (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+    bill_id UUID REFERENCES public.bills(id) ON DELETE SET NULL,
+    customer_name VARCHAR(255) NOT NULL,
+    customer_phone VARCHAR(50),
+    event_name VARCHAR(255),
+    booked_by_staff VARCHAR(255),
+    organized_by_manager VARCHAR(255),
+    
+    -- Private Internal Staff Ratings (1-5 Stars)
+    booking_staff_rating NUMERIC(2, 1) DEFAULT 5.0,
+    floor_manager_rating NUMERIC(2, 1) DEFAULT 5.0,
+    service_food_rating NUMERIC(2, 1) DEFAULT 5.0,
+    internal_owner_notes TEXT,
+    
+    -- Public Business Reputation
+    firm_star_rating INT DEFAULT 5,
+    public_review_text TEXT,
+    is_google_review_prompted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- INDEXES FOR FASTER LOOKUP
+CREATE INDEX IF NOT EXISTS idx_reviews_company ON public.customer_reviews(company_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_staff ON public.customer_reviews(booked_by_staff);

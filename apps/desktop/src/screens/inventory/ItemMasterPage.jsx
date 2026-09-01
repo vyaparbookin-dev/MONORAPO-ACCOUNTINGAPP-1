@@ -13,6 +13,7 @@ const ItemMasterPage = () => {
   const [formData, setFormData] = useState({ name: "", description: "", shortCode: "" });
 
   const tabs = [
+    { id: "group", label: "Item Groups", icon: <Grid size={18} />, endpoint: "group" },
     { id: "category", label: "Categories", icon: <Grid size={18} />, endpoint: "category" },
     { id: "subcategory", label: "Sub-Categories", icon: <Layers size={18} />, endpoint: "subcategory" },
     { id: "brand", label: "Brands", icon: <Tag size={18} />, endpoint: "brand" },
@@ -29,6 +30,7 @@ const ItemMasterPage = () => {
       
       // API response key fix: "category" -> "categories"
       let dataKey = currentTab.endpoint + 's';
+      if (currentTab.endpoint === 'group') dataKey = 'groups';
       if (currentTab.endpoint === 'category') dataKey = 'categories';
       if (currentTab.endpoint === 'subcategory') dataKey = 'subCategories';
 
