@@ -82,6 +82,7 @@ export default function DashboardLayout() {
   const indType = selectedCompany?.industryType?.toLowerCase() || '';
 
   const menuItems = [
+    { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
     { icon: Home, label: "Dashboard", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
     { icon: FileText, label: "Invoices", href: "/billing", color: "text-green-600", roles: ['admin', 'manager', 'cashier'] },
     { icon: ShoppingCart, label: "Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
@@ -348,6 +349,17 @@ export default function DashboardLayout() {
                   )}
                 </div>
               )}
+
+              {/* 1-Click Public Landing Page Button */}
+              <button
+                type="button"
+                onClick={() => navigate("/landing")}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs rounded-xl shadow-sm transition transform hover:scale-105"
+                title="View & Share Public Landing Page"
+              >
+                <Sparkles size={14} className="text-yellow-300 animate-pulse" />
+                <span>Landing Page</span>
+              </button>
 
               {/* Notifications */}
               <div className="relative">
