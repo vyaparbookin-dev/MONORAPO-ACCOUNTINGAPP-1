@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Smartphone,
   Laptop,
@@ -33,15 +33,18 @@ import {
   MessageCircle,
   Search,
   X,
-  Apple
+  FileText
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export default function LandingPage() {
-
+  const navigate = useNavigate();
+  const [selectedVertical, setSelectedVertical] = useState("restaurant");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -50,7 +53,6 @@ export default function LandingPage() {
     return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
   }, []);
 
-  
   const APK_DOWNLOAD_URL = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/download/v1.2.0/Red.Accounting.Book.v1.2.0.apk";
   const DESKTOP_EXE_DOWNLOAD_URL = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/download/v1.2.0/Red.Accounting.Book.Setup.1.2.0.exe";
 
@@ -72,23 +74,16 @@ export default function LandingPage() {
         setDeferredPrompt(null);
       });
     } else {
-      // Direct APK download fallback
+      // Fallback: Direct APK download
       window.location.href = APK_DOWNLOAD_URL;
       alert("📱 VyaparBook Android APK डाउनलोड शुरू हो गया है!\n\n(या आप अपने ब्राउज़र मेनू ⋮ में 'Install App / Add to Home Screen' भी दबा सकते हैं)");
     }
   };
 
-  
-
-  const navigate = useNavigate();
-  const [selectedVertical, setSelectedVertical] = useState("restaurant");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
-
   const verticalsData = {
     restaurant: {
       id: "restaurant",
-      name: "रेस्टोरेंट, कैफे व क्लाउड किचन",
+      name: "रेस्टोरेंट, कैफे व किचन",
       icon: ChefHat,
       color: "from-amber-500 to-orange-600",
       accent: "text-amber-400",
@@ -117,7 +112,7 @@ export default function LandingPage() {
     },
     banquet: {
       id: "banquet",
-      name: "होटल, बैंक्वेट हॉल व कैटरिंग",
+      name: "होटल, बैंक्वेट व कैटरिंग",
       icon: Building,
       color: "from-indigo-500 to-purple-600",
       accent: "text-indigo-400",
@@ -146,7 +141,7 @@ export default function LandingPage() {
     },
     gamezone: {
       id: "gamezone",
-      name: "गेमज़ोन, VR एरिना व आर्केड पार्क",
+      name: "गेमज़ोन व VR एरिना",
       icon: Gamepad2,
       color: "from-purple-500 to-pink-600",
       accent: "text-purple-400",
@@ -175,7 +170,7 @@ export default function LandingPage() {
     },
     supermarket: {
       id: "supermarket",
-      name: "सुपरमार्केट, किराना व FMCG",
+      name: "सुपरमार्केट व किराना",
       icon: ShoppingBag,
       color: "from-emerald-500 to-teal-600",
       accent: "text-emerald-400",
@@ -204,7 +199,7 @@ export default function LandingPage() {
     },
     mobile: {
       id: "mobile",
-      name: "मोबाइल, लैपटॉप व इलेक्ट्रॉनिक्स",
+      name: "मोबाइल व इलेक्ट्रॉनिक्स",
       icon: Smartphone,
       color: "from-cyan-500 to-blue-600",
       accent: "text-cyan-400",
@@ -233,7 +228,7 @@ export default function LandingPage() {
     },
     hardware: {
       id: "hardware",
-      name: "हार्डवेयर, सेनेटरी, पाइप्स व पेंट्स",
+      name: "हार्डवेयर, पाइप्स व पेंट्स",
       icon: Cpu,
       color: "from-orange-500 to-amber-600",
       accent: "text-orange-400",
@@ -262,7 +257,7 @@ export default function LandingPage() {
     },
     salon: {
       id: "salon",
-      name: "सैलून, स्पा व वेलनेस क्लिनिक",
+      name: "सैलून, स्पा व क्लिनिक",
       icon: Scissors,
       color: "from-pink-500 to-rose-600",
       accent: "text-pink-400",
@@ -291,7 +286,7 @@ export default function LandingPage() {
     },
     core: {
       id: "core",
-      name: "कोर अकाउंटिंग व डे-बुक रोकड़ बही",
+      name: "डे-बुक व कोर अकाउंटिंग",
       icon: Receipt,
       color: "from-blue-600 to-indigo-700",
       accent: "text-blue-400",
@@ -331,39 +326,39 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-purple-500 selection:text-white">
       {/* Top Announcement Ribbon */}
-      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 border-b border-purple-500/30 px-4 py-2 text-center text-xs font-bold text-purple-200 flex flex-wrap items-center justify-center gap-2">
-        <Sparkles size={14} className="text-yellow-400 animate-pulse" />
+      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 border-b border-purple-500/30 px-4 py-2.5 text-center text-xs font-bold text-purple-200 flex flex-wrap items-center justify-center gap-2">
+        <Sparkles size={14} className="text-yellow-400 animate-pulse shrink-0" />
         <span>VyaparBook 2.0 ERP लाइव है — 8 बिज़नेस वर्टिकल्स + ऑफलाइन SQLite + क्लाउड सिंक!</span>
         <button
           onClick={() => navigate("/dashboard")}
           className="ml-2 underline text-white hover:text-yellow-300 font-black cursor-pointer"
         >
-          अभी खोलें →
+          डैशबोर्ड खोलें →
         </button>
       </div>
 
       {/* Navbar */}
-      <nav className="sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 md:px-6 py-3.5">
+      <nav className="sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 md:px-8 py-3.5">
         <div className="max-w-7xl mx-auto flex justify-between items-center gap-2">
           <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate("/")}>
-            <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-500 flex items-center justify-center font-black text-lg md:text-xl text-white shadow-lg shadow-purple-500/30">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-500 flex items-center justify-center font-black text-xl text-white shadow-lg shadow-purple-500/30 shrink-0">
               V
             </div>
             <div>
               <span className="font-black text-lg md:text-xl tracking-tight text-white flex items-center gap-1.5">
                 VyaparBook <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-400/30 px-2 py-0.5 rounded-full font-bold">2.0 ERP</span>
               </span>
-              <p className="text-[9px] md:text-[10px] text-gray-400 hidden sm:block">All-in-One Multi-Industry Business Suite</p>
+              <p className="text-[10px] text-gray-400 hidden sm:block">All-in-One Multi-Industry Business Suite</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 md:gap-3">
             <button
               onClick={() => setDownloadModalOpen(true)}
-              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow"
             >
               <Download size={14} className="text-emerald-400" />
-              <span className="hidden sm:inline">ऐप डाउनलोड करें</span>
+              <span>ऐप डाउनलोड</span>
             </button>
 
             <button
@@ -389,12 +384,12 @@ export default function LandingPage() {
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] md:w-[500px] h-[350px] md:h-[500px] bg-purple-600/15 blur-[140px] pointer-events-none rounded-full"></div>
 
         <div className="max-w-5xl mx-auto space-y-6 md:space-y-8 relative z-10">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-[11px] md:text-xs font-black shadow-inner">
-            <Award size={14} className="text-yellow-400" />
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs font-black shadow-inner">
+            <Award size={14} className="text-yellow-400 shrink-0" />
             <span>भारत का सबसे शक्तिशाली 8-in-1 Multi-Business Cloud ERP</span>
           </div>
 
-          <h1 className="text-3xl sm:text-5xl md:text-6xl font-black text-white tracking-tight leading-tight">
+          <h1 className="text-3xl sm:text-5xl md:text-6xl font-black text-white tracking-tight leading-tight md:leading-snug">
             रेस्टोरेंट, बैंक्वेट, गेमज़ोन व सुपरमार्केट का{" "}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400">
               ऑटोमेशन व बिलिंग ईआरपी
@@ -428,30 +423,38 @@ export default function LandingPage() {
             </button>
 
             <button
-              onClick={() => setDownloadModalOpen(true)}
+              onClick={() => navigate("/billing")}
               className="w-full sm:w-auto px-7 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs sm:text-sm rounded-2xl shadow flex items-center justify-center gap-2 transition cursor-pointer"
             >
-              <Download size={16} className="text-emerald-400" />
-              विंडोज़ डेस्कटॉप व मोबाइल ऐप डाउनलोड
+              <ShoppingBag size={16} className="text-emerald-400" />
+              फास्ट पीओएस बिलिंग (Fast POS Billing)
+            </button>
+
+            <button
+              onClick={() => setDownloadModalOpen(true)}
+              className="w-full sm:w-auto px-7 py-3.5 bg-slate-900 hover:bg-slate-850 text-slate-300 border border-slate-700 hover:border-cyan-500 font-bold text-xs sm:text-sm rounded-2xl shadow flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              <Download size={16} className="text-cyan-400" />
+              ऐप डाउनलोड करें
             </button>
           </div>
 
           {/* 4 Trust Feature Badges */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-4 max-w-4xl mx-auto text-xs">
             <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-2 text-slate-300">
-              <Laptop size={15} className="text-cyan-400" />
+              <Laptop size={15} className="text-cyan-400 shrink-0" />
               <span>Windows App</span>
             </div>
             <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-2 text-slate-300">
-              <Smartphone size={15} className="text-purple-400" />
+              <Smartphone size={15} className="text-purple-400 shrink-0" />
               <span>Mobile POS</span>
             </div>
             <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-2 text-slate-300">
-              <ShieldCheck size={15} className="text-emerald-400" />
+              <ShieldCheck size={15} className="text-emerald-400 shrink-0" />
               <span>Offline SQLite</span>
             </div>
             <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-2 text-slate-300">
-              <Share2 size={15} className="text-green-400" />
+              <Share2 size={15} className="text-green-400 shrink-0" />
               <span>WhatsApp Bills</span>
             </div>
           </div>
@@ -465,7 +468,7 @@ export default function LandingPage() {
             <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
               हर बिज़नेस के लिए विशेष मॉड्यूल्स (Specialized USPs)
             </h2>
-            <p className="text-xs sm:text-sm text-slate-400 max-w-2xl mx-auto">
+            <p className="text-xs sm:text-sm text-slate-400 max-w-2xl mx-auto leading-relaxed">
               नीचे दिए गए किसी भी बिज़नेस पर क्लिक करें और देखें कि हमारे पास उस इंडस्ट्री के लिए कौन से खास फीचर्स हैं:
             </p>
           </div>
@@ -496,13 +499,13 @@ export default function LandingPage() {
           <div className={`p-6 sm:p-8 bg-slate-900 border-2 ${currentVertical.borderAccent} rounded-3xl shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-200`}>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-5">
               <div className="flex items-center gap-3.5">
-                <div className={`p-3.5 rounded-2xl ${currentVertical.bgAccent} border ${currentVertical.borderAccent} shadow-inner`}>
+                <div className={`p-3.5 rounded-2xl ${currentVertical.bgAccent} border ${currentVertical.borderAccent} shadow-inner shrink-0`}>
                   {React.createElement(currentVertical.icon, { size: 30, className: currentVertical.accent })}
                 </div>
                 <div>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">विशेष इंडस्ट्री मॉड्यूल</span>
                   <h3 className="text-xl sm:text-2xl font-black text-white">{currentVertical.name}</h3>
-                  <p className="text-xs sm:text-sm text-slate-300 mt-0.5 font-medium">{currentVertical.tagline}</p>
+                  <p className="text-xs sm:text-sm text-slate-300 mt-0.5 font-medium leading-relaxed">{currentVertical.tagline}</p>
                 </div>
               </div>
 
@@ -536,6 +539,47 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* 8-in-1 Complete Showcase Grid */}
+      <section className="px-4 sm:px-6 py-12 md:py-16 bg-slate-950 border-t border-slate-800">
+        <div className="max-w-7xl mx-auto space-y-10">
+          <div className="text-center space-y-2">
+            <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
+              सभी 8 बिज़नेस वर्टिकल्स एक नज़र में
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-400">
+              किसी भी कार्ड पर क्लिक करके सीधे उस मॉड्यूल को लाइव टेस्ट करें
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {Object.values(verticalsData).map((item) => {
+              const IconComp = item.icon;
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => navigate(item.route)}
+                  className="p-5 bg-slate-900 border border-slate-800 hover:border-purple-500 rounded-3xl transition duration-200 cursor-pointer space-y-3 hover:shadow-xl hover:shadow-purple-500/10 group flex flex-col justify-between"
+                >
+                  <div className="space-y-2.5">
+                    <div className={`w-11 h-11 rounded-2xl ${item.bgAccent} border ${item.borderAccent} flex items-center justify-center text-white group-hover:scale-110 transition shrink-0`}>
+                      <IconComp size={22} className={item.accent} />
+                    </div>
+                    <h3 className="font-black text-sm text-white">{item.name}</h3>
+                    <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed">
+                      {item.tagline}
+                    </p>
+                  </div>
+
+                  <span className={`text-xs font-bold ${item.accent} flex items-center gap-1 pt-2 border-t border-slate-800`}>
+                    स्क्रीन खोलें <ArrowRight size={13} />
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
       {/* Download Modal Popup */}
       {downloadModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
@@ -552,42 +596,56 @@ export default function LandingPage() {
                 <Download size={24} />
               </div>
               <h3 className="text-xl font-black">VyaparBook 2.0 ऐप्स डाउनलोड करें</h3>
-              <p className="text-xs text-slate-400">विंडोज़ कंप्यूटर या एंड्रॉइड/आईफोन मोबाइल के लिए ऐप चुनें</p>
+              <p className="text-xs text-slate-400">विंडोज़ कंप्यूटर या एंड्रॉइड मोबाइल के लिए ऐप चुनें</p>
             </div>
 
             <div className="space-y-3 text-xs">
               {/* Windows App */}
-              <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 flex justify-between items-center">
+              <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div className="flex items-center gap-3">
-                  <Laptop size={28} className="text-cyan-400" />
+                  <Laptop size={28} className="text-cyan-400 shrink-0" />
                   <div>
                     <h4 className="font-bold text-white text-sm">Windows Desktop Setup (.exe)</h4>
-                    <p className="text-slate-400 text-[11px]">100% ऑफलाइन SQLite, थर्मल प्रिंटर व बारकोड सिंक</p>
+                    <p className="text-slate-400 text-[11px] leading-tight">100% ऑफलाइन SQLite, थर्मल प्रिंटर व बारकोड सिंक (118 MB)</p>
                   </div>
                 </div>
                 <button
                   onClick={handleDownloadWindowsApp}
-                  className="px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-black rounded-xl"
+                  className="w-full sm:w-auto px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-black rounded-xl text-center cursor-pointer shrink-0"
                 >
                   Download .exe
                 </button>
               </div>
 
-              {/* Android App */}
-              <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 flex justify-between items-center">
+              {/* Android APK Download */}
+              <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div className="flex items-center gap-3">
-                  <Smartphone size={28} className="text-emerald-400" />
+                  <Smartphone size={28} className="text-emerald-400 shrink-0" />
                   <div>
-                    <h4 className="font-bold text-white text-sm">Android Mobile App (PWA / APK)</h4>
-                    <p className="text-slate-400 text-[11px]">मोबाइल बिलिंग, कैमरा बारकोड व व्हाट्सएप इनवॉइस</p>
+                    <h4 className="font-bold text-white text-sm">Android Mobile App (.apk)</h4>
+                    <p className="text-slate-400 text-[11px] leading-tight">डायरेक्ट Android APK इंस्टॉलर फाइल (171 MB)</p>
                   </div>
                 </div>
                 <button
-                  onClick={() => {
-                    alert("📱 मोबाइल में इसे ऐप की तरह चलाने के लिए ब्राउज़र मेनू में जाकर 'Add to Home Screen' या 'Install App' पर टैप करें!");
-                    setDownloadModalOpen(false);
-                  }}
-                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl"
+                  onClick={handleDownloadAndroidApk}
+                  className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-center cursor-pointer shrink-0"
+                >
+                  Download .apk
+                </button>
+              </div>
+
+              {/* Android / iOS PWA Instant Install */}
+              <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div className="flex items-center gap-3">
+                  <Zap size={28} className="text-yellow-400 shrink-0" />
+                  <div>
+                    <h4 className="font-bold text-white text-sm">Instant Mobile Web App (PWA)</h4>
+                    <p className="text-slate-400 text-[11px] leading-tight">बिना डाउनलोड के सीधे होम-स्क्रीन पर जोड़ें (0 MB)</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleInstallMobileApp}
+                  className="w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-black rounded-xl text-center cursor-pointer shrink-0"
                 >
                   Install App
                 </button>
