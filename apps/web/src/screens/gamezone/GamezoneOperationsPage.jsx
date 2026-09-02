@@ -521,43 +521,7 @@ export default function GamezoneOperationsPage() {
 
       {/* TAB 2: MULTI-TIER SMARTCARDS (Phase 1 & 3) */}
       {activeSubTab === "rfid_cards" && (
-                  {/* Grace Period & Overtime Settings Bar */}
-          <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl flex flex-wrap justify-between items-center gap-3 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-teal-950">⏱️ फ्री ग्रेस पीरियड (Free Grace Buffer):</span>
-              <select
-                value={softPlayRules.gracePeriodMins}
-                onChange={(e) => setSoftPlayRules({ ...softPlayRules, gracePeriodMins: parseInt(e.target.value) })}
-                className="bg-white border border-teal-300 p-1.5 rounded-lg font-bold font-mono text-teal-900 outline-none"
-              >
-                <option value={0}>0 मिनट (तुरंत पेनल्टी)</option>
-                <option value={5}>5 मिनट फ्री छूट (Standard)</option>
-                <option value={10}>10 मिनट फ्री छूट</option>
-                <option value={15}>15 मिनट फ्री छूट</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-teal-950">पेनल्टी दर (Overtime Rate):</span>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  value={softPlayRules.overtimeRatePerMin}
-                  onChange={(e) => setSoftPlayRules({ ...softPlayRules, overtimeRatePerMin: parseFloat(e.target.value) || 0 })}
-                  className="w-16 p-1 border border-teal-300 rounded-lg text-center font-bold font-mono text-teal-900 bg-white outline-none"
-                />
-                <span className="font-bold text-teal-900">₹ / मिनट</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-1 bg-teal-200/60 text-teal-900 rounded-lg font-bold text-[11px]">
-                ट्रे में उपलब्ध रिस्टबैंड्स: {wristbandInventory.filter(w => w.status === 'AVAILABLE').length} / {wristbandInventory.length} नग
-              </span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 bg-gradient-to-tr from-slate-900 via-indigo-900 to-slate-950 p-6 rounded-3xl text-white shadow-xl space-y-6 border border-indigo-400/20">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
@@ -837,7 +801,7 @@ export default function GamezoneOperationsPage() {
           </div>
         </div>
       )}
-    </di
+
       {/* TAB 9: HARDWARE DIAGNOSTICS, MANUAL FALLBACK & ERROR EMAIL ALERTS */}
       {activeSubTab === "diagnostics" && (
         <div className="space-y-6">
@@ -953,7 +917,7 @@ export default function GamezoneOperationsPage() {
         </div>
       )}
 
-    </di
+    
       {/* TAB: CENTRALIZED PRICING MATRIX & HAPPY HOUR SCHEDULER */}
       {activeSubTab === "pricing_matrix" && (
         <div className="space-y-6">
@@ -1079,7 +1043,7 @@ export default function GamezoneOperationsPage() {
         </div>
       )}
 
-    </di
+    
       {/* TAB: SOFT TOY CLAW MACHINE ANTI-FRAUD SECURITY GUARD */}
       {activeSubTab === "claw_security" && (
         <div className="space-y-6">
@@ -1184,7 +1148,7 @@ export default function GamezoneOperationsPage() {
         </div>
       )}
 
-    </di
+    
       {/* TAB: INDOOR SOFT PLAY ARENA & TRAMPOLINE PARK (1200-1800 Sq.Ft) */}
       {activeSubTab === "soft_play_arena" && (
         <div className="space-y-6">
@@ -1366,6 +1330,7 @@ export default function GamezoneOperationsPage() {
 
               <div className="space-y-3 max-h-[450px] overflow-y-auto">
                 {activePlaySessions.map((sess) => {
+                  const timeLeft = sess.durationMins - sess.elapsedMins;
                   const rawExtraTime = sess.elapsedMins - sess.durationMins;
                   const effectiveOvertime = Math.max(0, rawExtraTime - softPlayRules.gracePeriodMins);
                   const isOverstay = effectiveOvertime > 0;

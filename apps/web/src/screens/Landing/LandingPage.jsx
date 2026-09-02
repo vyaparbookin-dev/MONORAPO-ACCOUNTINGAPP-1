@@ -78,10 +78,7 @@ export default function LandingPage() {
     }
   };
 
-  const handleDownloadWindowsApp = () => {
-    window.location.href = DESKTOP_EXE_DOWNLOAD_URL;
-    alert("📥 VyaparBook Windows Desktop App (.exe) डाउनलोड शुरू हो गया है!");
-  };
+  
 
   const navigate = useNavigate();
   const [selectedVertical, setSelectedVertical] = useState("restaurant");

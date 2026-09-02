@@ -32,6 +32,7 @@ import HardwareDimensionModal from "../../components/modals/HardwareDimensionMod
 import GarmentsMatrixModal from "../../components/modals/GarmentsMatrixModal";
 import PharmaBatchModal from "../../components/modals/PharmaBatchModal";
 import RestaurantKotModal from "../../components/modals/RestaurantKotModal";
+import RestaurantRecipeModal from "../../components/modals/RestaurantRecipeModal";
 import SalonSpaModal from "../../components/modals/SalonSpaModal";
 import AutomobileJobCardModal from "../../components/modals/AutomobileJobCardModal";
 import GamezoneStationModal from "../../components/modals/GamezoneStationModal";
