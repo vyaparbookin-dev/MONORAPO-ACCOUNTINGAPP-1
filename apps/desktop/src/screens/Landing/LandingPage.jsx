@@ -33,7 +33,7 @@ import {
   MessageCircle,
   Search,
   X,
-  FileText
+  Info
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -53,15 +53,16 @@ export default function LandingPage() {
     return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
   }, []);
 
-  const APK_DOWNLOAD_URL = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/download/v1.2.0/Red.Accounting.Book.v1.2.0.apk";
-  const DESKTOP_EXE_DOWNLOAD_URL = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/download/v1.2.0/Red.Accounting.Book.Setup.1.2.0.exe";
+  const GITHUB_RELEASES_PAGE = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases";
+  const DIRECT_APK_URL = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/tag/v1.2.0";
 
   const handleDownloadAndroidApk = () => {
-    window.location.href = APK_DOWNLOAD_URL;
+    // Open GitHub releases page or prompt
+    window.open(GITHUB_RELEASES_PAGE, "_blank");
   };
 
   const handleDownloadWindowsApp = () => {
-    window.location.href = DESKTOP_EXE_DOWNLOAD_URL;
+    window.open(GITHUB_RELEASES_PAGE, "_blank");
   };
 
   const handleInstallMobileApp = () => {
@@ -69,21 +70,19 @@ export default function LandingPage() {
       deferredPrompt.prompt();
       deferredPrompt.userChoice.then((choiceResult) => {
         if (choiceResult.outcome === "accepted") {
-          console.log("User accepted the install prompt");
+          console.log("User accepted install");
         }
         setDeferredPrompt(null);
       });
     } else {
-      // Fallback: Direct APK download
-      window.location.href = APK_DOWNLOAD_URL;
-      alert("📱 VyaparBook Android APK डाउनलोड शुरू हो गया है!\n\n(या आप अपने ब्राउज़र मेनू ⋮ में 'Install App / Add to Home Screen' भी दबा सकते हैं)");
+      alert("📱 VyaparBook मोबाइल ऐप तुरंत शुरू करने के लिए:\n\n1. अपने फोन के क्रोम ब्राउज़र में ऊपर दाईं ओर 3 बिंदु (⋮) दबाएं।\n2. 'Add to Home screen' या 'Install app' पर टैप करें।\n\nयह तुरंत बिना प्लेस्टोर के आपके फोन में ऐप बन जाएगा!");
     }
   };
 
   const verticalsData = {
     restaurant: {
       id: "restaurant",
-      name: "रेस्टोरेंट, कैफे व किचन",
+      name: "🍽️ रेस्टोरेंट व कैफे",
       icon: ChefHat,
       color: "from-amber-500 to-orange-600",
       accent: "text-amber-400",
@@ -112,7 +111,7 @@ export default function LandingPage() {
     },
     banquet: {
       id: "banquet",
-      name: "होटल, बैंक्वेट व कैटरिंग",
+      name: "🏨 होटल व बैंक्वेट",
       icon: Building,
       color: "from-indigo-500 to-purple-600",
       accent: "text-indigo-400",
@@ -141,7 +140,7 @@ export default function LandingPage() {
     },
     gamezone: {
       id: "gamezone",
-      name: "गेमज़ोन व VR एरिना",
+      name: "🎮 गेमज़ोन व VR पार्क",
       icon: Gamepad2,
       color: "from-purple-500 to-pink-600",
       accent: "text-purple-400",
@@ -170,7 +169,7 @@ export default function LandingPage() {
     },
     supermarket: {
       id: "supermarket",
-      name: "सुपरमार्केट व किराना",
+      name: "🛒 सुपरमार्केट व किराना",
       icon: ShoppingBag,
       color: "from-emerald-500 to-teal-600",
       accent: "text-emerald-400",
@@ -199,7 +198,7 @@ export default function LandingPage() {
     },
     mobile: {
       id: "mobile",
-      name: "मोबाइल व इलेक्ट्रॉनिक्स",
+      name: "📱 मोबाइल व इलेक्ट्रॉनिक्स",
       icon: Smartphone,
       color: "from-cyan-500 to-blue-600",
       accent: "text-cyan-400",
@@ -228,7 +227,7 @@ export default function LandingPage() {
     },
     hardware: {
       id: "hardware",
-      name: "हार्डवेयर, पाइप्स व पेंट्स",
+      name: "🔧 हार्डवेयर व पेंट्स",
       icon: Cpu,
       color: "from-orange-500 to-amber-600",
       accent: "text-orange-400",
@@ -257,13 +256,13 @@ export default function LandingPage() {
     },
     salon: {
       id: "salon",
-      name: "सैलून, स्पा व क्लिनिक",
+      name: "💇‍♀️ सैलून व स्पा",
       icon: Scissors,
       color: "from-pink-500 to-rose-600",
       accent: "text-pink-400",
       borderAccent: "border-pink-500/50",
       bgAccent: "bg-pink-500/10",
-      tagline: "अपॉइंटमेंट शेड्यूलिंग, ब्यूटीशियन इंसेंटिव कमीशन और मेंबरशिप वैक्स/फेशियल पैकेजेस",
+      tagline: "अपॉइंटमेंट शेड्यूलिंग, ब्यूटीशियन इंसेंटिव कमीशन और मेंबरशिप पैकेजेस",
       features: [
         {
           title: "📅 Stylist Chair & Appointment Scheduler",
@@ -286,7 +285,7 @@ export default function LandingPage() {
     },
     core: {
       id: "core",
-      name: "डे-बुक व कोर अकाउंटिंग",
+      name: "📖 डे-बुक व रोकड़",
       icon: Receipt,
       color: "from-blue-600 to-indigo-700",
       accent: "text-blue-400",
@@ -317,7 +316,6 @@ export default function LandingPage() {
 
   const currentVertical = verticalsData[selectedVertical] || verticalsData.restaurant;
 
-  // Search filter
   const filteredVerticals = Object.values(verticalsData).filter(v => 
     v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     v.tagline.toLowerCase().includes(searchQuery.toLowerCase())
@@ -338,17 +336,17 @@ export default function LandingPage() {
       </div>
 
       {/* Navbar */}
-      <nav className="sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 md:px-8 py-3.5">
-        <div className="max-w-7xl mx-auto flex justify-between items-center gap-2">
-          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate("/")}>
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-500 flex items-center justify-center font-black text-xl text-white shadow-lg shadow-purple-500/30 shrink-0">
+      <nav className="sticky top-0 z-50 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 md:px-8 py-3.5">
+        <div className="max-w-7xl mx-auto flex justify-between items-center gap-3">
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate("/")}>
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-500 flex items-center justify-center font-black text-xl text-white shadow-lg shadow-purple-500/30 shrink-0">
               V
             </div>
             <div>
               <span className="font-black text-lg md:text-xl tracking-tight text-white flex items-center gap-1.5">
                 VyaparBook <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-400/30 px-2 py-0.5 rounded-full font-bold">2.0 ERP</span>
               </span>
-              <p className="text-[10px] text-gray-400 hidden sm:block">All-in-One Multi-Industry Business Suite</p>
+              <p className="text-[10px] text-gray-400 hidden sm:block">Multi-Industry Business & Accounting Suite</p>
             </div>
           </div>
 
@@ -363,7 +361,7 @@ export default function LandingPage() {
 
             <button
               onClick={() => navigate("/login")}
-              className="px-3 py-2 text-xs font-bold text-slate-300 hover:text-white transition cursor-pointer"
+              className="px-3.5 py-2 text-xs font-bold text-slate-300 hover:text-white transition cursor-pointer"
             >
               लॉगिन
             </button>
@@ -379,33 +377,36 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section className="relative px-4 sm:px-6 pt-12 pb-16 overflow-hidden text-center">
+      {/* Hero Section with Beautiful Generous Spacing */}
+      <section className="relative px-4 sm:px-6 pt-14 pb-20 overflow-hidden text-center">
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] md:w-[500px] h-[350px] md:h-[500px] bg-purple-600/15 blur-[140px] pointer-events-none rounded-full"></div>
 
-        <div className="max-w-5xl mx-auto space-y-6 md:space-y-8 relative z-10">
+        <div className="max-w-5xl mx-auto space-y-8 relative z-10">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs font-black shadow-inner">
             <Award size={14} className="text-yellow-400 shrink-0" />
             <span>भारत का सबसे शक्तिशाली 8-in-1 Multi-Business Cloud ERP</span>
           </div>
 
-          <h1 className="text-3xl sm:text-5xl md:text-6xl font-black text-white tracking-tight leading-tight md:leading-snug">
-            रेस्टोरेंट, बैंक्वेट, गेमज़ोन व सुपरमार्केट का{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400">
-              ऑटोमेशन व बिलिंग ईआरपी
-            </span>
-          </h1>
+          {/* Clean Distinct Headings with Perfect Spacing */}
+          <div className="space-y-4 max-w-4xl mx-auto">
+            <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-black text-white tracking-normal leading-tight md:leading-snug">
+              रेस्टोरेंट • बैंक्वेट • गेमज़ोन • सुपरमार्केट
+            </h1>
+            <div className="text-lg sm:text-2xl md:text-3xl lg:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 leading-normal">
+              ऑल-इन-वन बिज़नेस ऑटोमेशन व बिलिंग ईआरपी
+            </div>
+          </div>
 
-          <p className="max-w-3xl mx-auto text-sm sm:text-base text-slate-300 font-medium leading-relaxed">
+          <p className="max-w-3xl mx-auto text-sm sm:text-base text-slate-300 font-medium leading-relaxed pt-1">
             दैनिक शुद्ध मुनाफा • KOT टेबल बिलिंग • Swiggy/Zomato पेआउट ऑडिट • RFID कैशलेस प्लेकार्ड्स • 48H एक्सपायरी अलर्ट
           </p>
 
           {/* Quick Search Bar */}
-          <div className="max-w-md mx-auto relative">
+          <div className="max-w-md mx-auto relative pt-2">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input
               type="text"
-              placeholder="अपने व्यापार का नाम या फीचर खोजें (उदा: रेस्टोरेंट, हार्डवेयर, KOT)..."
+              placeholder="अपने व्यापार का नाम खोजें (उदा: रेस्टोरेंट, हार्डवेयर, KOT)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 focus:border-purple-500 rounded-2xl text-xs text-white placeholder-slate-400 outline-none shadow-lg"
@@ -413,7 +414,7 @@ export default function LandingPage() {
           </div>
 
           {/* Action CTA Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-3">
             <button
               onClick={() => navigate("/dashboard")}
               className="w-full sm:w-auto px-7 py-3.5 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-black text-xs sm:text-sm rounded-2xl shadow-xl shadow-purple-600/40 flex items-center justify-center gap-2 transition cursor-pointer"
@@ -440,31 +441,31 @@ export default function LandingPage() {
           </div>
 
           {/* 4 Trust Feature Badges */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-4 max-w-4xl mx-auto text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-6 max-w-4xl mx-auto text-xs">
             <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-2 text-slate-300">
               <Laptop size={15} className="text-cyan-400 shrink-0" />
-              <span>Windows App</span>
+              <span>Windows Desktop App</span>
             </div>
             <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-2 text-slate-300">
               <Smartphone size={15} className="text-purple-400 shrink-0" />
-              <span>Mobile POS</span>
+              <span>Mobile & Tablet POS</span>
             </div>
             <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-2 text-slate-300">
               <ShieldCheck size={15} className="text-emerald-400 shrink-0" />
-              <span>Offline SQLite</span>
+              <span>100% Offline SQLite</span>
             </div>
             <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-2 text-slate-300">
               <Share2 size={15} className="text-green-400 shrink-0" />
-              <span>WhatsApp Bills</span>
+              <span>WhatsApp Invoices</span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Interactive Industry Explorer Section */}
-      <section className="px-4 sm:px-6 py-12 md:py-16 bg-slate-900/80 border-t border-slate-800">
-        <div className="max-w-7xl mx-auto space-y-8">
-          <div className="text-center space-y-2">
+      {/* Interactive Industry Explorer Section with Generous Button Spacing */}
+      <section className="px-4 sm:px-6 py-14 md:py-20 bg-slate-900/80 border-t border-slate-800">
+        <div className="max-w-7xl mx-auto space-y-10">
+          <div className="text-center space-y-3">
             <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
               हर बिज़नेस के लिए विशेष मॉड्यूल्स (Specialized USPs)
             </h2>
@@ -473,22 +474,20 @@ export default function LandingPage() {
             </p>
           </div>
 
-          {/* Industry Selection Tabs */}
-          <div className="flex justify-center gap-2 flex-wrap pb-2">
+          {/* Industry Selection Tabs with Clear Margins */}
+          <div className="flex justify-center gap-3 sm:gap-4 flex-wrap pb-2">
             {filteredVerticals.map((vert) => {
               const isSelected = selectedVertical === vert.id;
-              const IconComponent = vert.icon;
               return (
                 <button
                   key={vert.id}
                   onClick={() => setSelectedVertical(vert.id)}
-                  className={`px-3.5 py-2 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+                  className={`px-4 py-2.5 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer shadow ${
                     isSelected
                       ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/30 scale-105 ring-2 ring-purple-400"
-                      : "bg-slate-800/80 text-slate-300 hover:bg-slate-700 border border-slate-700"
+                      : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700"
                   }`}
                 >
-                  <IconComponent size={15} className={isSelected ? "text-yellow-300" : "text-slate-400"} />
                   <span>{vert.name}</span>
                 </button>
               );
@@ -497,21 +496,21 @@ export default function LandingPage() {
 
           {/* Active Industry Deep-Dive Card */}
           <div className={`p-6 sm:p-8 bg-slate-900 border-2 ${currentVertical.borderAccent} rounded-3xl shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-200`}>
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-5">
-              <div className="flex items-center gap-3.5">
-                <div className={`p-3.5 rounded-2xl ${currentVertical.bgAccent} border ${currentVertical.borderAccent} shadow-inner shrink-0`}>
-                  {React.createElement(currentVertical.icon, { size: 30, className: currentVertical.accent })}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-6">
+              <div className="flex items-center gap-4">
+                <div className={`p-4 rounded-2xl ${currentVertical.bgAccent} border ${currentVertical.borderAccent} shadow-inner shrink-0`}>
+                  {React.createElement(currentVertical.icon, { size: 32, className: currentVertical.accent })}
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">विशेष इंडस्ट्री मॉड्यूल</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">विशेष इंडस्ट्री मॉड्यूल</span>
                   <h3 className="text-xl sm:text-2xl font-black text-white">{currentVertical.name}</h3>
-                  <p className="text-xs sm:text-sm text-slate-300 mt-0.5 font-medium leading-relaxed">{currentVertical.tagline}</p>
+                  <p className="text-xs sm:text-sm text-slate-300 mt-1 font-medium leading-relaxed">{currentVertical.tagline}</p>
                 </div>
               </div>
 
               <button
                 onClick={() => navigate(currentVertical.route)}
-                className="w-full md:w-auto px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs rounded-xl shadow-lg flex items-center justify-center gap-2 transition cursor-pointer shrink-0"
+                className="w-full md:w-auto px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs rounded-xl shadow-lg flex items-center justify-center gap-2 transition cursor-pointer shrink-0"
               >
                 <span>यह मॉड्यूल अभी चलाएँ</span>
                 <ArrowRight size={14} />
@@ -523,13 +522,13 @@ export default function LandingPage() {
               {currentVertical.features.map((feat, idx) => (
                 <div
                   key={idx}
-                  className="p-4 bg-slate-800/60 border border-slate-700/80 rounded-2xl space-y-1.5 hover:border-slate-500 transition"
+                  className="p-5 bg-slate-800/60 border border-slate-700/80 rounded-2xl space-y-2 hover:border-slate-500 transition"
                 >
                   <h4 className="font-black text-white text-xs sm:text-sm flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
+                    <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
                     <span>{feat.title}</span>
                   </h4>
-                  <p className="text-xs text-slate-400 leading-relaxed pl-5">
+                  <p className="text-xs text-slate-400 leading-relaxed pl-6">
                     {feat.desc}
                   </p>
                 </div>
@@ -540,7 +539,7 @@ export default function LandingPage() {
       </section>
 
       {/* 8-in-1 Complete Showcase Grid */}
-      <section className="px-4 sm:px-6 py-12 md:py-16 bg-slate-950 border-t border-slate-800">
+      <section className="px-4 sm:px-6 py-14 md:py-20 bg-slate-950 border-t border-slate-800">
         <div className="max-w-7xl mx-auto space-y-10">
           <div className="text-center space-y-2">
             <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
@@ -560,9 +559,9 @@ export default function LandingPage() {
                   onClick={() => navigate(item.route)}
                   className="p-5 bg-slate-900 border border-slate-800 hover:border-purple-500 rounded-3xl transition duration-200 cursor-pointer space-y-3 hover:shadow-xl hover:shadow-purple-500/10 group flex flex-col justify-between"
                 >
-                  <div className="space-y-2.5">
-                    <div className={`w-11 h-11 rounded-2xl ${item.bgAccent} border ${item.borderAccent} flex items-center justify-center text-white group-hover:scale-110 transition shrink-0`}>
-                      <IconComp size={22} className={item.accent} />
+                  <div className="space-y-3">
+                    <div className={`w-12 h-12 rounded-2xl ${item.bgAccent} border ${item.borderAccent} flex items-center justify-center text-white group-hover:scale-110 transition shrink-0`}>
+                      <IconComp size={24} className={item.accent} />
                     </div>
                     <h3 className="font-black text-sm text-white">{item.name}</h3>
                     <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed">
@@ -586,7 +585,7 @@ export default function LandingPage() {
           <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-lg w-full p-6 space-y-6 shadow-2xl relative text-slate-100">
             <button
               onClick={() => setDownloadModalOpen(false)}
-              className="absolute right-5 top-5 p-2 rounded-full bg-slate-800 text-slate-400 hover:text-white"
+              className="absolute right-5 top-5 p-2 rounded-full bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
             >
               <X size={18} />
             </button>
@@ -600,54 +599,54 @@ export default function LandingPage() {
             </div>
 
             <div className="space-y-3 text-xs">
-              {/* Windows App */}
+              {/* Option 1: Instant PWA Install */}
+              <div className="p-4 bg-purple-950/40 rounded-2xl border border-purple-500/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div className="flex items-center gap-3">
+                  <Zap size={28} className="text-yellow-400 shrink-0" />
+                  <div>
+                    <h4 className="font-bold text-white text-sm">⚡ 1-टैप मोबाइल ऐप (Instant Install)</h4>
+                    <p className="text-slate-300 text-[11px] leading-tight">बिना किसी डाउनलोड के तुरंत अपने मोबाइल होम स्क्रीन पर ऐप जोड़ें!</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleInstallMobileApp}
+                  className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black rounded-xl text-center cursor-pointer shrink-0 shadow-lg shadow-purple-600/30"
+                >
+                  Install Now
+                </button>
+              </div>
+
+              {/* Option 2: Windows Desktop Setup */}
               <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div className="flex items-center gap-3">
                   <Laptop size={28} className="text-cyan-400 shrink-0" />
                   <div>
                     <h4 className="font-bold text-white text-sm">Windows Desktop Setup (.exe)</h4>
-                    <p className="text-slate-400 text-[11px] leading-tight">100% ऑफलाइन SQLite, थर्मल प्रिंटर व बारकोड सिंक (118 MB)</p>
+                    <p className="text-slate-400 text-[11px] leading-tight">100% ऑफलाइन SQLite, थर्मल प्रिंटर व बारकोड सिंक</p>
                   </div>
                 </div>
                 <button
                   onClick={handleDownloadWindowsApp}
                   className="w-full sm:w-auto px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-black rounded-xl text-center cursor-pointer shrink-0"
                 >
-                  Download .exe
+                  Releases →
                 </button>
               </div>
 
-              {/* Android APK Download */}
+              {/* Option 3: GitHub Releases Page */}
               <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div className="flex items-center gap-3">
                   <Smartphone size={28} className="text-emerald-400 shrink-0" />
                   <div>
-                    <h4 className="font-bold text-white text-sm">Android Mobile App (.apk)</h4>
-                    <p className="text-slate-400 text-[11px] leading-tight">डायरेक्ट Android APK इंस्टॉलर फाइल (171 MB)</p>
+                    <h4 className="font-bold text-white text-sm">Android APK & All Releases</h4>
+                    <p className="text-slate-400 text-[11px] leading-tight">गिटहब रिलीज पेज से सभी वर्शन्स की APK व EXE फाइलें देखें</p>
                   </div>
                 </div>
                 <button
                   onClick={handleDownloadAndroidApk}
                   className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-center cursor-pointer shrink-0"
                 >
-                  Download .apk
-                </button>
-              </div>
-
-              {/* Android / iOS PWA Instant Install */}
-              <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <div className="flex items-center gap-3">
-                  <Zap size={28} className="text-yellow-400 shrink-0" />
-                  <div>
-                    <h4 className="font-bold text-white text-sm">Instant Mobile Web App (PWA)</h4>
-                    <p className="text-slate-400 text-[11px] leading-tight">बिना डाउनलोड के सीधे होम-स्क्रीन पर जोड़ें (0 MB)</p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleInstallMobileApp}
-                  className="w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-black rounded-xl text-center cursor-pointer shrink-0"
-                >
-                  Install App
+                  View Releases →
                 </button>
               </div>
             </div>
