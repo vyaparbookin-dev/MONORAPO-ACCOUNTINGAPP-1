@@ -42,7 +42,7 @@ import { SecurityTracker } from "@repo/shared";
 import CloudSyncToggel from "./CloudSyncToggel";
 
 export default function DashboardLayout() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
@@ -142,11 +142,19 @@ export default function DashboardLayout() {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
+      {/* Mobile Backdrop Overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden transition-opacity"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <div
+      <aside
         className={`${
-          sidebarOpen ? "w-64" : "w-20"
-        } bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-40 md:relative overflow-y-auto`}
+          sidebarOpen ? "translate-x-0 w-64" : "-translate-x-full lg:translate-x-0 lg:w-20"
+        } bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-white transition-all duration-300 ease-in-out flex flex-col fixed lg:relative h-screen z-40 overflow-y-auto shrink-0 shadow-2xl lg:shadow-none`}
       >
         {/* Logo */}
         <div className="p-4 border-b border-slate-700 flex items-center justify-between">
@@ -169,6 +177,9 @@ export default function DashboardLayout() {
             <button
               key={item.label}
               onClick={() => {
+                if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                  setSidebarOpen(false);
+                }
                 if (item.isExternal) {
                   window.open(item.href, '_blank');
                 } else {
@@ -218,7 +229,7 @@ export default function DashboardLayout() {
         >
           {sidebarOpen ? <ChevronDown size={20} /> : <ChevronDown size={20} className="rotate-90" />}
         </button>
-      </div>
+      </aside>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden md:ml-0" style={{ marginLeft: sidebarOpen ? 0 : 0 }}>

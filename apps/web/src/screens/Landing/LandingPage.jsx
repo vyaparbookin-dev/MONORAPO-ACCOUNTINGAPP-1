@@ -30,13 +30,63 @@ import {
   FileSpreadsheet,
   Check,
   ExternalLink,
-  MessageCircle
+  MessageCircle,
+  Search,
+  X,
+  Apple
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export default function LandingPage() {
+
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+
+  React.useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+  }, []);
+
+  
+  const APK_DOWNLOAD_URL = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/download/v1.2.0/Red.Accounting.Book.v1.2.0.apk";
+  const DESKTOP_EXE_DOWNLOAD_URL = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/download/v1.2.0/Red.Accounting.Book.Setup.1.2.0.exe";
+
+  const handleDownloadAndroidApk = () => {
+    window.location.href = APK_DOWNLOAD_URL;
+  };
+
+  const handleDownloadWindowsApp = () => {
+    window.location.href = DESKTOP_EXE_DOWNLOAD_URL;
+  };
+
+  const handleInstallMobileApp = () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === "accepted") {
+          console.log("User accepted the install prompt");
+        }
+        setDeferredPrompt(null);
+      });
+    } else {
+      // Direct APK download fallback
+      window.location.href = APK_DOWNLOAD_URL;
+      alert("📱 VyaparBook Android APK डाउनलोड शुरू हो गया है!\n\n(या आप अपने ब्राउज़र मेनू ⋮ में 'Install App / Add to Home Screen' भी दबा सकते हैं)");
+    }
+  };
+
+  const handleDownloadWindowsApp = () => {
+    window.location.href = DESKTOP_EXE_DOWNLOAD_URL;
+    alert("📥 VyaparBook Windows Desktop App (.exe) डाउनलोड शुरू हो गया है!");
+  };
+
   const navigate = useNavigate();
   const [selectedVertical, setSelectedVertical] = useState("restaurant");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
 
   const verticalsData = {
     restaurant: {
@@ -149,118 +199,144 @@ export default function LandingPage() {
           desc: "बिलिंग करते समय ओनर पिन से खरीद भाव व शुद्ध मुनाफा देखें; स्टाफ के लिए यह 100% छिपा रहेगा।"
         },
         {
-          title: "📦 3-टियर प्राइसिंग (Sale A, Sale B, Sale C)",
-          desc: "खुदरा ग्राहक के लिए रिटेल भाव, होलसेलर के लिए थोक भाव और डीलर के लिए विशेष भाव 1-क्लिक में।"
+          title: "🏷️ एक्सपायरी अलार्म व डिस्काउंट क्लीयरेंस",
+          desc: "30 दिन में एक्सपायर होने वाले बिस्कुट, नमकीन या कॉस्मेटिक्स पर 'Buy 1 Get 1' ऑफर खुद सक्रिय।"
         }
       ],
-      route: "/fast-pos"
+      route: "/billing"
     },
     mobile: {
       id: "mobile",
-      name: "मोबाइल, कंप्यूटर व इलेक्ट्रॉनिक्स",
+      name: "मोबाइल, लैपटॉप व इलेक्ट्रॉनिक्स",
       icon: Smartphone,
       color: "from-cyan-500 to-blue-600",
       accent: "text-cyan-400",
       borderAccent: "border-cyan-500/50",
       bgAccent: "bg-cyan-500/10",
-      tagline: "डुअल IMEI 1 व 2, बैटरी सीरियल, ब्रांड वारंटी व इनवॉइस बारकोड ट्रैकिंग",
+      tagline: "15-Digit IMEI नंबर स्कैनिंग, ब्रांड वारंटी ट्रैकिंग और रिपेयरिंग जॉब-कार्ड",
       features: [
         {
-          title: "📱 Dual IMEI 1 & IMEI 2 Scanning",
-          desc: "मोबाइल बॉक्स का बारकोड स्कैन करते ही दोनों IMEI नंबर ऑटो-कैप्चर होकर इनवॉइस पर प्रिंट होते हैं।"
+          title: "📱 15-Digit Dual IMEI व सीरियल नंबर बारकोड",
+          desc: "स्मार्टफोन बेचते समय बॉक्स का बारकोड स्कैन करें; दोनों IMEI और बैटरी सीरियल नंबर इनवॉइस पर स्वतः प्रिंट।"
         },
         {
-          title: "🛡️ ब्रांड वारंटी व सर्विस हिस्ट्री",
-          desc: "12 महीने / 24 महीने की वारंटी ट्रैकर। बिल नंबर डालते ही हैंडसेट की पूरी गारंटी डिटेल्स सामने।"
+          title: "🛡️ ब्रांड वारंटी क्लेम व सर्विस सेंटर रिप्लेसमेंट",
+          desc: "सैमसंग, एप्पल, रियलमी के वारंटी क्लेम, डेड-ऑन-अराइवल (DOA) रिटर्न और क्रेडिट नोट मैनेजमेंट।"
         },
         {
-          title: "🏷️ ऑटोमैटिक बारकोड व सीरियल लेबल जनरेटर",
-          desc: "एक्सेसरीज, हेडफोन और चार्जर पर चिपकाने के लिए स्टिकर शीट 1-क्लिक में प्रिंट करें।"
+          title: "🔧 रिपेयरिंग जॉब-कार्ड व फॉल्ट डायग्नोस्टिक्स",
+          desc: "टूटी स्क्रीन, बैटरी प्रॉब्लम, कस्टमर का लॉक पैटर्न और रिपेयरिंग एस्टीमेट स्लिप।"
+        },
+        {
+          title: "🔄 ओल्ड फोन एक्सचेंज (Cashify Style Buyback)",
+          desc: "पुराना फोन एक्सचेंज में लेते समय IMEI वेरिफिकेशन, कस्टमर का आधार व कंडीशन डिस्काउंट।"
         }
       ],
-      route: "/billing"
+      route: "/serial-tracking"
     },
-    garments: {
-      id: "garments",
-      name: "गारमेंट्स, फुटवियर व फैशन स्टोर",
+    hardware: {
+      id: "hardware",
+      name: "हार्डवेयर, सेनेटरी, पाइप्स व पेंट्स",
+      icon: Cpu,
+      color: "from-orange-500 to-amber-600",
+      accent: "text-orange-400",
+      borderAccent: "border-orange-500/50",
+      bgAccent: "bg-orange-500/10",
+      tagline: "स्क्वायर फीट/मीटर डाइमेंशन कैलकुलेटर, वजन-से-मीटर कन्वर्जन व कटिंग वेस्टेज",
+      features: [
+        {
+          title: "📐 L × W × H डाइमेंशन कैलकुलेटर (ग्लास/प्लाई)",
+          desc: "प्लाईवुड, मार्बल, टफन्ड ग्लास या ग्रेनाइट: इंच/सूट में माप डालें, स्क्वायर फीट व कुल रेट खुद बनेगा।"
+        },
+        {
+          title: "⚖️ तार/पाइप का वजन-से-मीटर ऑटो कन्वर्जन",
+          desc: "कांटे पर 42.5 Kg वायर का बंडल तौलें; सिस्टम अपने आप '250 Meters' बिल में दर्ज करेगा।"
+        },
+        {
+          title: "✂️ कटिंग वेस्टेज चार्जिंग (Scrap Loss Recovery)",
+          desc: "लोहे के एंगल या पीवीसी पाइप के कटने पर बचे छोटे टुकड़ों का वेस्टेज चार्ज ग्राहक बिल में शामिल।"
+        },
+        {
+          title: "🎨 पेंट टिंटिंग बेस व कलरेंट फॉर्मूलेशन",
+          desc: "कंप्यूटराइज्ड पेंट मिक्सिंग: 20L बेस व्हाइट + 40ml रेड + 15ml येलो कलरेंट का सही स्टॉक डिडक्शन।"
+        }
+      ],
+      route: "/inventory"
+    },
+    salon: {
+      id: "salon",
+      name: "सैलून, स्पा व वेलनेस क्लिनिक",
       icon: Scissors,
       color: "from-pink-500 to-rose-600",
       accent: "text-pink-400",
       borderAccent: "border-pink-500/50",
       bgAccent: "bg-pink-500/10",
-      tagline: "साइज मैट्रिक्स (S/M/L/XL), कलर वेरिएंट्स और बारकोड हैंग-टैग्स",
+      tagline: "अपॉइंटमेंट शेड्यूलिंग, ब्यूटीशियन इंसेंटिव कमीशन और मेंबरशिप वैक्स/फेशियल पैकेजेस",
       features: [
         {
-          title: "👗 Multi-Size & Color Matrix Grid",
-          desc: "एक ही टी-शर्ट या कुर्ते के सभी साइजेस (S, M, L, XL, XXL) और कलर्स (Red, Black, Blue) का संयुक्त स्टॉक।"
+          title: "📅 Stylist Chair & Appointment Scheduler",
+          desc: "हेयरड्रेसर व ब्यूटीशियन की खाली कुर्सियों का टाइम-स्लॉट कैलेंडर; कस्टमर को व्हाट्सएप कन्फर्मेशन।"
         },
         {
-          title: "🏷️ बारकोड हैंग-टैग व स्टाइल कोड्स",
-          desc: "कपड़ों पर लगने वाले बारकोड टैग्स व सीजनल डिस्काउंट कूपन्स (Flat 20% Off, Buy 2 Get 1)।"
+          title: "💇‍♀️ 10-25% स्टाफ सर्विस इंसेंटिव कमीशन",
+          desc: "हेयर कट (₹500 पर ₹50) या ब्राइडल मेकअप (₹8,000 पर ₹1,200) का स्टाफ वाइज कमीशन ऑटोमैटिक वेतन में जुड़े।"
+        },
+        {
+          title: "🧴 सैलून बैक-बार शैम्पू/कलर कंजम्पशन",
+          desc: "कस्टमर पर इस्तेमाल हुआ 50ml L'Oreal शैम्पू, हेयर स्पा क्रीम या वैक्स का इंटरनल कंजम्पशन ट्रैकिंग।"
+        },
+        {
+          title: "💳 VIP मेंबरशिप वैलेट व एनुअल पैकेजेस",
+          desc: "₹10,000 का कार्ड रिचार्ज कराने पर 12 हेयरकट + 3 फेशियल फ्री; वॉलेट से प्रति विजिट डिडक्शन।"
         }
       ],
       route: "/billing"
     },
-    hardware: {
-      id: "hardware",
-      name: "हार्डवेयर, सेनेटरी, पेंट व पाइप्स",
-      icon: Cpu,
-      color: "from-teal-500 to-emerald-600",
-      accent: "text-teal-400",
-      borderAccent: "border-teal-500/50",
-      bgAccent: "bg-teal-500/10",
-      tagline: "वायर कॉइल मीटर, बंडल वजन (KG), पाइप mm और पेंट कवरेज कैलकुलेटर",
+    core: {
+      id: "core",
+      name: "कोर अकाउंटिंग व डे-बुक रोकड़ बही",
+      icon: Receipt,
+      color: "from-blue-600 to-indigo-700",
+      accent: "text-blue-400",
+      borderAccent: "border-blue-500/50",
+      bgAccent: "bg-blue-500/10",
+      tagline: "सुबह का गल्ला, दैनिक नकद आवक-जावक, शुद्ध मुनाफा और GSTR-1/3B फाइलिंग",
       features: [
         {
-          title: "⚡ वायर कॉइल रनिंग मीटर व बंडल वजन (KG)",
-          desc: "तार के वजन से लंबाई (Meters) और लंबाई से वजन निकालने का इनबिल्ट इंजीनियरिंग कैलकुलेटर।"
+          title: "💰 डे-बुक रोकड़ बही (Daily Cash In/Out)",
+          desc: "सुबह का ओपनिंग गल्ला (₹15,000) + नकद बिक्री (₹38.5k) - खर्चे = रात को गल्ले में सुरक्षित नकद।"
         },
         {
-          title: "📐 पाइप डायमीटर mm व पेंट कवरेज एस्टीमेटर",
-          desc: "दीवार के स्क्वायर फीट के हिसाब से जरूरी प्राइमर व पेंट बाल्टियों की मात्रा का ऑटोमैटिक अनुमान।"
-        }
-      ],
-      route: "/billing"
-    },
-    daybook: {
-      id: "daybook",
-      name: "दैनिक डे-बुक व शुद्ध मुनाफा (P&L)",
-      icon: TrendingUp,
-      color: "from-green-500 to-emerald-600",
-      accent: "text-green-400",
-      borderAccent: "border-green-500/50",
-      bgAccent: "bg-green-500/10",
-      tagline: "दैनिक पाई-पाई आवक vs जावक, फूड कॉस्ट % और 1-क्लिक व्हाट्सएप क्लोजिंग",
-      features: [
-        {
-          title: "💰 Real-Time Net Shuddh Munafa (Cash in Hand)",
-          desc: "कुल सेल (Inflow) - राशन/ग्रॉसरी खरीद - स्टाफ मजदूरी - गैस/बिजली = गल्ले में बचा शुद्ध मुनाफा।"
+          title: "📊 दैनिक शुद्ध मुनाफा (Real Shuddh Munafa)",
+          desc: "सिर्फ सेल नहीं, बल्कि माल खरीद लागत (COGS) और दुकान खर्चे काटकर आज का शुद्ध मुनाफा।"
         },
         {
-          title: "📊 गोल्ड स्टैंडर्ड कॉस्ट % रेश्यो (Industry Benchmarks)",
-          desc: "फूड कॉस्ट % (29%), स्टाफ सैलरी % (17%), रेंट % (14%) और गैस/बिजली % (5.8%) का लाइव चार्ट।"
+          title: "🏛️ ऑटोमैटिक GSTR-1, GSTR-2B व 3B टैक्स फाइलिंग",
+          desc: "B2B व B2C बिक्री का वर्गीकरण, 18% इनपुट टैक्स क्रेडिट (ITC) क्लेम और सरकारी पोर्टल पर 1-क्लिक JSON।"
         },
         {
-          title: "🎯 AI मंथली बजट प्रेडिक्टर व ब्रेक-इवन रन-रेट",
-          desc: "माह की शुरुआत में ही ₹1,06,000 फिक्स बजट का अनुमान + दुकान चलाने के लिए जरूरी न्यूनतम दैनिक बिक्री।"
-        },
-        {
-          title: "📲 1-Click WhatsApp Daily Closing Flash Report",
-          desc: "रात को दुकान बंद करते समय 1 बटन दबाते ही आज की पूरी कमाई व खर्च का सारांश ओनर के व्हाट्सएप पर।"
+          title: "🚛 ई-वे बिल व ट्रांसपोर्ट LR बिल्टी ट्रैकिंग",
+          desc: "₹50,000 से अधिक माल की गाड़ी के लिए 1-क्लिक e-Way Bill और ट्रांसपोर्टर LR बिल्टी ट्रैकिंग।"
         }
       ],
       route: "/reports/daybook"
     }
   };
 
-  const currentVertical = verticalsData[selectedVertical];
+  const currentVertical = verticalsData[selectedVertical] || verticalsData.restaurant;
+
+  // Search filter
+  const filteredVerticals = Object.values(verticalsData).filter(v => 
+    v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    v.tagline.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-purple-500 selection:text-white">
       {/* Top Announcement Ribbon */}
-      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 border-b border-purple-500/30 px-4 py-2 text-center text-xs font-bold text-purple-200 flex items-center justify-center gap-2">
+      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 border-b border-purple-500/30 px-4 py-2 text-center text-xs font-bold text-purple-200 flex flex-wrap items-center justify-center gap-2">
         <Sparkles size={14} className="text-yellow-400 animate-pulse" />
-        <span>VyaparBook 2.0 ईआरपी लाइव है — 8 बिज़नेस वर्टिकल्स + ऑफलाइन SQLite + क्लाउड सिंक!</span>
+        <span>VyaparBook 2.0 ERP लाइव है — 8 बिज़नेस वर्टिकल्स + ऑफलाइन SQLite + क्लाउड सिंक!</span>
         <button
           onClick={() => navigate("/dashboard")}
           className="ml-2 underline text-white hover:text-yellow-300 font-black cursor-pointer"
@@ -270,135 +346,149 @@ export default function LandingPage() {
       </div>
 
       {/* Navbar */}
-      <nav className="sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate("/")}>
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-500 flex items-center justify-center font-black text-xl text-white shadow-lg shadow-purple-500/30">
+      <nav className="sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 md:px-6 py-3.5">
+        <div className="max-w-7xl mx-auto flex justify-between items-center gap-2">
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate("/")}>
+            <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-500 flex items-center justify-center font-black text-lg md:text-xl text-white shadow-lg shadow-purple-500/30">
               V
             </div>
             <div>
-              <span className="font-black text-xl tracking-tight text-white flex items-center gap-1.5">
-                VyaparBook <span className="text-xs bg-purple-500/20 text-purple-300 border border-purple-400/30 px-2 py-0.5 rounded-full font-bold">2.0 ERP</span>
+              <span className="font-black text-lg md:text-xl tracking-tight text-white flex items-center gap-1.5">
+                VyaparBook <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-400/30 px-2 py-0.5 rounded-full font-bold">2.0 ERP</span>
               </span>
-              <p className="text-[10px] text-gray-400">All-in-One Multi-Industry Business & Accounting Suite</p>
+              <p className="text-[9px] md:text-[10px] text-gray-400 hidden sm:block">All-in-One Multi-Industry Business Suite</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
+            <button
+              onClick={() => setDownloadModalOpen(true)}
+              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <Download size={14} className="text-emerald-400" />
+              <span className="hidden sm:inline">ऐप डाउनलोड करें</span>
+            </button>
+
             <button
               onClick={() => navigate("/login")}
-              className="px-4 py-2 text-xs font-bold text-slate-300 hover:text-white transition cursor-pointer"
+              className="px-3 py-2 text-xs font-bold text-slate-300 hover:text-white transition cursor-pointer"
             >
-              Sign In
+              लॉगिन
             </button>
+
             <button
               onClick={() => navigate("/dashboard")}
-              className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs rounded-xl shadow-lg shadow-purple-600/30 flex items-center gap-1.5 transition transform hover:scale-105 cursor-pointer"
+              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs rounded-xl shadow-lg shadow-purple-600/30 flex items-center gap-1.5 transition cursor-pointer"
             >
-              Open Web ERP <ArrowRight size={14} />
+              <span>डैशबोर्ड</span>
+              <ArrowRight size={13} />
             </button>
           </div>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section className="relative px-6 pt-16 pb-20 overflow-hidden text-center">
-        {/* Glow Spheres */}
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-purple-600/15 blur-[140px] pointer-events-none rounded-full"></div>
-        <div className="absolute top-1/3 left-1/4 w-[400px] h-[400px] bg-blue-600/15 blur-[120px] pointer-events-none rounded-full"></div>
+      <section className="relative px-4 sm:px-6 pt-12 pb-16 overflow-hidden text-center">
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] md:w-[500px] h-[350px] md:h-[500px] bg-purple-600/15 blur-[140px] pointer-events-none rounded-full"></div>
 
-        <div className="max-w-5xl mx-auto space-y-8 relative z-10">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs font-black shadow-inner">
+        <div className="max-w-5xl mx-auto space-y-6 md:space-y-8 relative z-10">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-[11px] md:text-xs font-black shadow-inner">
             <Award size={14} className="text-yellow-400" />
             <span>भारत का सबसे शक्तिशाली 8-in-1 Multi-Business Cloud ERP</span>
           </div>
 
-          <h1 className="text-4xl sm:text-6xl font-black text-white tracking-tight leading-tight">
+          <h1 className="text-3xl sm:text-5xl md:text-6xl font-black text-white tracking-tight leading-tight">
             रेस्टोरेंट, बैंक्वेट, गेमज़ोन व सुपरमार्केट का{" "}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400">
               ऑटोमेशन व बिलिंग ईआरपी
             </span>
           </h1>
 
-          {/* Clean Well-Spaced Subtitle */}
-          <div className="max-w-3xl mx-auto space-y-3">
-            <p className="text-base sm:text-lg text-slate-300 font-medium leading-relaxed">
-              दैनिक शुद्ध मुनाफा • KOT टेबल बिलिंग • Swiggy/Zomato पेआउट ऑडिट • RFID कैशलेस प्लेकार्ड्स • 48H एक्सपायरी अलर्ट
-            </p>
-            <p className="text-xs sm:text-sm text-slate-400 leading-normal">
-              चाहे आपका 50-टेबल का रेस्टोरेंट हो, 1,000 लोगों का बैंक्वेट हॉल, 50 मशीनों का गेमज़ोन या सुपरमार्केट — हर व्यापार के लिए विशेष मॉड्यूल्स एक ही सॉफ्टवेयर में तैयार हैं।
-            </p>
+          <p className="max-w-3xl mx-auto text-sm sm:text-base text-slate-300 font-medium leading-relaxed">
+            दैनिक शुद्ध मुनाफा • KOT टेबल बिलिंग • Swiggy/Zomato पेआउट ऑडिट • RFID कैशलेस प्लेकार्ड्स • 48H एक्सपायरी अलर्ट
+          </p>
+
+          {/* Quick Search Bar */}
+          <div className="max-w-md mx-auto relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              type="text"
+              placeholder="अपने व्यापार का नाम या फीचर खोजें (उदा: रेस्टोरेंट, हार्डवेयर, KOT)..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 focus:border-purple-500 rounded-2xl text-xs text-white placeholder-slate-400 outline-none shadow-lg"
+            />
           </div>
 
           {/* Action CTA Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
             <button
               onClick={() => navigate("/dashboard")}
-              className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-black text-sm rounded-2xl shadow-xl shadow-purple-600/40 flex items-center justify-center gap-2 transition transform hover:scale-105 cursor-pointer"
+              className="w-full sm:w-auto px-7 py-3.5 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-black text-xs sm:text-sm rounded-2xl shadow-xl shadow-purple-600/40 flex items-center justify-center gap-2 transition cursor-pointer"
             >
-              <Zap size={18} className="text-yellow-300" />
+              <Zap size={16} className="text-yellow-300" />
               क्लाउड वेब ईआरपी खोलें (Launch Web ERP)
             </button>
 
             <button
-              onClick={() => navigate("/billing")}
-              className="w-full sm:w-auto px-8 py-4 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-purple-500 font-bold text-sm rounded-2xl shadow flex items-center justify-center gap-2 transition cursor-pointer"
+              onClick={() => setDownloadModalOpen(true)}
+              className="w-full sm:w-auto px-7 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs sm:text-sm rounded-2xl shadow flex items-center justify-center gap-2 transition cursor-pointer"
             >
-              <ShoppingBag size={18} className="text-emerald-400" />
-              फास्ट पीओएस बिलिंग स्क्रीन (Open POS)
+              <Download size={16} className="text-emerald-400" />
+              विंडोज़ डेस्कटॉप व मोबाइल ऐप डाउनलोड
             </button>
           </div>
 
           {/* 4 Trust Feature Badges */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-6 max-w-4xl mx-auto text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-4 max-w-4xl mx-auto text-xs">
             <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-2 text-slate-300">
-              <Laptop size={16} className="text-cyan-400" />
-              <span>Windows Desktop App</span>
+              <Laptop size={15} className="text-cyan-400" />
+              <span>Windows App</span>
             </div>
             <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-2 text-slate-300">
-              <Smartphone size={16} className="text-purple-400" />
-              <span>Mobile & Tablet POS</span>
+              <Smartphone size={15} className="text-purple-400" />
+              <span>Mobile POS</span>
             </div>
             <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-2 text-slate-300">
-              <ShieldCheck size={16} className="text-emerald-400" />
-              <span>100% Offline SQLite Engine</span>
+              <ShieldCheck size={15} className="text-emerald-400" />
+              <span>Offline SQLite</span>
             </div>
             <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-2 text-slate-300">
-              <Share2 size={16} className="text-green-400" />
-              <span>1-Click WhatsApp Invoices</span>
+              <Share2 size={15} className="text-green-400" />
+              <span>WhatsApp Bills</span>
             </div>
           </div>
         </div>
       </section>
 
       {/* Interactive Industry Explorer Section */}
-      <section className="px-6 py-16 bg-slate-900/80 border-t border-slate-800">
-        <div className="max-w-7xl mx-auto space-y-10">
+      <section className="px-4 sm:px-6 py-12 md:py-16 bg-slate-900/80 border-t border-slate-800">
+        <div className="max-w-7xl mx-auto space-y-8">
           <div className="text-center space-y-2">
             <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
-              हर बिज़नेस के लिए क्या खास और विशेष है? (Specialized USPs)
+              हर बिज़नेस के लिए विशेष मॉड्यूल्स (Specialized USPs)
             </h2>
             <p className="text-xs sm:text-sm text-slate-400 max-w-2xl mx-auto">
-              नीचे दिए गए किसी भी बिज़नेस पर क्लिक करें और देखें कि हमारे पास उस इंडस्ट्री के लिए कौन से खास फीचर्स हैं जो बाज़ार के किसी अन्य सॉफ्टवेयर में नहीं मिलते:
+              नीचे दिए गए किसी भी बिज़नेस पर क्लिक करें और देखें कि हमारे पास उस इंडस्ट्री के लिए कौन से खास फीचर्स हैं:
             </p>
           </div>
 
           {/* Industry Selection Tabs */}
           <div className="flex justify-center gap-2 flex-wrap pb-2">
-            {Object.values(verticalsData).map((vert) => {
+            {filteredVerticals.map((vert) => {
               const isSelected = selectedVertical === vert.id;
               const IconComponent = vert.icon;
               return (
                 <button
                   key={vert.id}
                   onClick={() => setSelectedVertical(vert.id)}
-                  className={`px-4 py-2.5 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+                  className={`px-3.5 py-2 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
                     isSelected
                       ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/30 scale-105 ring-2 ring-purple-400"
                       : "bg-slate-800/80 text-slate-300 hover:bg-slate-700 border border-slate-700"
                   }`}
                 >
-                  <IconComponent size={16} className={isSelected ? "text-yellow-300" : "text-slate-400"} />
+                  <IconComponent size={15} className={isSelected ? "text-yellow-300" : "text-slate-400"} />
                   <span>{vert.name}</span>
                 </button>
               );
@@ -406,22 +496,22 @@ export default function LandingPage() {
           </div>
 
           {/* Active Industry Deep-Dive Card */}
-          <div className={`p-8 bg-slate-900 border-2 ${currentVertical.borderAccent} rounded-3xl shadow-2xl space-y-8 animate-in fade-in zoom-in-95 duration-200`}>
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-6">
-              <div className="flex items-center gap-4">
-                <div className={`p-4 rounded-2xl ${currentVertical.bgAccent} border ${currentVertical.borderAccent} shadow-inner`}>
-                  {React.createElement(currentVertical.icon, { size: 36, className: currentVertical.accent })}
+          <div className={`p-6 sm:p-8 bg-slate-900 border-2 ${currentVertical.borderAccent} rounded-3xl shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-200`}>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-5">
+              <div className="flex items-center gap-3.5">
+                <div className={`p-3.5 rounded-2xl ${currentVertical.bgAccent} border ${currentVertical.borderAccent} shadow-inner`}>
+                  {React.createElement(currentVertical.icon, { size: 30, className: currentVertical.accent })}
                 </div>
                 <div>
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">विशेष इंडस्ट्री मॉड्यूल</span>
-                  <h3 className="text-2xl sm:text-3xl font-black text-white">{currentVertical.name}</h3>
-                  <p className="text-xs sm:text-sm text-slate-300 mt-1 font-medium">{currentVertical.tagline}</p>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">विशेष इंडस्ट्री मॉड्यूल</span>
+                  <h3 className="text-xl sm:text-2xl font-black text-white">{currentVertical.name}</h3>
+                  <p className="text-xs sm:text-sm text-slate-300 mt-0.5 font-medium">{currentVertical.tagline}</p>
                 </div>
               </div>
 
               <button
                 onClick={() => navigate(currentVertical.route)}
-                className="px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs rounded-xl shadow-lg flex items-center gap-2 transition cursor-pointer shrink-0"
+                className="w-full md:w-auto px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs rounded-xl shadow-lg flex items-center justify-center gap-2 transition cursor-pointer shrink-0"
               >
                 <span>यह मॉड्यूल अभी चलाएँ</span>
                 <ArrowRight size={14} />
@@ -429,17 +519,17 @@ export default function LandingPage() {
             </div>
 
             {/* 4 Detailed Feature Blocks */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {currentVertical.features.map((feat, idx) => (
                 <div
                   key={idx}
-                  className="p-5 bg-slate-800/60 border border-slate-700/80 rounded-2xl space-y-2 hover:border-slate-500 transition"
+                  className="p-4 bg-slate-800/60 border border-slate-700/80 rounded-2xl space-y-1.5 hover:border-slate-500 transition"
                 >
-                  <h4 className="font-black text-white text-sm flex items-center gap-2">
-                    <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                  <h4 className="font-black text-white text-xs sm:text-sm flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
                     <span>{feat.title}</span>
                   </h4>
-                  <p className="text-xs text-slate-400 leading-relaxed pl-6">
+                  <p className="text-xs text-slate-400 leading-relaxed pl-5">
                     {feat.desc}
                   </p>
                 </div>
@@ -449,50 +539,70 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 8-in-1 Complete Showcase Grid */}
-      <section className="px-6 py-16 bg-slate-950 border-t border-slate-800">
-        <div className="max-w-7xl mx-auto space-y-12">
-          <div className="text-center space-y-2">
-            <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
-              सभी 8 बिज़नेस वर्टिकल्स एक नज़र में
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400">
-              किसी भी कार्ड पर क्लिक करके सीधे उस मॉड्यूल को लाइव टेस्ट करें
-            </p>
-          </div>
+      {/* Download Modal Popup */}
+      {downloadModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-lg w-full p-6 space-y-6 shadow-2xl relative text-slate-100">
+            <button
+              onClick={() => setDownloadModalOpen(false)}
+              className="absolute right-5 top-5 p-2 rounded-full bg-slate-800 text-slate-400 hover:text-white"
+            >
+              <X size={18} />
+            </button>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {Object.values(verticalsData).map((item) => {
-              const IconComp = item.icon;
-              return (
-                <div
-                  key={item.id}
-                  onClick={() => navigate(item.route)}
-                  className="p-6 bg-slate-900 border border-slate-800 hover:border-purple-500 rounded-3xl transition duration-200 cursor-pointer space-y-4 hover:shadow-xl hover:shadow-purple-500/10 group flex flex-col justify-between"
-                >
-                  <div className="space-y-3">
-                    <div className={`w-12 h-12 rounded-2xl ${item.bgAccent} border ${item.borderAccent} flex items-center justify-center text-white group-hover:scale-110 transition`}>
-                      <IconComp size={24} className={item.accent} />
-                    </div>
-                    <h3 className="font-black text-base text-white">{item.name}</h3>
-                    <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed">
-                      {item.tagline}
-                    </p>
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-600/30 text-indigo-400 flex items-center justify-center mx-auto border border-indigo-500/30">
+                <Download size={24} />
+              </div>
+              <h3 className="text-xl font-black">VyaparBook 2.0 ऐप्स डाउनलोड करें</h3>
+              <p className="text-xs text-slate-400">विंडोज़ कंप्यूटर या एंड्रॉइड/आईफोन मोबाइल के लिए ऐप चुनें</p>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              {/* Windows App */}
+              <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Laptop size={28} className="text-cyan-400" />
+                  <div>
+                    <h4 className="font-bold text-white text-sm">Windows Desktop Setup (.exe)</h4>
+                    <p className="text-slate-400 text-[11px]">100% ऑफलाइन SQLite, थर्मल प्रिंटर व बारकोड सिंक</p>
                   </div>
-
-                  <span className={`text-xs font-bold ${item.accent} flex items-center gap-1 pt-2 border-t border-slate-800`}>
-                    Open Live Screen <ArrowRight size={13} />
-                  </span>
                 </div>
-              );
-            })}
+                <button
+                  onClick={handleDownloadWindowsApp}
+                  className="px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-black rounded-xl"
+                >
+                  Download .exe
+                </button>
+              </div>
+
+              {/* Android App */}
+              <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Smartphone size={28} className="text-emerald-400" />
+                  <div>
+                    <h4 className="font-bold text-white text-sm">Android Mobile App (PWA / APK)</h4>
+                    <p className="text-slate-400 text-[11px]">मोबाइल बिलिंग, कैमरा बारकोड व व्हाट्सएप इनवॉइस</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    alert("📱 मोबाइल में इसे ऐप की तरह चलाने के लिए ब्राउज़र मेनू में जाकर 'Add to Home Screen' या 'Install App' पर टैप करें!");
+                    setDownloadModalOpen(false);
+                  }}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl"
+                >
+                  Install App
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      </section>
+      )}
 
       {/* Footer */}
-      <footer className="border-t border-slate-800/80 px-6 py-10 text-center text-xs text-slate-500 space-y-3 bg-slate-950">
-        <div className="flex justify-center items-center gap-4 text-slate-400">
+      <footer className="border-t border-slate-800/80 px-4 md:px-6 py-8 text-center text-xs text-slate-500 space-y-3 bg-slate-950">
+        <div className="flex justify-center items-center gap-3 text-slate-400 text-xs">
           <span className="cursor-pointer hover:text-white" onClick={() => navigate("/dashboard")}>डैशबोर्ड</span>
           <span>•</span>
           <span className="cursor-pointer hover:text-white" onClick={() => navigate("/billing")}>बिलिंग</span>
@@ -501,8 +611,7 @@ export default function LandingPage() {
           <span>•</span>
           <span className="cursor-pointer hover:text-white" onClick={() => navigate("/reports/daybook")}>डे-बुक</span>
         </div>
-        <p>© 2026 VyaparBook Accounting & Multi-Industry ERP Suite. All rights reserved.</p>
-        <p className="text-slate-600">Enterprise Ready • Local Offline Storage + Supabase Cloud Database</p>
+        <p>© 2026 VyaparBook Accounting & Multi-Industry ERP Suite.</p>
       </footer>
     </div>
   );
