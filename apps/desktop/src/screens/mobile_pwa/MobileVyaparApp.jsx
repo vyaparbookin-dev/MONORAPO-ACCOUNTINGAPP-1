@@ -45,6 +45,7 @@ export default function MobileVyaparApp() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [isPwaInstalled, setIsPwaInstalled] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState(null);
 
   // Selected Item / Bill / Party Modal Details
   const [selectedBillDetail, setSelectedBillDetail] = useState(null);
@@ -79,7 +80,28 @@ export default function MobileVyaparApp() {
       setIsPwaInstalled(!!isStandalone);
     }
     loadRealData();
+
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
   }, [selectedCompany]);
+
+  const handleTriggerNativeInstall = () => {
+    if (installPrompt) {
+      installPrompt.prompt();
+      installPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === "accepted") {
+          setIsPwaInstalled(true);
+        }
+        setInstallPrompt(null);
+      });
+    } else {
+      alert("📱 VyaparBook मोबाइल ऐप सेव करने के लिए:\n\n1. ऊपर दाईं ओर 3 बिंदु (⋮) दबाएं।\n2. 'Install app' या 'Add to Home screen' पर टैप करें।\n\nयह तुरंत आपके फोन में असली ऐप बनकर सेव हो जाएगी!");
+    }
+  };
 
   const loadRealData = async () => {
     setLoading(true);
@@ -286,6 +308,28 @@ export default function MobileVyaparApp() {
         {/* ==================== TAB 1: HOME DASHBOARD ==================== */}
         {activeTab === "home" && (
           <div className="space-y-4 animate-in fade-in">
+            
+            {/* Native 1-Click PWA Install Banner */}
+            {!isPwaInstalled && (
+              <div className="p-3.5 bg-gradient-to-r from-purple-900/90 via-indigo-900/80 to-slate-900 border-2 border-purple-500/60 rounded-2xl flex items-center justify-between gap-3 shadow-xl">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center text-yellow-300 font-bold shadow shrink-0">
+                    <Download size={20} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-xs text-white">📱 VyaparBook ऐप इंस्टॉल करें</h4>
+                    <p className="text-[10px] text-purple-200">होम स्क्रीन पर असली ऐप की तरह सेव करें</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleTriggerNativeInstall}
+                  className="px-3.5 py-2 bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-300 text-slate-950 font-black text-xs rounded-xl shadow-lg shrink-0 cursor-pointer animate-pulse"
+                >
+                  इंस्टॉल ⚡
+                </button>
+              </div>
+            )}
+
             {/* Real Financial Summary Cards */}
             <div className="grid grid-cols-2 gap-3">
               {/* To Collect (उधारी) */}
