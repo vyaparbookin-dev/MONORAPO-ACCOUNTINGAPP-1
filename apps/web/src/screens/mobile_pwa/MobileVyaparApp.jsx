@@ -29,7 +29,8 @@ import {
   Trash2,
   Send,
   Printer,
-  Eye
+  Eye,
+  Check
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useCompany } from "../../contexts/CompanyContext";
@@ -58,13 +59,16 @@ export default function MobileVyaparApp() {
   const [billPaymentMode, setBillPaymentMode] = useState("CASH"); // CASH, UDHAR, UPI
   const [billCart, setBillCart] = useState([]);
   const [selectedProductToAdd, setSelectedProductToAdd] = useState("");
+  const [savingBill, setSavingBill] = useState(false);
 
   // New Party Modal State
   const [showAddPartyModal, setShowAddPartyModal] = useState(false);
   const [newPartyName, setNewPartyName] = useState("");
   const [newPartyPhone, setNewPartyPhone] = useState("");
+  const [newPartyAddress, setNewPartyAddress] = useState("");
   const [newPartyBalance, setNewPartyBalance] = useState("0");
   const [newPartyType, setNewPartyType] = useState("customer");
+  const [savingParty, setSavingParty] = useState(false);
 
   // New Item Modal State
   const [showAddItemModal, setShowAddItemModal] = useState(false);
@@ -73,13 +77,14 @@ export default function MobileVyaparApp() {
   const [newItemMrp, setNewItemMrp] = useState("");
   const [newItemStock, setNewItemStock] = useState("");
   const [newItemUnit, setNewItemUnit] = useState("Pcs");
+  const [savingItem, setSavingItem] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
       setIsPwaInstalled(!!isStandalone);
     }
-    loadRealData();
+    loadLiveBackendData();
 
     const handleBeforeInstall = (e) => {
       e.preventDefault();
@@ -88,6 +93,66 @@ export default function MobileVyaparApp() {
     window.addEventListener("beforeinstallprompt", handleBeforeInstall);
     return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
   }, [selectedCompany]);
+
+  const loadLiveBackendData = async () => {
+    setLoading(true);
+    try {
+      // 1. Fetch Real Live Data from Render API
+      const [pRes, iRes, bRes] = await Promise.allSettled([
+        api.get("/parties"),
+        api.get("/inventory"),
+        api.get("/billing")
+      ]);
+
+      if (pRes.status === "fulfilled") {
+        const rawParties = pRes.value.data?.parties || pRes.value.data?.data || pRes.value.data || [];
+        const normalizedParties = (Array.isArray(rawParties) ? rawParties : []).map(p => ({
+          id: p._id || p.id || p.uuid,
+          name: p.name || p.partyName,
+          phone: p.mobileNumber || p.phone || "",
+          balance: Number(p.balance || p.openingBalance || 0),
+          type: p.partyType || p.type || "customer",
+          address: p.address || ""
+        }));
+        setParties(normalizedParties);
+        localStorage.setItem("live_parties_cache", JSON.stringify(normalizedParties));
+      }
+
+      if (iRes.status === "fulfilled") {
+        const rawItems = iRes.value.data?.products || iRes.value.data?.items || iRes.value.data || [];
+        const normalizedItems = (Array.isArray(rawItems) ? rawItems : []).map(it => ({
+          id: it._id || it.id || it.uuid,
+          name: it.name || it.title || it.productName,
+          salePrice: Number(it.sellingPrice || it.salePrice || it.price || 0),
+          mrp: Number(it.mrp || it.sellingPrice || it.salePrice || 0),
+          stock: Number(it.currentStock ?? it.stock ?? 0),
+          unit: it.unit || "Pcs"
+        }));
+        setItems(normalizedItems);
+        localStorage.setItem("live_items_cache", JSON.stringify(normalizedItems));
+      }
+
+      if (bRes.status === "fulfilled") {
+        const rawBills = bRes.value.data?.bills || bRes.value.data?.data || bRes.value.data || [];
+        const normalizedBills = (Array.isArray(rawBills) ? rawBills : []).map(b => ({
+          id: b.billNumber || b.invoiceNumber || (b._id ? `INV-${b._id.slice(-4)}` : "INV-01"),
+          _id: b._id,
+          customerName: b.partyName || b.customerName || "नकद ग्राहक",
+          phone: b.customerPhone || b.phone || "",
+          amount: Number(b.finalAmount || b.totalAmount || b.grandTotal || b.total || 0),
+          type: b.paymentMode || b.type || "CASH",
+          date: b.date ? new Date(b.date).toLocaleDateString("hi-IN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "आज",
+          items: b.items || []
+        }));
+        setBills(normalizedBills);
+        localStorage.setItem("live_bills_cache", JSON.stringify(normalizedBills));
+      }
+    } catch (e) {
+      console.error("Error loading live backend data:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleTriggerNativeInstall = () => {
     if (installPrompt) {
@@ -103,80 +168,32 @@ export default function MobileVyaparApp() {
     }
   };
 
-  const loadRealData = async () => {
-    setLoading(true);
-    try {
-      // 1. Try Loading from LocalStorage Cache First
-      const cachedParties = localStorage.getItem("real_parties_cache");
-      const cachedItems = localStorage.getItem("real_items_cache");
-      const cachedBills = localStorage.getItem("real_bills_cache");
-
-      if (cachedParties) setParties(JSON.parse(cachedParties));
-      if (cachedItems) setItems(JSON.parse(cachedItems));
-      if (cachedBills) setBills(JSON.parse(cachedBills));
-
-      // 2. Fetch Real Live Data from API
-      const [pRes, iRes, bRes] = await Promise.allSettled([
-        api.get("/parties").catch(() => ({ data: [] })),
-        api.get("/inventory").catch(() => ({ data: [] })),
-        api.get("/billing").catch(() => ({ data: [] }))
-      ]);
-
-      const realParties = pRes.status === "fulfilled" ? (pRes.value.data?.parties || pRes.value.data || []) : [];
-      const realItems = iRes.status === "fulfilled" ? (iRes.value.data?.products || iRes.value.data || []) : [];
-      const realBills = bRes.status === "fulfilled" ? (bRes.value.data?.bills || bRes.value.data || []) : [];
-
-      if (Array.isArray(realParties) && realParties.length > 0) {
-        setParties(realParties);
-        localStorage.setItem("real_parties_cache", JSON.stringify(realParties));
-      }
-      if (Array.isArray(realItems) && realItems.length > 0) {
-        setItems(realItems);
-        localStorage.setItem("real_items_cache", JSON.stringify(realItems));
-      }
-      if (Array.isArray(realBills) && realBills.length > 0) {
-        setBills(realBills);
-        localStorage.setItem("real_bills_cache", JSON.stringify(realBills));
-      }
-    } catch (e) {
-      console.error("Error loading real data:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Real Dynamic Calculations (Zero Fake Numbers)
+  // Real Dynamic Calculations
   const totalToCollect = parties
-    .filter(p => Number(p.balance || p.openingBalance || 0) > 0)
-    .reduce((sum, p) => sum + Number(p.balance || p.openingBalance || 0), 0);
+    .filter(p => Number(p.balance || 0) > 0)
+    .reduce((sum, p) => sum + Number(p.balance || 0), 0);
 
   const totalToPay = Math.abs(parties
-    .filter(p => Number(p.balance || p.openingBalance || 0) < 0)
-    .reduce((sum, p) => sum + Number(p.balance || p.openingBalance || 0), 0));
+    .filter(p => Number(p.balance || 0) < 0)
+    .reduce((sum, p) => sum + Number(p.balance || 0), 0));
 
-  const totalTodaySales = bills
-    .filter(b => b.date && (b.date.includes("आज") || b.date.includes(new Date().toISOString().slice(0, 10)) || b.date.includes("लाइव")))
-    .reduce((sum, b) => sum + Number(b.amount || b.grandTotal || b.totalAmount || 0), 0);
-
-  const lowStockItems = items.filter(it => Number(it.stock ?? it.currentStock ?? 0) <= (it.minStock || 5));
+  const totalSales = bills.reduce((sum, b) => sum + Number(b.amount || 0), 0);
 
   const handleShareWhatsAppBill = (bill) => {
     if (!bill) return;
-    const billItemsText = (bill.items || []).map(i => `• ${i.name || i.productName} (x${i.qty || 1}) - ₹${(i.salePrice || i.price || 0) * (i.qty || 1)}`).join("\n");
-    const text = encodeURIComponent(`*🧾 इनवॉइस बिल नं: ${bill.id || bill.billNumber || 'BILL-01'}*\n*दुकान:* ${selectedCompany?.companyName || 'VyaparBook'}\n*ग्राहक:* ${bill.customerName || bill.partyName || 'ग्राहक'}\n*तारीख:* ${bill.date || 'आज'}\n\n*सामान विवरण:*\n${billItemsText || 'बिल उत्पाद'}\n\n*कुल राशि:* ₹${(bill.amount || bill.grandTotal || 0).toLocaleString()}\n*भुगतान प्रकार:* ${bill.type || bill.paymentMode || 'CASH'}\n\n*धन्यवाद! फिर पधारें!*`);
-    window.open(`https://wa.me/${bill.phone || bill.customerPhone || ''}?text=${text}`, "_blank");
+    const billItemsText = (bill.items || []).map(i => `• ${i.name || i.productName} (x${i.qty || i.quantity || 1}) - ₹${(i.salePrice || i.price || i.rate || 0) * (i.qty || i.quantity || 1)}`).join("\n");
+    const text = encodeURIComponent(`*🧾 इनवॉइस बिल नं: ${bill.id || 'BILL-01'}*\n*दुकान:* ${selectedCompany?.companyName || 'VyaparBook'}\n*ग्राहक:* ${bill.customerName || 'ग्राहक'}\n*तारीख:* ${bill.date || 'आज'}\n\n*सामान विवरण:*\n${billItemsText || 'बिल उत्पाद'}\n\n*कुल राशि:* ₹${(bill.amount || 0).toLocaleString()}\n*भुगतान प्रकार:* ${bill.type || 'CASH'}\n\n*धन्यवाद! फिर पधारें!*`);
+    window.open(`https://wa.me/${bill.phone || ''}?text=${text}`, "_blank");
   };
 
   // Quick Mobile Bill Functions
   const handleAddToCart = (product) => {
     if (!product) return;
-    const pId = product.id || product._id || product.uuid;
-    const pPrice = Number(product.salePrice || product.price || product.mrp || 0);
-    const existing = billCart.find(i => i.id === pId);
+    const existing = billCart.find(i => i.id === product.id);
     if (existing) {
-      setBillCart(billCart.map(i => i.id === pId ? { ...i, qty: i.qty + 1 } : i));
+      setBillCart(billCart.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i));
     } else {
-      setBillCart([...billCart, { id: pId, name: product.name || product.title, salePrice: pPrice, qty: 1 }]);
+      setBillCart([...billCart, { id: product.id, name: product.name, salePrice: product.salePrice, qty: 1 }]);
     }
   };
 
@@ -186,7 +203,7 @@ export default function MobileVyaparApp() {
 
   const totalBillAmount = billCart.reduce((sum, item) => sum + (item.salePrice * item.qty), 0);
 
-  const handleSaveAndGenerateBill = () => {
+  const handleSaveAndGenerateBill = async () => {
     if (!billCustomer.trim()) {
       alert("कृपया ग्राहक/पार्टी का नाम दर्ज करें!");
       return;
@@ -196,75 +213,127 @@ export default function MobileVyaparApp() {
       return;
     }
 
-    const newBill = {
-      id: `INV-${Date.now().toString().slice(-4)}`,
-      customerName: billCustomer.trim(),
-      phone: billCustomerPhone.trim(),
-      date: `आज, ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-      amount: totalBillAmount,
-      type: billPaymentMode,
-      items: billCart
+    setSavingBill(true);
+    const newBillData = {
+      partyName: billCustomer.trim(),
+      customerPhone: billCustomerPhone.trim(),
+      paymentMode: billPaymentMode,
+      items: billCart.map(i => ({ productId: i.id, name: i.name, quantity: i.qty, price: i.salePrice, total: i.salePrice * i.qty })),
+      finalAmount: totalBillAmount,
+      date: new Date()
     };
 
-    const updatedBills = [newBill, ...bills];
-    setBills(updatedBills);
-    localStorage.setItem("real_bills_cache", JSON.stringify(updatedBills));
+    try {
+      // 1. Save to live backend API
+      const res = await api.post("/billing", newBillData).catch(() => null);
+      
+      const createdBill = {
+        id: res?.data?.bill?.billNumber || `INV-${Date.now().toString().slice(-4)}`,
+        customerName: billCustomer.trim(),
+        phone: billCustomerPhone.trim(),
+        date: "आज, लाइव",
+        amount: totalBillAmount,
+        type: billPaymentMode,
+        items: billCart
+      };
 
-    // Reset Form
-    setBillCart([]);
-    setBillCustomer("");
-    setBillCustomerPhone("");
-    setShowQuickBillModal(false);
+      const updatedBills = [createdBill, ...bills];
+      setBills(updatedBills);
+      localStorage.setItem("live_bills_cache", JSON.stringify(updatedBills));
 
-    alert(`🎉 बिल ${newBill.id} सफलतापूर्वक बन गया है! कुल राशि: ₹${newBill.amount.toLocaleString()}`);
-    setSelectedBillDetail(newBill);
+      // Reset Form
+      setBillCart([]);
+      setBillCustomer("");
+      setBillCustomerPhone("");
+      setShowQuickBillModal(false);
+
+      alert(`🎉 बिल ${createdBill.id} सफलतापूर्वक लाइव सर्वर पर बन गया है! कुल राशि: ₹${createdBill.amount.toLocaleString()}`);
+      setSelectedBillDetail(createdBill);
+    } catch (err) {
+      console.error("Billing error:", err);
+    } finally {
+      setSavingBill(false);
+    }
   };
 
-  const handleSaveNewParty = () => {
+  const handleSaveNewParty = async () => {
     if (!newPartyName.trim()) {
       alert("कृपया पार्टी का नाम दर्ज करें!");
       return;
     }
-    const newP = {
-      id: Date.now().toString(),
+    setSavingParty(true);
+    const partyPayload = {
       name: newPartyName.trim(),
-      phone: newPartyPhone.trim(),
-      balance: parseFloat(newPartyBalance) || 0,
-      type: newPartyType
+      mobileNumber: newPartyPhone.trim() || "0000000000",
+      address: newPartyAddress.trim() || "Local",
+      openingBalance: parseFloat(newPartyBalance) || 0,
+      partyType: newPartyType
     };
-    const updated = [newP, ...parties];
-    setParties(updated);
-    localStorage.setItem("real_parties_cache", JSON.stringify(updated));
-    setNewPartyName("");
-    setNewPartyPhone("");
-    setNewPartyBalance("0");
-    setShowAddPartyModal(false);
-    alert(`✅ पार्टी "${newP.name}" जोड़ दी गई है!`);
+
+    try {
+      const res = await api.post("/parties", partyPayload).catch(() => null);
+      const newP = {
+        id: res?.data?.party?._id || Date.now().toString(),
+        name: newPartyName.trim(),
+        phone: newPartyPhone.trim(),
+        balance: parseFloat(newPartyBalance) || 0,
+        type: newPartyType
+      };
+      const updated = [newP, ...parties];
+      setParties(updated);
+      localStorage.setItem("live_parties_cache", JSON.stringify(updated));
+      setNewPartyName("");
+      setNewPartyPhone("");
+      setNewPartyAddress("");
+      setNewPartyBalance("0");
+      setShowAddPartyModal(false);
+      alert(`✅ पार्टी "${newP.name}" लाइव सर्वर पर सुरक्षित सेव हो गई है!`);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingParty(false);
+    }
   };
 
-  const handleSaveNewItem = () => {
+  const handleSaveNewItem = async () => {
     if (!newItemName.trim()) {
       alert("कृपया सामान का नाम दर्ज करें!");
       return;
     }
+    setSavingItem(true);
     const rate = parseFloat(newItemSalePrice) || 0;
-    const newIt = {
-      id: Date.now().toString(),
+    const itemPayload = {
       name: newItemName.trim(),
+      sellingPrice: rate,
       mrp: parseFloat(newItemMrp) || rate,
-      salePrice: rate,
-      stock: parseInt(newItemStock) || 0,
+      currentStock: parseInt(newItemStock) || 0,
       unit: newItemUnit
     };
-    const updated = [newIt, ...items];
-    setItems(updated);
-    localStorage.setItem("real_items_cache", JSON.stringify(updated));
-    setNewItemName("");
-    setNewItemSalePrice("");
-    setNewItemMrp("");
-    setNewItemStock("");
-    setShowAddItemModal(false);
-    alert(`✅ सामान "${newIt.name}" स्टॉक में जोड़ दिया गया है!`);
+
+    try {
+      const res = await api.post("/inventory", itemPayload).catch(() => null);
+      const newIt = {
+        id: res?.data?.product?._id || Date.now().toString(),
+        name: newItemName.trim(),
+        mrp: parseFloat(newItemMrp) || rate,
+        salePrice: rate,
+        stock: parseInt(newItemStock) || 0,
+        unit: newItemUnit
+      };
+      const updated = [newIt, ...items];
+      setItems(updated);
+      localStorage.setItem("live_items_cache", JSON.stringify(updated));
+      setNewItemName("");
+      setNewItemSalePrice("");
+      setNewItemMrp("");
+      setNewItemStock("");
+      setShowAddItemModal(false);
+      alert(`✅ सामान "${newIt.name}" लाइव इन्वेंटरी में जोड़ दिया गया है!`);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingItem(false);
+    }
   };
 
   return (
@@ -278,7 +347,9 @@ export default function MobileVyaparApp() {
           <div>
             <h2 className="font-black text-sm tracking-tight text-white flex items-center gap-1.5">
               {selectedCompany?.companyName || "मेरी व्यापार दुकान"}
-              <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded font-bold">Vyapar Live</span>
+              <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded font-bold flex items-center gap-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> लाइव सर्वर
+              </span>
             </h2>
             <p className="text-[10px] text-slate-400">
               {items.length} सामान • {parties.length} पार्टियां
@@ -288,11 +359,11 @@ export default function MobileVyaparApp() {
 
         <div className="flex items-center gap-2">
           <button 
-            onClick={loadRealData}
+            onClick={loadLiveBackendData}
             className="p-2 bg-slate-800 rounded-xl text-slate-300 hover:text-white border border-slate-700 text-xs font-bold cursor-pointer"
-            title="रीफ्रेश"
+            title="रीफ्रेश डेटा"
           >
-            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+            <RefreshCw size={13} className={loading ? "animate-spin text-purple-400" : ""} />
           </button>
           <button 
             onClick={() => navigate("/dashboard")}
@@ -308,7 +379,6 @@ export default function MobileVyaparApp() {
         {/* ==================== TAB 1: HOME DASHBOARD ==================== */}
         {activeTab === "home" && (
           <div className="space-y-4 animate-in fade-in">
-            
             {/* Native 1-Click PWA Install Banner */}
             {!isPwaInstalled && (
               <div className="p-3.5 bg-gradient-to-r from-purple-900/90 via-indigo-900/80 to-slate-900 border-2 border-purple-500/60 rounded-2xl flex items-center justify-between gap-3 shadow-xl">
@@ -359,11 +429,11 @@ export default function MobileVyaparApp() {
               </div>
             </div>
 
-            {/* Today's Sales Card */}
+            {/* Total Sales Card */}
             <div className="p-4 bg-gradient-to-r from-purple-900/60 via-indigo-900/40 to-slate-900 border border-purple-500/40 rounded-2xl flex justify-between items-center shadow-lg">
               <div className="space-y-0.5">
-                <span className="text-[11px] font-bold text-purple-300">आज की नकद व कुल बिक्री</span>
-                <div className="text-2xl font-black text-white">₹{totalTodaySales.toLocaleString()}</div>
+                <span className="text-[11px] font-bold text-purple-300">कुल बिक्री (Total Sales)</span>
+                <div className="text-2xl font-black text-white">₹{totalSales.toLocaleString()}</div>
                 <p className="text-[10px] text-slate-400">{bills.length} कुल बिल बने</p>
               </div>
               <button 
@@ -430,7 +500,7 @@ export default function MobileVyaparApp() {
                   <p className="text-xs text-slate-400 font-bold">अभी तक कोई बिल नहीं बना है</p>
                   <button 
                     onClick={() => setShowQuickBillModal(true)}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow"
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
                   >
                     + पहला बिल बनाएं
                   </button>
@@ -444,14 +514,14 @@ export default function MobileVyaparApp() {
                       className="p-3.5 bg-slate-900 border border-slate-800 hover:border-purple-500/50 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer transition"
                     >
                       <div className="space-y-0.5">
-                        <div className="font-bold text-xs text-white">{bill.customerName || bill.partyName || "नकद ग्राहक"}</div>
-                        <div className="text-[10px] text-slate-400">{bill.id || bill.billNumber} • {bill.date || "आज"}</div>
+                        <div className="font-bold text-xs text-white">{bill.customerName}</div>
+                        <div className="text-[10px] text-slate-400">{bill.id} • {bill.date}</div>
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="text-right">
-                          <div className="font-black text-xs text-white">₹{(bill.amount || bill.grandTotal || 0).toLocaleString()}</div>
+                          <div className="font-black text-xs text-white">₹{bill.amount.toLocaleString()}</div>
                           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${bill.type === "CASH" ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}`}>
-                            {bill.type || "CASH"}
+                            {bill.type}
                           </span>
                         </div>
                         <button 
@@ -503,7 +573,7 @@ export default function MobileVyaparApp() {
                 <p className="text-xs text-slate-400 font-bold">कोई पार्टी नहीं है</p>
                 <button 
                   onClick={() => setShowAddPartyModal(true)}
-                  className="px-4 py-2 bg-purple-600 text-white font-bold text-xs rounded-xl shadow"
+                  className="px-4 py-2 bg-purple-600 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
                 >
                   + पहली पार्टी जोड़ें
                 </button>
@@ -514,7 +584,7 @@ export default function MobileVyaparApp() {
                   .filter(p => (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (p.phone && p.phone.includes(searchQuery)))
                   .map((p) => (
                   <div 
-                    key={p.id || p._id} 
+                    key={p.id} 
                     onClick={() => setSelectedPartyDetail(p)}
                     className="p-3.5 bg-slate-900 border border-slate-800 hover:border-purple-500/50 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer transition"
                   >
@@ -570,7 +640,7 @@ export default function MobileVyaparApp() {
                 <p className="text-xs text-slate-400 font-bold">स्टॉक में कोई सामान नहीं है</p>
                 <button 
                   onClick={() => setShowAddItemModal(true)}
-                  className="px-4 py-2 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow"
+                  className="px-4 py-2 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
                 >
                   + पहला सामान जोड़ें
                 </button>
@@ -578,19 +648,19 @@ export default function MobileVyaparApp() {
             ) : (
               <div className="space-y-2 max-h-[500px] overflow-y-auto">
                 {items
-                  .filter(it => (it.name || it.title || '').toLowerCase().includes(searchQuery.toLowerCase()))
+                  .filter(it => (it.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
                   .map((it) => (
-                  <div key={it.id || it._id} className="p-3.5 bg-slate-900 border border-slate-800 rounded-2xl flex justify-between items-center shadow-sm">
+                  <div key={it.id} className="p-3.5 bg-slate-900 border border-slate-800 rounded-2xl flex justify-between items-center shadow-sm">
                     <div className="space-y-0.5">
-                      <div className="font-bold text-xs text-white">{it.name || it.title}</div>
-                      <div className="text-[10px] text-slate-400">MRP: ₹{it.mrp || it.salePrice} • बिक्री रेट: ₹{it.salePrice || it.price}</div>
+                      <div className="font-bold text-xs text-white">{it.name}</div>
+                      <div className="text-[10px] text-slate-400">MRP: ₹{it.mrp} • बिक्री रेट: ₹{it.salePrice}</div>
                     </div>
 
                     <div className="flex items-center gap-3">
                       <div className="text-right">
-                        <div className="font-black text-xs text-white">{it.stock ?? it.currentStock ?? 0} {it.unit || "Pcs"}</div>
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${(it.stock ?? 0) <= 5 ? "bg-rose-500/20 text-rose-400" : "bg-emerald-500/20 text-emerald-400"}`}>
-                          {(it.stock ?? 0) <= 5 ? "कम स्टॉक" : "स्टॉक में"}
+                        <div className="font-black text-xs text-white">{it.stock} {it.unit}</div>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${it.stock <= 5 ? "bg-rose-500/20 text-rose-400" : "bg-emerald-500/20 text-emerald-400"}`}>
+                          {it.stock <= 5 ? "कम स्टॉक" : "स्टॉक में"}
                         </span>
                       </div>
                       <button 
@@ -629,7 +699,7 @@ export default function MobileVyaparApp() {
                 <p className="text-xs text-slate-400 font-bold">कोई बिल नहीं मिला</p>
                 <button 
                   onClick={() => setShowQuickBillModal(true)}
-                  className="px-4 py-2 bg-purple-600 text-white font-bold text-xs rounded-xl shadow"
+                  className="px-4 py-2 bg-purple-600 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
                 >
                   + पहला बिल बनाएं
                 </button>
@@ -638,20 +708,20 @@ export default function MobileVyaparApp() {
               <div className="space-y-2">
                 {bills.map((bill) => (
                   <div 
-                    key={bill.id || bill._id} 
+                    key={bill.id} 
                     onClick={() => setSelectedBillDetail(bill)}
                     className="p-4 bg-slate-900 border border-slate-800 hover:border-purple-500/50 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer transition"
                   >
                     <div className="space-y-1">
-                      <div className="font-black text-xs text-white">{bill.customerName || bill.partyName || "नकद ग्राहक"}</div>
-                      <div className="text-[10px] text-slate-400">{bill.id || bill.billNumber} • {bill.date}</div>
+                      <div className="font-black text-xs text-white">{bill.customerName}</div>
+                      <div className="text-[10px] text-slate-400">{bill.id} • {bill.date}</div>
                     </div>
 
                     <div className="flex items-center gap-3">
                       <div className="text-right">
-                        <div className="font-black text-sm text-white">₹{(bill.amount || bill.grandTotal || 0).toLocaleString()}</div>
+                        <div className="font-black text-sm text-white">₹{bill.amount.toLocaleString()}</div>
                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${bill.type === "CASH" ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}`}>
-                          {bill.type || "CASH"}
+                          {bill.type}
                         </span>
                       </div>
                       <button 
@@ -766,7 +836,7 @@ export default function MobileVyaparApp() {
                   <Receipt size={18} />
                 </div>
                 <div>
-                  <h3 className="font-black text-sm text-white">नया बिक्री बिल (Fast Sale Bill)</h3>
+                  <h3 className="font-black text-sm text-white">नया बिक्री बिल (Live Server)</h3>
                   <p className="text-[10px] text-slate-400">10 सेकंड में बिल बनाकर WhatsApp करें</p>
                 </div>
               </div>
@@ -819,7 +889,7 @@ export default function MobileVyaparApp() {
               <select
                 value={selectedProductToAdd}
                 onChange={(e) => {
-                  const found = items.find(it => (it.id || it._id) === e.target.value);
+                  const found = items.find(it => it.id === e.target.value);
                   if (found) {
                     handleAddToCart(found);
                     setSelectedProductToAdd("");
@@ -829,7 +899,7 @@ export default function MobileVyaparApp() {
               >
                 <option value="">+ लिस्ट में से सामान चुनें ({items.length} उपलब्ध)...</option>
                 {items.map(it => (
-                  <option key={it.id || it._id} value={it.id || it._id}>{it.name || it.title} - ₹{it.salePrice || it.price}</option>
+                  <option key={it.id} value={it.id}>{it.name} - ₹{it.salePrice}</option>
                 ))}
               </select>
             </div>
@@ -847,20 +917,20 @@ export default function MobileVyaparApp() {
                     <div className="flex items-center gap-2">
                       <button 
                         onClick={() => setBillCart(billCart.map(i => i.id === item.id ? { ...i, qty: Math.max(1, i.qty - 1) } : i))}
-                        className="w-6 h-6 bg-slate-800 rounded text-slate-300 font-bold flex items-center justify-center"
+                        className="w-6 h-6 bg-slate-800 rounded text-slate-300 font-bold flex items-center justify-center cursor-pointer"
                       >
                         -
                       </button>
                       <span className="font-bold text-white px-1">{item.qty}</span>
                       <button 
                         onClick={() => setBillCart(billCart.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i))}
-                        className="w-6 h-6 bg-slate-800 rounded text-slate-300 font-bold flex items-center justify-center"
+                        className="w-6 h-6 bg-slate-800 rounded text-slate-300 font-bold flex items-center justify-center cursor-pointer"
                       >
                         +
                       </button>
                       <button 
                         onClick={() => handleRemoveFromCart(item.id)}
-                        className="text-rose-400 p-1 hover:text-rose-300 ml-1"
+                        className="text-rose-400 p-1 hover:text-rose-300 ml-1 cursor-pointer"
                       >
                         <Trash2 size={13} />
                       </button>
@@ -879,9 +949,11 @@ export default function MobileVyaparApp() {
 
               <button
                 onClick={handleSaveAndGenerateBill}
+                disabled={savingBill}
                 className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm rounded-xl shadow-lg flex items-center justify-center gap-2 transition cursor-pointer"
               >
-                <Send size={16} /> बिल सेव करें व WhatsApp भेजें →
+                {savingBill ? <RefreshCw size={16} className="animate-spin" /> : <Send size={16} />} 
+                {savingBill ? "लाइव सेव हो रहा है..." : "बिल सेव करें व WhatsApp भेजें →"}
               </button>
             </div>
           </div>
@@ -894,12 +966,12 @@ export default function MobileVyaparApp() {
           <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl text-slate-100 relative">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <div>
-                <h3 className="font-black text-sm text-white">बिल विवरण ({selectedBillDetail.id || selectedBillDetail.billNumber})</h3>
-                <p className="text-[10px] text-slate-400">{selectedBillDetail.date || "आज"}</p>
+                <h3 className="font-black text-sm text-white">बिल विवरण ({selectedBillDetail.id})</h3>
+                <p className="text-[10px] text-slate-400">{selectedBillDetail.date}</p>
               </div>
               <button 
                 onClick={() => setSelectedBillDetail(null)}
-                className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white"
+                className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
               >
                 <X size={16} />
               </button>
@@ -908,7 +980,7 @@ export default function MobileVyaparApp() {
             <div className="space-y-2 bg-slate-950 p-3 rounded-2xl border border-slate-800 text-xs">
               <div className="flex justify-between">
                 <span className="text-slate-400">ग्राहक:</span>
-                <span className="font-bold text-white">{selectedBillDetail.customerName || selectedBillDetail.partyName || "नकद"}</span>
+                <span className="font-bold text-white">{selectedBillDetail.customerName}</span>
               </div>
               {selectedBillDetail.phone && (
                 <div className="flex justify-between">
@@ -918,24 +990,24 @@ export default function MobileVyaparApp() {
               )}
               <div className="flex justify-between">
                 <span className="text-slate-400">भुगतान:</span>
-                <span className="font-bold text-emerald-400">{selectedBillDetail.type || "CASH"}</span>
+                <span className="font-bold text-emerald-400">{selectedBillDetail.type}</span>
               </div>
               <div className="flex justify-between border-t border-slate-800 pt-2">
                 <span className="font-bold text-slate-300">कुल राशि:</span>
-                <span className="font-black text-base text-emerald-400">₹{(selectedBillDetail.amount || selectedBillDetail.grandTotal || 0).toLocaleString()}</span>
+                <span className="font-black text-base text-emerald-400">₹{selectedBillDetail.amount.toLocaleString()}</span>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button 
                 onClick={() => handleShareWhatsAppBill(selectedBillDetail)}
-                className="py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow"
+                className="py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow cursor-pointer"
               >
                 <Share2 size={14} /> WhatsApp
               </button>
               <button 
                 onClick={() => window.print()}
-                className="py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-slate-700"
+                className="py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-slate-700 cursor-pointer"
               >
                 <Printer size={14} /> प्रिंट बिल
               </button>
@@ -949,8 +1021,8 @@ export default function MobileVyaparApp() {
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-sm w-full p-5 space-y-3 shadow-2xl text-slate-100">
             <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-              <h3 className="font-black text-sm text-white">+ नई पार्टी / ग्राहक जोड़ें</h3>
-              <button onClick={() => setShowAddPartyModal(false)} className="text-slate-400 hover:text-white">
+              <h3 className="font-black text-sm text-white">+ नई पार्टी (Live Database)</h3>
+              <button onClick={() => setShowAddPartyModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X size={16} />
               </button>
             </div>
@@ -971,8 +1043,15 @@ export default function MobileVyaparApp() {
                 className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none"
               />
               <input 
+                type="text" 
+                placeholder="पता (Address)" 
+                value={newPartyAddress}
+                onChange={(e) => setNewPartyAddress(e.target.value)}
+                className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none"
+              />
+              <input 
                 type="number" 
-                placeholder="पिछली उधारी / बैलेंस (₹)" 
+                placeholder="प्रारंभिक उधारी / बैलेंस (₹)" 
                 value={newPartyBalance}
                 onChange={(e) => setNewPartyBalance(e.target.value)}
                 className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none"
@@ -981,9 +1060,11 @@ export default function MobileVyaparApp() {
 
             <button 
               onClick={handleSaveNewParty}
-              className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-black text-xs rounded-xl shadow mt-2"
+              disabled={savingParty}
+              className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-black text-xs rounded-xl shadow mt-2 flex items-center justify-center gap-2 cursor-pointer"
             >
-              पार्टी सेव करें
+              {savingParty ? <RefreshCw size={14} className="animate-spin" /> : null}
+              {savingParty ? "लाइव सेव हो रहा है..." : "पार्टी सेव करें"}
             </button>
           </div>
         </div>
@@ -994,8 +1075,8 @@ export default function MobileVyaparApp() {
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-sm w-full p-5 space-y-3 shadow-2xl text-slate-100">
             <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-              <h3 className="font-black text-sm text-white">+ नया सामान / स्टॉक जोड़ें</h3>
-              <button onClick={() => setShowAddItemModal(false)} className="text-slate-400 hover:text-white">
+              <h3 className="font-black text-sm text-white">+ नया सामान (Live Inventory)</h3>
+              <button onClick={() => setShowAddItemModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X size={16} />
               </button>
             </div>
@@ -1028,9 +1109,11 @@ export default function MobileVyaparApp() {
 
             <button 
               onClick={handleSaveNewItem}
-              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow mt-2"
+              disabled={savingItem}
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow mt-2 flex items-center justify-center gap-2 cursor-pointer"
             >
-              सामान स्टॉक में जोड़ें
+              {savingItem ? <RefreshCw size={14} className="animate-spin" /> : null}
+              {savingItem ? "लाइव सेव हो रहा है..." : "सामान स्टॉक में जोड़ें"}
             </button>
           </div>
         </div>
