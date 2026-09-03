@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    name: 🤖 Compile Android APK
+    name: 🤖 Compile Android Production APK
     runs-on: ubuntu-latest
 
     steps:
@@ -41,7 +41,7 @@ jobs:
       - name: 🩹 Patch Expo Native Modules
         run: node scripts/patch-expo-modules.cjs
 
-      - name: 📦 Pre-bundle JavaScript Assets
+      - name: 📦 Pre-bundle Production JavaScript Assets
         working-directory: apps/mobile
         run: |
           mkdir -p android/app/src/main/assets
@@ -50,14 +50,14 @@ jobs:
       - name: 🔑 Make Gradlew Executable
         run: chmod +x apps/mobile/android/gradlew
 
-      - name: 🏗️ Build Android APK
+      - name: 🏗️ Build Standalone Release APK
         working-directory: apps/mobile/android
         env:
           NODE_PATH: ${{ github.workspace }}/node_modules:${{ github.workspace }}/apps/mobile/node_modules
           NODE_OPTIONS: "--max-old-space-size=4096"
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
         run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: 📋 Capture and Print Exact Error
         if: failure()
@@ -65,24 +65,24 @@ jobs:
           echo "==================== FULL GRADLE DIAGNOSTICS ===================="
           find apps/mobile/android/app/build/ -name "*.txt" -o -name "*.log" -o -name "*.html" | head -n 30 || true
 
-      - name: 🔍 Verify APK File Generation
+      - name: 🔍 Verify Release APK File Generation
         run: |
-          echo "=== Checking Output Directory ==="
-          ls -la apps/mobile/android/app/build/outputs/apk/debug/
-          test -f apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
-          echo "✅ APK file successfully verified!"
+          echo "=== Checking Release Output Directory ==="
+          ls -la apps/mobile/android/app/build/outputs/apk/release/
+          test -f apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          echo "✅ Standalone Release APK successfully verified!"
 
-      - name: 📤 Upload APK Artifacts
+      - name: 📤 Upload Release APK Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Red-Accounting-Book-Mobile-APK
-          path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
       - name: 🚀 Release to GitHub (if tagged)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          files: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
