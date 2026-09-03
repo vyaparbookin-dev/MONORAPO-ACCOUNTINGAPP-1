@@ -57,8 +57,7 @@ export default function LandingPage() {
   const DIRECT_APK_URL = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/tag/v1.2.0";
 
   const handleDownloadAndroidApk = () => {
-    // Open GitHub releases page or prompt
-    window.open(GITHUB_RELEASES_PAGE, "_blank");
+    window.open("https://drive.google.com/file/d/1rxtUoFxe_4TURlKK36TvDA8dDwk_zd2g/view?usp=sharing", "_blank");
   };
 
   const handleDownloadWindowsApp = () => {
