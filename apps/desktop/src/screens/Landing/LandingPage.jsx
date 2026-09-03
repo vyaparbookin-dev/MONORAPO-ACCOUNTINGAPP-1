@@ -653,6 +653,29 @@ export default function LandingPage() {
         </div>
       )}
 
+      
+      {/* Smart Auto-Slide Mobile App Install Floating Banner */}
+      <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-6 md:max-w-md z-40 animate-in slide-in-from-bottom duration-500">
+        <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 border-2 border-purple-500/50 p-4 rounded-3xl shadow-2xl shadow-purple-950/80 flex items-center justify-between gap-3 text-white backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shrink-0">
+              <Smartphone size={22} className="text-yellow-300" />
+            </div>
+            <div>
+              <h4 className="font-black text-xs sm:text-sm text-white">📱 VyaparBook मोबाइल ऐप</h4>
+              <p className="text-[11px] text-purple-200">1-टैप में मोबाइल में चलाएँ</p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setDownloadModalOpen(true)}
+            className="px-4 py-2.5 bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-300 hover:to-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg transition transform hover:scale-105 shrink-0 cursor-pointer"
+          >
+            डाउनलोड करें
+          </button>
+        </div>
+      </div>
+
       {/* Footer */}
       <footer className="border-t border-slate-800/80 px-4 md:px-6 py-8 text-center text-xs text-slate-500 space-y-3 bg-slate-950">
         <div className="flex justify-center items-center gap-3 text-slate-400 text-xs">
