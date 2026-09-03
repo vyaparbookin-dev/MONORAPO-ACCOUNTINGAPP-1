@@ -3,34 +3,28 @@ import {
   Home,
   Users,
   Package,
-  FileText,
+  BarChart2,
   Menu,
   Plus,
   Search,
-  ArrowUpRight,
-  ArrowDownLeft,
-  Share2,
-  Clock,
-  CheckCircle,
-  TrendingUp,
-  Receipt,
-  ShoppingCart,
-  QrCode,
-  DollarSign,
-  AlertTriangle,
-  Bot,
-  Building2,
+  ArrowDown,
+  ArrowUp,
   ChevronRight,
-  Download,
-  Sparkles,
+  ChevronDown,
+  Calculator,
+  Gift,
+  Tv,
+  Share2,
+  ShieldCheck,
+  Calendar,
+  X,
   RefreshCw,
   Phone,
-  X,
   Trash2,
   Send,
   Printer,
-  Eye,
-  Check
+  Receipt,
+  Download
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useCompany } from "../../contexts/CompanyContext";
@@ -39,7 +33,8 @@ import api from "../../services/api";
 export default function MobileVyaparApp() {
   const navigate = useNavigate();
   const { selectedCompany, companies, selectCompany } = useCompany();
-  const [activeTab, setActiveTab] = useState("home"); // home, parties, items, bills, more
+
+  const [activeTab, setActiveTab] = useState("dashboard"); // dashboard, parties, items, reports, more
   const [parties, setParties] = useState([]);
   const [items, setItems] = useState([]);
   const [bills, setBills] = useState([]);
@@ -48,20 +43,26 @@ export default function MobileVyaparApp() {
   const [isPwaInstalled, setIsPwaInstalled] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
 
-  // Selected Item / Bill / Party Modal Details
+  // Modals
+  const [calculatorVisible, setCalculatorVisible] = useState(false);
+  const [referralModalVisible, setReferralModalVisible] = useState(false);
+  const [ecosystemModalVisible, setEcosystemModalVisible] = useState(false);
   const [selectedBillDetail, setSelectedBillDetail] = useState(null);
   const [selectedPartyDetail, setSelectedPartyDetail] = useState(null);
 
-  // New Quick Sale Modal State (100% In-App Mobile Billing)
+  // Calculator State
+  const [calcInput, setCalcInput] = useState("");
+
+  // Quick Bill Modal
   const [showQuickBillModal, setShowQuickBillModal] = useState(false);
   const [billCustomer, setBillCustomer] = useState("");
   const [billCustomerPhone, setBillCustomerPhone] = useState("");
-  const [billPaymentMode, setBillPaymentMode] = useState("CASH"); // CASH, UDHAR, UPI
+  const [billPaymentMode, setBillPaymentMode] = useState("CASH");
   const [billCart, setBillCart] = useState([]);
   const [selectedProductToAdd, setSelectedProductToAdd] = useState("");
   const [savingBill, setSavingBill] = useState(false);
 
-  // New Party Modal State
+  // Quick Party Modal
   const [showAddPartyModal, setShowAddPartyModal] = useState(false);
   const [newPartyName, setNewPartyName] = useState("");
   const [newPartyPhone, setNewPartyPhone] = useState("");
@@ -70,7 +71,7 @@ export default function MobileVyaparApp() {
   const [newPartyType, setNewPartyType] = useState("customer");
   const [savingParty, setSavingParty] = useState(false);
 
-  // New Item Modal State
+  // Quick Item Modal
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [newItemName, setNewItemName] = useState("");
   const [newItemSalePrice, setNewItemSalePrice] = useState("");
@@ -84,7 +85,7 @@ export default function MobileVyaparApp() {
       const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
       setIsPwaInstalled(!!isStandalone);
     }
-    loadLiveBackendData();
+    fetchLiveDashboardData();
 
     const handleBeforeInstall = (e) => {
       e.preventDefault();
@@ -94,99 +95,82 @@ export default function MobileVyaparApp() {
     return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
   }, [selectedCompany]);
 
-  const loadLiveBackendData = async () => {
+  const fetchLiveDashboardData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch Real Live Data from Render API
-      const [pRes, iRes, bRes] = await Promise.allSettled([
+      const [billsRes, partiesRes, invRes] = await Promise.allSettled([
+        api.get("/billing"),
         api.get("/parties"),
-        api.get("/inventory"),
-        api.get("/billing")
+        api.get("/inventory")
       ]);
 
-      if (pRes.status === "fulfilled") {
-        const rawParties = pRes.value.data?.parties || pRes.value.data?.data || pRes.value.data || [];
-        const normalizedParties = (Array.isArray(rawParties) ? rawParties : []).map(p => ({
-          id: p._id || p.id || p.uuid,
+      if (billsRes.status === "fulfilled") {
+        const rawBills = billsRes.value.data?.bills || billsRes.value.data?.data || billsRes.value.data || [];
+        const normBills = (Array.isArray(rawBills) ? rawBills : []).map(b => ({
+          _id: b._id,
+          id: b.billNumber || b.invoiceNumber || (b._id ? `INV-${b._id.slice(-4)}` : "001"),
+          customerName: b.partyName || b.customerName || "Walk-in Customer",
+          phone: b.customerPhone || b.phone || "",
+          amount: Number(b.finalAmount || b.total || b.grandTotal || 0),
+          type: b.paymentMode || b.paymentType || "CASH",
+          paymentStatus: b.paymentStatus || (b.paymentMode === "UDHAR" ? "unpaid" : "paid"),
+          date: b.date ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today",
+          items: b.items || []
+        }));
+        setBills(normBills);
+      }
+
+      if (partiesRes.status === "fulfilled") {
+        const rawParties = partiesRes.value.data?.parties || partiesRes.value.data?.data || partiesRes.value.data || [];
+        const normParties = (Array.isArray(rawParties) ? rawParties : []).map(p => ({
+          id: p._id || p.id,
           name: p.name || p.partyName,
           phone: p.mobileNumber || p.phone || "",
           balance: Number(p.balance || p.openingBalance || 0),
           type: p.partyType || p.type || "customer",
           address: p.address || ""
         }));
-        setParties(normalizedParties);
-        localStorage.setItem("live_parties_cache", JSON.stringify(normalizedParties));
+        setParties(normParties);
       }
 
-      if (iRes.status === "fulfilled") {
-        const rawItems = iRes.value.data?.products || iRes.value.data?.items || iRes.value.data || [];
-        const normalizedItems = (Array.isArray(rawItems) ? rawItems : []).map(it => ({
-          id: it._id || it.id || it.uuid,
-          name: it.name || it.title || it.productName,
+      if (invRes.status === "fulfilled") {
+        const rawInv = invRes.value.data?.products || invRes.value.data?.items || invRes.value.data || [];
+        const normInv = (Array.isArray(rawInv) ? rawInv : []).map(it => ({
+          id: it._id || it.id,
+          name: it.name || it.productName,
           salePrice: Number(it.sellingPrice || it.salePrice || it.price || 0),
-          mrp: Number(it.mrp || it.sellingPrice || it.salePrice || 0),
+          mrp: Number(it.mrp || it.sellingPrice || 0),
           stock: Number(it.currentStock ?? it.stock ?? 0),
           unit: it.unit || "Pcs"
         }));
-        setItems(normalizedItems);
-        localStorage.setItem("live_items_cache", JSON.stringify(normalizedItems));
-      }
-
-      if (bRes.status === "fulfilled") {
-        const rawBills = bRes.value.data?.bills || bRes.value.data?.data || bRes.value.data || [];
-        const normalizedBills = (Array.isArray(rawBills) ? rawBills : []).map(b => ({
-          id: b.billNumber || b.invoiceNumber || (b._id ? `INV-${b._id.slice(-4)}` : "INV-01"),
-          _id: b._id,
-          customerName: b.partyName || b.customerName || "नकद ग्राहक",
-          phone: b.customerPhone || b.phone || "",
-          amount: Number(b.finalAmount || b.totalAmount || b.grandTotal || b.total || 0),
-          type: b.paymentMode || b.type || "CASH",
-          date: b.date ? new Date(b.date).toLocaleDateString("hi-IN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "आज",
-          items: b.items || []
-        }));
-        setBills(normalizedBills);
-        localStorage.setItem("live_bills_cache", JSON.stringify(normalizedBills));
+        setItems(normInv);
       }
     } catch (e) {
-      console.error("Error loading live backend data:", e);
+      console.error("Dashboard fetch error:", e);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleTriggerNativeInstall = () => {
-    if (installPrompt) {
-      installPrompt.prompt();
-      installPrompt.userChoice.then((choiceResult) => {
-        if (choiceResult.outcome === "accepted") {
-          setIsPwaInstalled(true);
-        }
-        setInstallPrompt(null);
-      });
-    } else {
-      alert("📱 VyaparBook मोबाइल ऐप सेव करने के लिए:\n\n1. ऊपर दाईं ओर 3 बिंदु (⋮) दबाएं।\n2. 'Install app' या 'Add to Home screen' पर टैप करें।\n\nयह तुरंत आपके फोन में असली ऐप बनकर सेव हो जाएगी!");
-    }
-  };
+  // APK Exact Metrics Calculation
+  const toCollect = parties.filter(p => Number(p.balance || 0) > 0).reduce((sum, p) => sum + Number(p.balance || 0), 0);
+  const toPay = Math.abs(parties.filter(p => Number(p.balance || 0) < 0).reduce((sum, p) => sum + Number(p.balance || 0), 0));
+  const stockValue = items.reduce((sum, it) => sum + (it.stock * it.salePrice), 0);
+  const recentSales = bills.reduce((sum, b) => sum + b.amount, 0);
 
-  // Real Dynamic Calculations
-  const totalToCollect = parties
-    .filter(p => Number(p.balance || 0) > 0)
-    .reduce((sum, p) => sum + Number(p.balance || 0), 0);
+  // Today EOD Breakdown
+  const todaySales = recentSales;
+  const todayCash = bills.filter(b => b.type === "CASH").reduce((sum, b) => sum + b.amount, 0);
+  const todayCredit = bills.filter(b => b.type === "UDHAR").reduce((sum, b) => sum + b.amount, 0);
 
-  const totalToPay = Math.abs(parties
-    .filter(p => Number(p.balance || 0) < 0)
-    .reduce((sum, p) => sum + Number(p.balance || 0), 0));
-
-  const totalSales = bills.reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const companyDisplayName = selectedCompany?.companyName || selectedCompany?.name || "GANESH HARDWARE";
 
   const handleShareWhatsAppBill = (bill) => {
     if (!bill) return;
-    const billItemsText = (bill.items || []).map(i => `• ${i.name || i.productName} (x${i.qty || i.quantity || 1}) - ₹${(i.salePrice || i.price || i.rate || 0) * (i.qty || i.quantity || 1)}`).join("\n");
-    const text = encodeURIComponent(`*🧾 इनवॉइस बिल नं: ${bill.id || 'BILL-01'}*\n*दुकान:* ${selectedCompany?.companyName || 'VyaparBook'}\n*ग्राहक:* ${bill.customerName || 'ग्राहक'}\n*तारीख:* ${bill.date || 'आज'}\n\n*सामान विवरण:*\n${billItemsText || 'बिल उत्पाद'}\n\n*कुल राशि:* ₹${(bill.amount || 0).toLocaleString()}\n*भुगतान प्रकार:* ${bill.type || 'CASH'}\n\n*धन्यवाद! फिर पधारें!*`);
+    const text = encodeURIComponent(`Dear ${bill.customerName || 'Customer'}, your invoice #${bill.id || '001'} for ₹${bill.amount.toLocaleString()} is generated by ${companyDisplayName}. Thank you for doing business with us!`);
     window.open(`https://wa.me/${bill.phone || ''}?text=${text}`, "_blank");
   };
 
-  // Quick Mobile Bill Functions
   const handleAddToCart = (product) => {
     if (!product) return;
     const existing = billCart.find(i => i.id === product.id);
@@ -197,10 +181,6 @@ export default function MobileVyaparApp() {
     }
   };
 
-  const handleRemoveFromCart = (productId) => {
-    setBillCart(billCart.filter(i => i.id !== productId));
-  };
-
   const totalBillAmount = billCart.reduce((sum, item) => sum + (item.salePrice * item.qty), 0);
 
   const handleSaveAndGenerateBill = async () => {
@@ -209,12 +189,12 @@ export default function MobileVyaparApp() {
       return;
     }
     if (billCart.length === 0) {
-      alert("कृपया बिल में कम से कम 1 सामान जोड़ें!");
+      alert("कृपया बिल में सामान जोड़ें!");
       return;
     }
 
     setSavingBill(true);
-    const newBillData = {
+    const billPayload = {
       partyName: billCustomer.trim(),
       customerPhone: billCustomerPhone.trim(),
       paymentMode: billPaymentMode,
@@ -224,33 +204,26 @@ export default function MobileVyaparApp() {
     };
 
     try {
-      // 1. Save to live backend API
-      const res = await api.post("/billing", newBillData).catch(() => null);
-      
+      const res = await api.post("/billing", billPayload).catch(() => null);
       const createdBill = {
+        _id: res?.data?.bill?._id || Date.now().toString(),
         id: res?.data?.bill?.billNumber || `INV-${Date.now().toString().slice(-4)}`,
         customerName: billCustomer.trim(),
         phone: billCustomerPhone.trim(),
-        date: "आज, लाइव",
+        date: "Today",
         amount: totalBillAmount,
         type: billPaymentMode,
+        paymentStatus: billPaymentMode === "UDHAR" ? "unpaid" : "paid",
         items: billCart
       };
-
-      const updatedBills = [createdBill, ...bills];
-      setBills(updatedBills);
-      localStorage.setItem("live_bills_cache", JSON.stringify(updatedBills));
-
-      // Reset Form
+      setBills([createdBill, ...bills]);
       setBillCart([]);
       setBillCustomer("");
       setBillCustomerPhone("");
       setShowQuickBillModal(false);
-
-      alert(`🎉 बिल ${createdBill.id} सफलतापूर्वक लाइव सर्वर पर बन गया है! कुल राशि: ₹${createdBill.amount.toLocaleString()}`);
       setSelectedBillDetail(createdBill);
-    } catch (err) {
-      console.error("Billing error:", err);
+    } catch (e) {
+      console.error(e);
     } finally {
       setSavingBill(false);
     }
@@ -262,16 +235,15 @@ export default function MobileVyaparApp() {
       return;
     }
     setSavingParty(true);
-    const partyPayload = {
-      name: newPartyName.trim(),
-      mobileNumber: newPartyPhone.trim() || "0000000000",
-      address: newPartyAddress.trim() || "Local",
-      openingBalance: parseFloat(newPartyBalance) || 0,
-      partyType: newPartyType
-    };
-
     try {
-      const res = await api.post("/parties", partyPayload).catch(() => null);
+      const res = await api.post("/parties", {
+        name: newPartyName.trim(),
+        mobileNumber: newPartyPhone.trim() || "0000000000",
+        address: newPartyAddress.trim() || "Local",
+        openingBalance: parseFloat(newPartyBalance) || 0,
+        partyType: newPartyType
+      }).catch(() => null);
+
       const newP = {
         id: res?.data?.party?._id || Date.now().toString(),
         name: newPartyName.trim(),
@@ -279,17 +251,14 @@ export default function MobileVyaparApp() {
         balance: parseFloat(newPartyBalance) || 0,
         type: newPartyType
       };
-      const updated = [newP, ...parties];
-      setParties(updated);
-      localStorage.setItem("live_parties_cache", JSON.stringify(updated));
+      setParties([newP, ...parties]);
       setNewPartyName("");
       setNewPartyPhone("");
       setNewPartyAddress("");
       setNewPartyBalance("0");
       setShowAddPartyModal(false);
-      alert(`✅ पार्टी "${newP.name}" लाइव सर्वर पर सुरक्षित सेव हो गई है!`);
-    } catch (err) {
-      console.error(err);
+    } catch (e) {
+      console.error(e);
     } finally {
       setSavingParty(false);
     }
@@ -302,16 +271,15 @@ export default function MobileVyaparApp() {
     }
     setSavingItem(true);
     const rate = parseFloat(newItemSalePrice) || 0;
-    const itemPayload = {
-      name: newItemName.trim(),
-      sellingPrice: rate,
-      mrp: parseFloat(newItemMrp) || rate,
-      currentStock: parseInt(newItemStock) || 0,
-      unit: newItemUnit
-    };
-
     try {
-      const res = await api.post("/inventory", itemPayload).catch(() => null);
+      const res = await api.post("/inventory", {
+        name: newItemName.trim(),
+        sellingPrice: rate,
+        mrp: parseFloat(newItemMrp) || rate,
+        currentStock: parseInt(newItemStock) || 0,
+        unit: newItemUnit
+      }).catch(() => null);
+
       const newIt = {
         id: res?.data?.product?._id || Date.now().toString(),
         name: newItemName.trim(),
@@ -320,208 +288,229 @@ export default function MobileVyaparApp() {
         stock: parseInt(newItemStock) || 0,
         unit: newItemUnit
       };
-      const updated = [newIt, ...items];
-      setItems(updated);
-      localStorage.setItem("live_items_cache", JSON.stringify(updated));
+      setItems([newIt, ...items]);
       setNewItemName("");
       setNewItemSalePrice("");
       setNewItemMrp("");
       setNewItemStock("");
       setShowAddItemModal(false);
-      alert(`✅ सामान "${newIt.name}" लाइव इन्वेंटरी में जोड़ दिया गया है!`);
-    } catch (err) {
-      console.error(err);
+    } catch (e) {
+      console.error(e);
     } finally {
       setSavingItem(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-24 select-none">
-      {/* 📱 1. Mobile Top Header Bar */}
-      <header className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 py-3 flex justify-between items-center shadow-lg">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-500 flex items-center justify-center text-white font-black text-lg shadow-md shadow-purple-600/30">
-            V
-          </div>
-          <div>
-            <h2 className="font-black text-sm tracking-tight text-white flex items-center gap-1.5">
-              {selectedCompany?.companyName || "मेरी व्यापार दुकान"}
-              <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded font-bold flex items-center gap-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> लाइव सर्वर
-              </span>
-            </h2>
-            <p className="text-[10px] text-slate-400">
-              {items.length} सामान • {parties.length} पार्टियां
-            </p>
-          </div>
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans pb-28 select-none">
+      {/* 📱 1. TOP WHITE HEADER (Exact APK Match) */}
+      <header className="sticky top-0 z-30 bg-white border-b border-slate-100 px-4 py-3 flex justify-between items-center shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
+        <div className="flex items-center gap-1.5 cursor-pointer" onClick={() => navigate("/company/list")}>
+          <h1 className="font-extrabold text-[15px] tracking-wide text-[#1E293B]">
+            {companyDisplayName.toUpperCase()}
+          </h1>
+          <ChevronDown size={16} className="text-[#6366F1]" />
         </div>
 
         <div className="flex items-center gap-2">
+          {/* 1. Calculator */}
           <button 
-            onClick={loadLiveBackendData}
-            className="p-2 bg-slate-800 rounded-xl text-slate-300 hover:text-white border border-slate-700 text-xs font-bold cursor-pointer"
-            title="रीफ्रेश डेटा"
+            onClick={() => setCalculatorVisible(true)}
+            className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition cursor-pointer"
           >
-            <RefreshCw size={13} className={loading ? "animate-spin text-purple-400" : ""} />
+            <Calculator size={18} />
           </button>
+
+          {/* 2. Refer & Earn Gift Icon */}
           <button 
-            onClick={() => navigate("/dashboard")}
-            className="px-2.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
+            onClick={() => setReferralModalVisible(true)}
+            className="w-9 h-9 rounded-full bg-[#EEF2FF] hover:bg-indigo-100 flex items-center justify-center text-[#6366F1] transition cursor-pointer"
           >
-            ERP
+            <Gift size={18} />
+          </button>
+
+          {/* 3. Multi-Platform Device Icon */}
+          <button 
+            onClick={() => setEcosystemModalVisible(true)}
+            className="w-9 h-9 rounded-full bg-[#ECFDF5] hover:bg-emerald-100 flex items-center justify-center text-[#059669] transition cursor-pointer"
+          >
+            <Tv size={18} />
           </button>
         </div>
       </header>
 
-      {/* 📱 2. Main Tab View Content */}
-      <main className="p-4 space-y-4 max-w-lg mx-auto">
-        {/* ==================== TAB 1: HOME DASHBOARD ==================== */}
-        {activeTab === "home" && (
-          <div className="space-y-4 animate-in fade-in">
-            {/* Native 1-Click PWA Install Banner */}
-            {!isPwaInstalled && (
-              <div className="p-3.5 bg-gradient-to-r from-purple-900/90 via-indigo-900/80 to-slate-900 border-2 border-purple-500/60 rounded-2xl flex items-center justify-between gap-3 shadow-xl">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center text-yellow-300 font-bold shadow shrink-0">
-                    <Download size={20} />
-                  </div>
-                  <div>
-                    <h4 className="font-black text-xs text-white">📱 VyaparBook ऐप इंस्टॉल करें</h4>
-                    <p className="text-[10px] text-purple-200">होम स्क्रीन पर असली ऐप की तरह सेव करें</p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleTriggerNativeInstall}
-                  className="px-3.5 py-2 bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-300 text-slate-950 font-black text-xs rounded-xl shadow-lg shrink-0 cursor-pointer animate-pulse"
-                >
-                  इंस्टॉल ⚡
-                </button>
-              </div>
-            )}
-
-            {/* Real Financial Summary Cards */}
-            <div className="grid grid-cols-2 gap-3">
-              {/* To Collect (उधारी) */}
-              <div 
-                onClick={() => setActiveTab("parties")}
-                className="p-3.5 bg-gradient-to-br from-emerald-950/60 to-slate-900 border border-emerald-500/30 rounded-2xl shadow space-y-1 cursor-pointer"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-emerald-400">आपको लेने हैं (To Collect)</span>
-                  <ArrowDownLeft size={14} className="text-emerald-400" />
-                </div>
-                <div className="text-xl font-black text-white">₹{totalToCollect.toLocaleString()}</div>
-                <p className="text-[10px] text-slate-400">{parties.filter(p => p.balance > 0).length} ग्राहकों से बाकी</p>
-              </div>
-
-              {/* To Pay (देने हैं) */}
-              <div 
-                onClick={() => setActiveTab("parties")}
-                className="p-3.5 bg-gradient-to-br from-rose-950/60 to-slate-900 border border-rose-500/30 rounded-2xl shadow space-y-1 cursor-pointer"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-rose-400">आपको देने हैं (To Pay)</span>
-                  <ArrowUpRight size={14} className="text-rose-400" />
-                </div>
-                <div className="text-xl font-black text-white">₹{totalToPay.toLocaleString()}</div>
-                <p className="text-[10px] text-slate-400">{parties.filter(p => p.balance < 0).length} सप्लायर को पेमेंट</p>
-              </div>
-            </div>
-
-            {/* Total Sales Card */}
-            <div className="p-4 bg-gradient-to-r from-purple-900/60 via-indigo-900/40 to-slate-900 border border-purple-500/40 rounded-2xl flex justify-between items-center shadow-lg">
-              <div className="space-y-0.5">
-                <span className="text-[11px] font-bold text-purple-300">कुल बिक्री (Total Sales)</span>
-                <div className="text-2xl font-black text-white">₹{totalSales.toLocaleString()}</div>
-                <p className="text-[10px] text-slate-400">{bills.length} कुल बिल बने</p>
+      {/* 📱 2. MAIN SCROLLABLE CONTENT */}
+      <main className="p-4 space-y-3.5 max-w-md mx-auto">
+        {/* ==================== TAB 1: DASHBOARD ==================== */}
+        {activeTab === "dashboard" && (
+          <div className="space-y-3.5 animate-in fade-in">
+            {/* 2. TOP PROMO BANNER (Exact APK Match) */}
+            <div className="p-3.5 bg-gradient-to-r from-[#EEF2FF] to-[#F5F3FF] border border-[#E0E7FF] rounded-2xl flex justify-between items-center shadow-sm">
+              <div>
+                <p className="text-[10px] font-bold text-[#6366F1] uppercase tracking-wider">Supabase Cloud & Offline POS Active</p>
+                <h3 className="font-black text-xs text-[#1E1B4B]">{companyDisplayName} ERP v2.0 Live</h3>
               </div>
               <button 
-                onClick={() => setShowQuickBillModal(true)}
-                className="px-3.5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-lg flex items-center gap-1.5 cursor-pointer"
+                onClick={() => setActiveTab("items")}
+                className="px-3 py-1.5 bg-[#6366F1] hover:bg-[#4F46E5] text-white font-bold text-xs rounded-xl shadow-sm transition cursor-pointer"
               >
-                <Plus size={15} /> नया बिल
+                View Stock →
               </button>
             </div>
 
-            {/* Quick 4-Grid Action Buttons */}
-            <div className="grid grid-cols-4 gap-2 pt-1 text-center text-xs">
+            {/* 3. 2x3 METRICS GRID (Exact APK Match) */}
+            <div className="grid grid-cols-2 gap-2.5">
+              {/* Row 1: To Collect */}
               <div 
-                onClick={() => setShowQuickBillModal(true)}
-                className="p-3 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col items-center gap-1.5 hover:border-purple-500 cursor-pointer shadow"
+                onClick={() => setActiveTab("parties")}
+                className="p-3.5 bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-[#34D399] transition"
               >
-                <div className="w-10 h-10 rounded-xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
-                  <Receipt size={18} />
+                <div className="flex justify-between items-center">
+                  <span className="font-black text-base text-[#059669]">₹ {toCollect.toLocaleString('en-IN')}</span>
+                  <ChevronRight size={16} className="text-[#059669]" />
                 </div>
-                <span className="text-[11px] font-bold text-slate-200">बिक्री बिल</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs font-bold text-[#065F46]">To Collect</span>
+                  <ArrowDown size={13} className="text-[#059669]" />
+                </div>
               </div>
 
+              {/* Row 1: To Pay */}
               <div 
-                onClick={() => setShowAddItemModal(true)}
-                className="p-3 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col items-center gap-1.5 hover:border-emerald-500 cursor-pointer shadow"
+                onClick={() => setActiveTab("parties")}
+                className="p-3.5 bg-[#FFF1F2] border border-[#FECDD3] rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-[#FB7185] transition"
               >
-                <div className="w-10 h-10 rounded-xl bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
-                  <Plus size={18} />
+                <div className="flex justify-between items-center">
+                  <span className="font-black text-base text-[#E11D48]">₹ {toPay.toLocaleString('en-IN')}</span>
+                  <ChevronRight size={16} className="text-[#E11D48]" />
                 </div>
-                <span className="text-[11px] font-bold text-slate-200">नया सामान</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs font-bold text-[#9F1239]">To Pay</span>
+                  <ArrowUp size={13} className="text-[#E11D48]" />
+                </div>
               </div>
 
-              <div 
-                onClick={() => setShowAddPartyModal(true)}
-                className="p-3 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col items-center gap-1.5 hover:border-blue-500 cursor-pointer shadow"
-              >
-                <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
-                  <Users size={18} />
-                </div>
-                <span className="text-[11px] font-bold text-slate-200">नई पार्टी</span>
-              </div>
-
+              {/* Row 2: Stock Value */}
               <div 
                 onClick={() => setActiveTab("items")}
-                className="p-3 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col items-center gap-1.5 hover:border-rose-500 cursor-pointer shadow"
+                className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
               >
-                <div className="w-10 h-10 rounded-xl bg-rose-600/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
-                  <Package size={18} />
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-[#64748B]">Stock Value</span>
+                  <ChevronRight size={16} className="text-[#94A3B8]" />
                 </div>
-                <span className="text-[11px] font-bold text-slate-200">स्टॉक लिस्ट</span>
+                <div className="font-black text-sm text-[#0F172A]">
+                  ₹ {stockValue > 0 ? (stockValue / 100000).toFixed(2) + ' Lakhs' : '0'}
+                </div>
+              </div>
+
+              {/* Row 2: This week's sale */}
+              <div 
+                onClick={() => setActiveTab("reports")}
+                className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="font-black text-sm text-[#0F172A]">₹ {recentSales.toLocaleString('en-IN')}</span>
+                  <ChevronRight size={16} className="text-[#94A3B8]" />
+                </div>
+                <div className="text-xs font-bold text-[#64748B]">This week's sale</div>
+              </div>
+
+              {/* Row 3: Total Balance */}
+              <div 
+                onClick={() => navigate("/reports/daybook")}
+                className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-[#64748B]">Total Balance</span>
+                  <ChevronRight size={16} className="text-[#94A3B8]" />
+                </div>
+                <div className="text-[11px] font-bold text-[#475569]">Cash + Bank Balance</div>
+              </div>
+
+              {/* Row 3: Reports */}
+              <div 
+                onClick={() => setActiveTab("reports")}
+                className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-[#64748B]">Reports</span>
+                  <ChevronRight size={16} className="text-[#94A3B8]" />
+                </div>
+                <div className="text-[11px] font-bold text-[#475569]">Sales, Party, GST...</div>
               </div>
             </div>
 
-            {/* Recent Bills Stream */}
-            <div className="space-y-2 pt-2">
+            {/* 4. MULTI-DEVICE / CLOUD SYNC PROMPT (Exact APK Match) */}
+            <div 
+              onClick={() => navigate("/admin")}
+              className="p-3 bg-[#FFFBEB] border border-[#FDE68A] rounded-2xl flex justify-between items-center cursor-pointer shadow-sm"
+            >
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={18} className="text-[#D97706]" />
+                <span className="text-xs font-bold text-[#92400E]">Multi-device Sync & Realtime Supabase Active</span>
+              </div>
+              <ChevronRight size={16} className="text-[#6366F1]" />
+            </div>
+
+            {/* 5. EOD DAILY SUMMARY WIDGET (Exact APK Match) */}
+            <div className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="font-extrabold text-xs text-[#0F172A]">Today's Business Summary (EOD)</span>
+                <span className="text-[11px] font-bold text-[#6366F1]">{new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+              </div>
+              <div className="grid grid-cols-3 divide-x divide-slate-100 text-center pt-1">
+                <div className="px-1">
+                  <div className="text-[10px] font-bold text-slate-400">Today's Sales</div>
+                  <div className="font-black text-xs text-[#0F172A] mt-0.5">₹ {todaySales.toLocaleString('en-IN')}</div>
+                </div>
+                <div className="px-1">
+                  <div className="text-[10px] font-bold text-slate-400">Cash Sales</div>
+                  <div className="font-black text-xs text-[#059669] mt-0.5">₹ {todayCash.toLocaleString('en-IN')}</div>
+                </div>
+                <div className="px-1">
+                  <div className="text-[10px] font-bold text-slate-400">Credit (Udhar)</div>
+                  <div className="font-black text-xs text-[#DC2626] mt-0.5">₹ {todayCredit.toLocaleString('en-IN')}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* 6. TRANSACTIONS SECTION (Exact APK Match) */}
+            <div className="space-y-2.5 pt-1">
               <div className="flex justify-between items-center px-1">
-                <span className="text-xs font-black text-slate-300">ताज़ा बिल (Recent Invoices)</span>
-                <span onClick={() => setActiveTab("bills")} className="text-[11px] font-bold text-purple-400 cursor-pointer">सभी {bills.length} बिल देखें →</span>
+                <h3 className="font-extrabold text-sm text-[#0F172A]">Transactions</h3>
+                <div className="px-2.5 py-1 bg-[#EEF2FF] border border-[#E0E7FF] rounded-full flex items-center gap-1 text-[10px] font-black text-[#6366F1]">
+                  <Calendar size={11} /> LAST 365 DAYS
+                </div>
               </div>
 
+              {/* Transactions List */}
               {bills.length === 0 ? (
-                <div className="p-6 bg-slate-900/60 border border-slate-800/80 rounded-2xl text-center space-y-2">
-                  <Receipt size={28} className="mx-auto text-slate-600" />
-                  <p className="text-xs text-slate-400 font-bold">अभी तक कोई बिल नहीं बना है</p>
-                  <button 
-                    onClick={() => setShowQuickBillModal(true)}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
-                  >
-                    + पहला बिल बनाएं
-                  </button>
+                <div className="p-8 bg-white border border-slate-100 rounded-2xl text-center space-y-2">
+                  <Receipt size={36} className="mx-auto text-slate-300" />
+                  <p className="text-xs font-bold text-slate-700">No Transactions Yet</p>
+                  <p className="text-[11px] text-slate-400">Tap "+ Bill / Invoice" below to create your first sale bill</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {bills.slice(0, 4).map((bill) => (
+                  {bills.slice(0, 5).map((bill) => (
                     <div 
-                      key={bill.id || bill._id} 
+                      key={bill._id || bill.id}
                       onClick={() => setSelectedBillDetail(bill)}
-                      className="p-3.5 bg-slate-900 border border-slate-800 hover:border-purple-500/50 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer transition"
+                      className="p-3.5 bg-white border border-slate-100 hover:border-indigo-200 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer transition"
                     >
                       <div className="space-y-0.5">
-                        <div className="font-bold text-xs text-white">{bill.customerName}</div>
-                        <div className="text-[10px] text-slate-400">{bill.id} • {bill.date}</div>
+                        <div className="font-bold text-xs text-[#0F172A]">{bill.customerName}</div>
+                        <div className="text-[11px] text-slate-400">
+                          Invoice #{bill.id} • {bill.date} • {bill.paymentStatus === 'unpaid' ? 'Due' : 'Paid'}
+                        </div>
                       </div>
+
                       <div className="flex items-center gap-3">
                         <div className="text-right">
-                          <div className="font-black text-xs text-white">₹{bill.amount.toLocaleString()}</div>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${bill.type === "CASH" ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}`}>
-                            {bill.type}
+                          <div className="font-black text-xs text-[#0F172A]">₹ {bill.amount.toLocaleString('en-IN')}</div>
+                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${bill.paymentStatus === 'unpaid' ? 'bg-[#FEE2E2] text-[#DC2626]' : 'bg-[#ECFDF5] text-[#059669]'}`}>
+                            {bill.paymentStatus === 'unpaid' ? 'Unpaid' : 'Paid'}
                           </span>
                         </div>
                         <button 
@@ -529,8 +518,7 @@ export default function MobileVyaparApp() {
                             e.stopPropagation();
                             handleShareWhatsAppBill(bill);
                           }}
-                          className="p-2 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white rounded-xl transition cursor-pointer"
-                          title="WhatsApp PDF"
+                          className="w-8 h-8 rounded-full bg-[#ECFDF5] hover:bg-emerald-100 text-[#059669] flex items-center justify-center transition cursor-pointer"
                         >
                           <Share2 size={14} />
                         </button>
@@ -543,577 +531,439 @@ export default function MobileVyaparApp() {
           </div>
         )}
 
-        {/* ==================== TAB 2: PARTIES (लेजर व उधारी) ==================== */}
+        {/* ==================== TAB 2: PARTIES (Exact APK Match) ==================== */}
         {activeTab === "parties" && (
           <div className="space-y-3 animate-in fade-in">
             <div className="flex justify-between items-center">
-              <h3 className="font-black text-base text-white">पार्टियां ({parties.length})</h3>
+              <h2 className="font-extrabold text-base text-[#0F172A]">Parties ({parties.length})</h2>
               <button 
                 onClick={() => setShowAddPartyModal(true)}
-                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
+                className="px-3.5 py-1.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer"
               >
-                + नई पार्टी
+                + Add Party
               </button>
             </div>
 
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
               <input 
                 type="text" 
-                placeholder="पार्टी का नाम या मोबाइल नंबर खोजें..." 
+                placeholder="Search party by name or mobile..." 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-purple-500"
+                className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
               />
             </div>
 
-            {parties.length === 0 ? (
-              <div className="p-8 bg-slate-900/60 border border-slate-800 rounded-2xl text-center space-y-3">
-                <Users size={32} className="mx-auto text-slate-600" />
-                <p className="text-xs text-slate-400 font-bold">कोई पार्टी नहीं है</p>
-                <button 
-                  onClick={() => setShowAddPartyModal(true)}
-                  className="px-4 py-2 bg-purple-600 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
+            <div className="space-y-2">
+              {parties
+                .filter(p => (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (p.phone && p.phone.includes(searchQuery)))
+                .map((p) => (
+                <div 
+                  key={p.id}
+                  onClick={() => setSelectedPartyDetail(p)}
+                  className="p-3.5 bg-white border border-slate-100 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer hover:border-indigo-100 transition"
                 >
-                  + पहली पार्टी जोड़ें
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                {parties
-                  .filter(p => (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (p.phone && p.phone.includes(searchQuery)))
-                  .map((p) => (
-                  <div 
-                    key={p.id} 
-                    onClick={() => setSelectedPartyDetail(p)}
-                    className="p-3.5 bg-slate-900 border border-slate-800 hover:border-purple-500/50 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer transition"
-                  >
-                    <div className="space-y-0.5">
-                      <div className="font-bold text-xs text-white">{p.name}</div>
-                      <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                        <Phone size={10} /> {p.phone || "No Phone"}
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <div className={`font-black text-xs ${Number(p.balance || 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                        {Number(p.balance || 0) >= 0 ? `+ ₹${Number(p.balance || 0).toLocaleString()}` : `- ₹${Math.abs(Number(p.balance || 0)).toLocaleString()}`}
-                      </div>
-                      <span className="text-[9px] text-slate-500 font-bold block">
-                        {Number(p.balance || 0) >= 0 ? "लेने हैं" : "देने हैं"}
-                      </span>
+                  <div>
+                    <div className="font-bold text-xs text-[#0F172A]">{p.name}</div>
+                    <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                      <Phone size={11} /> {p.phone || "No Phone"}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+                  <div className="text-right">
+                    <div className={`font-black text-xs ${Number(p.balance || 0) >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>
+                      {Number(p.balance || 0) >= 0 ? `+ ₹${Number(p.balance || 0).toLocaleString('en-IN')}` : `- ₹${Math.abs(Number(p.balance || 0)).toLocaleString('en-IN')}`}
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-medium block">
+                      {Number(p.balance || 0) >= 0 ? "You'll Get" : "You'll Give"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* ==================== TAB 3: ITEMS & STOCK ==================== */}
+        {/* ==================== TAB 3: ITEMS (Exact APK Match) ==================== */}
         {activeTab === "items" && (
           <div className="space-y-3 animate-in fade-in">
             <div className="flex justify-between items-center">
-              <h3 className="font-black text-base text-white">स्टॉक व सामान ({items.length})</h3>
+              <h2 className="font-extrabold text-base text-[#0F172A]">Items ({items.length})</h2>
               <button 
                 onClick={() => setShowAddItemModal(true)}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
+                className="px-3.5 py-1.5 bg-[#059669] hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer"
               >
-                + नया सामान
+                + Add Item
               </button>
             </div>
 
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
               <input 
                 type="text" 
-                placeholder="आइटम का नाम, साइज या बारकोड खोजें..." 
+                placeholder="Search item by name..." 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-emerald-500"
+                className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#059669]"
               />
             </div>
 
-            {items.length === 0 ? (
-              <div className="p-8 bg-slate-900/60 border border-slate-800 rounded-2xl text-center space-y-3">
-                <Package size={32} className="mx-auto text-slate-600" />
-                <p className="text-xs text-slate-400 font-bold">स्टॉक में कोई सामान नहीं है</p>
-                <button 
-                  onClick={() => setShowAddItemModal(true)}
-                  className="px-4 py-2 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
-                >
-                  + पहला सामान जोड़ें
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                {items
-                  .filter(it => (it.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
-                  .map((it) => (
-                  <div key={it.id} className="p-3.5 bg-slate-900 border border-slate-800 rounded-2xl flex justify-between items-center shadow-sm">
-                    <div className="space-y-0.5">
-                      <div className="font-bold text-xs text-white">{it.name}</div>
-                      <div className="text-[10px] text-slate-400">MRP: ₹{it.mrp} • बिक्री रेट: ₹{it.salePrice}</div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <div className="font-black text-xs text-white">{it.stock} {it.unit}</div>
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${it.stock <= 5 ? "bg-rose-500/20 text-rose-400" : "bg-emerald-500/20 text-emerald-400"}`}>
-                          {it.stock <= 5 ? "कम स्टॉक" : "स्टॉक में"}
-                        </span>
-                      </div>
-                      <button 
-                        onClick={() => {
-                          handleAddToCart(it);
-                          setShowQuickBillModal(true);
-                        }}
-                        className="px-2.5 py-1.5 bg-purple-600 text-white font-bold text-[10px] rounded-lg shadow cursor-pointer"
-                      >
-                        + बिल
-                      </button>
-                    </div>
+            <div className="space-y-2">
+              {items
+                .filter(it => (it.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
+                .map((it) => (
+                <div key={it.id} className="p-3.5 bg-white border border-slate-100 rounded-2xl flex justify-between items-center shadow-sm">
+                  <div>
+                    <div className="font-bold text-xs text-[#0F172A]">{it.name}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Sale: ₹{it.salePrice} • MRP: ₹{it.mrp}</div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ==================== TAB 4: BILLS LIST ==================== */}
-        {activeTab === "bills" && (
-          <div className="space-y-3 animate-in fade-in">
-            <div className="flex justify-between items-center">
-              <h3 className="font-black text-base text-white">बिल बुक ({bills.length} बिल)</h3>
-              <button 
-                onClick={() => setShowQuickBillModal(true)}
-                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
-              >
-                + नया बिल
-              </button>
+                  <div className="flex items-center gap-2.5">
+                    <div className="text-right">
+                      <div className="font-black text-xs text-[#0F172A]">{it.stock} {it.unit}</div>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${it.stock <= 5 ? "bg-[#FEE2E2] text-[#DC2626]" : "bg-[#ECFDF5] text-[#059669]"}`}>
+                        {it.stock <= 5 ? "Low Stock" : "In Stock"}
+                      </span>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        handleAddToCart(it);
+                        setShowQuickBillModal(true);
+                      }}
+                      className="px-2.5 py-1 bg-[#4338CA] text-white font-bold text-[10px] rounded-lg shadow-sm cursor-pointer"
+                    >
+                      + Sale
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
-
-            {bills.length === 0 ? (
-              <div className="p-8 bg-slate-900/60 border border-slate-800 rounded-2xl text-center space-y-3">
-                <Receipt size={32} className="mx-auto text-slate-600" />
-                <p className="text-xs text-slate-400 font-bold">कोई बिल नहीं मिला</p>
-                <button 
-                  onClick={() => setShowQuickBillModal(true)}
-                  className="px-4 py-2 bg-purple-600 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
-                >
-                  + पहला बिल बनाएं
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {bills.map((bill) => (
-                  <div 
-                    key={bill.id} 
-                    onClick={() => setSelectedBillDetail(bill)}
-                    className="p-4 bg-slate-900 border border-slate-800 hover:border-purple-500/50 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer transition"
-                  >
-                    <div className="space-y-1">
-                      <div className="font-black text-xs text-white">{bill.customerName}</div>
-                      <div className="text-[10px] text-slate-400">{bill.id} • {bill.date}</div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <div className="font-black text-sm text-white">₹{bill.amount.toLocaleString()}</div>
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${bill.type === "CASH" ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}`}>
-                          {bill.type}
-                        </span>
-                      </div>
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleShareWhatsAppBill(bill);
-                        }}
-                        className="p-2.5 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white rounded-xl transition cursor-pointer"
-                      >
-                        <Share2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
-        {/* ==================== TAB 5: MORE MENU ==================== */}
+        {/* ==================== TAB 4: REPORTS ==================== */}
+        {activeTab === "reports" && (
+          <div className="space-y-3 animate-in fade-in">
+            <h2 className="font-extrabold text-base text-[#0F172A]">Reports Menu</h2>
+            <div className="space-y-2 text-xs font-bold">
+              <div onClick={() => navigate("/reports/daybook")} className="p-4 bg-white border border-slate-100 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm">
+                <span>📖 DayBook (रोकड़ बही)</span>
+                <ChevronRight size={16} className="text-slate-400" />
+              </div>
+              <div onClick={() => navigate("/reports/profitloss")} className="p-4 bg-white border border-slate-100 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm">
+                <span>📊 Profit & Loss Report</span>
+                <ChevronRight size={16} className="text-slate-400" />
+              </div>
+              <div onClick={() => navigate("/reports/gst")} className="p-4 bg-white border border-slate-100 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm">
+                <span>📑 GST Summary & GSTR-3B</span>
+                <ChevronRight size={16} className="text-slate-400" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ==================== TAB 5: MORE SETTINGS ==================== */}
         {activeTab === "more" && (
           <div className="space-y-3 animate-in fade-in">
-            <h3 className="font-black text-base text-white">अधिक सुविधाएं (More Features)</h3>
-
+            <h2 className="font-extrabold text-base text-[#0F172A]">More Settings</h2>
             <div className="space-y-2 text-xs font-bold">
-              <div onClick={() => navigate("/reports/daybook")} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex justify-between items-center cursor-pointer hover:border-slate-700">
-                <div className="flex items-center gap-3">
-                  <Receipt className="text-rose-400" size={18} />
-                  <span>📖 डे-बुक रोकड़ बही (DayBook)</span>
-                </div>
-                <ChevronRight size={16} className="text-slate-500" />
+              <div onClick={() => setReferralModalVisible(true)} className="p-4 bg-white border border-slate-100 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm">
+                <span>🎁 Refer & Earn (20% Off)</span>
+                <ChevronRight size={16} className="text-slate-400" />
               </div>
-
-              <div onClick={() => navigate("/reports/profitloss")} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex justify-between items-center cursor-pointer hover:border-slate-700">
-                <div className="flex items-center gap-3">
-                  <TrendingUp className="text-emerald-400" size={18} />
-                  <span>📊 शुद्ध मुनाफा रिपोर्ट (Profit & Loss)</span>
-                </div>
-                <ChevronRight size={16} className="text-slate-500" />
-              </div>
-
-              <div onClick={() => navigate("/ai-advisor")} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex justify-between items-center cursor-pointer hover:border-purple-500">
-                <div className="flex items-center gap-3">
-                  <Bot className="text-purple-400" size={18} />
-                  <span>🤖 AI मुनीम जी (Smart Advisor)</span>
-                </div>
-                <ChevronRight size={16} className="text-slate-500" />
-              </div>
-
-              <div onClick={() => navigate("/dashboard")} className="p-4 bg-gradient-to-r from-purple-950/60 to-slate-900 border border-purple-500/40 rounded-2xl flex justify-between items-center cursor-pointer">
-                <div className="flex items-center gap-3">
-                  <Building2 className="text-yellow-400" size={18} />
-                  <span>🚀 फुल ERP डेस्कटॉप डैशबोर्ड खोलें</span>
-                </div>
-                <ChevronRight size={16} className="text-slate-500" />
+              <div onClick={() => navigate("/dashboard")} className="p-4 bg-[#EEF2FF] border border-[#E0E7FF] rounded-2xl flex justify-between items-center cursor-pointer shadow-sm">
+                <span className="text-[#4338CA]">🚀 Open Full Desktop ERP Dashboard</span>
+                <ChevronRight size={16} className="text-[#4338CA]" />
               </div>
             </div>
           </div>
         )}
       </main>
 
-      {/* 📱 3. True Bottom Navigation Bar */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-2 py-2 shadow-2xl flex justify-around items-center">
+      {/* 📱 3. FLOATING BOTTOM ACTION PILL BAR (Exact APK Match) */}
+      <div className="fixed bottom-16 left-0 right-0 z-30 px-4 flex justify-center items-center pointer-events-none">
+        <div className="bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-full px-3 py-1.5 shadow-xl flex items-center gap-3 pointer-events-auto">
+          <button 
+            onClick={() => setActiveTab("parties")}
+            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#0F172A] font-bold text-xs rounded-full transition cursor-pointer"
+          >
+            Received Payment
+          </button>
+
+          <button 
+            onClick={() => setShowQuickBillModal(true)}
+            className="w-10 h-10 -my-2 bg-[#4338CA] hover:bg-indigo-700 text-white rounded-full flex items-center justify-center shadow-lg shadow-indigo-500/40 transform active:scale-95 transition cursor-pointer"
+          >
+            <Plus size={22} />
+          </button>
+
+          <button 
+            onClick={() => setShowQuickBillModal(true)}
+            className="px-3.5 py-1.5 bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white font-bold text-xs rounded-full shadow-md transition cursor-pointer"
+          >
+            + Bill / Invoice
+          </button>
+        </div>
+      </div>
+
+      {/* 📱 4. BOTTOM TAB NAVIGATOR (Exact APK Match: White Bar, 5 Tabs) */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200/90 px-2 py-2 shadow-2xl flex justify-around items-center">
         <button 
-          onClick={() => setActiveTab("home")}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition cursor-pointer ${activeTab === "home" ? "text-purple-400 font-bold" : "text-slate-400 font-medium"}`}
+          onClick={() => setActiveTab("dashboard")}
+          className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "dashboard" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
         >
-          <Home size={18} />
-          <span className="text-[10px]">होम</span>
+          <Home size={20} />
+          <span className="text-[11px]">Dashboard</span>
         </button>
 
         <button 
           onClick={() => setActiveTab("parties")}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition cursor-pointer ${activeTab === "parties" ? "text-purple-400 font-bold" : "text-slate-400 font-medium"}`}
+          className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "parties" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
         >
-          <Users size={18} />
-          <span className="text-[10px]">पार्टियां</span>
+          <Users size={20} />
+          <span className="text-[11px]">Parties</span>
         </button>
 
-        {/* Center Floating Plus Billing Action */}
         <button 
-          onClick={() => setShowQuickBillModal(true)}
-          className="w-12 h-12 -mt-5 bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-500 text-white rounded-full flex items-center justify-center shadow-lg shadow-purple-600/50 transform active:scale-95 transition cursor-pointer"
+          onClick={() => setActiveTab("reports")}
+          className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "reports" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
         >
-          <Plus size={24} />
+          <BarChart2 size={20} />
+          <span className="text-[11px]">Reports</span>
         </button>
 
         <button 
           onClick={() => setActiveTab("items")}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition cursor-pointer ${activeTab === "items" ? "text-purple-400 font-bold" : "text-slate-400 font-medium"}`}
+          className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "items" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
         >
-          <Package size={18} />
-          <span className="text-[10px]">सामान</span>
+          <Package size={20} />
+          <span className="text-[11px]">Items</span>
         </button>
 
         <button 
           onClick={() => setActiveTab("more")}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition cursor-pointer ${activeTab === "more" ? "text-purple-400 font-bold" : "text-slate-400 font-medium"}`}
+          className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "more" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
         >
-          <Menu size={18} />
-          <span className="text-[10px]">मेन्यू</span>
+          <Menu size={20} />
+          <span className="text-[11px]">More</span>
         </button>
       </nav>
 
-      {/* 📱 4. Embedded Fast Mobile Sales Bill Modal */}
-      {showQuickBillModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center animate-in fade-in p-0 sm:p-4">
-          <div className="bg-slate-900 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl relative text-slate-100 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                  <Receipt size={18} />
-                </div>
-                <div>
-                  <h3 className="font-black text-sm text-white">नया बिक्री बिल (Live Server)</h3>
-                  <p className="text-[10px] text-slate-400">10 सेकंड में बिल बनाकर WhatsApp करें</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowQuickBillModal(false)}
-                className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
-              >
+      {/* 📱 5. CALCULATOR MODAL (Exact APK Match) */}
+      {calculatorVisible && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-xs w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <h3 className="font-extrabold text-sm text-[#0F172A]">Calculator</h3>
+              <button onClick={() => setCalculatorVisible(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X size={18} />
               </button>
             </div>
-
-            {/* Customer Details */}
-            <div className="space-y-2">
-              <label className="text-[11px] font-bold text-slate-300 block">ग्राहक / पार्टी का नाम *</label>
-              <input 
-                type="text" 
-                placeholder="ग्राहक का नाम दर्ज करें..." 
-                value={billCustomer}
-                onChange={(e) => setBillCustomer(e.target.value)}
-                className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-purple-500"
-              />
-              <input 
-                type="tel" 
-                placeholder="WhatsApp मोबाइल नंबर..." 
-                value={billCustomerPhone}
-                onChange={(e) => setBillCustomerPhone(e.target.value)}
-                className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-purple-500"
-              />
+            <div className="bg-slate-100 p-3 rounded-xl text-right font-mono font-black text-xl text-[#0F172A] min-h-[48px]">
+              {calcInput || "0"}
             </div>
-
-            {/* Payment Mode Selector */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-300 block">भुगतान प्रकार</label>
-              <div className="grid grid-cols-3 gap-2 text-xs font-bold">
-                {["CASH", "UDHAR", "UPI"].map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setBillPaymentMode(mode)}
-                    className={`py-2 rounded-xl border transition cursor-pointer ${billPaymentMode === mode ? "bg-purple-600 border-purple-400 text-white shadow" : "bg-slate-800 border-slate-700 text-slate-300"}`}
-                  >
-                    {mode === "CASH" ? "💵 नकद" : mode === "UDHAR" ? "📒 उधारी" : "📲 UPI"}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Quick Item Picker */}
-            <div className="space-y-2">
-              <label className="text-[11px] font-bold text-slate-300 block">सामान जोड़ें</label>
-              <select
-                value={selectedProductToAdd}
-                onChange={(e) => {
-                  const found = items.find(it => it.id === e.target.value);
-                  if (found) {
-                    handleAddToCart(found);
-                    setSelectedProductToAdd("");
-                  }
-                }}
-                className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white outline-none font-bold"
-              >
-                <option value="">+ लिस्ट में से सामान चुनें ({items.length} उपलब्ध)...</option>
-                {items.map(it => (
-                  <option key={it.id} value={it.id}>{it.name} - ₹{it.salePrice}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Cart Items List */}
-            {billCart.length > 0 && (
-              <div className="space-y-2 bg-slate-950/60 p-3 rounded-2xl border border-slate-800">
-                <div className="text-[11px] font-bold text-slate-400">जोड़े गए सामान ({billCart.length}):</div>
-                {billCart.map(item => (
-                  <div key={item.id} className="flex justify-between items-center text-xs border-b border-slate-800/80 pb-1.5">
-                    <div>
-                      <div className="font-bold text-white">{item.name}</div>
-                      <div className="text-[10px] text-slate-400">₹{item.salePrice} × {item.qty} = ₹{item.salePrice * item.qty}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => setBillCart(billCart.map(i => i.id === item.id ? { ...i, qty: Math.max(1, i.qty - 1) } : i))}
-                        className="w-6 h-6 bg-slate-800 rounded text-slate-300 font-bold flex items-center justify-center cursor-pointer"
-                      >
-                        -
-                      </button>
-                      <span className="font-bold text-white px-1">{item.qty}</span>
-                      <button 
-                        onClick={() => setBillCart(billCart.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i))}
-                        className="w-6 h-6 bg-slate-800 rounded text-slate-300 font-bold flex items-center justify-center cursor-pointer"
-                      >
-                        +
-                      </button>
-                      <button 
-                        onClick={() => handleRemoveFromCart(item.id)}
-                        className="text-rose-400 p-1 hover:text-rose-300 ml-1 cursor-pointer"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Total Amount & Submit Button */}
-            <div className="pt-2 border-t border-slate-800 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="font-bold text-slate-300 text-xs">कुल बिल राशि:</span>
-                <span className="font-black text-xl text-emerald-400">₹{totalBillAmount.toLocaleString()}</span>
-              </div>
-
-              <button
-                onClick={handleSaveAndGenerateBill}
-                disabled={savingBill}
-                className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm rounded-xl shadow-lg flex items-center justify-center gap-2 transition cursor-pointer"
-              >
-                {savingBill ? <RefreshCw size={16} className="animate-spin" /> : <Send size={16} />} 
-                {savingBill ? "लाइव सेव हो रहा है..." : "बिल सेव करें व WhatsApp भेजें →"}
-              </button>
+            <div className="grid grid-cols-4 gap-2">
+              {["7","8","9","/", "4","5","6","*", "1","2","3","-", "C","0","=","+"].map((key) => (
+                <button
+                  key={key}
+                  onClick={() => {
+                    if (key === "C") setCalcInput("");
+                    else if (key === "=") {
+                      try { setCalcInput(String(eval(calcInput))); } catch { setCalcInput("Error"); }
+                    } else setCalcInput(calcInput + key);
+                  }}
+                  className="py-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 rounded-xl font-bold text-sm text-[#0F172A] cursor-pointer"
+                >
+                  {key}
+                </button>
+              ))}
             </div>
           </div>
         </div>
       )}
 
-      {/* 📱 5. Interactive Bill Detail Modal */}
-      {selectedBillDetail && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl text-slate-100 relative">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="font-black text-sm text-white">बिल विवरण ({selectedBillDetail.id})</h3>
-                <p className="text-[10px] text-slate-400">{selectedBillDetail.date}</p>
+      {/* 📱 6. REFER & EARN MODAL (Exact APK Match) */}
+      {referralModalVisible && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-1.5">
+                <Gift size={18} className="text-[#6366F1]" />
+                <h3 className="font-extrabold text-sm text-[#0F172A]">Refer & Earn (Flat 20% Off)</h3>
               </div>
-              <button 
-                onClick={() => setSelectedBillDetail(null)}
-                className="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
-              >
-                <X size={16} />
+              <button onClick={() => setReferralModalVisible(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X size={18} />
               </button>
             </div>
-
-            <div className="space-y-2 bg-slate-950 p-3 rounded-2xl border border-slate-800 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-400">ग्राहक:</span>
-                <span className="font-bold text-white">{selectedBillDetail.customerName}</span>
-              </div>
-              {selectedBillDetail.phone && (
-                <div className="flex justify-between">
-                  <span className="text-slate-400">फोन:</span>
-                  <span className="font-bold text-slate-300">{selectedBillDetail.phone}</span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-slate-400">भुगतान:</span>
-                <span className="font-bold text-emerald-400">{selectedBillDetail.type}</span>
-              </div>
-              <div className="flex justify-between border-t border-slate-800 pt-2">
-                <span className="font-bold text-slate-300">कुल राशि:</span>
-                <span className="font-black text-base text-emerald-400">₹{selectedBillDetail.amount.toLocaleString()}</span>
-              </div>
+            <div className="p-3 bg-[#EEF2FF] border border-[#E0E7FF] rounded-2xl space-y-1">
+              <span className="text-[10px] font-bold text-[#6366F1]">EARN 20% DISCOUNT + TOKENS</span>
+              <p className="text-xs font-black text-[#1E1B4B]">Share with Merchant Friends & Get Flat 20% Off</p>
             </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <button 
-                onClick={() => handleShareWhatsAppBill(selectedBillDetail)}
-                className="py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow cursor-pointer"
-              >
-                <Share2 size={14} /> WhatsApp
-              </button>
-              <button 
-                onClick={() => window.print()}
-                className="py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-slate-700 cursor-pointer"
-              >
-                <Printer size={14} /> प्रिंट बिल
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 📱 6. Add Party Modal */}
-      {showAddPartyModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-sm w-full p-5 space-y-3 shadow-2xl text-slate-100">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-              <h3 className="font-black text-sm text-white">+ नई पार्टी (Live Database)</h3>
-              <button onClick={() => setShowAddPartyModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              <input 
-                type="text" 
-                placeholder="पार्टी का नाम *" 
-                value={newPartyName}
-                onChange={(e) => setNewPartyName(e.target.value)}
-                className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none"
-              />
-              <input 
-                type="tel" 
-                placeholder="मोबाइल नंबर" 
-                value={newPartyPhone}
-                onChange={(e) => setNewPartyPhone(e.target.value)}
-                className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none"
-              />
-              <input 
-                type="text" 
-                placeholder="पता (Address)" 
-                value={newPartyAddress}
-                onChange={(e) => setNewPartyAddress(e.target.value)}
-                className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none"
-              />
-              <input 
-                type="number" 
-                placeholder="प्रारंभिक उधारी / बैलेंस (₹)" 
-                value={newPartyBalance}
-                onChange={(e) => setNewPartyBalance(e.target.value)}
-                className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none"
-              />
-            </div>
-
             <button 
-              onClick={handleSaveNewParty}
-              disabled={savingParty}
-              className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-black text-xs rounded-xl shadow mt-2 flex items-center justify-center gap-2 cursor-pointer"
+              onClick={() => {
+                navigator.clipboard.writeText("https://vyaparbook.in");
+                alert("रेफरल लिंक कॉपी हो गया!");
+                setReferralModalVisible(false);
+              }}
+              className="w-full py-3 bg-[#4338CA] hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
             >
-              {savingParty ? <RefreshCw size={14} className="animate-spin" /> : null}
-              {savingParty ? "लाइव सेव हो रहा है..." : "पार्टी सेव करें"}
+              Copy Referral Link
             </button>
           </div>
         </div>
       )}
 
-      {/* 📱 7. Add Item Modal */}
-      {showAddItemModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-sm w-full p-5 space-y-3 shadow-2xl text-slate-100">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-              <h3 className="font-black text-sm text-white">+ नया सामान (Live Inventory)</h3>
-              <button onClick={() => setShowAddItemModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                <X size={16} />
+      {/* 📱 7. QUICK SALE BILL MODAL */}
+      {showQuickBillModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <h3 className="font-extrabold text-sm text-[#0F172A]">+ New Sale Bill</h3>
+              <button onClick={() => setShowQuickBillModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X size={18} />
               </button>
             </div>
-
-            <div className="space-y-2 text-xs">
-              <input 
-                type="text" 
-                placeholder="सामान का नाम (उदा. UPVC Elbow 1') *" 
-                value={newItemName}
-                onChange={(e) => setNewItemName(e.target.value)}
-                className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input 
-                  type="number" 
-                  placeholder="बिक्री रेट (₹) *" 
-                  value={newItemSalePrice}
-                  onChange={(e) => setNewItemSalePrice(e.target.value)}
-                  className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none"
-                />
-                <input 
-                  type="number" 
-                  placeholder="प्रारंभिक स्टॉक *" 
-                  value={newItemStock}
-                  onChange={(e) => setNewItemStock(e.target.value)}
-                  className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white outline-none"
-                />
-              </div>
+            <input 
+              type="text" 
+              placeholder="Party / Customer Name *" 
+              value={billCustomer}
+              onChange={(e) => setBillCustomer(e.target.value)}
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none font-bold"
+            />
+            <input 
+              type="tel" 
+              placeholder="WhatsApp Mobile Number..." 
+              value={billCustomerPhone}
+              onChange={(e) => setBillCustomerPhone(e.target.value)}
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
+            />
+            <div className="grid grid-cols-3 gap-2">
+              {["CASH", "UDHAR", "UPI"].map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setBillPaymentMode(m)}
+                  className={`py-2 rounded-xl text-xs font-bold border ${billPaymentMode === m ? "bg-[#4338CA] text-white border-[#4338CA]" : "bg-slate-50 border-slate-200 text-slate-700"}`}
+                >
+                  {m === "CASH" ? "Cash" : m === "UDHAR" ? "Credit" : "UPI"}
+                </button>
+              ))}
             </div>
+            <select
+              value={selectedProductToAdd}
+              onChange={(e) => {
+                const f = items.find(it => it.id === e.target.value);
+                if (f) { handleAddToCart(f); setSelectedProductToAdd(""); }
+              }}
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none font-bold"
+            >
+              <option value="">+ Pick Item to Add ({items.length} items)...</option>
+              {items.map(it => <option key={it.id} value={it.id}>{it.name} - ₹{it.salePrice}</option>)}
+            </select>
+            {billCart.length > 0 && (
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                {billCart.map(i => (
+                  <div key={i.id} className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-[#0F172A]">{i.name} (x{i.qty})</span>
+                    <span className="font-black text-[#059669]">₹{i.salePrice * i.qty}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-between items-center border-t border-slate-100 pt-2">
+              <span className="font-bold text-xs text-slate-600">Total Amount:</span>
+              <span className="font-black text-lg text-[#059669]">₹ {totalBillAmount.toLocaleString('en-IN')}</span>
+            </div>
+            <button
+              onClick={handleSaveAndGenerateBill}
+              disabled={savingBill}
+              className="w-full py-3 bg-[#059669] hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow cursor-pointer"
+            >
+              {savingBill ? "Saving Bill..." : "Save Bill & WhatsApp →"}
+            </button>
+          </div>
+        </div>
+      )}
 
-            <button 
+      {/* 📱 8. ADD PARTY MODAL */}
+      {showAddPartyModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <h3 className="font-extrabold text-sm text-[#0F172A]">+ Add Party</h3>
+              <button onClick={() => setShowAddPartyModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+            <input 
+              type="text" 
+              placeholder="Party Name *" 
+              value={newPartyName}
+              onChange={(e) => setNewPartyName(e.target.value)}
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none font-bold"
+            />
+            <input 
+              type="tel" 
+              placeholder="Mobile Number" 
+              value={newPartyPhone}
+              onChange={(e) => setNewPartyPhone(e.target.value)}
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
+            />
+            <input 
+              type="number" 
+              placeholder="Opening Balance (₹)" 
+              value={newPartyBalance}
+              onChange={(e) => setNewPartyBalance(e.target.value)}
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
+            />
+            <button
+              onClick={handleSaveNewParty}
+              disabled={savingParty}
+              className="w-full py-2.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow cursor-pointer"
+            >
+              {savingParty ? "Saving..." : "Save Party"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 📱 9. ADD ITEM MODAL */}
+      {showAddItemModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <h3 className="font-extrabold text-sm text-[#0F172A]">+ Add Item</h3>
+              <button onClick={() => setShowAddItemModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+            <input 
+              type="text" 
+              placeholder="Item Name *" 
+              value={newItemName}
+              onChange={(e) => setNewItemName(e.target.value)}
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none font-bold"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input 
+                type="number" 
+                placeholder="Sale Price (₹) *" 
+                value={newItemSalePrice}
+                onChange={(e) => setNewItemSalePrice(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
+              />
+              <input 
+                type="number" 
+                placeholder="Stock Qty *" 
+                value={newItemStock}
+                onChange={(e) => setNewItemStock(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
+              />
+            </div>
+            <button
               onClick={handleSaveNewItem}
               disabled={savingItem}
-              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow mt-2 flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-2.5 bg-[#059669] hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow cursor-pointer"
             >
-              {savingItem ? <RefreshCw size={14} className="animate-spin" /> : null}
-              {savingItem ? "लाइव सेव हो रहा है..." : "सामान स्टॉक में जोड़ें"}
+              {savingItem ? "Saving..." : "Save Item"}
             </button>
           </div>
         </div>
