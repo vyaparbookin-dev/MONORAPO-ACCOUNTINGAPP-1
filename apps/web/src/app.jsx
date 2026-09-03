@@ -9,6 +9,7 @@ import Loader from "./components/Loader"; // Assuming a loader component exists
 
 // Landing & Gamezone
 const LandingPage = React.lazy(() => import("./screens/Landing/LandingPage"));
+const MobileVyaparApp = React.lazy(() => import("./screens/mobile_pwa/MobileVyaparApp"));
 const GamezoneOperationsPage = React.lazy(() => import("./screens/gamezone/GamezoneOperationsPage"));
 
 // Auth Screens
@@ -206,6 +207,8 @@ const App = () => {
                 <Routes>
                   {/* Auth Routes - No Layout */}
                   <Route path="/landing" element={<LandingPage />} />
+              <Route path="/mobile-app" element={<MobileVyaparApp />} />
+              <Route path="/m" element={<MobileVyaparApp />} />
                   <Route path="/welcome" element={<LandingPage />} />
                   <Route path="/login" element={<LoginScreen />} />
                   <Route path="/register" element={<RegisterScreen />} />

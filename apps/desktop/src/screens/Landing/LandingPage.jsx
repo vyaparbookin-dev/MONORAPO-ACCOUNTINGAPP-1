@@ -608,7 +608,7 @@ export default function LandingPage() {
                   </div>
                 </div>
                 <button
-                  onClick={handleInstallMobileApp}
+                  onClick={() => navigate("/mobile-app")}
                   className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black rounded-xl text-center cursor-pointer shrink-0 shadow-lg shadow-purple-600/30"
                 >
                   Install Now
