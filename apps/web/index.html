@@ -1,13 +1,28 @@
 <!doctype html>
-<html lang="en">
+<html lang="hi">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: http: https: ws: wss:;" />
-    <title>Business Accounting App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#7c3aed" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="VyaparBook" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: http: https: ws: wss: blob:;" />
+    <title>VyaparBook 2.0 - Billing & Mobile Accounting</title>
   </head>
-  <body>
+  <body class="bg-slate-950 text-slate-100">
     <div id="root"></div>
     <script type="module" src="/src/index.jsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('✅ PWA Service Worker Registered:', reg.scope))
+            .catch(err => console.log('SW Registration error:', err));
+        });
+      }
+    </script>
   </body>
 </html>
