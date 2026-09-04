@@ -1,3 +1,4 @@
+import Tesseract from "tesseract.js";
 import React, { useState, useEffect, useRef } from "react";
 import {
   Home,
@@ -85,6 +86,9 @@ export default function MobileVyaparApp() {
   // AI Photo Bill OCR State
   const [showOcrModal, setShowOcrModal] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(0);
+  const [ocrRawText, setOcrRawText] = useState('');
+  const [ocrExtractedItems, setOcrExtractedItems] = useState([]);
   const [ocrBillType, setOcrBillType] = useState('sale'); // 'sale' (Customer) or 'purchase' (Vendor)
   const [scannedItemsList, setScannedItemsList] = useState([]);
   const fileInputRef = useRef(null);
@@ -280,37 +284,106 @@ export default function MobileVyaparApp() {
   };
 
   // AI OCR Bill Upload & Parsing
-  const handleProcessBillPhoto = (e) => {
+  const handleProcessBillPhoto = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setOcrLoading(true);
+    setOcrProgress(10);
+    setOcrRawText("");
 
-    setTimeout(() => {
-      // Smart matching with inventory catalog
-      const matched = items.slice(0, 4).map(it => ({
-        id: it.id,
-        name: it.name,
-        salePrice: it.salePrice,
-        qty: 1,
-        matchedWith: it.name
-      }));
+    try {
+      const imageUrl = URL.createObjectURL(file);
+      
+      const { data: { text } } = await Tesseract.recognize(
+        imageUrl,
+        'eng',
+        {
+          logger: (m) => {
+            if (m.status === 'recognizing text') {
+              setOcrProgress(Math.min(95, parseInt(m.progress * 100)));
+            }
+          }
+        }
+      );
 
-      if (matched.length > 0) {
-        setBillCart(matched);
+      setOcrProgress(100);
+      setOcrRawText(text);
+
+      // Smart Parser: Split text by lines and extract Item Name, Qty, Rate
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 2);
+      const parsedCart = [];
+
+      for (const line of lines) {
+        // Skip common header words
+        if (/invoice|bill|date|total|tax|gstin|amount|rate|qty|phone|mob|thank/i.test(line)) continue;
+
+        // Extract numbers at the end as price/amount
+        const numMatches = line.match(/(\d+[\.,]?\d*)/g);
+        let detectedPrice = 0;
+        let detectedQty = 1;
+        let detectedName = line;
+
+        if (numMatches && numMatches.length >= 1) {
+          const lastNum = parseFloat(numMatches[numMatches.length - 1].replace(',', ''));
+          if (lastNum > 0 && lastNum < 500000) {
+            detectedPrice = lastNum;
+          }
+          if (numMatches.length >= 2) {
+            const possibleQty = parseInt(numMatches[0]);
+            if (possibleQty > 0 && possibleQty <= 100) {
+              detectedQty = possibleQty;
+            }
+          }
+          // Clean name by removing digits from end
+          detectedName = line.replace(/[\d\.,\/\*\-\_\#\:]+$/g, '').trim();
+        }
+
+        if (detectedName.length >= 3) {
+          // Check if matches catalog item
+          const matchedItem = items.find(it => 
+            it.name.toLowerCase().includes(detectedName.toLowerCase()) || 
+            detectedName.toLowerCase().includes(it.name.toLowerCase())
+          );
+
+          parsedCart.push({
+            id: matchedItem?.id || `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            name: matchedItem?.name || detectedName,
+            salePrice: detectedPrice || matchedItem?.salePrice || 100,
+            qty: detectedQty
+          });
+        }
+      }
+
+      if (parsedCart.length > 0) {
+        setBillCart(parsedCart);
         if (ocrBillType === 'sale') {
-          setBillCustomer("कच्ची पर्ची ग्राहक (Scanned)");
-          alert("✨ [बिक्री बिल]: AI ने पर्ची से सामान और रेट पहचानकर बिल में भर दिए हैं!");
+          setBillCustomer("कच्ची पर्ची ग्राहक (OCR Scanned)");
         } else {
-          setBillCustomer("सप्लायर / वेंडर (Scanned Purchase)");
-          alert("✨ [खरीद बिल]: AI ने सप्लायर बिल से स्टॉक और रेट पहचानकर इन्वेंटरी में मैप कर दिया है!");
+          setBillCustomer("सप्लायर इनवॉइस (OCR Scanned)");
         }
         setShowOcrModal(false);
         setShowQuickBillModal(true);
+        alert(`✨ AI स्कैनर ने बिल से ${parsedCart.length} सामान और रेट पहचान लिए हैं! आप बिल में इसे चेक या एडिट कर सकते हैं।`);
       } else {
-        alert("कृपया पहले इन्वेंटरी में कुछ सामान जोड़ें।");
+        // Fallback: create raw entry from extracted text
+        const fallbackItem = {
+          id: `custom-${Date.now()}`,
+          name: lines[0] || "हस्तलिखित सामान",
+          salePrice: 500,
+          qty: 1
+        };
+        setBillCart([fallbackItem]);
+        setShowOcrModal(false);
+        setShowQuickBillModal(true);
+        alert("✨ पर्ची से टेक्स्ट पढ़ा गया है! कृपया रेट व मात्रा चेक करके बिल सेव करें।");
       }
+    } catch (err) {
+      console.error("OCR recognition error:", err);
+      alert("फोटो पढ़ने में दिक्कत आई। कृपया साफ और सीधी फोटो अपलोड करें।");
+    } finally {
       setOcrLoading(false);
-    }, 1200);
+      setOcrProgress(0);
+    }
   };
 
   // 20+ Comprehensive Reports Catalog
@@ -1023,13 +1096,24 @@ export default function MobileVyaparApp() {
                 className="hidden" 
               />
 
+              {ocrLoading && (
+                <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
+                  <div 
+                    className="bg-emerald-600 h-full transition-all duration-300 font-bold text-[9px] text-white flex items-center justify-center"
+                    style={{ width: `${ocrProgress}%` }}
+                  >
+                    {ocrProgress}%
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={ocrLoading}
                 className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow cursor-pointer inline-flex items-center gap-2"
               >
                 {ocrLoading ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}
-                {ocrLoading ? "AI स्कैन कर रहा है..." : "📸 फोटो खींचें / अपलोड करें"}
+                {ocrLoading ? `AI टेक्स्ट पढ़ रहा है (${ocrProgress}%)...` : "📸 फोटो खींचें / अपलोड करें"}
               </button>
             </div>
           </div>
