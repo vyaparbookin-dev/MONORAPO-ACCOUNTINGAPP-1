@@ -1,3 +1,4 @@
+import axios from "axios";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import Bill from "../model/bill.js";
 import fs from "fs";
@@ -277,7 +278,7 @@ export const deleteBill = async (req, res) => {
   }
 };
 
-// Parse uploaded bill image with Gemini 1.5 Flash Vision AI + Fallback OCR
+// Multi-Provider AI Vision Bill Scanner: OpenAI GPT-4o Mini + Google Gemini 2.5/2.0 Flash
 export const parseBillImage = async (req, res) => {
   try {
     const b64 = req.body?.image;
@@ -291,26 +292,17 @@ export const parseBillImage = async (req, res) => {
       pureB64 = match[2];
     }
 
-    // 1. Try High-Accuracy Gemini 1.5 Flash Vision AI
+    const fullDataUri = match ? b64 : `data:${mimeType};base64,${pureB64}`;
+    const openAiKey = req.body?.openaiApiKey || process.env.OPENAI_API_KEY;
     const geminiKey = req.body?.geminiApiKey || process.env.GEMINI_API_KEY;
-    if (geminiKey) {
-      try {
-        const genAI = new GoogleGenerativeAI(geminiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const selectedProvider = req.body?.provider || (openAiKey ? "openai" : "gemini");
 
-        const imagePart = {
-          inlineData: {
-            data: pureB64,
-            mimeType: mimeType
-          }
-        };
-
-        const prompt = `You are a high-accuracy AI retail bill, handwritten chit (कच्ची पर्ची), purchase invoice, and GST bill parser specialized in Indian retail and wholesale shops.
+    const promptSystem = `You are a world-class AI retail bill, handwritten chit (कच्ची पर्ची), purchase invoice, and GST bill parser specialized in Indian shopkeeping.
 Analyze this receipt/slip image and extract every line item, quantity, unit, price, and party details with 100% precision.
 Decipher handwritten Hindi/English terms and exact product names (e.g., 'Emulsion 10 ltr', 'Apex Ultima 20L', 'Asian Paints Tractor', 'White Cement 50kg', 'Nut Bolt 8mm').
-Do NOT skip any product. If price or quantity is written, calculate total accurately.
+Do NOT skip any product. Calculate total accurately.
 
-Return ONLY a valid JSON object without markdown fences, conforming strictly to this format:
+Return STRICTLY a valid JSON object without markdown fences, matching this schema:
 {
   "partyName": "Customer or supplier name if found, else ''",
   "partyType": "customer" or "supplier",
@@ -329,44 +321,125 @@ Return ONLY a valid JSON object without markdown fences, conforming strictly to 
   "rawText": "Complete transcribed text from the image"
 }`;
 
-        const result = await model.generateContent([prompt, imagePart]);
-        const responseText = result.response.text();
-        const cleanJson = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
-        const parsedData = JSON.parse(cleanJson);
+    // 1. TRY OPENAI CHATGPT (GPT-4o Mini)
+    if (openAiKey && (selectedProvider === "openai" || !geminiKey)) {
+      try {
+        const openAiRes = await axios.post(
+          "https://api.openai.com/v1/chat/completions",
+          {
+            model: "gpt-4o-mini",
+            response_format: { type: "json_object" },
+            messages: [
+              { role: "system", content: promptSystem },
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: "Parse this bill/receipt image into structured JSON items list:" },
+                  { type: "image_url", image_url: { url: fullDataUri } }
+                ]
+              }
+            ],
+            max_tokens: 1500
+          },
+          {
+            headers: {
+              "Authorization": `Bearer ${openAiKey}`,
+              "Content-Type": "application/json"
+            },
+            timeout: 25000
+          }
+        );
 
-        const itemsList = (parsedData.items || []).map(it => {
-          const qty = Number(it.quantity) || 1;
-          const price = Number(it.price || it.rate) || 0;
-          const total = Number(it.total) || +(qty * price).toFixed(2);
-          return {
-            name: it.name || "सामान (Item)",
-            quantity: qty,
-            unit: it.unit || "Pcs",
-            rate: price,
-            price: price,
-            taxable: total
-          };
-        });
+        const content = openAiRes.data?.choices?.[0]?.message?.content;
+        if (content) {
+          const parsedData = JSON.parse(content);
+          const itemsList = (parsedData.items || []).map(it => {
+            const qty = Number(it.quantity) || 1;
+            const price = Number(it.price || it.rate) || 0;
+            const total = Number(it.total) || +(qty * price).toFixed(2);
+            return {
+              name: it.name || "सामान (Item)",
+              quantity: qty,
+              unit: it.unit || "Pcs",
+              rate: price,
+              price: price,
+              taxable: total
+            };
+          });
 
-        const calculatedTotal = Number(parsedData.totalAmount) || itemsList.reduce((s, it) => s + it.taxable, 0);
+          const calculatedTotal = Number(parsedData.totalAmount) || itemsList.reduce((s, it) => s + it.taxable, 0);
 
-        return res.json({
-          success: true,
-          source: "gemini-1.5-flash",
-          partyName: parsedData.partyName || "",
-          partyType: parsedData.partyType || "customer",
-          billType: parsedData.billType || "sale",
-          date: parsedData.date || "",
-          parsedItems: itemsList,
-          totalAmount: calculatedTotal,
-          rawText: parsedData.rawText || responseText
-        });
-      } catch (geminiError) {
-        console.warn("Gemini Vision failed, falling back to local OCR:", geminiError.message);
+          return res.json({
+            success: true,
+            source: "openai-gpt-4o-mini",
+            partyName: parsedData.partyName || "",
+            partyType: parsedData.partyType || "customer",
+            billType: parsedData.billType || "sale",
+            date: parsedData.date || "",
+            parsedItems: itemsList,
+            totalAmount: calculatedTotal,
+            rawText: parsedData.rawText || content
+          });
+        }
+      } catch (openAiErr) {
+        console.warn("OpenAI GPT-4o Mini failed:", openAiErr.response?.data || openAiErr.message);
       }
     }
 
-    // 2. Fallback to Local Tesseract OCR
+    // 2. TRY GOOGLE GEMINI (Cascading Models: gemini-2.5-flash, gemini-2.0-flash, gemini-2.0-flash-lite, gemini-1.5-flash-8b)
+    if (geminiKey) {
+      const geminiCandidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-8b", "gemini-1.5-pro"];
+      const genAI = new GoogleGenerativeAI(geminiKey);
+
+      for (const modelName of geminiCandidateModels) {
+        try {
+          const model = genAI.getGenerativeModel({ model: modelName });
+          const imagePart = {
+            inlineData: {
+              data: pureB64,
+              mimeType: mimeType
+            }
+          };
+
+          const result = await model.generateContent([promptSystem, imagePart]);
+          const responseText = result.response.text();
+          const cleanJson = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
+          const parsedData = JSON.parse(cleanJson);
+
+          const itemsList = (parsedData.items || []).map(it => {
+            const qty = Number(it.quantity) || 1;
+            const price = Number(it.price || it.rate) || 0;
+            const total = Number(it.total) || +(qty * price).toFixed(2);
+            return {
+              name: it.name || "सामान (Item)",
+              quantity: qty,
+              unit: it.unit || "Pcs",
+              rate: price,
+              price: price,
+              taxable: total
+            };
+          });
+
+          const calculatedTotal = Number(parsedData.totalAmount) || itemsList.reduce((s, it) => s + it.taxable, 0);
+
+          return res.json({
+            success: true,
+            source: modelName,
+            partyName: parsedData.partyName || "",
+            partyType: parsedData.partyType || "customer",
+            billType: parsedData.billType || "sale",
+            date: parsedData.date || "",
+            parsedItems: itemsList,
+            totalAmount: calculatedTotal,
+            rawText: parsedData.rawText || responseText
+          });
+        } catch (mErr) {
+          console.warn(`Gemini model ${modelName} failed, trying next candidate:`, mErr.message);
+        }
+      }
+    }
+
+    // 3. FALLBACK TO LOCAL TESSERACT OCR
     const buffer = Buffer.from(pureB64, "base64");
     const tmpDir = os.tmpdir();
     const filename = `bill_${Date.now()}.png`;
@@ -384,7 +457,6 @@ Return ONLY a valid JSON object without markdown fences, conforming strictly to 
 
     for (const line of lines) {
       const lowerLine = line.toLowerCase();
-      
       if (lowerLine.includes("name:") || lowerLine.includes("to:") || lowerLine.includes("m/s")) {
         partyName = line.replace(/name:|to:|m\/s/i, "").trim();
       }
@@ -419,7 +491,7 @@ Return ONLY a valid JSON object without markdown fences, conforming strictly to 
     return res.status(500).json({ success: false, error: error.message });
   }
 };
-// Parse uploaded bill image with Gemini 1.5 Flash Vision AI + Fallback OCR
+// Multi-Provider AI Vision Bill Scanner: OpenAI GPT-4o Mini + Google Gemini 2.5/2.0 Flash
 export const parseBillImage = async (req, res) => {
   try {
     const b64 = req.body?.image;
@@ -433,26 +505,17 @@ export const parseBillImage = async (req, res) => {
       pureB64 = match[2];
     }
 
-    // 1. Try High-Accuracy Gemini 1.5 Flash Vision AI
+    const fullDataUri = match ? b64 : `data:${mimeType};base64,${pureB64}`;
+    const openAiKey = req.body?.openaiApiKey || process.env.OPENAI_API_KEY;
     const geminiKey = req.body?.geminiApiKey || process.env.GEMINI_API_KEY;
-    if (geminiKey) {
-      try {
-        const genAI = new GoogleGenerativeAI(geminiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const selectedProvider = req.body?.provider || (openAiKey ? "openai" : "gemini");
 
-        const imagePart = {
-          inlineData: {
-            data: pureB64,
-            mimeType: mimeType
-          }
-        };
-
-        const prompt = `You are a high-accuracy AI retail bill, handwritten chit (कच्ची पर्ची), purchase invoice, and GST bill parser specialized in Indian retail and wholesale shops.
+    const promptSystem = `You are a world-class AI retail bill, handwritten chit (कच्ची पर्ची), purchase invoice, and GST bill parser specialized in Indian shopkeeping.
 Analyze this receipt/slip image and extract every line item, quantity, unit, price, and party details with 100% precision.
 Decipher handwritten Hindi/English terms and exact product names (e.g., 'Emulsion 10 ltr', 'Apex Ultima 20L', 'Asian Paints Tractor', 'White Cement 50kg', 'Nut Bolt 8mm').
-Do NOT skip any product. If price or quantity is written, calculate total accurately.
+Do NOT skip any product. Calculate total accurately.
 
-Return ONLY a valid JSON object without markdown fences, conforming strictly to this format:
+Return STRICTLY a valid JSON object without markdown fences, matching this schema:
 {
   "partyName": "Customer or supplier name if found, else ''",
   "partyType": "customer" or "supplier",
@@ -471,44 +534,125 @@ Return ONLY a valid JSON object without markdown fences, conforming strictly to 
   "rawText": "Complete transcribed text from the image"
 }`;
 
-        const result = await model.generateContent([prompt, imagePart]);
-        const responseText = result.response.text();
-        const cleanJson = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
-        const parsedData = JSON.parse(cleanJson);
+    // 1. TRY OPENAI CHATGPT (GPT-4o Mini)
+    if (openAiKey && (selectedProvider === "openai" || !geminiKey)) {
+      try {
+        const openAiRes = await axios.post(
+          "https://api.openai.com/v1/chat/completions",
+          {
+            model: "gpt-4o-mini",
+            response_format: { type: "json_object" },
+            messages: [
+              { role: "system", content: promptSystem },
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: "Parse this bill/receipt image into structured JSON items list:" },
+                  { type: "image_url", image_url: { url: fullDataUri } }
+                ]
+              }
+            ],
+            max_tokens: 1500
+          },
+          {
+            headers: {
+              "Authorization": `Bearer ${openAiKey}`,
+              "Content-Type": "application/json"
+            },
+            timeout: 25000
+          }
+        );
 
-        const itemsList = (parsedData.items || []).map(it => {
-          const qty = Number(it.quantity) || 1;
-          const price = Number(it.price || it.rate) || 0;
-          const total = Number(it.total) || +(qty * price).toFixed(2);
-          return {
-            name: it.name || "सामान (Item)",
-            quantity: qty,
-            unit: it.unit || "Pcs",
-            rate: price,
-            price: price,
-            taxable: total
-          };
-        });
+        const content = openAiRes.data?.choices?.[0]?.message?.content;
+        if (content) {
+          const parsedData = JSON.parse(content);
+          const itemsList = (parsedData.items || []).map(it => {
+            const qty = Number(it.quantity) || 1;
+            const price = Number(it.price || it.rate) || 0;
+            const total = Number(it.total) || +(qty * price).toFixed(2);
+            return {
+              name: it.name || "सामान (Item)",
+              quantity: qty,
+              unit: it.unit || "Pcs",
+              rate: price,
+              price: price,
+              taxable: total
+            };
+          });
 
-        const calculatedTotal = Number(parsedData.totalAmount) || itemsList.reduce((s, it) => s + it.taxable, 0);
+          const calculatedTotal = Number(parsedData.totalAmount) || itemsList.reduce((s, it) => s + it.taxable, 0);
 
-        return res.json({
-          success: true,
-          source: "gemini-1.5-flash",
-          partyName: parsedData.partyName || "",
-          partyType: parsedData.partyType || "customer",
-          billType: parsedData.billType || "sale",
-          date: parsedData.date || "",
-          parsedItems: itemsList,
-          totalAmount: calculatedTotal,
-          rawText: parsedData.rawText || responseText
-        });
-      } catch (geminiError) {
-        console.warn("Gemini Vision failed, falling back to local OCR:", geminiError.message);
+          return res.json({
+            success: true,
+            source: "openai-gpt-4o-mini",
+            partyName: parsedData.partyName || "",
+            partyType: parsedData.partyType || "customer",
+            billType: parsedData.billType || "sale",
+            date: parsedData.date || "",
+            parsedItems: itemsList,
+            totalAmount: calculatedTotal,
+            rawText: parsedData.rawText || content
+          });
+        }
+      } catch (openAiErr) {
+        console.warn("OpenAI GPT-4o Mini failed:", openAiErr.response?.data || openAiErr.message);
       }
     }
 
-    // 2. Fallback to Local Tesseract OCR
+    // 2. TRY GOOGLE GEMINI (Cascading Models: gemini-2.5-flash, gemini-2.0-flash, gemini-2.0-flash-lite, gemini-1.5-flash-8b)
+    if (geminiKey) {
+      const geminiCandidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-8b", "gemini-1.5-pro"];
+      const genAI = new GoogleGenerativeAI(geminiKey);
+
+      for (const modelName of geminiCandidateModels) {
+        try {
+          const model = genAI.getGenerativeModel({ model: modelName });
+          const imagePart = {
+            inlineData: {
+              data: pureB64,
+              mimeType: mimeType
+            }
+          };
+
+          const result = await model.generateContent([promptSystem, imagePart]);
+          const responseText = result.response.text();
+          const cleanJson = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
+          const parsedData = JSON.parse(cleanJson);
+
+          const itemsList = (parsedData.items || []).map(it => {
+            const qty = Number(it.quantity) || 1;
+            const price = Number(it.price || it.rate) || 0;
+            const total = Number(it.total) || +(qty * price).toFixed(2);
+            return {
+              name: it.name || "सामान (Item)",
+              quantity: qty,
+              unit: it.unit || "Pcs",
+              rate: price,
+              price: price,
+              taxable: total
+            };
+          });
+
+          const calculatedTotal = Number(parsedData.totalAmount) || itemsList.reduce((s, it) => s + it.taxable, 0);
+
+          return res.json({
+            success: true,
+            source: modelName,
+            partyName: parsedData.partyName || "",
+            partyType: parsedData.partyType || "customer",
+            billType: parsedData.billType || "sale",
+            date: parsedData.date || "",
+            parsedItems: itemsList,
+            totalAmount: calculatedTotal,
+            rawText: parsedData.rawText || responseText
+          });
+        } catch (mErr) {
+          console.warn(`Gemini model ${modelName} failed, trying next candidate:`, mErr.message);
+        }
+      }
+    }
+
+    // 3. FALLBACK TO LOCAL TESSERACT OCR
     const buffer = Buffer.from(pureB64, "base64");
     const tmpDir = os.tmpdir();
     const filename = `bill_${Date.now()}.png`;
@@ -526,7 +670,6 @@ Return ONLY a valid JSON object without markdown fences, conforming strictly to 
 
     for (const line of lines) {
       const lowerLine = line.toLowerCase();
-      
       if (lowerLine.includes("name:") || lowerLine.includes("to:") || lowerLine.includes("m/s")) {
         partyName = line.replace(/name:|to:|m\/s/i, "").trim();
       }

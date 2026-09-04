@@ -116,13 +116,15 @@ function MobileVyaparAppContent() {
   const [showItemSuggestions, setShowItemSuggestions] = useState(false);
   const [savingBill, setSavingBill] = useState(false);
 
-  // AI Photo Bill OCR & Vision State
+  // AI Photo Bill OCR & Dual Vision State (ChatGPT 4o Mini + Gemini 2.5/2.0 Flash)
   const [showOcrModal, setShowOcrModal] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrStatusText, setOcrStatusText] = useState("");
   const [ocrBillType, setOcrBillType] = useState('sale'); // 'sale' (Customer) or 'purchase' (Vendor)
   const [capturedImagePreview, setCapturedImagePreview] = useState(null);
+  const [aiProvider, setAiProvider] = useState(() => localStorage.getItem("AI_VISION_PROVIDER") || "openai"); // 'openai' or 'gemini'
+  const [openaiApiKey, setOpenaiApiKey] = useState(() => localStorage.getItem("OPENAI_API_KEY") || "");
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem("GEMINI_API_KEY") || "");
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   
@@ -348,9 +350,11 @@ function MobileVyaparAppContent() {
       setOcrProgress(40);
       setOcrStatusText("🤖 AI Vision बिल और हस्तलिखित पर्ची को पढ़ रहा है...");
 
-      // Call Backend Vision AI Endpoint
+      // Call Backend Vision AI Endpoint with Dual AI Engine Support
       const res = await api.post("/billing/parse-image", {
         image: base64Data,
+        provider: aiProvider,
+        openaiApiKey: openaiApiKey.trim() || undefined,
         geminiApiKey: geminiApiKey.trim() || undefined
       }).catch(err => {
         console.warn("Backend OCR error:", err);
@@ -1221,7 +1225,7 @@ function MobileVyaparAppContent() {
                 </div>
                 <div>
                   <h3 className="font-extrabold text-sm text-[#0F172A]">AI फोटो बिल स्कैनर</h3>
-                  <p className="text-[10px] text-slate-400">Gemini Vision AI • 100% सटीक डिजिटाइजेशन</p>
+                  <p className="text-[10px] text-slate-400">{aiProvider === 'openai' ? '🤖 ChatGPT 4o Mini' : '⚡ Gemini 2.5 Flash'} • 100% सटीक</p>
                 </div>
               </div>
               <div className="flex items-center gap-1">
@@ -1236,6 +1240,22 @@ function MobileVyaparAppContent() {
                   <X size={18} />
                 </button>
               </div>
+            </div>
+
+            {/* AI Model Selector (ChatGPT 4o Mini vs Gemini 2.5 Flash) */}
+            <div className="flex items-center justify-between bg-slate-100 p-1.5 rounded-2xl text-[11px] font-bold">
+              <button
+                onClick={() => { setAiProvider('openai'); localStorage.setItem("AI_VISION_PROVIDER", "openai"); }}
+                className={`flex-1 py-1.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-1 ${aiProvider === 'openai' ? 'bg-white text-[#0F172A] shadow-sm' : 'text-slate-500'}`}
+              >
+                🤖 ChatGPT 4o Mini
+              </button>
+              <button
+                onClick={() => { setAiProvider('gemini'); localStorage.setItem("AI_VISION_PROVIDER", "gemini"); }}
+                className={`flex-1 py-1.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-1 ${aiProvider === 'gemini' ? 'bg-white text-[#0F172A] shadow-sm' : 'text-slate-500'}`}
+              >
+                ⚡ Gemini 2.5 Flash
+              </button>
             </div>
 
             {/* Bill Type Selector (Customer Sale vs Vendor Purchase) */}
@@ -1492,35 +1512,60 @@ function MobileVyaparAppContent() {
         </div>
       )}
 
-      {/* 📱 6.2 GEMINI API KEY SETTINGS MODAL */}
+      {/* 📱 6.2 AI MODEL & API KEYS SETTINGS MODAL */}
       {showApiKeyModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-xs w-full p-5 space-y-3 shadow-2xl">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3.5 shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-              <h3 className="font-extrabold text-xs text-[#0F172A]">⚙️ Gemini Vision AI Key</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">⚙️ AI Vision मॉडल व API Keys</h3>
               <button onClick={() => setShowApiKeyModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X size={16} />
               </button>
             </div>
-            <p className="text-[11px] text-slate-500">
-              फोटो से 100% सटीक बिल स्कैनिंग के लिए Google Gemini API Key डालें (ऑप्शनल, सिस्टम डिफ़ॉल्ट भी काम करता है):
-            </p>
-            <input 
-              type="password" 
-              placeholder="AIzaSy..." 
-              value={geminiApiKey}
-              onChange={(e) => setGeminiApiKey(e.target.value)}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none font-mono"
-            />
+
+            <div className="space-y-3 text-left">
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                  🤖 OpenAI API Key (ChatGPT 4o Mini):
+                </label>
+                <input 
+                  type="password" 
+                  placeholder="sk-proj-..." 
+                  value={openaiApiKey}
+                  onChange={(e) => setOpenaiApiKey(e.target.value)}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                  ⚡ Google Gemini API Key (2.5 / 2.0 Flash):
+                </label>
+                <input 
+                  type="password" 
+                  placeholder="AIzaSy..." 
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none font-mono"
+                />
+              </div>
+
+              <p className="text-[10px] text-slate-400">
+                * यदि आपके पास अपनी Key है तो यहाँ डालें। अन्यथा सिस्टम का ऑटोमेटिक AI इंजन सक्रिय रहेगा।
+              </p>
+            </div>
+
             <button
               onClick={() => {
+                localStorage.setItem("OPENAI_API_KEY", openaiApiKey.trim());
                 localStorage.setItem("GEMINI_API_KEY", geminiApiKey.trim());
-                alert("API Key सुरक्षित रूप से सेव हो गई!");
+                localStorage.setItem("AI_VISION_PROVIDER", aiProvider);
+                alert("✨ AI सेटिंग्स और Keys सुरक्षित रूप से सेव हो गई!");
                 setShowApiKeyModal(false);
               }}
-              className="w-full py-2.5 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
+              className="w-full py-2.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow cursor-pointer"
             >
-              सेव करें
+              सेव करें (Save Settings)
             </button>
           </div>
         </div>

@@ -1,10 +1,7 @@
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import axios from "axios";
 import { searchProductByName, getCustomerHistoryByPhone, createQuotationForAI, getProductStock } from '../controllers/aiGatewayController.js';
 
-// .env.local या .env.example से API Key लोड होगी
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-// Define the functions that the AI can call
 const tools = [
   {
     functionDeclarations: [
@@ -56,7 +53,6 @@ const tools = [
   },
 ];
 
-// Map function names to actual controller functions
 const availableFunctions = {
   searchProductByName,
   getCustomerHistoryByPhone,
@@ -64,53 +60,93 @@ const availableFunctions = {
   getProductStock,
 };
 
-const model = genAI.getGenerativeModel({
-  model: "gemini-1.5-flash",
-  tools,
-  systemInstruction: "You are a helpful AI assistant for a business. Your goal is to understand the customer's question and use the available tools to answer it. You can only use the functions provided to you. Do not make up information. Always reply in simple Hindi.",
-});
+// Dual AI Dispatcher: OpenAI (gpt-4o-mini) + Google Gemini (2.5/2.0 Flash)
+export const callGeminiAI = async (userMessage, userPhone, options = {}) => {
+  const openAiKey = options.openaiApiKey || process.env.OPENAI_API_KEY;
+  const geminiKey = options.geminiApiKey || process.env.GEMINI_API_KEY;
 
-export const callGeminiAI = async (userMessage, userPhone) => {
-  const chat = model.startChat();
-  const result = await chat.sendMessage(userMessage);
-  const call = result.response.functionCalls()?.[0];
-
-  if (call) {
-    const { name, args } = call;
-    const apiFunction = availableFunctions[name];
-
-    if (apiFunction) {
-      // Mock request and response objects for the controller
-      const mockReq = { 
-        query: { ...args, phone: args.phone || userPhone },
-        body: { ...args }, // For POST requests like createQuotation
-        companyId: process.env.DEFAULT_COMPANY_ID // Assuming a default company for AI operations
-      };
-      let apiResult;
-      const mockRes = {
-        status: () => mockRes,
-        json: (data) => { apiResult = data; }
-      };
-
-      await apiFunction(mockReq, mockRes);
-
-      // Send the API result back to the model
-      const result2 = await chat.sendMessage([
+  // 1. Try OpenAI GPT-4o Mini
+  if (openAiKey) {
+    try {
+      const systemPrompt = "You are a helpful AI assistant for VyaparBook business. Answer customer queries about products, rates, stock, and bills. Always reply in simple and polite Hindi.";
+      const res = await axios.post(
+        "https://api.openai.com/v1/chat/completions",
         {
-          functionResponse: {
-            name,
-            response: apiResult,
-          },
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessage }
+          ],
+          max_tokens: 500
         },
-      ]);
-
-      // Get the model's final natural language response
-      return result2.response.text();
-    } else {
-      return "माफ़ कीजिए, मैं यह जानकारी नहीं ढूंढ पा रहा हूँ।";
+        {
+          headers: {
+            "Authorization": `Bearer ${openAiKey}`,
+            "Content-Type": "application/json"
+          },
+          timeout: 15000
+        }
+      );
+      return res.data?.choices?.[0]?.message?.content || "नमस्ते! मैं आपकी क्या सहायता कर सकता हूँ?";
+    } catch (openAiErr) {
+      console.warn("OpenAI aiService error:", openAiErr.message);
     }
   }
 
-  // If no function call was triggered, return the model's direct text response
-  return result.response.text();
+  // 2. Try Google Gemini with modern model cascade
+  if (geminiKey) {
+    const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-8b", "gemini-1.5-pro"];
+    const genAI = new GoogleGenerativeAI(geminiKey);
+
+    for (const modelName of candidateModels) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          tools,
+          systemInstruction: "You are a helpful AI assistant for a business. Your goal is to understand the customer's question and use the available tools to answer it. Always reply in simple Hindi.",
+        });
+
+        const chat = model.startChat();
+        const result = await chat.sendMessage(userMessage);
+        const call = result.response.functionCalls()?.[0];
+
+        if (call) {
+          const { name, args } = call;
+          const apiFunction = availableFunctions[name];
+
+          if (apiFunction) {
+            const mockReq = { 
+              query: { ...args, phone: args.phone || userPhone },
+              body: { ...args },
+              companyId: process.env.DEFAULT_COMPANY_ID
+            };
+            let apiResult;
+            const mockRes = {
+              status: () => mockRes,
+              json: (data) => { apiResult = data; }
+            };
+
+            await apiFunction(mockReq, mockRes);
+
+            const result2 = await chat.sendMessage([
+              {
+                functionResponse: {
+                  name,
+                  response: apiResult,
+                },
+              },
+            ]);
+
+            return result2.response.text();
+          }
+        }
+
+        return result.response.text();
+      } catch (err) {
+        console.warn(`aiService model ${modelName} error, trying next:`, err.message);
+      }
+    }
+  }
+
+  return "नमस्ते! मैं आपका व्यापार सहायक हूँ। आपकी क्या मदद करूँ?";
 };
