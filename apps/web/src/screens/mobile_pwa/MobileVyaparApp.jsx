@@ -1,4 +1,3 @@
-import Tesseract from "tesseract.js";
 import React, { useState, useEffect, useRef } from "react";
 import {
   Home,
@@ -49,7 +48,41 @@ import { useNavigate } from "react-router-dom";
 import { useCompany } from "../../contexts/CompanyContext";
 import api from "../../services/api";
 
-export default function MobileVyaparApp() {
+
+class MobileErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("📱 Mobile View Error Caught:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-6 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-[#4338CA] flex items-center justify-center font-bold mb-3 shadow">
+            V
+          </div>
+          <h2 className="font-extrabold text-base text-[#0F172A] mb-1">VyaparBook मोबाइल ऐप</h2>
+          <p className="text-xs text-slate-500 mb-4">पेज को सुरक्षित रीलोड किया जा रहा है...</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-5 py-2.5 bg-[#4338CA] text-white font-bold text-xs rounded-xl shadow cursor-pointer"
+          >
+            🔄 ऐप रीफ्रेश करें
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function MobileVyaparAppContent() {
   const navigate = useNavigate();
   const { selectedCompany, companies, selectCompany } = useCompany();
 
@@ -294,6 +327,8 @@ export default function MobileVyaparApp() {
     try {
       const imageUrl = URL.createObjectURL(file);
       
+      const TesseractModule = await import("tesseract.js");
+      const Tesseract = TesseractModule.default || TesseractModule;
       const { data: { text } } = await Tesseract.recognize(
         imageUrl,
         'eng',
@@ -1270,5 +1305,13 @@ export default function MobileVyaparApp() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function MobileVyaparApp() {
+  return (
+    <MobileErrorBoundary>
+      <MobileVyaparAppContent />
+    </MobileErrorBoundary>
   );
 }
