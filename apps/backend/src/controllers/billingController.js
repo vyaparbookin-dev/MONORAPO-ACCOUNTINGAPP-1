@@ -1,3 +1,4 @@
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import Bill from "../model/bill.js";
 import fs from "fs";
 import path from "path";
@@ -276,66 +277,290 @@ export const deleteBill = async (req, res) => {
   }
 };
 
-// Parse uploaded bill image, run OCR and return parsed text + simple line-based parsing
+// Parse uploaded bill image with Gemini 1.5 Flash Vision AI + Fallback OCR
 export const parseBillImage = async (req, res) => {
   try {
-    // Legacy: expects base64 image in req.body.image
     const b64 = req.body?.image;
     if (!b64) return res.status(400).json({ success: false, error: "No image provided (expected base64 in body.image)" });
 
-    // strip data URI prefix if present
-    const match = b64.match(/^data:(image\/.+);base64,(.+)$/);
-    const dataPart = match ? match[2] : b64;
-    const buffer = Buffer.from(dataPart, "base64");
+    let mimeType = "image/jpeg";
+    let pureB64 = b64;
+    const match = b64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (match) {
+      mimeType = match[1];
+      pureB64 = match[2];
+    }
 
+    // 1. Try High-Accuracy Gemini 1.5 Flash Vision AI
+    const geminiKey = req.body?.geminiApiKey || process.env.GEMINI_API_KEY;
+    if (geminiKey) {
+      try {
+        const genAI = new GoogleGenerativeAI(geminiKey);
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+        const imagePart = {
+          inlineData: {
+            data: pureB64,
+            mimeType: mimeType
+          }
+        };
+
+        const prompt = `You are a high-accuracy AI retail bill, handwritten chit (कच्ची पर्ची), purchase invoice, and GST bill parser specialized in Indian retail and wholesale shops.
+Analyze this receipt/slip image and extract every line item, quantity, unit, price, and party details with 100% precision.
+Decipher handwritten Hindi/English terms and exact product names (e.g., 'Emulsion 10 ltr', 'Apex Ultima 20L', 'Asian Paints Tractor', 'White Cement 50kg', 'Nut Bolt 8mm').
+Do NOT skip any product. If price or quantity is written, calculate total accurately.
+
+Return ONLY a valid JSON object without markdown fences, conforming strictly to this format:
+{
+  "partyName": "Customer or supplier name if found, else ''",
+  "partyType": "customer" or "supplier",
+  "billType": "sale" or "purchase",
+  "date": "YYYY-MM-DD or readable date string",
+  "items": [
+    {
+      "name": "Exact item name and specification as written on the slip",
+      "quantity": 1,
+      "unit": "Pcs",
+      "price": 2850,
+      "total": 2850
+    }
+  ],
+  "totalAmount": 2850,
+  "rawText": "Complete transcribed text from the image"
+}`;
+
+        const result = await model.generateContent([prompt, imagePart]);
+        const responseText = result.response.text();
+        const cleanJson = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
+        const parsedData = JSON.parse(cleanJson);
+
+        const itemsList = (parsedData.items || []).map(it => {
+          const qty = Number(it.quantity) || 1;
+          const price = Number(it.price || it.rate) || 0;
+          const total = Number(it.total) || +(qty * price).toFixed(2);
+          return {
+            name: it.name || "सामान (Item)",
+            quantity: qty,
+            unit: it.unit || "Pcs",
+            rate: price,
+            price: price,
+            taxable: total
+          };
+        });
+
+        const calculatedTotal = Number(parsedData.totalAmount) || itemsList.reduce((s, it) => s + it.taxable, 0);
+
+        return res.json({
+          success: true,
+          source: "gemini-1.5-flash",
+          partyName: parsedData.partyName || "",
+          partyType: parsedData.partyType || "customer",
+          billType: parsedData.billType || "sale",
+          date: parsedData.date || "",
+          parsedItems: itemsList,
+          totalAmount: calculatedTotal,
+          rawText: parsedData.rawText || responseText
+        });
+      } catch (geminiError) {
+        console.warn("Gemini Vision failed, falling back to local OCR:", geminiError.message);
+      }
+    }
+
+    // 2. Fallback to Local Tesseract OCR
+    const buffer = Buffer.from(pureB64, "base64");
     const tmpDir = os.tmpdir();
     const filename = `bill_${Date.now()}.png`;
     const filepath = path.join(tmpDir, filename);
     fs.writeFileSync(filepath, buffer);
 
-    const worker = createWorker();
-    await worker.load();
-    await worker.loadLanguage("eng");
-    await worker.initialize("eng");
+    const worker = await createWorker("eng");
     const { data: { text } } = await worker.recognize(filepath);
     await worker.terminate();
 
     const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const parsedItems = [];
-    let partyName = "Unknown Party";
+    let partyName = "";
     let totalAmount = 0;
 
     for (const line of lines) {
       const lowerLine = line.toLowerCase();
       
-      // Extract Party Name
       if (lowerLine.includes("name:") || lowerLine.includes("to:") || lowerLine.includes("m/s")) {
         partyName = line.replace(/name:|to:|m\/s/i, "").trim();
       }
-      // Extract Total Amount
-      if (lowerLine.includes("total") || lowerLine.includes("amount")) {
+      if (lowerLine.includes("total") || lowerLine.includes("amount") || lowerLine.includes("g.total")) {
         const nums = line.match(/\d+[.,]?\d*/g) || [];
         if (nums.length > 0) totalAmount = parseFloat(nums[nums.length - 1].replace(/,/g, ""));
       }
 
       const nums = line.match(/\d+[.,]?\d*/g) || [];
-      if (nums.length >= 1 && !lowerLine.includes("total")) {
+      if (nums.length >= 1 && !lowerLine.includes("total") && !lowerLine.includes("invoice") && !lowerLine.includes("date")) {
         const priceRaw = nums[nums.length - 1];
         const qtyRaw = nums.length >= 2 ? nums[nums.length - 2] : "1";
         const price = parseFloat(priceRaw.replace(/,/g, "")) || 0;
         const qty = parseFloat(qtyRaw.replace(/,/g, "")) || 1;
         const name = line.replace(priceRaw, "").replace(qtyRaw, "").replace(/\s+/g, " ").replace(/[^a-zA-Z0-9 \-]/g, "").trim();
-        parsedItems.push({ name: name || "Item", quantity: qty, rate: price, price, taxable: +(price * qty).toFixed(2) });
+        if (name && name.length >= 2) {
+          parsedItems.push({ name: name, quantity: qty, unit: "Pcs", rate: price, price, taxable: +(price * qty).toFixed(2) });
+        }
       }
     }
 
     try { fs.unlinkSync(filepath); } catch (e) {}
-    return res.json({ success: true, text, parsedItems, partyName, totalAmount });
+    return res.json({ 
+      success: true, 
+      source: "tesseract-ocr",
+      text, 
+      parsedItems, 
+      partyName, 
+      totalAmount: totalAmount || parsedItems.reduce((s, it) => s + it.taxable, 0)
+    });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
   }
 };
+// Parse uploaded bill image with Gemini 1.5 Flash Vision AI + Fallback OCR
+export const parseBillImage = async (req, res) => {
+  try {
+    const b64 = req.body?.image;
+    if (!b64) return res.status(400).json({ success: false, error: "No image provided (expected base64 in body.image)" });
 
+    let mimeType = "image/jpeg";
+    let pureB64 = b64;
+    const match = b64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (match) {
+      mimeType = match[1];
+      pureB64 = match[2];
+    }
+
+    // 1. Try High-Accuracy Gemini 1.5 Flash Vision AI
+    const geminiKey = req.body?.geminiApiKey || process.env.GEMINI_API_KEY;
+    if (geminiKey) {
+      try {
+        const genAI = new GoogleGenerativeAI(geminiKey);
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+        const imagePart = {
+          inlineData: {
+            data: pureB64,
+            mimeType: mimeType
+          }
+        };
+
+        const prompt = `You are a high-accuracy AI retail bill, handwritten chit (कच्ची पर्ची), purchase invoice, and GST bill parser specialized in Indian retail and wholesale shops.
+Analyze this receipt/slip image and extract every line item, quantity, unit, price, and party details with 100% precision.
+Decipher handwritten Hindi/English terms and exact product names (e.g., 'Emulsion 10 ltr', 'Apex Ultima 20L', 'Asian Paints Tractor', 'White Cement 50kg', 'Nut Bolt 8mm').
+Do NOT skip any product. If price or quantity is written, calculate total accurately.
+
+Return ONLY a valid JSON object without markdown fences, conforming strictly to this format:
+{
+  "partyName": "Customer or supplier name if found, else ''",
+  "partyType": "customer" or "supplier",
+  "billType": "sale" or "purchase",
+  "date": "YYYY-MM-DD or readable date string",
+  "items": [
+    {
+      "name": "Exact item name and specification as written on the slip",
+      "quantity": 1,
+      "unit": "Pcs",
+      "price": 2850,
+      "total": 2850
+    }
+  ],
+  "totalAmount": 2850,
+  "rawText": "Complete transcribed text from the image"
+}`;
+
+        const result = await model.generateContent([prompt, imagePart]);
+        const responseText = result.response.text();
+        const cleanJson = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
+        const parsedData = JSON.parse(cleanJson);
+
+        const itemsList = (parsedData.items || []).map(it => {
+          const qty = Number(it.quantity) || 1;
+          const price = Number(it.price || it.rate) || 0;
+          const total = Number(it.total) || +(qty * price).toFixed(2);
+          return {
+            name: it.name || "सामान (Item)",
+            quantity: qty,
+            unit: it.unit || "Pcs",
+            rate: price,
+            price: price,
+            taxable: total
+          };
+        });
+
+        const calculatedTotal = Number(parsedData.totalAmount) || itemsList.reduce((s, it) => s + it.taxable, 0);
+
+        return res.json({
+          success: true,
+          source: "gemini-1.5-flash",
+          partyName: parsedData.partyName || "",
+          partyType: parsedData.partyType || "customer",
+          billType: parsedData.billType || "sale",
+          date: parsedData.date || "",
+          parsedItems: itemsList,
+          totalAmount: calculatedTotal,
+          rawText: parsedData.rawText || responseText
+        });
+      } catch (geminiError) {
+        console.warn("Gemini Vision failed, falling back to local OCR:", geminiError.message);
+      }
+    }
+
+    // 2. Fallback to Local Tesseract OCR
+    const buffer = Buffer.from(pureB64, "base64");
+    const tmpDir = os.tmpdir();
+    const filename = `bill_${Date.now()}.png`;
+    const filepath = path.join(tmpDir, filename);
+    fs.writeFileSync(filepath, buffer);
+
+    const worker = await createWorker("eng");
+    const { data: { text } } = await worker.recognize(filepath);
+    await worker.terminate();
+
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const parsedItems = [];
+    let partyName = "";
+    let totalAmount = 0;
+
+    for (const line of lines) {
+      const lowerLine = line.toLowerCase();
+      
+      if (lowerLine.includes("name:") || lowerLine.includes("to:") || lowerLine.includes("m/s")) {
+        partyName = line.replace(/name:|to:|m\/s/i, "").trim();
+      }
+      if (lowerLine.includes("total") || lowerLine.includes("amount") || lowerLine.includes("g.total")) {
+        const nums = line.match(/\d+[.,]?\d*/g) || [];
+        if (nums.length > 0) totalAmount = parseFloat(nums[nums.length - 1].replace(/,/g, ""));
+      }
+
+      const nums = line.match(/\d+[.,]?\d*/g) || [];
+      if (nums.length >= 1 && !lowerLine.includes("total") && !lowerLine.includes("invoice") && !lowerLine.includes("date")) {
+        const priceRaw = nums[nums.length - 1];
+        const qtyRaw = nums.length >= 2 ? nums[nums.length - 2] : "1";
+        const price = parseFloat(priceRaw.replace(/,/g, "")) || 0;
+        const qty = parseFloat(qtyRaw.replace(/,/g, "")) || 1;
+        const name = line.replace(priceRaw, "").replace(qtyRaw, "").replace(/\s+/g, " ").replace(/[^a-zA-Z0-9 \-]/g, "").trim();
+        if (name && name.length >= 2) {
+          parsedItems.push({ name: name, quantity: qty, unit: "Pcs", rate: price, price, taxable: +(price * qty).toFixed(2) });
+        }
+      }
+    }
+
+    try { fs.unlinkSync(filepath); } catch (e) {}
+    return res.json({ 
+      success: true, 
+      source: "tesseract-ocr",
+      text, 
+      parsedItems, 
+      partyName, 
+      totalAmount: totalAmount || parsedItems.reduce((s, it) => s + it.taxable, 0)
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
 export const createNonGstBill = async (req, res) => {
   try {
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID is missing" });
