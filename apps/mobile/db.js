@@ -1,7 +1,19 @@
 import * as SQLite from 'expo-sqlite';
 
 let db = null;
-let isInitializing = false; // 🔥 Prevent double initialization on Hot Reload
+let isInitializing = false;
+
+const ensureDB = async () => {
+  if (!db) {
+    try {
+      await initDB();
+    } catch (e) {
+      console.warn("DB auto-init warning:", e);
+    }
+  }
+  return db;
+};
+ // 🔥 Prevent double initialization on Hot Reload
 
 export const initDB = async () => {
   if (db) return; // Already initialized
@@ -178,7 +190,8 @@ export const initDB = async () => {
 
 // 1. नया प्रोडक्ट लोकल DB में सेव करना
 export const addProductLocal = async (product) => {
-  if (!db) throw new Error("Database not initialized");
+  if (!db) { try { await initDB(); } catch(e){} }
+  if (!db) return { success: false, error: "DB warming up" };
   try {
     const uuid = product.uuid || Date.now().toString(); // Temporary UUID agar server se nahi mila
     const result = await db.runAsync(
@@ -205,7 +218,8 @@ export const getProductsLocal = async () => {
 
 // --- Settings CRUD (Offline Key-Value Store) ---
 export const saveSettingLocal = async (key, value) => {
-  if (!db) throw new Error("Database not initialized");
+  if (!db) { try { await initDB(); } catch(e){} }
+  if (!db) return { success: false, error: "DB warming up" };
   try {
     await db.runAsync(
       'INSERT OR REPLACE INTO settings (key, value, is_synced) VALUES (?, ?, ?)',
@@ -231,7 +245,8 @@ export const getSettingLocal = async (key) => {
 
 // --- Staff & Salary CRUD (Offline) ---
 export const addStaffLocal = async (staff) => {
-  if (!db) throw new Error("Database not initialized");
+  if (!db) { try { await initDB(); } catch(e){} }
+  if (!db) return { success: false, error: "DB warming up" };
   try {
     const uuid = staff.uuid || Date.now().toString();
     await db.runAsync(
@@ -256,7 +271,8 @@ export const getStaffLocal = async () => {
 };
 
 export const addStaffPaymentLocal = async (payment) => {
-  if (!db) throw new Error("Database not initialized");
+  if (!db) { try { await initDB(); } catch(e){} }
+  if (!db) return { success: false, error: "DB warming up" };
   try {
     const uuid = Date.now().toString();
     await db.runAsync(
@@ -277,7 +293,8 @@ export const addStaffPaymentLocal = async (payment) => {
 };
 
 export const addAttendanceLocal = async (att) => {
-  if (!db) throw new Error("Database not initialized");
+  if (!db) { try { await initDB(); } catch(e){} }
+  if (!db) return { success: false, error: "DB warming up" };
   try {
     const uuid = Date.now().toString();
     await db.runAsync(
@@ -321,7 +338,8 @@ export const getUsersLocal = async () => {
 };
 
 export const updateUserRoleLocal = async (userUuid, role) => {
-  if (!db) throw new Error("Database not initialized");
+  if (!db) { try { await initDB(); } catch(e){} }
+  if (!db) return { success: false, error: "DB warming up" };
   try {
     await db.runAsync('UPDATE users SET role = ?, is_synced = 0 WHERE uuid = ?', [role, userUuid]);
     return { success: true };
@@ -354,7 +372,8 @@ export const getBranchesLocal = async () => {
 };
 
 export const addBranchLocal = async (branch) => {
-  if (!db) throw new Error("Database not initialized");
+  if (!db) { try { await initDB(); } catch(e){} }
+  if (!db) return { success: false, error: "DB warming up" };
   try {
     const uuid = branch.uuid || Date.now().toString();
     const result = await db.runAsync(
@@ -369,7 +388,8 @@ export const addBranchLocal = async (branch) => {
 };
 
 export const addWarehouseLocal = async (warehouse) => {
-  if (!db) throw new Error("Database not initialized");
+  if (!db) { try { await initDB(); } catch(e){} }
+  if (!db) return { success: false, error: "DB warming up" };
   try {
     const uuid = warehouse.uuid || Date.now().toString();
     const result = await db.runAsync(
@@ -401,7 +421,8 @@ export const getWarehousesLocal = async () => {
 
 // --- Companies CRUD (Offline) ---
 export const addCompanyLocal = async (company) => {
-  if (!db) throw new Error("Database not initialized");
+  if (!db) { try { await initDB(); } catch(e){} }
+  if (!db) return { success: false, error: "DB warming up" };
   try {
     const uuid = company.uuid || Date.now().toString();
     const result = await db.runAsync(
@@ -427,7 +448,8 @@ export const getCompaniesLocal = async () => {
 
 // --- Expenses CRUD (Offline) ---
 export const addExpenseLocal = async (expense) => {
-  if (!db) throw new Error("Database not initialized");
+  if (!db) { try { await initDB(); } catch(e){} }
+  if (!db) return { success: false, error: "DB warming up" };
   try {
     const uuid = expense.uuid || Date.now().toString();
     const result = await db.runAsync(
@@ -453,7 +475,8 @@ export const getExpensesLocal = async () => {
 
 // --- Parties (Customers/Suppliers) CRUD (Offline) ---
 export const addPartyLocal = async (party) => {
-  if (!db) throw new Error("Database not initialized");
+  if (!db) { try { await initDB(); } catch(e){} }
+  if (!db) return { success: false, error: "DB warming up" };
   try {
     const uuid = party.uuid || Date.now().toString();
     const result = await db.runAsync(
@@ -479,7 +502,8 @@ export const getPartiesLocal = async () => {
 
 // --- Bills / Invoices CRUD (Offline) ---
 export const addBillLocal = async (bill, items) => {
-  if (!db) throw new Error("Database not initialized");
+  if (!db) { try { await initDB(); } catch(e){} }
+  if (!db) return { success: false, error: "DB warming up" };
   try {
     const uuid = bill.uuid || Date.now().toString();
     const itemsJson = JSON.stringify(items || []); // Items ko JSON string bana kar save karte hain
@@ -513,7 +537,8 @@ export const getBillsLocal = async () => {
 
 // --- Coupons CRUD (Offline) ---
 export const addCouponLocal = async (coupon) => {
-  if (!db) throw new Error("Database not initialized");
+  if (!db) { try { await initDB(); } catch(e){} }
+  if (!db) return { success: false, error: "DB warming up" };
   try {
     const uuid = coupon.uuid || Date.now().toString();
     const result = await db.runAsync(
