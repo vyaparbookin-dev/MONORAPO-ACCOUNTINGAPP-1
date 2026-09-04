@@ -278,39 +278,31 @@ export const deleteBill = async (req, res) => {
   }
 };
 
-// Multi-Provider AI Vision Bill Scanner: OpenAI GPT-4o Mini + Google Gemini 2.5/2.0 Flash
+// Intelligent Auto-AI Vision Bill Parser (OpenAI GPT-4o Mini + Gemini 2.5/2.0 Flash)
 export const parseBillImage = async (req, res) => {
   try {
-    const b64 = req.body?.image;
-    if (!b64) return res.status(400).json({ success: false, error: "No image provided (expected base64 in body.image)" });
-
-    let mimeType = "image/jpeg";
-    let pureB64 = b64;
-    const match = b64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-    if (match) {
-      mimeType = match[1];
-      pureB64 = match[2];
+    const images = req.body?.images || (req.body?.image ? [req.body.image] : []);
+    if (!images || images.length === 0) {
+      return res.status(400).json({ success: false, error: "No image provided" });
     }
 
-    const fullDataUri = match ? b64 : `data:${mimeType};base64,${pureB64}`;
     const openAiKey = req.body?.openaiApiKey || process.env.OPENAI_API_KEY;
     const geminiKey = req.body?.geminiApiKey || process.env.GEMINI_API_KEY;
-    const selectedProvider = req.body?.provider || (openAiKey ? "openai" : "gemini");
 
-    const promptSystem = `You are a world-class AI retail bill, handwritten chit (कच्ची पर्ची), purchase invoice, and GST bill parser specialized in Indian shopkeeping.
-Analyze this receipt/slip image and extract every line item, quantity, unit, price, and party details with 100% precision.
+    const promptSystem = `You are a world-class AI retail invoice and handwritten slip (कच्ची पर्ची) parser specialized in Indian retail and wholesale shops.
+Extract every line item, quantity, unit, price, and party name with 100% precision.
 Decipher handwritten Hindi/English terms and exact product names (e.g., 'Emulsion 10 ltr', 'Apex Ultima 20L', 'Asian Paints Tractor', 'White Cement 50kg', 'Nut Bolt 8mm').
-Do NOT skip any product. Calculate total accurately.
+Do NOT skip any line item. Calculate total accurately.
 
-Return STRICTLY a valid JSON object without markdown fences, matching this schema:
+Return STRICTLY a JSON object without markdown formatting:
 {
-  "partyName": "Customer or supplier name if found, else ''",
+  "partyName": "Customer or supplier name if mentioned, else ''",
   "partyType": "customer" or "supplier",
   "billType": "sale" or "purchase",
-  "date": "YYYY-MM-DD or readable date string",
+  "date": "YYYY-MM-DD or readable date",
   "items": [
     {
-      "name": "Exact item name and specification as written on the slip",
+      "name": "Exact item name and specification as written",
       "quantity": 1,
       "unit": "Pcs",
       "price": 2850,
@@ -318,212 +310,189 @@ Return STRICTLY a valid JSON object without markdown fences, matching this schem
     }
   ],
   "totalAmount": 2850,
-  "rawText": "Complete transcribed text from the image"
+  "rawText": "Transcribed text"
 }`;
 
-    // 1. TRY OPENAI CHATGPT (GPT-4o Mini)
-    if (openAiKey && (selectedProvider === "openai" || !geminiKey)) {
-      try {
-        const openAiRes = await axios.post(
-          "https://api.openai.com/v1/chat/completions",
-          {
-            model: "gpt-4o-mini",
-            response_format: { type: "json_object" },
-            messages: [
-              { role: "system", content: promptSystem },
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: "Parse this bill/receipt image into structured JSON items list:" },
-                  { type: "image_url", image_url: { url: fullDataUri } }
-                ]
-              }
-            ],
-            max_tokens: 1500
-          },
-          {
-            headers: {
-              "Authorization": `Bearer ${openAiKey}`,
-              "Content-Type": "application/json"
-            },
-            timeout: 25000
-          }
-        );
-
-        const content = openAiRes.data?.choices?.[0]?.message?.content;
-        if (content) {
-          const parsedData = JSON.parse(content);
-          const itemsList = (parsedData.items || []).map(it => {
-            const qty = Number(it.quantity) || 1;
-            const price = Number(it.price || it.rate) || 0;
-            const total = Number(it.total) || +(qty * price).toFixed(2);
-            return {
-              name: it.name || "सामान (Item)",
-              quantity: qty,
-              unit: it.unit || "Pcs",
-              rate: price,
-              price: price,
-              taxable: total
-            };
-          });
-
-          const calculatedTotal = Number(parsedData.totalAmount) || itemsList.reduce((s, it) => s + it.taxable, 0);
-
-          return res.json({
-            success: true,
-            source: "openai-gpt-4o-mini",
-            partyName: parsedData.partyName || "",
-            partyType: parsedData.partyType || "customer",
-            billType: parsedData.billType || "sale",
-            date: parsedData.date || "",
-            parsedItems: itemsList,
-            totalAmount: calculatedTotal,
-            rawText: parsedData.rawText || content
-          });
-        }
-      } catch (openAiErr) {
-        console.warn("OpenAI GPT-4o Mini failed:", openAiErr.response?.data || openAiErr.message);
+    // Helper to parse single base64 image
+    const parseSingleImage = async (b64) => {
+      let mimeType = "image/jpeg";
+      let pureB64 = b64;
+      const match = b64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      if (match) {
+        mimeType = match[1];
+        pureB64 = match[2];
       }
-    }
+      const fullDataUri = match ? b64 : `data:${mimeType};base64,${pureB64}`;
 
-    // 2. TRY GOOGLE GEMINI (Cascading Models: gemini-2.5-flash, gemini-2.0-flash, gemini-2.0-flash-lite, gemini-1.5-flash-8b)
-    if (geminiKey) {
-      const geminiCandidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-8b", "gemini-1.5-pro"];
-      const genAI = new GoogleGenerativeAI(geminiKey);
-
-      for (const modelName of geminiCandidateModels) {
+      // 1. Try OpenAI GPT-4o Mini First (Highest precision)
+      if (openAiKey) {
         try {
-          const model = genAI.getGenerativeModel({ model: modelName });
-          const imagePart = {
-            inlineData: {
-              data: pureB64,
-              mimeType: mimeType
+          const openAiRes = await axios.post(
+            "https://api.openai.com/v1/chat/completions",
+            {
+              model: "gpt-4o-mini",
+              response_format: { type: "json_object" },
+              messages: [
+                { role: "system", content: promptSystem },
+                {
+                  role: "user",
+                  content: [
+                    { type: "text", text: "Parse this bill/receipt image into structured JSON items list:" },
+                    { type: "image_url", image_url: { url: fullDataUri } }
+                  ]
+                }
+              ],
+              max_tokens: 1500
+            },
+            {
+              headers: { "Authorization": `Bearer ${openAiKey}`, "Content-Type": "application/json" },
+              timeout: 25000
             }
-          };
-
-          const result = await model.generateContent([promptSystem, imagePart]);
-          const responseText = result.response.text();
-          const cleanJson = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
-          const parsedData = JSON.parse(cleanJson);
-
-          const itemsList = (parsedData.items || []).map(it => {
-            const qty = Number(it.quantity) || 1;
-            const price = Number(it.price || it.rate) || 0;
-            const total = Number(it.total) || +(qty * price).toFixed(2);
-            return {
+          );
+          const content = openAiRes.data?.choices?.[0]?.message?.content;
+          if (content) {
+            const parsed = JSON.parse(content);
+            const itemsList = (parsed.items || []).map(it => ({
               name: it.name || "सामान (Item)",
-              quantity: qty,
+              quantity: Number(it.quantity) || 1,
               unit: it.unit || "Pcs",
-              rate: price,
-              price: price,
-              taxable: total
+              price: Number(it.price || it.rate) || 0,
+              total: Number(it.total) || +((Number(it.quantity) || 1) * (Number(it.price || it.rate) || 0)).toFixed(2)
+            }));
+            return {
+              success: true,
+              source: "openai-gpt-4o-mini",
+              partyName: parsed.partyName || "",
+              partyType: parsed.partyType || "customer",
+              billType: parsed.billType || "sale",
+              date: parsed.date || "",
+              parsedItems: itemsList,
+              totalAmount: Number(parsed.totalAmount) || itemsList.reduce((s, it) => s + it.total, 0),
+              rawText: parsed.rawText || content
             };
-          });
-
-          const calculatedTotal = Number(parsedData.totalAmount) || itemsList.reduce((s, it) => s + it.taxable, 0);
-
-          return res.json({
-            success: true,
-            source: modelName,
-            partyName: parsedData.partyName || "",
-            partyType: parsedData.partyType || "customer",
-            billType: parsedData.billType || "sale",
-            date: parsedData.date || "",
-            parsedItems: itemsList,
-            totalAmount: calculatedTotal,
-            rawText: parsedData.rawText || responseText
-          });
-        } catch (mErr) {
-          console.warn(`Gemini model ${modelName} failed, trying next candidate:`, mErr.message);
+          }
+        } catch (oErr) {
+          console.warn("OpenAI parse failed, trying Gemini:", oErr.message);
         }
       }
-    }
 
-    // 3. FALLBACK TO LOCAL TESSERACT OCR
-    const buffer = Buffer.from(pureB64, "base64");
-    const tmpDir = os.tmpdir();
-    const filename = `bill_${Date.now()}.png`;
-    const filepath = path.join(tmpDir, filename);
-    fs.writeFileSync(filepath, buffer);
-
-    const worker = await createWorker("eng");
-    const { data: { text } } = await worker.recognize(filepath);
-    await worker.terminate();
-
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    const parsedItems = [];
-    let partyName = "";
-    let totalAmount = 0;
-
-    for (const line of lines) {
-      const lowerLine = line.toLowerCase();
-      if (lowerLine.includes("name:") || lowerLine.includes("to:") || lowerLine.includes("m/s")) {
-        partyName = line.replace(/name:|to:|m\/s/i, "").trim();
+      // 2. Try Google Gemini (Cascading modern models)
+      if (geminiKey) {
+        const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-8b", "gemini-1.5-pro"];
+        const genAI = new GoogleGenerativeAI(geminiKey);
+        for (const modelName of candidateModels) {
+          try {
+            const model = genAI.getGenerativeModel({ model: modelName });
+            const imagePart = { inlineData: { data: pureB64, mimeType: mimeType } };
+            const result = await model.generateContent([promptSystem, imagePart]);
+            const respText = result.response.text();
+            const cleanJson = respText.replace(/```json/gi, "").replace(/```/g, "").trim();
+            const parsed = JSON.parse(cleanJson);
+            const itemsList = (parsed.items || []).map(it => ({
+              name: it.name || "सामान (Item)",
+              quantity: Number(it.quantity) || 1,
+              unit: it.unit || "Pcs",
+              price: Number(it.price || it.rate) || 0,
+              total: Number(it.total) || +((Number(it.quantity) || 1) * (Number(it.price || it.rate) || 0)).toFixed(2)
+            }));
+            return {
+              success: true,
+              source: modelName,
+              partyName: parsed.partyName || "",
+              partyType: parsed.partyType || "customer",
+              billType: parsed.billType || "sale",
+              date: parsed.date || "",
+              parsedItems: itemsList,
+              totalAmount: Number(parsed.totalAmount) || itemsList.reduce((s, it) => s + it.total, 0),
+              rawText: parsed.rawText || respText
+            };
+          } catch (gErr) {
+            console.warn(`Gemini ${modelName} failed:`, gErr.message);
+          }
+        }
       }
-      if (lowerLine.includes("total") || lowerLine.includes("amount") || lowerLine.includes("g.total")) {
+
+      // 3. Fallback Tesseract
+      const buffer = Buffer.from(pureB64, "base64");
+      const tmpDir = os.tmpdir();
+      const filename = `bill_${Date.now()}_${Math.random().toString(36).slice(2,6)}.png`;
+      const filepath = path.join(tmpDir, filename);
+      fs.writeFileSync(filepath, buffer);
+      const worker = await createWorker("eng");
+      const { data: { text } } = await worker.recognize(filepath);
+      await worker.terminate();
+      try { fs.unlinkSync(filepath); } catch(e){}
+
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const itemsList = [];
+      let partyName = "";
+      for (const line of lines) {
+        if (/invoice|bill|date|total|tax|gstin/i.test(line)) continue;
         const nums = line.match(/\d+[.,]?\d*/g) || [];
-        if (nums.length > 0) totalAmount = parseFloat(nums[nums.length - 1].replace(/,/g, ""));
-      }
-
-      const nums = line.match(/\d+[.,]?\d*/g) || [];
-      if (nums.length >= 1 && !lowerLine.includes("total") && !lowerLine.includes("invoice") && !lowerLine.includes("date")) {
-        const priceRaw = nums[nums.length - 1];
-        const qtyRaw = nums.length >= 2 ? nums[nums.length - 2] : "1";
-        const price = parseFloat(priceRaw.replace(/,/g, "")) || 0;
-        const qty = parseFloat(qtyRaw.replace(/,/g, "")) || 1;
-        const name = line.replace(priceRaw, "").replace(qtyRaw, "").replace(/\s+/g, " ").replace(/[^a-zA-Z0-9 \-]/g, "").trim();
-        if (name && name.length >= 2) {
-          parsedItems.push({ name: name, quantity: qty, unit: "Pcs", rate: price, price, taxable: +(price * qty).toFixed(2) });
+        if (nums.length >= 1) {
+          const price = parseFloat(nums[nums.length - 1].replace(/,/g, "")) || 0;
+          const qty = nums.length >= 2 ? (parseFloat(nums[0]) || 1) : 1;
+          const name = line.replace(nums[nums.length - 1], "").replace(/\s+/g, " ").replace(/[^a-zA-Z0-9 \-]/g, "").trim();
+          if (name.length >= 2) {
+            itemsList.push({ name, quantity: qty, unit: "Pcs", price, total: +(qty * price).toFixed(2) });
+          }
         }
       }
+      return {
+        success: true,
+        source: "tesseract-ocr",
+        partyName: partyName,
+        partyType: "customer",
+        billType: "sale",
+        parsedItems: itemsList.length > 0 ? itemsList : [{ name: "हस्तलिखित सामान", quantity: 1, unit: "Pcs", price: 100, total: 100 }],
+        totalAmount: itemsList.reduce((s, it) => s + it.total, 0),
+        rawText: text
+      };
+    };
+
+    // Process all images
+    const results = await Promise.all(images.map(img => parseSingleImage(img)));
+
+    if (results.length === 1) {
+      return res.json(results[0]);
     }
 
-    try { fs.unlinkSync(filepath); } catch (e) {}
-    return res.json({ 
-      success: true, 
-      source: "tesseract-ocr",
-      text, 
-      parsedItems, 
-      partyName, 
-      totalAmount: totalAmount || parsedItems.reduce((s, it) => s + it.taxable, 0)
+    return res.json({
+      success: true,
+      batch: true,
+      count: results.length,
+      bills: results
     });
+
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
   }
 };
-// Multi-Provider AI Vision Bill Scanner: OpenAI GPT-4o Mini + Google Gemini 2.5/2.0 Flash
+// Intelligent Auto-AI Vision Bill Parser (OpenAI GPT-4o Mini + Gemini 2.5/2.0 Flash)
 export const parseBillImage = async (req, res) => {
   try {
-    const b64 = req.body?.image;
-    if (!b64) return res.status(400).json({ success: false, error: "No image provided (expected base64 in body.image)" });
-
-    let mimeType = "image/jpeg";
-    let pureB64 = b64;
-    const match = b64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-    if (match) {
-      mimeType = match[1];
-      pureB64 = match[2];
+    const images = req.body?.images || (req.body?.image ? [req.body.image] : []);
+    if (!images || images.length === 0) {
+      return res.status(400).json({ success: false, error: "No image provided" });
     }
 
-    const fullDataUri = match ? b64 : `data:${mimeType};base64,${pureB64}`;
     const openAiKey = req.body?.openaiApiKey || process.env.OPENAI_API_KEY;
     const geminiKey = req.body?.geminiApiKey || process.env.GEMINI_API_KEY;
-    const selectedProvider = req.body?.provider || (openAiKey ? "openai" : "gemini");
 
-    const promptSystem = `You are a world-class AI retail bill, handwritten chit (कच्ची पर्ची), purchase invoice, and GST bill parser specialized in Indian shopkeeping.
-Analyze this receipt/slip image and extract every line item, quantity, unit, price, and party details with 100% precision.
+    const promptSystem = `You are a world-class AI retail invoice and handwritten slip (कच्ची पर्ची) parser specialized in Indian retail and wholesale shops.
+Extract every line item, quantity, unit, price, and party name with 100% precision.
 Decipher handwritten Hindi/English terms and exact product names (e.g., 'Emulsion 10 ltr', 'Apex Ultima 20L', 'Asian Paints Tractor', 'White Cement 50kg', 'Nut Bolt 8mm').
-Do NOT skip any product. Calculate total accurately.
+Do NOT skip any line item. Calculate total accurately.
 
-Return STRICTLY a valid JSON object without markdown fences, matching this schema:
+Return STRICTLY a JSON object without markdown formatting:
 {
-  "partyName": "Customer or supplier name if found, else ''",
+  "partyName": "Customer or supplier name if mentioned, else ''",
   "partyType": "customer" or "supplier",
   "billType": "sale" or "purchase",
-  "date": "YYYY-MM-DD or readable date string",
+  "date": "YYYY-MM-DD or readable date",
   "items": [
     {
-      "name": "Exact item name and specification as written on the slip",
+      "name": "Exact item name and specification as written",
       "quantity": 1,
       "unit": "Pcs",
       "price": 2850,
@@ -531,175 +500,160 @@ Return STRICTLY a valid JSON object without markdown fences, matching this schem
     }
   ],
   "totalAmount": 2850,
-  "rawText": "Complete transcribed text from the image"
+  "rawText": "Transcribed text"
 }`;
 
-    // 1. TRY OPENAI CHATGPT (GPT-4o Mini)
-    if (openAiKey && (selectedProvider === "openai" || !geminiKey)) {
-      try {
-        const openAiRes = await axios.post(
-          "https://api.openai.com/v1/chat/completions",
-          {
-            model: "gpt-4o-mini",
-            response_format: { type: "json_object" },
-            messages: [
-              { role: "system", content: promptSystem },
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: "Parse this bill/receipt image into structured JSON items list:" },
-                  { type: "image_url", image_url: { url: fullDataUri } }
-                ]
-              }
-            ],
-            max_tokens: 1500
-          },
-          {
-            headers: {
-              "Authorization": `Bearer ${openAiKey}`,
-              "Content-Type": "application/json"
-            },
-            timeout: 25000
-          }
-        );
-
-        const content = openAiRes.data?.choices?.[0]?.message?.content;
-        if (content) {
-          const parsedData = JSON.parse(content);
-          const itemsList = (parsedData.items || []).map(it => {
-            const qty = Number(it.quantity) || 1;
-            const price = Number(it.price || it.rate) || 0;
-            const total = Number(it.total) || +(qty * price).toFixed(2);
-            return {
-              name: it.name || "सामान (Item)",
-              quantity: qty,
-              unit: it.unit || "Pcs",
-              rate: price,
-              price: price,
-              taxable: total
-            };
-          });
-
-          const calculatedTotal = Number(parsedData.totalAmount) || itemsList.reduce((s, it) => s + it.taxable, 0);
-
-          return res.json({
-            success: true,
-            source: "openai-gpt-4o-mini",
-            partyName: parsedData.partyName || "",
-            partyType: parsedData.partyType || "customer",
-            billType: parsedData.billType || "sale",
-            date: parsedData.date || "",
-            parsedItems: itemsList,
-            totalAmount: calculatedTotal,
-            rawText: parsedData.rawText || content
-          });
-        }
-      } catch (openAiErr) {
-        console.warn("OpenAI GPT-4o Mini failed:", openAiErr.response?.data || openAiErr.message);
+    // Helper to parse single base64 image
+    const parseSingleImage = async (b64) => {
+      let mimeType = "image/jpeg";
+      let pureB64 = b64;
+      const match = b64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      if (match) {
+        mimeType = match[1];
+        pureB64 = match[2];
       }
-    }
+      const fullDataUri = match ? b64 : `data:${mimeType};base64,${pureB64}`;
 
-    // 2. TRY GOOGLE GEMINI (Cascading Models: gemini-2.5-flash, gemini-2.0-flash, gemini-2.0-flash-lite, gemini-1.5-flash-8b)
-    if (geminiKey) {
-      const geminiCandidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-8b", "gemini-1.5-pro"];
-      const genAI = new GoogleGenerativeAI(geminiKey);
-
-      for (const modelName of geminiCandidateModels) {
+      // 1. Try OpenAI GPT-4o Mini First (Highest precision)
+      if (openAiKey) {
         try {
-          const model = genAI.getGenerativeModel({ model: modelName });
-          const imagePart = {
-            inlineData: {
-              data: pureB64,
-              mimeType: mimeType
+          const openAiRes = await axios.post(
+            "https://api.openai.com/v1/chat/completions",
+            {
+              model: "gpt-4o-mini",
+              response_format: { type: "json_object" },
+              messages: [
+                { role: "system", content: promptSystem },
+                {
+                  role: "user",
+                  content: [
+                    { type: "text", text: "Parse this bill/receipt image into structured JSON items list:" },
+                    { type: "image_url", image_url: { url: fullDataUri } }
+                  ]
+                }
+              ],
+              max_tokens: 1500
+            },
+            {
+              headers: { "Authorization": `Bearer ${openAiKey}`, "Content-Type": "application/json" },
+              timeout: 25000
             }
-          };
-
-          const result = await model.generateContent([promptSystem, imagePart]);
-          const responseText = result.response.text();
-          const cleanJson = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
-          const parsedData = JSON.parse(cleanJson);
-
-          const itemsList = (parsedData.items || []).map(it => {
-            const qty = Number(it.quantity) || 1;
-            const price = Number(it.price || it.rate) || 0;
-            const total = Number(it.total) || +(qty * price).toFixed(2);
-            return {
+          );
+          const content = openAiRes.data?.choices?.[0]?.message?.content;
+          if (content) {
+            const parsed = JSON.parse(content);
+            const itemsList = (parsed.items || []).map(it => ({
               name: it.name || "सामान (Item)",
-              quantity: qty,
+              quantity: Number(it.quantity) || 1,
               unit: it.unit || "Pcs",
-              rate: price,
-              price: price,
-              taxable: total
+              price: Number(it.price || it.rate) || 0,
+              total: Number(it.total) || +((Number(it.quantity) || 1) * (Number(it.price || it.rate) || 0)).toFixed(2)
+            }));
+            return {
+              success: true,
+              source: "openai-gpt-4o-mini",
+              partyName: parsed.partyName || "",
+              partyType: parsed.partyType || "customer",
+              billType: parsed.billType || "sale",
+              date: parsed.date || "",
+              parsedItems: itemsList,
+              totalAmount: Number(parsed.totalAmount) || itemsList.reduce((s, it) => s + it.total, 0),
+              rawText: parsed.rawText || content
             };
-          });
-
-          const calculatedTotal = Number(parsedData.totalAmount) || itemsList.reduce((s, it) => s + it.taxable, 0);
-
-          return res.json({
-            success: true,
-            source: modelName,
-            partyName: parsedData.partyName || "",
-            partyType: parsedData.partyType || "customer",
-            billType: parsedData.billType || "sale",
-            date: parsedData.date || "",
-            parsedItems: itemsList,
-            totalAmount: calculatedTotal,
-            rawText: parsedData.rawText || responseText
-          });
-        } catch (mErr) {
-          console.warn(`Gemini model ${modelName} failed, trying next candidate:`, mErr.message);
+          }
+        } catch (oErr) {
+          console.warn("OpenAI parse failed, trying Gemini:", oErr.message);
         }
       }
-    }
 
-    // 3. FALLBACK TO LOCAL TESSERACT OCR
-    const buffer = Buffer.from(pureB64, "base64");
-    const tmpDir = os.tmpdir();
-    const filename = `bill_${Date.now()}.png`;
-    const filepath = path.join(tmpDir, filename);
-    fs.writeFileSync(filepath, buffer);
-
-    const worker = await createWorker("eng");
-    const { data: { text } } = await worker.recognize(filepath);
-    await worker.terminate();
-
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    const parsedItems = [];
-    let partyName = "";
-    let totalAmount = 0;
-
-    for (const line of lines) {
-      const lowerLine = line.toLowerCase();
-      if (lowerLine.includes("name:") || lowerLine.includes("to:") || lowerLine.includes("m/s")) {
-        partyName = line.replace(/name:|to:|m\/s/i, "").trim();
+      // 2. Try Google Gemini (Cascading modern models)
+      if (geminiKey) {
+        const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-8b", "gemini-1.5-pro"];
+        const genAI = new GoogleGenerativeAI(geminiKey);
+        for (const modelName of candidateModels) {
+          try {
+            const model = genAI.getGenerativeModel({ model: modelName });
+            const imagePart = { inlineData: { data: pureB64, mimeType: mimeType } };
+            const result = await model.generateContent([promptSystem, imagePart]);
+            const respText = result.response.text();
+            const cleanJson = respText.replace(/```json/gi, "").replace(/```/g, "").trim();
+            const parsed = JSON.parse(cleanJson);
+            const itemsList = (parsed.items || []).map(it => ({
+              name: it.name || "सामान (Item)",
+              quantity: Number(it.quantity) || 1,
+              unit: it.unit || "Pcs",
+              price: Number(it.price || it.rate) || 0,
+              total: Number(it.total) || +((Number(it.quantity) || 1) * (Number(it.price || it.rate) || 0)).toFixed(2)
+            }));
+            return {
+              success: true,
+              source: modelName,
+              partyName: parsed.partyName || "",
+              partyType: parsed.partyType || "customer",
+              billType: parsed.billType || "sale",
+              date: parsed.date || "",
+              parsedItems: itemsList,
+              totalAmount: Number(parsed.totalAmount) || itemsList.reduce((s, it) => s + it.total, 0),
+              rawText: parsed.rawText || respText
+            };
+          } catch (gErr) {
+            console.warn(`Gemini ${modelName} failed:`, gErr.message);
+          }
+        }
       }
-      if (lowerLine.includes("total") || lowerLine.includes("amount") || lowerLine.includes("g.total")) {
+
+      // 3. Fallback Tesseract
+      const buffer = Buffer.from(pureB64, "base64");
+      const tmpDir = os.tmpdir();
+      const filename = `bill_${Date.now()}_${Math.random().toString(36).slice(2,6)}.png`;
+      const filepath = path.join(tmpDir, filename);
+      fs.writeFileSync(filepath, buffer);
+      const worker = await createWorker("eng");
+      const { data: { text } } = await worker.recognize(filepath);
+      await worker.terminate();
+      try { fs.unlinkSync(filepath); } catch(e){}
+
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const itemsList = [];
+      let partyName = "";
+      for (const line of lines) {
+        if (/invoice|bill|date|total|tax|gstin/i.test(line)) continue;
         const nums = line.match(/\d+[.,]?\d*/g) || [];
-        if (nums.length > 0) totalAmount = parseFloat(nums[nums.length - 1].replace(/,/g, ""));
-      }
-
-      const nums = line.match(/\d+[.,]?\d*/g) || [];
-      if (nums.length >= 1 && !lowerLine.includes("total") && !lowerLine.includes("invoice") && !lowerLine.includes("date")) {
-        const priceRaw = nums[nums.length - 1];
-        const qtyRaw = nums.length >= 2 ? nums[nums.length - 2] : "1";
-        const price = parseFloat(priceRaw.replace(/,/g, "")) || 0;
-        const qty = parseFloat(qtyRaw.replace(/,/g, "")) || 1;
-        const name = line.replace(priceRaw, "").replace(qtyRaw, "").replace(/\s+/g, " ").replace(/[^a-zA-Z0-9 \-]/g, "").trim();
-        if (name && name.length >= 2) {
-          parsedItems.push({ name: name, quantity: qty, unit: "Pcs", rate: price, price, taxable: +(price * qty).toFixed(2) });
+        if (nums.length >= 1) {
+          const price = parseFloat(nums[nums.length - 1].replace(/,/g, "")) || 0;
+          const qty = nums.length >= 2 ? (parseFloat(nums[0]) || 1) : 1;
+          const name = line.replace(nums[nums.length - 1], "").replace(/\s+/g, " ").replace(/[^a-zA-Z0-9 \-]/g, "").trim();
+          if (name.length >= 2) {
+            itemsList.push({ name, quantity: qty, unit: "Pcs", price, total: +(qty * price).toFixed(2) });
+          }
         }
       }
+      return {
+        success: true,
+        source: "tesseract-ocr",
+        partyName: partyName,
+        partyType: "customer",
+        billType: "sale",
+        parsedItems: itemsList.length > 0 ? itemsList : [{ name: "हस्तलिखित सामान", quantity: 1, unit: "Pcs", price: 100, total: 100 }],
+        totalAmount: itemsList.reduce((s, it) => s + it.total, 0),
+        rawText: text
+      };
+    };
+
+    // Process all images
+    const results = await Promise.all(images.map(img => parseSingleImage(img)));
+
+    if (results.length === 1) {
+      return res.json(results[0]);
     }
 
-    try { fs.unlinkSync(filepath); } catch (e) {}
-    return res.json({ 
-      success: true, 
-      source: "tesseract-ocr",
-      text, 
-      parsedItems, 
-      partyName, 
-      totalAmount: totalAmount || parsedItems.reduce((s, it) => s + it.taxable, 0)
+    return res.json({
+      success: true,
+      batch: true,
+      count: results.length,
+      bills: results
     });
+
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
   }

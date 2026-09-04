@@ -116,26 +116,24 @@ function MobileVyaparAppContent() {
   const [showItemSuggestions, setShowItemSuggestions] = useState(false);
   const [savingBill, setSavingBill] = useState(false);
 
-  // AI Photo Bill OCR & Dual Vision State (ChatGPT 4o Mini + Gemini 2.5/2.0 Flash)
+  // AI Photo Bill OCR & Multi-Bill Batch State
   const [showOcrModal, setShowOcrModal] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrStatusText, setOcrStatusText] = useState("");
   const [ocrBillType, setOcrBillType] = useState('sale'); // 'sale' (Customer) or 'purchase' (Vendor)
-  const [capturedImagePreview, setCapturedImagePreview] = useState(null);
-  const [aiProvider, setAiProvider] = useState(() => localStorage.getItem("AI_VISION_PROVIDER") || "openai"); // 'openai' or 'gemini'
   const [openaiApiKey, setOpenaiApiKey] = useState(() => localStorage.getItem("OPENAI_API_KEY") || "");
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem("GEMINI_API_KEY") || "");
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   
-  // Scanned Bill Review & Verification Modal State
+  // Multi-Bill Batch Review Modal State
   const [showScannedReviewModal, setShowScannedReviewModal] = useState(false);
-  const [scannedPartyName, setScannedPartyName] = useState("");
-  const [scannedPartyPhone, setScannedPartyPhone] = useState("");
-  const [scannedPaymentMode, setScannedPaymentMode] = useState("CASH");
-  const [scannedItems, setScannedItems] = useState([]);
+  const [scannedBillsBatch, setScannedBillsBatch] = useState([]); // Array of bills: [{ id, partyName, partyPhone, billType, paymentMode, items: [], imagePreview, totalAmount }]
+  const [activeScannedIndex, setActiveScannedIndex] = useState(0);
   const [savingScannedBill, setSavingScannedBill] = useState(false);
-  const fileInputRef = useRef(null);
+
+  const cameraInputRef = useRef(null);
+  const galleryInputRef = useRef(null);
 
   // Quick Party Modal
   const [showAddPartyModal, setShowAddPartyModal] = useState(false);
@@ -327,118 +325,112 @@ function MobileVyaparAppContent() {
     }
   };
 
-  // ==================== AI VISION BILL PHOTO SCANNER & REVIEW ====================
-  const handleProcessBillPhoto = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
+  // ==================== AI VISION MULTI-BILL PHOTO SCANNER & REVIEW ====================
+  const handleProcessBillImages = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
     setOcrLoading(true);
     setOcrProgress(15);
-    setOcrStatusText("📸 फोटो लोड हो रही है...");
+    setOcrStatusText(`📸 ${files.length} फोटो लोड हो रही हैं...`);
 
     try {
-      const reader = new FileReader();
-      const base64Promise = new Promise((resolve, reject) => {
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      // Read all files as base64
+      const base64List = await Promise.all(
+        files.map(file => new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        }))
+      );
 
-      const base64Data = await base64Promise;
-      setCapturedImagePreview(base64Data);
+      setOcrProgress(35);
+      setOcrStatusText(`🤖 AI Vision ${files.length} बिलों को पढ़ रहा है...`);
 
-      setOcrProgress(40);
-      setOcrStatusText("🤖 AI Vision बिल और हस्तलिखित पर्ची को पढ़ रहा है...");
-
-      // Call Backend Vision AI Endpoint with Dual AI Engine Support
+      // Call Backend Multi-Image AI Endpoint
       const res = await api.post("/billing/parse-image", {
-        image: base64Data,
-        provider: aiProvider,
+        images: base64List,
         openaiApiKey: openaiApiKey.trim() || undefined,
         geminiApiKey: geminiApiKey.trim() || undefined
       }).catch(err => {
-        console.warn("Backend OCR error:", err);
+        console.warn("Backend batch OCR error:", err);
         return null;
       });
 
-      setOcrProgress(80);
-      setOcrStatusText("🔍 1600+ इन्वेंटरी सामान से मिलान किया जा रहा है...");
+      setOcrProgress(75);
+      setOcrStatusText("🔍 1600+ इन्वेंटरी से सटीक मिलान किया जा रहा है...");
 
-      let extractedItems = [];
-      let detectedParty = "";
-      let detectedBillType = ocrBillType;
-
-      if (res?.data?.success && Array.isArray(res.data.parsedItems) && res.data.parsedItems.length > 0) {
-        extractedItems = res.data.parsedItems;
-        detectedParty = res.data.partyName || "";
-        detectedBillType = res.data.billType || ocrBillType;
+      let rawResults = [];
+      if (res?.data?.batch && Array.isArray(res.data.bills)) {
+        rawResults = res.data.bills;
+      } else if (res?.data?.success && res.data.parsedItems) {
+        rawResults = [res.data];
       } else {
-        // Fallback in-browser Tesseract if backend offline
-        try {
-          const TesseractModule = await import("tesseract.js");
-          const Tesseract = TesseractModule.default || TesseractModule;
-          const { data: { text } } = await Tesseract.recognize(base64Data, 'eng');
-          const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 2);
-          for (const line of lines) {
-            if (/invoice|bill|date|total|tax|gstin|amount|rate|qty|phone|mob/i.test(line)) continue;
-            const nums = line.match(/(\d+[\.,]?\d*)/g) || [];
-            let price = 0;
-            let qty = 1;
-            if (nums.length >= 1) price = parseFloat(nums[nums.length - 1].replace(',', '')) || 0;
-            if (nums.length >= 2) qty = parseFloat(nums[0]) || 1;
-            const cleanName = line.replace(/[\d\.,\/\*\-\_\#\:]+$/g, '').trim();
-            if (cleanName.length >= 2) {
-              extractedItems.push({ name: cleanName, quantity: qty, price: price, total: +(qty * price).toFixed(2) });
-            }
-          }
-        } catch (tessErr) {
-          console.error("Local fallback error:", tessErr);
-        }
+        // Fallback for each file
+        rawResults = base64List.map((b64, idx) => ({
+          success: true,
+          partyName: ocrBillType === 'sale' ? `कच्ची पर्ची ग्राहक ${idx + 1}` : "सप्लायर",
+          billType: ocrBillType,
+          parsedItems: [{ name: "सामान (Item)", quantity: 1, unit: "Pcs", price: 100, total: 100 }],
+          totalAmount: 100
+        }));
       }
 
-      // If still empty, add 1 blank line with detected text
-      if (extractedItems.length === 0) {
-        extractedItems = [{ name: "सामान (Item)", quantity: 1, price: 100, total: 100 }];
-      }
+      // Process each bill with 1600+ Inventory Catalog Fuzzy Matching
+      const processedBatch = rawResults.map((rawBill, billIdx) => {
+        const extractedItems = rawBill.parsedItems || [];
+        const processedItems = extractedItems.map((it, itemIdx) => {
+          const rawName = (it.name || '').trim();
+          const rawPrice = Number(it.price || it.rate) || 0;
+          const rawQty = Number(it.quantity || it.qty) || 1;
 
-      // Intelligent Fuzzy Matching with 1600+ Catalog Items
-      const processedRows = extractedItems.map((it, idx) => {
-        const rawName = (it.name || '').trim();
-        const rawPrice = Number(it.price || it.rate) || 0;
-        const rawQty = Number(it.quantity || it.qty) || 1;
+          // Fuzzy Match with 1600+ Catalog
+          const matchedItem = items.find(catItem => {
+            const catName = (catItem.name || '').toLowerCase();
+            const pName = rawName.toLowerCase();
+            if (catName === pName) return true;
+            const tokens = pName.split(/\s+/).filter(t => t.length >= 3);
+            return tokens.some(t => catName.includes(t));
+          });
 
-        // Find match in items
-        const matchedItem = items.find(catItem => {
-          const catName = (catItem.name || '').toLowerCase();
-          const pName = rawName.toLowerCase();
-          if (catName === pName) return true;
-          const tokens = pName.split(/\s+/).filter(t => t.length >= 3);
-          return tokens.some(t => catName.includes(t));
+          const finalPrice = rawPrice > 0 ? rawPrice : (matchedItem ? matchedItem.salePrice : 100);
+          const finalTotal = +(rawQty * finalPrice).toFixed(2);
+
+          return {
+            id: matchedItem?.id || `scanned-${Date.now()}-${billIdx}-${itemIdx}`,
+            name: rawName || (matchedItem?.name || `सामान ${itemIdx + 1}`),
+            qty: rawQty,
+            unit: it.unit || (matchedItem?.unit || "Pcs"),
+            price: finalPrice,
+            total: finalTotal,
+            matchedCatalogItem: matchedItem || null
+          };
         });
 
-        const finalPrice = rawPrice > 0 ? rawPrice : (matchedItem ? matchedItem.salePrice : 100);
-        const finalTotal = +(rawQty * finalPrice).toFixed(2);
+        const detectedParty = rawBill.partyName?.trim() || (ocrBillType === 'sale' ? (files.length > 1 ? `पर्ची ग्राहक ${billIdx + 1}` : "कच्ची पर्ची ग्राहक") : "सप्लायर");
+        const calculatedTotal = processedItems.reduce((sum, it) => sum + it.total, 0);
 
         return {
-          id: matchedItem?.id || `scanned-${Date.now()}-${idx}`,
-          name: rawName || (matchedItem?.name || `सामान ${idx + 1}`),
-          qty: rawQty,
-          unit: it.unit || (matchedItem?.unit || "Pcs"),
-          price: finalPrice,
-          total: finalTotal,
-          matchedCatalogItem: matchedItem || null
+          id: `batch-bill-${Date.now()}-${billIdx}`,
+          partyName: detectedParty,
+          partyPhone: "",
+          billType: rawBill.billType || ocrBillType,
+          paymentMode: "CASH",
+          items: processedItems,
+          imagePreview: base64List[billIdx] || null,
+          totalAmount: calculatedTotal
         };
       });
 
-      setScannedItems(processedRows);
-      setScannedPartyName(detectedParty || (ocrBillType === 'sale' ? "कच्ची पर्ची ग्राहक" : "सप्लायर"));
-      setOcrBillType(detectedBillType);
+      setScannedBillsBatch(processedBatch);
+      setActiveScannedIndex(0);
       setOcrProgress(100);
       setShowOcrModal(false);
       setShowScannedReviewModal(true);
 
     } catch (err) {
-      console.error("OCR Processing error:", err);
+      console.error("Batch OCR error:", err);
       alert("फोटो पढ़ने में दिक्कत आई। कृपया साफ और सीधी फोटो अपलोड करें।");
     } finally {
       setOcrLoading(false);
@@ -447,109 +439,149 @@ function MobileVyaparAppContent() {
     }
   };
 
-  const handleUpdateScannedItem = (index, field, value) => {
-    const updated = [...scannedItems];
-    const target = { ...updated[index] };
+  // Helper to update current active bill in batch
+  const handleUpdateActiveBillField = (field, value) => {
+    const updated = [...scannedBillsBatch];
+    if (!updated[activeScannedIndex]) return;
+    updated[activeScannedIndex] = {
+      ...updated[activeScannedIndex],
+      [field]: value
+    };
+    setScannedBillsBatch(updated);
+  };
+
+  const handleUpdateActiveBillItem = (itemIdx, field, value) => {
+    const updated = [...scannedBillsBatch];
+    const currentBill = { ...updated[activeScannedIndex] };
+    const itemsList = [...currentBill.items];
+    const targetItem = { ...itemsList[itemIdx] };
+
     if (field === 'qty') {
       const q = Math.max(1, parseFloat(value) || 1);
-      target.qty = q;
-      target.total = +(q * target.price).toFixed(2);
+      targetItem.qty = q;
+      targetItem.total = +(q * targetItem.price).toFixed(2);
     } else if (field === 'price') {
       const p = Math.max(0, parseFloat(value) || 0);
-      target.price = p;
-      target.total = +(target.qty * p).toFixed(2);
+      targetItem.price = p;
+      targetItem.total = +(targetItem.qty * p).toFixed(2);
     } else if (field === 'name') {
-      target.name = value;
-    }
-    updated[index] = target;
-    setScannedItems(updated);
-  };
-
-  const handleRemoveScannedItem = (index) => {
-    setScannedItems(scannedItems.filter((_, i) => i !== index));
-  };
-
-  const handleAddScannedItemRow = () => {
-    setScannedItems([
-      ...scannedItems,
-      {
-        id: `custom-row-${Date.now()}`,
-        name: "",
-        qty: 1,
-        unit: "Pcs",
-        price: 0,
-        total: 0,
-        matchedCatalogItem: null
-      }
-    ]);
-  };
-
-  const scannedGrandTotal = scannedItems.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
-
-  const handleSaveScannedBillDirectly = async () => {
-    if (scannedItems.length === 0) {
-      alert("कृपया कम से कम 1 सामान रखें!");
-      return;
+      targetItem.name = value;
     }
 
-    setSavingScannedBill(true);
-    const finalParty = scannedPartyName.trim() || (ocrBillType === 'sale' ? "कच्ची पर्ची ग्राहक (Walk-in)" : "सप्लायर");
-    const billPayload = {
-      partyName: finalParty,
-      customerPhone: scannedPartyPhone.trim(),
-      paymentMode: scannedPaymentMode,
-      items: scannedItems.map(i => ({
-        productId: i.matchedCatalogItem?.id || i.id,
-        name: i.name,
-        quantity: i.qty,
-        price: i.price,
-        total: i.total
-      })),
-      finalAmount: scannedGrandTotal,
-      billImageUrl: capturedImagePreview,
-      date: new Date()
+    itemsList[itemIdx] = targetItem;
+    currentBill.items = itemsList;
+    currentBill.totalAmount = itemsList.reduce((sum, it) => sum + (Number(it.total) || 0), 0);
+    updated[activeScannedIndex] = currentBill;
+    setScannedBillsBatch(updated);
+  };
+
+  const handleRemoveActiveBillItem = (itemIdx) => {
+    const updated = [...scannedBillsBatch];
+    const currentBill = { ...updated[activeScannedIndex] };
+    const itemsList = currentBill.items.filter((_, idx) => idx !== itemIdx);
+    currentBill.items = itemsList;
+    currentBill.totalAmount = itemsList.reduce((sum, it) => sum + (Number(it.total) || 0), 0);
+    updated[activeScannedIndex] = currentBill;
+    setScannedBillsBatch(updated);
+  };
+
+  const handleAddActiveBillItem = () => {
+    const updated = [...scannedBillsBatch];
+    const currentBill = { ...updated[activeScannedIndex] };
+    const newItem = {
+      id: `custom-row-${Date.now()}`,
+      name: "",
+      qty: 1,
+      unit: "Pcs",
+      price: 0,
+      total: 0,
+      matchedCatalogItem: null
+    };
+    currentBill.items = [...currentBill.items, newItem];
+    updated[activeScannedIndex] = currentBill;
+    setScannedBillsBatch(updated);
+  };
+
+  // Merge All Bills of Same Party into 1 Single Master Bill
+  const handleMergeAllBatchBills = () => {
+    if (scannedBillsBatch.length <= 1) return;
+    const firstBill = scannedBillsBatch[0];
+    const allMergedItems = [];
+
+    scannedBillsBatch.forEach(b => {
+      b.items.forEach(it => {
+        allMergedItems.push({ ...it, id: `merged-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` });
+      });
+    });
+
+    const masterBill = {
+      id: `master-${Date.now()}`,
+      partyName: firstBill.partyName || "संयुक्त ग्राहक (Merged Bill)",
+      partyPhone: firstBill.partyPhone || "",
+      billType: firstBill.billType || "sale",
+      paymentMode: firstBill.paymentMode || "CASH",
+      items: allMergedItems,
+      imagePreview: firstBill.imagePreview,
+      totalAmount: allMergedItems.reduce((sum, it) => sum + it.total, 0)
     };
 
+    setScannedBillsBatch([masterBill]);
+    setActiveScannedIndex(0);
+    alert(`✨ सभी ${scannedBillsBatch.length} पर्चियों को 1 मास्टर बिल में जोड़ दिया गया है (${allMergedItems.length} कुल सामान)!`);
+  };
+
+  // Save ALL Scanned Bills to Backend in 1 Click
+  const handleSaveAllScannedBills = async () => {
+    if (scannedBillsBatch.length === 0) return;
+    setSavingScannedBill(true);
+
     try {
-      const res = await api.post("/billing", billPayload).catch(() => null);
-      const createdBill = {
-        _id: res?.data?.bill?._id || Date.now().toString(),
-        id: res?.data?.bill?.billNumber || `INV-${Date.now().toString().slice(-4)}`,
-        customerName: finalParty,
-        phone: scannedPartyPhone.trim(),
-        date: "Today",
-        amount: scannedGrandTotal,
-        type: scannedPaymentMode,
-        paymentStatus: scannedPaymentMode === "UDHAR" ? "unpaid" : "paid",
-        items: scannedItems.map(i => ({ id: i.id, name: i.name, salePrice: i.price, qty: i.qty }))
-      };
-      setBills([createdBill, ...bills]);
+      const createdList = [];
+      for (const b of scannedBillsBatch) {
+        if (b.items.length === 0) continue;
+        const payload = {
+          partyName: b.partyName.trim() || "कच्ची पर्ची ग्राहक",
+          customerPhone: b.partyPhone.trim(),
+          paymentMode: b.paymentMode,
+          items: b.items.map(i => ({
+            productId: i.matchedCatalogItem?.id || i.id,
+            name: i.name,
+            quantity: i.qty,
+            price: i.price,
+            total: i.total
+          })),
+          finalAmount: b.totalAmount,
+          billImageUrl: b.imagePreview,
+          date: new Date()
+        };
+
+        const res = await api.post("/billing", payload).catch(() => null);
+        const createdBill = {
+          _id: res?.data?.bill?._id || Date.now().toString(),
+          id: res?.data?.bill?.billNumber || `INV-${Date.now().toString().slice(-4)}`,
+          customerName: payload.partyName,
+          phone: payload.customerPhone,
+          date: "Today",
+          amount: b.totalAmount,
+          type: b.paymentMode,
+          paymentStatus: b.paymentMode === "UDHAR" ? "unpaid" : "paid",
+          items: b.items.map(i => ({ id: i.id, name: i.name, salePrice: i.price, qty: i.qty }))
+        };
+        createdList.push(createdBill);
+      }
+
+      setBills([...createdList, ...bills]);
       setShowScannedReviewModal(false);
-      setSelectedBillDetail(createdBill);
-      alert(`🎉 बिल #${createdBill.id} सफलता से डिजिटल हो गया!`);
+      if (createdList.length > 0) {
+        setSelectedBillDetail(createdList[0]);
+        alert(`🎉 बधाई! ${createdList.length} बिल 1-क्लिक में सफलता से डिजिटल होकर सेव हो गए!`);
+      }
     } catch (e) {
       console.error(e);
-      alert("बिल सेव करते समय त्रुटि आई।");
+      alert("बिल सेव करने में त्रुटि आई।");
     } finally {
       setSavingScannedBill(false);
     }
-  };
-
-  const handleTransferScannedToCart = () => {
-    const newCart = scannedItems.map(i => ({
-      id: i.id,
-      name: i.name,
-      salePrice: i.price,
-      qty: i.qty,
-      stock: i.matchedCatalogItem?.stock || 999,
-      unit: i.unit
-    }));
-    setBillCart(newCart);
-    setBillCustomer(scannedPartyName);
-    setBillCustomerPhone(scannedPartyPhone);
-    setBillPaymentMode(scannedPaymentMode);
-    setShowScannedReviewModal(false);
-    setShowQuickBillModal(true);
   };
 
   // 20+ Comprehensive Reports Catalog
@@ -1214,7 +1246,7 @@ function MobileVyaparAppContent() {
         </div>
       )}
 
-      {/* 📱 6. AI BILL PHOTO SCANNER MODAL */}
+      {/* 📱 6. AI MULTI-BILL PHOTO & GALLERY SCANNER MODAL */}
       {showOcrModal && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl text-center">
@@ -1225,13 +1257,13 @@ function MobileVyaparAppContent() {
                 </div>
                 <div>
                   <h3 className="font-extrabold text-sm text-[#0F172A]">AI फोटो बिल स्कैनर</h3>
-                  <p className="text-[10px] text-slate-400">{aiProvider === 'openai' ? '🤖 ChatGPT 4o Mini' : '⚡ Gemini 2.5 Flash'} • 100% सटीक</p>
+                  <p className="text-[10px] text-slate-400">कैमरा + गैलरी मल्टी-बिल • 100% सटीक</p>
                 </div>
               </div>
               <div className="flex items-center gap-1">
                 <button 
                   onClick={() => setShowApiKeyModal(true)} 
-                  title="Configure Gemini API Key"
+                  title="Configure AI Keys"
                   className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-lg cursor-pointer text-xs font-bold"
                 >
                   ⚙️ Key
@@ -1240,22 +1272,6 @@ function MobileVyaparAppContent() {
                   <X size={18} />
                 </button>
               </div>
-            </div>
-
-            {/* AI Model Selector (ChatGPT 4o Mini vs Gemini 2.5 Flash) */}
-            <div className="flex items-center justify-between bg-slate-100 p-1.5 rounded-2xl text-[11px] font-bold">
-              <button
-                onClick={() => { setAiProvider('openai'); localStorage.setItem("AI_VISION_PROVIDER", "openai"); }}
-                className={`flex-1 py-1.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-1 ${aiProvider === 'openai' ? 'bg-white text-[#0F172A] shadow-sm' : 'text-slate-500'}`}
-              >
-                🤖 ChatGPT 4o Mini
-              </button>
-              <button
-                onClick={() => { setAiProvider('gemini'); localStorage.setItem("AI_VISION_PROVIDER", "gemini"); }}
-                className={`flex-1 py-1.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-1 ${aiProvider === 'gemini' ? 'bg-white text-[#0F172A] shadow-sm' : 'text-slate-500'}`}
-              >
-                ⚡ Gemini 2.5 Flash
-              </button>
             </div>
 
             {/* Bill Type Selector (Customer Sale vs Vendor Purchase) */}
@@ -1274,6 +1290,24 @@ function MobileVyaparAppContent() {
               </button>
             </div>
 
+            {/* Hidden File Inputs: Camera & Gallery */}
+            <input 
+              type="file" 
+              accept="image/*" 
+              capture="environment"
+              ref={cameraInputRef}
+              onChange={handleProcessBillImages}
+              className="hidden" 
+            />
+            <input 
+              type="file" 
+              accept="image/*" 
+              multiple
+              ref={galleryInputRef}
+              onChange={handleProcessBillImages}
+              className="hidden" 
+            />
+
             <div className="p-5 bg-gradient-to-b from-emerald-50/80 to-teal-50/40 border-2 border-dashed border-emerald-300 rounded-2xl space-y-3">
               <div className="w-14 h-14 rounded-2xl bg-white shadow-md mx-auto flex items-center justify-center text-emerald-600">
                 <Camera size={28} />
@@ -1281,21 +1315,12 @@ function MobileVyaparAppContent() {
 
               <div>
                 <h4 className="font-extrabold text-xs text-[#065F46]">
-                  {ocrBillType === 'sale' ? 'कागजी पर्ची या हाथ से लिखे बिल की फोटो खींचें' : 'सप्लायर का पक्का इनवॉइस या बिल अपलोड करें'}
+                  {ocrBillType === 'sale' ? 'कागजी पर्ची या हाथ से लिखे बिल की फोटो लें' : 'सप्लायर का पक्का इनवॉइस या बिल अपलोड करें'}
                 </h4>
                 <p className="text-[10px] text-slate-500 mt-1">
-                  AI खुद-ब-खुद सामान (उदा. "Emulsion 10 ltr"), मात्रा व रेट पढ़कर आपके 1600+ कैटलॉग से मिला देगा!
+                  AI खुद-ब-खुद सामान, मात्रा व रेट पढ़कर आपके 1600+ कैटलॉग से मिला देगा। एक साथ कई फोटो भी चुन सकते हैं!
                 </p>
               </div>
-
-              <input 
-                type="file" 
-                accept="image/*" 
-                capture="environment"
-                ref={fileInputRef}
-                onChange={handleProcessBillPhoto}
-                className="hidden" 
-              />
 
               {ocrLoading && (
                 <div className="space-y-2 py-2">
@@ -1313,21 +1338,31 @@ function MobileVyaparAppContent() {
                 </div>
               )}
 
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={ocrLoading}
-                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer flex items-center justify-center gap-2"
-              >
-                {ocrLoading ? <RefreshCw size={16} className="animate-spin" /> : <Upload size={16} />}
-                {ocrLoading ? "प्रोसेसिंग जारी है..." : "📸 कैमरा खोलें / गैलरी से चुनें"}
-              </button>
+              {/* 2 ACTION BUTTONS: CAMERA & GALLERY (MULTIPLE) */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  onClick={() => cameraInputRef.current?.click()}
+                  disabled={ocrLoading}
+                  className="py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Camera size={15} /> 📸 कैमरा खोलें
+                </button>
+
+                <button
+                  onClick={() => galleryInputRef.current?.click()}
+                  disabled={ocrLoading}
+                  className="py-3 bg-gradient-to-r from-[#4338CA] to-[#6366F1] hover:from-[#3730A3] hover:to-[#4F46E5] text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Upload size={15} /> 🖼️ गैलरी (Multiple)
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* 📱 6.1 AI SCANNED BILL REVIEW & VERIFICATION MODAL (Interactive Grid) */}
-      {showScannedReviewModal && (
+      {/* 📱 6.1 AI MULTI-BILL REVIEW & SMART MERGE MODAL */}
+      {showScannedReviewModal && scannedBillsBatch.length > 0 && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 space-y-3.5 shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
@@ -1336,8 +1371,8 @@ function MobileVyaparAppContent() {
                   <CheckCircle size={18} />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm text-[#0F172A]">AI फोटो से पढ़ा गया बिल</h3>
-                  <p className="text-[10px] text-slate-400">सामान और रेट चेक करें • 100% सही व एडिटेबल</p>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">AI स्कैन किए गए बिल ({scannedBillsBatch.length})</h3>
+                  <p className="text-[10px] text-slate-400">1600+ इन्वेंटरी से सटीक मिलान • 1-क्लिक सेव</p>
                 </div>
               </div>
               <button onClick={() => setShowScannedReviewModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
@@ -1345,179 +1380,232 @@ function MobileVyaparAppContent() {
               </button>
             </div>
 
-            {/* Bill Info Grid (Party, Phone, Payment Mode) */}
-            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-600">पार्टी / ग्राहक का नाम:</span>
-                <div className="flex gap-1.5 text-[10px] font-bold">
-                  <button 
-                    onClick={() => setOcrBillType('sale')}
-                    className={`px-2 py-0.5 rounded-full ${ocrBillType === 'sale' ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'}`}
+            {/* SMART SAME-PARTY MERGE BANNER (If multiple bills scanned) */}
+            {scannedBillsBatch.length > 1 && (
+              <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-black text-amber-900">
+                    ✨ {scannedBillsBatch.length} पर्चियां पहचानी गईं!
+                  </p>
+                  <p className="text-[10px] text-amber-700">
+                    क्या आप इन सभी पर्चियों को 1 मास्टर बिल में जोड़ना चाहते हैं?
+                  </p>
+                </div>
+                <button
+                  onClick={handleMergeAllBatchBills}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[11px] rounded-xl shadow-sm cursor-pointer whitespace-nowrap"
+                >
+                  🔗 1 बिल में जोड़ें
+                </button>
+              </div>
+            )}
+
+            {/* BATCH TABS (If multiple bills) */}
+            {scannedBillsBatch.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                {scannedBillsBatch.map((b, idx) => (
+                  <button
+                    key={b.id || idx}
+                    onClick={() => setActiveScannedIndex(idx)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${activeScannedIndex === idx ? 'bg-[#4338CA] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                   >
-                    बिक्री (Sale)
+                    <span>पर्ची #{idx + 1}</span>
+                    <span className="text-[10px] opacity-80">₹{b.totalAmount}</span>
                   </button>
-                  <button 
-                    onClick={() => setOcrBillType('purchase')}
-                    className={`px-2 py-0.5 rounded-full ${ocrBillType === 'purchase' ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'}`}
+                ))}
+              </div>
+            )}
+
+            {/* ACTIVE BILL EDIT FORM */}
+            {scannedBillsBatch[activeScannedIndex] && (
+              <div className="space-y-3">
+                {/* Party & Payment Details Card */}
+                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-600">पार्टी / ग्राहक का नाम:</span>
+                    <div className="flex gap-1.5 text-[10px] font-bold">
+                      <button 
+                        onClick={() => handleUpdateActiveBillField('billType', 'sale')}
+                        className={`px-2 py-0.5 rounded-full ${scannedBillsBatch[activeScannedIndex].billType === 'sale' ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'}`}
+                      >
+                        बिक्री (Sale)
+                      </button>
+                      <button 
+                        onClick={() => handleUpdateActiveBillField('billType', 'purchase')}
+                        className={`px-2 py-0.5 rounded-full ${scannedBillsBatch[activeScannedIndex].billType === 'purchase' ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'}`}
+                      >
+                        खरीद (Purchase)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <input 
+                      type="text" 
+                      value={scannedBillsBatch[activeScannedIndex].partyName}
+                      onChange={(e) => handleUpdateActiveBillField('partyName', e.target.value)}
+                      placeholder="पार्टी का नाम..."
+                      className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-indigo-600"
+                    />
+                    <input 
+                      type="tel" 
+                      value={scannedBillsBatch[activeScannedIndex].partyPhone}
+                      onChange={(e) => handleUpdateActiveBillField('partyPhone', e.target.value)}
+                      placeholder="फोन / WhatsApp..."
+                      className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-1.5 pt-1">
+                    {["CASH", "UDHAR", "UPI"].map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => handleUpdateActiveBillField('paymentMode', m)}
+                        className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition ${scannedBillsBatch[activeScannedIndex].paymentMode === m ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200 text-slate-600'}`}
+                      >
+                        {m === "CASH" ? "💵 नकद" : m === "UDHAR" ? "📒 उधार" : "📲 UPI"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Extracted Items Table */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] font-extrabold text-slate-700">
+                      पहचाने गए सामान ({scannedBillsBatch[activeScannedIndex].items.length} Items):
+                    </span>
+                    <button 
+                      onClick={handleAddActiveBillItem}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus size={13} /> सामान जोड़ें
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {scannedBillsBatch[activeScannedIndex].items.map((item, itemIdx) => (
+                      <div key={item.id || itemIdx} className="p-2.5 bg-slate-50 hover:bg-slate-100/80 rounded-2xl border border-slate-200 space-y-1.5 transition">
+                        <div className="flex items-center justify-between gap-2">
+                          <input 
+                            type="text"
+                            value={item.name}
+                            onChange={(e) => handleUpdateActiveBillItem(itemIdx, 'name', e.target.value)}
+                            placeholder="सामान का नाम..."
+                            className="flex-1 bg-white px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-[#0F172A] outline-none"
+                          />
+                          <button 
+                            onClick={() => handleRemoveActiveBillItem(itemIdx)}
+                            className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
+                        {item.matchedCatalogItem && (
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded-md">
+                            <CheckCircle size={10} /> 1600+ लिस्ट से मैच्ड: {item.matchedCatalogItem.name}
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between gap-2">
+                          {/* Qty Stepper */}
+                          <div className="flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden">
+                            <button 
+                              onClick={() => handleUpdateActiveBillItem(itemIdx, 'qty', Math.max(1, item.qty - 1))}
+                              className="w-7 h-7 flex items-center justify-center font-bold text-xs text-slate-600 hover:bg-slate-100 cursor-pointer"
+                            >
+                              -
+                            </button>
+                            <input 
+                              type="number" 
+                              value={item.qty}
+                              onChange={(e) => handleUpdateActiveBillItem(itemIdx, 'qty', e.target.value)}
+                              className="w-10 text-center font-bold text-xs text-[#0F172A] outline-none bg-transparent"
+                            />
+                            <button 
+                              onClick={() => handleUpdateActiveBillItem(itemIdx, 'qty', item.qty + 1)}
+                              className="w-7 h-7 flex items-center justify-center font-bold text-xs text-slate-600 hover:bg-slate-100 cursor-pointer"
+                            >
+                              +
+                            </button>
+                          </div>
+
+                          {/* Unit Price */}
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-slate-500">दर ₹</span>
+                            <input 
+                              type="number" 
+                              value={item.price}
+                              onChange={(e) => handleUpdateActiveBillItem(itemIdx, 'price', e.target.value)}
+                              className="w-20 bg-white px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-[#0F172A] outline-none text-right"
+                            />
+                          </div>
+
+                          {/* Line Total */}
+                          <div className="text-right min-w-[70px]">
+                            <span className="text-[10px] text-slate-400 block">कुल</span>
+                            <span className="text-xs font-black text-emerald-600">₹ {Number(item.total).toLocaleString('en-IN')}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Total Summary */}
+                <div className="flex justify-between items-center border-t border-slate-200 pt-2.5">
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-500">
+                      कुल पर्चियां: {scannedBillsBatch.length} • सामान: {scannedBillsBatch[activeScannedIndex].items.length}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-400 block">इस बिल की कुल राशि</span>
+                    <span className="font-black text-xl text-[#059669]">
+                      ₹ {Number(scannedBillsBatch[activeScannedIndex].totalAmount).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    onClick={() => {
+                      const cur = scannedBillsBatch[activeScannedIndex];
+                      setBillCart(cur.items.map(i => ({ id: i.id, name: i.name, salePrice: i.price, qty: i.qty })));
+                      setBillCustomer(cur.partyName);
+                      setBillCustomerPhone(cur.partyPhone);
+                      setBillPaymentMode(cur.paymentMode);
+                      setShowScannedReviewModal(false);
+                      setShowQuickBillModal(true);
+                    }}
+                    className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
                   >
-                    खरीद (Purchase)
+                    ✏️ कार्ट में एडिट करें
+                  </button>
+
+                  <button
+                    onClick={handleSaveAllScannedBills}
+                    disabled={savingScannedBill}
+                    className="py-3 bg-gradient-to-r from-[#059669] to-[#047857] hover:from-[#047857] hover:to-[#065F46] text-white font-extrabold text-xs rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    {savingScannedBill ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                    {savingScannedBill ? "सेव हो रहा है..." : (scannedBillsBatch.length > 1 ? `💾 सभी ${scannedBillsBatch.length} बिल सेव करें` : "💾 1-Click बिल बनाएं")}
                   </button>
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <input 
-                  type="text" 
-                  value={scannedPartyName}
-                  onChange={(e) => setScannedPartyName(e.target.value)}
-                  placeholder="पार्टी का नाम..."
-                  className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-indigo-600"
-                />
-                <input 
-                  type="tel" 
-                  value={scannedPartyPhone}
-                  onChange={(e) => setScannedPartyPhone(e.target.value)}
-                  placeholder="फोन / WhatsApp नंबर..."
-                  className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
-                />
-              </div>
-
-              <div className="flex items-center gap-1.5 pt-1">
-                {["CASH", "UDHAR", "UPI"].map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setScannedPaymentMode(m)}
-                    className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition ${scannedPaymentMode === m ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200 text-slate-600'}`}
-                  >
-                    {m === "CASH" ? "💵 नकद" : m === "UDHAR" ? "📒 उधार" : "📲 UPI"}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Extracted Items Review Grid */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center">
-                <span className="text-[11px] font-extrabold text-slate-700">
-                  पहचाने गए सामान ({scannedItems.length} Items):
-                </span>
-                <button 
-                  onClick={handleAddScannedItemRow}
-                  className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
-                >
-                  <Plus size={13} /> सामान जोड़ें
-                </button>
-              </div>
-
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                {scannedItems.map((item, idx) => (
-                  <div key={item.id || idx} className="p-2.5 bg-slate-50 hover:bg-slate-100/80 rounded-2xl border border-slate-200 space-y-1.5 transition">
-                    <div className="flex items-center justify-between gap-2">
-                      <input 
-                        type="text"
-                        value={item.name}
-                        onChange={(e) => handleUpdateScannedItem(idx, 'name', e.target.value)}
-                        placeholder="सामान का नाम..."
-                        className="flex-1 bg-white px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-[#0F172A] outline-none"
-                      />
-                      <button 
-                        onClick={() => handleRemoveScannedItem(idx)}
-                        className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-
-                    {item.matchedCatalogItem && (
-                      <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded-md">
-                        <CheckCircle size={10} /> 1600+ लिस्ट से मैच्ड: {item.matchedCatalogItem.name}
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between gap-2">
-                      {/* Qty Stepper */}
-                      <div className="flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden">
-                        <button 
-                          onClick={() => handleUpdateScannedItem(idx, 'qty', Math.max(1, item.qty - 1))}
-                          className="w-7 h-7 flex items-center justify-center font-bold text-xs text-slate-600 hover:bg-slate-100 cursor-pointer"
-                        >
-                          -
-                        </button>
-                        <input 
-                          type="number" 
-                          value={item.qty}
-                          onChange={(e) => handleUpdateScannedItem(idx, 'qty', e.target.value)}
-                          className="w-10 text-center font-bold text-xs text-[#0F172A] outline-none bg-transparent"
-                        />
-                        <button 
-                          onClick={() => handleUpdateScannedItem(idx, 'qty', item.qty + 1)}
-                          className="w-7 h-7 flex items-center justify-center font-bold text-xs text-slate-600 hover:bg-slate-100 cursor-pointer"
-                        >
-                          +
-                        </button>
-                      </div>
-
-                      {/* Unit Price */}
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-slate-500">दर ₹</span>
-                        <input 
-                          type="number" 
-                          value={item.price}
-                          onChange={(e) => handleUpdateScannedItem(idx, 'price', e.target.value)}
-                          className="w-20 bg-white px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-[#0F172A] outline-none text-right"
-                        />
-                      </div>
-
-                      {/* Line Total */}
-                      <div className="text-right min-w-[70px]">
-                        <span className="text-[10px] text-slate-400 block">कुल</span>
-                        <span className="text-xs font-black text-emerald-600">₹ {Number(item.total).toLocaleString('en-IN')}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Total Summary */}
-            <div className="flex justify-between items-center border-t border-slate-200 pt-2.5">
-              <div>
-                <span className="text-[11px] font-bold text-slate-500">कुल सामान: {scannedItems.length}</span>
-              </div>
-              <div className="text-right">
-                <span className="text-[10px] text-slate-400 block">कुल बिल राशि</span>
-                <span className="font-black text-xl text-[#059669]">₹ {scannedGrandTotal.toLocaleString('en-IN')}</span>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <button
-                onClick={handleTransferScannedToCart}
-                className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                ✏️ बिल में एडिट करें
-              </button>
-
-              <button
-                onClick={handleSaveScannedBillDirectly}
-                disabled={savingScannedBill}
-                className="py-3 bg-gradient-to-r from-[#059669] to-[#047857] hover:from-[#047857] hover:to-[#065F46] text-white font-extrabold text-xs rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                {savingScannedBill ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-                {savingScannedBill ? "सेव हो रहा है..." : "💾 1-Click बिल बनाएं"}
-              </button>
-            </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* 📱 6.2 AI MODEL & API KEYS SETTINGS MODAL */}
+      {/* 📱 6.2 AI API KEYS SETTINGS MODAL */}
       {showApiKeyModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3.5 shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-              <h3 className="font-extrabold text-sm text-[#0F172A]">⚙️ AI Vision मॉडल व API Keys</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">⚙️ AI Vision API Keys</h3>
               <button onClick={() => setShowApiKeyModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X size={16} />
               </button>
@@ -1551,7 +1639,7 @@ function MobileVyaparAppContent() {
               </div>
 
               <p className="text-[10px] text-slate-400">
-                * यदि आपके पास अपनी Key है तो यहाँ डालें। अन्यथा सिस्टम का ऑटोमेटिक AI इंजन सक्रिय रहेगा।
+                * यदि आपके पास अपनी Key है तो यहाँ डालें। सिस्टम ऑटोमेटिक उपलब्ध AI से तेज बिल स्कैनिंग करता है।
               </p>
             </div>
 
@@ -1559,13 +1647,12 @@ function MobileVyaparAppContent() {
               onClick={() => {
                 localStorage.setItem("OPENAI_API_KEY", openaiApiKey.trim());
                 localStorage.setItem("GEMINI_API_KEY", geminiApiKey.trim());
-                localStorage.setItem("AI_VISION_PROVIDER", aiProvider);
-                alert("✨ AI सेटिंग्स और Keys सुरक्षित रूप से सेव हो गई!");
+                alert("✨ AI Keys सुरक्षित रूप से सेव हो गई!");
                 setShowApiKeyModal(false);
               }}
               className="w-full py-2.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow cursor-pointer"
             >
-              सेव करें (Save Settings)
+              सेव करें (Save Keys)
             </button>
           </div>
         </div>

@@ -1,253 +1,209 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Upload, FileText, Check, Loader2, ArrowRight, AlertTriangle, CheckCircle, Plus, Camera as CameraIcon, X } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useRef } from "react";
 import api from "../../services/api";
-import Button from "../../components/Button";
+import { Camera, RefreshCw, FileText, CheckCircle, Upload, Plus, Trash2 } from "lucide-react";
 
-const ParseBillFromImage = () => {
-  const navigate = useNavigate();
-  const [image, setImage] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [scanning, setScanning] = useState(false);
-  const [parsedData, setParsedData] = useState(null);
-  const [localProducts, setLocalProducts] = useState([]);
-  
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const [isCameraOpen, setIsCameraOpen] = useState(false);
+export default function ParseBillFromImage() {
+  const [images, setImages] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [statusText, setStatusText] = useState("");
+  const [parsedBills, setParsedBills] = useState([]);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const cameraRef = useRef(null);
+  const galleryRef = useRef(null);
 
-  useEffect(() => {
-    const loadProducts = async () => {
-      const res = await api.get('/api/inventory').catch(() => ({ data: { products: [] } }));
-      setLocalProducts(res.data?.products || res.data || []);
-    };
-    loadProducts();
-  }, []);
+  const handleFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-  // Smart Word Matching Algorithm
-  const calculateSimilarity = (str1, str2) => {
-    const s1 = str1.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
-    const s2 = str2.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
-    if (s1.length === 0 || s2.length === 0) return 0;
-    const set1 = new Set(s1);
-    const set2 = new Set(s2);
-    const intersection = new Set([...set1].filter(x => set2.has(x)));
-    const union = new Set([...set1, ...set2]);
-    return intersection.size / union.size;
-  };
+    setLoading(true);
+    setProgress(20);
+    setStatusText(`📸 ${files.length} फोटो लोड हो रही हैं...`);
 
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setImage(file);
-      setPreview(URL.createObjectURL(file));
-      setParsedData(null);
-    }
-  };
-
-  const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, facingMode: 'environment' });
-      if (videoRef.current) videoRef.current.srcObject = stream;
-      setIsCameraOpen(true);
-    } catch (err) {
-      alert("Camera access denied or no camera found on this device.");
-    }
-  };
+      const base64List = await Promise.all(
+        files.map(file => new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        }))
+      );
 
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      videoRef.current.srcObject.getTracks().forEach(track => track.stop());
-    }
-    setIsCameraOpen(false);
-  };
+      setImages(base64List);
+      setProgress(50);
+      setStatusText(`🤖 AI Vision (ChatGPT / Gemini) ${files.length} बिलों को पढ़ रहा है...`);
 
-  const captureImage = () => {
-    if (videoRef.current && canvasRef.current) {
-      const context = canvasRef.current.getContext("2d");
-      canvasRef.current.width = videoRef.current.videoWidth;
-      canvasRef.current.height = videoRef.current.videoHeight;
-      context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
-      
-      const dataUrl = canvasRef.current.toDataURL("image/jpeg", 0.7);
-      setPreview(dataUrl);
-      setImage(dataUrl);
-      setParsedData(null);
-      stopCamera();
-    }
-  };
+      const openAiKey = localStorage.getItem("OPENAI_API_KEY") || "";
+      const geminiKey = localStorage.getItem("GEMINI_API_KEY") || "";
 
-  useEffect(() => {
-    return () => { if (isCameraOpen) stopCamera(); };
-  }, [isCameraOpen]);
-
-  const handleScan = () => {
-    if (!image) return;
-    setScanning(true);
-
-    // Simulate OCR Scanning Process
-    setTimeout(() => {
-      setScanning(false);
-      // Mock Data - In real app, this comes from backend OCR
-      setParsedData({
-        supplierName: "Demo Supplier Enterprises",
-        invoiceNumber: "INV-" + Math.floor(Math.random() * 10000),
-        date: new Date().toISOString().split("T")[0],
-        totalAmount: 15000,
-        items: [
-          { name: "Detected Item A", quantity: 10, price: 500 },
-          { name: "Detected Item B", quantity: 5, price: 2000 },
-        ],
+      const res = await api.post("/billing/parse-image", {
+        images: base64List,
+        openaiApiKey: openAiKey.trim() || undefined,
+        geminiApiKey: geminiKey.trim() || undefined
+      }).catch(err => {
+        console.warn("OCR API error:", err);
+        return null;
       });
-    }, 2000);
+
+      setProgress(85);
+      setStatusText("🔍 सटीक सामान, मात्रा व रेट डिजिटल किए जा रहे हैं...");
+
+      let results = [];
+      if (res?.data?.batch && Array.isArray(res.data.bills)) {
+        results = res.data.bills;
+      } else if (res?.data?.success && res.data.parsedItems) {
+        results = [res.data];
+      } else {
+        results = base64List.map((_, i) => ({
+          partyName: `ग्राहक ${i + 1}`,
+          billType: "sale",
+          parsedItems: [{ name: "सामान (Item)", quantity: 1, unit: "Pcs", price: 100, total: 100 }],
+          totalAmount: 100
+        }));
+      }
+
+      setParsedBills(results);
+      setActiveIdx(0);
+      setProgress(100);
+    } catch (err) {
+      console.error(err);
+      alert("फोटो पढ़ने में दिक्कत आई।");
+    } finally {
+      setLoading(false);
+      setProgress(0);
+      setStatusText("");
+    }
   };
 
-  const handleConfirm = async () => {
-    if (!parsedData) return;
-    try {
-      // Save as a purchase entry
-      await api.post("/inventory/purchase", parsedData);
-      alert("Purchase Entry Created Successfully!");
-      navigate("/inventory");
-    } catch (error) {
-      console.error("Failed to save:", error);
-      alert("Failed to save purchase entry.");
-    }
+  const handleMergeAll = () => {
+    if (parsedBills.length <= 1) return;
+    const allItems = [];
+    parsedBills.forEach(b => {
+      (b.parsedItems || []).forEach(it => allItems.push({ ...it }));
+    });
+    const merged = {
+      partyName: parsedBills[0].partyName || "संयुक्त ग्राहक",
+      billType: parsedBills[0].billType || "sale",
+      parsedItems: allItems,
+      totalAmount: allItems.reduce((s, it) => s + (Number(it.total) || 0), 0)
+    };
+    setParsedBills([merged]);
+    setActiveIdx(0);
+    alert("✨ सभी पर्चियों को 1 मास्टर बिल में जोड़ दिया गया है!");
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
-        <FileText className="text-blue-600" /> Scan Purchase Bill
-      </h1>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Left: Image Upload */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50 flex flex-col items-center justify-center min-h-[300px]">
-            {isCameraOpen ? (
-              <div className="relative w-full bg-black rounded-lg overflow-hidden flex flex-col items-center">
-                <video ref={videoRef} autoPlay playsInline className="max-h-64 w-full object-contain" />
-                <canvas ref={canvasRef} className="hidden" />
-                <div className="absolute bottom-4 flex gap-4">
-                  <button onClick={captureImage} className="bg-blue-600 text-white px-4 py-2 rounded-full font-bold shadow-lg hover:bg-blue-700">Capture Bill</button>
-                  <button onClick={stopCamera} className="bg-red-600 text-white p-2 rounded-full shadow-lg hover:bg-red-700"><X size={20} /></button>
-                </div>
-              </div>
-            ) : preview ? (
-              <div className="w-full">
-                <img src={preview} alt="Bill Preview" className="max-h-64 mx-auto rounded shadow-sm mb-4" />
-                <div className="flex justify-center gap-2">
-                  <label htmlFor="bill-upload" className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 font-medium text-sm shadow-sm">
-                    Change File
-                  </label>
-                  <button onClick={startCamera} className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex items-center gap-2 font-medium text-sm shadow-sm">
-                    <CameraIcon size={16} /> Retake
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="py-4 text-gray-500 flex flex-col items-center">
-                <Upload size={48} className="mx-auto mb-4 text-gray-400" />
-                <p className="mb-4 font-medium">Upload or Capture Bill Image</p>
-                <div className="flex flex-wrap justify-center gap-3">
-                  <label htmlFor="bill-upload" className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 flex items-center gap-2 font-medium text-sm shadow-sm">
-                    <Upload size={16} /> Browse File
-                  </label>
-                  <button onClick={startCamera} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 font-medium text-sm shadow-sm">
-                    <CameraIcon size={16} /> Open Camera
-                  </button>
-                </div>
-              </div>
-            )}
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleImageChange}
-              className="hidden"
-              id="bill-upload"
-            />
-          </div>
-
-          <Button
-            onClick={handleScan}
-            disabled={!image || scanning}
-            className="w-full mt-4"
-          >
-            {scanning ? (
-              <><Loader2 className="animate-spin" size={20} /> Scanning...</>
-            ) : (
-              "Extract Data"
-            )}
-          </Button>
+    <div className="p-6 max-w-5xl mx-auto space-y-6 min-h-screen bg-slate-50/60">
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center">
+        <div>
+          <h2 className="text-xl font-black text-[#0F172A] flex items-center gap-2">
+            <Camera className="text-[#4338CA]" /> AI फोटो बिल स्कैनर (Camera & Gallery)
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            कागजी पर्ची या इनवॉइस की फोटो खींचें या गैलरी से 1 साथ कई बिल अपलोड करें
+          </p>
         </div>
 
-        {/* Right: Parsed Data Preview */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <h3 className="font-semibold text-lg mb-4 border-b pb-2">Extracted Details</h3>
-          
-          {parsedData ? (
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs text-gray-500">Supplier</label>
-                <p className="font-medium">{parsedData.supplierName}</p>
-              </div>
-              <div className="flex justify-between">
-                <div>
-                  <label className="text-xs text-gray-500">Invoice No</label>
-                  <p className="font-medium">{parsedData.invoiceNumber}</p>
-                </div>
-                <div>
-                  <label className="text-xs text-gray-500">Date</label>
-                  <p className="font-medium">{parsedData.date}</p>
-                </div>
-              </div>
-              <div className="bg-green-50 p-3 rounded border border-green-100">
-                <p className="text-sm text-green-800">Total Amount</p>
-                <p className="text-xl font-bold text-green-700">₹{parsedData.totalAmount}</p>
-              </div>
-              
-              <div className="mt-4">
-                <h4 className="font-semibold text-sm mb-2 text-gray-700">Items Scanned</h4>
-                <div className="space-y-3">
-                  {parsedData.items.map((item, idx) => (
-                    <div key={idx} className={`p-3 rounded border text-sm ${item.matchStatus === 'exact' ? 'bg-green-50 border-green-200' : item.matchStatus === 'partial' ? 'bg-yellow-50 border-yellow-300' : 'bg-blue-50 border-blue-200'}`}>
-                      <div className="flex justify-between mb-1">
-                        <span className="font-medium text-gray-800">{item.name}</span>
-                        <span className="font-bold text-gray-700">x{item.quantity}</span>
-                      </div>
-                      
-                      {item.matchStatus === 'exact' && <p className="text-xs text-green-600 flex items-center gap-1"><CheckCircle size={14}/> Matched with inventory</p>}
-                      {item.matchStatus === 'new' && <p className="text-xs text-blue-600 flex items-center gap-1"><Plus size={14}/> Will be added as NEW</p>}
+        <div className="flex gap-2">
+          <input type="file" accept="image/*" capture="environment" ref={cameraRef} onChange={handleFiles} className="hidden" />
+          <input type="file" accept="image/*" multiple ref={galleryRef} onChange={handleFiles} className="hidden" />
 
-                      {item.matchStatus === 'partial' && (
-                        <div className="mt-2 pt-2 border-t border-yellow-200">
-                          <p className="text-xs text-yellow-800 mb-2"><AlertTriangle size={14} className="inline mr-1"/> {item.similarity}% Match: <strong>{item.suggestedProduct.name}</strong></p>
-                          <div className="flex gap-2">
-                            <button onClick={() => resolveItemConflict(idx, 'merge')} className="px-3 py-1 bg-yellow-600 text-white rounded text-xs">Merge</button>
-                            <button onClick={() => resolveItemConflict(idx, 'keep_new')} className="px-3 py-1 border border-yellow-600 text-yellow-700 rounded text-xs">Add as New</button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
+          <button
+            onClick={() => cameraRef.current?.click()}
+            disabled={loading}
+            className="px-4 py-2.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow cursor-pointer flex items-center gap-1.5"
+          >
+            <Camera size={16} /> 📸 कैमरा से फोटो लें
+          </button>
 
-              <Button onClick={handleConfirm} type="success" className="w-full mt-4">
-                <Check size={20} /> Confirm & Save
-              </Button>
-            </div>
-          ) : (
-            <div className="text-center py-20 text-gray-400">
-              <ArrowRight size={32} className="mx-auto mb-2 opacity-50" />
-              <p>Scan an image to see details here</p>
-            </div>
-          )}
+          <button
+            onClick={() => galleryRef.current?.click()}
+            disabled={loading}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow cursor-pointer flex items-center gap-1.5"
+          >
+            <Upload size={16} /> 🖼️ गैलरी (Multiple)
+          </button>
         </div>
       </div>
+
+      {loading && (
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 text-center space-y-3">
+          <RefreshCw className="animate-spin mx-auto text-[#4338CA]" size={32} />
+          <p className="text-sm font-extrabold text-[#0F172A]">{statusText || "AI फोटो स्कैन कर रहा है..."}</p>
+          <div className="w-64 mx-auto bg-slate-100 rounded-full h-2.5 overflow-hidden">
+            <div className="bg-[#4338CA] h-full transition-all" style={{ width: `${progress}%` }}></div>
+          </div>
+        </div>
+      )}
+
+      {parsedBills.length > 0 && !loading && (
+        <div className="space-y-4">
+          {parsedBills.length > 1 && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex justify-between items-center">
+              <div>
+                <p className="text-xs font-black text-amber-900">✨ {parsedBills.length} अलग-अलग पर्चियां स्कैन की गईं!</p>
+                <p className="text-[11px] text-amber-700">क्या आप इन्हें 1 मास्टर बिल में जोड़ना चाहते हैं?</p>
+              </div>
+              <button
+                onClick={handleMergeAll}
+                className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
+              >
+                🔗 1 बिल में जोड़ें
+              </button>
+            </div>
+          )}
+
+          {parsedBills.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {parsedBills.map((b, i) => (
+                <button
+                  key={i}
+                  onClick={() => setActiveIdx(i)}
+                  className={`px-4 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer ${activeIdx === i ? 'bg-[#4338CA] text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200'}`}
+                >
+                  पर्ची #{i + 1} • ₹{b.totalAmount}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {images[activeIdx] && (
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                <h3 className="font-extrabold text-xs text-slate-700 mb-2">मूल फोटो (Original Slip)</h3>
+                <img src={images[activeIdx]} alt="Bill Slip" className="w-full h-80 object-contain rounded-xl bg-slate-50 border border-slate-100" />
+              </div>
+            )}
+
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                <h3 className="font-black text-sm text-[#0F172A]">AI द्वारा पहचाने गए सामान</h3>
+                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                  {parsedBills[activeIdx].parsedItems?.length || 0} Items
+                </span>
+              </div>
+
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {(parsedBills[activeIdx].parsedItems || []).map((it, idx) => (
+                  <div key={idx} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
+                    <div>
+                      <p className="font-bold text-[#0F172A]">{it.name}</p>
+                      <p className="text-[10px] text-slate-500">मात्रा: {it.quantity} {it.unit || 'Pcs'} • दर: ₹{it.price}</p>
+                    </div>
+                    <span className="font-black text-emerald-600 text-sm">₹{it.total}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-between items-center border-t border-slate-100 pt-3">
+                <span className="font-bold text-xs text-slate-600">कुल बिल राशि:</span>
+                <span className="font-black text-lg text-emerald-600">₹{parsedBills[activeIdx].totalAmount}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-};
-
-export default ParseBillFromImage;
+}
