@@ -40,6 +40,8 @@ const companySchema = new mongoose.Schema({
   plan: { type: String, enum: ['free', 'premium'], default: 'free' },
   freeBillCount: { type: Number, default: 0 }, // Number of bills created by free users
   maxFreeBills: { type: Number, default: 50 }, // Max bills allowed for free plan
+  freeAiScanCount: { type: Number, default: 0 }, // Free AI Bill Scans used
+  maxFreeAiScans: { type: Number, default: 25 }, // Free limit of 25 AI scans
   subscriptionExpiresAt: { type: Date }, // Date when premium subscription expires
 
   // New Settings object for extensibility
