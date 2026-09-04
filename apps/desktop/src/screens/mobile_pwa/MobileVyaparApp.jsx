@@ -768,7 +768,7 @@ export default function MobileVyaparApp() {
                   onClick={() => {
                     if (key === "C") setCalcInput("");
                     else if (key === "=") {
-                      try { setCalcInput(String(eval(calcInput))); } catch { setCalcInput("Error"); }
+                      try { setCalcInput(String(Function(`"use strict"; return (${calcInput})`)())); } catch { setCalcInput("Error"); }
                     } else setCalcInput(calcInput + key);
                   }}
                   className="py-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 rounded-xl font-bold text-sm text-[#0F172A] cursor-pointer"

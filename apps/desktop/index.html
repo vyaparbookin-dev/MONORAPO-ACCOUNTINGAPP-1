@@ -3,24 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#7c3aed" />
+    <meta name="theme-color" content="#4338ca" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="VyaparBook" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="manifest" href="/manifest.json" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: http: https: ws: wss: blob:;" />
     <title>VyaparBook 2.0 - Billing & Mobile Accounting</title>
   </head>
-  <body class="bg-slate-950 text-slate-100">
+  <body class="bg-[#F8FAFC] text-[#0F172A]">
     <div id="root"></div>
     <script type="module" src="/src/index.jsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('✅ PWA Service Worker Registered:', reg.scope))
+            .then(reg => {
+              reg.update();
+              console.log('✅ PWA Active:', reg.scope);
+            })
             .catch(err => console.log('SW Registration error:', err));
         });
       }
