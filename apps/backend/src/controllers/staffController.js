@@ -8,7 +8,12 @@ export const createStaff = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const { name, salary, wageAmount, wageType, mobileNumber, mobile, position, overtimeRatePerHour, salesTarget, commissionPercent, paidLeavesAllowed } = req.body;
+    const { 
+      name, salary, wageAmount, dailyRate, monthlySalary, 
+      wageType, mobileNumber, mobile, position, 
+      overtimeRatePerHour, salesTarget, commissionPercent, paidLeavesAllowed 
+    } = req.body;
+
     if (!name || !name.trim()) {
       return res.status(400).json({ success: false, error: "Staff Name is required" });
     }
@@ -22,14 +27,23 @@ export const createStaff = async (req, res) => {
     }
 
     const isDaily = wageType === 'daily';
-    const staffSalary = Number(salary || wageAmount || 0);
+    let finalWageAmount = 0;
+    let finalMonthlySalary = 0;
+
+    if (isDaily) {
+      finalWageAmount = Number(dailyRate || wageAmount || salary || 0);
+      finalMonthlySalary = finalWageAmount * 30;
+    } else {
+      finalWageAmount = Number(monthlySalary || wageAmount || salary || 0);
+      finalMonthlySalary = finalWageAmount;
+    }
 
     const staff = new Staff({
       ...req.body,
       name: name.trim(),
       mobileNumber: phone,
-      salary: staffSalary,
-      wageAmount: staffSalary,
+      salary: finalMonthlySalary,
+      wageAmount: finalWageAmount,
       wageType: isDaily ? 'daily' : 'monthly',
       paidLeavesAllowed: Number(paidLeavesAllowed || 0),
       position: position || 'Worker / Staff',
@@ -46,7 +60,7 @@ export const createStaff = async (req, res) => {
   }
 };
 
-// --- PAGARBOOK SUMMARY & DASHBOARD (Daily/Monthly Wage + Paid Leaves + Default Attendance) ---
+// --- PAGARBOOK SUMMARY & DASHBOARD (Includes Day-by-Day Attendance Map for 30/31 Days) ---
 export const getPagarBookSummary = async (req, res) => {
   try {
     if (!req.companyId) {
@@ -58,16 +72,15 @@ export const getPagarBookSummary = async (req, res) => {
     const year = parseInt(req.query.year) || now.getFullYear();
 
     const daysInMonth = new Date(year, month, 0).getDate();
-    const startDate = new Date(year, month - 1, 1);
+    const startDate = new Date(year, month - 1, 1, 0, 0, 0);
     const endDate = new Date(year, month - 1, daysInMonth, 23, 59, 59);
 
-    // If current month, calculate up to current date, else whole month
     const isCurrentMonth = (now.getFullYear() === year && (now.getMonth() + 1) === month);
     const daysConsidered = isCurrentMonth ? now.getDate() : daysInMonth;
 
     const allStaff = await Staff.find({ companyId: req.companyId, isActive: true }).sort({ name: 1 });
 
-    // Fetch Attendance records for this company and month
+    // Fetch Attendance records for this month
     const attendanceRecords = await Attendance.find({
       date: { $gte: startDate, $lte: endDate }
     });
@@ -89,6 +102,16 @@ export const getPagarBookSummary = async (req, res) => {
       // Check today's status
       const todayRecord = staffAtt.find(a => new Date(a.date).toDateString() === todayStr);
       const todayStatus = todayRecord ? todayRecord.status : 'present'; // Default Present
+
+      // Build Day-by-Day Attendance Map for every day of the month (1 to 30/31)
+      const dailyAttendanceMap = {};
+      for (let day = 1; day <= daysInMonth; day++) {
+        const matchingRecord = staffAtt.find(a => {
+          const ad = new Date(a.date);
+          return ad.getDate() === day && ad.getMonth() === (month - 1) && ad.getFullYear() === year;
+        });
+        dailyAttendanceMap[day] = matchingRecord ? matchingRecord.status : 'present'; // Default Present
+      }
 
       // Count Absents and Half Days
       let absentCount = 0;
@@ -119,19 +142,22 @@ export const getPagarBookSummary = async (req, res) => {
 
       // Daily vs Monthly Wage Calculation:
       const isDaily = (s.wageType === 'daily');
-      const baseSalary = Number(s.salary || s.wageAmount || 0);
+      const baseSalary = Number(s.wageAmount || s.salary || 0);
 
       let perDaySalary = 0;
       let earnedSalary = 0;
+      let monthlyEquivalent = 0;
 
       if (isDaily) {
         // Daily Basis: wageAmount is daily rate directly (e.g. ₹500/day)
         perDaySalary = baseSalary;
         earnedSalary = Math.round(perDaySalary * payableDays);
+        monthlyEquivalent = baseSalary * daysInMonth;
       } else {
         // Monthly Basis: wageAmount is monthly salary (e.g. ₹15,000/month)
         perDaySalary = daysInMonth > 0 ? (baseSalary / daysInMonth) : 0;
         earnedSalary = Math.round(perDaySalary * payableDays);
+        monthlyEquivalent = baseSalary;
       }
 
       // Overtime & Commission
@@ -155,10 +181,12 @@ export const getPagarBookSummary = async (req, res) => {
         wageType: s.wageType || 'monthly',
         isDaily,
         baseSalary,
+        monthlyEquivalent,
         perDaySalary: Math.round(perDaySalary),
         daysInMonth,
         daysConsidered,
         todayStatus,
+        dailyAttendanceMap,
         presentCount,
         halfDayCount,
         absentCount,
@@ -175,7 +203,7 @@ export const getPagarBookSummary = async (req, res) => {
         salesTarget: Number(s.salesTarget || 0),
         commissionPercent: Number(s.commissionPercent || 0),
         overtimeRatePerHour: Number(s.overtimeRatePerHour || 0),
-        transactions: staffTx.slice(0, 20)
+        transactions: staffTx
       };
     });
 
@@ -201,7 +229,7 @@ export const getPagarBookSummary = async (req, res) => {
   }
 };
 
-// 1-Tap Quick Mark Attendance (Present / Half Day / Absent)
+// 1-Tap Quick Mark Attendance for ANY specific date of the month
 export const quickMarkAttendance = async (req, res) => {
   try {
     const { staffId, status, date } = req.body;
@@ -213,12 +241,12 @@ export const quickMarkAttendance = async (req, res) => {
     const staff = await Staff.findOne({ _id: staffId, companyId: req.companyId });
     if (!staff) return res.status(404).json({ success: false, error: "Staff not found" });
 
+    const startOfDay = new Date(attDate.getFullYear(), attDate.getMonth(), attDate.getDate(), 0, 0, 0);
+    const endOfDay = new Date(attDate.getFullYear(), attDate.getMonth(), attDate.getDate(), 23, 59, 59);
+
     let attendance = await Attendance.findOne({
       staffId,
-      date: {
-        $gte: new Date(attDate.getFullYear(), attDate.getMonth(), attDate.getDate()),
-        $lte: new Date(attDate.getFullYear(), attDate.getMonth(), attDate.getDate(), 23, 59, 59)
-      }
+      date: { $gte: startOfDay, $lte: endOfDay }
     });
 
     if (attendance) {
@@ -234,13 +262,17 @@ export const quickMarkAttendance = async (req, res) => {
       await attendance.save();
     }
 
-    res.status(200).json({ success: true, message: `हाजिरी दर्ज: ${status === 'present' ? 'उपस्थित (Present)' : status === 'half-day' ? 'हाफ डे (Half Day)' : 'छुट्टी (Absent)'}`, attendance });
+    res.status(200).json({ 
+      success: true, 
+      message: `तारीख ${attDate.getDate()} को हाजिरी दर्ज: ${status === 'present' ? 'उपस्थित (Present)' : status === 'half-day' ? 'हाफ डे (Half Day)' : 'छुट्टी (Absent)'}`, 
+      attendance 
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 };
 
-// 1-Tap Record Staff Advance (बीच में दिए गए पैसे)
+// 1-Tap Record Staff Advance
 export const addStaffAdvance = async (req, res) => {
   try {
     const { staffId, amount, notes, date } = req.body;
@@ -416,9 +448,32 @@ export const updateStaff = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
+    const { wageType, dailyRate, monthlySalary, salary, wageAmount, paidLeavesAllowed } = req.body;
+    const isDaily = wageType === 'daily';
+
+    let finalWageAmount = req.body.wageAmount;
+    let finalSalary = req.body.salary;
+
+    if (wageType) {
+      if (isDaily) {
+        finalWageAmount = Number(dailyRate || wageAmount || salary || 0);
+        finalSalary = finalWageAmount * 30;
+      } else {
+        finalWageAmount = Number(monthlySalary || wageAmount || salary || 0);
+        finalSalary = finalWageAmount;
+      }
+    }
+
+    const updatePayload = {
+      ...req.body,
+      ...(wageType && { wageType: isDaily ? 'daily' : 'monthly', wageAmount: finalWageAmount, salary: finalSalary }),
+      ...(paidLeavesAllowed !== undefined && { paidLeavesAllowed: Number(paidLeavesAllowed) }),
+      updatedAt: new Date()
+    };
+
     const staff = await Staff.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
-      { $set: { ...req.body, updatedAt: new Date() } },
+      { $set: updatePayload },
       { new: true }
     );
     if (!staff) return res.status(404).json({ success: false, error: "Staff not found" });
