@@ -8,7 +8,7 @@ export const createStaff = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const { name, salary, wageAmount, wageType, mobileNumber, mobile, position, overtimeRatePerHour, salesTarget, commissionPercent } = req.body;
+    const { name, salary, wageAmount, wageType, mobileNumber, mobile, position, overtimeRatePerHour, salesTarget, commissionPercent, paidLeavesAllowed } = req.body;
     if (!name || !name.trim()) {
       return res.status(400).json({ success: false, error: "Staff Name is required" });
     }
@@ -21,6 +21,7 @@ export const createStaff = async (req, res) => {
       }
     }
 
+    const isDaily = wageType === 'daily';
     const staffSalary = Number(salary || wageAmount || 0);
 
     const staff = new Staff({
@@ -29,8 +30,9 @@ export const createStaff = async (req, res) => {
       mobileNumber: phone,
       salary: staffSalary,
       wageAmount: staffSalary,
-      wageType: wageType || 'monthly',
-      position: position || 'Staff / Worker',
+      wageType: isDaily ? 'daily' : 'monthly',
+      paidLeavesAllowed: Number(paidLeavesAllowed || 0),
+      position: position || 'Worker / Staff',
       overtimeRatePerHour: Number(overtimeRatePerHour || 0),
       salesTarget: Number(salesTarget || 0),
       commissionPercent: Number(commissionPercent || 0),
@@ -44,7 +46,7 @@ export const createStaff = async (req, res) => {
   }
 };
 
-// --- PAGARBOOK SUMMARY & DASHBOARD (Default Attendance + Salary + Advances + OT + Commission) ---
+// --- PAGARBOOK SUMMARY & DASHBOARD (Daily/Monthly Wage + Paid Leaves + Default Attendance) ---
 export const getPagarBookSummary = async (req, res) => {
   try {
     if (!req.companyId) {
@@ -105,11 +107,32 @@ export const getPagarBookSummary = async (req, res) => {
 
       // Default Logic: Staff is Present on every day unless marked Absent or Half-Day
       const presentCount = Math.max(0, daysConsidered - absentCount - halfDayCount);
-      const effectiveWorkingDays = presentCount + (halfDayCount * 0.5);
+      const workedEffectiveDays = presentCount + (halfDayCount * 0.5);
 
+      // Paid Leaves (सवेतन अवकाश) Calculation:
+      const allowedPaidLeaves = Number(s.paidLeavesAllowed || 0);
+      const paidLeavesBenefited = Math.min(absentCount, allowedPaidLeaves);
+      const unpaidAbsentDays = Math.max(0, absentCount - paidLeavesBenefited);
+
+      // Total Payable Days = Actual Worked Days + Paid Leaves (Capped at daysConsidered/daysInMonth)
+      const payableDays = Math.min(daysInMonth, workedEffectiveDays + paidLeavesBenefited);
+
+      // Daily vs Monthly Wage Calculation:
+      const isDaily = (s.wageType === 'daily');
       const baseSalary = Number(s.salary || s.wageAmount || 0);
-      const perDaySalary = daysInMonth > 0 ? (baseSalary / daysInMonth) : 0;
-      const earnedSalary = Math.round(perDaySalary * effectiveWorkingDays);
+
+      let perDaySalary = 0;
+      let earnedSalary = 0;
+
+      if (isDaily) {
+        // Daily Basis: wageAmount is daily rate directly (e.g. ₹500/day)
+        perDaySalary = baseSalary;
+        earnedSalary = Math.round(perDaySalary * payableDays);
+      } else {
+        // Monthly Basis: wageAmount is monthly salary (e.g. ₹15,000/month)
+        perDaySalary = daysInMonth > 0 ? (baseSalary / daysInMonth) : 0;
+        earnedSalary = Math.round(perDaySalary * payableDays);
+      }
 
       // Overtime & Commission
       const otTransactions = staffTx.filter(t => t.type === 'overtime');
@@ -130,6 +153,7 @@ export const getPagarBookSummary = async (req, res) => {
         mobileNumber: s.mobileNumber || '',
         position: s.position || 'Worker',
         wageType: s.wageType || 'monthly',
+        isDaily,
         baseSalary,
         perDaySalary: Math.round(perDaySalary),
         daysInMonth,
@@ -138,7 +162,11 @@ export const getPagarBookSummary = async (req, res) => {
         presentCount,
         halfDayCount,
         absentCount,
-        effectiveWorkingDays,
+        allowedPaidLeaves,
+        paidLeavesBenefited,
+        unpaidAbsentDays,
+        workedEffectiveDays,
+        payableDays,
         earnedSalary,
         otEarnings,
         commEarnings,
@@ -182,8 +210,6 @@ export const quickMarkAttendance = async (req, res) => {
     }
 
     const attDate = date ? new Date(date) : new Date();
-    const dateStr = new Date(attDate.getFullYear(), attDate.getMonth(), attDate.getDate()).toDateString();
-
     const staff = await Staff.findOne({ _id: staffId, companyId: req.companyId });
     if (!staff) return res.status(404).json({ success: false, error: "Staff not found" });
 
@@ -344,7 +370,7 @@ export const markAttendance = async (req, res) => {
 
     res.status(201).json({ success: true, message: "Attendance marked successfully" });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 

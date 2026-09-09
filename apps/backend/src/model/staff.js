@@ -12,6 +12,7 @@ const staffSchema = new mongoose.Schema({
   overtimeRatePerHour: { type: Number, default: 0 },
   salesTarget: { type: Number, default: 0 },
   commissionPercent: { type: Number, default: 0 },
+  paidLeavesAllowed: { type: Number, default: 0 }, // Free paid leaves per month without salary deduction
   shiftStartTime: String, // e.g., "09:00 AM" (For restaurant/resort shift management)
   shiftEndTime: String, // e.g., "06:00 PM"
   incentiveType: { type: String, enum: ['fixed', 'percentage', 'none'], default: 'none' }, // For clothes/retail sales incentive

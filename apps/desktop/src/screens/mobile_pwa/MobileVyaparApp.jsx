@@ -175,6 +175,8 @@ function MobileVyaparAppContent() {
   const [newStaffSalary, setNewStaffSalary] = useState("");
   const [newStaffMobile, setNewStaffMobile] = useState("");
   const [newStaffPosition, setNewStaffPosition] = useState("Worker / Staff");
+  const [newStaffWageType, setNewStaffWageType] = useState("daily"); // 'daily' (दैनिक वेतन / Daily Basis) or 'monthly' (मासिक वेतन)
+  const [newStaffPaidLeaves, setNewStaffPaidLeaves] = useState("0"); // e.g. 0, 1, 2 allowed paid leaves
   const [newStaffOtRate, setNewStaffOtRate] = useState("");
   const [newStaffSalesTarget, setNewStaffSalesTarget] = useState("");
   const [newStaffCommission, setNewStaffCommission] = useState("");
@@ -284,7 +286,7 @@ function MobileVyaparAppContent() {
   const handleSaveNewStaff = async (e) => {
     if (e) e.preventDefault();
     if (!newStaffName.trim() || !newStaffSalary) {
-      alert("कृपया स्टाफ का नाम और मासिक सैलरी (₹) दर्ज करें!");
+      alert(newStaffWageType === 'daily' ? "कृपया स्टाफ का नाम और दैनिक दर (₹/दिन) दर्ज करें!" : "कृपया स्टाफ का नाम और मासिक सैलरी (₹) दर्ज करें!");
       return;
     }
     setSavingStaff(true);
@@ -293,6 +295,8 @@ function MobileVyaparAppContent() {
         name: newStaffName.trim(),
         salary: Number(newStaffSalary),
         wageAmount: Number(newStaffSalary),
+        wageType: newStaffWageType,
+        paidLeavesAllowed: Number(newStaffPaidLeaves) || 0,
         mobileNumber: newStaffMobile.trim(),
         position: newStaffPosition.trim() || "Worker",
         overtimeRatePerHour: Number(newStaffOtRate) || 0,
@@ -301,12 +305,14 @@ function MobileVyaparAppContent() {
       };
 
       await api.post("/staff", payload);
-      alert(`✅ स्टाफ '${newStaffName}' सफलतापूर्वक जुड़ गया!`);
+      alert(`✅ स्टाफ '${newStaffName}' (${newStaffWageType === 'daily' ? 'दैनिक ₹' + newStaffSalary + '/दिन' : 'मासिक ₹' + newStaffSalary + '/माह'}) सफलतापूर्वक जुड़ गया!`);
       
       setNewStaffName("");
       setNewStaffSalary("");
       setNewStaffMobile("");
       setNewStaffPosition("Worker / Staff");
+      setNewStaffWageType("daily");
+      setNewStaffPaidLeaves("0");
       setNewStaffOtRate("");
       setNewStaffSalesTarget("");
       setNewStaffCommission("");
@@ -374,37 +380,43 @@ function MobileVyaparAppContent() {
     }
   };
 
-  const handleShareSalarySlipWhatsApp = (staff) => {
+      const handleShareSalarySlipWhatsApp = (staff) => {
     if (!staff) return;
     const monthNames = ["", "जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"];
-    const mName = monthNames[pagarBookMonth] || `Month ${pagarBookMonth}`;
+    const mName = monthNames[pagarBookMonth] || ("Month " + pagarBookMonth);
 
-    const text = `*📄 वेतन पर्ची / SALARY SLIP*\n` +
-      `🏢 *${companyDisplayName}*\n` +
-      `--------------------------------\n` +
-      `👤 *स्टाफ नाम:* ${staff.name}\n` +
-      `📅 *माह:* ${mName} ${pagarBookYear}\n` +
-      `💰 *मासिक मूल वेतन:* ₹${(staff.baseSalary || 0).toLocaleString('en-IN')}\n` +
-      `--------------------------------\n` +
-      `📅 *माह के कुल दिन:* ${staff.daysInMonth} दिन\n` +
-      `🟢 *उपस्थित दिन (P):* ${staff.presentCount} दिन\n` +
-      `🟡 *हाफ डे (HT):* ${staff.halfDayCount} दिन\n` +
-      `🔴 *छुट्टी/अनुपस्थित (A):* ${staff.absentCount} दिन\n` +
-      `--------------------------------\n` +
-      `💵 *बनी हुई सैलरी:* ₹${(staff.earnedSalary || 0).toLocaleString('en-IN')}\n` +
-      (staff.otEarnings > 0 ? `⏱️ *ओवरटाइम:* +₹${staff.otEarnings.toLocaleString('en-IN')}\n` : '') +
-      (staff.commEarnings > 0 ? `🎯 *कमीशन:* +₹${staff.commEarnings.toLocaleString('en-IN')}\n` : '') +
-      `💸 *लिया गया एडवांस:* -₹${(staff.totalAdvance || 0).toLocaleString('en-IN')}\n` +
-      `--------------------------------\n` +
-      `⚖️ *शुद्ध देय वेतन (Net Payable):* *₹${(staff.netPayable || 0).toLocaleString('en-IN')}*\n` +
-      `--------------------------------\n` +
-      `_धन्यवाद!_`;
+    const wageLabel = staff.isDaily 
+      ? ("📆 दैनिक दर: ₹" + staff.perDaySalary + "/दिन")
+      : ("📅 मासिक मूल वेतन: ₹" + (staff.baseSalary || 0).toLocaleString('en-IN') + " (@ ₹" + staff.perDaySalary + "/दिन)");
+
+    const lines = [
+      "*📄 वेतन पर्ची / SALARY SLIP*",
+      "🏢 *" + companyDisplayName + "*",
+      "--------------------------------",
+      "👤 *स्टाफ नाम:* " + staff.name,
+      "📅 *माह:* " + mName + " " + pagarBookYear + " (कुल " + staff.daysInMonth + " दिन)",
+      "💰 *वेतन प्रकार:* " + wageLabel,
+      "--------------------------------",
+      "🟢 *उपस्थित दिन (P):* " + staff.presentCount + " दिन",
+      "🟡 *हाफ डे (HT):* " + staff.halfDayCount + " दिन",
+      "🔴 *ली गई छुट्टियां (A):* " + staff.absentCount + " दिन" + (staff.paidLeavesBenefited > 0 ? (" (🎁 " + staff.paidLeavesBenefited + " दिन बिना वेतन कटे सवेतन अवकाश)") : ""),
+      "⚡ *कुल देय दिन (Payable Days):* " + staff.payableDays + " दिन",
+      "--------------------------------",
+      "💵 *बनी हुई सैलरी:* ₹" + (staff.earnedSalary || 0).toLocaleString('en-IN'),
+      (staff.otEarnings > 0 ? ("⏱️ *ओवरटाइम:* +₹" + staff.otEarnings.toLocaleString('en-IN')) : null),
+      (staff.commEarnings > 0 ? ("🎯 *कमीशन:* +₹" + staff.commEarnings.toLocaleString('en-IN')) : null),
+      "💸 *लिया गया एडवांस:* -₹" + (staff.totalAdvance || 0).toLocaleString('en-IN'),
+      "--------------------------------",
+      "⚖️ *शुद्ध देय बाकी वेतन (Net Payable):* *₹" + (staff.netPayable || 0).toLocaleString('en-IN') + "*",
+      "--------------------------------",
+      "_धन्यवाद!_"
+    ].filter(Boolean).join(String.fromCharCode(10));
 
     const cleanPhone = (staff.mobileNumber || '').replace(/[^0-9]/g, '');
     const phoneParam = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : '';
     const whatsappUrl = phoneParam 
-      ? `https://api.whatsapp.com/send?phone=91${phoneParam}&text=${encodeURIComponent(text.replace(/\\n/g, '\n'))}`
-      : `https://api.whatsapp.com/send?text=${encodeURIComponent(text.replace(/\\n/g, '\n'))}`;
+      ? ("https://api.whatsapp.com/send?phone=91" + phoneParam + "&text=" + encodeURIComponent(lines))
+      : ("https://api.whatsapp.com/send?text=" + encodeURIComponent(lines));
     
     window.open(whatsappUrl, '_blank');
   };
