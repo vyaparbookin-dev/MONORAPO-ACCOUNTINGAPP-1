@@ -189,7 +189,15 @@ function MobileVyaparAppContent() {
   const [actionAmount, setActionAmount] = useState("");
   const [actionHours, setActionHours] = useState("");
   const [actionNotes, setActionNotes] = useState("");
-  const [savingStaffAction, setSavingStaffAction] = useState(false); // 'drawings' (Ghar Kharch) or 'operating' (Dukaan Kharch)
+  const [savingStaffAction, setSavingStaffAction] = useState(false);
+
+  // Quick Edit Staff Salary & Wage Modal (दैनिक / मासिक दर बदलें)
+  const [showEditStaffSalaryModal, setShowEditStaffSalaryModal] = useState(false);
+  const [editingStaffTarget, setEditingStaffTarget] = useState(null);
+  const [editingWageType, setEditingWageType] = useState("daily"); // 'daily' or 'monthly'
+  const [editingSalaryAmount, setEditingSalaryAmount] = useState("");
+  const [editingPaidLeaves, setEditingPaidLeaves] = useState("0");
+  const [savingEditSalary, setSavingEditSalary] = useState(false); // 'drawings' (Ghar Kharch) or 'operating' (Dukaan Kharch)
   const [selectedFamilyMember, setSelectedFamilyMember] = useState("Self");
   const [customFamilyMember, setCustomFamilyMember] = useState("");
   const [gharKharchTitle, setGharKharchTitle] = useState("");
@@ -323,6 +331,34 @@ function MobileVyaparAppContent() {
       alert(err.response?.data?.error || "स्टाफ सेव करने में त्रुटि आई।");
     } finally {
       setSavingStaff(false);
+    }
+  };
+
+  const handleUpdateStaffSalary = async (e) => {
+    if (e) e.preventDefault();
+    if (!editingStaffTarget || !editingSalaryAmount || Number(editingSalaryAmount) <= 0) {
+      alert("कृपया सही वेतन राशि (₹) दर्ज करें!");
+      return;
+    }
+    setSavingEditSalary(true);
+    try {
+      const payload = {
+        salary: Number(editingSalaryAmount),
+        wageAmount: Number(editingSalaryAmount),
+        wageType: editingWageType,
+        paidLeavesAllowed: Number(editingPaidLeaves) || 0
+      };
+
+      await api.put(`/staff/${editingStaffTarget._id}`, payload);
+      alert(`✅ ${editingStaffTarget.name} का वेतन ${editingWageType === 'daily' ? 'दैनिक ₹' + editingSalaryAmount + '/दिन' : 'मासिक ₹' + editingSalaryAmount + '/माह'} पर सेट हो गया!`);
+      
+      setShowEditStaffSalaryModal(false);
+      fetchPagarBookData(pagarBookMonth, pagarBookYear);
+    } catch (err) {
+      console.error("Failed to update staff salary:", err);
+      alert("वेतन अपडेट करने में त्रुटि आई।");
+    } finally {
+      setSavingEditSalary(false);
     }
   };
 
@@ -3256,7 +3292,107 @@ function MobileVyaparAppContent() {
         </div>
       )}
 
+            {/* ======================================================== */}
+      {/* 📱 6.8E QUICK EDIT STAFF SALARY / DAILY RATE MODAL       */}
       {/* ======================================================== */}
+      {showEditStaffSalaryModal && editingStaffTarget && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 space-y-3.5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
+                  💰
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">वेतन व दर सेट करें (Set Salary Rate)</h3>
+                  <p className="text-[10px] text-slate-400">स्टाफ: {editingStaffTarget.name}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowEditStaffSalaryModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateStaffSalary} className="space-y-3">
+              {/* 1. Switch between Daily Wage vs Monthly Salary */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-extrabold text-slate-700 block">वेतन का आधार चुनें (Choose Wage Type):</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingWageType("daily")}
+                    className={`py-2.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 ${editingWageType === "daily" ? "bg-amber-600 text-white border-amber-600 shadow-md" : "bg-slate-50 border border-slate-200 text-slate-700"}`}
+                  >
+                    📆 दैनिक वेतन (Daily Rate ₹/दिन)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingWageType("monthly")}
+                    className={`py-2.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 ${editingWageType === "monthly" ? "bg-indigo-600 text-white border-indigo-600 shadow-md" : "bg-slate-50 border border-slate-200 text-slate-700"}`}
+                  >
+                    📅 मासिक वेतन (Monthly ₹/माह)
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Amount Input */}
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                  {editingWageType === "daily" ? "दैनिक वेतन दर (Daily Rate ₹/दिन) *" : "मासिक कुल वेतन (Monthly Salary ₹/माह) *"}
+                </label>
+                <input
+                  type="number"
+                  placeholder={editingWageType === "daily" ? "उदा. ₹ 500 / दिन" : "उदा. ₹ 15000 / माह"}
+                  value={editingSalaryAmount}
+                  onChange={(e) => setEditingSalaryAmount(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-[#0F172A] outline-none focus:border-amber-600"
+                  required
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  {editingWageType === "daily" 
+                    ? "💡 दैनिक आधार में जितने दिन काम करेगा, सीधे (दिन × दर) से हिसाब बनेगा!" 
+                    : "💡 मासिक आधार में महीने के दिनों के अनुसार प्रतिदिन दर बनेगी।"}
+                </p>
+              </div>
+
+              {/* 3. Paid Leaves Allowance */}
+              <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-1.5">
+                <label className="text-[11px] font-extrabold text-emerald-950 block">
+                  🎁 सवेतन छुट्टी (महीने में कितनी छुट्टियां बिना पैसे कटे मिलेंगी):
+                </label>
+                <div className="grid grid-cols-4 gap-1.5 text-xs font-bold">
+                  {[
+                    { val: "0", label: "0 (कोई नहीं)" },
+                    { val: "1", label: "1 दिन" },
+                    { val: "2", label: "2 दिन" },
+                    { val: "4", label: "4 दिन (Weekly)" }
+                  ].map(opt => (
+                    <button
+                      key={opt.val}
+                      type="button"
+                      onClick={() => setEditingPaidLeaves(opt.val)}
+                      className={`py-1.5 px-2 rounded-xl text-center text-xs font-bold transition cursor-pointer border ${editingPaidLeaves === opt.val ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs' : 'bg-white border-emerald-200 text-emerald-900'}`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingEditSalary}
+                className="w-full py-3.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-extrabold text-sm rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
+              >
+                {savingEditSalary ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                {savingEditSalary ? "वेतन सेव हो रहा है..." : "💾 नया वेतन व दर सेव करें"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+{/* ======================================================== */}
       {/* 📱 6.8D QUICK ACTION MODAL (ADVANCE / OVERTIME / COMM)   */}
       {/* ======================================================== */}
       {showStaffActionModal && actionStaffTarget && (

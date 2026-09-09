@@ -43,6 +43,7 @@ export default function StaffManagementPage() {
   const [staffForm, setStaffForm] = useState({
     name: "",
     mobileNumber: "",
+    paidLeavesAllowed: 0,
     email: "",
     role: "staff",
     department: "Sales & Stock",
@@ -272,6 +273,7 @@ export default function StaffManagementPage() {
               setStaffForm({
                 name: "",
                 mobileNumber: "",
+    paidLeavesAllowed: 0,
                 email: "",
                 role: "staff",
                 department: "Sales & Stock",
@@ -792,8 +794,7 @@ export default function StaffManagementPage() {
                   <label className="block text-xs font-bold text-gray-700 uppercase mb-1">मोबाइल नंबर *</label>
                   <input
                     type="tel"
-                    required
-                    placeholder="10 अंकों का मोबाइल नंबर"
+                    placeholder="10 अंकों का मोबाइल नंबर (वैकल्पिक)"
                     value={staffForm.mobileNumber}
                     onChange={(e) => setStaffForm({ ...staffForm, mobileNumber: e.target.value })}
                     className="w-full px-3.5 py-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500"
