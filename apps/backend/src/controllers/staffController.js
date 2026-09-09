@@ -76,14 +76,14 @@ export const getPagarBookSummary = async (req, res) => {
     const endDate = new Date(year, month - 1, daysInMonth, 23, 59, 59);
 
     const isCurrentMonth = (now.getFullYear() === year && (now.getMonth() + 1) === month);
-    // For current month, count only elapsed days up to today (e.g. 1..9 Sep). For past months, count all days.
     const daysConsidered = isCurrentMonth ? Math.min(now.getDate(), daysInMonth) : daysInMonth;
 
     const allStaff = await Staff.find({ companyId: req.companyId, isActive: true }).sort({ name: 1 });
+    const staffIds = allStaff.map(s => s._id);
 
     // Fetch Attendance records for this month
     const attendanceRecords = await Attendance.find({
-      companyId: req.companyId,
+      staffId: { $in: staffIds },
       date: { $gte: startDate, $lte: endDate }
     });
 
@@ -122,7 +122,7 @@ export const getPagarBookSummary = async (req, res) => {
           return ad.getDate() === day && ad.getMonth() === (month - 1) && ad.getFullYear() === year;
         });
 
-        const rawStatus = matchingRecord ? matchingRecord.status : 'present'; // default present
+        const rawStatus = matchingRecord ? matchingRecord.status : 'present';
         const status = (rawStatus === 'half-day' || rawStatus === 'halfday' || rawStatus === 'half_day') 
           ? 'half_day' 
           : (rawStatus === 'absent' || rawStatus === 'leave') 
@@ -136,18 +136,18 @@ export const getPagarBookSummary = async (req, res) => {
         else presentCount++;
       }
 
-      // Default Logic: effective worked days = present + (halfDay * 0.5)
+      // Worked effective days: Present + (HalfDay * 0.5)
       const workedEffectiveDays = presentCount + (halfDayCount * 0.5);
 
-      // Paid Leaves (सवेतन अवकाश) Calculation:
+      // Paid Leaves allowance
       const allowedPaidLeaves = Number(s.paidLeavesAllowed || 0);
       const paidLeavesBenefited = Math.min(absentCount, allowedPaidLeaves);
       const unpaidAbsentDays = Math.max(0, absentCount - paidLeavesBenefited);
 
-      // Total Payable Days = Worked Effective Days + Paid Leaves (Exact decimal e.g. 6.5)
+      // Total Payable Days (e.g. 6.5)
       const payableDays = Math.round((workedEffectiveDays + paidLeavesBenefited) * 10) / 10;
 
-      // Daily vs Monthly Wage Calculation:
+      // Salary Calculation
       const isDaily = (s.wageType === 'daily');
       const dailyRateVal = Number(s.dailyRate || s.wageAmount || s.salary || 0);
       const monthlySalaryVal = Number(s.monthlySalary || s.salary || s.wageAmount || 0);
@@ -175,7 +175,7 @@ export const getPagarBookSummary = async (req, res) => {
       const commEarnings = commTransactions.reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
 
       // Advances & Payments Given
-      const advanceTransactions = staffTx.filter(t => ['advance', 'salary_settlement', 'deduction'].includes(t.type));
+      const advanceTransactions = staffTx.filter(t => ['advance', 'salary_settlement', 'deduction', 'loan_emi'].includes(t.type));
       const totalAdvance = advanceTransactions.reduce((sum, t) => sum + (Number(t.debit) || 0), 0);
 
       const grossSalary = earnedSalary + otEarnings + commEarnings;
@@ -224,6 +224,7 @@ export const getPagarBookSummary = async (req, res) => {
           amount: t.debit || t.amount,
           date: t.date,
           paymentMode: t.paymentMode || 'cash',
+          type: t.type,
           notes: t.notes || 'Advance'
         })),
         salesTarget: Number(s.salesTarget || 0),
@@ -267,6 +268,13 @@ export const quickMarkAttendance = async (req, res) => {
     const staff = await Staff.findOne({ _id: staffId, companyId: req.companyId });
     if (!staff) return res.status(404).json({ success: false, error: "Staff not found" });
 
+    // Normalize status to clean format
+    const normStatus = (status === 'half-day' || status === 'halfday' || status === 'half_day') 
+      ? 'half_day' 
+      : (status === 'absent' || status === 'leave') 
+      ? 'absent' 
+      : 'present';
+
     const startOfDay = new Date(attDate.getFullYear(), attDate.getMonth(), attDate.getDate(), 0, 0, 0);
     const endOfDay = new Date(attDate.getFullYear(), attDate.getMonth(), attDate.getDate(), 23, 59, 59);
 
@@ -276,24 +284,26 @@ export const quickMarkAttendance = async (req, res) => {
     });
 
     if (attendance) {
-      attendance.status = status;
+      attendance.status = normStatus;
+      attendance.updatedAt = new Date();
       await attendance.save();
     } else {
       attendance = new Attendance({
         staffId,
+        companyId: req.companyId,
         date: attDate,
-        status,
-        companyId: req.companyId
+        status: normStatus
       });
       await attendance.save();
     }
 
     res.status(200).json({ 
       success: true, 
-      message: `तारीख ${attDate.getDate()} को हाजिरी दर्ज: ${status === 'present' ? 'उपस्थित (Present)' : status === 'half-day' ? 'हाफ डे (Half Day)' : 'छुट्टी (Absent)'}`, 
+      message: `तारीख ${attDate.getDate()} को हाजिरी सुरक्षित हुई: ${normStatus}`, 
       attendance 
     });
   } catch (error) {
+    console.error("quickMarkAttendance error:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 };

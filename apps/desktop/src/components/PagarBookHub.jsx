@@ -2,13 +2,19 @@ import React, { useState, useEffect } from "react";
 import { 
   ArrowLeft, Plus, Search, Calendar, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   Settings, HelpCircle, Clock, FileText, Award, DollarSign, Send, Printer,
-  User, Check, X, AlertCircle, Edit, Trash2, Shield, MoreVertical, Sparkles, Umbrella
+  User, Check, X, AlertCircle, Edit, Trash2, Shield, MoreVertical, Sparkles, Umbrella,
+  CreditCard, Landmark
 } from "lucide-react";
 import api from "../services/api";
 
 export default function PagarBookHub({ onClose, initialStaffId = null }) {
-  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1);
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    return parseInt(sessionStorage.getItem("pagarbook_month")) || (new Date().getMonth() + 1);
+  });
+  const [currentYear, setCurrentYear] = useState(() => {
+    return parseInt(sessionStorage.getItem("pagarbook_year")) || new Date().getFullYear();
+  });
+
   const [summaryData, setSummaryData] = useState({
     staff: [],
     totalCompanySalaryEarned: 0,
@@ -20,11 +26,27 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
   const [loading, setLoading] = useState(false);
   const [companyName, setCompanyName] = useState("Ganesh traders sarangarh");
 
-  // Screen state: 'home' (Screenshot 4) | 'staff_hub' (Screenshot 3) | 'attendance_cal' (Screenshots 1 & 2)
-  const [activeScreen, setActiveScreen] = useState(initialStaffId ? "staff_hub" : "home");
-  const [selectedStaffId, setSelectedStaffId] = useState(initialStaffId);
+  // State Persistence on Refresh
+  const [activeScreen, setActiveScreen] = useState(() => {
+    return sessionStorage.getItem("pagarbook_screen") || (initialStaffId ? "staff_hub" : "home");
+  });
+  const [selectedStaffId, setSelectedStaffId] = useState(() => {
+    return sessionStorage.getItem("pagarbook_staff_id") || initialStaffId;
+  });
 
   const [earningsExpanded, setEarningsExpanded] = useState(true);
+
+  // Dedicated In-App Salary Slip Modal State
+  const [showSalarySlipModal, setShowSalarySlipModal] = useState(false);
+
+  // Dedicated Loan & Advance Modal State (Advance vs Loan)
+  const [showLoanAdvanceModal, setShowLoanAdvanceModal] = useState(false);
+  const [loanAdvanceTab, setLoanAdvanceTab] = useState("advance"); // 'advance' or 'loan'
+  const [advanceAmount, setAdvanceAmount] = useState("");
+  const [advancePaymentMode, setAdvancePaymentMode] = useState("cash");
+  const [advanceNotes, setAdvanceNotes] = useState("");
+  const [loanEmiMonths, setLoanEmiMonths] = useState("3");
+  const [savingAdvance, setSavingAdvance] = useState(false);
 
   // Add / Edit Staff Modal State
   const [showStaffModal, setShowStaffModal] = useState(false);
@@ -41,12 +63,15 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
   const [staffCommission, setStaffCommission] = useState("");
   const [savingStaff, setSavingStaff] = useState(false);
 
-  // Add Advance Modal State
-  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
-  const [advanceAmount, setAdvanceAmount] = useState("");
-  const [advancePaymentMode, setAdvancePaymentMode] = useState("cash");
-  const [advanceNotes, setAdvanceNotes] = useState("");
-  const [savingAdvance, setSavingAdvance] = useState(false);
+  // Persist screen and staffId to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem("pagarbook_screen", activeScreen);
+    if (selectedStaffId) {
+      sessionStorage.setItem("pagarbook_staff_id", selectedStaffId);
+    }
+    sessionStorage.setItem("pagarbook_month", String(currentMonth));
+    sessionStorage.setItem("pagarbook_year", String(currentYear));
+  }, [activeScreen, selectedStaffId, currentMonth, currentYear]);
 
   useEffect(() => {
     fetchData();
@@ -82,7 +107,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     setCurrentYear(newY);
   };
 
-  // 1-Tap Attendance Mark for any day (Present, Half Day, Absent)
+  // 1-Tap Attendance Mark for any day
   const handleMarkDayAttendance = async (staffId, dayNum, status) => {
     try {
       // Optimistic instant UI update
@@ -91,7 +116,6 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
           if (s._id === staffId) {
             const newMap = { ...(s.dailyAttendanceMap || {}), [dayNum]: status };
             
-            // Recalculate counts dynamically
             const daysLimit = prev.daysConsidered || new Date().getDate();
             let pCount = 0;
             let hdCount = 0;
@@ -250,7 +274,8 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
       await api.delete(`/staff/${staffId}`);
       alert(`✅ स्टाफ '${sName}' हटा दिया गया!`);
       setShowStaffModal(false);
-      if (activeScreen !== "home") setActiveScreen("home");
+      setActiveScreen("home");
+      sessionStorage.setItem("pagarbook_screen", "home");
       fetchData(currentMonth, currentYear);
     } catch (err) {
       console.error("Delete staff error:", err);
@@ -258,7 +283,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     }
   };
 
-  const handleSaveAdvance = async (e) => {
+  const handleSaveLoanOrAdvance = async (e) => {
     if (e) e.preventDefault();
     if (!selectedStaffId || !advanceAmount || Number(advanceAmount) <= 0) {
       alert("कृपया सही राशि दर्ज करें!");
@@ -266,36 +291,41 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     }
     setSavingAdvance(true);
     try {
+      const finalNotes = loanAdvanceTab === "loan" 
+        ? `स्टाफ लोन (${loanEmiMonths} माह ईएमआई) - ${advanceNotes || 'व्यक्तिगत जरूरत'}`
+        : (advanceNotes.trim() || "बीच में लिया गया एडवांस");
+
       await api.post("/staff/advance", {
         staffId: selectedStaffId,
         amount: Number(advanceAmount),
         paymentMode: advancePaymentMode,
-        notes: advanceNotes.trim() || "एडवांस भुगतान",
+        notes: finalNotes,
         date: new Date()
       });
-      alert(`✅ ₹${advanceAmount} का एडवांस जुड़ गया!`);
+
+      alert(`✅ ${loanAdvanceTab === 'loan' ? 'लोन' : 'एडवांस'} ₹${advanceAmount} सफलतापूर्वक दर्ज हो गया!`);
       setAdvanceAmount("");
       setAdvanceNotes("");
-      setShowAdvanceModal(false);
+      setShowLoanAdvanceModal(false);
       fetchData(currentMonth, currentYear);
     } catch (err) {
       console.error("Advance error:", err);
-      alert(err.response?.data?.error || "एडवांस दर्ज करने में त्रुटि आई।");
+      alert(err.response?.data?.error || "दर्ज करने में त्रुटि आई।");
     } finally {
       setSavingAdvance(false);
     }
   };
 
   const handleDeleteAdvance = async (txId) => {
-    const ok = window.confirm("⚠️ क्या आप इस एडवांस एंट्री को हटाना चाहते हैं?");
+    const ok = window.confirm("⚠️ क्या आप इस एंट्री को हटाना चाहते हैं?");
     if (!ok) return;
     try {
       await api.delete(`/staff/transaction/${txId}`);
-      alert("✅ एडवांस प्रविष्टि हटा दी गई!");
+      alert("✅ प्रविष्टि हटा दी गई!");
       fetchData(currentMonth, currentYear);
     } catch (err) {
-      console.error("Delete advance error:", err);
-      alert(err.response?.data?.error || "एडवांस हटाने में त्रुटि आई।");
+      console.error("Delete error:", err);
+      alert(err.response?.data?.error || "हटाने में त्रुटि आई।");
     }
   };
 
@@ -307,10 +337,10 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
       `━━━━━━━━━━━━━━━━━━━━`,
       `👤 *कर्मचारी:* ${staff.name}`,
       `📱 *मोबाइल:* ${staff.mobileNumber || "N/A"}`,
-      `📅 *महीना:* ${mName} ${currentYear}`,
+      `📅 *अवधि:* 01 ${mName} - ${String(activeDaysCount).padStart(2, '0')} ${mName} ${currentYear}`,
       `💼 *वेतन दर:* ${staff.wageType === 'daily' ? `₹${staff.dailyRate || staff.wageAmount}/दिन (दैनिक)` : `₹${staff.monthlySalary || staff.salary}/माह (मासिक)`}`,
       `━━━━━━━━━━━━━━━━━━━━`,
-      `📊 *हाजिरी (आज तक):*`,
+      `📊 *हाजिरी विवरण:*`,
       `  🟢 उपस्थित (P): ${staff.presentDays || staff.presentCount || 0} दिन`,
       `  🟡 हाफ डे (HD): ${staff.halfDays || staff.halfDayCount || 0} दिन`,
       `  🔴 अनुपस्थित (AB): ${staff.absentDays || staff.absentCount || 0} दिन`,
@@ -318,11 +348,14 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
       `  ✅ कुल वेतन योग्य दिन: ${staff.payableDays || 0} दिन`,
       `━━━━━━━━━━━━━━━━━━━━`,
       `💰 *वेतन गणना:*`,
-      `  💵 मूल वेतन: ₹${(staff.earnedSalary || 0).toLocaleString('en-IN')}`,
-      staff.overtimeEarnings > 0 ? `  ⏱️ ओवर-टाइम: +₹${(staff.overtimeEarnings || 0).toLocaleString('en-IN')}` : null,
-      `  💸 एडवांस कटौती: -₹${(staff.totalAdvance || 0).toLocaleString('en-IN')}`,
+      `  💵 अर्जित मूल वेतन: ₹${(staff.earnedSalary || 0).toLocaleString('en-IN')}`,
+      staff.overtimeEarnings > 0 ? `  ⏱️ ओवर-टाइम कमाई: +₹${(staff.overtimeEarnings || 0).toLocaleString('en-IN')}` : null,
+      `  ✨ कुल ग्रॉस वेतन: ₹${(staff.grossSalary || staff.earnedSalary || 0).toLocaleString('en-IN')}`,
+      `  💸 बीच में लिया एडवांस: -₹${(staff.totalAdvance || 0).toLocaleString('en-IN')}`,
       `━━━━━━━━━━━━━━━━━━━━`,
-      `*💳 शुद्ध देय वेतन (Net Due): ₹${(staff.netPayable || 0).toLocaleString('en-IN')}*`
+      `*💳 कुल शुद्ध बाकी (Net Due): ₹${(staff.netPayable || 0).toLocaleString('en-IN')}*`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `_डिजिटल पगार बुक द्वारा सत्यापित_`
     ].filter(Boolean);
 
     const fullMsg = lines.join(String.fromCharCode(10));
@@ -333,8 +366,6 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
   };
 
   const monthShortName = new Date(currentYear, currentMonth - 1).toLocaleString('en-US', { month: 'short' });
-  
-  // Show only elapsed days (1 to daysConsidered, e.g. 1 to 9 for current month, descending 9 down to 1)
   const isNowMonth = (new Date().getFullYear() === currentYear && (new Date().getMonth() + 1) === currentMonth);
   const activeDaysCount = isNowMonth ? Math.min(new Date().getDate(), summaryData.daysInMonth || 30) : (summaryData.daysInMonth || 30);
 
@@ -351,7 +382,9 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     <div className="w-full flex justify-center bg-[#F4F6F9] min-h-screen text-[#1E293B]">
       <div className="w-full max-w-lg bg-[#F8FAFC] min-h-screen flex flex-col relative shadow-xl pb-10">
 
-        {/* SCREEN 1: HOME - STAFF LIST (Screenshot 4) */}
+        {/* ========================================================================= */}
+        {/* SCREEN 1: HOME - STAFF LIST (Screenshot 4)                                */}
+        {/* ========================================================================= */}
         {activeScreen === "home" && (
           <div className="flex flex-col flex-1">
             <div className="bg-white px-4 py-3.5 flex items-center justify-between border-b border-slate-100 sticky top-0 z-10 shadow-xs">
@@ -507,7 +540,9 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
           </div>
         )}
 
-        {/* SCREEN 2: STAFF HUB (Screenshot 3) */}
+        {/* ========================================================================= */}
+        {/* SCREEN 2: STAFF HUB (Screenshot 3)                                        */}
+        {/* ========================================================================= */}
         {activeScreen === "staff_hub" && currentStaff && (
           <div className="flex flex-col flex-1 animate-fadeIn">
             <div className="bg-white px-4 py-3.5 flex items-center justify-between border-b border-slate-100 sticky top-0 z-10 shadow-xs">
@@ -529,6 +564,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
             </div>
 
             <div className="p-4 space-y-4 flex-1">
+              {/* 4 Quick Action Tiles */}
               <div className="grid grid-cols-2 gap-3">
                 <div
                   onClick={() => setActiveScreen("attendance_cal")}
@@ -541,17 +577,20 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                 </div>
 
                 <div
-                  onClick={() => setShowAdvanceModal(true)}
+                  onClick={() => {
+                    setLoanAdvanceTab("advance");
+                    setShowLoanAdvanceModal(true);
+                  }}
                   className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex items-center gap-3 cursor-pointer hover:border-blue-300 transition active:scale-[0.98]"
                 >
                   <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
                     💵
                   </div>
-                  <span className="text-sm font-bold text-slate-800">Loans</span>
+                  <span className="text-sm font-bold text-slate-800">Loans & Adv</span>
                 </div>
 
                 <div
-                  onClick={() => handleShareWhatsApp(currentStaff)}
+                  onClick={() => setShowSalarySlipModal(true)}
                   className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex items-center gap-3 cursor-pointer hover:border-blue-300 transition active:scale-[0.98]"
                 >
                   <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
@@ -625,7 +664,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                         {currentStaff.payableDays || 0}
                       </div>
                       <button 
-                        onClick={() => setActiveScreen("attendance_cal")}
+                        onClick={() => setShowSalarySlipModal(true)}
                         className="text-xs font-bold text-blue-600 mt-2 block hover:underline cursor-pointer"
                       >
                         View Details
@@ -638,7 +677,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                       onClick={() => setEarningsExpanded(!earningsExpanded)}
                       className="flex items-center justify-between text-sm font-bold text-slate-800 cursor-pointer"
                     >
-                      <span>Earnings</span>
+                      <span>Earnings Breakdown</span>
                       <div className="flex items-center gap-1.5">
                         <span>₹ {(currentStaff.grossSalary || currentStaff.earnedSalary || 0).toLocaleString('en-IN')}</span>
                         {earningsExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
@@ -659,38 +698,46 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                         )}
                         {currentStaff.totalAdvance > 0 && (
                           <div className="flex justify-between text-amber-600">
-                            <span>Advance Deduction:</span>
+                            <span>बीच में लिया एडवांस कटौती:</span>
                             <span className="font-bold">-₹{currentStaff.totalAdvance}</span>
                           </div>
                         )}
+                        <div className="flex justify-between pt-1 border-t border-slate-200 font-extrabold text-emerald-700">
+                          <span>शुद्ध बाकी (Net Payable):</span>
+                          <span>₹{(currentStaff.netPayable || 0).toLocaleString('en-IN')}</span>
+                        </div>
                       </div>
                     )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 pt-2">
                     <button
-                      onClick={() => handleShareWhatsApp(currentStaff)}
-                      className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer"
+                      onClick={() => setShowSalarySlipModal(true)}
+                      className="py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border border-indigo-200 shadow-xs transition cursor-pointer"
                     >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>WhatsApp Slip</span>
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>वेतन पर्ची खोलें</span>
                     </button>
 
                     <button
-                      onClick={() => setShowAdvanceModal(true)}
+                      onClick={() => {
+                        setLoanAdvanceTab("advance");
+                        setShowLoanAdvanceModal(true);
+                      }}
                       className="py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer"
                     >
                       <DollarSign className="w-3.5 h-3.5" />
-                      <span>+ Pay / Advance</span>
+                      <span>+ एडवांस / लोन दें</span>
                     </button>
                   </div>
                 </div>
 
+                {/* Advance & Loan Passbook Table */}
                 {currentStaff.advancesList && currentStaff.advancesList.length > 0 && (
                   <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs space-y-3 mt-4">
                     <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                      <span className="text-xs font-bold text-slate-800">Advance Passbook</span>
-                      <span className="text-xs font-extrabold text-amber-600">Total: ₹{currentStaff.totalAdvance}</span>
+                      <span className="text-xs font-bold text-slate-800">एडवांस व लोन लेजर</span>
+                      <span className="text-xs font-extrabold text-amber-600">कुल एडवांस: ₹{currentStaff.totalAdvance}</span>
                     </div>
                     <div className="space-y-2">
                       {currentStaff.advancesList.map((adv, idx) => (
@@ -702,7 +749,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                             <span className="text-[11px] text-slate-400">{adv.notes || "Advance"}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-amber-600">₹{adv.amount}</span>
+                            <span className="font-bold text-amber-600">-₹{adv.amount}</span>
                             {adv._id && (
                               <button onClick={() => handleDeleteAdvance(adv._id)} className="text-slate-300 hover:text-rose-500 p-1 cursor-pointer">
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -719,7 +766,9 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
           </div>
         )}
 
-        {/* SCREEN 3: ATTENDANCE CALENDAR (Screenshots 1 & 2) */}
+        {/* ========================================================================= */}
+        {/* SCREEN 3: ATTENDANCE CALENDAR (Screenshots 1 & 2)                          */}
+        {/* ========================================================================= */}
         {activeScreen === "attendance_cal" && currentStaff && (
           <div className="flex flex-col flex-1 animate-fadeIn">
             <div className="bg-white px-4 py-3 flex items-center justify-between border-b border-slate-100 sticky top-0 z-10 shadow-xs">
@@ -910,7 +959,204 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
           </div>
         )}
 
-        {/* MODAL 1: ADD / EDIT STAFF & SALARY */}
+        {/* ========================================================================= */}
+        {/* MODAL 1: IN-APP DEDICATED SALARY SLIP (पूरा हिसाब + कटौती + नेट बाकी)    */}
+        {/* ========================================================================= */}
+        {showSalarySlipModal && currentStaff && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 animate-fadeIn">
+            <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-5 sm:p-6 max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-100 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-lg">
+                    📄
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900">वेतन पर्ची (Salary Slip)</h3>
+                    <p className="text-[10px] text-slate-400">01 {monthShortName} - {String(activeDaysCount).padStart(2, '0')} {monthShortName} {currentYear}</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowSalarySlipModal(false)} className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Staff Overview Box */}
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1 text-xs">
+                <div className="flex justify-between font-bold">
+                  <span className="text-slate-500">कर्मचारी:</span>
+                  <span className="text-slate-900">{currentStaff.name} ({currentStaff.position || 'Staff'})</span>
+                </div>
+                <div className="flex justify-between font-bold">
+                  <span className="text-slate-500">वेतन प्रकार:</span>
+                  <span className="text-indigo-700">
+                    {currentStaff.wageType === 'daily' ? `दैनिक ₹${currentStaff.dailyRate || currentStaff.wageAmount}/दिन` : `मासिक ₹${currentStaff.monthlySalary || currentStaff.salary}/माह`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Working Days Breakdown */}
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="p-2 bg-emerald-50 rounded-xl border border-emerald-100">
+                  <span className="text-[10px] text-emerald-700 block">🟢 Present</span>
+                  <span className="font-extrabold text-emerald-800 text-sm">{currentStaff.presentDays || currentStaff.presentCount || 0} दिन</span>
+                </div>
+                <div className="p-2 bg-amber-50 rounded-xl border border-amber-100">
+                  <span className="text-[10px] text-amber-700 block">🟡 Half Day</span>
+                  <span className="font-extrabold text-amber-800 text-sm">{currentStaff.halfDays || currentStaff.halfDayCount || 0} दिन</span>
+                </div>
+                <div className="p-2 bg-rose-50 rounded-xl border border-rose-100">
+                  <span className="text-[10px] text-rose-700 block">🔴 Absent</span>
+                  <span className="font-extrabold text-rose-800 text-sm">{currentStaff.absentDays || currentStaff.absentCount || 0} दिन</span>
+                </div>
+              </div>
+
+              {/* Detailed Financial Calculation */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2 text-xs">
+                <div className="flex justify-between text-slate-600">
+                  <span>कुल काम के दिन (Payable Days):</span>
+                  <span className="font-extrabold text-slate-900">{currentStaff.payableDays || 0} दिन</span>
+                </div>
+                <div className="flex justify-between text-slate-800 font-bold border-t border-slate-200 pt-1.5">
+                  <span>💵 बना हुआ मूल वेतन:</span>
+                  <span>₹ {(currentStaff.earnedSalary || 0).toLocaleString('en-IN')}</span>
+                </div>
+                {currentStaff.overtimeEarnings > 0 && (
+                  <div className="flex justify-between text-indigo-600 font-bold">
+                    <span>⏱️ ओवर-टाइम कमाई:</span>
+                    <span>+₹ {currentStaff.overtimeEarnings}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-rose-600 font-bold border-t border-slate-200 pt-1.5">
+                  <span>💸 बीच में लिया गया एडवांस (Deduction):</span>
+                  <span>-₹ {(currentStaff.totalAdvance || 0).toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex justify-between items-center bg-emerald-600 text-white p-3 rounded-xl font-extrabold text-sm mt-2 shadow-sm">
+                  <span>💳 कुल शुद्ध बाकी (Net Payable):</span>
+                  <span className="text-base">₹ {(currentStaff.netPayable || 0).toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+
+              {/* Bottom Actions inside Slip Modal */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  onClick={() => handleShareWhatsApp(currentStaff)}
+                  className="py-3 bg-[#25D366] hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>WhatsApp पर्ची</span>
+                </button>
+
+                <button
+                  onClick={() => window.print()}
+                  className="py-3 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>प्रिंट / PDF</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* MODAL 2: LOANS & ADVANCES (Advance vs Long-Term Loan)                     */}
+        {/* ========================================================================= */}
+        {showLoanAdvanceModal && currentStaff && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
+            <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-100 space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <h3 className="text-base font-extrabold text-slate-900">एडवांस व लोन एंट्री</h3>
+                <button onClick={() => setShowLoanAdvanceModal(false)} className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Tab Switcher: Advance vs Loan */}
+              <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold">
+                <button
+                  onClick={() => setLoanAdvanceTab("advance")}
+                  className={`flex-1 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 ${loanAdvanceTab === "advance" ? "bg-white text-indigo-700 shadow-xs font-extrabold" : "text-slate-500"}`}
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>1. बीच में एडवांस</span>
+                </button>
+                <button
+                  onClick={() => setLoanAdvanceTab("loan")}
+                  className={`flex-1 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 ${loanAdvanceTab === "loan" ? "bg-white text-indigo-700 shadow-xs font-extrabold" : "text-slate-500"}`}
+                >
+                  <Landmark className="w-3.5 h-3.5" />
+                  <span>2. स्टाफ लोन (EMI)</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveLoanOrAdvance} className="space-y-3.5 text-xs font-bold text-slate-700">
+                <div>
+                  <label className="block mb-1">{loanAdvanceTab === 'loan' ? 'लोन राशि (Loan Amount ₹) *' : 'एडवांस राशि (Advance ₹) *'}</label>
+                  <input 
+                    type="number"
+                    placeholder="उदा. 2000"
+                    value={advanceAmount}
+                    onChange={(e) => setAdvanceAmount(e.target.value)}
+                    required
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {loanAdvanceTab === "loan" && (
+                  <div>
+                    <label className="block mb-1">ईएमआई अवधि (किस्त महीने)</label>
+                    <select
+                      value={loanEmiMonths}
+                      onChange={(e) => setLoanEmiMonths(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                    >
+                      <option value="2">2 महीने में कटौती (2 किस्तों में)</option>
+                      <option value="3">3 महीने में कटौती (3 किस्तों में)</option>
+                      <option value="6">6 महीने में कटौती (6 किस्तों में)</option>
+                      <option value="12">12 महीने में कटौती (1 साल)</option>
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block mb-1">भुगतान माध्यम (Payment Mode)</label>
+                  <select
+                    value={advancePaymentMode}
+                    onChange={(e) => setAdvancePaymentMode(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                  >
+                    <option value="cash">Cash (नकद)</option>
+                    <option value="online">Online / UPI (PhonePe/GPay)</option>
+                    <option value="bank">Bank Transfer</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block mb-1">विवरण / टिप्पणी (Notes)</label>
+                  <input 
+                    type="text"
+                    placeholder="उदा. त्योहार खर्च / राशन"
+                    value={advanceNotes}
+                    onChange={(e) => setAdvanceNotes(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingAdvance}
+                  className="w-full py-3 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white rounded-xl font-bold text-sm shadow-md transition disabled:opacity-50 cursor-pointer"
+                >
+                  {savingAdvance ? "सुरक्षित हो रहा है..." : loanAdvanceTab === 'loan' ? "लोन सुरक्षित करें" : "एडवांस सुरक्षित करें"}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* MODAL 3: ADD / EDIT STAFF & SALARY WITH DUAL INDEPENDENT BOXES            */}
+        {/* ========================================================================= */}
         {showStaffModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
             <div className="bg-white rounded-3xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100">
@@ -1034,66 +1280,6 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                     </button>
                   )}
                 </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* MODAL 2: ADD ADVANCE */}
-        {showAdvanceModal && currentStaff && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
-            <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-100">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-                <h3 className="text-base font-extrabold text-slate-900">Add Loan / Advance</h3>
-                <button onClick={() => setShowAdvanceModal(false)} className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleSaveAdvance} className="space-y-4 text-xs font-bold text-slate-700">
-                <div>
-                  <label className="block mb-1">Advance Amount (₹) *</label>
-                  <input 
-                    type="number"
-                    placeholder="e.g. 2000"
-                    value={advanceAmount}
-                    onChange={(e) => setAdvanceAmount(e.target.value)}
-                    required
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block mb-1">Payment Mode</label>
-                  <select
-                    value={advancePaymentMode}
-                    onChange={(e) => setAdvancePaymentMode(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
-                  >
-                    <option value="cash">Cash (नकद)</option>
-                    <option value="online">Online / UPI</option>
-                    <option value="bank">Bank Transfer</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block mb-1">Notes / Reason</label>
-                  <input 
-                    type="text"
-                    placeholder="e.g. Festival advance / Ration"
-                    value={advanceNotes}
-                    onChange={(e) => setAdvanceNotes(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={savingAdvance}
-                  className="w-full py-3 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white rounded-xl font-bold text-sm shadow-md transition disabled:opacity-50 cursor-pointer"
-                >
-                  {savingAdvance ? "Saving..." : "Save Advance"}
-                </button>
               </form>
             </div>
           </div>
