@@ -76,12 +76,14 @@ export const getPagarBookSummary = async (req, res) => {
     const endDate = new Date(year, month - 1, daysInMonth, 23, 59, 59);
 
     const isCurrentMonth = (now.getFullYear() === year && (now.getMonth() + 1) === month);
-    const daysConsidered = isCurrentMonth ? now.getDate() : daysInMonth;
+    // For current month, count only elapsed days up to today (e.g. 1..9 Sep). For past months, count all days.
+    const daysConsidered = isCurrentMonth ? Math.min(now.getDate(), daysInMonth) : daysInMonth;
 
     const allStaff = await Staff.find({ companyId: req.companyId, isActive: true }).sort({ name: 1 });
 
     // Fetch Attendance records for this month
     const attendanceRecords = await Attendance.find({
+      companyId: req.companyId,
       date: { $gte: startDate, $lte: endDate }
     });
 
@@ -101,35 +103,40 @@ export const getPagarBookSummary = async (req, res) => {
 
       // Check today's status
       const todayRecord = staffAtt.find(a => new Date(a.date).toDateString() === todayStr);
-      const todayStatus = todayRecord ? todayRecord.status : 'present'; // Default Present
+      const todayRaw = todayRecord ? todayRecord.status : 'present';
+      const todayStatus = (todayRaw === 'half-day' || todayRaw === 'halfday' || todayRaw === 'half_day') 
+        ? 'half_day' 
+        : (todayRaw === 'absent' || todayRaw === 'leave') 
+        ? 'absent' 
+        : 'present';
 
-      // Build Day-by-Day Attendance Map for every day of the month (1 to 30/31)
+      // Build Day-by-Day Attendance Map for elapsed days (1 to daysConsidered)
       const dailyAttendanceMap = {};
-      for (let day = 1; day <= daysInMonth; day++) {
+      let absentCount = 0;
+      let halfDayCount = 0;
+      let presentCount = 0;
+
+      for (let day = 1; day <= daysConsidered; day++) {
         const matchingRecord = staffAtt.find(a => {
           const ad = new Date(a.date);
           return ad.getDate() === day && ad.getMonth() === (month - 1) && ad.getFullYear() === year;
         });
-        dailyAttendanceMap[day] = matchingRecord ? matchingRecord.status : 'present'; // Default Present
+
+        const rawStatus = matchingRecord ? matchingRecord.status : 'present'; // default present
+        const status = (rawStatus === 'half-day' || rawStatus === 'halfday' || rawStatus === 'half_day') 
+          ? 'half_day' 
+          : (rawStatus === 'absent' || rawStatus === 'leave') 
+          ? 'absent' 
+          : 'present';
+
+        dailyAttendanceMap[day] = status;
+
+        if (status === 'absent') absentCount++;
+        else if (status === 'half_day') halfDayCount++;
+        else presentCount++;
       }
 
-      // Count Absents and Half Days
-      let absentCount = 0;
-      let halfDayCount = 0;
-      let explicitlyPresentCount = 0;
-
-      staffAtt.forEach(a => {
-        const d = new Date(a.date);
-        const dayNum = d.getDate();
-        if (dayNum <= daysConsidered) {
-          if (a.status === 'absent' || a.status === 'leave') absentCount++;
-          else if (a.status === 'half-day') halfDayCount++;
-          else if (a.status === 'present') explicitlyPresentCount++;
-        }
-      });
-
-      // Default Logic: Staff is Present on every day unless marked Absent or Half-Day
-      const presentCount = Math.max(0, daysConsidered - absentCount - halfDayCount);
+      // Default Logic: effective worked days = present + (halfDay * 0.5)
       const workedEffectiveDays = presentCount + (halfDayCount * 0.5);
 
       // Paid Leaves (सवेतन अवकाश) Calculation:
@@ -137,32 +144,32 @@ export const getPagarBookSummary = async (req, res) => {
       const paidLeavesBenefited = Math.min(absentCount, allowedPaidLeaves);
       const unpaidAbsentDays = Math.max(0, absentCount - paidLeavesBenefited);
 
-      // Total Payable Days = Actual Worked Days + Paid Leaves (Capped at daysConsidered/daysInMonth)
-      const payableDays = Math.min(daysInMonth, workedEffectiveDays + paidLeavesBenefited);
+      // Total Payable Days = Worked Effective Days + Paid Leaves (Exact decimal e.g. 6.5)
+      const payableDays = Math.round((workedEffectiveDays + paidLeavesBenefited) * 10) / 10;
 
       // Daily vs Monthly Wage Calculation:
       const isDaily = (s.wageType === 'daily');
-      const baseSalary = Number(s.wageAmount || s.salary || 0);
+      const dailyRateVal = Number(s.dailyRate || s.wageAmount || s.salary || 0);
+      const monthlySalaryVal = Number(s.monthlySalary || s.salary || s.wageAmount || 0);
 
       let perDaySalary = 0;
       let earnedSalary = 0;
       let monthlyEquivalent = 0;
 
       if (isDaily) {
-        // Daily Basis: wageAmount is daily rate directly (e.g. ₹500/day)
-        perDaySalary = baseSalary;
+        perDaySalary = dailyRateVal;
         earnedSalary = Math.round(perDaySalary * payableDays);
-        monthlyEquivalent = baseSalary * daysInMonth;
+        monthlyEquivalent = dailyRateVal * daysInMonth;
       } else {
-        // Monthly Basis: wageAmount is monthly salary (e.g. ₹15,000/month)
-        perDaySalary = daysInMonth > 0 ? (baseSalary / daysInMonth) : 0;
+        perDaySalary = daysInMonth > 0 ? (monthlySalaryVal / daysInMonth) : 0;
         earnedSalary = Math.round(perDaySalary * payableDays);
-        monthlyEquivalent = baseSalary;
+        monthlyEquivalent = monthlySalaryVal;
       }
 
       // Overtime & Commission
       const otTransactions = staffTx.filter(t => t.type === 'overtime');
       const otEarnings = otTransactions.reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
+      const overtimeHours = otTransactions.reduce((sum, t) => sum + (Number(t.hours || 0) || 0), 0);
 
       const commTransactions = staffTx.filter(t => t.type === 'commission' || t.type === 'incentive');
       const commEarnings = commTransactions.reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
@@ -171,16 +178,19 @@ export const getPagarBookSummary = async (req, res) => {
       const advanceTransactions = staffTx.filter(t => ['advance', 'salary_settlement', 'deduction'].includes(t.type));
       const totalAdvance = advanceTransactions.reduce((sum, t) => sum + (Number(t.debit) || 0), 0);
 
-      const netPayable = Math.max(0, (earnedSalary + otEarnings + commEarnings) - totalAdvance);
+      const grossSalary = earnedSalary + otEarnings + commEarnings;
+      const netPayable = Math.max(0, grossSalary - totalAdvance);
 
       return {
         _id: s._id,
         name: s.name,
         mobileNumber: s.mobileNumber || '',
-        position: s.position || 'Worker',
-        wageType: s.wageType || 'monthly',
+        position: s.position || 'Staff',
+        wageType: s.wageType || 'daily',
+        dailyRate: dailyRateVal,
+        monthlySalary: monthlySalaryVal,
         isDaily,
-        baseSalary,
+        baseSalary: isDaily ? dailyRateVal : monthlySalaryVal,
         monthlyEquivalent,
         perDaySalary: Math.round(perDaySalary),
         daysInMonth,
@@ -188,18 +198,34 @@ export const getPagarBookSummary = async (req, res) => {
         todayStatus,
         dailyAttendanceMap,
         presentCount,
+        presentDays: presentCount,
         halfDayCount,
+        halfDays: halfDayCount,
         absentCount,
+        absentDays: absentCount,
         allowedPaidLeaves,
+        paidLeavesAllowed: allowedPaidLeaves,
         paidLeavesBenefited,
+        paidLeavesCount: paidLeavesBenefited,
         unpaidAbsentDays,
         workedEffectiveDays,
         payableDays,
         earnedSalary,
+        overtimeHours,
         otEarnings,
+        overtimeEarnings: otEarnings,
         commEarnings,
+        commissionEarnings: commEarnings,
+        grossSalary,
         totalAdvance,
         netPayable,
+        advancesList: advanceTransactions.map(t => ({
+          _id: t._id,
+          amount: t.debit || t.amount,
+          date: t.date,
+          paymentMode: t.paymentMode || 'cash',
+          notes: t.notes || 'Advance'
+        })),
         salesTarget: Number(s.salesTarget || 0),
         commissionPercent: Number(s.commissionPercent || 0),
         overtimeRatePerHour: Number(s.overtimeRatePerHour || 0),

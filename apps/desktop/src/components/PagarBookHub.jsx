@@ -14,7 +14,8 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     totalCompanySalaryEarned: 0,
     totalCompanyAdvanceGiven: 0,
     totalCompanyNetPayable: 0,
-    daysInMonth: 30
+    daysInMonth: 30,
+    daysConsidered: new Date().getDate()
   });
   const [loading, setLoading] = useState(false);
   const [companyName, setCompanyName] = useState("Ganesh traders sarangarh");
@@ -81,14 +82,50 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     setCurrentYear(newY);
   };
 
-  // 1-Tap Attendance Mark for any day
+  // 1-Tap Attendance Mark for any day (Present, Half Day, Absent)
   const handleMarkDayAttendance = async (staffId, dayNum, status) => {
     try {
+      // Optimistic instant UI update
       setSummaryData(prev => {
         const updatedStaff = (prev.staff || []).map(s => {
           if (s._id === staffId) {
             const newMap = { ...(s.dailyAttendanceMap || {}), [dayNum]: status };
-            return { ...s, dailyAttendanceMap: newMap };
+            
+            // Recalculate counts dynamically
+            const daysLimit = prev.daysConsidered || new Date().getDate();
+            let pCount = 0;
+            let hdCount = 0;
+            let abCount = 0;
+            for (let d = 1; d <= daysLimit; d++) {
+              const st = newMap[d] || 'present';
+              if (st === 'absent') abCount++;
+              else if (st === 'half_day') hdCount++;
+              else pCount++;
+            }
+
+            const effDays = pCount + (hdCount * 0.5);
+            const paidBenefit = Math.min(abCount, Number(s.paidLeavesAllowed || 0));
+            const payDays = Math.round((effDays + paidBenefit) * 10) / 10;
+            
+            const rate = s.wageType === 'daily' 
+              ? (s.dailyRate || s.wageAmount || 0) 
+              : ((s.monthlySalary || s.salary || 0) / (prev.daysInMonth || 30));
+            const earned = Math.round(rate * payDays);
+            const net = Math.max(0, (earned + (s.overtimeEarnings || 0) + (s.commissionEarnings || 0)) - (s.totalAdvance || 0));
+
+            return { 
+              ...s, 
+              dailyAttendanceMap: newMap,
+              presentDays: pCount,
+              presentCount: pCount,
+              halfDays: hdCount,
+              halfDayCount: hdCount,
+              absentDays: abCount,
+              absentCount: abCount,
+              payableDays: payDays,
+              earnedSalary: earned,
+              netPayable: net
+            };
           }
           return s;
         });
@@ -273,10 +310,10 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
       `📅 *महीना:* ${mName} ${currentYear}`,
       `💼 *वेतन दर:* ${staff.wageType === 'daily' ? `₹${staff.dailyRate || staff.wageAmount}/दिन (दैनिक)` : `₹${staff.monthlySalary || staff.salary}/माह (मासिक)`}`,
       `━━━━━━━━━━━━━━━━━━━━`,
-      `📊 *हाजिरी:*`,
-      `  🟢 उपस्थित (P): ${staff.presentDays || 0} दिन`,
-      `  🟡 हाफ डे (HD): ${staff.halfDays || 0} दिन`,
-      `  🔴 अनुपस्थित (AB): ${staff.absentDays || 0} दिन`,
+      `📊 *हाजिरी (आज तक):*`,
+      `  🟢 उपस्थित (P): ${staff.presentDays || staff.presentCount || 0} दिन`,
+      `  🟡 हाफ डे (HD): ${staff.halfDays || staff.halfDayCount || 0} दिन`,
+      `  🔴 अनुपस्थित (AB): ${staff.absentDays || staff.absentCount || 0} दिन`,
       `  🎁 सवेतन छुट्टी: ${staff.paidLeavesCount || 0} दिन`,
       `  ✅ कुल वेतन योग्य दिन: ${staff.payableDays || 0} दिन`,
       `━━━━━━━━━━━━━━━━━━━━`,
@@ -296,7 +333,10 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
   };
 
   const monthShortName = new Date(currentYear, currentMonth - 1).toLocaleString('en-US', { month: 'short' });
-  const daysCount = summaryData.daysInMonth || 30;
+  
+  // Show only elapsed days (1 to daysConsidered, e.g. 1 to 9 for current month, descending 9 down to 1)
+  const isNowMonth = (new Date().getFullYear() === currentYear && (new Date().getMonth() + 1) === currentMonth);
+  const activeDaysCount = isNowMonth ? Math.min(new Date().getDate(), summaryData.daysInMonth || 30) : (summaryData.daysInMonth || 30);
 
   const getDayShortName = (y, m, d) => {
     const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -559,7 +599,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                     <div>
                       <h4 className="text-sm font-extrabold text-slate-900">{monthShortName} {currentYear}</h4>
                       <div className="text-xs text-slate-400 mt-0.5">
-                        Date: 01 {monthShortName}'{String(currentYear).slice(2)} - {daysCount} {monthShortName}'{String(currentYear).slice(2)}
+                        Date: 01 {monthShortName}'{String(currentYear).slice(2)} - {String(activeDaysCount).padStart(2, '0')} {monthShortName}'{String(currentYear).slice(2)}
                       </div>
                     </div>
                     <ChevronUp className="w-5 h-5 text-slate-400" />
@@ -730,21 +770,29 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                 <div className="grid grid-cols-3 gap-2">
                   <div className="p-2.5 bg-slate-50/70 rounded-xl border border-slate-100">
                     <span className="text-[11px] text-slate-500 font-medium block">Present</span>
-                    <span className="text-base font-extrabold text-slate-900">{currentStaff.presentDays || 0}</span>
+                    <span className="text-base font-extrabold text-slate-900">
+                      {currentStaff.presentDays ?? currentStaff.presentCount ?? 0}
+                    </span>
                   </div>
                   <div className="p-2.5 bg-slate-50/70 rounded-xl border border-slate-100">
                     <span className="text-[11px] text-slate-500 font-medium block">Absent</span>
-                    <span className="text-base font-extrabold text-slate-900">{currentStaff.absentDays || 0}</span>
+                    <span className="text-base font-extrabold text-slate-900">
+                      {currentStaff.absentDays ?? currentStaff.absentCount ?? 0}
+                    </span>
                   </div>
                   <div className="p-2.5 bg-slate-50/70 rounded-xl border border-slate-100">
                     <span className="text-[11px] text-slate-500 font-medium block">Half Day</span>
-                    <span className="text-base font-extrabold text-slate-900">{currentStaff.halfDays || 0}</span>
+                    <span className="text-base font-extrabold text-slate-900">
+                      {currentStaff.halfDays ?? currentStaff.halfDayCount ?? 0}
+                    </span>
                   </div>
 
                   <div className="p-2.5 bg-slate-50/70 rounded-xl border border-slate-100 flex items-center justify-between">
                     <div>
                       <span className="text-[11px] text-slate-500 font-medium block">Leave</span>
-                      <span className="text-base font-extrabold text-slate-900">{currentStaff.paidLeavesCount || 0}</span>
+                      <span className="text-base font-extrabold text-slate-900">
+                        {currentStaff.paidLeavesCount ?? currentStaff.paidLeavesBenefited ?? 0}
+                      </span>
                     </div>
                     <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
                   </div>
@@ -788,10 +836,10 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                 </div>
               </div>
 
-              {/* Day-by-Day List (Descending Order) */}
+              {/* Day-by-Day List (Descending Order from Today down to 1st) */}
               <div className="space-y-2.5 pt-1">
-                {Array.from({ length: daysCount }, (_, i) => daysCount - i).map((dayNum) => {
-                  const status = currentStaff.dailyAttendanceMap?.[dayNum] || "none";
+                {Array.from({ length: activeDaysCount }, (_, i) => activeDaysCount - i).map((dayNum) => {
+                  const status = currentStaff.dailyAttendanceMap?.[dayNum] || "present";
                   const dayName = getDayShortName(currentYear, currentMonth, dayNum);
 
                   return (
@@ -811,6 +859,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                       </div>
 
                       <div className="flex items-center gap-2">
+                        {/* P Button */}
                         <button
                           onClick={() => handleMarkDayAttendance(currentStaff._id, dayNum, "present")}
                           className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer ${
@@ -822,6 +871,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                           P
                         </button>
 
+                        {/* HD Button */}
                         <button
                           onClick={() => handleMarkDayAttendance(currentStaff._id, dayNum, "half_day")}
                           className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer ${
@@ -833,6 +883,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                           HD
                         </button>
 
+                        {/* AB Button */}
                         <button
                           onClick={() => handleMarkDayAttendance(currentStaff._id, dayNum, "absent")}
                           className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer ${
@@ -845,7 +896,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                         </button>
 
                         <button 
-                          onClick={() => alert(`Day ${dayNum} ${monthShortName}: ${status}`)}
+                          onClick={() => alert(`Day ${dayNum} ${monthShortName}: ${status === 'present' ? 'Present (पूर्ण दिन)' : status === 'half_day' ? 'Half Day (आधा दिन)' : 'Absent (छुट्टी)'}`)}
                           className="p-2 bg-[#F1F5F9] text-blue-600 rounded-xl hover:bg-slate-200 cursor-pointer"
                         >
                           <ChevronDown className="w-4 h-4" />
