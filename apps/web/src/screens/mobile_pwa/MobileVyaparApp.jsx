@@ -225,9 +225,11 @@ function MobileVyaparAppContent() {
   const [savingEditSalary, setSavingEditSalary] = useState(false); // 'drawings' (Ghar Kharch) or 'operating' (Dukaan Kharch)
   const [selectedFamilyMember, setSelectedFamilyMember] = useState("Self");
   const [customFamilyMember, setCustomFamilyMember] = useState("");
+  const [gharKharchDate, setGharKharchDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [gharKharchTitle, setGharKharchTitle] = useState("");
   const [gharKharchAmount, setGharKharchAmount] = useState("");
   const [gharKharchCategory, setGharKharchCategory] = useState("राशन/किराना");
+  const [customGharKharchCategory, setCustomGharKharchCategory] = useState("");
   const [gharKharchPaymentMode, setGharKharchPaymentMode] = useState("cash");
   const [gharKharchNotes, setGharKharchNotes] = useState("");
   const [savingGharKharch, setSavingGharKharch] = useState(false);
@@ -488,11 +490,17 @@ function MobileVyaparAppContent() {
       alert("कृपया सही राशि (₹) दर्ज करें!");
       return;
     }
-    const finalMember = selectedFamilyMember === "अन्य (Custom)" ? (customFamilyMember.trim() || "Family Member") : selectedFamilyMember;
-    const flowLabel = gharKharchFlow === "received" ? "पैसा लिया (Borrowing/Inflow)" : "पैसा दिया (Ghar Kharch/Drawings)";
+    const finalMember = (selectedFamilyMember === "अन्य (Custom)" || selectedFamilyMember === "+ नया सदस्य")
+      ? (customFamilyMember.trim() || "अन्य सदस्य")
+      : selectedFamilyMember;
+
+    const finalCategory = (gharKharchCategory === "अन्य (Custom Category)" || gharKharchCategory === "+ नया खर्च")
+      ? (customGharKharchCategory.trim() || "विविध घरेलू खर्च")
+      : gharKharchCategory;
+
     const defaultTitle = gharKharchType === "drawings" 
-      ? `${gharKharchCategory} - ${finalMember} (${gharKharchFlow === 'received' ? 'लिया' : 'दिया'})` 
-      : `${gharKharchCategory} (दुकान खर्च)`;
+      ? `${finalCategory} - ${finalMember}` 
+      : `${finalCategory} (दुकान खर्च)`;
     const finalTitle = gharKharchTitle.trim() || defaultTitle;
 
     setSavingGharKharch(true);
@@ -500,19 +508,19 @@ function MobileVyaparAppContent() {
       const payload = {
         title: finalTitle,
         amount: Number(gharKharchAmount),
-        category: gharKharchCategory,
+        category: finalCategory,
         expenseType: gharKharchType,
         transactionFlow: gharKharchFlow,
         familyMember: gharKharchType === 'drawings' ? finalMember : '',
         paymentMethod: gharKharchPaymentMode,
         description: gharKharchNotes.trim(),
         notes: gharKharchNotes.trim(),
-        date: new Date()
+        date: gharKharchDate ? new Date(gharKharchDate) : new Date()
       };
 
       await api.post("/expenses", payload);
       const successMsg = gharKharchType === 'drawings'
-        ? `🏡 ${finalMember} से ${gharKharchFlow === 'received' ? '₹' + gharKharchAmount + ' लिया गया' : 'को ₹' + gharKharchAmount + ' दिया गया'} सफलतापूर्वक दर्ज हो गया!`
+        ? `🏡 ${finalMember} के लिए ${finalCategory} (₹${gharKharchAmount}) सफलतापूर्वक दर्ज हो गया!`
         : `🏢 दुकान खर्च ₹${gharKharchAmount} दर्ज हो गया!`;
       alert(successMsg);
       
@@ -520,7 +528,8 @@ function MobileVyaparAppContent() {
       setGharKharchAmount("");
       setGharKharchNotes("");
       setCustomFamilyMember("");
-      setGharKharchFlow("given");
+      setCustomGharKharchCategory("");
+      setGharKharchCategory("राशन/किराना");
       handleToggleGharKharchEntry(false);
       fetchGharKharchData();
     } catch (err) {
@@ -529,6 +538,35 @@ function MobileVyaparAppContent() {
     } finally {
       setSavingGharKharch(false);
     }
+  };
+
+  const handleShareGharKharchWhatsApp = (memberFilter = "all") => {
+    const allItems = gharKharchList;
+    const filtered = memberFilter === "all"
+      ? allItems
+      : allItems.filter(it => (it.familyMember || 'Unassigned').toLowerCase() === memberFilter.toLowerCase());
+    
+    const total = filtered.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+    const titleHeader = memberFilter === "all"
+      ? "*🏡 सम्पूर्ण फैमिली घर खर्च विवरण (All Members)*"
+      : `*🏡 ${memberFilter} का व्यक्तिगत घर खर्च विवरण*`;
+
+    const lines = [
+      titleHeader,
+      `🏢 *${companyDisplayName}*`,
+      `📅 *तारीख:* ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+      "--------------------------------",
+      ...filtered.slice(0, 15).map(it => {
+        const dStr = it.date ? new Date(it.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'आज';
+        return `• ${dStr} | ${it.familyMember ? `[${it.familyMember}] ` : ''}${it.category || it.title || 'खर्च'} : ₹${Number(it.amount || 0).toLocaleString('en-IN')}`;
+      }),
+      "--------------------------------",
+      `💰 *कुल योग (Total Spent): ₹${total.toLocaleString('en-IN')}* (${filtered.length} एंट्रियां)`,
+      "--------------------------------",
+      "_VyaparBook सुरक्षित फैमिली लेजर_"
+    ].join(String.fromCharCode(10));
+
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(lines)}`, '_blank');
   };
 
   const handleDeleteGharKharch = async (id) => {
