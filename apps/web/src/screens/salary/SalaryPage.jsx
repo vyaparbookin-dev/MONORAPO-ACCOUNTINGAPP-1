@@ -122,7 +122,6 @@ const SalaryPage = () => {
         date: targetDate
       });
 
-      // Refetch full summary to recalculate salaries accurately
       fetchData(pagarBookMonth, pagarBookYear);
     } catch (err) {
       console.error("Error marking attendance:", err);
@@ -135,7 +134,6 @@ const SalaryPage = () => {
     setMonthlySalaryInput(val);
     if (val && Number(val) > 0) {
       setActiveWageType("monthly");
-      // Optional auto calculation preview: dailyRateInput could stay empty or separate
     }
   };
 
@@ -168,11 +166,11 @@ const SalaryPage = () => {
     setStaffName(staff.name || "");
     if (staff.wageType === "monthly") {
       setMonthlySalaryInput(staff.salary || staff.wageAmount || "");
-      setDailyRateInput(staff.dailyRate ? staff.dailyRate : "");
+      setDailyRateInput(staff.dailyRate ? String(staff.dailyRate) : "");
       setActiveWageType("monthly");
     } else {
       setDailyRateInput(staff.dailyRate || staff.wageAmount || staff.salary || "");
-      setMonthlySalaryInput(staff.monthlySalary ? staff.monthlySalary : "");
+      setMonthlySalaryInput(staff.monthlySalary ? String(staff.monthlySalary) : "");
       setActiveWageType("daily");
     }
     setStaffMobile(staff.mobileNumber || "");
@@ -183,6 +181,37 @@ const SalaryPage = () => {
     setStaffCommission(staff.commissionPercent ? String(staff.commissionPercent) : "");
     setShowAddStaffForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteStaff = async (staffId, sName) => {
+    const isConfirmed = window.confirm(`⚠️ क्या आप वाकई स्टाफ '${sName}' को हटाना (Delete) चाहते हैं?\n\nहटाने के बाद इस स्टाफ का खाता सूची से हट जाएगा।`);
+    if (!isConfirmed) return;
+
+    try {
+      await api.delete(`/staff/${staffId}`);
+      alert(`✅ स्टाफ '${sName}' सफलतापूर्वक हटा दिया गया!`);
+      if (activeView === "staff_hub" && selectedStaffId === staffId) {
+        setActiveView("list");
+      }
+      fetchData(pagarBookMonth, pagarBookYear);
+    } catch (err) {
+      console.error("Failed to delete staff:", err);
+      alert(err.response?.data?.error || "स्टाफ हटाने में त्रुटि आई।");
+    }
+  };
+
+  const handleDeleteAdvance = async (txId) => {
+    const isConfirmed = window.confirm("⚠️ क्या आप इस एडवांस प्रविष्टि को हटाना (Delete) चाहते हैं?");
+    if (!isConfirmed) return;
+
+    try {
+      await api.delete(`/staff/transaction/${txId}`);
+      alert("✅ एडवांस प्रविष्टि हटा दी गई!");
+      fetchData(pagarBookMonth, pagarBookYear);
+    } catch (err) {
+      console.error("Failed to delete transaction:", err);
+      alert(err.response?.data?.error || "एडवांस हटाने में त्रुटि आई।");
+    }
   };
 
   const handleSaveStaffForm = async (e) => {
@@ -256,9 +285,8 @@ const SalaryPage = () => {
     }
     setSavingAdvance(true);
     try {
-      await api.post("/staff/action", {
+      await api.post("/staff/advance", {
         staffId: selectedStaffId,
-        type: "advance",
         amount: Number(advanceAmount),
         paymentMode: advancePaymentMode,
         notes: advanceNotes.trim() || "बीच में लिया गया एडवांस",
@@ -286,9 +314,8 @@ const SalaryPage = () => {
     }
     setSavingOt(true);
     try {
-      await api.post("/staff/action", {
+      await api.post("/staff/overtime", {
         staffId: selectedStaffId,
-        type: "overtime",
         hours: Number(otHours),
         rate: otRateOverride ? Number(otRateOverride) : undefined,
         notes: `ओवर-टाइम ${otHours} घंटे`,
@@ -310,14 +337,14 @@ const SalaryPage = () => {
   // WhatsApp Salary Slip Share
   const handleShareWhatsApp = (staff) => {
     if (!staff) return;
-    const monthName = new Date(pagarBookYear, pagarBookMonth - 1).toLocaleString('hi-IN', { month: 'long' });
+    const mName = new Date(pagarBookYear, pagarBookMonth - 1).toLocaleString('hi-IN', { month: 'long' });
     
     const lines = [
       `*🧾 मासिक वेतन पर्ची (Salary Slip)*`,
       `━━━━━━━━━━━━━━━━━━━━`,
       `👤 *कर्मचारी:* ${staff.name}`,
       `📱 *मोबाइल:* ${staff.mobileNumber || "N/A"}`,
-      `📅 *महीना:* ${monthName} ${pagarBookYear} (कुल दिन: ${staff.daysInMonth || pagarBookData.daysInMonth || 30})`,
+      `📅 *महीना:* ${mName} ${pagarBookYear} (कुल दिन: ${staff.daysInMonth || pagarBookData.daysInMonth || 30})`,
       `💼 *वेतन प्रकार:* ${staff.wageType === 'daily' ? `दैनिक दिहाड़ी (₹${staff.dailyRate || staff.wageAmount}/दिन)` : `मासिक वेतन (₹${staff.monthlySalary || staff.salary}/माह)`}`,
       `━━━━━━━━━━━━━━━━━━━━`,
       `*📊 हाजिरी विवरण:*`,
@@ -521,7 +548,7 @@ const SalaryPage = () => {
                 <div>
                   <h3 className="text-lg md:text-xl font-black text-slate-900 flex items-center gap-2">
                     <span className="w-3 h-3 rounded-full bg-indigo-600 inline-block"></span>
-                    {editingStaffId ? "स्टाफ व वेतन विवरण संपादित करें (Edit Staff)" : "नया स्टाफ जोड़ें (Add New Staff)"}
+                    {editingStaffId ? "✏️ स्टाफ व वेतन विवरण संपादित करें (Edit Staff & Salary)" : "➕ नया स्टाफ जोड़ें (Add New Staff)"}
                   </h3>
                   <p className="text-xs md:text-sm text-slate-500 font-medium">
                     दोनों अलग-अलग फील्ड उपलब्ध हैं: मासिक वेतन या दैनिक दिहाड़ी दर में से कोई भी भरें
@@ -579,7 +606,7 @@ const SalaryPage = () => {
                   </div>
                 </div>
 
-                {/* Row 2: DUAL INDEPENDENT SALARY BOXES (Highlight & Clean Selection) */}
+                {/* Row 2: DUAL INDEPENDENT SALARY BOXES */}
                 <div className="bg-indigo-50/70 p-4 md:p-5 rounded-2xl border border-indigo-200">
                   <div className="mb-3 flex items-center justify-between">
                     <div>
@@ -725,7 +752,7 @@ const SalaryPage = () => {
                     className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md shadow-indigo-100 transition disabled:opacity-50 flex items-center gap-2"
                   >
                     {savingStaff ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                    <span>{editingStaffId ? "स्टाफ अपडेट करें (Update Staff)" : "स्टाफ सुरक्षित करें (Save Staff)"}</span>
+                    <span>{editingStaffId ? "स्टाफ व वेतन अपडेट करें (Update Staff)" : "स्टाफ सुरक्षित करें (Save Staff)"}</span>
                   </button>
                 </div>
               </form>
@@ -775,7 +802,7 @@ const SalaryPage = () => {
                       className="bg-white rounded-2xl border border-slate-200 hover:border-indigo-400 hover:shadow-md transition p-4 md:p-5 flex flex-col justify-between group"
                     >
                       <div>
-                        {/* Card Top: Staff Header */}
+                        {/* Card Top: Staff Header with Clear Edit & Delete Buttons */}
                         <div className="flex items-start justify-between gap-2 mb-3">
                           <div className="flex items-center gap-3">
                             <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100 text-indigo-700 flex items-center justify-center font-black text-lg border border-indigo-200">
@@ -801,16 +828,26 @@ const SalaryPage = () => {
                             </div>
                           </div>
 
-                          <button
-                            onClick={() => handleOpenEditStaff(staff)}
-                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
-                            title="स्टाफ विवरण बदलें"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
+                          {/* Quick Action Icons: Edit & Delete */}
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleOpenEditStaff(staff)}
+                              className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition border border-slate-200"
+                              title="स्टाफ व वेतन एडिट करें (Edit Staff & Salary)"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteStaff(staff._id, staff.name)}
+                              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition border border-slate-200"
+                              title="स्टाफ हटाएं (Delete Staff)"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
 
-                        {/* Bracket Counters Banner (As requested by User!) */}
+                        {/* Bracket Counters Banner */}
                         <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 mb-3 text-[11px] font-bold text-slate-700 flex flex-wrap items-center gap-1.5">
                           <span className="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded border border-emerald-200">
                             [ 🟢 उपस्थित: {staff.presentDays || 0} दिन ]
@@ -913,9 +950,9 @@ const SalaryPage = () => {
       {/* ========================================================================= */}
       {activeView === "staff_hub" && currentSelectedStaff && (
         <div className="max-w-7xl mx-auto space-y-5 animate-fadeIn">
-          {/* Top Bar with Back Button & Staff Profile */}
+          {/* Top Bar with Back Button, Staff Profile, Edit & Delete Buttons */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <button
                   onClick={handleBackToList}
@@ -934,7 +971,7 @@ const SalaryPage = () => {
                     <h2 className="text-xl md:text-2xl font-black text-slate-900">{currentSelectedStaff.name}</h2>
                     {currentSelectedStaff.wageType === "daily" ? (
                       <span className="text-xs bg-emerald-100 text-emerald-800 font-extrabold px-2.5 py-0.5 rounded-full border border-emerald-200">
-                        📆 दैनिक दिहाड़ी दर: ₹{currentSelectedStaff.dailyRate || currentSelectedStaff.wageAmount}/दिन
+                        📆 दैनिक दिहाड़ी: ₹{currentSelectedStaff.dailyRate || currentSelectedStaff.wageAmount}/दिन
                       </span>
                     ) : (
                       <span className="text-xs bg-blue-100 text-blue-800 font-extrabold px-2.5 py-0.5 rounded-full border border-blue-200">
@@ -950,15 +987,32 @@ const SalaryPage = () => {
                 </div>
               </div>
 
-              {/* Action Buttons: WhatsApp Slip & Print */}
-              <div className="flex items-center gap-2">
+              {/* Action Buttons: Edit, Delete, WhatsApp Slip & Print */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => handleOpenEditStaff(currentSelectedStaff)}
+                  className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3.5 py-2 rounded-xl text-xs font-bold border border-indigo-200 transition"
+                >
+                  <Edit className="w-4 h-4" />
+                  <span>✏️ स्टाफ व वेतन एडिट करें</span>
+                </button>
+
+                <button
+                  onClick={() => handleDeleteStaff(currentSelectedStaff._id, currentSelectedStaff.name)}
+                  className="flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 px-3.5 py-2 rounded-xl text-xs font-bold border border-rose-200 transition"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>🗑️ स्टाफ हटाएं</span>
+                </button>
+
                 <button
                   onClick={() => handleShareWhatsApp(currentSelectedStaff)}
-                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition"
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-sm transition"
                 >
                   <Send className="w-4 h-4" />
-                  <span>व्हाट्सएप वेतन पर्ची</span>
+                  <span>व्हाट्सएप पर्ची</span>
                 </button>
+
                 <button
                   onClick={() => window.print()}
                   className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs font-bold transition"
@@ -969,7 +1023,7 @@ const SalaryPage = () => {
               </div>
             </div>
 
-            {/* TOP BRACKET COUNTERS BANNER (Requested by User) */}
+            {/* TOP BRACKET COUNTERS BANNER */}
             <div className="mt-5 p-3.5 bg-slate-900 text-white rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs md:text-sm font-black shadow-inner">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-indigo-300">[ 📅 माह के कुल दिन: {daysInCurrentMonth} ]</span>
@@ -1161,7 +1215,7 @@ const SalaryPage = () => {
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
                 <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
                   <Clock className="w-5 h-5 text-amber-600" />
-                  <h3 className="text-base font-black text-slate-900">+ नया एडवांस / बीच में पेमेंट दर्ज करें</h3>
+                  <h3 className="text-base font-black text-slate-900">+ नया एडवांस दर्ज करें</h3>
                 </div>
 
                 <form onSubmit={handleSaveAdvance} className="space-y-4">
@@ -1267,7 +1321,7 @@ const SalaryPage = () => {
                 </div>
               </div>
 
-              {/* Right Column: Advances History Passbook Table */}
+              {/* Right Column: Advances History Passbook Table with Delete Action */}
               <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <div>
@@ -1294,11 +1348,12 @@ const SalaryPage = () => {
                           <th className="p-3 font-bold">राशि (₹)</th>
                           <th className="p-3 font-bold">माध्यम</th>
                           <th className="p-3 font-bold">विवरण / नोट्स</th>
+                          <th className="p-3 font-bold text-center">हटाएं</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {currentSelectedStaff.advancesList.map((adv, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50">
+                          <tr key={adv._id || idx} className="hover:bg-slate-50">
                             <td className="p-3 font-semibold text-slate-800">
                               {new Date(adv.date).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                             </td>
@@ -1312,6 +1367,17 @@ const SalaryPage = () => {
                             </td>
                             <td className="p-3 text-slate-600 font-medium">
                               {adv.notes || "एडवांस भुगतान"}
+                            </td>
+                            <td className="p-3 text-center">
+                              {adv._id && (
+                                <button
+                                  onClick={() => handleDeleteAdvance(adv._id)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                                  title="एडवांस हटाएं"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </td>
                           </tr>
                         ))}

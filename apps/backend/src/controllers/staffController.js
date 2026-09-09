@@ -500,3 +500,20 @@ export const deleteStaff = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+export const deleteStaffTransaction = async (req, res) => {
+  try {
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+    const tx = await StaffTransaction.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.companyId },
+      { $set: { isDeleted: true } },
+      { new: true }
+    );
+    if (!tx) return res.status(404).json({ success: false, error: "Transaction not found" });
+    res.json({ success: true, message: "Transaction deleted successfully!" });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};

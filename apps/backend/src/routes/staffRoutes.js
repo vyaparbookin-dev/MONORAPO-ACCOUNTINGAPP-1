@@ -36,6 +36,7 @@ router.post("/attendance", markAttendance);
 router.get("/:id/statement", getStaffStatement);
 router.get("/:id", getStaffById);
 router.put("/:id", updateStaff);
+router.delete("/transaction/:id", deleteStaffTransaction);
 router.delete("/:id", deleteStaff);
 
 export default router;
