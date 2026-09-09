@@ -9,6 +9,7 @@ const expenseSchema = new mongoose.Schema({
   category: { type: String, default: "Other" },
   
   // Classification: Operating, Owner Drawings, Personal FD/RD, Dealership Security Deposit, Bank Interest
+  familyMember: { type: String, default: '' }, // e.g. 'Self', 'Papa', 'Mummy', 'Bhai', 'Wife', 'Son', etc.
   expenseType: { 
     type: String, 
     enum: ['operating', 'drawings', 'personal_investment', 'security_deposit', 'bank_interest_paid', 'bank_interest_received'], 

@@ -1,21 +1,26 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, Download, Edit, Trash2, DollarSign, Calendar, Tag, PieChart } from "lucide-react";
+import { Plus, Search, Download, Edit, Trash2, DollarSign, Calendar, Tag, PieChart, Users, Home, Building2, CheckCircle2 } from "lucide-react";
 import api from "../../services/api";
 
 const ExpensesPage = () => {
   const [expenses, setExpenses] = useState([]);
   const [filteredExpenses, setFilteredExpenses] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [memberFilter, setMemberFilter] = useState("all");
+  const [activeTypeTab, setActiveTypeTab] = useState("all"); // 'all', 'operating' (Business), 'drawings' (Ghar Kharch)
+  
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     title: "",
-    amount: 0,
+    amount: "",
     category: "other",
+    expenseType: "operating", // 'operating' or 'drawings'
+    familyMember: "Self",
     description: "",
+    paymentMethod: "cash",
     date: new Date().toISOString().split('T')[0],
   });
 
@@ -25,19 +30,19 @@ const ExpensesPage = () => {
 
   useEffect(() => {
     filterExpenses();
-  }, [expenses, searchTerm, categoryFilter]);
+  }, [expenses, searchTerm, categoryFilter, memberFilter, activeTypeTab]);
 
   const fetchExpenses = async () => {
     try {
       setLoading(true);
-      const response = await api.get("/api/expenses");
-      const expensesList = Array.isArray(response) 
-        ? response 
+      const response = await api.get("/expenses?limit=300");
+      const expensesList = Array.isArray(response?.data?.expenses) 
+        ? response.data.expenses 
         : (Array.isArray(response?.data) ? response.data : (response?.expenses || []));
       setExpenses(expensesList);
     } catch (err) {
       console.error("Failed to fetch expenses:", err);
-      setExpenses([]); // Error आने पर खाली Array सेट करें ताकि पेज क्रैश ना हो
+      setExpenses([]);
     } finally {
       setLoading(false);
     }
@@ -45,15 +50,29 @@ const ExpensesPage = () => {
 
   const filterExpenses = () => {
     let filtered = Array.isArray(expenses) ? [...expenses] : [];
+    
+    // Filter by Tab (All, Business, Ghar Kharch)
+    if (activeTypeTab !== "all") {
+      filtered = filtered.filter(exp => exp.expenseType === activeTypeTab);
+    }
+
     if (searchTerm) {
       filtered = filtered.filter((exp) =>
         exp.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        exp.description?.toLowerCase().includes(searchTerm.toLowerCase())
+        exp.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        exp.familyMember?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        exp.category?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
+
     if (categoryFilter !== "all") {
       filtered = filtered.filter((exp) => exp.category === categoryFilter);
     }
+
+    if (memberFilter !== "all") {
+      filtered = filtered.filter((exp) => (exp.familyMember || 'Unassigned').toLowerCase() === memberFilter.toLowerCase());
+    }
+
     setFilteredExpenses(filtered);
   };
 
@@ -62,9 +81,12 @@ const ExpensesPage = () => {
     setFormData({
       title: expense.title,
       amount: expense.amount,
-      category: expense.category,
-      description: expense.description,
-      date: new Date(expense.date).toISOString().split("T")[0],
+      category: expense.category || "other",
+      expenseType: expense.expenseType || "operating",
+      familyMember: expense.familyMember || "Self",
+      description: expense.description || "",
+      paymentMethod: expense.paymentMethod || "cash",
+      date: expense.date ? new Date(expense.date).toISOString().split("T")[0] : new Date().toISOString().split('T')[0],
     });
     setShowForm(true);
   };
@@ -73,9 +95,12 @@ const ExpensesPage = () => {
     setEditingId(null);
     setFormData({
       title: "",
-      amount: 0,
+      amount: "",
       category: "other",
+      expenseType: activeTypeTab === "drawings" ? "drawings" : "operating",
+      familyMember: "Self",
       description: "",
+      paymentMethod: "cash",
       date: new Date().toISOString().split("T")[0],
     });
     setShowForm(false);
@@ -83,26 +108,36 @@ const ExpensesPage = () => {
 
   const handleAddExpense = async (e) => {
     e.preventDefault();
+    if (!formData.amount || Number(formData.amount) <= 0) {
+      alert("कृपया सही खर्च राशि दर्ज करें!");
+      return;
+    }
+
     try {
+      const payload = {
+        ...formData,
+        amount: Number(formData.amount)
+      };
+
       if (editingId) {
-        await api.put(`/api/expenses/${editingId}`, formData);
-        alert("Expense updated successfully!");
+        await api.put(`/expenses/${editingId}`, payload);
+        alert("खर्च सफलतापूर्वक अपडेट हो गया!");
       } else {
-        await api.post("/api/expenses", formData);
-        alert("Expense recorded successfully!");
+        await api.post("/expenses", payload);
+        alert(payload.expenseType === 'drawings' ? `🏡 ${payload.familyMember} का घर खर्च ₹${payload.amount} दर्ज हो गया!` : `🏢 दुकान खर्च ₹${payload.amount} दर्ज हो गया!`);
       }
       fetchExpenses();
       resetForm();
     } catch (err) {
       console.error("Error saving expense:", err);
-      alert("Error saving expense. Please check connection.");
+      alert("खर्च सेव करने में त्रुटि आई।");
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm("Delete this expense?")) {
+    if (window.confirm("क्या आप इस खर्च को हटाना चाहते हैं?")) {
       try {
-        await api.delete(`/api/expenses/${id}`);
+        await api.delete(`/expenses/${id}`);
         fetchExpenses();
       } catch (err) {
         console.error("Error deleting expense:", err);
@@ -110,305 +145,346 @@ const ExpensesPage = () => {
     }
   };
 
-  const categories = ["rent", "utilities", "supplies", "salary", "travel", "marketing", "other"];
-  const categoryColors = {
-    rent: "bg-red-100 text-red-800",
-    utilities: "bg-blue-100 text-blue-800",
-    supplies: "bg-green-100 text-green-800",
-    salary: "bg-purple-100 text-purple-800",
-    travel: "bg-yellow-100 text-yellow-800",
-    marketing: "bg-pink-100 text-pink-800",
-    other: "bg-gray-100 text-gray-800",
-  };
+  const businessCategories = ["rent", "utilities", "supplies", "salary", "travel", "marketing", "दुकान किराया", "बिजली बिल", "चाय/नाश्ता", "स्टाफ सैलरी", "other"];
+  const gharKharchCategories = ["राशन/किराना", "स्कूल/कॉलेज फीस", "दवाई/अस्पताल", "बिजली/पानी/गैस", "कपड़े/शॉपिंग", "निजी जेब खर्च", "पेट्रोल/वाहन", "अन्य घरेलू खर्च"];
 
-  const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
-  const expensesByCategory = {};
   const safeExpenses = Array.isArray(expenses) ? expenses : [];
-  safeExpenses.forEach((exp) => {
-    expensesByCategory[exp.category] = (expensesByCategory[exp.category] || 0) + (exp.amount || 0);
+  const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+  
+  const totalBusinessExpenses = safeExpenses.filter(e => e.expenseType === 'operating').reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+  const totalGharKharch = safeExpenses.filter(e => e.expenseType === 'drawings').reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+
+  // Family Members Breakup
+  const familyMembersMap = {};
+  safeExpenses.filter(e => e.expenseType === 'drawings').forEach(e => {
+    const mem = e.familyMember?.trim() || "Unassigned";
+    familyMembersMap[mem] = (familyMembersMap[mem] || 0) + (Number(e.amount) || 0);
   });
+  const uniqueFamilyMembers = Object.keys(familyMembersMap);
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-start">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Expenses</h1>
-          <p className="text-gray-600 mt-1">Track and manage all your business expenses</p>
+          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+            💰 खर्च प्रबंधन (Expenses & Ghar Kharch)
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            दुकान का बिजनेस खर्च और घर खर्च (Papa, Mummy, Family-wise) आसानी से मैनेज करें
+          </p>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-        >
-          <Plus size={20} />
-          Record Expense
-        </button>
-      </div>
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard label="Total Expenses" value={`₹${totalExpenses.toLocaleString()}`} icon="💰" />
-        <StatCard label="This Month" value={filteredExpenses.length} icon="📊" />
-        <StatCard label="Avg Expense" value={`₹${Math.round(totalExpenses / (filteredExpenses.length || 1)).toLocaleString()}`} icon="📈" />
-      </div>
-
-      {/* Search & Filter */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-        <div className="flex gap-4 flex-wrap">
-          <div className="flex-1 min-w-[200px] relative">
-            <Search className="absolute left-3 top-3 text-gray-400" size={20} />
-            <input
-              type="text"
-              placeholder="Search expenses..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <select
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 capitalize"
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              setFormData({ ...formData, expenseType: "drawings" });
+              setShowForm(true);
+            }}
+            className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
           >
-            <option value="all">All Categories</option>
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat.charAt(0).toUpperCase() + cat.slice(1)}
-              </option>
-            ))}
-          </select>
-          <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-            <Download size={18} />
-            Export
+            <Plus size={16} /> 🏡 + घर खर्च दर्ज करें
+          </button>
+          <button
+            onClick={() => {
+              setFormData({ ...formData, expenseType: "operating" });
+              setShowForm(true);
+            }}
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+          >
+            <Plus size={16} /> 🏢 + दुकान खर्च दर्ज करें
           </button>
         </div>
       </div>
 
-      {/* Add Expense Form */}
-      {showForm && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">
-            {editingId ? "Edit Expense" : "Record New Expense"}
-          </h2>
-          <form onSubmit={handleAddExpense} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input
-                type="text"
-                placeholder="Expense Title"
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.title}
-                onChange={(e) =>
-                  setFormData({ ...formData, title: e.target.value })
-                }
-                required
-              />
-              <input
-                type="number"
-                placeholder="Amount"
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.amount}
-                onChange={(e) =>
-                  setFormData({ ...formData, amount: parseFloat(e.target.value) })
-                }
-                required
-              />
-              <select
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 capitalize"
-                value={formData.category}
-                onChange={(e) =>
-                  setFormData({ ...formData, category: e.target.value })
-                }
-              >
-                {categories.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="date"
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.date}
-                onChange={(e) =>
-                  setFormData({ ...formData, date: e.target.value })
-                }
-              />
-              <textarea
-                placeholder="Description (optional)"
-                className="col-span-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData({ ...formData, description: e.target.value })
-                }
-                rows="3"
-              />
-            </div>
-            <div className="flex gap-2">
+      {/* Main Mode Tabs */}
+      <div className="flex bg-slate-100 p-1.5 rounded-2xl gap-2 text-xs font-extrabold max-w-xl">
+        <button
+          onClick={() => { setActiveTypeTab("all"); setMemberFilter("all"); }}
+          className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${activeTypeTab === "all" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+        >
+          <span>📊 सभी खर्च (All)</span>
+        </button>
+        <button
+          onClick={() => { setActiveTypeTab("operating"); setMemberFilter("all"); }}
+          className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${activeTypeTab === "operating" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}
+        >
+          <Building2 size={14} /> 🏢 दुकान खर्च (₹{totalBusinessExpenses.toLocaleString('en-IN')})
+        </button>
+        <button
+          onClick={() => { setActiveTypeTab("drawings"); setMemberFilter("all"); }}
+          className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${activeTypeTab === "drawings" ? "bg-white text-amber-700 shadow-sm" : "text-slate-500"}`}
+        >
+          <Home size={14} /> 🏡 घर खर्च (₹{totalGharKharch.toLocaleString('en-IN')})
+        </button>
+      </div>
+
+      {/* Quick Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <span className="text-xs font-bold text-slate-500 block">कुल सिलेक्टेड खर्च</span>
+          <span className="text-2xl font-black text-slate-900 mt-1 block">₹{totalExpenses.toLocaleString('en-IN')}</span>
+          <span className="text-[11px] text-slate-400">{filteredExpenses.length} खर्च एंट्रीज</span>
+        </div>
+
+        <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-5 rounded-2xl border border-indigo-100 shadow-sm">
+          <span className="text-xs font-bold text-indigo-700 block">🏢 कुल दुकान खर्च (Business)</span>
+          <span className="text-2xl font-black text-indigo-950 mt-1 block">₹{totalBusinessExpenses.toLocaleString('en-IN')}</span>
+          <span className="text-[11px] text-indigo-500">किराया, सैलरी, बिजली व मेंटेनेंस</span>
+        </div>
+
+        <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-5 rounded-2xl border border-amber-100 shadow-sm">
+          <span className="text-xs font-bold text-amber-800 block">🏡 कुल घर खर्च (Family Drawings)</span>
+          <span className="text-2xl font-black text-amber-950 mt-1 block">₹{totalGharKharch.toLocaleString('en-IN')}</span>
+          <span className="text-[11px] text-amber-600">{uniqueFamilyMembers.length} फैमिली मेंबर्स के खाते</span>
+        </div>
+      </div>
+
+      {/* Family Member Breakdown Bar (Shown when viewing Ghar Kharch or All) */}
+      {(activeTypeTab === "drawings" || activeTypeTab === "all") && uniqueFamilyMembers.length > 0 && (
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+          <div className="flex justify-between items-center">
+            <h3 className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
+              <Users size={16} className="text-amber-600" /> 👥 फैमिली मेंबर-वाइज घर खर्च (Family Ledger Breakdown)
+            </h3>
+            <span className="text-[11px] text-slate-400">सदस्य पर क्लिक करके फिल्टर करें</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
+            {uniqueFamilyMembers.map(mem => (
               <button
-                type="submit"
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+                key={mem}
+                onClick={() => setMemberFilter(memberFilter === mem ? "all" : mem)}
+                className={`p-3 rounded-xl border text-left transition cursor-pointer ${memberFilter.toLowerCase() === mem.toLowerCase() ? 'bg-amber-600 text-white border-amber-600 shadow-sm' : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'}`}
               >
-                {editingId ? "Save Changes" : "Record Expense"}
+                <span className="text-xs font-bold block truncate">👤 {mem}</span>
+                <span className="text-sm font-black mt-0.5 block">₹{familyMembersMap[mem].toLocaleString('en-IN')}</span>
+                <span className="text-[10px] opacity-75 block">
+                  {totalGharKharch > 0 ? +((familyMembersMap[mem] / totalGharKharch) * 100).toFixed(0) : 0}% खर्च
+                </span>
               </button>
-              <button
-                type="button"
-                onClick={resetForm}
-                className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Expenses Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Expenses List */}
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">
-                    Title
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">
-                    Category
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">
-                    Amount
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">
-                    Date
-                  </th>
-                  <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td
-                      colSpan="5"
-                      className="px-6 py-8 text-center text-gray-500"
-                    >
-                      Loading expenses...
-                    </td>
-                  </tr>
-                ) : filteredExpenses.length > 0 ? (
-                  filteredExpenses.map((expense) => (
-                    <tr
-                      key={expense._id}
-                      className="border-b border-gray-200 hover:bg-gray-50 transition"
-                    >
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <Tag className="text-gray-400" size={18} />
-                          <span className="font-semibold text-gray-900">
-                            {expense.title}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-block px-3 py-1 rounded-full text-xs font-semibold capitalize ${
-                            categoryColors[expense.category] ||
-                            categoryColors.other
-                          }`}
-                        >
-                          {expense.category}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 font-bold text-gray-900">
-                        ₹{expense.amount?.toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2 text-gray-700">
-                          <Calendar size={16} className="text-gray-400" />
-                          {expense.date
-                            ? new Date(expense.date).toLocaleDateString("en-IN")
-                            : "N/A"}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex justify-center gap-2">
-                          <button
-                            onClick={() => handleEdit(expense)}
-                            className="p-2 hover:bg-green-100 rounded-lg text-green-600 transition"
-                          >
-                            <Edit size={18} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(expense._id)}
-                            className="p-2 hover:bg-red-100 rounded-lg text-red-600 transition"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td
-                      colSpan="5"
-                      className="px-6 py-8 text-center text-gray-500"
-                    >
-                      No expenses found
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+      {/* Search & Filter Bar */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+        <div className="flex gap-3 flex-wrap items-center">
+          <div className="flex-1 min-w-[200px] relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              type="text"
+              placeholder="खर्च का नाम, विवरण या फैमिली मेंबर खोजें..."
+              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-600"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
-        </div>
 
-        {/* Category Breakdown */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <PieChart size={20} className="text-blue-600" />
-            By Category
-          </h3>
-          <div className="space-y-4">
-            {Object.entries(expensesByCategory).map(([cat, amount]) => {
-              const percentage = ((amount / Object.values(expensesByCategory).reduce((a, b) => a + b, 0)) * 100).toFixed(1);
-              return (
-                <div key={cat}>
-                  <div className="flex justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-700 capitalize">{cat}</span>
-                    <span className="text-sm font-bold text-gray-900">₹{amount.toLocaleString()}</span>
+          {memberFilter !== "all" && (
+            <button
+              onClick={() => setMemberFilter("all")}
+              className="px-3 py-1.5 bg-amber-100 text-amber-800 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer"
+            >
+              सदस्य: {memberFilter} ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Add / Edit Expense Modal/Form */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h2 className="text-base font-black text-slate-900">
+                {editingId ? "खर्च एडिट करें" : "नया खर्च दर्ज करें (+ Record Expense)"}
+              </h2>
+              <button onClick={resetForm} className="text-slate-400 hover:text-slate-600 cursor-pointer">✕</button>
+            </div>
+
+            {/* Type Selector */}
+            <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, expenseType: "operating" })}
+                className={`py-2.5 rounded-xl border transition cursor-pointer ${formData.expenseType === "operating" ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" : "bg-slate-50 border-slate-200 text-slate-700"}`}
+              >
+                🏢 दुकान खर्च (Business Expense)
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, expenseType: "drawings" })}
+                className={`py-2.5 rounded-xl border transition cursor-pointer ${formData.expenseType === "drawings" ? "bg-amber-600 text-white border-amber-600 shadow-sm" : "bg-slate-50 border-slate-200 text-slate-700"}`}
+              >
+                🏡 घर खर्च (Family & Personal)
+              </button>
+            </div>
+
+            <form onSubmit={handleAddExpense} className="space-y-3 text-xs">
+              {/* If Ghar Kharch: Select Family Member */}
+              {formData.expenseType === "drawings" && (
+                <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200 space-y-2">
+                  <label className="font-extrabold text-amber-900 block">
+                    👤 फैमिली मेंबर चुनें (किसका / किसके लिए खर्च):
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5 font-bold">
+                    {["Self", "Papa", "Mummy", "Bhai", "Wife", "Children"].map(m => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, familyMember: m })}
+                        className={`p-2 rounded-xl border text-center transition cursor-pointer ${formData.familyMember === m ? 'bg-amber-600 text-white border-amber-600 shadow-sm' : 'bg-white border-amber-200 text-amber-900'}`}
+                      >
+                        {m === "Self" ? "👨‍💼 Self (खुद)" : m === "Papa" ? "👴 Papa (पिताजी)" : m === "Mummy" ? "👵 Mummy (माताजी)" : m === "Bhai" ? "👦 Bhai (भाई)" : m === "Wife" ? "👩 Wife (पत्नी)" : "👶 बच्चे (Kids)"}
+                      </button>
+                    ))}
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-blue-600"
-                      style={{ width: `${percentage}%` }}
-                    ></div>
-                  </div>
-                  <span className="text-xs text-gray-500">{percentage}%</span>
                 </div>
-              );
-            })}
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">खर्च राशि (₹) *</label>
+                  <input
+                    type="number"
+                    placeholder="₹ 500"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-black text-slate-900 outline-none focus:border-indigo-600"
+                    value={formData.amount}
+                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">श्रेणी (Category)</label>
+                  <select
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  >
+                    {(formData.expenseType === "drawings" ? gharKharchCategories : businessCategories).map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">खर्च का नाम / विवरण (Title)</label>
+                <input
+                  type="text"
+                  placeholder={formData.expenseType === "drawings" ? "उदा. महीने का राशन, पापा की दवाई..." : "उदा. दुकान का बिजली बिल..."}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-900 outline-none"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">तारीख (Date)</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none"
+                    value={formData.date}
+                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">भुगतान माध्यम</label>
+                  <select
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
+                    value={formData.paymentMethod}
+                    onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
+                  >
+                    <option value="cash">💵 नकद (Cash)</option>
+                    <option value="upi">📲 UPI / QR</option>
+                    <option value="bank">🏦 बैंक ट्रांसफर / चेक</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl cursor-pointer"
+                >
+                  रद्द करें
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl shadow cursor-pointer"
+                >
+                  {editingId ? "अपडेट करें" : "💾 खर्च सेव करें"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
+      )}
+
+      {/* Expenses Table */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold uppercase">
+            <tr>
+              <th className="p-3.5">तारीख</th>
+              <th className="p-3.5">खर्च का विवरण (Title)</th>
+              <th className="p-3.5">प्रकार</th>
+              <th className="p-3.5">फैमिली मेंबर</th>
+              <th className="p-3.5">श्रेणी</th>
+              <th className="p-3.5">माध्यम</th>
+              <th className="p-3.5 text-right">राशि (₹)</th>
+              <th className="p-3.5 text-center">एक्शन</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {loading ? (
+              <tr><td colSpan="8" className="p-8 text-center text-slate-400">लोड हो रहा है...</td></tr>
+            ) : filteredExpenses.length === 0 ? (
+              <tr><td colSpan="8" className="p-8 text-center text-slate-400">कोई खर्च नहीं मिला</td></tr>
+            ) : (
+              filteredExpenses.map((exp) => (
+                <tr key={exp._id} className="hover:bg-slate-50/80 transition">
+                  <td className="p-3.5 text-slate-500 font-medium">
+                    {exp.date ? new Date(exp.date).toLocaleDateString("en-IN") : "-"}
+                  </td>
+                  <td className="p-3.5 font-extrabold text-slate-900">{exp.title}</td>
+                  <td className="p-3.5">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${exp.expenseType === 'drawings' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                      {exp.expenseType === 'drawings' ? '🏡 घर खर्च' : '🏢 दुकान खर्च'}
+                    </span>
+                  </td>
+                  <td className="p-3.5 font-bold text-slate-700">
+                    {exp.familyMember ? `👤 ${exp.familyMember}` : "-"}
+                  </td>
+                  <td className="p-3.5 text-slate-600">{exp.category || "General"}</td>
+                  <td className="p-3.5 uppercase text-slate-500 text-[10px] font-bold">{exp.paymentMethod || "cash"}</td>
+                  <td className="p-3.5 text-right font-black text-slate-900 text-sm">
+                    ₹{Number(exp.amount || 0).toLocaleString('en-IN')}
+                  </td>
+                  <td className="p-3.5 text-center">
+                    <div className="flex justify-center items-center gap-1.5">
+                      <button onClick={() => handleEdit(exp)} className="p-1 text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer">
+                        <Edit size={14} />
+                      </button>
+                      <button onClick={() => handleDelete(exp._id)} className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
 };
-
-function StatCard({ label, value, icon }) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-gray-600 font-medium">{label}</p>
-          <p className="text-2xl font-bold text-gray-900 mt-2">{value}</p>
-        </div>
-        <span className="text-3xl">{icon}</span>
-      </div>
-    </div>
-  );
-}
 
 export default ExpensesPage;

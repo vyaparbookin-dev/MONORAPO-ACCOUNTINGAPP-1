@@ -2,9 +2,14 @@ import { z } from "zod";
 
 // Rule: Expense me title zaroori hai aur amount number hi hona chahiye (>0)
 export const expenseSchema = z.object({
-  title: z.string().min(2, "Title must be at least 2 characters long"),
+  title: z.string().min(1, "Title is required"),
   amount: z.number().positive("Amount must be greater than zero"),
   category: z.string().optional(),
+  expenseType: z.string().optional(),
+  familyMember: z.string().optional(),
+  paymentMethod: z.string().optional(),
+  description: z.string().optional(),
+  date: z.any().optional(),
 });
 
 // --- Billing Schemas ---

@@ -144,6 +144,24 @@ function MobileVyaparAppContent() {
   const [newPartyType, setNewPartyType] = useState("customer");
   const [savingParty, setSavingParty] = useState(false);
 
+  // ==================== GHAR KHARCH (HOUSEHOLD & FAMILY EXPENSE) STATE ====================
+  const [showGharKharchModal, setShowGharKharchModal] = useState(false);
+  const [showGharKharchLedgerModal, setShowGharKharchLedgerModal] = useState(false);
+  const [gharKharchType, setGharKharchType] = useState("drawings"); // 'drawings' (Ghar Kharch) or 'operating' (Dukaan Kharch)
+  const [selectedFamilyMember, setSelectedFamilyMember] = useState("Self");
+  const [customFamilyMember, setCustomFamilyMember] = useState("");
+  const [gharKharchTitle, setGharKharchTitle] = useState("");
+  const [gharKharchAmount, setGharKharchAmount] = useState("");
+  const [gharKharchCategory, setGharKharchCategory] = useState("राशन/किराना");
+  const [gharKharchPaymentMode, setGharKharchPaymentMode] = useState("cash");
+  const [gharKharchNotes, setGharKharchNotes] = useState("");
+  const [savingGharKharch, setSavingGharKharch] = useState(false);
+  
+  // Ghar Kharch Ledger & Filter State
+  const [gharKharchList, setGharKharchList] = useState([]);
+  const [gharKharchMemberFilter, setGharKharchMemberFilter] = useState("all");
+  const [loadingGharKharch, setLoadingGharKharch] = useState(false);
+
   // Quick Item Modal
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [newItemName, setNewItemName] = useState("");
@@ -167,6 +185,70 @@ function MobileVyaparAppContent() {
     window.addEventListener("beforeinstallprompt", handleBeforeInstall);
     return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
   }, [selectedCompany]);
+
+  const fetchGharKharchData = async () => {
+    try {
+      setLoadingGharKharch(true);
+      const res = await api.get("/expenses?expenseType=drawings&limit=200");
+      const list = res.data?.expenses || res.data || [];
+      setGharKharchList(Array.isArray(list) ? list : []);
+    } catch (e) {
+      console.error("Failed to fetch Ghar Kharch:", e);
+    } finally {
+      setLoadingGharKharch(false);
+    }
+  };
+
+  const handleSaveGharKharch = async (e) => {
+    if (e) e.preventDefault();
+    if (!gharKharchAmount || Number(gharKharchAmount) <= 0) {
+      alert("कृपया सही खर्च राशि (₹) दर्ज करें!");
+      return;
+    }
+    const finalMember = selectedFamilyMember === "अन्य (Custom)" ? (customFamilyMember.trim() || "Family Member") : selectedFamilyMember;
+    const finalTitle = gharKharchTitle.trim() || `${gharKharchCategory} (${finalMember})`;
+
+    setSavingGharKharch(true);
+    try {
+      const payload = {
+        title: finalTitle,
+        amount: Number(gharKharchAmount),
+        category: gharKharchCategory,
+        expenseType: gharKharchType,
+        familyMember: gharKharchType === 'drawings' ? finalMember : '',
+        paymentMethod: gharKharchPaymentMode,
+        description: gharKharchNotes.trim(),
+        date: new Date()
+      };
+
+      await api.post("/expenses", payload);
+      alert(gharKharchType === 'drawings' ? `🏡 ${finalMember} का घर खर्च ₹${gharKharchAmount} सफलतापूर्वक दर्ज हो गया!` : `🏢 दुकान खर्च ₹${gharKharchAmount} दर्ज हो गया!`);
+      
+      setGharKharchTitle("");
+      setGharKharchAmount("");
+      setGharKharchNotes("");
+      setCustomFamilyMember("");
+      setShowGharKharchModal(false);
+      fetchGharKharchData();
+    } catch (err) {
+      console.error(err);
+      alert("खर्च दर्ज करने में त्रुटि आई।");
+    } finally {
+      setSavingGharKharch(false);
+    }
+  };
+
+  const handleDeleteGharKharch = async (id) => {
+    if (!window.confirm("क्या आप इस खर्च को हटाना चाहते हैं?")) return;
+    try {
+      await api.delete(`/expenses/${id}`);
+      setGharKharchList(prev => prev.filter(k => (k._id || k.id) !== id));
+      alert("खर्च हटा दिया गया!");
+    } catch (err) {
+      console.error(err);
+      alert("डिलीट करने में त्रुटि आई।");
+    }
+  };
 
   const fetchLiveDashboardData = async () => {
     setLoading(true);
@@ -605,6 +687,7 @@ function MobileVyaparAppContent() {
     { id: "staff_payroll", title: "👔 Staff Salary & Statement", desc: "Daily Attendance & Advances", path: "/salary", category: "Staff", color: "text-amber-600 bg-amber-50" },
     { id: "sales_return", title: "🔄 Sales Return Register", desc: "Credit Notes & Returns", path: "/billing/return", category: "Sales", color: "text-red-600 bg-red-50" },
     { id: "graphical_analytics", title: "📈 Graphical BI Analytics", desc: "Visual Charts & Trends", path: "/reports/analytics", category: "BI", color: "text-teal-600 bg-teal-50" },
+    { id: "ghar_kharch", title: "🏡 Ghar Kharch (फैमिली घर खर्च लेजर)", desc: "Papa, Mummy, Family-wise Expense Ledger", path: "ghar_kharch_modal", category: "Personal", color: "text-amber-600 bg-amber-50" },
     { id: "ai_advisor", title: "🤖 AI मुनीम जी (Smart Insights)", desc: "AI Health Score & Predictions", path: "/ai-advisor", category: "AI", color: "text-purple-600 bg-purple-100" }
   ];
 
@@ -980,7 +1063,14 @@ function MobileVyaparAppContent() {
                 .map((r) => (
                 <div 
                   key={r.id}
-                  onClick={() => navigate(r.path)}
+                  onClick={() => {
+                    if (r.path === 'ghar_kharch_modal') {
+                      fetchGharKharchData();
+                      setShowGharKharchLedgerModal(true);
+                    } else {
+                      navigate(r.path);
+                    }
+                  }}
                   className="p-3 bg-white border border-slate-100 hover:border-indigo-200 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer transition"
                 >
                   <div className="space-y-0.5">
@@ -1654,6 +1744,339 @@ function MobileVyaparAppContent() {
             >
               सेव करें (Save Keys)
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 📱 6.3 ADD GHAR KHARCH / EXPENSE MODAL */}
+      {showGharKharchModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 space-y-3.5 shadow-2xl max-h-[92vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                  🏡
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">खर्च दर्ज करें (+ Expense)</h3>
+                  <p className="text-[10px] text-slate-400">घर खर्च (Family) या दुकान खर्च दर्ज करें</p>
+                </div>
+              </div>
+              <button onClick={() => setShowGharKharchModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Expense Type Switcher (Ghar Kharch vs Dukaan Kharch) */}
+            <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setGharKharchType("drawings")}
+                className={`py-2.5 rounded-xl border transition cursor-pointer flex items-center justify-center gap-1.5 ${gharKharchType === "drawings" ? "bg-amber-600 text-white border-amber-600 shadow-md" : "bg-slate-50 border-slate-200 text-slate-700"}`}
+              >
+                🏡 घर खर्च (Personal / Family)
+              </button>
+              <button
+                type="button"
+                onClick={() => setGharKharchType("operating")}
+                className={`py-2.5 rounded-xl border transition cursor-pointer flex items-center justify-center gap-1.5 ${gharKharchType === "operating" ? "bg-[#4338CA] text-white border-[#4338CA] shadow-md" : "bg-slate-50 border-slate-200 text-slate-700"}`}
+              >
+                🏢 दुकान खर्च (Business Expense)
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveGharKharch} className="space-y-3">
+              {/* If Ghar Kharch: Select Family Member */}
+              {gharKharchType === "drawings" && (
+                <div className="space-y-1.5 bg-amber-50/60 p-3 rounded-2xl border border-amber-200/80">
+                  <label className="text-[11px] font-extrabold text-amber-900 block">
+                    👤 फैमिली मेंबर चुनें (किसका / किसके लिए खर्च):
+                  </label>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 text-xs font-bold">
+                    {[
+                      { id: "Self", label: "👨‍💼 Self (खुद)" },
+                      { id: "Papa", label: "👴 Papa (पिताजी)" },
+                      { id: "Mummy", label: "👵 Mummy (माताजी)" },
+                      { id: "Bhai", label: "👦 Bhai (भाई)" },
+                      { id: "Wife", label: "👩 Wife (पत्नी)" },
+                      { id: "Children", label: "👶 बच्चे (Son/Daughter)" },
+                      { id: "अन्य (Custom)", label: "✏️ अन्य सदस्य" }
+                    ].map(m => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setSelectedFamilyMember(m.id)}
+                        className={`p-2 rounded-xl text-[11px] font-bold border text-center transition cursor-pointer ${selectedFamilyMember === m.id ? 'bg-amber-600 text-white border-amber-600 shadow-sm' : 'bg-white border-amber-200 text-amber-900 hover:bg-amber-100/50'}`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {selectedFamilyMember === "अन्य (Custom)" && (
+                    <input
+                      type="text"
+                      placeholder="फैमिली मेंबर का नाम टाइप करें (उदा. दादाजी, चाचाजी, बहन)..."
+                      value={customFamilyMember}
+                      onChange={(e) => setCustomFamilyMember(e.target.value)}
+                      className="w-full mt-2 p-2.5 bg-white border border-amber-300 rounded-xl text-xs text-[#0F172A] outline-none font-bold"
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* Amount & Category */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">खर्च राशि (₹) *</label>
+                  <input
+                    type="number"
+                    placeholder="₹ 500"
+                    value={gharKharchAmount}
+                    onChange={(e) => setGharKharchAmount(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-[#0F172A] outline-none focus:border-amber-600"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">खर्च श्रेणी (Category)</label>
+                  <select
+                    value={gharKharchCategory}
+                    onChange={(e) => setGharKharchCategory(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                  >
+                    {gharKharchType === "drawings" ? (
+                      <>
+                        <option value="राशन/किराना">🛒 राशन / किराना</option>
+                        <option value="स्कूल/कॉलेज फीस">🎓 स्कूल / कॉलेज फीस</option>
+                        <option value="दवाई/अस्पताल">💊 दवाई / इलाज</option>
+                        <option value="बिजली/पानी/गैस">⚡ बिजली / पानी / गैस</option>
+                        <option value="कपड़े/शॉपिंग">👗 कपड़े / शॉपिंग</option>
+                        <option value="निजी जेब खर्च">💵 व्यक्तिगत जेब खर्च</option>
+                        <option value="पेट्रोल/वाहन खर्च">🚗 पेट्रोल / गाड़ी खर्च</option>
+                        <option value="अन्य घरेलू खर्च">📦 अन्य घरेलू खर्च</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="दुकान किराया">🏢 दुकान किराया (Rent)</option>
+                        <option value="बिजली बिल">⚡ बिजली बिल</option>
+                        <option value="चाय/नाश्ता">☕ चाय / नाश्ता / पानी</option>
+                        <option value="स्टाफ सैलरी/मजदूरी">👔 स्टाफ मजदूरी / एडवांस</option>
+                        <option value="ट्रांसपोर्ट/भाड़ा">🚚 ट्रांसपोर्ट / माल भाड़ा</option>
+                        <option value="स्टेशनरी/पैकिंग">📦 स्टेशनरी / पैकिंग</option>
+                        <option value="दुकान मेंटेनेंस">🛠️ मेंटेनेंस व मरम्मत</option>
+                        <option value="अन्य बिजनेस खर्च">💼 अन्य बिजनेस खर्च</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              {/* Title / Description */}
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">खर्च का विवरण (विवरण / Title)</label>
+                <input
+                  type="text"
+                  placeholder={gharKharchType === "drawings" ? "उदा. महीने का राशन, पापा की दवाइयाँ, स्कूल फीस..." : "उदा. दुकान का बिजली बिल, पैकिंग रोल..."}
+                  value={gharKharchTitle}
+                  onChange={(e) => setGharKharchTitle(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none font-bold"
+                />
+              </div>
+
+              {/* Payment Mode */}
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">भुगतान माध्यम (Payment Mode)</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: "cash", label: "💵 नकद (Cash)" },
+                    { id: "upi", label: "📲 UPI / QR" },
+                    { id: "bank", label: "🏦 बैंक / चेक" }
+                  ].map(pm => (
+                    <button
+                      key={pm.id}
+                      type="button"
+                      onClick={() => setGharKharchPaymentMode(pm.id)}
+                      className={`py-2 rounded-xl text-xs font-bold border transition ${gharKharchPaymentMode === pm.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 border-slate-200 text-slate-700'}`}
+                    >
+                      {pm.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingGharKharch}
+                className="w-full py-3.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-extrabold text-sm rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
+              >
+                {savingGharKharch ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                {savingGharKharch ? "खर्च दर्ज हो रहा है..." : (gharKharchType === "drawings" ? "💾 घर खर्च सेव करें" : "💾 दुकान खर्च सेव करें")}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 📱 6.4 GHAR KHARCH FAMILY LEDGER & REPORT MODAL */}
+      {showGharKharchLedgerModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-xl w-full p-5 space-y-3.5 shadow-2xl max-h-[92vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                  🏡
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">फैमिली घर खर्च लेजर (Ghar Kharch Ledger)</h3>
+                  <p className="text-[10px] text-slate-400">Papa, Mummy व फैमिली मेंबर्स के अनुसार खर्च देखें</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => {
+                    setShowGharKharchLedgerModal(false);
+                    setShowGharKharchModal(true);
+                  }}
+                  className="px-2.5 py-1 bg-amber-600 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer"
+                >
+                  + नया खर्च
+                </button>
+                <button onClick={() => setShowGharKharchLedgerModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Summary Cards */}
+            {(() => {
+              const allItems = gharKharchList;
+              const totalAmt = allItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+              const membersMap = {};
+              allItems.forEach(it => {
+                const m = it.familyMember?.trim() || "Unassigned";
+                membersMap[m] = (membersMap[m] || 0) + (Number(it.amount) || 0);
+              });
+              const uniqueMembers = Object.keys(membersMap);
+
+              const filteredItems = gharKharchMemberFilter === "all"
+                ? allItems
+                : allItems.filter(it => (it.familyMember || 'Unassigned').toLowerCase() === gharKharchMemberFilter.toLowerCase());
+              
+              const filteredTotal = filteredItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+
+              return (
+                <div className="space-y-3">
+                  {/* Total Banner */}
+                  <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-4 rounded-2xl text-white shadow-md flex justify-between items-center">
+                    <div>
+                      <span className="text-[11px] font-bold text-amber-100 block">कुल घर खर्च (Total Ghar Kharch)</span>
+                      <span className="text-2xl font-black">₹ {totalAmt.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-amber-100 block">कुल एंट्रीज</span>
+                      <span className="text-sm font-extrabold">{allItems.length} खर्च दर्ज</span>
+                    </div>
+                  </div>
+
+                  {/* Family Members Breakdown Chips & Progress */}
+                  {uniqueMembers.length > 0 && (
+                    <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
+                      <span className="text-[11px] font-extrabold text-slate-700 block">
+                        👥 फैमिली मेंबर के अनुसार खर्च ब्रेकअप:
+                      </span>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {uniqueMembers.map(m => (
+                          <div key={m} className="p-2 bg-white rounded-xl border border-slate-200 text-xs">
+                            <div className="flex justify-between items-center font-bold text-slate-700">
+                              <span>👤 {m}</span>
+                              <span className="text-amber-700 font-black">₹{membersMap[m].toLocaleString('en-IN')}</span>
+                            </div>
+                            <div className="w-full bg-slate-100 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                              <div
+                                className="bg-amber-500 h-full rounded-full"
+                                style={{ width: `${totalAmt > 0 ? (membersMap[m] / totalAmt) * 100 : 0}%` }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Filter by Family Member Pills */}
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-bold text-slate-600 block">सदस्य अनुसार फिल्टर करें:</span>
+                    <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                      <button
+                        onClick={() => setGharKharchMemberFilter("all")}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${gharKharchMemberFilter === "all" ? 'bg-[#0F172A] text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                      >
+                        सभी सदस्य ({allItems.length})
+                      </button>
+                      {uniqueMembers.map(m => (
+                        <button
+                          key={m}
+                          onClick={() => setGharKharchMemberFilter(m)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap flex items-center gap-1 ${gharKharchMemberFilter.toLowerCase() === m.toLowerCase() ? 'bg-amber-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                        >
+                          <span>👤 {m}</span>
+                          <span className="text-[10px] opacity-80">₹{membersMap[m]}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Expenses List */}
+                  <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {loadingGharKharch ? (
+                      <div className="p-8 text-center text-xs text-slate-400">घर खर्च लोड हो रहा है...</div>
+                    ) : filteredItems.length === 0 ? (
+                      <div className="p-8 bg-slate-50 border border-dashed border-slate-200 rounded-2xl text-center text-xs text-slate-400 space-y-1">
+                        <p className="font-bold text-slate-600">कोई घर खर्च नहीं मिला</p>
+                        <p className="text-[10px]">ऊपर "+ नया खर्च" बटन से पहला घर खर्च दर्ज करें</p>
+                      </div>
+                    ) : (
+                      filteredItems.map(exp => (
+                        <div key={exp._id || exp.id} className="p-3 bg-slate-50 hover:bg-slate-100/80 rounded-2xl border border-slate-200 flex justify-between items-center transition">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-extrabold text-xs text-[#0F172A]">{exp.title}</span>
+                              {exp.familyMember && (
+                                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-900 font-bold text-[10px] rounded-md">
+                                  👤 {exp.familyMember}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 flex items-center gap-2">
+                              <span>🏷️ {exp.category || "घरेलू खर्च"}</span>
+                              <span>•</span>
+                              <span>📅 {exp.date ? new Date(exp.date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short' }) : 'Today'}</span>
+                              <span>•</span>
+                              <span className="uppercase">{exp.paymentMethod || 'cash'}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2.5">
+                            <span className="font-black text-xs text-amber-800">
+                              ₹ {Number(exp.amount || 0).toLocaleString('en-IN')}
+                            </span>
+                            <button
+                              onClick={() => handleDeleteGharKharch(exp._id || exp.id)}
+                              className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                              title="Delete Expense"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
