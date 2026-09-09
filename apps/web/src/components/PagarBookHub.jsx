@@ -6,6 +6,7 @@ import {
   CreditCard, Landmark
 } from "lucide-react";
 import api from "../services/api";
+import { useCompany } from "../contexts/CompanyContext";
 
 export default function PagarBookHub({ onClose, initialStaffId = null }) {
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -24,7 +25,8 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     daysConsidered: new Date().getDate()
   });
   const [loading, setLoading] = useState(false);
-  const [companyName, setCompanyName] = useState("Ganesh traders sarangarh");
+  const { selectedCompany } = useCompany() || {};
+  const companyName = selectedCompany?.name || selectedCompany?.companyName || "VyaparBook";
 
   // State Persistence on Refresh
   const [activeScreen, setActiveScreen] = useState(() => {

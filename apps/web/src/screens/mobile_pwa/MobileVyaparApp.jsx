@@ -87,7 +87,10 @@ function MobileVyaparAppContent() {
   const navigate = useNavigate();
   const { selectedCompany, companies, selectCompany } = useCompany();
 
-  const [activeTab, setActiveTab] = useState("dashboard"); // dashboard, parties, items, reports, more
+  const [activeTab, setActiveTab] = useState(() => {
+    return sessionStorage.getItem("mobile_active_tab") || "dashboard";
+  });
+  const [showCompanySelectModal, setShowCompanySelectModal] = useState(false);
   const [parties, setParties] = useState([]);
   const [items, setItems] = useState([]);
   const [bills, setBills] = useState([]);
@@ -144,10 +147,31 @@ function MobileVyaparAppContent() {
   const [newPartyBalance, setNewPartyBalance] = useState("0");
   const [newPartyType, setNewPartyType] = useState("customer");
   const [savingParty, setSavingParty] = useState(false);
+  // Sync tab & modal states to sessionStorage
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    sessionStorage.setItem("mobile_active_tab", tab);
+  };
+
+  const handleTogglePagarBook = (show) => {
+    setShowPagarBookModal(show);
+    sessionStorage.setItem("mobile_show_pagarbook", show ? "true" : "false");
+  };
+
+  const handleToggleGharKharchEntry = (show) => {
+    setShowGharKharchModal(show);
+    sessionStorage.setItem("mobile_show_gharkharch_entry", show ? "true" : "false");
+  };
+
+  const handleToggleGharKharchLedger = (show) => {
+    setShowGharKharchLedgerModal(show);
+    sessionStorage.setItem("mobile_show_gharkharch_ledger", show ? "true" : "false");
+  };
+
 
   // ==================== GHAR KHARCH (HOUSEHOLD & FAMILY EXPENSE) STATE ====================
-  const [showGharKharchModal, setShowGharKharchModal] = useState(false);
-  const [showGharKharchLedgerModal, setShowGharKharchLedgerModal] = useState(false);
+  const [showGharKharchModal, setShowGharKharchModal] = useState(() => sessionStorage.getItem("mobile_show_gharkharch_entry") === "true");
+  const [showGharKharchLedgerModal, setShowGharKharchLedgerModal] = useState(() => sessionStorage.getItem("mobile_show_gharkharch_ledger") === "true");
   const [gharKharchType, setGharKharchType] = useState("drawings"); // 'drawings' (Ghar Kharch) or 'operating' (Dukaan Kharch)
   const [gharKharchFlow, setGharKharchFlow] = useState("given"); // 'given' (पैसा दिया / खर्च) or 'received' (पैसा लिया / उधार/कैपिटल)
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("ALL");
@@ -160,7 +184,7 @@ function MobileVyaparAppContent() {
   const [newItemPurchasePrice, setNewItemPurchasePrice] = useState("");
 
   // ==================== PAGARBOOK STAFF & SALARY STATE ====================
-  const [showPagarBookModal, setShowPagarBookModal] = useState(false);
+  const [showPagarBookModal, setShowPagarBookModal] = useState(() => sessionStorage.getItem("mobile_show_pagarbook") === "true");
   const [pagarBookMonth, setPagarBookMonth] = useState(new Date().getMonth() + 1);
   const [pagarBookYear, setPagarBookYear] = useState(new Date().getFullYear());
   const [pagarBookData, setPagarBookData] = useState({ staff: [], totalCompanySalaryEarned: 0, totalCompanyAdvanceGiven: 0, totalCompanyNetPayable: 0 });
@@ -497,7 +521,7 @@ function MobileVyaparAppContent() {
       setGharKharchNotes("");
       setCustomFamilyMember("");
       setGharKharchFlow("given");
-      setShowGharKharchModal(false);
+      handleToggleGharKharchEntry(false);
       fetchGharKharchData();
     } catch (err) {
       console.error(err);
@@ -522,10 +546,12 @@ function MobileVyaparAppContent() {
   const fetchLiveDashboardData = async () => {
     setLoading(true);
     try {
-      const [billsRes, partiesRes, invRes] = await Promise.allSettled([
+      const [billsRes, partiesRes, invRes, catRes, brandRes] = await Promise.allSettled([
         api.get("/billing"),
         api.get("/parties"),
-        api.get("/inventory")
+        api.get("/api/inventory").catch(() => api.get("/inventory")),
+        api.get("/api/category").catch(() => ({ data: [] })),
+        api.get("/api/brand").catch(() => ({ data: [] }))
       ]);
 
       if (billsRes.status === "fulfilled") {
@@ -558,14 +584,25 @@ function MobileVyaparAppContent() {
       }
 
       if (invRes.status === "fulfilled") {
-        const rawInv = invRes.value.data?.products || invRes.value.data?.items || invRes.value.data || [];
+        const rawInv = invRes.value.data?.products || invRes.value.data?.inventory || invRes.value.data?.items || invRes.value.data || (Array.isArray(invRes.value) ? invRes.value : []);
         const normInv = (Array.isArray(rawInv) ? rawInv : []).map(it => ({
+          ...it,
           id: it._id || it.id,
-          name: it.name || it.productName,
-          salePrice: Number(it.sellingPrice || it.salePrice || it.price || 0),
-          mrp: Number(it.mrp || it.sellingPrice || 0),
+          _id: it._id || it.id,
+          name: it.name || it.productName || "Unnamed Item",
+          category: (it.category || "General").trim(),
+          subCategory: (it.subCategory || "").trim(),
+          brand: (it.brand || "General").trim(),
+          salePrice: Number(it.sellingPrice ?? it.salePrice ?? it.price ?? 0),
+          sellingPrice: Number(it.sellingPrice ?? it.salePrice ?? it.price ?? 0),
+          costPrice: Number(it.costPrice ?? 0),
+          mrp: Number(it.mrp ?? it.sellingPrice ?? 0),
           stock: Number(it.currentStock ?? it.stock ?? 0),
-          unit: it.unit || "Pcs"
+          currentStock: Number(it.currentStock ?? it.stock ?? 0),
+          unit: it.unit || "Pcs",
+          barcode: it.barcode || "",
+          sku: it.sku || "",
+          hsnCode: it.hsnCode || ""
         }));
         setItems(normInv);
       }
@@ -586,7 +623,7 @@ function MobileVyaparAppContent() {
   const todayCash = bills.filter(b => b.type === "CASH").reduce((sum, b) => sum + b.amount, 0);
   const todayCredit = bills.filter(b => b.type === "UDHAR").reduce((sum, b) => sum + b.amount, 0);
 
-  const companyDisplayName = selectedCompany?.companyName || selectedCompany?.name || "GANESH HARDWARE";
+  const companyDisplayName = selectedCompany?.name || selectedCompany?.companyName || "VyaparBook";
 
   const handleShareWhatsAppBill = (bill) => {
     if (!bill) return;
@@ -969,7 +1006,7 @@ function MobileVyaparAppContent() {
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans pb-28 select-none">
       {/* 📱 1. TOP WHITE HEADER */}
       <header className="sticky top-0 z-30 bg-white border-b border-slate-100 px-4 py-3 flex justify-between items-center shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
-        <div className="flex items-center gap-1.5 cursor-pointer" onClick={() => navigate("/company/list")}>
+        <div className="flex items-center gap-1.5 cursor-pointer" onClick={() => setShowCompanySelectModal(true)}>
           <h1 className="font-extrabold text-[15px] tracking-wide text-[#1E293B]">
             {companyDisplayName.toUpperCase()}
           </h1>
@@ -1016,7 +1053,7 @@ function MobileVyaparAppContent() {
                 <h3 className="font-black text-xs text-[#1E1B4B]">{companyDisplayName} ERP v2.0 Live</h3>
               </div>
               <button 
-                onClick={() => setActiveTab("items")}
+                onClick={() => handleTabChange("items")}
                 className="px-3 py-1.5 bg-[#6366F1] hover:bg-[#4F46E5] text-white font-bold text-xs rounded-xl shadow-sm transition cursor-pointer"
               >
                 View Stock →
@@ -1026,7 +1063,7 @@ function MobileVyaparAppContent() {
             {/* 2x3 Metrics Grid */}
             <div className="grid grid-cols-2 gap-2.5">
               <div 
-                onClick={() => setActiveTab("parties")}
+                onClick={() => handleTabChange("parties")}
                 className="p-3.5 bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-[#34D399] transition"
               >
                 <div className="flex justify-between items-center">
@@ -1040,7 +1077,7 @@ function MobileVyaparAppContent() {
               </div>
 
               <div 
-                onClick={() => setActiveTab("parties")}
+                onClick={() => handleTabChange("parties")}
                 className="p-3.5 bg-[#FFF1F2] border border-[#FECDD3] rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-[#FB7185] transition"
               >
                 <div className="flex justify-between items-center">
@@ -1054,7 +1091,7 @@ function MobileVyaparAppContent() {
               </div>
 
               <div 
-                onClick={() => setActiveTab("items")}
+                onClick={() => handleTabChange("items")}
                 className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
               >
                 <div className="flex justify-between items-center">
@@ -1067,7 +1104,7 @@ function MobileVyaparAppContent() {
               </div>
 
               <div 
-                onClick={() => setActiveTab("reports")}
+                onClick={() => handleTabChange("reports")}
                 className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
               >
                 <div className="flex justify-between items-center">
@@ -1089,7 +1126,7 @@ function MobileVyaparAppContent() {
               </div>
 
               <div 
-                onClick={() => setActiveTab("reports")}
+                onClick={() => handleTabChange("reports")}
                 className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
               >
                 <div className="flex justify-between items-center">
@@ -1121,7 +1158,7 @@ function MobileVyaparAppContent() {
             <div 
               onClick={() => {
                 fetchPagarBookData();
-                setShowPagarBookModal(true);
+                handleTogglePagarBook(true);
               }}
               className="p-3.5 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 border border-amber-500/30 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm hover:border-amber-400 transition"
             >
@@ -1135,6 +1172,42 @@ function MobileVyaparAppContent() {
                 </div>
               </div>
               <ChevronRight size={16} className="text-amber-700" />
+            </div>
+
+            {/* 🏡 GHAR KHARCH (FAMILY & HOUSEHOLD EXPENSE) DASHBOARD STRIP */}
+            <div className="p-3.5 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/10 border border-emerald-500/30 rounded-2xl flex justify-between items-center shadow-sm">
+              <div 
+                onClick={() => {
+                  fetchGharKharchData();
+                  handleToggleGharKharchLedger(true);
+                }}
+                className="flex items-center gap-2.5 flex-1 cursor-pointer"
+              >
+                <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow text-base">
+                  🏡
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-xs text-emerald-950">🏡 घर खर्च व फैमिली लेजर (Ghar Kharch)</h4>
+                  <p className="text-[10px] text-emerald-800">राशन, दवाई, बिजली, स्कूल फीस व फैमिली खर्च का पूरा हिसाब</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => {
+                    fetchGharKharchData();
+                    handleToggleGharKharchLedger(true);
+                  }}
+                  className="px-2.5 py-1.5 bg-white border border-emerald-300 text-emerald-900 font-bold text-[11px] rounded-xl shadow-xs hover:bg-emerald-50 transition cursor-pointer"
+                >
+                  लेजर →
+                </button>
+                <button
+                  onClick={() => handleToggleGharKharchEntry(true)}
+                  className="px-2.5 py-1.5 bg-emerald-600 text-white font-bold text-[11px] rounded-xl shadow-xs hover:bg-emerald-700 transition cursor-pointer"
+                >
+                  + खर्च
+                </button>
+              </div>
             </div>
 
             {/* EOD Daily Summary */}
@@ -1281,18 +1354,25 @@ function MobileVyaparAppContent() {
 
           // Filter items based on search, category, brand, and stock status
           const filteredItems = items.filter(it => {
-            const matchesSearch = (it.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-              (it.category || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-              (it.brand || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-              (it.barcode || '').toLowerCase().includes(searchQuery.toLowerCase());
+            const itemCat = (it.category || 'General').trim().toLowerCase();
+            const itemBrand = (it.brand || 'General').trim().toLowerCase();
+            const q = searchQuery.trim().toLowerCase();
+
+            const matchesSearch = !q || 
+              (it.name || '').toLowerCase().includes(q) ||
+              itemCat.includes(q) ||
+              itemBrand.includes(q) ||
+              (it.barcode || '').toLowerCase().includes(q) ||
+              (it.sku || '').toLowerCase().includes(q);
 
             const matchesCategory = selectedCategoryFilter === "ALL" || 
-              (it.category || '').toLowerCase() === selectedCategoryFilter.toLowerCase();
+              itemCat === selectedCategoryFilter.trim().toLowerCase() ||
+              (selectedCategoryFilter.toLowerCase().includes("plywood") && itemCat.includes("plywood"));
 
             const matchesBrand = selectedBrandFilter === "ALL" || 
-              (it.brand || '').toLowerCase() === selectedBrandFilter.toLowerCase();
+              itemBrand === selectedBrandFilter.trim().toLowerCase();
 
-            const stockNum = Number(it.stock || it.currentStock || 0);
+            const stockNum = Number(it.stock ?? it.currentStock ?? 0);
             let matchesStock = true;
             if (selectedStockFilter === "IN_STOCK") matchesStock = stockNum > 0;
             else if (selectedStockFilter === "LOW_STOCK") matchesStock = stockNum > 0 && stockNum <= 5;
@@ -1590,7 +1670,7 @@ function MobileVyaparAppContent() {
       <div className="fixed bottom-16 left-0 right-0 z-30 px-4 flex justify-center items-center pointer-events-none">
         <div className="bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-full px-3 py-1.5 shadow-xl flex items-center gap-3 pointer-events-auto">
           <button 
-            onClick={() => setActiveTab("parties")}
+            onClick={() => handleTabChange("parties")}
             className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#0F172A] font-bold text-xs rounded-full transition cursor-pointer"
           >
             Received Payment
@@ -1615,7 +1695,7 @@ function MobileVyaparAppContent() {
       {/* 📱 4. BOTTOM TAB NAVIGATOR (5 Tabs) */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200/90 px-2 py-2 shadow-2xl flex justify-around items-center">
         <button 
-          onClick={() => setActiveTab("dashboard")}
+          onClick={() => handleTabChange("dashboard")}
           className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "dashboard" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
         >
           <Home size={20} />
@@ -1623,7 +1703,7 @@ function MobileVyaparAppContent() {
         </button>
 
         <button 
-          onClick={() => setActiveTab("parties")}
+          onClick={() => handleTabChange("parties")}
           className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "parties" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
         >
           <Users size={20} />
@@ -1631,7 +1711,7 @@ function MobileVyaparAppContent() {
         </button>
 
         <button 
-          onClick={() => setActiveTab("reports")}
+          onClick={() => handleTabChange("reports")}
           className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "reports" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
         >
           <BarChart2 size={20} />
@@ -1639,7 +1719,7 @@ function MobileVyaparAppContent() {
         </button>
 
         <button 
-          onClick={() => setActiveTab("items")}
+          onClick={() => handleTabChange("items")}
           className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "items" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
         >
           <Package size={20} />
@@ -1647,7 +1727,7 @@ function MobileVyaparAppContent() {
         </button>
 
         <button 
-          onClick={() => setActiveTab("more")}
+          onClick={() => handleTabChange("more")}
           className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "more" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
         >
           <Menu size={20} />
@@ -2418,7 +2498,7 @@ function MobileVyaparAppContent() {
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => {
-                    setShowGharKharchLedgerModal(false);
+                    handleToggleGharKharchLedger(false);
                     setShowGharKharchModal(true);
                   }}
                   className="px-2.5 py-1 bg-amber-600 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer"
@@ -2808,7 +2888,7 @@ function MobileVyaparAppContent() {
       {/* ======================================================== */}
       {showPagarBookModal && (
         <div className="fixed inset-0 z-50 bg-[#F4F6F9] overflow-y-auto animate-in fade-in">
-          <PagarBookHub onClose={() => setShowPagarBookModal(false)} />
+          <PagarBookHub onClose={() => handleTogglePagarBook(false)} />
         </div>
       )}
 
@@ -3245,6 +3325,65 @@ function MobileVyaparAppContent() {
                 {savingStaffAction ? "दर्ज हो रहा है..." : "💾 सेव करें"}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+
+      {/* 🏢 COMPANY SELECT / SWITCH MODAL */}
+      {showCompanySelectModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  🏢
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">कंपनी / दुकान चुनें</h3>
+                  <p className="text-[10px] text-slate-400">अपनी एक्टिव कंपनी बदलें</p>
+                </div>
+              </div>
+              <button onClick={() => setShowCompanySelectModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {(companies && companies.length > 0 ? companies : [{ _id: selectedCompany?._id, name: companyDisplayName }]).map(c => {
+                const cId = c._id || c.id;
+                const isSelected = selectedCompany?._id === cId || selectedCompany?.id === cId;
+                return (
+                  <div
+                    key={cId || Math.random()}
+                    onClick={() => {
+                      if (selectCompany) selectCompany(c);
+                      setShowCompanySelectModal(false);
+                      setTimeout(() => window.location.reload(), 100);
+                    }}
+                    className={`p-3 rounded-2xl border flex justify-between items-center cursor-pointer transition ${isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-900 font-extrabold' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 font-bold'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span>🏪</span>
+                      <span className="text-xs">{c.name || c.companyName || "My Company"}</span>
+                    </div>
+                    {isSelected && <CheckCircle size={16} className="text-indigo-600" />}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="pt-2 border-t border-slate-100">
+              <button
+                onClick={() => {
+                  setShowCompanySelectModal(false);
+                  navigate("/company/add");
+                }}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Plus size={14} /> + नई कंपनी / दुकान जोड़ें
+              </button>
+            </div>
           </div>
         </div>
       )}
