@@ -2663,6 +2663,660 @@ function MobileVyaparAppContent() {
           </div>
         </div>
       )}
+
+      {/* ======================================================== */}
+      {/* 📱 6.6B CATEGORY PICKER MODAL */}
+      {/* ======================================================== */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 space-y-3.5 shadow-2xl max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  📁
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">श्रेणी अनुसार फिल्टर (Category Filter)</h3>
+                  <p className="text-[10px] text-slate-400">अपनी दुकान के अनुसार कैटेगरी चुनें</p>
+                </div>
+              </div>
+              <button onClick={() => setShowCategoryModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {["ALL", "General", "Paints", "Hardware", "Pipes & Fittings", "Electricals", "Sanitary", "Plywood & Beat", "Tools", ...new Set(items.map(it => it.category).filter(Boolean))].map(cat => {
+                const count = cat === "ALL" ? items.length : items.filter(it => (it.category || '').toLowerCase() === cat.toLowerCase()).length;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => {
+                      setSelectedCategoryFilter(cat);
+                      setShowCategoryModal(false);
+                    }}
+                    className={`p-3 rounded-2xl border text-left font-bold text-xs flex justify-between items-center transition cursor-pointer ${selectedCategoryFilter === cat ? "bg-[#4338CA] text-white border-[#4338CA] shadow-md" : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"}`}
+                  >
+                    <span>📁 {cat === "ALL" ? "सभी कैटेगरी (All)" : cat}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${selectedCategoryFilter === cat ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"}`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 📱 6.6C BRAND PICKER MODAL */}
+      {/* ======================================================== */}
+      {showBrandModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 space-y-3.5 shadow-2xl max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
+                  🏷️
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">ब्रांड अनुसार फिल्टर (Brand Filter)</h3>
+                  <p className="text-[10px] text-slate-400">पसंदीदा ब्रांड के अनुसार प्रोडक्ट्स देखें</p>
+                </div>
+              </div>
+              <button onClick={() => setShowBrandModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {["ALL", "General", "Asian Paints", "Berger", "Kamdhenu", "Astral", "Supreme", "Pidilite", "Havells", "Finolex", ...new Set(items.map(it => it.brand).filter(Boolean))].map(br => {
+                const count = br === "ALL" ? items.length : items.filter(it => (it.brand || '').toLowerCase() === br.toLowerCase()).length;
+                return (
+                  <button
+                    key={br}
+                    onClick={() => {
+                      setSelectedBrandFilter(br);
+                      setShowBrandModal(false);
+                    }}
+                    className={`p-3 rounded-2xl border text-left font-bold text-xs flex justify-between items-center transition cursor-pointer ${selectedBrandFilter === br ? "bg-amber-600 text-white border-amber-600 shadow-md" : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"}`}
+                  >
+                    <span>🏷️ {br === "ALL" ? "सभी ब्रांड (All)" : br}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${selectedBrandFilter === br ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"}`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 📱 6.8 PAGARBOOK (STAFF ATTENDANCE & SALARY) MAIN MODAL  */}
+      {/* ======================================================== */}
+      {showPagarBookModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-xl w-full p-4 sm:p-5 space-y-3.5 shadow-2xl max-h-[94vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                  👔
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">PagarBook (स्टाफ हाजिरी व सैलरी)</h3>
+                  <p className="text-[10px] text-slate-400">रोज-रोज झंझट नहीं - डिफ़ॉल्ट उपस्थित (1-क्लिक हाजिरी)</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setShowAddStaffModal(true)}
+                  className="px-2.5 py-1 bg-[#059669] text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer flex items-center gap-1"
+                >
+                  <Plus size={13} /> + नया स्टाफ
+                </button>
+                <button onClick={() => setShowPagarBookModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Month Switcher Bar */}
+            <div className="flex items-center justify-between bg-slate-100 p-2 rounded-2xl">
+              <button
+                onClick={() => {
+                  let newM = pagarBookMonth - 1;
+                  let newY = pagarBookYear;
+                  if (newM < 1) { newM = 12; newY -= 1; }
+                  setPagarBookMonth(newM);
+                  setPagarBookYear(newY);
+                  fetchPagarBookData(newM, newY);
+                }}
+                className="p-1.5 bg-white rounded-xl text-slate-700 shadow-xs cursor-pointer hover:bg-slate-50 font-bold text-xs"
+              >
+                ◀ पिछला माह
+              </button>
+              <div className="text-center">
+                <span className="text-xs font-black text-[#0F172A] block">
+                  📅 {["", "जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"][pagarBookMonth]} {pagarBookYear}
+                </span>
+                <span className="text-[10px] text-slate-500 font-semibold">
+                  (कुल {pagarBookData.daysInMonth || 30} दिन का महीना)
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  let newM = pagarBookMonth + 1;
+                  let newY = pagarBookYear;
+                  if (newM > 12) { newM = 1; newY += 1; }
+                  setPagarBookMonth(newM);
+                  setPagarBookYear(newY);
+                  fetchPagarBookData(newM, newY);
+                }}
+                className="p-1.5 bg-white rounded-xl text-slate-700 shadow-xs cursor-pointer hover:bg-slate-50 font-bold text-xs"
+              >
+                अगला माह ▶
+              </button>
+            </div>
+
+            {/* Monthly Company Financials Summary Banner */}
+            <div className="grid grid-cols-3 gap-2 bg-gradient-to-r from-slate-900 to-indigo-950 p-3.5 rounded-2xl text-white shadow-md">
+              <div className="text-center border-r border-slate-700/60 pr-1">
+                <span className="text-[10px] font-bold text-indigo-200 block">💰 कुल बनी सैलरी</span>
+                <span className="text-xs sm:text-sm font-black text-white">₹ {(pagarBookData.totalCompanySalaryEarned || 0).toLocaleString('en-IN')}</span>
+              </div>
+              <div className="text-center border-r border-slate-700/60 pr-1">
+                <span className="text-[10px] font-bold text-rose-300 block">💸 दिया एडवांस</span>
+                <span className="text-xs sm:text-sm font-black text-white">₹ {(pagarBookData.totalCompanyAdvanceGiven || 0).toLocaleString('en-IN')}</span>
+              </div>
+              <div className="text-center">
+                <span className="text-[10px] font-bold text-emerald-300 block">⚖️ कुल बाकी सैलरी</span>
+                <span className="text-xs sm:text-sm font-black text-emerald-300">
+                  ₹ {(pagarBookData.totalCompanyNetPayable || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+
+            {/* Staff Cards List */}
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-0.5">
+              {loadingPagarBook ? (
+                <div className="p-8 text-center text-xs text-slate-400">स्टाफ व हाजिरी लोड हो रही है...</div>
+              ) : (pagarBookData.staff || []).length === 0 ? (
+                <div className="p-8 bg-slate-50 border border-dashed border-slate-200 rounded-2xl text-center space-y-2">
+                  <p className="font-bold text-xs text-slate-600">कोई स्टाफ नहीं मिला (No Staff Found)</p>
+                  <p className="text-[10px] text-slate-400">नीचे "+ नया स्टाफ जोड़ें" बटन से पहला स्टाफ जोड़ें</p>
+                  <button
+                    onClick={() => setShowAddStaffModal(true)}
+                    className="px-3 py-1.5 bg-[#059669] text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer"
+                  >
+                    + नया स्टाफ जोड़ें
+                  </button>
+                </div>
+              ) : (
+                pagarBookData.staff.map(s => (
+                  <div key={s._id} className="p-3.5 bg-white border border-slate-200 rounded-2xl shadow-xs space-y-2.5 hover:border-indigo-200 transition">
+                    {/* Top Row: Name, Salary & Detail Trigger */}
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-extrabold text-sm text-[#0F172A]">{s.name}</span>
+                          <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-semibold">
+                            {s.position}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          मासिक वेतन: <strong className="text-slate-800">₹{(s.baseSalary || 0).toLocaleString('en-IN')}</strong> ({s.daysInMonth} दिन @ ₹{s.perDaySalary}/दिन)
+                          {s.mobileNumber && <span className="ml-1.5 text-slate-400">• 📞 {s.mobileNumber}</span>}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setSelectedStaffForSlip(s);
+                          setShowStaffSlipModal(true);
+                        }}
+                        className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-[#4338CA] font-extrabold text-[11px] rounded-xl border border-indigo-200 transition cursor-pointer flex items-center gap-1"
+                      >
+                        📄 पूरा हिसाब
+                      </button>
+                    </div>
+
+                    {/* LIVE MONTHLY STATS COUNTER BAR (Directly above attendance buttons) */}
+                    <div className="grid grid-cols-4 gap-1.5 bg-slate-50 p-2 rounded-xl border border-slate-100 text-center">
+                      <div>
+                        <span className="text-[9px] font-bold text-slate-400 block">माह के दिन</span>
+                        <span className="text-xs font-black text-slate-700">{s.daysInMonth} दिन</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] font-bold text-emerald-600 block">🟢 उपस्थित (P)</span>
+                        <span className="text-xs font-black text-emerald-700">{s.presentCount} दिन</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] font-bold text-amber-600 block">🟡 हाफ डे (HT)</span>
+                        <span className="text-xs font-black text-amber-700">{s.halfDayCount} दिन</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] font-bold text-rose-600 block">🔴 छुट्टी (A)</span>
+                        <span className="text-xs font-black text-rose-700">{s.absentCount} दिन</span>
+                      </div>
+                    </div>
+
+                    {/* 3 QUICK ATTENDANCE BUTTONS (1-TAP ACTION) */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-extrabold text-slate-500 block">
+                        आज की हाजिरी (Today Attendance):
+                      </span>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleQuickMarkAttendance(s._id, 'present')}
+                          className={`py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1 ${s.todayStatus === 'present' ? 'bg-emerald-600 text-white shadow-md border-emerald-600' : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100/70'}`}
+                        >
+                          🟢 उपस्थित (P)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickMarkAttendance(s._id, 'half-day')}
+                          className={`py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1 ${s.todayStatus === 'half-day' ? 'bg-amber-500 text-white shadow-md border-amber-500' : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100/70'}`}
+                        >
+                          🟡 हाफ डे (HT)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickMarkAttendance(s._id, 'absent')}
+                          className={`py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1 ${s.todayStatus === 'absent' ? 'bg-rose-600 text-white shadow-md border-rose-600' : 'bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100/70'}`}
+                        >
+                          🔴 छुट्टी (A)
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Financial Summary & Quick Action Buttons */}
+                    <div className="pt-1 border-t border-slate-100 flex flex-wrap justify-between items-center gap-2">
+                      <div className="text-[11px] font-bold text-slate-700">
+                        बनी: <strong className="text-indigo-700">₹{(s.earnedSalary || 0).toLocaleString('en-IN')}</strong> • एडवांस: <strong className="text-rose-600">₹{(s.totalAdvance || 0).toLocaleString('en-IN')}</strong> • बाकी: <strong className="text-emerald-700 font-black">₹{(s.netPayable || 0).toLocaleString('en-IN')}</strong>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setActionStaffTarget(s);
+                            setActionType("advance");
+                            setShowStaffActionModal(true);
+                          }}
+                          className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[10px] rounded-lg border border-rose-200 cursor-pointer"
+                        >
+                          💸 + एडवांस
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActionStaffTarget(s);
+                            setActionType("overtime");
+                            setShowStaffActionModal(true);
+                          }}
+                          className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-extrabold text-[10px] rounded-lg border border-amber-200 cursor-pointer"
+                        >
+                          ⏱️ + OT
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActionStaffTarget(s);
+                            setActionType("commission");
+                            setShowStaffActionModal(true);
+                          }}
+                          className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-[10px] rounded-lg border border-emerald-200 cursor-pointer"
+                        >
+                          🎯 + कमीशन
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 📱 6.8B DEDICATED STAFF CALCULATION & SALARY SLIP MODAL */}
+      {/* ======================================================== */}
+      {showStaffSlipModal && selectedStaffForSlip && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  📄
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">{selectedStaffForSlip.name} - पूरा सैलरी हिसाब</h3>
+                  <p className="text-[10px] text-slate-400">वेतन पर्ची, हाजिरी विवरण व एडवांस पासबुक</p>
+                </div>
+              </div>
+              <button onClick={() => setShowStaffSlipModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Attendance Breakdown Box */}
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
+              <span className="text-xs font-black text-slate-800 block">📊 हाजिरी विवरण (Attendance Calculation):</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                <div className="bg-white p-2 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-400 block">माह के कुल दिन</span>
+                  <span className="font-black text-slate-800">{selectedStaffForSlip.daysInMonth} दिन</span>
+                </div>
+                <div className="bg-white p-2 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-emerald-600 block">🟢 उपस्थित (P)</span>
+                  <span className="font-black text-emerald-700">{selectedStaffForSlip.presentCount} दिन</span>
+                </div>
+                <div className="bg-white p-2 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-amber-600 block">🟡 हाफ डे (HT)</span>
+                  <span className="font-black text-amber-700">{selectedStaffForSlip.halfDayCount} दिन</span>
+                </div>
+                <div className="bg-white p-2 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-rose-600 block">🔴 अनुपस्थित (A)</span>
+                  <span className="font-black text-rose-700">{selectedStaffForSlip.absentCount} दिन</span>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-600 font-semibold bg-white p-2 rounded-xl border border-slate-100">
+                ⚡ कुल प्रभावी काम के दिन: <strong>{selectedStaffForSlip.effectiveWorkingDays} दिन</strong> ({selectedStaffForSlip.presentCount} पूर्ण दिन + {selectedStaffForSlip.halfDayCount * 0.5} हाफ डे)
+              </p>
+            </div>
+
+            {/* Salary Calculation Formula Sheet */}
+            <div className="bg-gradient-to-br from-indigo-50/70 to-slate-50 p-4 rounded-2xl border border-indigo-100 space-y-2 text-xs">
+              <span className="font-black text-xs text-indigo-950 block">💰 वेतन गणना (Salary Calculation):</span>
+              
+              <div className="space-y-1.5 pt-1">
+                <div className="flex justify-between text-slate-700">
+                  <span>मासिक मूल वेतन (Base Salary):</span>
+                  <span className="font-bold">₹{(selectedStaffForSlip.baseSalary || 0).toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex justify-between text-slate-700">
+                  <span>प्रति दिन दर (Daily Rate):</span>
+                  <span className="font-bold">₹{selectedStaffForSlip.perDaySalary} / दिन</span>
+                </div>
+                <div className="flex justify-between text-indigo-900 font-bold border-t border-indigo-100/80 pt-1">
+                  <span>💵 बनी हुई सैलरी ({selectedStaffForSlip.effectiveWorkingDays} दिन × ₹{selectedStaffForSlip.perDaySalary}):</span>
+                  <span className="font-black">₹{(selectedStaffForSlip.earnedSalary || 0).toLocaleString('en-IN')}</span>
+                </div>
+
+                {selectedStaffForSlip.otEarnings > 0 && (
+                  <div className="flex justify-between text-amber-800 font-bold">
+                    <span>⏱️ ओवरटाइम वेतन (Overtime):</span>
+                    <span>+₹{selectedStaffForSlip.otEarnings.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+
+                {selectedStaffForSlip.commEarnings > 0 && (
+                  <div className="flex justify-between text-emerald-800 font-bold">
+                    <span>🎯 बिक्री कमीशन / इंसेंटिव:</span>
+                    <span>+₹{selectedStaffForSlip.commEarnings.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between text-rose-700 font-bold">
+                  <span>💸 बीच में लिया गया एडवांस (Advance Paid):</span>
+                  <span>-₹{(selectedStaffForSlip.totalAdvance || 0).toLocaleString('en-IN')}</span>
+                </div>
+
+                <div className="flex justify-between items-center bg-indigo-600 text-white p-2.5 rounded-xl font-black text-sm mt-2 shadow-sm">
+                  <span>⚖️ शुद्ध देय बाकी वेतन (Net Payable):</span>
+                  <span className="text-base">₹{(selectedStaffForSlip.netPayable || 0).toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Advance & Payment History List */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-black text-slate-800">
+                  📝 एडवांस व भुगतान पासबुक ({(selectedStaffForSlip.transactions || []).length}):
+                </span>
+                <button
+                  onClick={() => {
+                    setActionStaffTarget(selectedStaffForSlip);
+                    setActionType("advance");
+                    setShowStaffActionModal(true);
+                  }}
+                  className="px-2 py-0.5 bg-rose-50 text-rose-700 rounded-lg text-[10px] font-bold border border-rose-200"
+                >
+                  + नया एडवांस
+                </button>
+              </div>
+
+              <div className="max-h-36 overflow-y-auto space-y-1.5 bg-slate-50 p-2 rounded-2xl border border-slate-200">
+                {(selectedStaffForSlip.transactions || []).length === 0 ? (
+                  <p className="text-[11px] text-slate-400 text-center py-2">इस माह कोई एडवांस या अतिरिक्त लेन-देन नहीं है</p>
+                ) : (
+                  selectedStaffForSlip.transactions.map((t, idx) => (
+                    <div key={idx} className="p-2 bg-white rounded-xl border border-slate-200 flex justify-between items-center text-xs">
+                      <div>
+                        <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <span>{t.type === 'advance' ? '💸 एडवांस' : t.type === 'overtime' ? '⏱️ ओवरटाइम' : '🎯 कमीशन'}</span>
+                          <span className="text-[10px] text-slate-400 font-normal">
+                            {new Date(t.date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short' })}
+                          </span>
+                        </div>
+                        {t.notes && <p className="text-[10px] text-slate-500 mt-0.5">{t.notes}</p>}
+                      </div>
+                      <span className={`font-black ${t.debit > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                        {t.debit > 0 ? `-₹${t.debit}` : `+₹${t.credit}`}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* WhatsApp Share Button */}
+            <button
+              onClick={() => handleShareSalarySlipWhatsApp(selectedStaffForSlip)}
+              className="w-full py-3 bg-[#25D366] hover:bg-emerald-600 text-white font-black text-xs sm:text-sm rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+            >
+              <span>📲 WhatsApp पर वेतन पर्ची (Salary Slip) भेजें</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 📱 6.8C QUICK ADD STAFF MODAL (NAME + SALARY = DONE!)   */}
+      {/* ======================================================== */}
+      {showAddStaffModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 space-y-3.5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                  👤
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">नया स्टाफ जोड़ें (Add Staff)</h3>
+                  <p className="text-[10px] text-slate-400">नाम व सैलरी डालें, बस हो गया!</p>
+                </div>
+              </div>
+              <button onClick={() => setShowAddStaffModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveNewStaff} className="space-y-3">
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">स्टाफ का नाम (Staff Name) *</label>
+                <input
+                  type="text"
+                  placeholder="उदा. राहुल शर्मा, मुन्ना कारीगर..."
+                  value={newStaffName}
+                  onChange={(e) => setNewStaffName(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-[#059669]"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">मासिक वेतन (Monthly Salary ₹) *</label>
+                  <input
+                    type="number"
+                    placeholder="₹ 15000"
+                    value={newStaffSalary}
+                    onChange={(e) => setNewStaffSalary(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-[#0F172A] outline-none focus:border-[#059669]"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">मोबाइल नंबर (वैकल्पिक)</label>
+                  <input
+                    type="tel"
+                    placeholder="9876543210"
+                    value={newStaffMobile}
+                    onChange={(e) => setNewStaffMobile(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-[#0F172A] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">पद / भूमिका (Role / Designation)</label>
+                <input
+                  type="text"
+                  placeholder="उदा. हेल्पर, पेंटर, सेल्समैन, कारीगर..."
+                  value={newStaffPosition}
+                  onChange={(e) => setNewStaffPosition(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-[#0F172A] outline-none"
+                />
+              </div>
+
+              {/* Optional Advanced Settings (Overtime & Commission) */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                <span className="text-[11px] font-bold text-slate-700 block">⚙️ अतिरिक्त (ओवरटाइम व कमीशन - यदि लागू हो):</span>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <div>
+                    <label className="text-[9px] text-slate-500 block">OT दर (₹/घंटा)</label>
+                    <input
+                      type="number"
+                      placeholder="₹ 50"
+                      value={newStaffOtRate}
+                      onChange={(e) => setNewStaffOtRate(e.target.value)}
+                      className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-slate-500 block">सेल्स टारगेट (₹)</label>
+                    <input
+                      type="number"
+                      placeholder="₹ 50000"
+                      value={newStaffSalesTarget}
+                      onChange={(e) => setNewStaffSalesTarget(e.target.value)}
+                      className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-slate-500 block">कमीशन (%)</label>
+                    <input
+                      type="number"
+                      placeholder="2%"
+                      value={newStaffCommission}
+                      onChange={(e) => setNewStaffCommission(e.target.value)}
+                      className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingStaff}
+                className="w-full py-3.5 bg-[#059669] hover:bg-emerald-700 text-white font-extrabold text-sm rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
+              >
+                {savingStaff ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                {savingStaff ? "स्टाफ जुड़ रहा है..." : "💾 नया स्टाफ सेव करें"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 📱 6.8D QUICK ACTION MODAL (ADVANCE / OVERTIME / COMM)   */}
+      {/* ======================================================== */}
+      {showStaffActionModal && actionStaffTarget && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 space-y-3.5 shadow-2xl max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
+                  {actionType === "advance" ? "💸" : actionType === "overtime" ? "⏱️" : "🎯"}
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">
+                    {actionType === "advance" ? "एडवांस पेमेंट दर्ज करें" : actionType === "overtime" ? "ओवरटाइम दर्ज करें" : "कमीशन दर्ज करें"}
+                  </h3>
+                  <p className="text-[10px] text-slate-400">स्टाफ: {actionStaffTarget.name}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowStaffActionModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStaffAction} className="space-y-3">
+              {actionType === "overtime" && (
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">कुल घंटे (Hours)</label>
+                  <input
+                    type="number"
+                    placeholder="उदा. 4 घंटे"
+                    value={actionHours}
+                    onChange={(e) => setActionHours(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">राशि (₹ Amount) *</label>
+                <input
+                  type="number"
+                  placeholder="₹ 1000"
+                  value={actionAmount}
+                  onChange={(e) => setActionAmount(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-[#0F172A] outline-none focus:border-indigo-600"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">विवरण / नोट्स (Notes)</label>
+                <input
+                  type="text"
+                  placeholder="उदा. घर के काम हेतु लिया, रात की शिफ्ट..."
+                  value={actionNotes}
+                  onChange={(e) => setActionNotes(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingStaffAction}
+                className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-sm rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
+              >
+                {savingStaffAction ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                {savingStaffAction ? "दर्ज हो रहा है..." : "💾 सेव करें"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
