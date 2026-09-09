@@ -1,12 +1,33 @@
 import express from "express";
-import { createStaff, listStaff, getStaffById, updateStaff, deleteStaff, addPayment, markAttendance, getStaffStatement } from "../controllers/staffController.js";
+import { 
+  createStaff, 
+  listStaff, 
+  getStaffById, 
+  updateStaff, 
+  deleteStaff, 
+  addPayment, 
+  markAttendance, 
+  getStaffStatement,
+  getPagarBookSummary,
+  quickMarkAttendance,
+  addStaffAdvance,
+  addStaffOvertime,
+  addStaffCommission
+} from "../controllers/staffController.js";
 import { protect, requireCompany } from "../middleware/authmiddleware.js";
 
 const router = express.Router();
 
-// 🚀 SAAS LOCK
+// SAAS LOCK
 router.use(protect);
 router.use(requireCompany);
+
+// PagarBook APIs
+router.get("/pagarbook-summary", getPagarBookSummary);
+router.post("/quick-attendance", quickMarkAttendance);
+router.post("/advance", addStaffAdvance);
+router.post("/overtime", addStaffOvertime);
+router.post("/commission", addStaffCommission);
 
 router.post("/", createStaff);
 router.get("/", listStaff);

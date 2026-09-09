@@ -156,7 +156,38 @@ function MobileVyaparAppContent() {
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [newItemCategory, setNewItemCategory] = useState("General");
   const [newItemBrand, setNewItemBrand] = useState("General");
-  const [newItemPurchasePrice, setNewItemPurchasePrice] = useState(""); // 'drawings' (Ghar Kharch) or 'operating' (Dukaan Kharch)
+  const [newItemPurchasePrice, setNewItemPurchasePrice] = useState("");
+
+  // ==================== PAGARBOOK STAFF & SALARY STATE ====================
+  const [showPagarBookModal, setShowPagarBookModal] = useState(false);
+  const [pagarBookMonth, setPagarBookMonth] = useState(new Date().getMonth() + 1);
+  const [pagarBookYear, setPagarBookYear] = useState(new Date().getFullYear());
+  const [pagarBookData, setPagarBookData] = useState({ staff: [], totalCompanySalaryEarned: 0, totalCompanyAdvanceGiven: 0, totalCompanyNetPayable: 0 });
+  const [loadingPagarBook, setLoadingPagarBook] = useState(false);
+  
+  // Selected Staff for Full Detail & Salary Slip Modal
+  const [selectedStaffForSlip, setSelectedStaffForSlip] = useState(null);
+  const [showStaffSlipModal, setShowStaffSlipModal] = useState(false);
+
+  // Quick Add Staff Modal
+  const [showAddStaffModal, setShowAddStaffModal] = useState(false);
+  const [newStaffName, setNewStaffName] = useState("");
+  const [newStaffSalary, setNewStaffSalary] = useState("");
+  const [newStaffMobile, setNewStaffMobile] = useState("");
+  const [newStaffPosition, setNewStaffPosition] = useState("Worker / Staff");
+  const [newStaffOtRate, setNewStaffOtRate] = useState("");
+  const [newStaffSalesTarget, setNewStaffSalesTarget] = useState("");
+  const [newStaffCommission, setNewStaffCommission] = useState("");
+  const [savingStaff, setSavingStaff] = useState(false);
+
+  // Quick Action Modals (Advance, Overtime, Commission)
+  const [showStaffActionModal, setShowStaffActionModal] = useState(false);
+  const [actionStaffTarget, setActionStaffTarget] = useState(null);
+  const [actionType, setActionType] = useState("advance"); // 'advance', 'overtime', 'commission'
+  const [actionAmount, setActionAmount] = useState("");
+  const [actionHours, setActionHours] = useState("");
+  const [actionNotes, setActionNotes] = useState("");
+  const [savingStaffAction, setSavingStaffAction] = useState(false); // 'drawings' (Ghar Kharch) or 'operating' (Dukaan Kharch)
   const [selectedFamilyMember, setSelectedFamilyMember] = useState("Self");
   const [customFamilyMember, setCustomFamilyMember] = useState("");
   const [gharKharchTitle, setGharKharchTitle] = useState("");
@@ -206,6 +237,176 @@ function MobileVyaparAppContent() {
     } finally {
       setLoadingGharKharch(false);
     }
+  };
+
+  // ==================== PAGARBOOK HANDLERS ====================
+  const fetchPagarBookData = async (m = pagarBookMonth, y = pagarBookYear) => {
+    try {
+      setLoadingPagarBook(true);
+      const res = await api.get(`/staff/pagarbook-summary?month=${m}&year=${y}`);
+      if (res.data && res.data.success) {
+        setPagarBookData(res.data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch PagarBook data:", e);
+    } finally {
+      setLoadingPagarBook(false);
+    }
+  };
+
+  const handleQuickMarkAttendance = async (staffId, status) => {
+    try {
+      // Optimistic UI update
+      setPagarBookData(prev => {
+        const updatedStaff = (prev.staff || []).map(s => {
+          if (s._id === staffId) {
+            return { ...s, todayStatus: status };
+          }
+          return s;
+        });
+        return { ...prev, staff: updatedStaff };
+      });
+
+      await api.post("/staff/quick-attendance", {
+        staffId,
+        status,
+        date: new Date()
+      });
+
+      // Refetch to recalculate perfect monthly stats
+      fetchPagarBookData(pagarBookMonth, pagarBookYear);
+    } catch (e) {
+      console.error("Failed to mark quick attendance:", e);
+      alert("हाजिरी दर्ज करने में त्रुटि आई।");
+    }
+  };
+
+  const handleSaveNewStaff = async (e) => {
+    if (e) e.preventDefault();
+    if (!newStaffName.trim() || !newStaffSalary) {
+      alert("कृपया स्टाफ का नाम और मासिक सैलरी (₹) दर्ज करें!");
+      return;
+    }
+    setSavingStaff(true);
+    try {
+      const payload = {
+        name: newStaffName.trim(),
+        salary: Number(newStaffSalary),
+        wageAmount: Number(newStaffSalary),
+        mobileNumber: newStaffMobile.trim(),
+        position: newStaffPosition.trim() || "Worker",
+        overtimeRatePerHour: Number(newStaffOtRate) || 0,
+        salesTarget: Number(newStaffSalesTarget) || 0,
+        commissionPercent: Number(newStaffCommission) || 0
+      };
+
+      await api.post("/staff", payload);
+      alert(`✅ स्टाफ '${newStaffName}' सफलतापूर्वक जुड़ गया!`);
+      
+      setNewStaffName("");
+      setNewStaffSalary("");
+      setNewStaffMobile("");
+      setNewStaffPosition("Worker / Staff");
+      setNewStaffOtRate("");
+      setNewStaffSalesTarget("");
+      setNewStaffCommission("");
+      setShowAddStaffModal(false);
+      fetchPagarBookData(pagarBookMonth, pagarBookYear);
+    } catch (err) {
+      console.error("Failed to add staff:", err);
+      alert(err.response?.data?.error || "स्टाफ सेव करने में त्रुटि आई।");
+    } finally {
+      setSavingStaff(false);
+    }
+  };
+
+  const handleSaveStaffAction = async (e) => {
+    if (e) e.preventDefault();
+    if (!actionStaffTarget) return;
+
+    setSavingStaffAction(true);
+    try {
+      if (actionType === "advance") {
+        if (!actionAmount || Number(actionAmount) <= 0) {
+          alert("कृपया सही एडवांस राशि (₹) दर्ज करें!");
+          return;
+        }
+        await api.post("/staff/advance", {
+          staffId: actionStaffTarget._id,
+          amount: Number(actionAmount),
+          notes: actionNotes.trim() || "Advance Payment",
+          date: new Date()
+        });
+        alert(`💵 ₹${actionAmount} एडवांस दर्ज हो गया!`);
+      } else if (actionType === "overtime") {
+        await api.post("/staff/overtime", {
+          staffId: actionStaffTarget._id,
+          hours: Number(actionHours) || 0,
+          amount: Number(actionAmount) || 0,
+          notes: actionNotes.trim() || `Overtime ${actionHours} hrs`,
+          date: new Date()
+        });
+        alert(`⏱️ ओवरटाइम दर्ज हो गया!`);
+      } else if (actionType === "commission") {
+        if (!actionAmount || Number(actionAmount) <= 0) {
+          alert("कृपया सही कमीशन राशि (₹) दर्ज करें!");
+          return;
+        }
+        await api.post("/staff/commission", {
+          staffId: actionStaffTarget._id,
+          amount: Number(actionAmount),
+          notes: actionNotes.trim() || "Sales Commission",
+          date: new Date()
+        });
+        alert(`🎯 कमीशन दर्ज हो गया!`);
+      }
+
+      setShowStaffActionModal(false);
+      setActionAmount("");
+      setActionHours("");
+      setActionNotes("");
+      fetchPagarBookData(pagarBookMonth, pagarBookYear);
+    } catch (err) {
+      console.error("Failed staff action:", err);
+      alert("एंट्री दर्ज करने में त्रुटि आई।");
+    } finally {
+      setSavingStaffAction(false);
+    }
+  };
+
+  const handleShareSalarySlipWhatsApp = (staff) => {
+    if (!staff) return;
+    const monthNames = ["", "जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"];
+    const mName = monthNames[pagarBookMonth] || `Month ${pagarBookMonth}`;
+
+    const text = `*📄 वेतन पर्ची / SALARY SLIP*\n` +
+      `🏢 *${companyDisplayName}*\n` +
+      `--------------------------------\n` +
+      `👤 *स्टाफ नाम:* ${staff.name}\n` +
+      `📅 *माह:* ${mName} ${pagarBookYear}\n` +
+      `💰 *मासिक मूल वेतन:* ₹${(staff.baseSalary || 0).toLocaleString('en-IN')}\n` +
+      `--------------------------------\n` +
+      `📅 *माह के कुल दिन:* ${staff.daysInMonth} दिन\n` +
+      `🟢 *उपस्थित दिन (P):* ${staff.presentCount} दिन\n` +
+      `🟡 *हाफ डे (HT):* ${staff.halfDayCount} दिन\n` +
+      `🔴 *छुट्टी/अनुपस्थित (A):* ${staff.absentCount} दिन\n` +
+      `--------------------------------\n` +
+      `💵 *बनी हुई सैलरी:* ₹${(staff.earnedSalary || 0).toLocaleString('en-IN')}\n` +
+      (staff.otEarnings > 0 ? `⏱️ *ओवरटाइम:* +₹${staff.otEarnings.toLocaleString('en-IN')}\n` : '') +
+      (staff.commEarnings > 0 ? `🎯 *कमीशन:* +₹${staff.commEarnings.toLocaleString('en-IN')}\n` : '') +
+      `💸 *लिया गया एडवांस:* -₹${(staff.totalAdvance || 0).toLocaleString('en-IN')}\n` +
+      `--------------------------------\n` +
+      `⚖️ *शुद्ध देय वेतन (Net Payable):* *₹${(staff.netPayable || 0).toLocaleString('en-IN')}*\n` +
+      `--------------------------------\n` +
+      `_धन्यवाद!_`;
+
+    const cleanPhone = (staff.mobileNumber || '').replace(/[^0-9]/g, '');
+    const phoneParam = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : '';
+    const whatsappUrl = phoneParam 
+      ? `https://api.whatsapp.com/send?phone=91${phoneParam}&text=${encodeURIComponent(text.replace(/\\n/g, '\n'))}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(text.replace(/\\n/g, '\n'))}`;
+    
+    window.open(whatsappUrl, '_blank');
   };
 
   const handleSaveGharKharch = async (e) => {
@@ -703,7 +904,7 @@ function MobileVyaparAppContent() {
     { id: "eway_bill", title: "🚚 E-Way Bill Register", desc: "Govt Transport E-Way Invoices", path: "/reports/eway-bill", category: "Tax", color: "text-emerald-600 bg-emerald-50" },
     { id: "fixed_assets", title: "🏢 Fixed Assets & Capital", desc: "Shop Furniture, Machines & Equip", path: "/reports/fixed-assets", category: "Finance", color: "text-purple-600 bg-purple-50" },
     { id: "customer_builder", title: "🎯 Customer Report Builder", desc: "Custom Filtered Demographics", path: "/reports/customer", category: "CRM", color: "text-blue-600 bg-blue-50" },
-    { id: "staff_payroll", title: "👔 Staff Salary & Statement", desc: "Daily Attendance & Advances", path: "/salary", category: "Staff", color: "text-amber-600 bg-amber-50" },
+    { id: "staff_payroll", title: "👔 PagarBook (स्टाफ हाजिरी व सैलरी)", desc: "Daily Attendance (P/HT/A), Advances, Overtime & Salary Slip", path: "pagarbook_modal", category: "Staff", color: "text-amber-600 bg-amber-50" },
     { id: "sales_return", title: "🔄 Sales Return Register", desc: "Credit Notes & Returns", path: "/billing/return", category: "Sales", color: "text-red-600 bg-red-50" },
     { id: "graphical_analytics", title: "📈 Graphical BI Analytics", desc: "Visual Charts & Trends", path: "/reports/analytics", category: "BI", color: "text-teal-600 bg-teal-50" },
     { id: "ghar_kharch", title: "🏡 Ghar Kharch (फैमिली घर खर्च लेजर)", desc: "Papa, Mummy, Family-wise Expense Ledger", path: "ghar_kharch_modal", category: "Personal", color: "text-amber-600 bg-amber-50" },
@@ -865,6 +1066,26 @@ function MobileVyaparAppContent() {
                 </div>
               </div>
               <ChevronRight size={16} className="text-emerald-600" />
+            </div>
+
+            {/* PagarBook Staff Strip */}
+            <div 
+              onClick={() => {
+                fetchPagarBookData();
+                setShowPagarBookModal(true);
+              }}
+              className="p-3.5 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 border border-amber-500/30 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm hover:border-amber-400 transition"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-600 text-white flex items-center justify-center font-bold shadow">
+                  👔
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-xs text-amber-950">👔 PagarBook (स्टाफ हाजिरी व सैलरी)</h4>
+                  <p className="text-[10px] text-amber-800">1-क्लिक हाजिरी (P/HT/A), एडवांस, ओवरटाइम व वेतन पर्ची</p>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-amber-700" />
             </div>
 
             {/* EOD Daily Summary */}
@@ -1273,7 +1494,10 @@ function MobileVyaparAppContent() {
                 <div 
                   key={r.id}
                   onClick={() => {
-                    if (r.path === 'ghar_kharch_modal') {
+                    if (r.path === 'pagarbook_modal') {
+                      fetchPagarBookData();
+                      setShowPagarBookModal(true);
+                    } else if (r.path === 'ghar_kharch_modal') {
                       fetchGharKharchData();
                       setShowGharKharchLedgerModal(true);
                     } else {

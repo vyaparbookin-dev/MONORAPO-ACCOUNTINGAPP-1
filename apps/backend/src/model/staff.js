@@ -4,11 +4,14 @@ const staffSchema = new mongoose.Schema({
   name: { type: String, required: true },
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
   email: { type: String, unique: true, sparse: true },
-  mobileNumber: { type: String, required: true },
+  mobileNumber: { type: String, default: '' },
   position: String,
   role: { type: String, default: 'staff' },
   wageType: { type: String, enum: ['monthly', 'daily'], default: 'monthly' },
   wageAmount: { type: Number, default: 0 },
+  overtimeRatePerHour: { type: Number, default: 0 },
+  salesTarget: { type: Number, default: 0 },
+  commissionPercent: { type: Number, default: 0 },
   shiftStartTime: String, // e.g., "09:00 AM" (For restaurant/resort shift management)
   shiftEndTime: String, // e.g., "06:00 PM"
   incentiveType: { type: String, enum: ['fixed', 'percentage', 'none'], default: 'none' }, // For clothes/retail sales incentive
