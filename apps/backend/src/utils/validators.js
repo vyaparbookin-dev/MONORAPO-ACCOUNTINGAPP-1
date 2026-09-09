@@ -7,6 +7,8 @@ export const expenseSchema = z.object({
   category: z.string().optional(),
   expenseType: z.string().optional(),
   familyMember: z.string().optional(),
+  transactionFlow: z.string().optional(),
+  notes: z.string().optional(),
   paymentMethod: z.string().optional(),
   description: z.string().optional(),
   date: z.any().optional(),

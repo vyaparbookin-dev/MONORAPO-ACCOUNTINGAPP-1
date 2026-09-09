@@ -18,6 +18,8 @@ const ExpensesPage = () => {
     amount: "",
     category: "other",
     expenseType: "operating", // 'operating' or 'drawings'
+    transactionFlow: "given", // 'given' or 'received'
+    notes: "",
     familyMember: "Self",
     description: "",
     paymentMethod: "cash",
@@ -83,6 +85,8 @@ const ExpensesPage = () => {
       amount: expense.amount,
       category: expense.category || "other",
       expenseType: expense.expenseType || "operating",
+      transactionFlow: expense.transactionFlow || "given",
+      notes: expense.notes || expense.description || "",
       familyMember: expense.familyMember || "Self",
       description: expense.description || "",
       paymentMethod: expense.paymentMethod || "cash",
@@ -98,6 +102,8 @@ const ExpensesPage = () => {
       amount: "",
       category: "other",
       expenseType: activeTypeTab === "drawings" ? "drawings" : "operating",
+      transactionFlow: "given",
+      notes: "",
       familyMember: "Self",
       description: "",
       paymentMethod: "cash",
@@ -152,15 +158,33 @@ const ExpensesPage = () => {
   const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
   
   const totalBusinessExpenses = safeExpenses.filter(e => e.expenseType === 'operating').reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
-  const totalGharKharch = safeExpenses.filter(e => e.expenseType === 'drawings').reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
-
-  // Family Members Breakup
+  
+  let totalGharKharchGiven = 0;
+  let totalGharKharchReceived = 0;
   const familyMembersMap = {};
-  safeExpenses.filter(e => e.expenseType === 'drawings').forEach(e => {
-    const mem = e.familyMember?.trim() || "Unassigned";
-    familyMembersMap[mem] = (familyMembersMap[mem] || 0) + (Number(e.amount) || 0);
+
+  safeExpenses.filter(e => e.expenseType === 'drawings' || (e.familyMember && e.familyMember.trim() !== '')).forEach(e => {
+    const mem = e.familyMember?.trim() || "Family";
+    const amt = Number(e.amount) || 0;
+    const flow = e.transactionFlow === 'received' ? 'received' : 'given';
+
+    if (!familyMembersMap[mem]) {
+      familyMembersMap[mem] = { totalGiven: 0, totalReceived: 0, netBalance: 0 };
+    }
+
+    if (flow === 'received') {
+      totalGharKharchReceived += amt;
+      familyMembersMap[mem].totalReceived += amt;
+    } else {
+      totalGharKharchGiven += amt;
+      familyMembersMap[mem].totalGiven += amt;
+    }
+    familyMembersMap[mem].netBalance = familyMembersMap[mem].totalGiven - familyMembersMap[mem].totalReceived;
   });
+
   const uniqueFamilyMembers = Object.keys(familyMembersMap);
+  const totalGharKharch = totalGharKharchGiven;
+  const netFamilyBalance = totalGharKharchGiven - totalGharKharchReceived;
 
   return (
     <div className="space-y-6">

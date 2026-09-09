@@ -80,41 +80,67 @@ export const listExpenses = async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-// Family Member-wise Ghar Kharch (Personal Drawings) Summary & Analytics
+// Family Member-wise Ghar Kharch & Money In/Out (Paise Lena aur Dena) Summary & Analytics
 export const getGharKharchSummary = async (req, res) => {
   try {
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
 
     const gharKharchFilter = {
       companyId: req.companyId,
-      expenseType: "drawings",
+      $or: [
+        { expenseType: "drawings" },
+        { familyMember: { $exists: true, $nin: ["", null] } }
+      ],
       isDeleted: false
     };
 
-    const allGharKharch = await Expense.find(gharKharchFilter).sort({ date: -1 });
+    const allGharKharch = await Expense.find(gharKharchFilter).sort({ date: -1, createdAt: -1 });
 
     const memberBreakdown = {};
-    let totalGharKharch = 0;
+    let totalGiven = 0;
+    let totalReceived = 0;
 
     allGharKharch.forEach(exp => {
-      const member = exp.familyMember?.trim() || "अन्य (Unassigned)";
+      const member = exp.familyMember?.trim() || "अन्य (Family)";
       const amt = Number(exp.amount) || 0;
-      totalGharKharch += amt;
-      memberBreakdown[member] = (memberBreakdown[member] || 0) + amt;
+      const flow = exp.transactionFlow === 'received' ? 'received' : 'given';
+
+      if (!memberBreakdown[member]) {
+        memberBreakdown[member] = {
+          member,
+          totalGiven: 0,
+          totalReceived: 0,
+          netBalance: 0,
+          transactionsCount: 0
+        };
+      }
+
+      if (flow === 'received') {
+        totalReceived += amt;
+        memberBreakdown[member].totalReceived += amt;
+      } else {
+        totalGiven += amt;
+        memberBreakdown[member].totalGiven += amt;
+      }
+      memberBreakdown[member].transactionsCount += 1;
+      // Net balance: positive means net given (खर्च/दिया), negative means net taken (लिया/उधार)
+      memberBreakdown[member].netBalance = memberBreakdown[member].totalGiven - memberBreakdown[member].totalReceived;
     });
 
-    const memberList = Object.entries(memberBreakdown).map(([member, amount]) => ({
-      member,
-      amount,
-      percentage: totalGharKharch > 0 ? +((amount / totalGharKharch) * 100).toFixed(1) : 0
-    })).sort((a, b) => b.amount - a.amount);
+    const memberList = Object.values(memberBreakdown).map(m => ({
+      ...m,
+      percentage: (totalGiven + totalReceived) > 0 ? +(((m.totalGiven + m.totalReceived) / (totalGiven + totalReceived)) * 100).toFixed(1) : 0
+    })).sort((a, b) => (b.totalGiven + b.totalReceived) - (a.totalGiven + a.totalReceived));
 
     res.json({
       success: true,
-      totalGharKharch,
+      totalGharKharch: totalGiven,
+      totalGiven,
+      totalReceived,
+      netBalance: totalGiven - totalReceived,
       count: allGharKharch.length,
       members: memberList,
-      recentExpenses: allGharKharch.slice(0, 30)
+      recentExpenses: allGharKharch.slice(0, 100)
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

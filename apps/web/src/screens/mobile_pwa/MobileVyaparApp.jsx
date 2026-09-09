@@ -148,6 +148,15 @@ function MobileVyaparAppContent() {
   const [showGharKharchModal, setShowGharKharchModal] = useState(false);
   const [showGharKharchLedgerModal, setShowGharKharchLedgerModal] = useState(false);
   const [gharKharchType, setGharKharchType] = useState("drawings"); // 'drawings' (Ghar Kharch) or 'operating' (Dukaan Kharch)
+  const [gharKharchFlow, setGharKharchFlow] = useState("given"); // 'given' (पैसा दिया / खर्च) or 'received' (पैसा लिया / उधार/कैपिटल)
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("ALL");
+  const [selectedBrandFilter, setSelectedBrandFilter] = useState("ALL");
+  const [selectedStockFilter, setSelectedStockFilter] = useState("ALL"); // 'ALL', 'IN_STOCK', 'LOW_STOCK', 'OUT_OF_STOCK'
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showBrandModal, setShowBrandModal] = useState(false);
+  const [newItemCategory, setNewItemCategory] = useState("General");
+  const [newItemBrand, setNewItemBrand] = useState("General");
+  const [newItemPurchasePrice, setNewItemPurchasePrice] = useState(""); // 'drawings' (Ghar Kharch) or 'operating' (Dukaan Kharch)
   const [selectedFamilyMember, setSelectedFamilyMember] = useState("Self");
   const [customFamilyMember, setCustomFamilyMember] = useState("");
   const [gharKharchTitle, setGharKharchTitle] = useState("");
@@ -189,8 +198,8 @@ function MobileVyaparAppContent() {
   const fetchGharKharchData = async () => {
     try {
       setLoadingGharKharch(true);
-      const res = await api.get("/expenses?expenseType=drawings&limit=200");
-      const list = res.data?.expenses || res.data || [];
+      const res = await api.get("/expenses/ghar-kharch-summary").catch(() => api.get("/expenses?limit=300"));
+      const list = res.data?.recentExpenses || res.data?.expenses || res.data || [];
       setGharKharchList(Array.isArray(list) ? list : []);
     } catch (e) {
       console.error("Failed to fetch Ghar Kharch:", e);
@@ -202,11 +211,15 @@ function MobileVyaparAppContent() {
   const handleSaveGharKharch = async (e) => {
     if (e) e.preventDefault();
     if (!gharKharchAmount || Number(gharKharchAmount) <= 0) {
-      alert("कृपया सही खर्च राशि (₹) दर्ज करें!");
+      alert("कृपया सही राशि (₹) दर्ज करें!");
       return;
     }
     const finalMember = selectedFamilyMember === "अन्य (Custom)" ? (customFamilyMember.trim() || "Family Member") : selectedFamilyMember;
-    const finalTitle = gharKharchTitle.trim() || `${gharKharchCategory} (${finalMember})`;
+    const flowLabel = gharKharchFlow === "received" ? "पैसा लिया (Borrowing/Inflow)" : "पैसा दिया (Ghar Kharch/Drawings)";
+    const defaultTitle = gharKharchType === "drawings" 
+      ? `${gharKharchCategory} - ${finalMember} (${gharKharchFlow === 'received' ? 'लिया' : 'दिया'})` 
+      : `${gharKharchCategory} (दुकान खर्च)`;
+    const finalTitle = gharKharchTitle.trim() || defaultTitle;
 
     setSavingGharKharch(true);
     try {
@@ -215,24 +228,30 @@ function MobileVyaparAppContent() {
         amount: Number(gharKharchAmount),
         category: gharKharchCategory,
         expenseType: gharKharchType,
+        transactionFlow: gharKharchFlow,
         familyMember: gharKharchType === 'drawings' ? finalMember : '',
         paymentMethod: gharKharchPaymentMode,
         description: gharKharchNotes.trim(),
+        notes: gharKharchNotes.trim(),
         date: new Date()
       };
 
       await api.post("/expenses", payload);
-      alert(gharKharchType === 'drawings' ? `🏡 ${finalMember} का घर खर्च ₹${gharKharchAmount} सफलतापूर्वक दर्ज हो गया!` : `🏢 दुकान खर्च ₹${gharKharchAmount} दर्ज हो गया!`);
+      const successMsg = gharKharchType === 'drawings'
+        ? `🏡 ${finalMember} से ${gharKharchFlow === 'received' ? '₹' + gharKharchAmount + ' लिया गया' : 'को ₹' + gharKharchAmount + ' दिया गया'} सफलतापूर्वक दर्ज हो गया!`
+        : `🏢 दुकान खर्च ₹${gharKharchAmount} दर्ज हो गया!`;
+      alert(successMsg);
       
       setGharKharchTitle("");
       setGharKharchAmount("");
       setGharKharchNotes("");
       setCustomFamilyMember("");
+      setGharKharchFlow("given");
       setShowGharKharchModal(false);
       fetchGharKharchData();
     } catch (err) {
       console.error(err);
-      alert("खर्च दर्ज करने में त्रुटि आई।");
+      alert("एंट्री दर्ज करने में त्रुटि आई।");
     } finally {
       setSavingGharKharch(false);
     }
@@ -979,60 +998,250 @@ function MobileVyaparAppContent() {
         )}
 
         {/* ==================== TAB 3: ITEMS ==================== */}
-        {activeTab === "items" && (
-          <div className="space-y-3 animate-in fade-in">
-            <div className="flex justify-between items-center">
-              <h2 className="font-extrabold text-base text-[#0F172A]">Items ({items.length})</h2>
-              <button 
-                onClick={() => setShowAddItemModal(true)}
-                className="px-3.5 py-1.5 bg-[#059669] hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer"
-              >
-                + Add Item
-              </button>
-            </div>
+        {activeTab === "items" && (() => {
+          // Extract unique categories and brands dynamically from items
+          const dynamicCats = [...new Set(items.map(it => (it.category || '').trim()).filter(Boolean))];
+          const dynamicBrands = [...new Set(items.map(it => (it.brand || '').trim()).filter(Boolean))];
 
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-              <input 
-                type="text" 
-                placeholder="Search item by name..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#059669]"
-              />
-            </div>
+          const standardCats = ["General", "Paints", "Hardware", "Pipes & Fittings", "Electricals", "Sanitary", "Plywood & Beat", "Tools"];
+          const allAvailableCats = ["ALL", ...new Set([...standardCats, ...dynamicCats])];
 
-            <div className="space-y-2">
-              {items
-                .filter(it => (it.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
-                .map((it) => (
-                <div key={it.id} className="p-3.5 bg-white border border-slate-100 rounded-2xl flex justify-between items-center shadow-sm">
-                  <div>
-                    <div className="font-bold text-xs text-[#0F172A]">{it.name}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">Sale: ₹{it.salePrice} • MRP: ₹{it.mrp}</div>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <div className="text-right">
-                      <div className="font-black text-xs text-[#0F172A]">{it.stock} {it.unit}</div>
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${it.stock <= 5 ? "bg-[#FEE2E2] text-[#DC2626]" : "bg-[#ECFDF5] text-[#059669]"}`}>
-                        {it.stock <= 5 ? "Low Stock" : "In Stock"}
-                      </span>
-                    </div>
+          const standardBrands = ["General", "Asian Paints", "Berger", "Kamdhenu", "Astral", "Supreme", "Pidilite", "Havells", "Finolex"];
+          const allAvailableBrands = ["ALL", ...new Set([...standardBrands, ...dynamicBrands])];
+
+          // Filter items based on search, category, brand, and stock status
+          const filteredItems = items.filter(it => {
+            const matchesSearch = (it.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+              (it.category || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+              (it.brand || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+              (it.barcode || '').toLowerCase().includes(searchQuery.toLowerCase());
+
+            const matchesCategory = selectedCategoryFilter === "ALL" || 
+              (it.category || '').toLowerCase() === selectedCategoryFilter.toLowerCase();
+
+            const matchesBrand = selectedBrandFilter === "ALL" || 
+              (it.brand || '').toLowerCase() === selectedBrandFilter.toLowerCase();
+
+            const stockNum = Number(it.stock || it.currentStock || 0);
+            let matchesStock = true;
+            if (selectedStockFilter === "IN_STOCK") matchesStock = stockNum > 0;
+            else if (selectedStockFilter === "LOW_STOCK") matchesStock = stockNum > 0 && stockNum <= 5;
+            else if (selectedStockFilter === "OUT_OF_STOCK") matchesStock = stockNum <= 0;
+
+            return matchesSearch && matchesCategory && matchesBrand && matchesStock;
+          });
+
+          return (
+            <div className="space-y-3 animate-in fade-in">
+              {/* Header with Title & Action Buttons */}
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="font-extrabold text-base text-[#0F172A]">Items ({filteredItems.length} / {items.length})</h2>
+                  <p className="text-[10px] text-slate-500 font-medium">Category, Brand & Stock Filter</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button 
+                    onClick={() => setShowCategoryModal(true)}
+                    className={`px-2.5 py-1.5 border rounded-xl font-bold text-xs flex items-center gap-1 transition cursor-pointer shadow-sm ${selectedCategoryFilter !== "ALL" ? "bg-indigo-50 border-indigo-300 text-indigo-700" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                  >
+                    📁 Category {selectedCategoryFilter !== "ALL" ? `(${selectedCategoryFilter})` : ""}
+                  </button>
+                  <button 
+                    onClick={() => setShowBrandModal(true)}
+                    className={`px-2.5 py-1.5 border rounded-xl font-bold text-xs flex items-center gap-1 transition cursor-pointer shadow-sm ${selectedBrandFilter !== "ALL" ? "bg-amber-50 border-amber-300 text-amber-800" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                  >
+                    🏷️ Brand {selectedBrandFilter !== "ALL" ? `(${selectedBrandFilter})` : ""}
+                  </button>
+                  <button 
+                    onClick={() => setShowAddItemModal(true)}
+                    className="px-3 py-1.5 bg-[#059669] hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer flex items-center gap-1"
+                  >
+                    <Plus size={14} /> Add Item
+                  </button>
+                </div>
+              </div>
+
+              {/* Search Bar with Camera Barcode Scanner Shortcut */}
+              <div className="relative flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                  <input 
+                    type="text" 
+                    placeholder="Search name, category, brand, barcode..." 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#059669] shadow-sm"
+                  />
+                  {searchQuery && (
+                    <button 
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    if (cameraInputRef.current) cameraInputRef.current.click();
+                  }}
+                  title="Scan Barcode / Bill"
+                  className="p-2.5 bg-[#4338CA] hover:bg-indigo-700 text-white rounded-xl shadow-sm cursor-pointer flex items-center justify-center"
+                >
+                  <Camera size={16} />
+                </button>
+              </div>
+
+              {/* Quick Horizontal Category Filter Pills */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-500">
+                  <span>📁 Categories:</span>
+                  {(selectedCategoryFilter !== "ALL" || selectedBrandFilter !== "ALL" || selectedStockFilter !== "ALL") && (
                     <button 
                       onClick={() => {
-                        handleAddToCart(it);
-                        setShowQuickBillModal(true);
+                        setSelectedCategoryFilter("ALL");
+                        setSelectedBrandFilter("ALL");
+                        setSelectedStockFilter("ALL");
                       }}
-                      className="px-2.5 py-1 bg-[#4338CA] text-white font-bold text-[10px] rounded-lg shadow-sm cursor-pointer"
+                      className="text-[#4338CA] hover:underline cursor-pointer"
                     >
-                      + Sale
+                      Reset All Filters
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                  {allAvailableCats.slice(0, 10).map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setSelectedCategoryFilter(cat)}
+                      className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${selectedCategoryFilter === cat ? "bg-[#4338CA] text-white shadow-sm" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                    >
+                      {cat === "ALL" ? "All Categories" : cat}
+                    </button>
+                  ))}
+                  {allAvailableCats.length > 10 && (
+                    <button
+                      onClick={() => setShowCategoryModal(true)}
+                      className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold whitespace-nowrap"
+                    >
+                      + More ({allAvailableCats.length - 10})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick Horizontal Brand Filter Pills */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold text-slate-500 block">🏷️ Popular Brands:</span>
+                <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                  {allAvailableBrands.slice(0, 8).map((br) => (
+                    <button
+                      key={br}
+                      onClick={() => setSelectedBrandFilter(br)}
+                      className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${selectedBrandFilter === br ? "bg-amber-600 text-white shadow-sm" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                    >
+                      {br === "ALL" ? "All Brands" : br}
+                    </button>
+                  ))}
+                  {allAvailableBrands.length > 8 && (
+                    <button
+                      onClick={() => setShowBrandModal(true)}
+                      className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold whitespace-nowrap"
+                    >
+                      + More Brands ({allAvailableBrands.length - 8})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Stock Status Pills (All, In Stock, Low Stock, Out of Stock) */}
+              <div className="flex gap-1.5 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
+                <button
+                  onClick={() => setSelectedStockFilter("ALL")}
+                  className={`flex-1 py-1.5 rounded-lg transition cursor-pointer text-center ${selectedStockFilter === "ALL" ? "bg-white text-[#0F172A] shadow-sm font-extrabold" : "text-slate-500"}`}
+                >
+                  All Items ({items.length})
+                </button>
+                <button
+                  onClick={() => setSelectedStockFilter("IN_STOCK")}
+                  className={`flex-1 py-1.5 rounded-lg transition cursor-pointer text-center ${selectedStockFilter === "IN_STOCK" ? "bg-emerald-600 text-white shadow-sm font-extrabold" : "text-slate-500"}`}
+                >
+                  ✨ In Stock ({items.filter(it => Number(it.stock || it.currentStock || 0) > 0).length})
+                </button>
+                <button
+                  onClick={() => setSelectedStockFilter("LOW_STOCK")}
+                  className={`flex-1 py-1.5 rounded-lg transition cursor-pointer text-center ${selectedStockFilter === "LOW_STOCK" ? "bg-rose-600 text-white shadow-sm font-extrabold" : "text-slate-500"}`}
+                >
+                  ⚠️ Low Stock ({items.filter(it => Number(it.stock || it.currentStock || 0) > 0 && Number(it.stock || it.currentStock || 0) <= 5).length})
+                </button>
+                <button
+                  onClick={() => setSelectedStockFilter("OUT_OF_STOCK")}
+                  className={`flex-1 py-1.5 rounded-lg transition cursor-pointer text-center ${selectedStockFilter === "OUT_OF_STOCK" ? "bg-slate-700 text-white shadow-sm font-extrabold" : "text-slate-500"}`}
+                >
+                  ❌ Out ({items.filter(it => Number(it.stock || it.currentStock || 0) <= 0).length})
+                </button>
+              </div>
+
+              {/* Items List */}
+              <div className="space-y-2">
+                {filteredItems.length === 0 ? (
+                  <div className="p-8 bg-white border border-slate-100 rounded-2xl text-center space-y-2 shadow-sm">
+                    <p className="text-xs font-bold text-slate-600">कोई आइटम नहीं मिला (No items found)</p>
+                    <p className="text-[10px] text-slate-400">फिल्टर बदलें या नया आइटम जोड़ें</p>
+                    <button
+                      onClick={() => setShowAddItemModal(true)}
+                      className="px-3.5 py-1.5 bg-[#059669] text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer inline-flex items-center gap-1"
+                    >
+                      <Plus size={14} /> + Add Item
                     </button>
                   </div>
-                </div>
-              ))}
+                ) : (
+                  filteredItems.map((it) => {
+                    const stockVal = Number(it.stock || it.currentStock || 0);
+                    return (
+                      <div key={it.id || it._id} className="p-3.5 bg-white border border-slate-100 rounded-2xl flex justify-between items-center shadow-sm hover:border-indigo-100 transition">
+                        <div className="space-y-0.5">
+                          <div className="font-bold text-xs text-[#0F172A]">{it.name}</div>
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
+                            {it.category && (
+                              <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded font-semibold">
+                                📁 {it.category}
+                              </span>
+                            )}
+                            {it.brand && it.brand !== "General" && (
+                              <span className="px-1.5 py-0.2 bg-amber-50 text-amber-800 rounded font-semibold">
+                                🏷️ {it.brand}
+                              </span>
+                            )}
+                            <span>Sale: <strong className="text-slate-700">₹{it.salePrice || it.sellingPrice || 0}</strong></span>
+                            {it.mrp && <span>MRP: ₹{it.mrp}</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2.5">
+                          <div className="text-right">
+                            <div className="font-black text-xs text-[#0F172A]">{stockVal} {it.unit || "Pcs"}</div>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${stockVal <= 0 ? "bg-slate-100 text-slate-600" : stockVal <= 5 ? "bg-[#FEE2E2] text-[#DC2626]" : "bg-[#ECFDF5] text-[#059669]"}`}>
+                              {stockVal <= 0 ? "Out of Stock" : stockVal <= 5 ? "Low Stock" : "In Stock"}
+                            </span>
+                          </div>
+                          <button 
+                            onClick={() => {
+                              handleAddToCart(it);
+                              setShowQuickBillModal(true);
+                            }}
+                            className="px-2.5 py-1.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-bold text-[10px] rounded-xl shadow-sm cursor-pointer transition"
+                          >
+                            + Sale
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ==================== TAB 4: 20+ COMPLETE REPORTS MENU ==================== */}
         {activeTab === "reports" && (
