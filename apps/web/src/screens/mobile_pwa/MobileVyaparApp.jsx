@@ -233,6 +233,17 @@ function MobileVyaparAppContent() {
   const [gharKharchPaymentMode, setGharKharchPaymentMode] = useState("cash");
   const [gharKharchNotes, setGharKharchNotes] = useState("");
   const [savingGharKharch, setSavingGharKharch] = useState(false);
+  const [editingGharKharchItem, setEditingGharKharchItem] = useState(null); // When editing an existing entry
+  const [savedFamilyMembers, setSavedFamilyMembers] = useState(() => {
+    try {
+      const stored = localStorage.getItem("saved_family_members");
+      return stored ? JSON.parse(stored) : ["Self", "Papa", "Mummy", "Bhai", "Sister", "Wife", "Children", "Dada-Dadi"];
+    } catch (e) {
+      return ["Self", "Papa", "Mummy", "Bhai", "Sister", "Wife", "Children", "Dada-Dadi"];
+    }
+  });
+  const [showAddNewMemberInput, setShowAddNewMemberInput] = useState(false);
+  const [newMemberInputValue, setNewMemberInputValue] = useState("");
   
   // Ghar Kharch Ledger & Filter State
   const [gharKharchList, setGharKharchList] = useState([]);
@@ -484,6 +495,35 @@ function MobileVyaparAppContent() {
     window.open(whatsappUrl, '_blank');
   };
 
+  const handleAddNewFamilyMember = (name) => {
+    const cleanName = (name || newMemberInputValue).trim();
+    if (!cleanName) return;
+    if (!savedFamilyMembers.includes(cleanName)) {
+      const updated = [...savedFamilyMembers, cleanName];
+      setSavedFamilyMembers(updated);
+      try { localStorage.setItem("saved_family_members", JSON.stringify(updated)); } catch (e) {}
+    }
+    setSelectedFamilyMember(cleanName);
+    setNewMemberInputValue("");
+    setShowAddNewMemberInput(false);
+  };
+
+  const handleOpenEditGharKharch = (item) => {
+    if (!item) return;
+    setEditingGharKharchItem(item);
+    setSelectedFamilyMember(item.familyMember || "Self");
+    setGharKharchDate(item.date ? new Date(item.date).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]);
+    setGharKharchAmount(String(item.amount || ""));
+    setGharKharchCategory(item.category || "राशन/किराना");
+    setCustomGharKharchCategory("");
+    setGharKharchTitle(item.title || "");
+    setGharKharchNotes(item.notes || item.description || "");
+    setGharKharchPaymentMode(item.paymentMethod || "cash");
+    setGharKharchType(item.expenseType || "drawings");
+    setGharKharchFlow(item.transactionFlow || "given");
+    handleToggleGharKharchEntry(true);
+  };
+
   const handleSaveGharKharch = async (e) => {
     if (e) e.preventDefault();
     if (!gharKharchAmount || Number(gharKharchAmount) <= 0) {
@@ -518,12 +558,28 @@ function MobileVyaparAppContent() {
         date: gharKharchDate ? new Date(gharKharchDate) : new Date()
       };
 
-      await api.post("/expenses", payload);
-      const successMsg = gharKharchType === 'drawings'
-        ? `🏡 ${finalMember} के लिए ${finalCategory} (₹${gharKharchAmount}) सफलतापूर्वक दर्ज हो गया!`
-        : `🏢 दुकान खर्च ₹${gharKharchAmount} दर्ज हो गया!`;
-      alert(successMsg);
+      if (editingGharKharchItem) {
+        // UPDATE EXISTING EXPENSE
+        const expId = editingGharKharchItem._id || editingGharKharchItem.id;
+        await api.put(`/expenses/${expId}`, payload);
+        alert(`✅ ${finalMember} का खर्च (₹${gharKharchAmount}) सफलता से अपडेट हो गया!`);
+      } else {
+        // CREATE NEW EXPENSE
+        await api.post("/expenses", payload);
+        const successMsg = gharKharchType === 'drawings'
+          ? `🏡 ${finalMember} के लिए ${finalCategory} (₹${gharKharchAmount}) सफलतापूर्वक दर्ज हो गया!`
+          : `🏢 दुकान खर्च ₹${gharKharchAmount} दर्ज हो गया!`;
+        alert(successMsg);
+      }
       
+      // Auto-save member to list if custom
+      if (finalMember && !savedFamilyMembers.includes(finalMember)) {
+        const updated = [...savedFamilyMembers, finalMember];
+        setSavedFamilyMembers(updated);
+        try { localStorage.setItem("saved_family_members", JSON.stringify(updated)); } catch (e) {}
+      }
+
+      setEditingGharKharchItem(null);
       setGharKharchTitle("");
       setGharKharchAmount("");
       setGharKharchNotes("");
@@ -534,7 +590,7 @@ function MobileVyaparAppContent() {
       fetchGharKharchData();
     } catch (err) {
       console.error(err);
-      alert("एंट्री दर्ज करने में त्रुटि आई।");
+      alert("एंट्री सेव/अपडेट करने में त्रुटि आई।");
     } finally {
       setSavingGharKharch(false);
     }
