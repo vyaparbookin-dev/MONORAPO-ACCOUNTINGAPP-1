@@ -5,6 +5,7 @@ import {
   getStaffById, 
   updateStaff, 
   deleteStaff, 
+  deleteStaffTransaction, 
   addPayment, 
   markAttendance, 
   getStaffStatement,
