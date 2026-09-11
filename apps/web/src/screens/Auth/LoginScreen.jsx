@@ -41,6 +41,29 @@ export default function LoginScreen() {
     }
   };
 
+    const handleGuestLogin = () => {
+    const demoUser = {
+      _id: "demo_guest_user_101",
+      name: "Guest Explorer (अतिथि)",
+      email: "demo@vyaparbook.in",
+      role: "admin",
+      companyId: "demo_company_101",
+      company: "demo_company_101",
+      isGuest: true
+    };
+    localStorage.setItem("authToken", "demo_guest_token_2026_valid");
+    localStorage.setItem("token", "demo_guest_token_2026_valid");
+    localStorage.setItem("user", JSON.stringify(demoUser));
+    localStorage.setItem("companyId", "demo_company_101");
+    localStorage.setItem("selectedCompany", "demo_company_101");
+    navigate("/dashboard");
+  };
+
+  const handleFillDemo = () => {
+    setEmail("demo@example.com");
+    setPassword("password123");
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
@@ -140,10 +163,24 @@ export default function LoginScreen() {
           <button
             type="submit"
             disabled={loading}
-            className="bg-blue-600 hover:bg-blue-700 text-white w-full py-3 rounded-lg font-semibold transition disabled:bg-gray-400"
+            className="bg-blue-600 hover:bg-blue-700 text-white w-full py-3 rounded-lg font-bold transition disabled:bg-gray-400 shadow-md cursor-pointer"
           >
-            {loading ? "Logging in..." : "Login"}
+            {loading ? "Logging in..." : "Login (साधारण लॉगिन)"}
           </button>
+
+          {/* Instant 1-Click Guest Demo Button */}
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={handleGuestLogin}
+              className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white font-black text-sm rounded-xl shadow-lg shadow-orange-500/30 flex items-center justify-center gap-2 transition transform hover:scale-[1.02] cursor-pointer"
+            >
+              <span>⚡ 1-Click Guest Mode (बिना पासवर्ड सीधे खोलें)</span>
+            </button>
+            <p className="text-[11px] text-center text-gray-500 mt-1 font-medium">
+              बिना रजिस्ट्रेशन के तुरंत पूरा ऐप और सभी फीचर्स चेक करें
+            </p>
+          </div>
 
           {error && (
             <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">
@@ -176,10 +213,16 @@ export default function LoginScreen() {
           </div>
         </form>
 
-        <div className="mt-6 text-center text-white text-sm">
-          <p>Demo Credentials (for testing):</p>
-          <p>Email: <code className="bg-blue-700 px-2 py-1 rounded">demo@example.com</code></p>
-          <p>Password: <code className="bg-blue-700 px-2 py-1 rounded">password123</code></p>
+        <div className="mt-6 text-center text-white text-sm bg-white/10 p-3.5 rounded-xl border border-white/20">
+          <p className="font-bold text-amber-300 mb-1">💡 Quick Demo Access:</p>
+          <p className="text-xs text-blue-100 mb-2">Email: <code>demo@example.com</code> | Pass: <code>password123</code></p>
+          <button
+            type="button"
+            onClick={handleFillDemo}
+            className="px-3 py-1 bg-white text-blue-800 text-xs font-bold rounded-lg shadow hover:bg-blue-50 transition cursor-pointer"
+          >
+            📋 Auto-Fill Demo Credentials
+          </button>
         </div>
       </div>
     </div>

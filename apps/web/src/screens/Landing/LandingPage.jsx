@@ -38,6 +38,24 @@ import {
 import { useNavigate } from "react-router-dom";
 
 export default function LandingPage() {
+  const enterGuestMode = () => {
+    const demoUser = {
+      _id: "demo_guest_user_101",
+      name: "Guest Explorer (अतिथि)",
+      email: "demo@vyaparbook.in",
+      role: "admin",
+      companyId: "demo_company_101",
+      company: "demo_company_101",
+      isGuest: true
+    };
+    localStorage.setItem("authToken", "demo_guest_token_2026_valid");
+    localStorage.setItem("token", "demo_guest_token_2026_valid");
+    localStorage.setItem("user", JSON.stringify(demoUser));
+    localStorage.setItem("companyId", "demo_company_101");
+    localStorage.setItem("selectedCompany", "demo_company_101");
+    navigate("/dashboard");
+  };
+
   const navigate = useNavigate();
   const [selectedVertical, setSelectedVertical] = useState("restaurant");
   const [searchQuery, setSearchQuery] = useState("");
@@ -356,6 +374,13 @@ export default function LandingPage() {
             >
               <Download size={14} className="text-emerald-400" />
               <span>ऐप डाउनलोड</span>
+            </button>
+
+            <button
+              onClick={enterGuestMode}
+              className="px-3.5 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-black rounded-xl transition cursor-pointer flex items-center gap-1"
+            >
+              <span>⚡ 1-Click Guest</span>
             </button>
 
             <button

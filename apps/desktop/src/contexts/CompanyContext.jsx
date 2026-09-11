@@ -6,6 +6,17 @@ const CompanyContext = createContext();
 export const useCompany = () => useContext(CompanyContext);
 
 export const CompanyProvider = ({ children }) => {
+  const fallbackDemoCompany = {
+    _id: "demo_company_101",
+    name: "VyaparBook Demo Enterprises",
+    businessType: "Restaurant & Retail",
+    industryType: "restaurant",
+    address: "Main Market Road, New Delhi",
+    phone: "9876543210",
+    gstin: "07AAAAA0000A1Z5",
+    isDemo: true
+  };
+
   const [companies, setCompanies] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -45,8 +56,15 @@ export const CompanyProvider = ({ children }) => {
         console.log("[Company Debug] No company found in user account or company list is empty.");
       }
     } catch (error) {
-      console.error('Failed to fetch companies:', error);
+      console.error('Failed to fetch companies, applying demo company fallback:', error);
+      setCompanies([fallbackDemoCompany]);
+      setSelectedCompany(fallbackDemoCompany);
     } finally {
+      // Ensure there is always a selectedCompany for guest / demo users
+      if (!selectedCompany && companies.length === 0) {
+        setSelectedCompany(fallbackDemoCompany);
+        setCompanies([fallbackDemoCompany]);
+      }
       setLoading(false);
     }
   };

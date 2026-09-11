@@ -118,9 +118,17 @@ api.interceptors.response.use(
     // --- Universal 401 Handler ---
     // If token is invalid, log out on all platforms.
     if (err.response?.status === 401) {
+      // Check if current user is in Guest / Demo mode - do not force kick out
+      const token = typeof localStorage !== 'undefined' ? (localStorage.getItem("authToken") || localStorage.getItem("token")) : null;
+      const isGuestToken = token && (token.includes("demo_guest") || token.includes("guest"));
+      if (isGuestToken) {
+        console.warn("[API Notice] Guest mode 401 suppressed to allow offline/demo exploration.");
+        return Promise.resolve({ data: { success: true, isDemoFallback: true } });
+      }
+
       // Only redirect if we are NOT on a public page.
       if (typeof window !== 'undefined' && window.location) {
-        const publicPaths = ['/login', '/register', '/verify-otp', '/forgot-password', '/key-recovery'];
+        const publicPaths = ['/login', '/register', '/verify-otp', '/forgot-password', '/key-recovery', '/landing', '/welcome', '/m', '/mobile-app'];
         
         // Fix for Electron (Desktop) which uses HashRouter
         const currentPath = window.location.protocol === 'file:' ? window.location.hash.replace('#', '').split('?')[0] : window.location.pathname;
