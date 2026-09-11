@@ -194,6 +194,11 @@ function MobileVyaparAppContent() {
   const [newItemCategory, setNewItemCategory] = useState("General");
   const [newItemBrand, setNewItemBrand] = useState("General");
   const [newItemPurchasePrice, setNewItemPurchasePrice] = useState("");
+  const [newItemTaxMode, setNewItemTaxMode] = useState("without_tax"); // 'without_tax' or 'with_tax'
+  const [newItemGstRate, setNewItemGstRate] = useState(0); // 0, 5, 12, 18, 28
+  const [newItemPriceWithTax, setNewItemPriceWithTax] = useState("");
+  const [billCustomerAddress, setBillCustomerAddress] = useState("");
+  const [showCustomerAddressInput, setShowCustomerAddressInput] = useState(false);
 
   // ==================== PAGARBOOK STAFF & SALARY STATE ====================
   const [showPagarBookModal, setShowPagarBookModal] = useState(() => sessionStorage.getItem("mobile_show_pagarbook") === "true");
@@ -794,14 +799,34 @@ function MobileVyaparAppContent() {
 
     setSavingBill(true);
     const finalCustomer = billCustomer.trim() || "नकद ग्राहक (Walk-in)";
+    const finalPhone = billCustomerPhone.trim();
+    const finalAddress = billCustomerAddress.trim() || "Local";
+
     const billPayload = {
       partyName: finalCustomer,
-      customerPhone: billCustomerPhone.trim(),
+      customerName: finalCustomer,
+      customerPhone: finalPhone,
+      customerMobile: finalPhone,
+      customerAddress: finalAddress,
       paymentMode: billPaymentMode,
+      paymentStatus: billPaymentMode === "UDHAR" ? "unpaid" : "paid",
       items: billCart.map(i => ({ productId: i.id, name: i.name, quantity: i.qty, price: i.salePrice, total: i.salePrice * i.qty })),
       finalAmount: totalBillAmount,
       date: new Date()
     };
+
+    // Auto-create party locally if it doesn't exist
+    if (finalCustomer && finalCustomer !== "नकद ग्राहक (Walk-in)" && !parties.some(p => p.name.toLowerCase() === finalCustomer.toLowerCase())) {
+      const newP = {
+        id: `party-${Date.now()}`,
+        name: finalCustomer,
+        phone: finalPhone,
+        address: finalAddress,
+        balance: billPaymentMode === "UDHAR" ? totalBillAmount : 0,
+        type: "customer"
+      };
+      setParties(prev => [newP, ...prev]);
+    }
 
     try {
       const res = await api.post("/billing", billPayload).catch(() => null);
@@ -843,11 +868,22 @@ function MobileVyaparAppContent() {
       const autoBarcode = `890${Math.floor(1000000000 + Math.random() * 9000000000)}`;
       const autoSku = `SKU-${Date.now().toString().slice(-6)}`;
 
+      const gst = Number(newItemGstRate) || 0;
+      let finalSellingPrice = saleP;
+      let finalCostPrice = parseFloat(newItemPurchasePrice) || +(saleP * 0.8).toFixed(2);
+
+      if (newItemTaxMode === "with_tax" && gst > 0) {
+        finalSellingPrice = parseFloat(newItemPriceWithTax) || saleP;
+      }
+
       const payload = {
         name: newItemName.trim(),
-        sellingPrice: saleP,
-        costPrice: parseFloat(newItemPurchasePrice) || +(saleP * 0.8).toFixed(2),
-        mrp: parseFloat(newItemMrp) || saleP,
+        sellingPrice: finalSellingPrice,
+        costPrice: finalCostPrice,
+        mrp: parseFloat(newItemMrp) || finalSellingPrice,
+        gstRate: gst,
+        gstType: gst > 0 ? "CGST" : "CGST",
+        isTaxInclusive: newItemTaxMode === "with_tax",
         currentStock: stockQ,
         stock: stockQ,
         unit: newItemUnit || "Pcs",
@@ -2170,9 +2206,62 @@ function MobileVyaparAppContent() {
               ))}
             </div>
 
+            {/* 📍 CUSTOMER ADDRESS & DETAILS ON-THE-SPOT */}
+            <div className="space-y-1.5">
+              {!showCustomerAddressInput ? (
+                <button
+                  type="button"
+                  onClick={() => setShowCustomerAddressInput(true)}
+                  className="text-[11px] font-bold text-[#4338CA] hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  📍 + ग्राहक का पता (Address) दर्ज करें
+                </button>
+              ) : (
+                <div className="space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-200 animate-in fade-in">
+                  <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
+                    <span>📍 ग्राहक का पता (Customer Address):</span>
+                    <button onClick={() => setShowCustomerAddressInput(false)} className="text-slate-400 hover:text-slate-600">✕ बंद करें</button>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="दुकान/गांव/शहर का पता (उदा. मेन मार्केट, सारंगढ़)..."
+                    value={billCustomerAddress}
+                    onChange={(e) => setBillCustomerAddress(e.target.value)}
+                    className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs text-[#0F172A] outline-none font-medium"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* ⚡ TOP 20-30 DAILY FREQUENT / TOP SELLING QUICK-PICK ITEMS BAR */}
+            <div className="space-y-1.5 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 p-2.5 rounded-2xl border border-amber-300/60">
+              <div className="flex justify-between items-center text-[11px] font-black text-amber-950">
+                <span className="flex items-center gap-1">⚡ अक्सर बिकने वाले टॉप 20-30 सामान (Quick 1-Tap Pick):</span>
+                <span className="text-[10px] text-amber-800 font-bold">{Math.min(items.length, 30)} सामान</span>
+              </div>
+              <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                {items.slice(0, 30).map(quickIt => (
+                  <button
+                    key={quickIt.id || quickIt._id}
+                    type="button"
+                    onClick={() => handleAddToCart(quickIt)}
+                    className="px-2.5 py-1.5 bg-white hover:bg-amber-100/80 active:scale-95 border border-amber-300 rounded-xl text-left transition cursor-pointer shadow-2xs whitespace-nowrap flex items-center gap-1.5"
+                  >
+                    <span className="font-extrabold text-xs text-slate-800">
+                      {quickIt.name.length > 18 ? quickIt.name.slice(0, 18) + '…' : quickIt.name}
+                    </span>
+                    <span className="font-black text-xs text-[#059669] bg-emerald-50 px-1.5 py-0.2 rounded">
+                      ₹{quickIt.salePrice || quickIt.sellingPrice}
+                    </span>
+                    <span className="text-amber-700 font-black text-xs">+</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* 🔍 LIVE INSTANT SEARCH FOR 1600+ ITEMS */}
             <div className="relative space-y-1">
-              <label className="text-[11px] font-extrabold text-slate-700 block">सामान खोजें व जोड़ें (1600+ Stock Items):</label>
+              <label className="text-[11px] font-extrabold text-slate-700 block">🔍 अन्य सामान खोजें (1600+ Stock Catalog):</label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input 
@@ -3170,34 +3259,119 @@ function MobileVyaparAppContent() {
                 />
               </div>
 
-              {/* 2. Sale Price & Purchase Rate */}
+              {/* 2. Tax Mode Switcher: Without Tax vs With Tax */}
+              <div className="space-y-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+                <div className="flex justify-between items-center text-[11px] font-extrabold text-slate-700">
+                  <span>🛡️ टैक्स प्रकार (Tax / GST Option):</span>
+                  <span className="text-[10px] text-indigo-700 font-bold">
+                    {newItemTaxMode === "without_tax" ? "बिना टैक्स (Non-GST)" : `GST ${newItemGstRate}% सहित`}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewItemTaxMode("without_tax");
+                      setNewItemGstRate(0);
+                    }}
+                    className={`py-2 rounded-xl border transition cursor-pointer text-center ${newItemTaxMode === "without_tax" ? "bg-[#0F172A] text-white border-[#0F172A] shadow-sm font-black" : "bg-white border-slate-200 text-slate-700"}`}
+                  >
+                    🏷️ बिना टैक्स (Without Tax)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewItemTaxMode("with_tax");
+                      if (newItemGstRate === 0) setNewItemGstRate(18);
+                    }}
+                    className={`py-2 rounded-xl border transition cursor-pointer text-center ${newItemTaxMode === "with_tax" ? "bg-indigo-600 text-white border-indigo-600 shadow-sm font-black" : "bg-white border-slate-200 text-slate-700"}`}
+                  >
+                    📑 GST टैक्स सहित (With Tax)
+                  </button>
+                </div>
+
+                {/* If With Tax: Select GST Rate % */}
+                {newItemTaxMode === "with_tax" && (
+                  <div className="space-y-1.5 pt-1">
+                    <label className="text-[10px] font-extrabold text-indigo-900 block">GST दर (GST Rate %):</label>
+                    <div className="grid grid-cols-5 gap-1 text-xs font-bold">
+                      {[0, 5, 12, 18, 28].map(rate => (
+                        <button
+                          key={rate}
+                          type="button"
+                          onClick={() => {
+                            setNewItemGstRate(rate);
+                            const baseP = parseFloat(newItemSalePrice) || 0;
+                            if (baseP > 0) {
+                              setNewItemPriceWithTax((baseP + (baseP * rate) / 100).toFixed(2));
+                            }
+                          }}
+                          className={`py-1.5 rounded-lg border text-center transition cursor-pointer ${newItemGstRate === rate ? "bg-indigo-600 text-white border-indigo-600 shadow-xs font-black" : "bg-white border-slate-200 text-slate-700"}`}
+                        >
+                          {rate}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Sale Price & Purchase Rate Auto-Calc */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
-                    💰 बिक्री रेट (Sale Price ₹) *
+                    💰 {newItemTaxMode === "with_tax" ? "मूल रेट (Base Rate ₹) *" : "बिक्री रेट (Sale Price ₹) *"}
                   </label>
                   <input 
                     type="number" 
                     placeholder="₹ 250" 
                     value={newItemSalePrice}
-                    onChange={(e) => setNewItemSalePrice(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewItemSalePrice(val);
+                      const baseP = parseFloat(val) || 0;
+                      if (newItemGstRate > 0) {
+                        setNewItemPriceWithTax((baseP + (baseP * newItemGstRate) / 100).toFixed(2));
+                      }
+                    }}
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-[#0F172A] outline-none focus:border-emerald-600"
                     required
                   />
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
-                    🏷️ खरीद रेट (Cost Price ₹ - ऑप्शनल)
-                  </label>
-                  <input 
-                    type="number" 
-                    placeholder="₹ 200" 
-                    value={newItemPurchasePrice}
-                    onChange={(e) => setNewItemPurchasePrice(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
-                  />
-                </div>
+                {newItemTaxMode === "with_tax" ? (
+                  <div>
+                    <label className="text-[11px] font-extrabold text-indigo-700 block mb-1">
+                      ✨ टैक्स सहित रेट (Price + Tax ₹)
+                    </label>
+                    <input 
+                      type="number" 
+                      placeholder="₹ 295" 
+                      value={newItemPriceWithTax}
+                      onChange={(e) => {
+                        const withTax = parseFloat(e.target.value) || 0;
+                        setNewItemPriceWithTax(e.target.value);
+                        if (newItemGstRate > 0 && withTax > 0) {
+                          setNewItemSalePrice((withTax / (1 + newItemGstRate / 100)).toFixed(2));
+                        }
+                      }}
+                      className="w-full p-2.5 bg-indigo-50/50 border border-indigo-200 rounded-xl text-xs font-black text-indigo-900 outline-none"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                      🏷️ खरीद रेट (Cost Price ₹ - ऑप्शनल)
+                    </label>
+                    <input 
+                      type="number" 
+                      placeholder="₹ 200" 
+                      value={newItemPurchasePrice}
+                      onChange={(e) => setNewItemPurchasePrice(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* 3. Initial Stock & Unit */}

@@ -1269,6 +1269,50 @@ export default function BillingPage() {
 
               <div className="space-y-3 bg-gray-50 p-4 rounded-lg mb-4">
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                  {/* ⚡ TOP 20-30 DAILY FREQUENT ITEMS QUICK-PICK BAR */}
+                  <div className="col-span-12 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 border border-amber-300 p-2.5 rounded-xl mb-2 space-y-1">
+                    <div className="flex justify-between items-center text-xs font-black text-amber-950">
+                      <span>⚡ अक्सर बिकने वाले टॉप 20-30 सामान (1-Click Fast Pick):</span>
+                      <span className="text-[10px] text-amber-800 font-bold">1-क्लिक में बिल में जोड़ें</span>
+                    </div>
+                    <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                      {(inventory || []).slice(0, 30).map(qIt => (
+                        <button
+                          key={qIt._id || qIt.id}
+                          type="button"
+                          onClick={() => {
+                            const sp = Number(qIt.sellingPrice || qIt.price || 0);
+                            const existingIdx = formData.items.findIndex(i => i.productId === (qIt._id || qIt.id));
+                            if (existingIdx >= 0) {
+                              const updated = [...formData.items];
+                              updated[existingIdx].quantity += 1;
+                              updated[existingIdx].total = updated[existingIdx].quantity * updated[existingIdx].rate;
+                              setFormData({ ...formData, items: updated });
+                            } else {
+                              const newRow = {
+                                productId: qIt._id || qIt.id,
+                                name: qIt.name,
+                                category: qIt.category || "General",
+                                quantity: 1,
+                                rate: sp,
+                                unit: qIt.unit || "pcs",
+                                total: sp,
+                                discountPercent: 0,
+                                discountAmount: 0
+                              };
+                              setFormData({ ...formData, items: [...formData.items, newRow] });
+                            }
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-amber-100 border border-amber-300 rounded-lg text-left transition cursor-pointer shadow-xs whitespace-nowrap flex items-center gap-1.5"
+                        >
+                          <span className="font-extrabold text-xs text-slate-800">{qIt.name}</span>
+                          <span className="font-black text-xs text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded">₹{qIt.sellingPrice || qIt.price || 0}</span>
+                          <span className="text-amber-700 font-black text-xs">+</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="md:col-span-3">
                     <div className="flex justify-between items-center mb-1 flex-wrap gap-1">
                       <label className="text-xs font-medium text-gray-600">Item Name</label>
