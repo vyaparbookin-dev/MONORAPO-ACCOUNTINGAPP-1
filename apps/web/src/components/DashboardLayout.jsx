@@ -382,36 +382,40 @@ export default function DashboardLayout() {
           ))}
         </nav>
 
-        {/* Settings & Logout */}
-        <div className="p-4 border-t border-slate-700 space-y-2">
-          {['admin'].includes(userRole) && (
-          <button
-            onClick={() => navigate("/settings")}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition text-left"
-            title={!sidebarOpen ? "Settings" : ""}
-          >
-            <Settings className="w-5 h-5 flex-shrink-0" />
-            {sidebarOpen && <span className="text-sm font-medium">Settings</span>}
-          </button>
-          )}
+        {/* Sleek Compact Settings & Logout Footer */}
+        <div className="p-2 border-t border-slate-700/80 bg-slate-900/60 flex flex-col gap-1 shrink-0">
+          <div className="flex items-center gap-1.5">
+            {['admin'].includes(userRole) && (
+              <button
+                onClick={() => navigate("/settings")}
+                className="flex-1 flex items-center justify-center sm:justify-start gap-2 px-2.5 py-1.5 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition text-xs font-semibold"
+                title="Settings"
+              >
+                <Settings className="w-4 h-4 flex-shrink-0 text-slate-400" />
+                {sidebarOpen && <span>Settings</span>}
+              </button>
+            )}
 
+            <button
+              onClick={handleLogout}
+              className="flex-1 flex items-center justify-center sm:justify-start gap-2 px-2.5 py-1.5 rounded-lg text-rose-400 hover:bg-rose-600 hover:text-white transition text-xs font-semibold"
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4 flex-shrink-0" />
+              {sidebarOpen && <span>Logout</span>}
+            </button>
+          </div>
+
+          {/* Inline Sleek Sidebar Collapse/Expand Button */}
           <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-red-600 hover:text-white transition"
-            title={!sidebarOpen ? "Logout" : ""}
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="w-full py-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded flex items-center justify-center text-[10px] font-bold transition hidden lg:flex gap-1"
+            title={sidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
           >
-            <LogOut className="w-5 h-5 flex-shrink-0" />
-            {sidebarOpen && <span className="text-sm font-medium">Logout</span>}
+            {sidebarOpen ? <ChevronDown size={14} className="rotate-90" /> : <ChevronDown size={14} className="-rotate-90" />}
+            {sidebarOpen && <span className="tracking-wider uppercase text-[9px] text-slate-400">Collapse</span>}
           </button>
         </div>
-
-        {/* Toggle Button */}
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="p-2 m-4 hover:bg-slate-700 rounded-lg transition hidden lg:block w-12 h-12 flex items-center justify-center"
-        >
-          {sidebarOpen ? <ChevronDown size={20} /> : <ChevronDown size={20} className="rotate-90" />}
-        </button>
       </aside>
 
       {/* Main Content */}
