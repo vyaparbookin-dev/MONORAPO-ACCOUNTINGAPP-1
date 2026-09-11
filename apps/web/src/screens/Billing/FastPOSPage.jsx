@@ -17,9 +17,6 @@ import {
   Minus,
   Image as ImageIcon,
   Camera,
-  Mic,
-  ChevronUp,
-  ChevronDown,
   Sparkles,
   X,
   FileText,
@@ -29,7 +26,13 @@ import {
   Sliders,
   Store,
   Layers,
-  Phone
+  Phone,
+  ChefHat,
+  Flame,
+  AlertTriangle,
+  Printer,
+  ShieldCheck,
+  HelpCircle
 } from "lucide-react";
 import RestaurantKotModal from "../../components/modals/RestaurantKotModal";
 import { getBusinessMode } from "../../utils/businessMode";
@@ -220,10 +223,9 @@ export default function FastPOSPage() {
 
   // Modals & Bottom Bar State
   const [showKotModal, setShowKotModal] = useState(false);
-  const [showSlipScanner, setShowSlipScanner] = useState(false);
-  const [slipImage, setSlipImage] = useState(null);
-  const [slipText, setSlipText] = useState("");
-  const [isBottomCartExpanded, setIsBottomCartExpanded] = useState(false);
+  const [showHappyHourModal, setShowHappyHourModal] = useState(false);
+  const [showEmergencyHandoverModal, setShowEmergencyHandoverModal] = useState(false);
+  const [showKitchenKdsModal, setShowKitchenKdsModal] = useState(false);
 
   // --- ⏰ OWNER CONTROLLED HAPPY HOURS STATE ---
   const [couponCodeInput, setCouponCodeInput] = useState("");
@@ -232,13 +234,12 @@ export default function FastPOSPage() {
     const saved = localStorage.getItem("vb_happy_hours");
     return saved ? JSON.parse(saved) : {
       isEnabled: true,
-      startHour: 12, // 12 PM
-      endHour: 17,   // 5 PM
+      startHour: 12,
+      endHour: 17,
       discountPercent: 20,
       categories: ["Fast Food", "Beverages", "Snacks", "Main Course", "Starters", "Breads", "Rice & Biryani", "Desserts", "Restaurant"]
     };
   });
-  const [showHappyHourModal, setShowHappyHourModal] = useState(false);
 
   // --- 🚫 OUT OF STOCK (86 ITEM) TOGGLE STATE ---
   const [outOfStockItems, setOutOfStockItems] = useState(() => {
@@ -246,39 +247,71 @@ export default function FastPOSPage() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // --- 🔔 LIVE KITCHEN-TO-CASHIER ACTIVE ORDERS & SLA TIMINGS ---
-  const [activeKotOrders, setActiveKotOrders] = useState([
+  // --- 🔔 LIVE KITCHEN & TABLE FLOOR ORDERS REALTIME STATE ---
+  const [activeFloorOrders, setActiveFloorOrders] = useState([
     {
       id: "KOT-101",
-      table: "Table 3 (AC Hall - 6 Seater)",
+      table: "Table 2 (AC Hall)",
+      capacity: 4,
       waiter: "Rohan",
       placedAt: new Date(Date.now() - 14 * 60000),
-      prepTimeMinutes: 11,
-      status: "READY",
-      items: [{ name: "Shahi Paneer", qty: 1 }, { name: "Butter Garlic Naan", qty: 4 }]
+      prepTimeMinutes: 14,
+      status: "COOKING", // 'COOKING' | 'SERVED' | 'BILLED'
+      amount: 480,
+      items: [{ name: "Crispy Veg Burger", qty: 2, station: "Pizza & Fast Food" }, { name: "Cold Coffee", qty: 2, station: "Bar & Drinks" }]
     },
     {
       id: "KOT-102",
-      table: "Table 4 (Garden - 8 Seater)",
+      table: "Table 3 (AC Hall)",
+      capacity: 6,
       waiter: "Sunil",
-      placedAt: new Date(Date.now() - 24 * 60000),
-      prepTimeMinutes: 24,
+      placedAt: new Date(Date.now() - 28 * 60000),
+      prepTimeMinutes: 28,
+      status: "SERVED",
+      amount: 800,
+      items: [{ name: "Shahi Paneer", qty: 1, station: "Main Kitchen" }, { name: "Butter Garlic Naan", qty: 4, station: "Tandoor" }]
+    },
+    {
+      id: "KOT-103",
+      table: "Table 4 (Garden)",
+      capacity: 8,
+      waiter: "Aman",
+      placedAt: new Date(Date.now() - 42 * 60000),
+      prepTimeMinutes: 42,
+      status: "BILLED",
+      amount: 1250,
+      items: [{ name: "Veg Dum Biryani", qty: 2, station: "Main Kitchen" }, { name: "Paneer Tikka", qty: 2, station: "Tandoor" }]
+    },
+    {
+      id: "KOT-104",
+      table: "Table 1 (Dine-in)",
+      capacity: 2,
+      waiter: "Rohan",
+      placedAt: new Date(Date.now() - 6 * 60000),
+      prepTimeMinutes: 6,
       status: "COOKING",
-      items: [{ name: "Veg Dum Biryani", qty: 2 }, { name: "Cold Coffee", qty: 2 }]
+      amount: 320,
+      items: [{ name: "Dal Makhani Special", qty: 1, station: "Main Kitchen" }, { name: "Tandoori Roti", qty: 4, station: "Tandoor" }]
     }
   ]);
 
-  // Modals
-  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
-  const [showQuickAddProductModal, setShowQuickAddProductModal] = useState(false);
-  const [showCouponAuthModal, setShowCouponAuthModal] = useState(false);
-  const [pendingCouponAuth, setPendingCouponAuth] = useState(null);
-  const [enteredAuthOtp, setEnteredAuthOtp] = useState("");
-  const [authOtpError, setAuthOtpError] = useState("");
-  const [quickProductForm, setQuickProductForm] = useState({ name: "", price: "", category: "Fast Food", stock: 50, barcode: "" });
-  const [feedbackBillData, setFeedbackBillData] = useState(null);
+  // Emergency Shift Handover Form State
+  const [handoverForm, setHandoverForm] = useState({
+    outgoingCashier: "Current Cashier (You)",
+    incomingCashier: "Rohan Captain",
+    emergencyReason: "Personal Emergency / Shift Swap",
+    openingCash: 2000,
+    countedCash: 16800,
+    expectedCash: 16800,
+    handoverTime: new Date().toLocaleTimeString("hi-IN")
+  });
 
-  // Check if current time falls into Happy Hours
+  // Calculate Real-time Floor Counts
+  const cookingCount = activeFloorOrders.filter(o => o.status === "COOKING").length;
+  const servedCount = activeFloorOrders.filter(o => o.status === "SERVED").length;
+  const billedCount = activeFloorOrders.filter(o => o.status === "BILLED").length;
+  const vacantCount = 4; // Tables 5, 6, P1, SW
+
   const isCurrentTimeInHappyHours = () => {
     if (!happyHourConfig.isEnabled) return false;
     const currentHour = new Date().getHours();
@@ -286,7 +319,6 @@ export default function FastPOSPage() {
   };
   const isHappyHourActive = isCurrentTimeInHappyHours();
 
-  // Save happy hour changes
   const handleSaveHappyHourConfig = (newConfig) => {
     setHappyHourConfig(newConfig);
     localStorage.setItem("vb_happy_hours", JSON.stringify(newConfig));
@@ -294,7 +326,6 @@ export default function FastPOSPage() {
     alert(`🎉 Happy Hours सेटिंग्स सेव हो गई! (${newConfig.discountPercent}% छूट: ${newConfig.startHour}:00 से ${newConfig.endHour}:00 बजे)`);
   };
 
-  // Toggle Item Stock
   const toggleItemStock = (prodId, e) => {
     if (e) e.stopPropagation();
     setOutOfStockItems(prev => {
@@ -304,9 +335,8 @@ export default function FastPOSPage() {
     });
   };
 
-  // Mark KOT Order as Ready or Served
   const handleUpdateKotStatus = (kotId, newStatus) => {
-    setActiveKotOrders(prev => prev.map(k => k.id === kotId ? { ...k, status: newStatus } : k));
+    setActiveFloorOrders(prev => prev.map(k => k.id === kotId ? { ...k, status: newStatus } : k));
   };
 
   const { selectedCompany } = useCompany();
@@ -314,63 +344,11 @@ export default function FastPOSPage() {
 
   const searchInputRef = useRef(null);
   const customerNameInputRef = useRef(null);
-  const fileInputRef = useRef(null);
 
   useEffect(() => {
     fetchProducts();
     fetchBills();
   }, []);
-
-  // Keyboard Shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === "F2") {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-      } else if (e.key === "F4") {
-        e.preventDefault();
-        customerNameInputRef.current?.focus();
-      } else if (e.key === "F9") {
-        e.preventDefault();
-        triggerCheckout();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
-  // Customer Insights Calculator
-  useEffect(() => {
-    if (customerMobile.trim().length >= 10 || (customerName.trim().length >= 3 && !customerMobile)) {
-      const matchedBills = bills.filter(
-        (b) =>
-          (customerMobile && b.customerMobile === customerMobile.trim()) ||
-          (customerName && b.customerName?.toLowerCase() === customerName.trim().toLowerCase())
-      );
-
-      if (matchedBills.length > 0) {
-        const totalSpent = matchedBills.reduce((sum, b) => sum + (b.total || b.finalAmount || 0), 0);
-        const avgSpent = Math.round(totalSpent / matchedBills.length);
-        const lastBill = matchedBills[0];
-        const lastDate = new Date(lastBill.createdAt || lastBill.date || Date.now()).toLocaleDateString("hi-IN", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        });
-
-        setCustomerInsight({
-          totalVisits: matchedBills.length,
-          lastVisitDate: lastDate,
-          totalSpent,
-          avgSpent,
-        });
-      } else {
-        setCustomerInsight(null);
-      }
-    } else {
-      setCustomerInsight(null);
-    }
-  }, [customerMobile, customerName, bills]);
 
   const fetchProducts = async () => {
     try {
@@ -400,10 +378,8 @@ export default function FastPOSPage() {
     }
   };
 
-  // Extract Categories
   const categories = ["All", ...new Set(products.map((p) => p.category || "General").filter(Boolean))];
 
-  // Filtered Products
   const filteredProducts = products.filter((p) => {
     const matchesCat = selectedCategory === "All" || (p.category || "General") === selectedCategory;
     const matchesSearch =
@@ -414,7 +390,6 @@ export default function FastPOSPage() {
     return matchesCat && matchesSearch;
   });
 
-  // Handle Barcode scan or manual entry
   const handleSearch = (e) => {
     if (e.key === "Enter" && barcode.trim() !== "") {
       e.preventDefault();
@@ -487,42 +462,6 @@ export default function FastPOSPage() {
     setCart((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const handleApplyCoupon = (e) => {
-    e.preventDefault();
-    setCouponError("");
-    const cleanCode = couponCodeInput.trim().toUpperCase();
-    if (!cleanCode) return;
-
-    const redeemedCoupons = JSON.parse(localStorage.getItem("vb_redeemed_coupons") || "[]");
-    const alreadyRedeemed = redeemedCoupons.find(c => c.code.toUpperCase() === cleanCode);
-    if (alreadyRedeemed) {
-      setCouponError(`❌ यह कूपन पहले ही दिनांक ${new Date(alreadyRedeemed.redeemedAt).toLocaleDateString("hi-IN")} को बिल #${alreadyRedeemed.billNumber} में उपयोग हो चुका है!`);
-      return;
-    }
-
-    let couponData = null;
-    if (cleanCode.startsWith("SAVE100") || cleanCode === "SAVE100") {
-      couponData = { code: cleanCode, type: "FLAT", discount: 100, title: "₹100 की फ्लैट छूट", minBill: 500, phoneLink: cleanCode.includes("-") ? cleanCode.split("-")[1] : "" };
-    } else if (cleanCode.startsWith("BURGER30") || cleanCode === "BURGER30") {
-      couponData = { code: cleanCode, type: "ITEM_PRICE", discount: 80, targetItem: "Crispy Cheese Veg Burger", specialPrice: 30, title: "बर्गर सिर्फ ₹30 में" };
-    } else if (cleanCode.startsWith("FREEFRIES") || cleanCode === "FREEFRIES") {
-      couponData = { code: cleanCode, type: "FREE_ITEM", discount: 90, freeItem: "French Fries", title: "मुफ़्त फ्रेंच फ्राइज़" };
-    } else if (cleanCode.startsWith("FESTIVE20") || cleanCode === "FESTIVE20") {
-      couponData = { code: cleanCode, type: "PERCENT", discountPercent: 20, title: "20% की छूट" };
-    } else {
-      couponData = { code: cleanCode, type: "FLAT", discount: 50, title: "विशेष छूट" };
-    }
-
-    const sub = cart.reduce((s, i) => s + (i.total || 0), 0);
-    if (couponData.minBill && sub < couponData.minBill) {
-      setCouponError(`⚠️ यह कूपन ₹${couponData.minBill} या अधिक के बिल पर ही लागू होगा!`);
-      return;
-    }
-
-    setAppliedCoupon(couponData);
-    setCouponCodeInput("");
-  };
-
   const getSubTotal = () => cart.reduce((sum, item) => sum + (item.total || 0), 0);
   const getCouponDiscount = () => {
     if (!appliedCoupon) return 0;
@@ -552,18 +491,6 @@ export default function FastPOSPage() {
         date: new Date().toISOString()
       };
 
-      if (appliedCoupon) {
-        const existingRedeemed = JSON.parse(localStorage.getItem("vb_redeemed_coupons") || "[]");
-        existingRedeemed.push({
-          code: appliedCoupon.code,
-          customerMobile: customerMobile || "",
-          customerName: customerName || "Walk-in",
-          billNumber: payload.billNumber,
-          redeemedAt: new Date().toISOString()
-        });
-        localStorage.setItem("vb_redeemed_coupons", JSON.stringify(existingRedeemed));
-      }
-
       await api.post("/api/billing", payload).catch(() => {});
       alert(`🎉 [${currentActiveTab.counterName}] बिल ${payload.billNumber} सफलतापूर्वक तैयार हो गया! कुल: ₹${getGrandTotal()}`);
       setCart([]);
@@ -592,27 +519,59 @@ export default function FastPOSPage() {
     setSelectedTable(kotData.table);
   };
 
+  // Perform Emergency Shift Handover
+  const handleExecuteEmergencyHandover = () => {
+    alert(`🚨 आपातकालीन गल्ला हैंडओवर संपन्न!
+
+आउटगोइंग: ${handoverForm.outgoingCashier}
+इनकमिंग: ${handoverForm.incomingCashier}
+गल्ला कैश: ₹${handoverForm.countedCash}
+कारण: ${handoverForm.emergencyReason}
+समय: ${handoverForm.handoverTime}
+
+नया कैशियर सेशन प्रारंभ हो गया!`);
+    setShowEmergencyHandoverModal(false);
+  };
+
   return (
     <div className="h-[calc(100vh-100px)] flex flex-col bg-slate-100 -m-6 p-6 overflow-hidden relative">
       {/* Header */}
-      <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 mb-3 flex justify-between items-center shrink-0 flex-wrap gap-2">
+      <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 mb-2.5 flex justify-between items-center shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <div className="bg-gradient-to-tr from-amber-600 to-orange-600 p-2 rounded-xl text-white shadow-md">
             <Utensils size={20} />
           </div>
           <div>
             <h1 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <span>Fast POS Touch & Multi-Counter Billing</span>
+              <span>Fast POS Touch & Kitchen Operations</span>
               <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold">
                 Live POS
               </span>
             </h1>
-            <p className="text-xs text-slate-500 font-medium">टचस्क्रीन टाइल्स, KOT टेबल सीटर व 2 काउंटर एक साथ बिलिंग</p>
+            <p className="text-xs text-slate-500 font-medium">लाइव टेबल फ्लोर स्टेटस, KOT किचन ट्रैकिंग व इमरजेंसी गल्ला हैंडओवर</p>
           </div>
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Emergency Shift Handover Button */}
+          <button
+            onClick={() => setShowEmergencyHandoverModal(true)}
+            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1.5"
+            title="किसी भी समय बीच शिफ्ट में गल्ला हैंडओवर करें"
+          >
+            <ShieldCheck size={14} /> 🚨 इमरजेंसी गल्ला हैंडओवर
+          </button>
+
+          {/* Kitchen KDS Live Tracker Button */}
+          <button
+            onClick={() => setShowKitchenKdsModal(true)}
+            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1.5"
+            title="लाइव किचन डिस्प्ले सिस्टम (KDS)"
+          >
+            <ChefHat size={14} /> 🍳 लाइव किचन ऑर्डर्स ({cookingCount})
+          </button>
+
           {/* Table KOT Button */}
           <button
             onClick={() => setShowKotModal(true)}
@@ -629,7 +588,7 @@ export default function FastPOSPage() {
                 viewMode === "tiles" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              <LayoutGrid size={14} /> 🍱 Food / Item Tiles
+              <LayoutGrid size={14} /> 🍱 Food Tiles
             </button>
             <button
               onClick={() => setViewMode("list")}
@@ -637,7 +596,7 @@ export default function FastPOSPage() {
                 viewMode === "list" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              <List size={14} /> 📋 List Mode
+              <List size={14} /> 📋 List
             </button>
           </div>
 
@@ -656,8 +615,52 @@ export default function FastPOSPage() {
         </div>
       </div>
 
+      {/* 📊 LIVE RESTAURANT FLOOR & KITCHEN STATUS BAR */}
+      <div className="bg-white p-2.5 rounded-2xl shadow-sm border border-slate-200 mb-2.5 flex items-center justify-between gap-2 flex-wrap text-xs font-black">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-slate-700 flex items-center gap-1.5 pl-1">
+            <Flame size={15} className="text-orange-500" />
+            <span>रेस्टोरेंट लाइव स्टेटस:</span>
+          </span>
+
+          {/* Cooking in Kitchen */}
+          <button
+            onClick={() => setShowKitchenKdsModal(true)}
+            className="px-3 py-1 rounded-xl bg-blue-100 text-blue-900 border border-blue-300 flex items-center gap-1.5 hover:bg-blue-200 transition"
+          >
+            <span>🔵 किचन में चल रहे (Cooking):</span>
+            <span className="px-1.5 py-0.5 rounded bg-blue-600 text-white font-mono text-[11px]">{cookingCount} Tables</span>
+          </button>
+
+          {/* Food Served */}
+          <div className="px-3 py-1 rounded-xl bg-amber-100 text-amber-950 border border-amber-300 flex items-center gap-1.5">
+            <span>🟡 खाना सर्व हो चुका (Served):</span>
+            <span className="px-1.5 py-0.5 rounded bg-amber-600 text-white font-mono text-[11px]">{servedCount} Tables</span>
+          </div>
+
+          {/* Billed / Payment Pending */}
+          <div className="px-3 py-1 rounded-xl bg-rose-100 text-rose-900 border border-rose-300 flex items-center gap-1.5">
+            <span>🔴 बिल तैयार / पेमेंट बाकी (Billed):</span>
+            <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white font-mono text-[11px]">{billedCount} Tables</span>
+          </div>
+
+          {/* Vacant Tables */}
+          <div className="px-3 py-1 rounded-xl bg-emerald-100 text-emerald-900 border border-emerald-300 flex items-center gap-1.5">
+            <span>🟢 खाली टेबल (Vacant):</span>
+            <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-mono text-[11px]">{vacantCount} Tables</span>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setShowKitchenKdsModal(true)}
+          className="text-blue-700 hover:text-blue-900 text-xs font-bold flex items-center gap-1 underline"
+        >
+          पूरा किचन KDS देखें &gt;
+        </button>
+      </div>
+
       {/* 🏢 2 COUNTERS SIMULTANEOUS MULTI-TAB SWITCHER */}
-      <div className="bg-slate-900 p-2 rounded-2xl shadow-sm border border-slate-800 mb-3 flex items-center justify-between gap-3 text-white">
+      <div className="bg-slate-900 p-2 rounded-2xl shadow-sm border border-slate-800 mb-2.5 flex items-center justify-between gap-3 text-white">
         <div className="flex items-center gap-2 overflow-x-auto">
           <span className="text-xs font-black text-amber-400 flex items-center gap-1.5 pl-2 shrink-0">
             <Store size={15} /> काउंटर चुनें:
@@ -698,7 +701,7 @@ export default function FastPOSPage() {
       </div>
 
       {/* Main Content Layout */}
-      <div className="flex gap-4 flex-1 min-h-0 pb-12">
+      <div className="flex gap-4 flex-1 min-h-0 pb-6">
         {/* Left Side: Product Selector (Tiles Grid vs Barcode List) */}
         <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
           {/* Category Tabs & Search Bar */}
@@ -756,7 +759,6 @@ export default function FastPOSPage() {
                           : "border-slate-200 hover:border-amber-400"
                       }`}
                     >
-                      {/* Image Thumbnail */}
                       <div className="w-full h-24 rounded-xl bg-slate-100 overflow-hidden mb-2 flex items-center justify-center border border-slate-100 relative">
                         {p.image ? (
                           <img
@@ -779,7 +781,6 @@ export default function FastPOSPage() {
                         <p className="text-[10px] text-slate-400 font-medium">{p.category || "Restaurant"}</p>
                       </div>
 
-                      {/* Stock Switch & Price */}
                       <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-100">
                         <div className="flex items-center gap-1">
                           <span className="text-sm font-black text-amber-900 font-mono">
@@ -819,7 +820,6 @@ export default function FastPOSPage() {
               </div>
             </div>
           ) : (
-            /* List View */
             <div className="flex-1 overflow-auto bg-white">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-100 sticky top-0 font-bold text-slate-700 border-b">
@@ -875,7 +875,6 @@ export default function FastPOSPage() {
               </span>
             </div>
 
-            {/* Full-Width Clean Customer Inputs */}
             <div className="space-y-1.5 text-xs">
               <div>
                 <input
@@ -905,7 +904,6 @@ export default function FastPOSPage() {
               </div>
             </div>
 
-            {/* Available Coupon Offer Banner */}
             {customerMobile.length >= 10 && !appliedCoupon && (
               <div className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/40 p-2 rounded-xl flex items-center justify-between text-xs animate-in slide-in-from-top-2">
                 <div className="flex items-center gap-1.5">
@@ -1016,10 +1014,232 @@ export default function FastPOSPage() {
         </div>
       </div>
 
-      {/* ⏰ MODAL: HAPPY HOURS DISCOUNT CONFIGURATION */}
+      {/* 🚨 MODAL: EMERGENCY MID-SHIFT CASHIER HANDOVER (ON-THE-SPOT Z-REPORT) */}
+      {showEmergencyHandoverModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 border border-slate-200 animate-in zoom-in-95">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5 text-rose-600">
+                <ShieldCheck size={22} />
+                <div>
+                  <h3 className="font-black text-slate-900 text-sm">आपातकालीन गल्ला हैंडओवर (Emergency Shift Handover)</h3>
+                  <p className="text-[10px] text-slate-500">बिना बिलिंग रोके तुरंत 30 सेकंड में गल्ला मिलान व हैंडओवर</p>
+                </div>
+              </div>
+              <button onClick={() => setShowEmergencyHandoverModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="py-4 space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">वर्तमान कैशियर (Outgoing)</label>
+                  <input
+                    type="text"
+                    value={handoverForm.outgoingCashier}
+                    onChange={(e) => setHandoverForm({ ...handoverForm, outgoingCashier: e.target.value })}
+                    className="w-full p-2 border border-slate-300 rounded-xl font-bold bg-slate-50 text-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">नया कैशियर (Incoming)*</label>
+                  <input
+                    type="text"
+                    value={handoverForm.incomingCashier}
+                    onChange={(e) => setHandoverForm({ ...handoverForm, incomingCashier: e.target.value })}
+                    className="w-full p-2 border border-slate-300 rounded-xl font-bold bg-white text-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">हैंडओवर का कारण (Reason)*</label>
+                <input
+                  type="text"
+                  value={handoverForm.emergencyReason}
+                  onChange={(e) => setHandoverForm({ ...handoverForm, emergencyReason: e.target.value })}
+                  placeholder="उदा: अचानक आवश्यक कार्य / शिफ्ट बदलाव"
+                  className="w-full p-2 border border-slate-300 rounded-xl font-bold bg-white text-slate-800"
+                />
+              </div>
+
+              <div className="p-3.5 bg-slate-900 text-white rounded-2xl space-y-2">
+                <div className="flex justify-between text-slate-300">
+                  <span>ओपनिंग कैश:</span>
+                  <span className="font-mono font-bold">₹{handoverForm.openingCash}</span>
+                </div>
+                <div className="flex justify-between text-slate-300">
+                  <span>वर्तमान शिफ्ट कैश सेल:</span>
+                  <span className="font-mono font-bold">₹{handoverForm.expectedCash - handoverForm.openingCash}</span>
+                </div>
+                <div className="flex justify-between items-center text-amber-400 font-black pt-2 border-t border-slate-800 text-sm">
+                  <span>गल्ले में अपेक्षित कुल कैश:</span>
+                  <span className="font-mono text-base">₹{handoverForm.expectedCash}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-black mb-1">
+                  गल्ले में वास्तविक गिना गया कैश (Counted Cash in Drawer)*
+                </label>
+                <input
+                  type="number"
+                  value={handoverForm.countedCash}
+                  onChange={(e) => setHandoverForm({ ...handoverForm, countedCash: parseFloat(e.target.value) || 0 })}
+                  className="w-full p-2.5 border-2 border-rose-500 rounded-xl font-mono text-lg font-black bg-rose-50/50 text-rose-950 text-center"
+                />
+              </div>
+
+              <div className={`p-3 rounded-2xl text-center font-black ${
+                handoverForm.countedCash === handoverForm.expectedCash
+                  ? "bg-emerald-100 text-emerald-900 border border-emerald-300"
+                  : "bg-rose-100 text-rose-900 border border-rose-300"
+              }`}>
+                {handoverForm.countedCash === handoverForm.expectedCash
+                  ? "✅ गल्ला पूरा मिल गया है (0 Shortage)"
+                  : `⚠️ अंतर (Difference): ₹${handoverForm.countedCash - handoverForm.expectedCash}`}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleExecuteEmergencyHandover}
+                className="w-full py-3 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white font-black text-xs rounded-xl shadow-lg transition flex items-center justify-center gap-2"
+              >
+                <Printer size={15} />
+                <span>🧾 Z-Report हैंडओवर स्लिप बनाएं व नया कैशियर सेट करें</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🍳 MODAL: LIVE KITCHEN DISPLAY SYSTEM (KDS) & FLOOR ORDERS TRACKER */}
+      {showKitchenKdsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl p-6 border border-slate-200 animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2.5 text-blue-700">
+                <ChefHat size={24} />
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">लाइव किचन डिस्प्ले व टेबल ट्रैकर (Kitchen KDS)</h3>
+                  <p className="text-xs text-slate-500">किचन में चल रहे आर्डर, वेटर, तैयारी समय (SLA) व स्थिति</p>
+                </div>
+              </div>
+              <button onClick={() => setShowKitchenKdsModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="py-4 space-y-4 overflow-y-auto flex-1 text-xs">
+              {/* Summary Badges */}
+              <div className="grid grid-cols-4 gap-3 text-center">
+                <div className="p-3 bg-blue-50 rounded-2xl border border-blue-200">
+                  <span className="text-[11px] text-blue-700 font-bold block">किचन में कुकिंग (Cooking)</span>
+                  <span className="text-2xl font-black text-blue-900 font-mono">{cookingCount} Tables</span>
+                </div>
+                <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200">
+                  <span className="text-[11px] text-amber-700 font-bold block">खाना सर्व हो चुका (Served)</span>
+                  <span className="text-2xl font-black text-amber-900 font-mono">{servedCount} Tables</span>
+                </div>
+                <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200">
+                  <span className="text-[11px] text-rose-700 font-bold block">बिल तैयार / पेंडिंग</span>
+                  <span className="text-2xl font-black text-rose-900 font-mono">{billedCount} Tables</span>
+                </div>
+                <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200">
+                  <span className="text-[11px] text-emerald-700 font-bold block">खाली टेबल्स (Vacant)</span>
+                  <span className="text-2xl font-black text-emerald-900 font-mono">{vacantCount} Tables</span>
+                </div>
+              </div>
+
+              {/* Live Order Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {activeFloorOrders.map((ord) => {
+                  const isCooking = ord.status === "COOKING";
+                  const isServed = ord.status === "SERVED";
+                  const isLate = ord.prepTimeMinutes >= 20;
+
+                  return (
+                    <div
+                      key={ord.id}
+                      className={`p-4 rounded-2xl border-2 transition ${
+                        isCooking
+                          ? isLate
+                            ? "bg-rose-50/70 border-rose-400"
+                            : "bg-blue-50/70 border-blue-400"
+                          : isServed
+                          ? "bg-amber-50/70 border-amber-400"
+                          : "bg-slate-50 border-slate-300"
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h4 className="font-black text-slate-900 text-sm flex items-center gap-2">
+                            <span>{ord.table}</span>
+                            <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded-full border text-slate-600">
+                              👤 {ord.capacity} Pax
+                            </span>
+                          </h4>
+                          <p className="text-[10px] text-slate-500 mt-0.5">
+                            कैप्टन: <span className="font-bold text-slate-800">{ord.waiter}</span> • KOT: <span className="font-mono">{ord.id}</span>
+                          </p>
+                        </div>
+
+                        <div className="text-right">
+                          <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
+                            isCooking
+                              ? isLate ? "bg-rose-600 text-white animate-pulse" : "bg-blue-600 text-white"
+                              : isServed ? "bg-amber-500 text-slate-950" : "bg-rose-600 text-white"
+                          }`}>
+                            {ord.status} ({ord.prepTimeMinutes}m)
+                          </span>
+                          <p className="font-black text-slate-900 font-mono mt-1 text-sm">₹{ord.amount}</p>
+                        </div>
+                      </div>
+
+                      {/* Items Cooking List */}
+                      <div className="mt-3 pt-2 border-t border-slate-200/80 space-y-1">
+                        <p className="text-[10px] font-bold text-slate-600 uppercase">ऑर्डर में शामिल व्यंजन:</p>
+                        {ord.items.map((it, i) => (
+                          <div key={i} className="flex justify-between items-center text-[11px] bg-white p-1.5 rounded-lg border border-slate-100">
+                            <span className="font-bold text-slate-800">{it.name} <span className="text-slate-500 font-mono">×{it.qty}</span></span>
+                            <span className="text-[10px] font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded">{it.station}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="mt-3 flex gap-2">
+                        {isCooking && (
+                          <button
+                            onClick={() => handleUpdateKotStatus(ord.id, "SERVED")}
+                            className="flex-1 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl font-bold text-xs transition"
+                          >
+                            ✓ खाना सर्व हो गया (Mark Served)
+                          </button>
+                        )}
+                        {isServed && (
+                          <button
+                            onClick={() => handleUpdateKotStatus(ord.id, "BILLED")}
+                            className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition"
+                          >
+                            🧾 बिल बनाएं (Generate Bill)
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⏰ MODAL: HAPPY HOURS */}
       {showHappyHourModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 border border-slate-200 animate-in fade-in zoom-in-95">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 border border-slate-200 animate-in zoom-in-95">
             <div className="flex justify-between items-center pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center text-lg font-bold">
@@ -1042,7 +1262,6 @@ export default function FastPOSPage() {
               }}
               className="py-4 space-y-4 text-xs"
             >
-              {/* Enable / Disable Switch */}
               <div className="flex items-center justify-between p-3 bg-amber-50 rounded-2xl border border-amber-200">
                 <div>
                   <span className="font-black text-amber-950 block">Happy Hours चालू / बंद रखें</span>
@@ -1056,7 +1275,6 @@ export default function FastPOSPage() {
                 />
               </div>
 
-              {/* Discount Percentage */}
               <div>
                 <label className="block text-slate-700 font-black mb-1.5">
                   डिस्काउंट प्रतिशत (% Discount): <span className="text-amber-600 font-black text-sm">{happyHourConfig.discountPercent}% OFF</span>
@@ -1076,47 +1294,6 @@ export default function FastPOSPage() {
                       {pct}%
                     </button>
                   ))}
-                </div>
-                <input
-                  type="number"
-                  min={1}
-                  max={90}
-                  value={happyHourConfig.discountPercent}
-                  onChange={(e) => setHappyHourConfig({ ...happyHourConfig, discountPercent: parseInt(e.target.value) || 0 })}
-                  className="w-full p-2 border border-slate-300 rounded-xl font-bold bg-white"
-                  placeholder="कस्टम % डालें (e.g. 25)"
-                />
-              </div>
-
-              {/* Timing Slots */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">शुरू समय (Start Hour)</label>
-                  <select
-                    value={happyHourConfig.startHour}
-                    onChange={(e) => setHappyHourConfig({ ...happyHourConfig, startHour: parseInt(e.target.value) })}
-                    className="w-full p-2 border border-slate-300 rounded-xl font-bold bg-white"
-                  >
-                    {[10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map((h) => (
-                      <option key={h} value={h}>
-                        {h > 12 ? `${h - 12}:00 PM` : `${h}:00 AM`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">समाप्त समय (End Hour)</label>
-                  <select
-                    value={happyHourConfig.endHour}
-                    onChange={(e) => setHappyHourConfig({ ...happyHourConfig, endHour: parseInt(e.target.value) })}
-                    className="w-full p-2 border border-slate-300 rounded-xl font-bold bg-white"
-                  >
-                    {[12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23].map((h) => (
-                      <option key={h} value={h}>
-                        {h > 12 ? `${h - 12}:00 PM` : `${h}:00 AM`}
-                      </option>
-                    ))}
-                  </select>
                 </div>
               </div>
 
