@@ -842,6 +842,8 @@ function ReferralCashTokensModal({ company, onClose }) {
             </div>
           </div>
         </div>
+      )}
+
       {/* 🏢 ON-THE-SPOT NEW BUSINESS CREATION MODAL */}
       {showQuickCreateBusinessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
@@ -931,14 +933,19 @@ function ReferralCashTokensModal({ company, onClose }) {
           </div>
         </div>
       )}
+
+      {/* Multi-Platform Ecosystem Showcase Modal */}
+      {ecosystemModalOpen && <EcosystemShowcaseModal onClose={() => setEcosystemModalOpen(false)} />}
+
+      {/* Footer */}
+      <Footer />
       </div>
     </div>
   );
 }
 
 function EcosystemShowcaseModal({ onClose }) {
-  const [billingPeriod, setBillingPeriod] = useState("3year"); // "1year" or "3year"
-
+  const [billingPeriod, setBillingPeriod] = useState("3year");
   const plans = [
     {
       id: "offline",
@@ -946,19 +953,17 @@ function EcosystemShowcaseModal({ onClose }) {
       highlight: "Basic / 100% Offline POS",
       color: "from-blue-600 to-indigo-700",
       borderColor: "border-blue-200",
-      headerBg: "bg-blue-50 text-blue-900",
-      // Pricing
       price1Year: 299,
       first50_1Year: 209,
-      price3Year: 672, // 25% cheaper: 299*3=897 -> 672 (224/yr)
-      first50_3Year: 470, // 30% off on 672
+      price3Year: 672,
+      first50_3Year: 470,
       pricePerYear3Yr: 224,
       features: [
-        "⚡ 100% Offline POS Billing: Generate bills anywhere without internet.",
-        "💾 Local SQLite Engine: Zero-lag instant database performance on phone.",
-        "🖨️ Wireless Bluetooth Thermal Printing: 2-inch & 3-inch receipt printing.",
-        "📷 Barcode Camera Scanner: Instant item addition via phone camera.",
-        "📄 Professional PDF Invoices: Clean bills ready to print/save."
+        "⚡ 100% Offline POS Billing",
+        "💾 Local SQLite Engine",
+        "🖨️ Wireless Bluetooth Thermal Printing",
+        "📷 Barcode Camera Scanner",
+        "📄 Professional PDF Invoices"
       ]
     },
     {
@@ -967,42 +972,38 @@ function EcosystemShowcaseModal({ onClose }) {
       highlight: "Single Store + Auto Cloud Backup",
       color: "from-purple-600 to-indigo-800",
       borderColor: "border-purple-200",
-      headerBg: "bg-purple-50 text-purple-900",
-      // Pricing
       price1Year: 599,
       first50_1Year: 419,
-      price3Year: 1348, // 25% cheaper: 599*3=1797 -> 1348 (449/yr)
-      first50_3Year: 943, // 30% off on 1348
+      price3Year: 1348,
+      first50_3Year: 943,
       pricePerYear3Yr: 449,
       features: [
-        "☁️ Mobile Offline + Automatic Cloud Backup: 100% data safety.",
-        "🔄 1-Click Cloud Restore: Phone change/chori hone par data kabhi nahi khoyega.",
-        "💬 WhatsApp Invoice Sharing: Send professional PDF bills with payment QR.",
-        "📦 Godown Stock Audit: Check & update stock directly in warehouse.",
-        "⚡ Auto-sync when internet connects + Instant offline speed."
+        "☁️ Mobile Offline + Auto Cloud Backup",
+        "🔄 1-Click Cloud Restore",
+        "💬 WhatsApp Invoice Sharing",
+        "📦 Godown Stock Audit",
+        "⚡ Auto-sync when online"
       ]
     },
     {
       id: "pro",
       badge: "🚀 Enterprise Pro (Web + Desktop + Mobile)",
-      highlight: "Universal 3-Way Realtime Sync (Recommended)",
+      highlight: "Universal 3-Way Realtime Sync",
       color: "from-emerald-600 to-teal-800",
       borderColor: "border-emerald-300 ring-2 ring-emerald-500",
-      headerBg: "bg-emerald-50 text-emerald-900",
       isPopular: true,
-      // Pricing
       price1Year: 2999,
       first50_1Year: 2099,
-      price3Year: 6749, // 25% cheaper: 2999*3=8997 -> 6749 (2249/yr, Save 2248!)
-      first50_3Year: 4724, // 30% off on 6749
+      price3Year: 6749,
+      first50_3Year: 4724,
       pricePerYear3Yr: 2249,
       features: [
-        "🌐💻📱 3-Device Real-time Sync: Mobile + Windows/Mac Desktop + Web Browser.",
-        "⌨️ 100% Keyboard-Driven Desktop POS: Counter billing at lightning speed.",
-        "🌍 Web Live Owner Analytics: Check sales, profits & cashflow from anywhere.",
-        "📊 20+ GSTR Accounting Reports: Tally & CA Excel 1-click export.",
-        "👥 Multi-User Roles & Permissions: Cashier, Manager, Admin controls.",
-        "🏬 Multi-Branch Management: Manage multiple shops under 1 account."
+        "🌐💻📱 3-Device Real-time Sync",
+        "⌨️ 100% Keyboard-Driven Desktop POS",
+        "🌍 Web Live Owner Analytics",
+        "📊 20+ GSTR Accounting Reports",
+        "👥 Multi-User Roles & Permissions",
+        "🏬 Multi-Branch Management"
       ]
     }
   ];
@@ -1010,259 +1011,50 @@ function EcosystemShowcaseModal({ onClose }) {
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        {/* Header */}
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 flex justify-between items-center">
           <div>
             <div className="flex items-center gap-2">
               <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/30 uppercase tracking-wide">
                 ⏱️ 15 Days Free Trial Active
               </span>
-              <span className="bg-amber-500/20 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30 uppercase tracking-wide">
-                🎉 First 50 Users: Extra 30% OFF
-              </span>
             </div>
             <h3 className="font-extrabold text-lg mt-1">SaaS Plans & Multi-Platform Ecosystem</h3>
-            <p className="text-xs text-gray-300">Choose the perfect edition for your store — Mobile, Desktop & Web</p>
+            <p className="text-xs text-gray-300">Mobile, Desktop & Web Business Suite</p>
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-slate-800 rounded-lg text-gray-400 hover:text-white transition">
             <X size={18} />
           </button>
         </div>
 
-        {/* Duration Selector & Launch Banner */}
-        <div className="p-4 bg-slate-50 border-b border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-gray-300 shadow-sm">
-            <button
-              onClick={() => setBillingPeriod("1year")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-extrabold transition ${
-                billingPeriod === "1year" 
-                  ? "bg-slate-900 text-white shadow-sm" 
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              1 Year Plan
-            </button>
-            <button
-              onClick={() => setBillingPeriod("3year")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 ${
-                billingPeriod === "3year" 
-                  ? "bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-sm" 
-                  : "text-emerald-700 hover:text-emerald-900"
-              }`}
-            >
-              <span>3 Years Plan</span>
-              <span className="text-[10px] bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded font-black">25% Cheaper 🔥</span>
-            </button>
-          </div>
-
-          <div className="text-xs text-emerald-800 font-bold bg-emerald-100/70 border border-emerald-200 px-3 py-1.5 rounded-lg">
-            ✨ First 50 Stores: Extra 30% Launch Discount Applied!
-          </div>
-        </div>
-
-        {/* 3 Pricing Cards Grid */}
         <div className="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
-          {plans.map(plan => {
-            const is3Yr = billingPeriod === "3year";
-            const normalRate = is3Yr ? plan.price3Year : plan.price1Year;
-            const specialRate = is3Yr ? plan.first50_3Year : plan.first50_1Year;
-            const perYearCost = is3Yr ? plan.pricePerYear3Yr : plan.price1Year;
-
-            return (
-              <div 
-                key={plan.id} 
-                className={`bg-white border rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between transition hover:shadow-md ${plan.borderColor}`}
-              >
-                <div>
-                  {/* Card Header */}
-                  <div className={`bg-gradient-to-r ${plan.color} text-white p-4`}>
-                    {plan.isPopular && (
-                      <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider mb-2 inline-block">
-                        ★ Most Powerful
-                      </span>
-                    )}
-                    <h4 className="font-extrabold text-sm leading-tight">{plan.badge}</h4>
-                    <p className="text-[11px] text-white/80 mt-1">{plan.highlight}</p>
-                  </div>
-
-                  {/* Pricing Box */}
-                  <div className="p-4 border-b border-gray-100 bg-slate-50/50">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-2xl font-black text-slate-900">₹{specialRate.toLocaleString()}</span>
-                      <span className="text-xs text-gray-400 line-through">₹{normalRate.toLocaleString()}</span>
-                    </div>
-
-                    <div className="text-[11px] font-bold text-emerald-700 mt-1">
-                      {is3Yr ? (
-                        <span>₹{perYearCost}/year (25% + 30% Cheaper)</span>
-                      ) : (
-                        <span>₹{specialRate}/year (30% Launch Offer)</span>
-                      )}
-                    </div>
-
-                    <div className="text-[10px] text-gray-500 mt-0.5">
-                      {is3Yr ? "Billed for 3 Years (₹" + specialRate + " total)" : "Billed Annually"}
-                    </div>
-                  </div>
-
-                  {/* Feature List */}
-                  <div className="p-4 space-y-2">
-                    <span className="text-[11px] font-extrabold text-gray-700 uppercase tracking-wider block mb-2">Key Features:</span>
-                    {plan.features.map((f, idx) => (
-                      <div key={idx} className="text-xs text-gray-600 flex items-start gap-2 leading-snug">
-                        <span className="text-emerald-600 font-bold mt-0.5">✓</span>
-                        <span>{f}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Card Footer CTA */}
-                <div className="p-4 pt-0">
-                  <button 
-                    onClick={() => {
-                      alert(`आपने "${plan.badge}" चुना है। आपका 15 दिन का Free Trial एक्टिव है!`);
-                      onClose();
-                    }}
-                    className={`w-full py-2.5 rounded-xl font-extrabold text-xs transition shadow-sm ${
-                      plan.isPopular 
-                        ? "bg-emerald-600 hover:bg-emerald-700 text-white" 
-                        : "bg-slate-900 hover:bg-slate-800 text-white"
-                    }`}
-                  >
-                    Start 15-Day Free Trial →
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Direct Download Action Bar */}
-        <div className="p-4 bg-slate-900 text-white border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="text-left">
-            <div className="text-xs font-black text-amber-400 flex items-center gap-1.5">
-              <span>🚀 Download Native Apps (v1.2.0)</span>
-            </div>
-            <p className="text-[11px] text-slate-300">Download for Windows PC or Android smartphone</p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <a
-              href="https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/download/v1.2.0/Red.Accounting.Book.Setup.1.2.0.exe"
-              target="_blank"
-              rel="noreferrer"
-              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-              title="Download Windows PC Installer"
-            >
-              <span>💻 Download Desktop (.exe)</span>
-            </a>
-
-            <a
-              href="https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/download/v1.2.0/RedAccounting-1.2.0.apk"
-              target="_blank"
-              rel="noreferrer"
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-              title="Download Android APK"
-            >
-              <span>📱 Download Android (.apk)</span>
-            </a>
-          </div>
-        </div>
-
-        {/* Footer Note */}
-        <div className="p-2.5 bg-slate-950 border-t border-slate-800 text-center text-[11px] text-gray-400 font-medium">
-          🔒 100% Data Privacy & Encryption • Free Customer Support on WhatsApp • Cancel Anytime
-        </div>
-      {/* 🏢 ON-THE-SPOT NEW BUSINESS CREATION MODAL */}
-      {showQuickCreateBusinessModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 border border-slate-200 animate-in fade-in zoom-in-95">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-xl font-bold">
-                  🏢
-                </div>
-                <div>
-                  <h3 className="font-black text-slate-900 text-base">नया व्यापार / दुकान बनाएं</h3>
-                  <p className="text-xs text-slate-500">Create & Switch Business in 10 Seconds</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowQuickCreateBusinessModal(false)}
-                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <form onSubmit={handleQuickCreateBusiness} className="py-4 space-y-3.5 text-xs">
+          {plans.map(plan => (
+            <div key={plan.id} className={`bg-white border rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between ${plan.borderColor}`}>
               <div>
-                <label className="block text-slate-700 font-black mb-1">1. व्यापार का नाम (Business / Shop Name)*</label>
-                <input
-                  type="text"
-                  placeholder="उदा: शर्मा रेस्टोरेंट & कैफे या गुप्ता हार्डवेयर..."
-                  required
-                  value={newBusinessForm.name}
-                  onChange={(e) => setNewBusinessForm({ ...newBusinessForm, name: e.target.value })}
-                  className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-900 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-black mb-1">2. व्यापार प्रकार (Industry Type)*</label>
-                <select
-                  value={newBusinessForm.industryType}
-                  onChange={(e) => setNewBusinessForm({ ...newBusinessForm, industryType: e.target.value })}
-                  className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
-                >
-                  <option value="restaurant">🍽️ रेस्टोरेंट, कैफे व ढाबा (KOT & Tables)</option>
-                  <option value="banquet">🏨 होटल व बैंक्वेट (Event & Room Booking)</option>
-                  <option value="gamezone">🎮 गेमज़ोन व VR पार्क (RFID Playcard & Timers)</option>
-                  <option value="supermarket">🛒 सुपरमार्केट, किराना व प्रोविजन (Barcode POS)</option>
-                  <option value="electronics">📱 मोबाइल व इलेक्ट्रॉनिक्स (IMEI Tracking)</option>
-                  <option value="hardware">🔧 हार्डवेयर, पेंट्स व प्लाईवुड (Sq.Ft Calculator)</option>
-                  <option value="salon">💇‍♀️ सैलून, ब्यूटी पार्लर व स्पा (Stylist Commission)</option>
-                  <option value="garments">👗 रेडीमेड गारमेंट्स व फुटवियर (Size Matrix)</option>
-                  <option value="general">🏢 अन्य सामान्य रिटेल व होलसेल व्यापार</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">मोबाइल नंबर (Phone)</label>
-                  <input
-                    type="tel"
-                    placeholder="9876543210"
-                    value={newBusinessForm.phone}
-                    onChange={(e) => setNewBusinessForm({ ...newBusinessForm, phone: e.target.value })}
-                    className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
-                  />
+                <div className={`bg-gradient-to-r ${plan.color} text-white p-4`}>
+                  <h4 className="font-extrabold text-sm">{plan.badge}</h4>
+                  <p className="text-[11px] text-white/80 mt-1">{plan.highlight}</p>
                 </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">पता / शहर (Address)</label>
-                  <input
-                    type="text"
-                    placeholder="मेन रोड, मार्केट"
-                    value={newBusinessForm.address}
-                    onChange={(e) => setNewBusinessForm({ ...newBusinessForm, address: e.target.value })}
-                    className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
-                  />
+                <div className="p-4 border-b border-gray-100 bg-slate-50/50">
+                  <span className="text-2xl font-black text-slate-900">₹{plan.first50_1Year}</span>
+                  <span className="text-xs text-gray-400 line-through ml-2">₹{plan.price1Year}</span>
+                </div>
+                <div className="p-4 space-y-2">
+                  {plan.features.map((f, idx) => (
+                    <div key={idx} className="text-xs text-gray-600 flex items-center gap-1.5">
+                      <span className="text-emerald-600 font-bold">✓</span>
+                      <span>{f}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-500/30 transition cursor-pointer"
-                >
-                  🚀 तुरंत बिज़नेस बनाएं व चालू करें (Create & Launch)
+              <div className="p-4 pt-0">
+                <button onClick={() => { alert("Trial active!"); onClose(); }} className="w-full py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl">
+                  Start 15-Day Trial →
                 </button>
               </div>
-            </form>
-          </div>
+            </div>
+          ))}
         </div>
-      )}
       </div>
     </div>
   );
@@ -1283,97 +1075,7 @@ function NotificationItem({ title, desc, time, color }) {
         <p className="font-medium text-gray-900 text-sm">{title}</p>
         <p className="text-gray-600 text-xs">{desc}</p>
         <p className="text-gray-500 text-xs mt-1">{time}</p>
-      {/* 🏢 ON-THE-SPOT NEW BUSINESS CREATION MODAL */}
-      {showQuickCreateBusinessModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 border border-slate-200 animate-in fade-in zoom-in-95">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-xl font-bold">
-                  🏢
-                </div>
-                <div>
-                  <h3 className="font-black text-slate-900 text-base">नया व्यापार / दुकान बनाएं</h3>
-                  <p className="text-xs text-slate-500">Create & Switch Business in 10 Seconds</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowQuickCreateBusinessModal(false)}
-                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <form onSubmit={handleQuickCreateBusiness} className="py-4 space-y-3.5 text-xs">
-              <div>
-                <label className="block text-slate-700 font-black mb-1">1. व्यापार का नाम (Business / Shop Name)*</label>
-                <input
-                  type="text"
-                  placeholder="उदा: शर्मा रेस्टोरेंट & कैफे या गुप्ता हार्डवेयर..."
-                  required
-                  value={newBusinessForm.name}
-                  onChange={(e) => setNewBusinessForm({ ...newBusinessForm, name: e.target.value })}
-                  className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-900 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-black mb-1">2. व्यापार प्रकार (Industry Type)*</label>
-                <select
-                  value={newBusinessForm.industryType}
-                  onChange={(e) => setNewBusinessForm({ ...newBusinessForm, industryType: e.target.value })}
-                  className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
-                >
-                  <option value="restaurant">🍽️ रेस्टोरेंट, कैफे व ढाबा (KOT & Tables)</option>
-                  <option value="banquet">🏨 होटल व बैंक्वेट (Event & Room Booking)</option>
-                  <option value="gamezone">🎮 गेमज़ोन व VR पार्क (RFID Playcard & Timers)</option>
-                  <option value="supermarket">🛒 सुपरमार्केट, किराना व प्रोविजन (Barcode POS)</option>
-                  <option value="electronics">📱 मोबाइल व इलेक्ट्रॉनिक्स (IMEI Tracking)</option>
-                  <option value="hardware">🔧 हार्डवेयर, पेंट्स व प्लाईवुड (Sq.Ft Calculator)</option>
-                  <option value="salon">💇‍♀️ सैलून, ब्यूटी पार्लर व स्पा (Stylist Commission)</option>
-                  <option value="garments">👗 रेडीमेड गारमेंट्स व फुटवियर (Size Matrix)</option>
-                  <option value="general">🏢 अन्य सामान्य रिटेल व होलसेल व्यापार</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">मोबाइल नंबर (Phone)</label>
-                  <input
-                    type="tel"
-                    placeholder="9876543210"
-                    value={newBusinessForm.phone}
-                    onChange={(e) => setNewBusinessForm({ ...newBusinessForm, phone: e.target.value })}
-                    className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">पता / शहर (Address)</label>
-                  <input
-                    type="text"
-                    placeholder="मेन रोड, मार्केट"
-                    value={newBusinessForm.address}
-                    onChange={(e) => setNewBusinessForm({ ...newBusinessForm, address: e.target.value })}
-                    className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-500/30 transition cursor-pointer"
-                >
-                  🚀 तुरंत बिज़नेस बनाएं व चालू करें (Create & Launch)
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
       </div>
     </div>
   );
 }
-

@@ -123,7 +123,13 @@ api.interceptors.response.use(
       const isGuestToken = token && (token.includes("demo_guest") || token.includes("guest"));
       if (isGuestToken) {
         console.warn("[API Notice] Guest mode 401 suppressed to allow offline/demo exploration.");
-        return Promise.resolve({ data: { success: true, isDemoFallback: true } });
+                const mockArray = [];
+        Object.defineProperty(mockArray, 'bills', { value: [], enumerable: true });
+        Object.defineProperty(mockArray, 'expenses', { value: [], enumerable: true });
+        Object.defineProperty(mockArray, 'products', { value: [], enumerable: true });
+        Object.defineProperty(mockArray, 'summary', { value: { totalProducts: 12, lowStockItems: 2 }, enumerable: true });
+        Object.defineProperty(mockArray, 'data', { value: { bills: [], expenses: [] }, enumerable: true });
+        return Promise.resolve({ data: mockArray, bills: [], expenses: [], products: [] });
       }
 
       // Only redirect if we are NOT on a public page.

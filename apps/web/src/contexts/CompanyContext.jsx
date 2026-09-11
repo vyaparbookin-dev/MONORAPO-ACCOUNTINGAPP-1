@@ -109,36 +109,26 @@ export const CompanyProvider = ({ children }) => {
   const fetchCompanies = async () => {
     try {
       const response = await api.get('/api/company');
-      // Handle multiple possible response structures: { companies: [] }, { data: [] }, or []
-      const companyList = response.companies || response.data || (Array.isArray(response) ? response : []);
-      console.log("[Company Debug] Fetched companies:", companyList.map(c => ({ _id: c._id, name: c.name, user: c.user })));
-      setCompanies(companyList);
+      const rawList = response?.companies || response?.data?.companies || response?.data || response;
+      const companyList = Array.isArray(rawList) ? rawList : (Array.isArray(rawList?.companies) ? rawList.companies : allDemoCompanies);
+      
+      const finalCompanies = (companyList && companyList.length > 0) ? companyList : allDemoCompanies;
+      setCompanies(finalCompanies);
 
-      // Restore selected company from localStorage if available
       const storedCompanyId = localStorage.getItem("companyId") || localStorage.getItem("selectedCompany");
-      console.log("[Company Debug] Stored company ID from localStorage:", storedCompanyId);
-      const foundCompany = companyList.find(c => c._id === storedCompanyId || c._id?.toString() === storedCompanyId?.toString());
+      const foundCompany = finalCompanies.find(c => c._id === storedCompanyId || c._id?.toString() === storedCompanyId?.toString());
 
       if (foundCompany) {
-        console.log("[Company Debug] Restored selected company:", { _id: foundCompany._id, name: foundCompany.name });
         setSelectedCompany(foundCompany);
-      } else if (companyList.length > 0 && !selectedCompany) {
-        console.log("[Company Debug] No stored company matched. Defaulting to first company:", companyList[0]._id);
-        setSelectedCompany(companyList[0]);
-        localStorage.setItem("companyId", companyList[0]._id);
       } else {
-        console.log("[Company Debug] No company found in user account or company list is empty.");
+        setSelectedCompany(finalCompanies[0]);
+        localStorage.setItem("companyId", finalCompanies[0]._id);
       }
     } catch (error) {
-      console.error('Failed to fetch companies, applying demo company fallback:', error);
+      console.warn('Applying demo companies fallback:', error);
       setCompanies(allDemoCompanies);
       setSelectedCompany(fallbackDemoCompany);
     } finally {
-      // Ensure there is always a selectedCompany for guest / demo users
-      if (!selectedCompany && companies.length === 0) {
-        setSelectedCompany(fallbackDemoCompany);
-        setCompanies(allDemoCompanies);
-      }
       setLoading(false);
     }
   };

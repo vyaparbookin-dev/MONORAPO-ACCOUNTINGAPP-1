@@ -7,7 +7,7 @@ export default function RegisterScreen() {
   const [step, setStep] = useState(1); // 1: Register, 2: OTP
   const [userId, setUserId] = useState(null);
   const [otp, setOtp] = useState("");
-  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", businessName: "", industryType: "restaurant" });
   const [showPassword, setShowPassword] = useState(false);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);

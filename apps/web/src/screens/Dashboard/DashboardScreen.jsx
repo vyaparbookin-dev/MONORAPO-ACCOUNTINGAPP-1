@@ -37,10 +37,10 @@ export default function DashboardScreen() {
         api.get("/api/approvals").catch(() => ({ data: { data: {} } }))
       ]);
 
-      const billsData = billsRes.data?.bills || billsRes.data || [];
-      const expensesData = expensesRes.data?.expenses || expensesRes.data || [];
-      const invSummary = invSummaryRes.data?.summary || {};
-      const approvalsData = approvalsRes.data?.data || {};
+      const billsData = Array.isArray(billsRes?.data?.bills) ? billsRes.data.bills : (Array.isArray(billsRes?.data) ? billsRes.data : (Array.isArray(billsRes?.bills) ? billsRes.bills : []));
+      const expensesData = Array.isArray(expensesRes?.data?.expenses) ? expensesRes.data.expenses : (Array.isArray(expensesRes?.data) ? expensesRes.data : (Array.isArray(expensesRes?.expenses) ? expensesRes.expenses : []));
+      const invSummary = invSummaryRes?.data?.summary || invSummaryRes?.summary || {};
+      const approvalsData = approvalsRes?.data?.data || approvalsRes?.data || {};
 
       // Filter by date range
       const filteredBills = filterBillsByDate(billsData, dateRange);
@@ -94,30 +94,35 @@ export default function DashboardScreen() {
     }
   };
 
-  const filterBillsByDate = (bills, range) => {
+  const filterBillsByDate = (items, range) => {
+    if (!Array.isArray(items)) return [];
     const now = new Date();
     const daysMap = { "last7days": 7, "last30days": 30, "last90days": 90, "allyear": Infinity };
     const days = daysMap[range] || 30;
     
-    if (days === Infinity) return bills;
+    if (days === Infinity) return items;
     
-    return (bills || []).filter(item => {
+    return items.filter(item => {
+      if (!item) return false;
       const billDate = new Date(item.createdAt || item.date);
+      if (isNaN(billDate.getTime())) return true;
       const diffTime = Math.abs(now - billDate);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       return diffDays <= days;
     });
   };
 
-  const generateMonthlyData = (bills) => {
+  const generateMonthlyData = (items) => {
+    if (!Array.isArray(items)) return [];
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const currentMonth = new Date().getMonth();
     const data = [];
     
     for (let i = 5; i >= 0; i--) {
       const monthIndex = (currentMonth - i + 12) % 12;
-      const monthBills = bills.filter(b => {
-        const billMonth = new Date(b.createdAt).getMonth();
+      const monthBills = items.filter(b => {
+        if (!b) return false;
+        const billMonth = new Date(b.createdAt || b.date).getMonth();
         return billMonth === monthIndex;
       });
       const total = monthBills.reduce((sum, b) => sum + (b.finalAmount || b.totalAmount || b.total || 0), 0);

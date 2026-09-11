@@ -11,7 +11,7 @@ const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString()
 // Register
 export const register = async (req, res) => {
   try {
-    const { name, email, password, phone, role } = req.body;
+    const { name, email, password, phone, role, businessName, industryType } = req.body;
     const normalizedEmail = String(email || "").trim().toLowerCase();
     console.log("[Auth Debug] register attempt for:", normalizedEmail);
 
@@ -58,10 +58,13 @@ export const register = async (req, res) => {
 
     // --- CRITICAL FIX: Create a company for the new user ---
     const company = new Company({
-      name: `${name}'s Company`,
+      name: businessName?.trim() || `${name}'s Company`,
       ownerName: name,
       ownerEmail: normalizedEmail,
       user: user._id,
+      phone: phone || "",
+      industryType: industryType || "general",
+      businessType: industryType || "general",
     });
     await company.save();
     user.companyId = company._id;
@@ -334,4 +337,4 @@ export const changePassword = async (req, res) => {
     console.error("🔴 Change Password Error:", err);
     return res.status(500).json({ success: false, message: err.message });
   }
-};
+};
