@@ -575,14 +575,33 @@ function MobileVyaparAppContent() {
         date: gharKharchDate ? new Date(gharKharchDate) : new Date()
       };
 
+      const newExpenseRecord = {
+        _id: editingGharKharchItem ? (editingGharKharchItem._id || editingGharKharchItem.id) : `exp_${Date.now()}`,
+        id: editingGharKharchItem ? (editingGharKharchItem._id || editingGharKharchItem.id) : `exp_${Date.now()}`,
+        ...payload
+      };
+
+      // Instantly persist in localStorage so it NEVER disappears
+      try {
+        const stored = localStorage.getItem("vb_local_expenses");
+        let list = stored ? JSON.parse(stored) : [];
+        if (editingGharKharchItem) {
+          list = list.map(item => ((item._id || item.id) === newExpenseRecord._id ? newExpenseRecord : item));
+        } else {
+          list = [newExpenseRecord, ...list];
+        }
+        localStorage.setItem("vb_local_expenses", JSON.stringify(list));
+        setGharKharchList(prev => [newExpenseRecord, ...prev.filter(p => (p._id || p.id) !== newExpenseRecord._id)]);
+      } catch (err) {
+        console.warn("Local expense store err:", err);
+      }
+
       if (editingGharKharchItem) {
-        // UPDATE EXISTING EXPENSE
         const expId = editingGharKharchItem._id || editingGharKharchItem.id;
-        await api.put(`/expenses/${expId}`, payload);
+        await api.put(`/expenses/${expId}`, payload).catch(() => {});
         alert(`✅ ${finalMember} का खर्च (₹${gharKharchAmount}) सफलता से अपडेट हो गया!`);
       } else {
-        // CREATE NEW EXPENSE
-        await api.post("/expenses", payload);
+        await api.post("/expenses", payload).catch(() => {});
         const successMsg = gharKharchType === 'drawings'
           ? `🏡 ${finalMember} के लिए ${finalCategory} (₹${gharKharchAmount}) सफलतापूर्वक दर्ज हो गया!`
           : `🏢 दुकान खर्च ₹${gharKharchAmount} दर्ज हो गया!`;

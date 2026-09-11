@@ -64,12 +64,36 @@ const getGuestMockData = (url, method = 'GET') => {
 
   // 4. Expenses (Ghar Kharch & Business)
   if (u.includes('expense')) {
-    const expenses = [
-      { _id: "e1", title: "दूध व सब्जी (Daily Milk and Veg)", amount: 450, category: "Kitchen / Grocery", member: "Mummy", date: new Date().toISOString(), notes: "Fresh organic milk and veggies" },
-      { _id: "e2", title: "दुकान बिजली बिल (Electricity)", amount: 2400, category: "Utilities", member: "Self", date: new Date(Date.now() - 86400000 * 2).toISOString(), notes: "Commercial meter power bill" },
-      { _id: "e3", title: "किचन गैस सिलेंडर (LPG Commercial)", amount: 1850, category: "Kitchen", member: "Papa", date: new Date(Date.now() - 86400000 * 4).toISOString(), notes: "Refill Indane Gas" }
+    let localExpenses = [];
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem("vb_local_expenses");
+        if (stored) localExpenses = JSON.parse(stored);
+      }
+    } catch (e) {}
+
+    const defaultExpenses = [
+      { _id: "e1", id: "e1", title: "दूध व सब्जी (Daily Milk and Veg)", amount: 450, category: "राशन/किराना", member: "Mummy", date: new Date().toISOString(), notes: "Fresh organic milk and veggies", expenseType: "drawings", familyMember: "Mummy", transactionFlow: "given" },
+      { _id: "e2", id: "e2", title: "दुकान बिजली बिल (Electricity)", amount: 2400, category: "दुकान बिल/किराया", member: "Self", date: new Date(Date.now() - 86400000 * 2).toISOString(), notes: "Commercial meter power bill", expenseType: "operating", familyMember: "Self", transactionFlow: "given" },
+      { _id: "e3", id: "e3", title: "किचन गैस सिलेंडर (LPG Commercial)", amount: 1850, category: "रसोई गैस/सिलेंडर", member: "Papa", date: new Date(Date.now() - 86400000 * 4).toISOString(), notes: "Refill Indane Gas", expenseType: "drawings", familyMember: "Papa", transactionFlow: "given" }
     ];
-    return { success: true, data: expenses, expenses: expenses, total: expenses.length, totalExpenses: 4700 };
+
+    const combined = [...localExpenses, ...defaultExpenses];
+    const totalExp = combined.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const drawingsExp = combined.filter(x => x.expenseType === 'drawings').reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const operatingExp = combined.filter(x => x.expenseType !== 'drawings').reduce((s, x) => s + (Number(x.amount) || 0), 0);
+
+    return { 
+      success: true, 
+      data: combined, 
+      expenses: combined, 
+      recentExpenses: combined,
+      list: combined,
+      total: combined.length, 
+      totalExpenses: totalExp,
+      totalDrawings: drawingsExp,
+      totalOperating: operatingExp
+    };
   }
 
   // 5. Parties / Customers
