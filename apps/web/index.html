@@ -13,7 +13,23 @@
     <title>VyaparBook 2.0 - Billing & Mobile Accounting</title>
   </head>
   <body class="bg-[#F8FAFC] text-[#0F172A]">
-    <div id="root"></div>
+    <script>
+      // Global Dynamic Import / Chunk Failure Auto-Reload Protection
+      window.addEventListener('vite:preloadError', (event) => {
+        console.warn('⚡ [Vite Chunk Sync] New application version detected, reloading latest assets...');
+        window.location.reload();
+      });
+      window.addEventListener('error', (e) => {
+        if (e && (e.message?.includes('Failed to fetch dynamically imported module') || e.message?.includes('Expected a JavaScript-or-Wasm module script') || e.message?.includes('text/html'))) {
+          const reloadKey = 'vb_chunk_reload_' + (window.location.pathname || 'root');
+          if (!sessionStorage.getItem(reloadKey)) {
+            sessionStorage.setItem(reloadKey, '1');
+            console.warn('⚡ [Chunk Recovery] Stale chunk MIME mismatch detected, refreshing now...');
+            window.location.reload();
+          }
+        }
+      });
+    </script>
     <script type="module" src="/src/index.jsx"></script>
     <script>
       if ('serviceWorker' in navigator) {

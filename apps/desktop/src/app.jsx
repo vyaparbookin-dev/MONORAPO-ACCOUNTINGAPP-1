@@ -5,149 +5,195 @@ import { GoogleOAuthProvider } from "@react-oauth/google";
 import { SettingsProvider } from "./contexts/SettingsContext"; // Import SettingsProvider
 import { SecurityTracker } from "./components/SecurityTracker";
 import DashboardLayout from "./components/DashboardLayout";
-import Loader from "./components/Loader"; // Assuming a loader component exists
+import Loader from "./components/Loader";
+
+// Resilient Dynamic Import Wrapper with Auto-Recovery for Stale Deployments
+const safeLazy = (importFn) => {
+  return React.lazy(async () => {
+    try {
+      return await importFn();
+    } catch (err) {
+      console.warn("Dynamic import failed, retrying chunk...", err);
+      const isChunkError = 
+        err?.message?.includes("dynamically imported module") || 
+        err?.message?.includes("Failed to fetch") ||
+        err?.message?.includes("MIME type") ||
+        err?.message?.includes("text/html") ||
+        err?.name === "ChunkLoadError";
+
+      if (isChunkError && typeof window !== "undefined") {
+        const key = "safe_lazy_reload_" + (window.location.pathname || "root");
+        const alreadyReloaded = sessionStorage.getItem(key);
+        if (!alreadyReloaded) {
+          sessionStorage.setItem(key, "true");
+          window.location.reload();
+          return new Promise(() => {});
+        }
+      }
+      try {
+        return await importFn();
+      } catch (retryErr) {
+        console.error("Critical component load fallback:", retryErr);
+        return {
+          default: () => (
+            <div className="flex flex-col items-center justify-center min-h-[300px] p-6 text-center">
+              <div className="text-4xl mb-2">⚡</div>
+              <h3 className="text-lg font-bold text-gray-800">Screen Refreshing...</h3>
+              <p className="text-sm text-gray-500 mb-4">Please refresh to load the latest components.</p>
+              <button onClick={() => { sessionStorage.clear(); window.location.reload(); }} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold">
+                Refresh Now
+              </button>
+            </div>
+          )
+        };
+      }
+    }
+  });
+};
+
+ // Assuming a loader component exists
 
 // Landing & Gamezone
-const LandingPage = React.lazy(() => import("./screens/Landing/LandingPage"));
-const MobileVyaparApp = React.lazy(() => import("./screens/mobile_pwa/MobileVyaparApp"));
-const GamezoneOperationsPage = React.lazy(() => import("./screens/gamezone/GamezoneOperationsPage"));
+const LandingPage = safeLazy(() => import("./screens/Landing/LandingPage"));
+const MobileVyaparApp = safeLazy(() => import("./screens/mobile_pwa/MobileVyaparApp"));
+const GamezoneOperationsPage = safeLazy(() => import("./screens/gamezone/GamezoneOperationsPage"));
 
 // Auth Screens
-const LoginScreen = React.lazy(() => import("./screens/Auth/LoginScreen"));
-const RegisterScreen = React.lazy(() => import("./screens/Auth/RegisterScreen"));
-const ForgotPasswordScreen = React.lazy(() => import("./screens/Auth/ForgotPasswordScreen"));
-const KeyreCoveryPage = React.lazy(() => import("./screens/Auth/KeyreCoveryPage"));
-const VerifyOtp = React.lazy(() => import("./pages/setting/VerifyOtp"));
+const LoginScreen = safeLazy(() => import("./screens/Auth/LoginScreen"));
+const RegisterScreen = safeLazy(() => import("./screens/Auth/RegisterScreen"));
+const ForgotPasswordScreen = safeLazy(() => import("./screens/Auth/ForgotPasswordScreen"));
+const KeyreCoveryPage = safeLazy(() => import("./screens/Auth/KeyreCoveryPage"));
+const VerifyOtp = safeLazy(() => import("./pages/setting/VerifyOtp"));
 
 // Dashboard
-const Dashboard = React.lazy(() => import("./screens/Dashboard/DashboardScreen"));
-const ApprovalsPage = React.lazy(() => import("./screens/Dashboard/ApprovalsPage"));
+const Dashboard = safeLazy(() => import("./screens/Dashboard/DashboardScreen"));
+const ApprovalsPage = safeLazy(() => import("./screens/Dashboard/ApprovalsPage"));
 
 // Parties
-const PartiesPage = React.lazy(() => import("./screens/parties/PartiesPage"));
+const PartiesPage = safeLazy(() => import("./screens/parties/PartiesPage"));
 
 // Billing
-const BillingPage = React.lazy(() => import("./screens/Billing/BillingPage"));
-const BillListPage = React.lazy(() => import("./screens/Billing/BillListPage"));
-const BillDetailPage = React.lazy(() => import("./screens/Billing/BillDetailPage"));
-const FastPOSPage = React.lazy(() => import("./screens/Billing/FastPOSPage"));
-const ImportBillPage = React.lazy(() => import("./screens/Billing/ImportBillPage"));
-const ParseBillFromImage = React.lazy(() => import("./screens/Billing/ParseBillFromImage"));
-const SalesReturnPage = React.lazy(() => import("./screens/Billing/SalesReturnPage"));
-const CreateReturnScreen = React.lazy(() => import("./screens/returns/CreateReturnScreen"));
-const B2bDocumentListPage = React.lazy(() => import("./screens/Billing/B2bDocumentListPage"));
-const CreateB2bDocumentPage = React.lazy(() => import("./screens/Billing/CreateB2bDocumentPage"));
+const BillingPage = safeLazy(() => import("./screens/Billing/BillingPage"));
+const BillListPage = safeLazy(() => import("./screens/Billing/BillListPage"));
+const BillDetailPage = safeLazy(() => import("./screens/Billing/BillDetailPage"));
+const FastPOSPage = safeLazy(() => import("./screens/Billing/FastPOSPage"));
+const ImportBillPage = safeLazy(() => import("./screens/Billing/ImportBillPage"));
+const ParseBillFromImage = safeLazy(() => import("./screens/Billing/ParseBillFromImage"));
+const SalesReturnPage = safeLazy(() => import("./screens/Billing/SalesReturnPage"));
+const CreateReturnScreen = safeLazy(() => import("./screens/returns/CreateReturnScreen"));
+const B2bDocumentListPage = safeLazy(() => import("./screens/Billing/B2bDocumentListPage"));
+const CreateB2bDocumentPage = safeLazy(() => import("./screens/Billing/CreateB2bDocumentPage"));
 
 // Inventory
-const InventoryPage = React.lazy(() => import("./screens/inventory/InventoryPage"));
-const AddProductPage = React.lazy(() => import("./screens/inventory/AddProductPage"));
-const BulkProductPage = React.lazy(() => import("./screens/inventory/BulkProductPage"));
-const BulkUploadPage = React.lazy(() => import("./screens/inventory/BulkUploadPage"));
-const CategoryAnalyticsPage = React.lazy(() => import("./screens/inventory/CategoryAnalyticsPage"));
-const PurchaseEntryPage = React.lazy(() => import("./screens/inventory/PurchaseEntryPage"));
-const StockAdjustmentPage = React.lazy(() => import("./screens/inventory/StockAdjustmentPage"));
-const ProductListPage = React.lazy(() => import("./screens/inventory/ProductListPage"));
-const ProductDetailPage = React.lazy(() => import("./screens/inventory/ProductDetailPage"));
-const SerialBatchPage = React.lazy(() => import("./screens/inventory/SerialBatchPage"));
-const InventorySalesReturnPage = React.lazy(() => import("./screens/inventory/SalesReturnPage"));
-const InventorySupplierLedgerPage = React.lazy(() => import("./screens/inventory/SupplierLedgerPage"));
-const StockTransferPage = React.lazy(() => import("./screens/inventory/StockTransferPage"));
-const ParsePurchaseBillPage = React.lazy(() => import("./screens/inventory/ParseBillFromImage"));
-const CategoryManagementPage = React.lazy(() => import("./screens/inventory/CategoryManagementPage"));
-const ItemMasterPage = React.lazy(() => import("./screens/inventory/ItemMasterPage"));
+const InventoryPage = safeLazy(() => import("./screens/inventory/InventoryPage"));
+const AddProductPage = safeLazy(() => import("./screens/inventory/AddProductPage"));
+const BulkProductPage = safeLazy(() => import("./screens/inventory/BulkProductPage"));
+const BulkUploadPage = safeLazy(() => import("./screens/inventory/BulkUploadPage"));
+const CategoryAnalyticsPage = safeLazy(() => import("./screens/inventory/CategoryAnalyticsPage"));
+const PurchaseEntryPage = safeLazy(() => import("./screens/inventory/PurchaseEntryPage"));
+const StockAdjustmentPage = safeLazy(() => import("./screens/inventory/StockAdjustmentPage"));
+const ProductListPage = safeLazy(() => import("./screens/inventory/ProductListPage"));
+const ProductDetailPage = safeLazy(() => import("./screens/inventory/ProductDetailPage"));
+const SerialBatchPage = safeLazy(() => import("./screens/inventory/SerialBatchPage"));
+const InventorySalesReturnPage = safeLazy(() => import("./screens/inventory/SalesReturnPage"));
+const InventorySupplierLedgerPage = safeLazy(() => import("./screens/inventory/SupplierLedgerPage"));
+const StockTransferPage = safeLazy(() => import("./screens/inventory/StockTransferPage"));
+const ParsePurchaseBillPage = safeLazy(() => import("./screens/inventory/ParseBillFromImage"));
+const CategoryManagementPage = safeLazy(() => import("./screens/inventory/CategoryManagementPage"));
+const ItemMasterPage = safeLazy(() => import("./screens/inventory/ItemMasterPage"));
 
 // Expenses
-const ExpensesPage = React.lazy(() => import("./screens/expenses/ExpensesPage"));
-const AddExpensePage = React.lazy(() => import("./screens/expenses/AddExpensesPage"));
-const ExpensesListPage = React.lazy(() => import("./screens/expenses/ExpensesListPage"));
+const ExpensesPage = safeLazy(() => import("./screens/expenses/ExpensesPage"));
+const AddExpensePage = safeLazy(() => import("./screens/expenses/AddExpensesPage"));
+const ExpensesListPage = safeLazy(() => import("./screens/expenses/ExpensesListPage"));
 
 // Company
-const CompanyPage = React.lazy(() => import("./screens/company/CompanyPage"));
-const AddCompanyPage = React.lazy(() => import("./screens/company/AddCompanyPage"));
-const BranchPage = React.lazy(() => import("./screens/company/BranchPage"));
-const CompanyListPage = React.lazy(() => import("./screens/company/CompanyListPage"));
+const CompanyPage = safeLazy(() => import("./screens/company/CompanyPage"));
+const AddCompanyPage = safeLazy(() => import("./screens/company/AddCompanyPage"));
+const BranchPage = safeLazy(() => import("./screens/company/BranchPage"));
+const CompanyListPage = safeLazy(() => import("./screens/company/CompanyListPage"));
 
 // Coupons
-const CouponsPage = React.lazy(() => import("./screens/coupons/CouponsPage"));
-const CouponListPage = React.lazy(() => import("./screens/coupons/CouponListPage"));
-const GenerateCoupanPage = React.lazy(() => import("./screens/coupons/GenerateCouponPage"));
+const CouponsPage = safeLazy(() => import("./screens/coupons/CouponsPage"));
+const CouponListPage = safeLazy(() => import("./screens/coupons/CouponListPage"));
+const GenerateCoupanPage = safeLazy(() => import("./screens/coupons/GenerateCouponPage"));
 
 // Membership
-const MembershipPage = React.lazy(() => import("./screens/membership/MembershipPage"));
-const MembershipListPage = React.lazy(() => import("./screens/membership/MemberShipListPage"));
-const LoyaltyDetailPage = React.lazy(() => import("./screens/membership/LoyaltyDetailPage"));
+const MembershipPage = safeLazy(() => import("./screens/membership/MembershipPage"));
+const MembershipListPage = safeLazy(() => import("./screens/membership/MemberShipListPage"));
+const LoyaltyDetailPage = safeLazy(() => import("./screens/membership/LoyaltyDetailPage"));
 
 // Notifications
-const NotificationPage = React.lazy(() => import("./screens/notification/NotificationPage"));
-const ReminderPage = React.lazy(() => import("./screens/notification/ReminderPage"));
+const NotificationPage = safeLazy(() => import("./screens/notification/NotificationPage"));
+const ReminderPage = safeLazy(() => import("./screens/notification/ReminderPage"));
 
 // Reports
-const ReportsPage = React.lazy(() => import("./screens/Reports/ReportsPage"));
-const GstReportPost = React.lazy(() => import("./screens/Reports/GstReportPage"));
-const ProductGstReportPage = React.lazy(() => import("./screens/Reports/ProductGstReportPage"));
-const Gstr3bReportPage = React.lazy(() => import("./screens/Reports/Gstr3bReportPage"));
-const ItemWiseReport = React.lazy(() => import("./screens/Reports/ItemWiseReport"));
-const ItemWiseReportPage = React.lazy(() => import("./screens/Reports/ItemWiseReportpage"));
-const BillWiseReportPage = React.lazy(() => import("./screens/Reports/BillWiseReportPage"));
-const CustomerReportBuilder = React.lazy(() => import("./screens/Reports/CustomerReportBuilder"));
-const PartyWiseReportPage = React.lazy(() => import("./screens/Reports/PartyWiseReportPage"));
-const ProfitLossReportPage = React.lazy(() => import("./screens/Reports/ProfitLossReport"));
-const SchemeReportPage = React.lazy(() => import("./screens/Reports/SchemeReportPage"));
-const SupplierLedgerPage = React.lazy(() => import("./screens/Reports/SupplierLedgerPage"));
-const DayBookPage = React.lazy(() => import("./screens/Reports/DayBookPage"));
-const SitewiseReportPage = React.lazy(() => import("./screens/Reports/SitewiseReportPage"));
-const AgingReportPage = React.lazy(() => import("./screens/Reports/AgingReportPage"));
-const GraphicalAnalytics = React.lazy(() => import("./screens/Reports/GraphicalAnalytics"));
-const BankReconciliationPage = React.lazy(() => import("./screens/Reports/BankReconciliationPage"));
-const EWayBillPage = React.lazy(() => import("./screens/Reports/EWayBillPage"));
-const FixedAssetsPage = React.lazy(() => import("./screens/Reports/FixedAssetsPage"));
-const TdsTcsPage = React.lazy(() => import("./screens/Reports/TdsTcsPage"));
+const ReportsPage = safeLazy(() => import("./screens/Reports/ReportsPage"));
+const GstReportPost = safeLazy(() => import("./screens/Reports/GstReportPage"));
+const ProductGstReportPage = safeLazy(() => import("./screens/Reports/ProductGstReportPage"));
+const Gstr3bReportPage = safeLazy(() => import("./screens/Reports/Gstr3bReportPage"));
+const ItemWiseReport = safeLazy(() => import("./screens/Reports/ItemWiseReport"));
+const ItemWiseReportPage = safeLazy(() => import("./screens/Reports/ItemWiseReportpage"));
+const BillWiseReportPage = safeLazy(() => import("./screens/Reports/BillWiseReportPage"));
+const CustomerReportBuilder = safeLazy(() => import("./screens/Reports/CustomerReportBuilder"));
+const PartyWiseReportPage = safeLazy(() => import("./screens/Reports/PartyWiseReportPage"));
+const ProfitLossReportPage = safeLazy(() => import("./screens/Reports/ProfitLossReport"));
+const SchemeReportPage = safeLazy(() => import("./screens/Reports/SchemeReportPage"));
+const SupplierLedgerPage = safeLazy(() => import("./screens/Reports/SupplierLedgerPage"));
+const DayBookPage = safeLazy(() => import("./screens/Reports/DayBookPage"));
+const SitewiseReportPage = safeLazy(() => import("./screens/Reports/SitewiseReportPage"));
+const AgingReportPage = safeLazy(() => import("./screens/Reports/AgingReportPage"));
+const GraphicalAnalytics = safeLazy(() => import("./screens/Reports/GraphicalAnalytics"));
+const BankReconciliationPage = safeLazy(() => import("./screens/Reports/BankReconciliationPage"));
+const EWayBillPage = safeLazy(() => import("./screens/Reports/EWayBillPage"));
+const FixedAssetsPage = safeLazy(() => import("./screens/Reports/FixedAssetsPage"));
+const TdsTcsPage = safeLazy(() => import("./screens/Reports/TdsTcsPage"));
 
 // Salary
-const SalaryPage = React.lazy(() => import("./screens/salary/SalaryPage"));
-const AddSalaryPage = React.lazy(() => import("./screens/salary/AddSalaryPage"));
-const MarkAttendancePage = React.lazy(() => import("./screens/salary/MarkAttendancePage"));
-const StaffStatementPage = React.lazy(() => import("./screens/salary/StaffStatementPage"));
-const SalaryListPage = React.lazy(() => import("./screens/salary/SalaryListPage"));
+const SalaryPage = safeLazy(() => import("./screens/salary/SalaryPage"));
+const AddSalaryPage = safeLazy(() => import("./screens/salary/AddSalaryPage"));
+const MarkAttendancePage = safeLazy(() => import("./screens/salary/MarkAttendancePage"));
+const StaffStatementPage = safeLazy(() => import("./screens/salary/StaffStatementPage"));
+const SalaryListPage = safeLazy(() => import("./screens/salary/SalaryListPage"));
 
 // Laterpad (Late Payments)
-const LaterpadPage = React.lazy(() => import("./screens/laterpad/LaterpadPage"));
-const LaterpadListPage = React.lazy(() => import("./screens/laterpad/LaterpadlistPage"));
+const LaterpadPage = safeLazy(() => import("./screens/laterpad/LaterpadPage"));
+const LaterpadListPage = safeLazy(() => import("./screens/laterpad/LaterpadlistPage"));
 
 // Warehouse
-const AddWarehousePage = React.lazy(() => import("./screens/warehouse/AddWarehousePage"));
-const WarehouseListPage = React.lazy(() => import("./screens/warehouse/WareHouseListPage"));
+const AddWarehousePage = safeLazy(() => import("./screens/warehouse/AddWarehousePage"));
+const WarehouseListPage = safeLazy(() => import("./screens/warehouse/WareHouseListPage"));
 
 // Settings
-const SettingsPage = React.lazy(() => import("./screens/Settings/SettingsPage"));
-const AppSettings = React.lazy(() => import("./screens/Settings/AppSettingPage"));
-const BackupRestore = React.lazy(() => import("./screens/Settings/BackupRestore"));
-const ProfilePage = React.lazy(() => import("./screens/Settings/ProfilePage"));
-const SecurityLogPage = React.lazy(() => import("./screens/Settings/SecurityLogPage"));
-const WebPreferences = React.lazy(() => import("./screens/Settings/WebPreferences"));
-const StaffManagementPage = React.lazy(() => import("./screens/Settings/StaffManagementPage"));
+const SettingsPage = safeLazy(() => import("./screens/Settings/SettingsPage"));
+const AppSettings = safeLazy(() => import("./screens/Settings/AppSettingPage"));
+const BackupRestore = safeLazy(() => import("./screens/Settings/BackupRestore"));
+const ProfilePage = safeLazy(() => import("./screens/Settings/ProfilePage"));
+const SecurityLogPage = safeLazy(() => import("./screens/Settings/SecurityLogPage"));
+const WebPreferences = safeLazy(() => import("./screens/Settings/WebPreferences"));
+const StaffManagementPage = safeLazy(() => import("./screens/Settings/StaffManagementPage"));
 
 // Additional Settings Pages (from pages/setting)
-const PageAppSettings = React.lazy(() => import("./pages/setting/appsetting"));
-const PageCloudSync = React.lazy(() => import("./pages/setting/cloudSync"));
-const PageProfile = React.lazy(() => import("./pages/setting/profile"));
-const PageSecurityLog = React.lazy(() => import("./pages/setting/securityLog"));
-const PageSettings = React.lazy(() => import("./pages/setting/settings"));
-const UnitSettingsPage = React.lazy(() => import("./screens/Settings/UnitSettingsPage"));
-const StaffPerformancePage = React.lazy(() => import("./screens/Settings/StaffPerformancePage"));
-const WhatsappSettingsPage = React.lazy(() => import("./screens/Settings/WhatsappSettingsPage"));
+const PageAppSettings = safeLazy(() => import("./pages/setting/appsetting"));
+const PageCloudSync = safeLazy(() => import("./pages/setting/cloudSync"));
+const PageProfile = safeLazy(() => import("./pages/setting/profile"));
+const PageSecurityLog = safeLazy(() => import("./pages/setting/securityLog"));
+const PageSettings = safeLazy(() => import("./pages/setting/settings"));
+const UnitSettingsPage = safeLazy(() => import("./screens/Settings/UnitSettingsPage"));
+const StaffPerformancePage = safeLazy(() => import("./screens/Settings/StaffPerformancePage"));
+const WhatsappSettingsPage = safeLazy(() => import("./screens/Settings/WhatsappSettingsPage"));
 
 // Leads & Quotations
-const LeadListPage = React.lazy(() => import("./screens/lead/LeadListPage"));
-const CreateLeadPage = React.lazy(() => import("./screens/lead/CreateLeadPage"));
-const LeadDetailPage = React.lazy(() => import("./screens/lead/LeadDetailPage"));
-const QuotationListPage = React.lazy(() => import("./screens/quotation/QuotationListPage"));
-const CreateQuotationPage = React.lazy(() => import("./screens/quotation/CreateQuotationPage"));
-const QuotationDetailPage = React.lazy(() => import("./screens/quotation/QuotationDetailPage"));
+const LeadListPage = safeLazy(() => import("./screens/lead/LeadListPage"));
+const CreateLeadPage = safeLazy(() => import("./screens/lead/CreateLeadPage"));
+const LeadDetailPage = safeLazy(() => import("./screens/lead/LeadDetailPage"));
+const QuotationListPage = safeLazy(() => import("./screens/quotation/QuotationListPage"));
+const CreateQuotationPage = safeLazy(() => import("./screens/quotation/CreateQuotationPage"));
+const QuotationDetailPage = safeLazy(() => import("./screens/quotation/QuotationDetailPage"));
 
 // Super Admin & AI Advisor
-const SuperAdminDashboardPage = React.lazy(() => import("./screens/admin/SuperAdminDashboardPage"));
-const AIBusinessAdvisorPage = React.lazy(() => import("./screens/ai/AIBusinessAdvisorPage"));
+const SuperAdminDashboardPage = safeLazy(() => import("./screens/admin/SuperAdminDashboardPage"));
+const AIBusinessAdvisorPage = safeLazy(() => import("./screens/ai/AIBusinessAdvisorPage"));
 
 const ComingSoonPage = () => (
   <div className="flex items-center justify-center h-full min-h-[400px]">
