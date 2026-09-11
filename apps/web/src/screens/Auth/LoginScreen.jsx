@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Eye, EyeOff, Mail, Lock, Sparkles, LogIn } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, Sparkles, LogIn, KeyRound, CheckCircle2 } from "lucide-react";
 import api from "../../services/api";
 import { GoogleLogin } from '@react-oauth/google';
 
@@ -10,6 +10,11 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showQuickReset, setShowQuickReset] = useState(false);
+  const [resetPasswordVal, setResetPasswordVal] = useState("");
+  const [resetSuccess, setResetSuccess] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+
   const navigate = useNavigate();
 
   const handleGoogleSuccess = async (credentialResponse) => {
@@ -120,9 +125,72 @@ export default function LoginScreen() {
         return;
       }
       setError(errData.message || "गलत मोबाइल नंबर, ईमेल या पासवर्ड दर्ज किया गया है।");
+      if (errData.suggestReset) {
+        setShowQuickReset(true);
+      }
       console.error("🔴 Login Error:", err.response?.data || err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleQuickReset = async (e) => {
+    e.preventDefault();
+    const cleanInput = identifier.trim();
+    if (!cleanInput) {
+      setError("कृपया पहले ऊपर मोबाइल नंबर या ईमेल दर्ज करें।");
+      return;
+    }
+    if (!resetPasswordVal || resetPasswordVal.length < 4) {
+      setError("नया पासवर्ड कम से कम 4 अक्षरों का होना चाहिए।");
+      return;
+    }
+
+    setResetLoading(true);
+    setError("");
+    setResetSuccess("");
+
+    try {
+      localStorage.removeItem("isGuestMode");
+      const res = await api.post("/api/auth/quick-reset-password", {
+        identifier: cleanInput,
+        email: cleanInput,
+        phone: cleanInput,
+        newPassword: resetPasswordVal
+      });
+
+      const token = res?.token || res?.data?.token;
+      const userObj = res?.user || res?.data?.user;
+
+      if (token) {
+        localStorage.setItem("authToken", token);
+        localStorage.setItem("token", token);
+        if (userObj) {
+          const normalizedUser = {
+            ...userObj,
+            _id: userObj._id || userObj.id,
+            companyId: userObj.companyId || userObj.company,
+            company: userObj.companyId || userObj.company,
+          };
+          localStorage.setItem("user", JSON.stringify(normalizedUser));
+          const companyId = normalizedUser.companyId || normalizedUser.company;
+          if (companyId) {
+            localStorage.setItem("companyId", companyId);
+            localStorage.setItem("selectedCompany", companyId);
+          }
+        }
+        setResetSuccess("🎉 नया पासवर्ड सेट हो गया! तुरंत लॉगिन किया जा रहा है...");
+        setTimeout(() => navigate("/"), 1000);
+      } else {
+        setResetSuccess("पासवर्ड अपडेट हो गया! अब आप लॉगिन कर सकते हैं।");
+        setShowQuickReset(false);
+        setPassword(resetPasswordVal);
+      }
+    } catch (err) {
+      const errData = err.response?.data || err;
+      setError(errData.message || "पासवर्ड रीसेट करने में समस्या आई।");
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -140,7 +208,7 @@ export default function LoginScreen() {
             <p className="text-xs sm:text-sm text-gray-500 font-medium mt-1">Smart Cloud Billing & Business POS</p>
           </div>
 
-          {/* Identifier Field (Email OR 10-Digit Mobile) */}
+          {/* Identifier Field */}
           <div className="mb-4">
             <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
               <Mail size={14} className="text-blue-600" />
@@ -161,15 +229,19 @@ export default function LoginScreen() {
           </div>
 
           {/* Password Field */}
-          <div className="mb-5">
+          <div className="mb-4">
             <div className="flex justify-between items-center mb-1.5">
               <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
                 <Lock size={14} className="text-blue-600" />
                 <span>पासवर्ड (Password)</span>
               </label>
-              <Link to="/forgot-password" className="text-xs text-blue-600 font-bold hover:underline">
-                भूल गए?
-              </Link>
+              <button 
+                type="button" 
+                onClick={() => setShowQuickReset(!showQuickReset)} 
+                className="text-xs text-blue-600 font-bold hover:underline cursor-pointer"
+              >
+                {showQuickReset ? "पासवर्ड लॉगिन" : "पासवर्ड भूल गए?"}
+              </button>
             </div>
             <div className="relative">
               <input
@@ -179,7 +251,7 @@ export default function LoginScreen() {
                 className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl text-sm font-medium text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-11 transition"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                required
+                required={!showQuickReset}
               />
               <button
                 type="button"
@@ -194,29 +266,62 @@ export default function LoginScreen() {
 
           {/* Error Message */}
           {error && (
-            <div className="mb-4 p-3.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold flex items-start gap-2 shadow-sm animate-shake">
+            <div className="mb-4 p-3.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold flex items-start gap-2 shadow-sm">
               <span className="text-sm">⚠️</span>
               <span className="flex-1">{error}</span>
             </div>
           )}
 
-          {/* Login Submit Button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 transition transform active:scale-98 disabled:opacity-50 cursor-pointer"
-          >
-            {loading ? (
-              <span className="flex items-center gap-2">
-                <span className="animate-spin text-lg">⏳</span> लॉगिन हो रहा है...
-              </span>
-            ) : (
-              <>
-                <LogIn size={18} />
-                <span>लॉगिन करें (Login to Account)</span>
-              </>
-            )}
-          </button>
+          {/* Reset Success Message */}
+          {resetSuccess && (
+            <div className="mb-4 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-sm">
+              <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+              <span>{resetSuccess}</span>
+            </div>
+          )}
+
+          {/* Instant Password Reset Box (Expanded if user forgets password) */}
+          {showQuickReset ? (
+            <div className="mb-4 p-4 bg-blue-50/80 border border-blue-200 rounded-2xl animate-fade-in">
+              <div className="flex items-center gap-2 text-blue-900 font-bold text-xs mb-2">
+                <KeyRound size={16} className="text-blue-600" />
+                <span>1-Click में नया पासवर्ड सेट करें (Direct Reset)</span>
+              </div>
+              <input
+                type="text"
+                placeholder="अपना नया पासवर्ड यहाँ लिखें"
+                value={resetPasswordVal}
+                onChange={(e) => setResetPasswordVal(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-white border border-blue-300 rounded-xl text-xs font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+              />
+              <button
+                type="button"
+                disabled={resetLoading}
+                onClick={handleQuickReset}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {resetLoading ? "अपडेट हो रहा है..." : "⚡ नया पासवर्ड सेट करें और तुरंत लॉगिन हों"}
+              </button>
+            </div>
+          ) : (
+            /* Standard Login Button */
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 transition transform active:scale-98 disabled:opacity-50 cursor-pointer"
+            >
+              {loading ? (
+                <span className="flex items-center gap-2">
+                  <span className="animate-spin text-lg">⏳</span> लॉगिन हो रहा है...
+                </span>
+              ) : (
+                <>
+                  <LogIn size={18} />
+                  <span>लॉगिन करें (Login to Account)</span>
+                </>
+              )}
+            </button>
+          )}
 
           {/* Instant 1-Click Guest Demo Button */}
           <div className="mt-3">
