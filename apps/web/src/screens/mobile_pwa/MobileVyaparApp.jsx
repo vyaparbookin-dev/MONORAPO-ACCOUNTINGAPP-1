@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
+  User,
   Home,
   Users,
   Package,
@@ -58,24 +59,45 @@ class MobileErrorBoundary extends React.Component {
   static getDerivedStateFromError(error) {
     return { hasError: true, error };
   }
-  componentDidCatch(error, errorInfo) {
-    console.error("📱 Mobile View Error Caught:", error, errorInfo);
+  componentDidCatch(error, info) {
+    console.error("Mobile PWA Render Error:", error, info);
   }
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-6 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-[#4338CA] flex items-center justify-center font-bold mb-3 shadow">
-            V
+        <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center bg-slate-50 select-none">
+          <div className="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl font-bold mb-3 shadow-sm">
+            📱
           </div>
-          <h2 className="font-extrabold text-base text-[#0F172A] mb-1">VyaparBook मोबाइल ऐप</h2>
-          <p className="text-xs text-slate-500 mb-4">पेज को सुरक्षित रीलोड किया जा रहा है...</p>
-          <button 
-            onClick={() => window.location.reload()}
-            className="px-5 py-2.5 bg-[#4338CA] text-white font-bold text-xs rounded-xl shadow cursor-pointer"
-          >
-            🔄 ऐप रीफ्रेश करें
-          </button>
+          <h2 className="text-lg font-black text-[#0F172A] mb-1">VyaparBook मोबाइल</h2>
+          <p className="text-xs text-slate-500 mb-4 max-w-xs">
+            ऐप रीलोड करने या अपने खाते में लॉगिन करने के लिए नीचे दिए गए विकल्प चुनें:
+          </p>
+          <div className="flex flex-col gap-2.5 w-full max-w-xs">
+            <button
+              onClick={() => {
+                sessionStorage.clear();
+                window.location.reload();
+              }}
+              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md transition cursor-pointer"
+            >
+              🔄 रीलोड करें (Reload App)
+            </button>
+            <button
+              onClick={() => {
+                localStorage.removeItem("isGuestMode");
+                localStorage.removeItem("authToken");
+                localStorage.removeItem("token");
+                localStorage.removeItem("companyId");
+                localStorage.removeItem("selectedCompany");
+                sessionStorage.clear();
+                window.location.href = "/login";
+              }}
+              className="w-full py-3 bg-white border border-slate-300 text-slate-700 font-extrabold text-xs rounded-xl hover:bg-slate-100 transition cursor-pointer"
+            >
+              🔑 लॉगिन स्क्रीन पर जाएं (Go to Login)
+            </button>
+          </div>
         </div>
       );
     }
