@@ -263,7 +263,16 @@ function MobileVyaparAppContent() {
   const [newMemberInputValue, setNewMemberInputValue] = useState("");
   
   // Ghar Kharch Ledger & Filter State
-  const [gharKharchList, setGharKharchList] = useState([]);
+  const [gharKharchList, setGharKharchList] = useState(() => {
+    try {
+      const stored = localStorage.getItem("vb_local_expenses");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
   const [gharKharchMemberFilter, setGharKharchMemberFilter] = useState("all");
   const [loadingGharKharch, setLoadingGharKharch] = useState(false);
 
@@ -282,6 +291,7 @@ function MobileVyaparAppContent() {
       setIsPwaInstalled(!!isStandalone);
     }
     fetchLiveDashboardData();
+    fetchGharKharchData();
 
     const handleBeforeInstall = (e) => {
       e.preventDefault();
@@ -291,12 +301,37 @@ function MobileVyaparAppContent() {
     return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
   }, [selectedCompany]);
 
+  useEffect(() => {
+    if (showGharKharchLedgerModal || showGharKharchModal) {
+      fetchGharKharchData();
+    }
+  }, [showGharKharchLedgerModal, showGharKharchModal]);
+
   const fetchGharKharchData = async () => {
     try {
       setLoadingGharKharch(true);
+      let localList = [];
+      try {
+        const stored = localStorage.getItem("vb_local_expenses");
+        if (stored) localList = JSON.parse(stored);
+      } catch (e) {}
+
       const res = await api.get("/expenses/ghar-kharch-summary").catch(() => api.get("/expenses?limit=300"));
-      const list = res.data?.recentExpenses || res.data?.expenses || res.data || [];
-      setGharKharchList(Array.isArray(list) ? list : []);
+      const serverList = res?.recentExpenses || res?.expenses || res?.data?.recentExpenses || res?.data?.expenses || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+      
+      const combinedMap = new Map();
+      [...localList, ...(Array.isArray(serverList) ? serverList : [])].forEach(item => {
+        if (!item) return;
+        const key = item._id || item.id || `${item.title}_${item.amount}_${item.date}`;
+        if (!combinedMap.has(key)) {
+          combinedMap.set(key, item);
+        }
+      });
+      const combined = Array.from(combinedMap.values());
+      setGharKharchList(combined);
+      try {
+        localStorage.setItem("vb_local_expenses", JSON.stringify(combined));
+      } catch (e) {}
     } catch (e) {
       console.error("Failed to fetch Ghar Kharch:", e);
     } finally {

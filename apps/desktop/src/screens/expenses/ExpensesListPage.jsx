@@ -1,13 +1,25 @@
 import React, { useEffect, useState } from "react";
-import axios from "axios";
+import api from "../../services/api";
 
 export default function ExpansesList() {
   const [expanses, setExpanses] = useState([]);
 
   const loadExpanses = async () => {
     try {
-      const res = await axios.get("/api/expenses");
-      const list = Array.isArray(res?.data) ? res.data : res?.data?.expenses || [];
+      let localList = [];
+      try {
+        const stored = localStorage.getItem("vb_local_expenses");
+        if (stored) localList = JSON.parse(stored);
+      } catch (e) {}
+      const res = await api.get("/expenses?limit=300").catch(() => null);
+      const serverList = res?.recentExpenses || res?.expenses || res?.data?.recentExpenses || res?.data?.expenses || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+      const combinedMap = new Map();
+      [...localList, ...(Array.isArray(serverList) ? serverList : [])].forEach(item => {
+        if (!item) return;
+        const key = item._id || item.id || `${item.title}_${item.amount}_${item.date}`;
+        if (!combinedMap.has(key)) combinedMap.set(key, item);
+      });
+      const list = Array.from(combinedMap.values());
       setExpanses(list);
     } catch (error) {
       console.error("Failed to load expenses:", error);

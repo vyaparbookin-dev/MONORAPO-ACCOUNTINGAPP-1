@@ -3,7 +3,16 @@ import { Plus, Search, Download, Edit, Trash2, DollarSign, Calendar, Tag, PieCha
 import api from "../../services/api";
 
 const ExpensesPage = () => {
-  const [expenses, setExpenses] = useState([]);
+  const [expenses, setExpenses] = useState(() => {
+    try {
+      const stored = localStorage.getItem("vb_local_expenses");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
   const [filteredExpenses, setFilteredExpenses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -37,14 +46,30 @@ const ExpensesPage = () => {
   const fetchExpenses = async () => {
     try {
       setLoading(true);
-      const response = await api.get("/expenses?limit=300");
-      const expensesList = Array.isArray(response?.data?.expenses) 
-        ? response.data.expenses 
-        : (Array.isArray(response?.data) ? response.data : (response?.expenses || []));
-      setExpenses(expensesList);
+      let localList = [];
+      try {
+        const stored = localStorage.getItem("vb_local_expenses");
+        if (stored) localList = JSON.parse(stored);
+      } catch (e) {}
+
+      const response = await api.get("/expenses?limit=300").catch(() => null);
+      const serverList = response?.recentExpenses || response?.expenses || response?.data?.recentExpenses || response?.data?.expenses || (Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : []));
+
+      const combinedMap = new Map();
+      [...localList, ...(Array.isArray(serverList) ? serverList : [])].forEach(item => {
+        if (!item) return;
+        const key = item._id || item.id || `${item.title}_${item.amount}_${item.date}`;
+        if (!combinedMap.has(key)) {
+          combinedMap.set(key, item);
+        }
+      });
+      const combined = Array.from(combinedMap.values());
+      setExpenses(combined);
+      try {
+        localStorage.setItem("vb_local_expenses", JSON.stringify(combined));
+      } catch (e) {}
     } catch (err) {
       console.error("Failed to fetch expenses:", err);
-      setExpenses([]);
     } finally {
       setLoading(false);
     }

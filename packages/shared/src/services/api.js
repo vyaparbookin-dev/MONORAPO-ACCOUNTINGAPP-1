@@ -13,6 +13,12 @@ const getGuestMockData = (url, method = 'GET') => {
         }
       };
     }
+    
+    // Auto-persist offline / fallback expense mutations
+    if (u.includes('expense')) {
+      return { success: true, message: "Expense Saved Successfully!", data: { _id: `exp_${Date.now()}` } };
+    }
+
     return { success: true, message: "Action Successful!", data: { _id: `mock_${Date.now()}` } };
   }
 
