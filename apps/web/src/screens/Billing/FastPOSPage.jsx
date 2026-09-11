@@ -109,6 +109,10 @@ export default function FastPOSPage() {
   // --- ⭐ CUSTOMER FEEDBACK & GOOGLE REVIEW MODAL STATE ---
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showQuickAddProductModal, setShowQuickAddProductModal] = useState(false);
+  const [showCouponAuthModal, setShowCouponAuthModal] = useState(false);
+  const [pendingCouponAuth, setPendingCouponAuth] = useState(null);
+  const [enteredAuthOtp, setEnteredAuthOtp] = useState("");
+  const [authOtpError, setAuthOtpError] = useState("");
   const [quickProductForm, setQuickProductForm] = useState({ name: "", price: "", category: "Fast Food", stock: 50, barcode: "" });
   const [feedbackBillData, setFeedbackBillData] = useState(null);
 
@@ -408,11 +412,38 @@ export default function FastPOSPage() {
 
     const subtotal = cart.reduce((sum, item) => sum + (item.total || 0), 0);
 
-    // 1. Flat 100 off on 500+ (e.g. SAVE100, REST100, SAVE100-XYZ)
+    // 1. Flat 100 off on 500+ with Fraud-Proof Transfer Check
     if (code.startsWith("SAVE100") || code.startsWith("REST100") || code.includes("100")) {
       if (subtotal < 500) {
         return setCouponError("⚠️ यह कूपन ₹500 या उससे अधिक के बिल पर ही मान्य है!");
       }
+
+      // Check if coupon belongs to Rahul Verma (7828289433) and is being used by someone else
+      const isRahulCoupon = code.includes("7828") || code.includes("XYZ") || code.includes("RAHUL");
+      const currentMobile = customerMobile.replace(/\D/g, "");
+      const isDifferentUser = isRahulCoupon && (!currentMobile.endsWith("7828289433") && !currentMobile.endsWith("7828"));
+
+      if (isDifferentUser) {
+        // Trigger Fraud-Proof 4-Digit Security OTP to Original Owner Rahul
+        const generatedOtp = String(Math.floor(1000 + Math.random() * 9000));
+        setPendingCouponAuth({
+          code,
+          type: "FLAT",
+          discount: 100,
+          title: "₹100 की फ्लैट छूट (Min ₹500)",
+          originalOwnerName: "Rahul Verma",
+          originalOwnerMobile: "7828289433",
+          currentCustomerName: customerName || "मित्र / परिवार",
+          currentCustomerMobile: customerMobile || "नया नंबर",
+          generatedOtp: generatedOtp
+        });
+        setEnteredAuthOtp("");
+        setAuthOtpError("");
+        setShowCouponAuthModal(true);
+        setCouponCodeInput("");
+        return;
+      }
+
       setAppliedCoupon({ code, type: "FLAT", discount: 100, title: "₹100 की फ्लैट छूट (Min ₹500)" });
       setCouponCodeInput("");
       return;
@@ -451,6 +482,32 @@ export default function FastPOSPage() {
     const disc = Math.min(100, Math.round(subtotal * 0.15));
     setAppliedCoupon({ code, type: "CUSTOM", discount: disc, title: `विशेष ऑफर: ₹${disc} की छूट (${code})` });
     setCouponCodeInput("");
+  };
+
+  const handleVerifyCouponOtp = (e) => {
+    e.preventDefault();
+    setAuthOtpError("");
+    if (!pendingCouponAuth) return;
+
+    if (enteredAuthOtp.trim() !== pendingCouponAuth.generatedOtp) {
+      return setAuthOtpError("❌ गलत ऑथराइजेशन कोड (Wrong OTP)! कृपया मूल कूपन धारक से सही 4-अंकीय कोड लें।");
+    }
+
+    // OTP Verified Successfully!
+    setAppliedCoupon({
+      code: pendingCouponAuth.code,
+      type: pendingCouponAuth.type,
+      discount: pendingCouponAuth.discount,
+      title: `${pendingCouponAuth.title} (Verified via OTP from ${pendingCouponAuth.originalOwnerName})`,
+      authorizedViaOtp: true,
+      originalOwnerMobile: pendingCouponAuth.originalOwnerMobile,
+      originalOwnerName: pendingCouponAuth.originalOwnerName,
+      authCodeUsed: enteredAuthOtp.trim()
+    });
+
+    setShowCouponAuthModal(false);
+    setPendingCouponAuth(null);
+    alert(`✅ ऑथराइजेशन सफल! ${pendingCouponAuth.originalOwnerName} का कूपन सफलतापूर्वक सत्यापित होकर बिल में जुड़ गया।`);
   };
 
   const handleRemoveCoupon = () => {
