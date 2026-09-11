@@ -12,6 +12,20 @@ export const protect = asyncHandler(async (req, res, next) => {
 
   if (!token) return res.status(401).json({ success: false, message: "Not authorized, no token" });
 
+  // Guest Demo Token Bypass
+  if (token && (token.includes("demo_guest") || token.includes("guest"))) {
+    req.user = {
+      _id: "demo_guest_user_101",
+      name: "Guest Explorer (अतिथि)",
+      email: "demo@vyaparbook.in",
+      role: "admin",
+      isGuest: true
+    };
+    req.companyId = req.headers['x-company-id'] || "demo_company_101";
+    return next();
+  }
+
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = await User.findById(decoded.id).select("-password").lean();

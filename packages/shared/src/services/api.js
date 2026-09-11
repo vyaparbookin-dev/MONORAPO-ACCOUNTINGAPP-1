@@ -1,3 +1,74 @@
+// --- RICH DEMO MOCK DATA GENERATOR FOR GUEST MODE ---
+const getGuestMockData = (url, method = 'GET') => {
+  const u = (url || '').toLowerCase();
+  
+  if (method !== 'GET') {
+    return { success: true, message: "Guest Action Successful!", data: { _id: `mock_${Date.now()}` } };
+  }
+
+  // 1. Inventory / Products
+  if (u.includes('inventory') || u.includes('product')) {
+    const products = [
+      { _id: "p1", id: "p1", name: "🍔 Crispy Veg Supreme Burger", category: "Fast Food", sellingPrice: 120, price: 120, costPrice: 60, currentStock: 45, unit: "pcs", barcode: "8901001", image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200" },
+      { _id: "p2", id: "p2", name: "🍕 Farmhouse Cheese Burst Pizza", category: "Pizza", sellingPrice: 280, price: 280, costPrice: 130, currentStock: 25, unit: "pcs", barcode: "8901002", image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=200" },
+      { _id: "p3", id: "p3", name: "🍛 Shahi Paneer Butter Masala", category: "Main Course", sellingPrice: 240, price: 240, costPrice: 110, currentStock: 30, unit: "plt", barcode: "8901003", image: "https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=200" },
+      { _id: "p4", id: "p4", name: "🫓 Butter Garlic Tandoori Naan", category: "Main Course", sellingPrice: 45, price: 45, costPrice: 15, currentStock: 100, unit: "pcs", barcode: "8901004" },
+      { _id: "p5", id: "p5", name: "🍚 Veg Dum Biryani with Raita", category: "Rice", sellingPrice: 190, price: 190, costPrice: 85, currentStock: 20, unit: "plt", barcode: "8901005" },
+      { _id: "p6", id: "p6", name: "🥤 Cold Coffee with Ice Cream", category: "Beverages", sellingPrice: 95, price: 95, costPrice: 35, currentStock: 50, unit: "gls", barcode: "8901006" },
+      { _id: "p7", id: "p7", name: "📱 iPhone 15 Pro 128GB (Blue)", category: "Mobile", sellingPrice: 119900, price: 119900, costPrice: 105000, currentStock: 8, unit: "pcs", barcode: "8901007", imeiList: ["354890123456781"] },
+      { _id: "p8", id: "p8", name: "🔧 Century Plywood 8x4 (18mm)", category: "Hardware", sellingPrice: 2400, price: 2400, costPrice: 1850, currentStock: 60, unit: "sht", barcode: "8901008" }
+    ];
+    return { success: true, data: products, products: products, items: products, total: products.length, summary: { totalProducts: products.length, lowStockItems: 2, totalStockValue: 850000 } };
+  }
+
+  // 2. Billing / Invoices
+  if (u.includes('billing') || u.includes('bill') || u.includes('invoice')) {
+    const bills = [
+      { _id: "b1", billNumber: "BILL-1001", customerName: "Ramesh Sharma", customerMobile: "9876543210", totalAmount: 580, finalAmount: 580, total: 580, paymentMode: "CASH", status: "paid", createdAt: new Date(Date.now() - 3600000).toISOString(), items: [{ name: "Crispy Veg Burger", quantity: 2, rate: 120, total: 240 }, { name: "Cold Coffee", quantity: 2, rate: 95, total: 190 }] },
+      { _id: "b2", billNumber: "BILL-1002", customerName: "Suresh Gupta (उधार)", customerMobile: "9812345678", totalAmount: 1250, finalAmount: 1250, total: 1250, paymentMode: "UDHAR", status: "unpaid", createdAt: new Date(Date.now() - 7200000).toISOString(), items: [{ name: "Shahi Paneer", quantity: 2, rate: 240, total: 480 }, { name: "Butter Naan", quantity: 6, rate: 45, total: 270 }] },
+      { _id: "b3", billNumber: "BILL-1003", customerName: "Anita Verma", customerMobile: "9988776655", totalAmount: 375, finalAmount: 375, total: 375, paymentMode: "UPI", status: "paid", createdAt: new Date(Date.now() - 86400000).toISOString(), items: [{ name: "Veg Dum Biryani", quantity: 1, rate: 190, total: 190 }] }
+    ];
+    return { success: true, data: bills, bills: bills, total: bills.length, totalSales: 2205 };
+  }
+
+  // 3. Expenses (Ghar Kharch & Business)
+  if (u.includes('expense')) {
+    const expenses = [
+      { _id: "e1", title: "दूध व सब्जी (Daily Milk & Veg)", amount: 450, category: "Kitchen / Grocery", member: "Mummy", date: new Date().toISOString(), notes: "Fresh organic milk & veggies" },
+      { _id: "e2", title: "दुकान बिजली बिल (Electricity)", amount: 2400, category: "Utilities", member: "Self", date: new Date(Date.now() - 86400000 * 2).toISOString(), notes: "Commercial meter power bill" },
+      { _id: "e3", title: "किचन गैस सिलेंडर (LPG Commercial)", amount: 1850, category: "Kitchen", member: "Papa", date: new Date(Date.now() - 86400000 * 4).toISOString(), notes: "Refill Indane Gas" }
+    ];
+    return { success: true, data: expenses, expenses: expenses, total: expenses.length, totalExpenses: 4700 };
+  }
+
+  // 4. Parties / Customers
+  if (u.includes('party') || u.includes('customer')) {
+    const parties = [
+      { _id: "pt1", name: "Ramesh Sharma", mobileNumber: "9876543210", phone: "9876543210", currentBalance: 0, balance: 0, address: "Shop 12, Main Market", type: "customer" },
+      { _id: "pt2", name: "Suresh Gupta", mobileNumber: "9812345678", phone: "9812345678", currentBalance: 1500, balance: 1500, address: "Ward 4, Gandhi Chowk", type: "customer" },
+      { _id: "pt3", name: "Pooja Traders (Supplier)", mobileNumber: "9765432109", phone: "9765432109", currentBalance: -4500, balance: -4500, address: "Industrial Area Phase 2", type: "supplier" }
+    ];
+    return { success: true, data: parties, parties: parties, customers: parties, total: parties.length };
+  }
+
+  // 5. Staff / Salary / Attendance
+  if (u.includes('staff') || u.includes('salary') || u.includes('attendance')) {
+    const staffList = [
+      { _id: "st1", name: "Rohan Kumar", role: "Cashier", phone: "9871112233", salary: 15000, attendance: { presentDays: 24, halfDays: 1, absentDays: 1 } },
+      { _id: "st2", name: "Sunil Chef", role: "Head Cook", phone: "9872223344", salary: 22000, attendance: { presentDays: 26, halfDays: 0, absentDays: 0 } }
+    ];
+    return { success: true, data: staffList, staff: staffList, list: staffList };
+  }
+
+  // 6. Approvals
+  if (u.includes('approval')) {
+    return { success: true, data: { bills: [], expenses: [] }, bills: [], expenses: [] };
+  }
+
+  // Default Fallback
+  return { success: true, data: [], items: [], list: [] };
+};
+
 import axios from "axios";
 
 // --- Platform-Aware Storage ---
@@ -122,14 +193,9 @@ api.interceptors.response.use(
       const token = typeof localStorage !== 'undefined' ? (localStorage.getItem("authToken") || localStorage.getItem("token")) : null;
       const isGuestToken = token && (token.includes("demo_guest") || token.includes("guest"));
       if (isGuestToken) {
-        console.warn("[API Notice] Guest mode 401 suppressed to allow offline/demo exploration.");
-                const mockArray = [];
-        Object.defineProperty(mockArray, 'bills', { value: [], enumerable: true });
-        Object.defineProperty(mockArray, 'expenses', { value: [], enumerable: true });
-        Object.defineProperty(mockArray, 'products', { value: [], enumerable: true });
-        Object.defineProperty(mockArray, 'summary', { value: { totalProducts: 12, lowStockItems: 2 }, enumerable: true });
-        Object.defineProperty(mockArray, 'data', { value: { bills: [], expenses: [] }, enumerable: true });
-        return Promise.resolve({ data: mockArray, bills: [], expenses: [], products: [] });
+        console.warn("[API Notice] Serving rich local demo mock data for URL:", err.config?.url);
+        const mockPayload = getGuestMockData(err.config?.url, err.config?.method?.toUpperCase());
+        return Promise.resolve(mockPayload);
       }
 
       // Only redirect if we are NOT on a public page.

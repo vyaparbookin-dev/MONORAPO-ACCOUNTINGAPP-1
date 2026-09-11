@@ -842,7 +842,6 @@ function ReferralCashTokensModal({ company, onClose }) {
             </div>
           </div>
         </div>
-      )}
 
       {/* 🏢 ON-THE-SPOT NEW BUSINESS CREATION MODAL */}
       {showQuickCreateBusinessModal && (

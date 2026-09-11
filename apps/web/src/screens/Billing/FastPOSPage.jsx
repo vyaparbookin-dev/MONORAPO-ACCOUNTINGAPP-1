@@ -519,7 +519,7 @@ export default function FastPOSPage() {
               🟢 On-Time: 39 Tables (93%)
             </span>
             <span className="px-2.5 py-1 bg-rose-100 text-rose-800 rounded-lg border border-rose-300 animate-pulse" title="20 मिनट से ज्यादा समय लेने वाले लेट ऑर्डर्स">
-              🔴 Late Delayed: 3 Tables (>20 mins)
+              🔴 Late Delayed: 3 Tables (&gt;20 mins)
             </span>
             <span className="text-slate-500 text-[11px] hidden md:inline font-medium">
               (Avg Turnaround: 11.4 Mins)
