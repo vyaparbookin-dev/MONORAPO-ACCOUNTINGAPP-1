@@ -120,6 +120,16 @@ function MobileVyaparAppContent() {
   const [showItemSuggestions, setShowItemSuggestions] = useState(false);
   const [savingBill, setSavingBill] = useState(false);
 
+  // ==================== MANUAL QUICK DAILY SALE STATE ====================
+  const [showManualSaleModal, setShowManualSaleModal] = useState(false);
+  const [manualSaleAmount, setManualSaleAmount] = useState("");
+  const [manualSalePaymentMode, setManualSalePaymentMode] = useState("CASH"); // CASH, UPI, UDHAR
+  const [manualSaleCustomer, setManualSaleCustomer] = useState("काउंटर नकद ग्राहक");
+  const [manualSalePhone, setManualSalePhone] = useState("");
+  const [manualSaleDate, setManualSaleDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [manualSaleNotes, setManualSaleNotes] = useState("");
+  const [savingManualSale, setSavingManualSale] = useState(false);
+
   // AI Photo Bill OCR & Multi-Bill Batch State
   const [showOcrModal, setShowOcrModal] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
@@ -659,6 +669,7 @@ function MobileVyaparAppContent() {
           type: b.paymentMode || b.paymentType || "CASH",
           paymentStatus: b.paymentStatus || (b.paymentMode === "UDHAR" ? "unpaid" : "paid"),
           date: b.date ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today",
+          rawDate: b.date || b.createdAt || new Date(),
           items: b.items || []
         }));
         setBills(normBills);
@@ -713,9 +724,18 @@ function MobileVyaparAppContent() {
   const stockValue = items.reduce((sum, it) => sum + (it.stock * it.salePrice), 0);
   const recentSales = bills.reduce((sum, b) => sum + b.amount, 0);
 
-  const todaySales = recentSales;
-  const todayCash = bills.filter(b => b.type === "CASH").reduce((sum, b) => sum + b.amount, 0);
-  const todayCredit = bills.filter(b => b.type === "UDHAR").reduce((sum, b) => sum + b.amount, 0);
+  // Filter bills created today
+  const todayBills = bills.filter(b => {
+    if (!b.rawDate) return true;
+    const d = new Date(b.rawDate);
+    const today = new Date();
+    return d.toDateString() === today.toDateString();
+  });
+
+  const todaySales = todayBills.reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const todayCash = todayBills.filter(b => b.type === "CASH").reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const todayUpi = todayBills.filter(b => b.type === "UPI" || b.type === "ONLINE").reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const todayCredit = todayBills.filter(b => b.type === "UDHAR" || b.type === "CREDIT").reduce((sum, b) => sum + Number(b.amount || 0), 0);
 
   const companyDisplayName = selectedCompany?.name || selectedCompany?.companyName || "VyaparBook";
 
@@ -804,6 +824,68 @@ function MobileVyaparAppContent() {
       console.error(e);
     } finally {
       setSavingBill(false);
+    }
+  };
+
+  // ==================== FAST MANUAL DAILY SALE HANDLER ====================
+  const handleSaveManualSale = async (e) => {
+    if (e) e.preventDefault();
+    if (!manualSaleAmount || Number(manualSaleAmount) <= 0) {
+      alert("कृपया सही बिक्री राशि (₹) दर्ज करें!");
+      return;
+    }
+    setSavingManualSale(true);
+    try {
+      const saleAmt = Number(manualSaleAmount);
+      const partyTitle = manualSaleCustomer.trim() || (manualSalePaymentMode === 'CASH' ? "काउंटर नकद बिक्री" : manualSalePaymentMode === 'UPI' ? "UPI ऑनलाइन बिक्री" : "उधारी ग्राहक");
+      const payload = {
+        partyName: partyTitle,
+        customerPhone: manualSalePhone.trim(),
+        paymentMode: manualSalePaymentMode,
+        paymentStatus: manualSalePaymentMode === "UDHAR" ? "unpaid" : "paid",
+        finalAmount: saleAmt,
+        grandTotal: saleAmt,
+        total: saleAmt,
+        date: manualSaleDate ? new Date(manualSaleDate) : new Date(),
+        items: [{
+          name: manualSaleNotes.trim() || `दैनिक बिक्री (${manualSalePaymentMode})`,
+          quantity: 1,
+          price: saleAmt,
+          total: saleAmt
+        }],
+        notes: manualSaleNotes.trim()
+      };
+
+      const res = await api.post("/billing", payload).catch(() => null);
+      
+      const createdBill = {
+        _id: res?.data?.bill?._id || Date.now().toString(),
+        id: res?.data?.bill?.billNumber || `SALE-${Date.now().toString().slice(-4)}`,
+        customerName: payload.partyName,
+        phone: payload.customerPhone,
+        amount: saleAmt,
+        type: manualSalePaymentMode,
+        paymentStatus: payload.paymentStatus,
+        date: "Today",
+        rawDate: new Date(),
+        items: payload.items
+      };
+
+      setBills(prev => [createdBill, ...prev]);
+      setShowManualSaleModal(false);
+      setManualSaleAmount("");
+      setManualSaleNotes("");
+      setManualSalePhone("");
+      setManualSaleCustomer("काउंटर नकद ग्राहक");
+      setManualSalePaymentMode("CASH");
+
+      alert(`🎉 ₹${saleAmt.toLocaleString('en-IN')} की ${manualSalePaymentMode === 'CASH' ? 'नकद' : manualSalePaymentMode === 'UPI' ? 'UPI' : 'उधारी'} बिक्री सफलतापूर्वक दर्ज हो गई!`);
+      fetchLiveDashboardData();
+    } catch (err) {
+      console.error("Manual sale error:", err);
+      alert("बिक्री दर्ज करने में त्रुटि आई।");
+    } finally {
+      setSavingManualSale(false);
     }
   };
 
@@ -1140,6 +1222,53 @@ function MobileVyaparAppContent() {
         {/* ==================== TAB 1: DASHBOARD ==================== */}
         {activeTab === "dashboard" && (
           <div className="space-y-3.5 animate-in fade-in">
+            {/* 💰 DEDICATED PROMINENT DAILY SALES CARD (आज की कुल बिक्री) */}
+            <div className="p-4 bg-gradient-to-br from-[#1E1B4B] via-[#312E81] to-[#4338CA] text-white rounded-3xl shadow-xl space-y-3 border border-indigo-500/40">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-xs font-black text-indigo-200 uppercase tracking-wider">
+                    आज की कुल बिक्री (Today's Total Sale)
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold text-indigo-200 bg-white/10 px-2.5 py-0.5 rounded-full backdrop-blur-xs">
+                  📅 {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-baseline pt-1">
+                <div>
+                  <div className="text-3xl font-black tracking-tight text-white drop-shadow-sm">
+                    ₹ {todaySales.toLocaleString('en-IN')}
+                  </div>
+                  <p className="text-[11px] text-indigo-200 font-semibold mt-0.5">
+                    {todayBills.length > 0 ? `कुल ${todayBills.length} बिक्री बिल दर्ज हैं` : 'आज की बिक्री दर्ज करने हेतु बटन दबाएं'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowManualSaleModal(true)}
+                  className="px-3.5 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-extrabold text-xs rounded-xl shadow-lg transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+                >
+                  <Plus size={15} /> + सीधी बिक्री
+                </button>
+              </div>
+
+              {/* 3 Breakdown Pills: Cash, UPI, Udhar */}
+              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-indigo-400/30 text-center">
+                <div className="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
+                  <span className="text-[10px] text-emerald-300 font-bold block">💵 नकद (Cash)</span>
+                  <span className="font-extrabold text-xs text-white">₹{todayCash.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
+                  <span className="text-[10px] text-sky-300 font-bold block">📲 UPI / QR</span>
+                  <span className="font-extrabold text-xs text-white">₹{todayUpi.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
+                  <span className="text-[10px] text-rose-300 font-bold block">📒 उधारी (Udhar)</span>
+                  <span className="font-extrabold text-xs text-white">₹{todayCredit.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            </div>
             {/* Top Promo Banner */}
             <div className="p-3.5 bg-gradient-to-r from-[#EEF2FF] to-[#F5F3FF] border border-[#E0E7FF] rounded-2xl flex justify-between items-center shadow-sm">
               <div>
@@ -3423,6 +3552,129 @@ function MobileVyaparAppContent() {
         </div>
       )}
 
+
+      
+      {/* 📱 6.10 FAST MANUAL DAILY SALE ENTRY MODAL (मैन्युअल सीधी बिक्री) */}
+      {showManualSaleModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl max-h-[92vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-base">
+                  💵
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">मैन्युअल दैनिक बिक्री जोड़ें (+ Direct Sale)</h3>
+                  <p className="text-[10px] text-slate-400">काउंटर बिक्री बिना आइटम सर्च किए तुरंत दर्ज करें</p>
+                </div>
+              </div>
+              <button onClick={() => setShowManualSaleModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveManualSale} className="space-y-3.5">
+              {/* Sale Amount (₹) */}
+              <div>
+                <label className="text-xs font-black text-slate-800 block mb-1">
+                  💰 कुल बिक्री राशि (Sale Amount ₹) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-black text-base">₹</span>
+                  <input
+                    type="number"
+                    placeholder="5000"
+                    value={manualSaleAmount}
+                    onChange={(e) => setManualSaleAmount(e.target.value)}
+                    className="w-full pl-8 pr-3 py-3 bg-slate-50 border-2 border-slate-200 focus:border-emerald-600 rounded-2xl text-lg font-black text-[#0F172A] outline-none shadow-xs"
+                    autoFocus
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Payment Mode (Cash, UPI, Udhar) */}
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                  भुगतान माध्यम (Payment Mode) *
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: "CASH", label: "💵 नकद (Cash)" },
+                    { id: "UPI", label: "📲 UPI / QR" },
+                    { id: "UDHAR", label: "📒 उधारी (Credit)" }
+                  ].map(pm => (
+                    <button
+                      key={pm.id}
+                      type="button"
+                      onClick={() => setManualSalePaymentMode(pm.id)}
+                      className={`py-2.5 rounded-xl text-xs font-bold border transition cursor-pointer ${manualSalePaymentMode === pm.id ? 'bg-emerald-600 text-white border-emerald-600 shadow-md font-black' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+                    >
+                      {pm.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Date & Customer Name */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">📅 तारीख (Date)</label>
+                  <input
+                    type="date"
+                    value={manualSaleDate}
+                    onChange={(e) => setManualSaleDate(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">👤 ग्राहक / विवरण (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="काउंटर नकद ग्राहक..."
+                    value={manualSaleCustomer}
+                    onChange={(e) => setManualSaleCustomer(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Customer Phone (Optional) */}
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">📱 WhatsApp नंबर (ऑप्शनल - पर्ची भेजने हेतु)</label>
+                <input
+                  type="tel"
+                  placeholder="10 अंकों का मोबाइल नंबर..."
+                  value={manualSalePhone}
+                  onChange={(e) => setManualSalePhone(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                />
+              </div>
+
+              {/* Description / Remarks */}
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">📝 टिप्पणी / नोट्स (Remarks - ऑप्शनल)</label>
+                <input
+                  type="text"
+                  placeholder="उदा. सुबह की नकद बिक्री, हार्डवेयर सामान, गल्ला काउंटर सेल..."
+                  value={manualSaleNotes}
+                  onChange={(e) => setManualSaleNotes(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-[#0F172A] outline-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingManualSale}
+                className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-sm rounded-2xl shadow-xl transition cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+              >
+                {savingManualSale ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                {savingManualSale ? "बिक्री दर्ज हो रही है..." : "💾 बिक्री सेव करें (Save Daily Sale)"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* 🏢 COMPANY SELECT / SWITCH MODAL */}
       {showCompanySelectModal && (
