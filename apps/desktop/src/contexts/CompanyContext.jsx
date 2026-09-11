@@ -6,16 +6,90 @@ const CompanyContext = createContext();
 export const useCompany = () => useContext(CompanyContext);
 
 export const CompanyProvider = ({ children }) => {
-  const fallbackDemoCompany = {
-    _id: "demo_company_101",
-    name: "VyaparBook Demo Enterprises",
-    businessType: "Restaurant & Retail",
-    industryType: "restaurant",
-    address: "Main Market Road, New Delhi",
-    phone: "9876543210",
-    gstin: "07AAAAA0000A1Z5",
-    isDemo: true
-  };
+    const allDemoCompanies = [
+    {
+      _id: "demo_company_restaurant",
+      name: "🍽️ Royal Spice Restaurant & Cafe",
+      businessType: "restaurant",
+      industryType: "restaurant",
+      address: "12 Food Street, Connaught Place, New Delhi",
+      phone: "9876543210",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_banquet",
+      name: "🏨 Grand Imperial Hotel & Banquet",
+      businessType: "banquet",
+      industryType: "banquet",
+      address: "Ring Road Express, New Delhi",
+      phone: "9876543211",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_gamezone",
+      name: "🎮 CyberVerse VR & Gamezone Park",
+      businessType: "gamezone",
+      industryType: "gamezone",
+      address: "Mall Level 3, Sector 18, Noida",
+      phone: "9876543212",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_supermarket",
+      name: "🛒 Apna Bazaar Supermarket & Kirana",
+      businessType: "supermarket",
+      industryType: "supermarket",
+      address: "Main Market, Gandhi Chowk",
+      phone: "9876543213",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_electronics",
+      name: "📱 Apex Mobile & Electronics Hub (IMEI)",
+      businessType: "electronics",
+      industryType: "electronics",
+      address: "Nehru Place Tech Market, New Delhi",
+      phone: "9876543214",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_hardware",
+      name: "🔧 Bharat Hardware, Plywood & Paints",
+      businessType: "hardware",
+      industryType: "hardware",
+      address: "Timber & Hardware Market, Plot 44",
+      phone: "9876543215",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_salon",
+      name: "💇‍♀️ Glamour Locks Salon & Spa",
+      businessType: "salon",
+      industryType: "salon",
+      address: "High Street Plaza, 2nd Floor",
+      phone: "9876543216",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_garments",
+      name: "👗 Trendz Garments & Footwear Matrix",
+      businessType: "garments",
+      industryType: "garments",
+      address: "Fashion Hub, Shop 108",
+      phone: "9876543217",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    }
+  ];
+  const fallbackDemoCompany = allDemoCompanies[0];
+
 
   const [companies, setCompanies] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState(null);
@@ -57,13 +131,13 @@ export const CompanyProvider = ({ children }) => {
       }
     } catch (error) {
       console.error('Failed to fetch companies, applying demo company fallback:', error);
-      setCompanies([fallbackDemoCompany]);
+      setCompanies(allDemoCompanies);
       setSelectedCompany(fallbackDemoCompany);
     } finally {
       // Ensure there is always a selectedCompany for guest / demo users
       if (!selectedCompany && companies.length === 0) {
         setSelectedCompany(fallbackDemoCompany);
-        setCompanies([fallbackDemoCompany]);
+        setCompanies(allDemoCompanies);
       }
       setLoading(false);
     }

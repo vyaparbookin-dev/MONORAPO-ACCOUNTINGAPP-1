@@ -47,6 +47,13 @@ export default function DashboardLayout() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
   const [calcModalOpen, setCalcModalOpen] = useState(false);
+  const [showQuickCreateBusinessModal, setShowQuickCreateBusinessModal] = useState(false);
+  const [newBusinessForm, setNewBusinessForm] = useState({
+    name: "",
+    industryType: "restaurant",
+    address: "",
+    phone: ""
+  });
   const [referralModalOpen, setReferralModalOpen] = useState(false);
   const [ecosystemModalOpen, setEcosystemModalOpen] = useState(false);
   const [user, setUser] = useState(null);
@@ -68,6 +75,26 @@ export default function DashboardLayout() {
       selectCompany(companies[0]);
     }
   }, [companies, selectedCompany]);
+
+  const handleQuickCreateBusiness = (e) => {
+    e.preventDefault();
+    if (!newBusinessForm.name.trim()) return alert("कृपया व्यापार का नाम दर्ज करें!");
+    
+    const newCo = {
+      _id: `custom_co_${Date.now()}`,
+      name: newBusinessForm.name.trim(),
+      industryType: newBusinessForm.industryType,
+      businessType: newBusinessForm.industryType,
+      address: newBusinessForm.address.trim() || "Local Market",
+      phone: newBusinessForm.phone.trim() || "9876543210",
+      gstin: "07AAAAA0000A1Z5"
+    };
+
+    selectCompany(newCo);
+    setShowQuickCreateBusinessModal(false);
+    setNewBusinessForm({ name: "", industryType: "restaurant", address: "", phone: "" });
+    alert(`🎉 "${newCo.name}" सफलतापूर्वक बन गया और एक्टिव हो गया!`);
+  };
 
   const handleLogout = () => {
     SecurityTracker.track('USER_LOGOUT', { userId: user?._id, email: user?.email });
@@ -578,6 +605,95 @@ function QuickCalculatorModal({ onClose }) {
           <button onClick={() => handleDigit(".")} className="p-3 bg-white hover:bg-gray-100 border border-gray-200 font-bold rounded-xl text-sm shadow-sm transition">.</button>
           <button onClick={handleEqual} className="p-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm shadow-sm transition">=</button>
         </div>
+      {/* 🏢 ON-THE-SPOT NEW BUSINESS CREATION MODAL */}
+      {showQuickCreateBusinessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-xl font-bold">
+                  🏢
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">नया व्यापार / दुकान बनाएं</h3>
+                  <p className="text-xs text-slate-500">Create & Switch Business in 10 Seconds</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowQuickCreateBusinessModal(false)}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickCreateBusiness} className="py-4 space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-700 font-black mb-1">1. व्यापार का नाम (Business / Shop Name)*</label>
+                <input
+                  type="text"
+                  placeholder="उदा: शर्मा रेस्टोरेंट & कैफे या गुप्ता हार्डवेयर..."
+                  required
+                  value={newBusinessForm.name}
+                  onChange={(e) => setNewBusinessForm({ ...newBusinessForm, name: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-900 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-black mb-1">2. व्यापार प्रकार (Industry Type)*</label>
+                <select
+                  value={newBusinessForm.industryType}
+                  onChange={(e) => setNewBusinessForm({ ...newBusinessForm, industryType: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
+                >
+                  <option value="restaurant">🍽️ रेस्टोरेंट, कैफे व ढाबा (KOT & Tables)</option>
+                  <option value="banquet">🏨 होटल व बैंक्वेट (Event & Room Booking)</option>
+                  <option value="gamezone">🎮 गेमज़ोन व VR पार्क (RFID Playcard & Timers)</option>
+                  <option value="supermarket">🛒 सुपरमार्केट, किराना व प्रोविजन (Barcode POS)</option>
+                  <option value="electronics">📱 मोबाइल व इलेक्ट्रॉनिक्स (IMEI Tracking)</option>
+                  <option value="hardware">🔧 हार्डवेयर, पेंट्स व प्लाईवुड (Sq.Ft Calculator)</option>
+                  <option value="salon">💇‍♀️ सैलून, ब्यूटी पार्लर व स्पा (Stylist Commission)</option>
+                  <option value="garments">👗 रेडीमेड गारमेंट्स व फुटवियर (Size Matrix)</option>
+                  <option value="general">🏢 अन्य सामान्य रिटेल व होलसेल व्यापार</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">मोबाइल नंबर (Phone)</label>
+                  <input
+                    type="tel"
+                    placeholder="9876543210"
+                    value={newBusinessForm.phone}
+                    onChange={(e) => setNewBusinessForm({ ...newBusinessForm, phone: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">पता / शहर (Address)</label>
+                  <input
+                    type="text"
+                    placeholder="मेन रोड, मार्केट"
+                    value={newBusinessForm.address}
+                    onChange={(e) => setNewBusinessForm({ ...newBusinessForm, address: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-500/30 transition cursor-pointer"
+                >
+                  🚀 तुरंत बिज़नेस बनाएं व चालू करें (Create & Launch)
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );
@@ -726,6 +842,95 @@ function ReferralCashTokensModal({ company, onClose }) {
             </div>
           </div>
         </div>
+      {/* 🏢 ON-THE-SPOT NEW BUSINESS CREATION MODAL */}
+      {showQuickCreateBusinessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-xl font-bold">
+                  🏢
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">नया व्यापार / दुकान बनाएं</h3>
+                  <p className="text-xs text-slate-500">Create & Switch Business in 10 Seconds</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowQuickCreateBusinessModal(false)}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickCreateBusiness} className="py-4 space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-700 font-black mb-1">1. व्यापार का नाम (Business / Shop Name)*</label>
+                <input
+                  type="text"
+                  placeholder="उदा: शर्मा रेस्टोरेंट & कैफे या गुप्ता हार्डवेयर..."
+                  required
+                  value={newBusinessForm.name}
+                  onChange={(e) => setNewBusinessForm({ ...newBusinessForm, name: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-900 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-black mb-1">2. व्यापार प्रकार (Industry Type)*</label>
+                <select
+                  value={newBusinessForm.industryType}
+                  onChange={(e) => setNewBusinessForm({ ...newBusinessForm, industryType: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
+                >
+                  <option value="restaurant">🍽️ रेस्टोरेंट, कैफे व ढाबा (KOT & Tables)</option>
+                  <option value="banquet">🏨 होटल व बैंक्वेट (Event & Room Booking)</option>
+                  <option value="gamezone">🎮 गेमज़ोन व VR पार्क (RFID Playcard & Timers)</option>
+                  <option value="supermarket">🛒 सुपरमार्केट, किराना व प्रोविजन (Barcode POS)</option>
+                  <option value="electronics">📱 मोबाइल व इलेक्ट्रॉनिक्स (IMEI Tracking)</option>
+                  <option value="hardware">🔧 हार्डवेयर, पेंट्स व प्लाईवुड (Sq.Ft Calculator)</option>
+                  <option value="salon">💇‍♀️ सैलून, ब्यूटी पार्लर व स्पा (Stylist Commission)</option>
+                  <option value="garments">👗 रेडीमेड गारमेंट्स व फुटवियर (Size Matrix)</option>
+                  <option value="general">🏢 अन्य सामान्य रिटेल व होलसेल व्यापार</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">मोबाइल नंबर (Phone)</label>
+                  <input
+                    type="tel"
+                    placeholder="9876543210"
+                    value={newBusinessForm.phone}
+                    onChange={(e) => setNewBusinessForm({ ...newBusinessForm, phone: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">पता / शहर (Address)</label>
+                  <input
+                    type="text"
+                    placeholder="मेन रोड, मार्केट"
+                    value={newBusinessForm.address}
+                    onChange={(e) => setNewBusinessForm({ ...newBusinessForm, address: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-500/30 transition cursor-pointer"
+                >
+                  🚀 तुरंत बिज़नेस बनाएं व चालू करें (Create & Launch)
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );
@@ -969,6 +1174,95 @@ function EcosystemShowcaseModal({ onClose }) {
         <div className="p-2.5 bg-slate-950 border-t border-slate-800 text-center text-[11px] text-gray-400 font-medium">
           🔒 100% Data Privacy & Encryption • Free Customer Support on WhatsApp • Cancel Anytime
         </div>
+      {/* 🏢 ON-THE-SPOT NEW BUSINESS CREATION MODAL */}
+      {showQuickCreateBusinessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-xl font-bold">
+                  🏢
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">नया व्यापार / दुकान बनाएं</h3>
+                  <p className="text-xs text-slate-500">Create & Switch Business in 10 Seconds</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowQuickCreateBusinessModal(false)}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickCreateBusiness} className="py-4 space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-700 font-black mb-1">1. व्यापार का नाम (Business / Shop Name)*</label>
+                <input
+                  type="text"
+                  placeholder="उदा: शर्मा रेस्टोरेंट & कैफे या गुप्ता हार्डवेयर..."
+                  required
+                  value={newBusinessForm.name}
+                  onChange={(e) => setNewBusinessForm({ ...newBusinessForm, name: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-900 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-black mb-1">2. व्यापार प्रकार (Industry Type)*</label>
+                <select
+                  value={newBusinessForm.industryType}
+                  onChange={(e) => setNewBusinessForm({ ...newBusinessForm, industryType: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
+                >
+                  <option value="restaurant">🍽️ रेस्टोरेंट, कैफे व ढाबा (KOT & Tables)</option>
+                  <option value="banquet">🏨 होटल व बैंक्वेट (Event & Room Booking)</option>
+                  <option value="gamezone">🎮 गेमज़ोन व VR पार्क (RFID Playcard & Timers)</option>
+                  <option value="supermarket">🛒 सुपरमार्केट, किराना व प्रोविजन (Barcode POS)</option>
+                  <option value="electronics">📱 मोबाइल व इलेक्ट्रॉनिक्स (IMEI Tracking)</option>
+                  <option value="hardware">🔧 हार्डवेयर, पेंट्स व प्लाईवुड (Sq.Ft Calculator)</option>
+                  <option value="salon">💇‍♀️ सैलून, ब्यूटी पार्लर व स्पा (Stylist Commission)</option>
+                  <option value="garments">👗 रेडीमेड गारमेंट्स व फुटवियर (Size Matrix)</option>
+                  <option value="general">🏢 अन्य सामान्य रिटेल व होलसेल व्यापार</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">मोबाइल नंबर (Phone)</label>
+                  <input
+                    type="tel"
+                    placeholder="9876543210"
+                    value={newBusinessForm.phone}
+                    onChange={(e) => setNewBusinessForm({ ...newBusinessForm, phone: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">पता / शहर (Address)</label>
+                  <input
+                    type="text"
+                    placeholder="मेन रोड, मार्केट"
+                    value={newBusinessForm.address}
+                    onChange={(e) => setNewBusinessForm({ ...newBusinessForm, address: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-500/30 transition cursor-pointer"
+                >
+                  🚀 तुरंत बिज़नेस बनाएं व चालू करें (Create & Launch)
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );
@@ -989,6 +1283,95 @@ function NotificationItem({ title, desc, time, color }) {
         <p className="font-medium text-gray-900 text-sm">{title}</p>
         <p className="text-gray-600 text-xs">{desc}</p>
         <p className="text-gray-500 text-xs mt-1">{time}</p>
+      {/* 🏢 ON-THE-SPOT NEW BUSINESS CREATION MODAL */}
+      {showQuickCreateBusinessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-xl font-bold">
+                  🏢
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">नया व्यापार / दुकान बनाएं</h3>
+                  <p className="text-xs text-slate-500">Create & Switch Business in 10 Seconds</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowQuickCreateBusinessModal(false)}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickCreateBusiness} className="py-4 space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-700 font-black mb-1">1. व्यापार का नाम (Business / Shop Name)*</label>
+                <input
+                  type="text"
+                  placeholder="उदा: शर्मा रेस्टोरेंट & कैफे या गुप्ता हार्डवेयर..."
+                  required
+                  value={newBusinessForm.name}
+                  onChange={(e) => setNewBusinessForm({ ...newBusinessForm, name: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-900 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-black mb-1">2. व्यापार प्रकार (Industry Type)*</label>
+                <select
+                  value={newBusinessForm.industryType}
+                  onChange={(e) => setNewBusinessForm({ ...newBusinessForm, industryType: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
+                >
+                  <option value="restaurant">🍽️ रेस्टोरेंट, कैफे व ढाबा (KOT & Tables)</option>
+                  <option value="banquet">🏨 होटल व बैंक्वेट (Event & Room Booking)</option>
+                  <option value="gamezone">🎮 गेमज़ोन व VR पार्क (RFID Playcard & Timers)</option>
+                  <option value="supermarket">🛒 सुपरमार्केट, किराना व प्रोविजन (Barcode POS)</option>
+                  <option value="electronics">📱 मोबाइल व इलेक्ट्रॉनिक्स (IMEI Tracking)</option>
+                  <option value="hardware">🔧 हार्डवेयर, पेंट्स व प्लाईवुड (Sq.Ft Calculator)</option>
+                  <option value="salon">💇‍♀️ सैलून, ब्यूटी पार्लर व स्पा (Stylist Commission)</option>
+                  <option value="garments">👗 रेडीमेड गारमेंट्स व फुटवियर (Size Matrix)</option>
+                  <option value="general">🏢 अन्य सामान्य रिटेल व होलसेल व्यापार</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">मोबाइल नंबर (Phone)</label>
+                  <input
+                    type="tel"
+                    placeholder="9876543210"
+                    value={newBusinessForm.phone}
+                    onChange={(e) => setNewBusinessForm({ ...newBusinessForm, phone: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">पता / शहर (Address)</label>
+                  <input
+                    type="text"
+                    placeholder="मेन रोड, मार्केट"
+                    value={newBusinessForm.address}
+                    onChange={(e) => setNewBusinessForm({ ...newBusinessForm, address: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-500/30 transition cursor-pointer"
+                >
+                  🚀 तुरंत बिज़नेस बनाएं व चालू करें (Create & Launch)
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );
