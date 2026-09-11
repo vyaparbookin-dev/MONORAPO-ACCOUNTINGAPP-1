@@ -105,6 +105,8 @@ export default function FastPOSPage() {
 
   // --- ⭐ CUSTOMER FEEDBACK & GOOGLE REVIEW MODAL STATE ---
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [showQuickAddProductModal, setShowQuickAddProductModal] = useState(false);
+  const [quickProductForm, setQuickProductForm] = useState({ name: "", price: "", category: "Fast Food", stock: 50, barcode: "" });
   const [feedbackBillData, setFeedbackBillData] = useState(null);
 
   // Check if current time falls into Happy Hours
@@ -142,26 +144,55 @@ export default function FastPOSPage() {
     fetchBills();
   }, []);
 
+  const cartRef = useRef(cart);
+  const customerNameRef = useRef(customerName);
+  const customerMobileRef = useRef(customerMobile);
+  const customerAddressRef = useRef(customerAddress);
+
   useEffect(() => {
-    // Global Keyboard Shortcuts
+    cartRef.current = cart;
+    customerNameRef.current = customerName;
+    customerMobileRef.current = customerMobile;
+    customerAddressRef.current = customerAddress;
+  }, [cart, customerName, customerMobile, customerAddress]);
+
+  const focusSearch = () => {
+    if (searchInputRef.current) {
+      searchInputRef.current.focus();
+      searchInputRef.current.select();
+    }
+  };
+
+  const focusCustomer = () => {
+    if (customerNameInputRef.current) {
+      customerNameInputRef.current.focus();
+      customerNameInputRef.current.select();
+    }
+  };
+
+  const triggerCheckout = () => {
+    handleCheckout();
+  };
+
+  useEffect(() => {
+    // Global Keyboard Shortcuts (F2, F4, F9, Escape)
     const handleKeyDown = (e) => {
-      if (e.key === "F2") {
+      const key = e.key || e.code;
+      if (key === "F2" || e.code === "F2" || e.keyCode === 113) {
         e.preventDefault();
-        searchInputRef.current?.focus();
-      }
-      if (e.key === "F4") {
+        focusSearch();
+      } else if (key === "F4" || e.code === "F4" || e.keyCode === 115) {
         e.preventDefault();
-        customerNameInputRef.current?.focus();
-      }
-      if (e.key === "F9") {
+        focusCustomer();
+      } else if (key === "F9" || e.code === "F9" || e.keyCode === 120) {
         e.preventDefault();
-        handleCheckout();
+        triggerCheckout();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [cart, barcode]);
+  }, []);
 
   // Customer Insights Calculator
   useEffect(() => {
@@ -203,6 +234,49 @@ export default function FastPOSPage() {
       setCustomerInsight(null);
     }
   }, [customerMobile, customerName, bills]);
+
+    const handleQuickAddProduct = async (e) => {
+    e.preventDefault();
+    if (!quickProductForm.name.trim() || !quickProductForm.price) {
+      return alert("कृपया प्रोडक्ट का नाम और कीमत दर्ज करें!");
+    }
+
+    const newProd = {
+      _id: `custom_prod_${Date.now()}`,
+      name: quickProductForm.name.trim(),
+      sellingPrice: parseFloat(quickProductForm.price),
+      price: parseFloat(quickProductForm.price),
+      category: quickProductForm.category || "General",
+      currentStock: parseInt(quickProductForm.stock) || 50,
+      unit: "pcs",
+      barcode: quickProductForm.barcode.trim() || String(Date.now()).slice(-6),
+      image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200"
+    };
+
+    try {
+      await api.post("/api/inventory", newProd).catch(() => {});
+      const updated = [newProd, ...products];
+      setProducts(updated);
+      localStorage.setItem("vb_custom_products", JSON.stringify(updated));
+      setShowQuickAddProductModal(false);
+      setQuickProductForm({ name: "", price: "", category: "Fast Food", stock: 50, barcode: "" });
+      addToCart(newProd);
+      alert(`🎉 "${newProd.name}" जुड़ गया और कार्ट में डाल दिया गया!`);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleClearAllDummyData = () => {
+    if (window.confirm("क्या आप सभी डमी प्रोडक्ट्स और बिल्स को हटाकर नए सिरे (Clean Slate) से शुरू करना चाहते हैं?")) {
+      setProducts([]);
+      setCart([]);
+      setBills([]);
+      localStorage.removeItem("vb_custom_products");
+      localStorage.removeItem("vb_local_bills");
+      alert("✨ सभी डमी डेटा साफ़ कर दिया गया है! अब आप '+ नया आइटम जोड़ें' से अपना असली मेन्यू जोड़ सकते हैं।");
+    }
+  };
 
   const fetchProducts = async () => {
     try {
@@ -498,11 +572,41 @@ export default function FastPOSPage() {
             >
               ⏰ {isHappyHourActive ? `Happy Hours ON (${happyHourConfig.discountPercent}% OFF)` : "Happy Hours"}
             </button>
-            <span className="bg-slate-100 text-slate-700 px-2 py-1.5 rounded-lg border">F2 खोजें</span>
-            <span className="bg-slate-100 text-slate-700 px-2 py-1.5 rounded-lg border">F4 ग्राहक</span>
-            <span className="bg-emerald-100 text-emerald-800 px-2 py-1.5 rounded-lg border border-emerald-300">
-              F9 बिल बनाएं
-            </span>
+            <button
+              onClick={focusSearch}
+              className="bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700 px-2.5 py-1.5 rounded-lg border border-slate-300 transition flex items-center gap-1 active:scale-95"
+              title="खोज बॉक्स पर जाएं (Keyboard Shortcut: F2)"
+            >
+              🔍 <span className="font-mono">F2</span> खोजें
+            </button>
+            <button
+              onClick={focusCustomer}
+              className="bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700 px-2.5 py-1.5 rounded-lg border border-slate-300 transition flex items-center gap-1 active:scale-95"
+              title="ग्राहक बॉक्स पर जाएं (Keyboard Shortcut: F4)"
+            >
+              👤 <span className="font-mono">F4</span> ग्राहक
+            </button>
+            <button
+              onClick={triggerCheckout}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg border border-emerald-500 shadow-sm transition flex items-center gap-1 active:scale-95"
+              title="पक्का बिल तैयार करें (Keyboard Shortcut: F9)"
+            >
+              ⚡ <span className="font-mono">F9</span> बिल बनाएं
+            </button>
+            <button
+              onClick={() => setShowQuickAddProductModal(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1"
+              title="नया आइटम तुरंत जोड़ें"
+            >
+              <Plus size={14} /> नया आइटम
+            </button>
+            <button
+              onClick={handleClearAllDummyData}
+              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-2 py-1.5 rounded-lg text-xs font-bold transition"
+              title="सभी डमी डेटा साफ़ करें"
+            >
+              🗑️ साफ़ करें
+            </button>
           </div>
         </div>
       </div>
@@ -644,7 +748,7 @@ export default function FastPOSPage() {
                       </div>
 
                       {/* Stock Switch & Price */}
-                      <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-100">
                         <div className="flex items-center gap-1">
                           <span className="text-sm font-black text-blue-700 font-mono">
                             ₹{isHappyHourActive && happyHourConfig.categories.includes(p.category || "General")
