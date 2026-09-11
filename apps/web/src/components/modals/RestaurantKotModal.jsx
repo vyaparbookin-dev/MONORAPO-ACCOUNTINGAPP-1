@@ -2,13 +2,16 @@ import React, { useState } from "react";
 import { X, Utensils, Plus, CheckCircle, Clock, ChefHat, Printer } from "lucide-react";
 
 const TABLES_LIST = [
+  { id: "P1", name: "🛍️ Parcel / Takeaway (No Table)", zone: "Counter", capacity: 1, status: "vacant" },
+  { id: "SW", name: "🛵 Swiggy / Zomato Delivery", zone: "Delivery", capacity: 1, status: "vacant" },
   { id: "T1", name: "Table 1 (Dine-in)", zone: "AC Hall", capacity: 4, status: "vacant" },
   { id: "T2", name: "Table 2 (Dine-in)", zone: "AC Hall", capacity: 4, status: "occupied" },
   { id: "T3", name: "Table 3 (Dine-in)", zone: "AC Hall", capacity: 6, status: "vacant" },
   { id: "T4", name: "Table 4 (Family)", zone: "Garden", capacity: 8, status: "vacant" },
   { id: "T5", name: "Table 5 (Garden)", zone: "Garden", capacity: 4, status: "vacant" },
-  { id: "P1", name: "Parcel / Takeaway", zone: "Counter", capacity: 1, status: "vacant" },
-  { id: "SW", name: "Swiggy / Zomato", zone: "Delivery", capacity: 1, status: "vacant" },
+  { id: "M1", name: "🔗 Table 3 + Table 4 (Merged 12 Pax)", zone: "AC Hall Combined", capacity: 12, status: "vacant" },
+  { id: "M2", name: "🔗 Table 1 + Table 2 (Merged 8 Pax)", zone: "AC Hall Combined", capacity: 8, status: "vacant" },
+  { id: "M3", name: "🔗 Table 4 + Table 5 (Garden Combined)", zone: "Garden Combined", capacity: 12, status: "vacant" },
 ];
 
 
