@@ -1,0 +1,5 @@
+# Supabase project configuration
+
+# This tells the CLI where to find your migration files.
+[db]
+  migrations_dir = "./apps/backend/supabase/migrations"
