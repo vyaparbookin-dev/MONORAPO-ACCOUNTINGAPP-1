@@ -925,6 +925,32 @@ export default function FastPOSPage() {
               />
             </div>
 
+            {/* 🎁 AUTO SUGGEST AVAILABLE CUSTOMER COUPON POPUP */}
+            {customerMobile.length >= 10 && !appliedCoupon && (
+              <div className="bg-gradient-to-r from-amber-500/20 to-purple-500/20 border border-amber-500/40 p-2 rounded-xl flex items-center justify-between text-xs animate-in slide-in-from-top-2">
+                <div className="flex items-center gap-1.5">
+                  <Gift size={14} className="text-amber-400 shrink-0" />
+                  <div>
+                    <p className="font-bold text-amber-300 text-[11px]">🎉 1 कूपन उपलब्ध: SAVE100 (₹100 OFF)</p>
+                    <p className="text-[9px] text-slate-400">मोबाइल {customerMobile} पर एक्टिव लॉयल्टी ऑफर</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sub = cart.reduce((s, i) => s + (i.total || 0), 0);
+                    if (sub > 0 && sub < 500) {
+                      alert("⚠️ यह कूपन ₹500 या उससे अधिक के बिल पर लागू होगा। कृपया कार्ट में कुछ और आइटम जोड़ें!");
+                    }
+                    setAppliedCoupon({ code: `SAVE100-${customerMobile.slice(-4)}`, type: "FLAT", discount: 100, title: "₹100 की फ्लैट छूट (Min ₹500)" });
+                  }}
+                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] rounded-lg transition shrink-0 shadow"
+                >
+                  ✓ लागू करें (1-Click)
+                </button>
+              </div>
+            )}
+
             {/* Live Customer Insight Widget */}
             {customerInsight && (
               <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-700/60 text-[11px] space-y-1 animate-in fade-in">
