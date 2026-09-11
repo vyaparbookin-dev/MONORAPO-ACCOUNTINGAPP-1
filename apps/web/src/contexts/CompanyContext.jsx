@@ -8,6 +8,16 @@ export const useCompany = () => useContext(CompanyContext);
 export const CompanyProvider = ({ children }) => {
     const allDemoCompanies = [
     {
+      _id: "co_royal_spice_9425574230",
+      name: "🍽️ श्री गणेश रॉयल डाइन & कैफे (Royal Dine)",
+      businessType: "restaurant",
+      industryType: "restaurant",
+      address: "Main City Center Road, Near Gandhi Chowk",
+      phone: "9425574230",
+      gstin: "22AAAAA0000A1Z5",
+      isDemo: false
+    },
+    {
       _id: "demo_company_restaurant",
       name: "🍽️ Royal Spice Restaurant & Cafe",
       businessType: "restaurant",

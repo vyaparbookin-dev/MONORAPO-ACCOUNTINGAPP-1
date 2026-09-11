@@ -6,19 +6,20 @@ const getGuestMockData = (url, method = 'GET') => {
     return { success: true, message: "Guest Action Successful!", data: { _id: `mock_${Date.now()}` } };
   }
 
-  // 1. Inventory / Products
+  // 1. Inventory / Products (Restaurant Menu & Raw Materials)
   if (u.includes('inventory') || u.includes('product')) {
     const products = [
-      { _id: "p1", id: "p1", name: "🍔 Crispy Veg Supreme Burger", category: "Fast Food", sellingPrice: 120, price: 120, costPrice: 60, currentStock: 45, unit: "pcs", barcode: "8901001", image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200" },
-      { _id: "p2", id: "p2", name: "🍕 Farmhouse Cheese Burst Pizza", category: "Pizza", sellingPrice: 280, price: 280, costPrice: 130, currentStock: 25, unit: "pcs", barcode: "8901002", image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=200" },
-      { _id: "p3", id: "p3", name: "🍛 Shahi Paneer Butter Masala", category: "Main Course", sellingPrice: 240, price: 240, costPrice: 110, currentStock: 30, unit: "plt", barcode: "8901003", image: "https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=200" },
-      { _id: "p4", id: "p4", name: "🫓 Butter Garlic Tandoori Naan", category: "Main Course", sellingPrice: 45, price: 45, costPrice: 15, currentStock: 100, unit: "pcs", barcode: "8901004" },
-      { _id: "p5", id: "p5", name: "🍚 Veg Dum Biryani with Raita", category: "Rice", sellingPrice: 190, price: 190, costPrice: 85, currentStock: 20, unit: "plt", barcode: "8901005" },
-      { _id: "p6", id: "p6", name: "🥤 Cold Coffee with Ice Cream", category: "Beverages", sellingPrice: 95, price: 95, costPrice: 35, currentStock: 50, unit: "gls", barcode: "8901006" },
-      { _id: "p7", id: "p7", name: "📱 iPhone 15 Pro 128GB (Blue)", category: "Mobile", sellingPrice: 119900, price: 119900, costPrice: 105000, currentStock: 8, unit: "pcs", barcode: "8901007", imeiList: ["354890123456781"] },
-      { _id: "p8", id: "p8", name: "🔧 Century Plywood 8x4 (18mm)", category: "Hardware", sellingPrice: 2400, price: 2400, costPrice: 1850, currentStock: 60, unit: "sht", barcode: "8901008" }
+      { _id: "p1", id: "p1", name: "🍛 Shahi Paneer Butter Masala", category: "Main Course", sellingPrice: 240, price: 240, costPrice: 110, currentStock: 40, unit: "plt", barcode: "8901001", image: "https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=200", recipe: [{ item: "Fresh Dairy Paneer", qty: "200g" }, { item: "Amul Salted Butter", qty: "30g" }] },
+      { _id: "p2", id: "p2", name: "🫓 Butter Garlic Tandoori Naan", category: "Main Course", sellingPrice: 45, price: 45, costPrice: 15, currentStock: 150, unit: "pcs", barcode: "8901002", recipe: [{ item: "Maida Flour", qty: "100g" }, { item: "Amul Salted Butter", qty: "15g" }] },
+      { _id: "p3", id: "p3", name: "🍚 Veg Dum Biryani with Raita", category: "Rice", sellingPrice: 190, price: 190, costPrice: 85, currentStock: 35, unit: "plt", barcode: "8901003", image: "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=200", recipe: [{ item: "Basmati Rice", qty: "250g" }, { item: "Veggies", qty: "80g" }] },
+      { _id: "p4", id: "p4", name: "🥤 Cold Coffee with Ice Cream", category: "Beverages", sellingPrice: 95, price: 95, costPrice: 35, currentStock: 60, unit: "gls", barcode: "8901004", recipe: [{ item: "Milk", qty: "200ml" }, { item: "Coffee & Ice Cream", qty: "1 scoop" }] },
+      { _id: "p5", id: "p5", name: "🍔 Crispy Veg Supreme Burger", category: "Fast Food", sellingPrice: 120, price: 120, costPrice: 60, currentStock: 50, unit: "pcs", barcode: "8901005", image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200", recipe: [{ item: "Burger Bun Pack", qty: "1 pc" }, { item: "Cheese Slice", qty: "1 pc" }] },
+      { _id: "p6", id: "p6", name: "🍕 Farmhouse Cheese Burst Pizza", category: "Pizza", sellingPrice: 280, price: 280, costPrice: 130, currentStock: 30, unit: "pcs", barcode: "8901006", image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=200", recipe: [{ item: "Pizza Base", qty: "1 pc" }, { item: "Mozzarella Cheese", qty: "80g" }] },
+      { _id: "p7", id: "p7", name: "🥛 Fresh Dairy Paneer (कच्चा माल)", category: "Raw Material", sellingPrice: 340, price: 340, costPrice: 280, currentStock: 20, unit: "kg", barcode: "RAW001" },
+      { _id: "p8", id: "p8", name: "🧈 Amul Salted Butter (कच्चा माल)", category: "Raw Material", sellingPrice: 540, price: 540, costPrice: 480, currentStock: 15, unit: "kg", barcode: "RAW002" },
+      { _id: "p9", id: "p9", name: "🍞 Burger Bun Pack (कच्चा माल)", category: "Raw Material", sellingPrice: 45, price: 45, costPrice: 30, currentStock: 100, unit: "pcs", barcode: "RAW003" }
     ];
-    return { success: true, data: products, products: products, items: products, total: products.length, summary: { totalProducts: products.length, lowStockItems: 2, totalStockValue: 850000 } };
+    return { success: true, data: products, products: products, items: products, total: products.length, summary: { totalProducts: products.length, lowStockItems: 1, totalStockValue: 38500 } };
   }
 
   // 2. Categories, Subcategories, Brands, Units
@@ -36,11 +37,29 @@ const getGuestMockData = (url, method = 'GET') => {
   // 3. Billing / Invoices
   if (u.includes('billing') || u.includes('bill') || u.includes('invoice')) {
     const bills = [
-      { _id: "b1", billNumber: "BILL-1001", customerName: "Ramesh Sharma", customerMobile: "9876543210", totalAmount: 580, finalAmount: 580, total: 580, paymentMode: "CASH", status: "paid", createdAt: new Date(Date.now() - 3600000).toISOString(), items: [{ name: "Crispy Veg Burger", quantity: 2, rate: 120, total: 240 }, { name: "Cold Coffee", quantity: 2, rate: 95, total: 190 }] },
-      { _id: "b2", billNumber: "BILL-1002", customerName: "Suresh Gupta (उधार)", customerMobile: "9812345678", totalAmount: 1250, finalAmount: 1250, total: 1250, paymentMode: "UDHAR", status: "unpaid", createdAt: new Date(Date.now() - 7200000).toISOString(), items: [{ name: "Shahi Paneer", quantity: 2, rate: 240, total: 480 }, { name: "Butter Naan", quantity: 6, rate: 45, total: 270 }] },
-      { _id: "b3", billNumber: "BILL-1003", customerName: "Anita Verma", customerMobile: "9988776655", totalAmount: 375, finalAmount: 375, total: 375, paymentMode: "UPI", status: "paid", createdAt: new Date(Date.now() - 86400000).toISOString(), items: [{ name: "Veg Dum Biryani", quantity: 1, rate: 190, total: 190 }] }
+      {
+        _id: "b_real_1001",
+        billNumber: "BILL-REST-1001",
+        customerName: "Rahul Verma",
+        customerMobile: "7828289433",
+        customerAddress: "Shop 4, Civil Lines",
+        table: "Table 3 (AC Hall)",
+        waiter: "Rohan",
+        totalAmount: 800,
+        finalAmount: 800,
+        total: 800,
+        paymentMode: "UPI (Paid)",
+        status: "paid",
+        createdAt: new Date().toISOString(),
+        items: [
+          { name: "Shahi Paneer Butter Masala", quantity: 1, rate: 240, total: 240, unit: "plt" },
+          { name: "Butter Garlic Tandoori Naan", quantity: 4, rate: 45, total: 180, unit: "pcs" },
+          { name: "Veg Dum Biryani with Raita", quantity: 1, rate: 190, total: 190, unit: "plt" },
+          { name: "Cold Coffee with Ice Cream", quantity: 2, rate: 95, total: 190, unit: "gls" }
+        ]
+      }
     ];
-    return { success: true, data: bills, bills: bills, total: bills.length, totalSales: 2205 };
+    return { success: true, data: bills, bills: bills, total: bills.length, totalSales: 800 };
   }
 
   // 4. Expenses (Ghar Kharch & Business)
@@ -56,9 +75,8 @@ const getGuestMockData = (url, method = 'GET') => {
   // 5. Parties / Customers
   if (u.includes('party') || u.includes('customer')) {
     const parties = [
-      { _id: "pt1", name: "Ramesh Sharma", mobileNumber: "9876543210", phone: "9876543210", currentBalance: 0, balance: 0, address: "Shop 12, Main Market", type: "customer" },
-      { _id: "pt2", name: "Suresh Gupta", mobileNumber: "9812345678", phone: "9812345678", currentBalance: 1500, balance: 1500, address: "Ward 4, Gandhi Chowk", type: "customer" },
-      { _id: "pt3", name: "Pooja Traders (Supplier)", mobileNumber: "9765432109", phone: "9765432109", currentBalance: -4500, balance: -4500, address: "Industrial Area Phase 2", type: "supplier" }
+      { _id: "pt_rahul", name: "Rahul Verma", mobileNumber: "7828289433", phone: "7828289433", currentBalance: 0, balance: 0, address: "Shop 4, Civil Lines", type: "customer" },
+      { _id: "pt_amul", name: "Amul Dairy Distributor (Supplier)", mobileNumber: "9425574230", phone: "9425574230", currentBalance: -2500, balance: -2500, address: "Dairy Plant Road", type: "supplier" }
     ];
     return { success: true, data: parties, parties: parties, customers: parties, total: parties.length };
   }
