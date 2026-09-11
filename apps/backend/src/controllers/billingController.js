@@ -7,6 +7,7 @@ import os from "os";
 import { createWorker } from "tesseract.js";
 import { generateInvoicePdf } from "../utils/invoicePdfGenerator.js";
 import Product from "../model/product.js";
+import Party from "../model/party.js";
 import Staff from "../model/staff.js";
 import Company from "../model/company.js";
 import { generateUpiQrCode } from "../utils/paymentUtils.js";
@@ -30,9 +31,60 @@ export const createBill = async (req, res) => {
     }
     // --- END LICENSING CHECK ---
 
-    const { billNumber, companyId, partyId, customerName, customerMobile, customerAddress, customerGst, siteName, date, dueDate, items, total, tax, discountPercent, discountAmount, finalAmount, paymentMethod, notes, status, billImageUrl } = req.body;
-    const bill = new Bill({ ...req.body, companyId: req.companyId, billImageUrl: req.body.billImageUrl });
+    const { billNumber, companyId, partyId, customerName, customerMobile, customerAddress, customerGst, siteName, date, dueDate, items, total, tax, discountPercent, discountAmount, finalAmount, paymentMethod, paymentMode, notes, status, billImageUrl } = req.body;
+    const pMode = String(paymentMode || paymentMethod || req.body.type || "CASH").toUpperCase();
+    const finalBillAmount = Number(finalAmount || total || 0);
+
+    const bill = new Bill({
+      ...req.body,
+      companyId: req.companyId,
+      paymentMode: pMode,
+      paymentMethod: pMode,
+      finalAmount: finalBillAmount,
+      billImageUrl: req.body.billImageUrl
+    });
     await bill.save();
+
+    // --- AUTO-UPDATE PARTY UDHAR (CREDIT) BALANCE ---
+    try {
+      const pName = (customerName || req.body.partyName || "").trim();
+      const pMobile = (customerMobile || req.body.customerPhone || req.body.phone || "").trim();
+      const isUdhar = pMode === "UDHAR" || pMode === "CREDIT" || req.body.paymentStatus === "unpaid";
+
+      if (isUdhar && pName && pName !== "नकद ग्राहक" && pName !== "Walk-in Customer") {
+        let matchedParty = null;
+        if (partyId && mongoose.Types.ObjectId.isValid(partyId)) {
+          matchedParty = await Party.findOne({ _id: partyId, companyId: req.companyId });
+        }
+        if (!matchedParty && pMobile) {
+          matchedParty = await Party.findOne({ mobileNumber: pMobile, companyId: req.companyId });
+        }
+        if (!matchedParty) {
+          matchedParty = await Party.findOne({ name: new RegExp(`^${pName}$`, "i"), companyId: req.companyId });
+        }
+
+        if (matchedParty) {
+          await Party.findByIdAndUpdate(matchedParty._id, {
+            $inc: { currentBalance: finalBillAmount },
+            $set: { updatedAt: new Date() }
+          });
+        } else {
+          // Auto-create new customer with the Udhar balance
+          const dummyPhone = pMobile || `9${Math.floor(100000000 + Math.random() * 900000000)}`;
+          await Party.create({
+            companyId: req.companyId,
+            name: pName,
+            mobileNumber: dummyPhone,
+            address: customerAddress || "Local",
+            partyType: "customer",
+            openingBalance: 0,
+            currentBalance: finalBillAmount
+          }).catch(pErr => console.warn("Auto-create party warning:", pErr.message));
+        }
+      }
+    } catch (partySyncErr) {
+      console.error("Party Udhar Balance Sync Error:", partySyncErr.message);
+    }
     
     // Auto Raw Material Deduction & Standard Stock Update
     if (items && items.length > 0) {

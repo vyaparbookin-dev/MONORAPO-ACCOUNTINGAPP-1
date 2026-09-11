@@ -13,18 +13,21 @@ import { supabase } from "../config/supabase.js";
 // Zod schema for robust validation
 const productSchema = z.object({
   name: z.string().min(1, "Product name is required"),
-  category: z.string().min(1, "Category is required"),
-  unit: z.string().min(1, "Unit is required"),
+  category: z.string().optional(),
+  unit: z.string().optional(),
   brand: z.string().optional(),
-  hsnCode: z.string().optional(), // HSN code is now optional
+  hsnCode: z.string().optional(),
   sku: z.string().optional(),
   barcode: z.string().optional(),
   notes: z.string().optional(),
-  costPrice: z.number().min(0, "Cost price must be non-negative"),
-  sellingPrice: z.number().min(0, "Selling price must be non-negative"),
-  currentStock: z.number().optional(),
-  minimumStock: z.number().optional(),
-}).strict(); // strict() ensures no extra properties are allowed
+  costPrice: z.union([z.number(), z.string()]).optional(),
+  sellingPrice: z.union([z.number(), z.string()]).optional(),
+  currentStock: z.union([z.number(), z.string()]).optional(),
+  stock: z.union([z.number(), z.string()]).optional(),
+  minimumStock: z.union([z.number(), z.string()]).optional(),
+  mrp: z.union([z.number(), z.string()]).optional(),
+  subCategory: z.string().optional(),
+}).passthrough(); // strict() ensures no extra properties are allowed
 
 export const addPurchaseEntry = async (req, res) => {
   try {
@@ -115,14 +118,21 @@ export const addProduct = async (req, res) => {
     if (req.body.brand) await Brand.updateOne({ companyId: compIdObj, name: req.body.brand }, { $setOnInsert: { companyId: compIdObj, name: req.body.brand, isActive: true } }, upsertOpt);
     if (unit) await Unit.updateOne({ companyId: compIdObj, name: unit }, { $setOnInsert: { companyId: compIdObj, name: unit, shortCode: String(unit).substring(0, 3).toUpperCase() } }, upsertOpt);
 
+    const autoSku = req.body.sku || `SKU-${Date.now().toString().slice(-6)}`;
+    const autoBarcode = req.body.barcode || `890${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+
     const product = await Product.create({
       ...req.body,
-      category: category || "General",
-      costPrice: Number(costPrice) || 0,
-      sellingPrice: Number(sellingPrice) || 0,
-      unit: unit || "pcs",
+      sku: autoSku,
+      barcode: autoBarcode,
+      category: category || req.body.category || "General",
+      brand: req.body.brand || "General",
+      costPrice: Number(costPrice) || Number(req.body.costPrice) || 0,
+      sellingPrice: Number(sellingPrice) || Number(req.body.sellingPrice) || 0,
+      mrp: Number(req.body.mrp) || Number(sellingPrice) || 0,
+      unit: unit || req.body.unit || "Pcs",
       companyId: req.companyId,
-      currentStock: Number(currentStock) || Number(stock) || 0,
+      currentStock: Number(currentStock) || Number(stock) || Number(req.body.stock) || 0,
     });
 
     // --- SYNC TO SUPABASE ---

@@ -8,7 +8,7 @@ const productSchema = new mongoose.Schema({
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
   
   // Category & Classification
-  category: { type: String, required: true }, // Electronics, Textiles, etc.
+  category: { type: String, default: "General" }, // Electronics, Textiles, etc.
   subCategory: String,
   hsnCode: { type: String, default: "" }, // HSN Code for GST (Made optional to fix Excel Imports)
   image: { type: String }, // Base64 compressed image
@@ -19,8 +19,8 @@ const productSchema = new mongoose.Schema({
   
   // Pricing
   dpl: { type: Number, default: 0 }, // Company Rate / Basic Rate
-  costPrice: { type: Number, required: true }, // Cost to you
-  sellingPrice: { type: Number, required: true }, // Sell price
+  costPrice: { type: Number, default: 0 }, // Cost to you
+  sellingPrice: { type: Number, default: 0 }, // Sell price
   wholesalePrice: { type: Number, default: 0 }, // Wholesale Rate
   dealerPrice: { type: Number, default: 0 },
   p3Rate: { type: Number, default: 0 }, // Extra rate mapped in import
@@ -35,7 +35,7 @@ const productSchema = new mongoose.Schema({
   gstType: { type: String, enum: ["CGST", "SGST", "IGST"], default: "CGST" },
   
   // Units & Quantity
-  unit: { type: String, required: true }, // kg, ltr, pcs, ft, mtr, etc.
+  unit: { type: String, default: "Pcs" }, // kg, ltr, pcs, ft, mtr, etc.
   secondaryUnit: { type: String }, // Box, Carton, Dozen etc.
   conversionRate: { type: Number, default: 1 }, // 1 Box = 10 pcs
   minimumStock: { type: Number, default: 10 },

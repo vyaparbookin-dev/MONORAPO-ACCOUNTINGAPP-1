@@ -118,6 +118,8 @@ function MobileVyaparAppContent() {
   const [billCart, setBillCart] = useState([]);
   const [itemSearchTerm, setItemSearchTerm] = useState("");
   const [showItemSuggestions, setShowItemSuggestions] = useState(false);
+  const [showPartySuggestions, setShowPartySuggestions] = useState(false);
+  const [selectedPartyObject, setSelectedPartyObject] = useState(null);
   const [savingBill, setSavingBill] = useState(false);
 
   // ==================== MANUAL QUICK DAILY SALE STATE ====================
@@ -824,6 +826,113 @@ function MobileVyaparAppContent() {
       console.error(e);
     } finally {
       setSavingBill(false);
+    }
+  };
+
+  // ==================== FAST VYAPAR-STYLE 1-CLICK ITEM CREATOR ====================
+  const handleSaveNewItem = async (e) => {
+    if (e) e.preventDefault();
+    if (!newItemName.trim()) {
+      alert("कृपया सामान का नाम (Item Name) दर्ज करें!");
+      return;
+    }
+    setSavingItem(true);
+    try {
+      const saleP = parseFloat(newItemSalePrice) || 0;
+      const stockQ = parseFloat(newItemStock) || 0;
+      const autoBarcode = `890${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+      const autoSku = `SKU-${Date.now().toString().slice(-6)}`;
+
+      const payload = {
+        name: newItemName.trim(),
+        sellingPrice: saleP,
+        costPrice: parseFloat(newItemPurchasePrice) || +(saleP * 0.8).toFixed(2),
+        mrp: parseFloat(newItemMrp) || saleP,
+        currentStock: stockQ,
+        stock: stockQ,
+        unit: newItemUnit || "Pcs",
+        category: newItemCategory || "General",
+        brand: newItemBrand || "General",
+        barcode: autoBarcode,
+        sku: autoSku,
+        hsnCode: ""
+      };
+
+      const res = await api.post("/api/inventory", payload).catch(() => api.post("/inventory", payload));
+      const createdItem = {
+        ...payload,
+        id: res?.data?.product?._id || res?.data?._id || `item-${Date.now()}`,
+        _id: res?.data?.product?._id || res?.data?._id || `item-${Date.now()}`,
+        salePrice: saleP
+      };
+
+      setItems(prev => [createdItem, ...prev]);
+      
+      // If billing modal is open, automatically add the newly created item to the cart!
+      if (showQuickBillModal) {
+        setBillCart(prev => [...prev, { id: createdItem.id, name: createdItem.name, salePrice: saleP, qty: 1 }]);
+      }
+
+      setShowAddItemModal(false);
+      setNewItemName("");
+      setNewItemSalePrice("");
+      setNewItemMrp("");
+      setNewItemStock("");
+      setNewItemPurchasePrice("");
+      setNewItemCategory("General");
+      setNewItemBrand("General");
+      setNewItemUnit("Pcs");
+
+      alert(`✅ सामान '${createdItem.name}' (₹${saleP}) तुरंत बन गया और कैटलॉग में जुड़ गया!`);
+      fetchLiveDashboardData();
+    } catch (err) {
+      console.error("Save item error:", err);
+      alert("सामान सेव करने में त्रुटि आई।");
+    } finally {
+      setSavingItem(false);
+    }
+  };
+
+  const handleSaveNewParty = async (e) => {
+    if (e) e.preventDefault();
+    if (!newPartyName.trim()) {
+      alert("कृपया पार्टी का नाम दर्ज करें!");
+      return;
+    }
+    setSavingParty(true);
+    try {
+      const payload = {
+        name: newPartyName.trim(),
+        mobileNumber: newPartyPhone.trim() || `9${Math.floor(100000000 + Math.random() * 900000000)}`,
+        openingBalance: Number(newPartyBalance) || 0,
+        currentBalance: Number(newPartyBalance) || 0,
+        partyType: newPartyType || "customer",
+        address: newPartyAddress.trim() || "Local"
+      };
+
+      const res = await api.post("/parties", payload);
+      const createdParty = {
+        id: res?.data?.party?._id || res?.data?._id || `party-${Date.now()}`,
+        name: payload.name,
+        phone: payload.mobileNumber,
+        balance: payload.currentBalance,
+        type: payload.partyType
+      };
+
+      setParties(prev => [createdParty, ...prev]);
+      setShowAddPartyModal(false);
+      setNewPartyName("");
+      setNewPartyPhone("");
+      setNewPartyBalance("0");
+      setNewPartyAddress("");
+
+      alert(`✅ पार्टी '${createdParty.name}' सफलतापूर्वक जुड़ गई!`);
+      fetchLiveDashboardData();
+    } catch (err) {
+      console.error("Save party error:", err);
+      alert("पार्टी सेव करने में त्रुटि आई।");
+    } finally {
+      setSavingParty(false);
     }
   };
 
@@ -1977,22 +2086,75 @@ function MobileVyaparAppContent() {
               </button>
             </div>
 
-            {/* Customer Name & Phone (OPTIONAL) */}
-            <div className="grid grid-cols-2 gap-2">
-              <input 
-                type="text" 
-                placeholder="ग्राहक का नाम (ऑप्शनल)..." 
-                value={billCustomer}
-                onChange={(e) => setBillCustomer(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none font-bold placeholder:font-normal"
-              />
-              <input 
-                type="tel" 
-                placeholder="WhatsApp नंबर (ऑप्शनल)..." 
-                value={billCustomerPhone}
-                onChange={(e) => setBillCustomerPhone(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
-              />
+            {/* Customer Name, Search Dropdown & Phone */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center text-[11px] font-extrabold text-slate-700">
+                <span>👤 ग्राहक / पार्टी (Customer & Udhar Ledger):</span>
+                {selectedPartyObject && (
+                  <span className={`text-[10px] font-black ${selectedPartyObject.balance >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    पुराना बकाया: ₹{Math.abs(selectedPartyObject.balance || 0).toLocaleString('en-IN')} ({selectedPartyObject.balance >= 0 ? "You'll Get" : "You'll Give"})
+                  </span>
+                )}
+              </div>
+              <div className="relative grid grid-cols-2 gap-2">
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    placeholder={billPaymentMode === "UDHAR" ? "उधारी ग्राहक का नाम खोजें/लिखें *" : "ग्राहक का नाम (ऑप्शनल)..."}
+                    value={billCustomer}
+                    onFocus={() => setShowPartySuggestions(true)}
+                    onChange={(e) => {
+                      setBillCustomer(e.target.value);
+                      setShowPartySuggestions(true);
+                    }}
+                    className={`w-full p-2.5 bg-slate-50 border rounded-xl text-xs text-[#0F172A] outline-none font-bold placeholder:font-normal ${billPaymentMode === "UDHAR" ? "border-rose-400 focus:border-rose-600 bg-rose-50/40" : "border-slate-200 focus:border-[#4338CA]"}`}
+                  />
+                  {/* Live Party Suggestions Dropdown */}
+                  {showPartySuggestions && (
+                    <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-44 overflow-y-auto divide-y divide-slate-100">
+                      {parties
+                        .filter(p => (p.name || '').toLowerCase().includes(billCustomer.toLowerCase()) || (p.phone || '').includes(billCustomer))
+                        .slice(0, 6)
+                        .map(p => (
+                          <div
+                            key={p.id}
+                            onClick={() => {
+                              setBillCustomer(p.name);
+                              setBillCustomerPhone(p.phone || "");
+                              setSelectedPartyObject(p);
+                              setShowPartySuggestions(false);
+                            }}
+                            className="p-2.5 hover:bg-indigo-50 flex justify-between items-center cursor-pointer transition"
+                          >
+                            <div>
+                              <div className="font-extrabold text-xs text-[#0F172A]">👤 {p.name}</div>
+                              <div className="text-[10px] text-slate-400">{p.phone || "No Phone"}</div>
+                            </div>
+                            <div className="text-right font-black text-xs text-[#DC2626]">
+                              {Number(p.balance || 0) !== 0 ? `₹${Number(p.balance || 0).toLocaleString('en-IN')}` : '₹0'}
+                            </div>
+                          </div>
+                        ))}
+                      {billCustomer.trim().length > 0 && (
+                        <div
+                          onClick={() => setShowPartySuggestions(false)}
+                          className="p-2 text-center text-xs text-[#4338CA] font-extrabold hover:bg-slate-50 cursor-pointer"
+                        >
+                          + "{billCustomer}" को नया ग्राहक रखें
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <input 
+                  type="tel" 
+                  placeholder="WhatsApp नंबर (ऑप्शनल)..." 
+                  value={billCustomerPhone}
+                  onChange={(e) => setBillCustomerPhone(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
+                />
+              </div>
             </div>
 
             {/* Payment Mode Selector */}
@@ -2972,46 +3134,148 @@ function MobileVyaparAppContent() {
         </div>
       )}
 
-      {/* 📱 10. ADD ITEM MODAL */}
+      {/* 📱 10. VYAPAR-STYLE FAST ADD ITEM MODAL (AUTOMATIC BARCODE, SKU & CATEGORY) */}
       {showAddItemModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 space-y-3.5 shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-              <h3 className="font-extrabold text-sm text-[#0F172A]">+ Add Item</h3>
-              <button onClick={() => setShowAddItemModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-base">
+                  📦
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">नया सामान जोड़ें (+ Quick Item)</h3>
+                  <p className="text-[10px] text-slate-400">सिर्फ नाम और रेट डालें • बारकोड व कोड अपने आप बनेगा</p>
+                </div>
+              </div>
+              <button onClick={() => setShowAddItemModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
                 <X size={18} />
               </button>
             </div>
-            <input 
-              type="text" 
-              placeholder="Item Name *" 
-              value={newItemName}
-              onChange={(e) => setNewItemName(e.target.value)}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none font-bold"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <input 
-                type="number" 
-                placeholder="Sale Price (₹) *" 
-                value={newItemSalePrice}
-                onChange={(e) => setNewItemSalePrice(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
-              />
-              <input 
-                type="number" 
-                placeholder="Stock Qty *" 
-                value={newItemStock}
-                onChange={(e) => setNewItemStock(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
-              />
-            </div>
-            <button
-              onClick={handleSaveNewItem}
-              disabled={savingItem}
-              className="w-full py-2.5 bg-[#059669] hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow cursor-pointer"
-            >
-              {savingItem ? "Saving..." : "Save Item"}
-            </button>
+
+            <form onSubmit={handleSaveNewItem} className="space-y-3">
+              {/* 1. Item Name (Required) */}
+              <div>
+                <label className="text-xs font-black text-slate-800 block mb-1">
+                  📝 सामान का नाम (Item Name) *
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="उदा. Asian Paint Apex 1L, Supreme Pipe 1/2 inch..." 
+                  value={newItemName}
+                  onChange={(e) => setNewItemName(e.target.value)}
+                  className="w-full p-3 bg-slate-50 border-2 border-slate-200 focus:border-emerald-600 rounded-2xl text-xs font-black text-[#0F172A] outline-none shadow-xs"
+                  autoFocus
+                  required
+                />
+              </div>
+
+              {/* 2. Sale Price & Purchase Rate */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                    💰 बिक्री रेट (Sale Price ₹) *
+                  </label>
+                  <input 
+                    type="number" 
+                    placeholder="₹ 250" 
+                    value={newItemSalePrice}
+                    onChange={(e) => setNewItemSalePrice(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-[#0F172A] outline-none focus:border-emerald-600"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                    🏷️ खरीद रेट (Cost Price ₹ - ऑप्शनल)
+                  </label>
+                  <input 
+                    type="number" 
+                    placeholder="₹ 200" 
+                    value={newItemPurchasePrice}
+                    onChange={(e) => setNewItemPurchasePrice(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* 3. Initial Stock & Unit */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                    📦 शुरुआती स्टॉक (Qty)
+                  </label>
+                  <input 
+                    type="number" 
+                    placeholder="10" 
+                    value={newItemStock}
+                    onChange={(e) => setNewItemStock(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                    📏 इकाई (Unit)
+                  </label>
+                  <select
+                    value={newItemUnit}
+                    onChange={(e) => setNewItemUnit(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                  >
+                    {["Pcs", "Nos", "Kg", "Ltr", "Box", "Bag", "Ft", "Mtr", "Set", "Dozen", "Nag", "Cartoon"].map(u => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* 4. Fast Category & Brand Group Selection */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                    📁 श्रेणी / ग्रुप (Category)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="General / Paints..."
+                    value={newItemCategory}
+                    onChange={(e) => setNewItemCategory(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                    🏷️ ब्रांड (Brand - ऑप्शनल)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Asian, Supreme..."
+                    value={newItemBrand}
+                    onChange={(e) => setNewItemBrand(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Auto Badge Info (Like Vyapar App) */}
+              <div className="p-2.5 bg-emerald-50/70 border border-emerald-200 rounded-xl text-[10px] text-emerald-800 space-y-0.5">
+                <div className="font-bold flex items-center gap-1">
+                  ✨ <span>बारकोड, SKU कोड व इनवॉइस टैक्स ऑटोमेटिक जनरेट होंगे।</span>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingItem}
+                className="w-full py-3.5 bg-gradient-to-r from-[#059669] to-[#047857] hover:from-[#047857] hover:to-[#065F46] text-white font-black text-sm rounded-2xl shadow-xl transition cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+              >
+                {savingItem ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                {savingItem ? "सामान बन रहा है..." : "💾 1-क्लिक में सामान बनाएं (Save Item)"}
+              </button>
+            </form>
           </div>
         </div>
       )}
