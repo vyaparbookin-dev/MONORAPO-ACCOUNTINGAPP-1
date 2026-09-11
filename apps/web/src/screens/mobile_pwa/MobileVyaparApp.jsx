@@ -131,6 +131,7 @@ function MobileVyaparAppContent() {
   const [manualSaleDate, setManualSaleDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [manualSaleNotes, setManualSaleNotes] = useState("");
   const [savingManualSale, setSavingManualSale] = useState(false);
+  const [transactionTab, setTransactionTab] = useState("all"); // "all", "sales", "expenses"
 
   // AI Photo Bill OCR & Multi-Bill Batch State
   const [showOcrModal, setShowOcrModal] = useState(false);
@@ -1597,40 +1598,52 @@ function MobileVyaparAppContent() {
             </div>
 
             {/* 🏡 GHAR KHARCH (FAMILY & HOUSEHOLD EXPENSE) DASHBOARD STRIP */}
-            <div className="p-3.5 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/10 border border-emerald-500/30 rounded-2xl flex justify-between items-center shadow-sm">
-              <div 
-                onClick={() => {
-                  fetchGharKharchData();
-                  handleToggleGharKharchLedger(true);
-                }}
-                className="flex items-center gap-2.5 flex-1 cursor-pointer"
-              >
-                <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow text-base">
-                  🏡
+            {(() => {
+              const totalExpVal = (gharKharchList || []).reduce((s, it) => s + (Number(it.amount) || 0), 0);
+              return (
+                <div className="p-3.5 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border border-amber-500/30 rounded-2xl flex justify-between items-center shadow-sm hover:border-amber-400 transition">
+                  <div 
+                    onClick={() => {
+                      fetchGharKharchData();
+                      handleToggleGharKharchLedger(true);
+                    }}
+                    className="flex items-center gap-2.5 flex-1 cursor-pointer"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white flex items-center justify-center font-bold shadow text-lg">
+                      🏡
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-extrabold text-xs text-amber-950">घर खर्च व फैमिली लेजर</h4>
+                        <span className="px-1.5 py-0.2 bg-amber-600 text-white font-black text-[9px] rounded-md">
+                          ₹ {totalExpVal.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-amber-800 font-medium">
+                        {(gharKharchList || []).length > 0 ? `${(gharKharchList || []).length} खर्चे दर्ज हैं • पापा, मम्मी, राशन हिसाब` : 'राशन, दवाई, बिजली, स्कूल फीस व फैमिली खर्च'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        fetchGharKharchData();
+                        handleToggleGharKharchLedger(true);
+                      }}
+                      className="px-2.5 py-1.5 bg-white border border-amber-300 text-amber-900 font-bold text-[11px] rounded-xl shadow-xs hover:bg-amber-50 transition cursor-pointer"
+                    >
+                      लेजर →
+                    </button>
+                    <button
+                      onClick={() => handleToggleGharKharchEntry(true)}
+                      className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1"
+                    >
+                      <Plus size={12} /> खर्च
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-extrabold text-xs text-emerald-950">🏡 घर खर्च व फैमिली लेजर (Ghar Kharch)</h4>
-                  <p className="text-[10px] text-emerald-800">राशन, दवाई, बिजली, स्कूल फीस व फैमिली खर्च का पूरा हिसाब</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => {
-                    fetchGharKharchData();
-                    handleToggleGharKharchLedger(true);
-                  }}
-                  className="px-2.5 py-1.5 bg-white border border-emerald-300 text-emerald-900 font-bold text-[11px] rounded-xl shadow-xs hover:bg-emerald-50 transition cursor-pointer"
-                >
-                  लेजर →
-                </button>
-                <button
-                  onClick={() => handleToggleGharKharchEntry(true)}
-                  className="px-2.5 py-1.5 bg-emerald-600 text-white font-bold text-[11px] rounded-xl shadow-xs hover:bg-emerald-700 transition cursor-pointer"
-                >
-                  + खर्च
-                </button>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* EOD Daily Summary */}
             <div className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-3">
@@ -1654,57 +1667,133 @@ function MobileVyaparAppContent() {
               </div>
             </div>
 
-            {/* Transactions Section */}
+            {/* Unified Transactions Section (Sales & Ghar Kharch / Expenses) */}
             <div className="space-y-2.5 pt-1">
               <div className="flex justify-between items-center px-1">
-                <h3 className="font-extrabold text-sm text-[#0F172A]">Transactions</h3>
-                <div className="px-2.5 py-1 bg-[#EEF2FF] border border-[#E0E7FF] rounded-full flex items-center gap-1 text-[10px] font-black text-[#6366F1]">
-                  <Calendar size={11} /> LAST 365 DAYS
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">हालिया लेनदेन (Transactions)</h3>
+                  <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[10px] font-bold">
+                    <button
+                      onClick={() => setTransactionTab("all")}
+                      className={`px-2 py-0.5 rounded-md transition ${transactionTab === "all" ? "bg-white text-indigo-900 shadow-xs" : "text-slate-500"}`}
+                    >
+                      सभी ({bills.length + (gharKharchList || []).length})
+                    </button>
+                    <button
+                      onClick={() => setTransactionTab("sales")}
+                      className={`px-2 py-0.5 rounded-md transition ${transactionTab === "sales" ? "bg-emerald-600 text-white shadow-xs" : "text-slate-500"}`}
+                    >
+                      बिक्री ({bills.length})
+                    </button>
+                    <button
+                      onClick={() => setTransactionTab("expenses")}
+                      className={`px-2 py-0.5 rounded-md transition ${transactionTab === "expenses" ? "bg-amber-600 text-white shadow-xs" : "text-slate-500"}`}
+                    >
+                      खर्च ({(gharKharchList || []).length})
+                    </button>
+                  </div>
                 </div>
+
+                <button
+                  onClick={() => handleToggleGharKharchEntry(true)}
+                  className="text-[10px] font-black text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-1 rounded-lg transition flex items-center gap-1"
+                >
+                  <Plus size={11} /> + खर्च
+                </button>
               </div>
 
-              {bills.length === 0 ? (
-                <div className="p-8 bg-white border border-slate-100 rounded-2xl text-center space-y-2">
-                  <Receipt size={36} className="mx-auto text-slate-300" />
-                  <p className="text-xs font-bold text-slate-700">No Transactions Yet</p>
-                  <p className="text-[11px] text-slate-400">Tap "+ Bill / Invoice" below to create your first sale bill</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {bills.slice(0, 5).map((bill) => (
-                    <div 
-                      key={bill._id || bill.id}
-                      onClick={() => setSelectedBillDetail(bill)}
-                      className="p-3.5 bg-white border border-slate-100 hover:border-indigo-200 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer transition"
-                    >
-                      <div className="space-y-0.5">
-                        <div className="font-bold text-xs text-[#0F172A]">{bill.customerName}</div>
-                        <div className="text-[11px] text-slate-400">
-                          Invoice #{bill.id} • {bill.date} • {bill.paymentStatus === 'unpaid' ? 'Due' : 'Paid'}
-                        </div>
-                      </div>
+              {(() => {
+                const combinedStream = [
+                  ...bills.map(b => ({
+                    _id: b._id || b.id,
+                    typeCategory: 'sale',
+                    title: b.customerName || 'नकद काउंटर बिक्री',
+                    subtitle: `Invoice #${b.id} • ${b.date} • ${b.paymentStatus === 'unpaid' ? 'Due (उधार)' : 'Paid'}`,
+                    amount: b.amount,
+                    isPositive: true,
+                    dateObj: new Date(b.rawDate || b.date || Date.now()),
+                    original: b
+                  })),
+                  ...(gharKharchList || []).map(e => ({
+                    _id: e._id || e.id,
+                    typeCategory: 'expense',
+                    title: e.title || `${e.category || 'घरेलू खर्च'} ${e.familyMember ? `(${e.familyMember})` : ''}`,
+                    subtitle: `🏡 ${e.category || 'खर्च'} • ${e.familyMember ? `[${e.familyMember}] • ` : ''}${e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today'}`,
+                    amount: Number(e.amount || 0),
+                    isPositive: false,
+                    dateObj: new Date(e.date || Date.now()),
+                    original: e
+                  }))
+                ].sort((a, b) => b.dateObj - a.dateObj);
 
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <div className="font-black text-xs text-[#0F172A]">₹ {bill.amount.toLocaleString('en-IN')}</div>
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${bill.paymentStatus === 'unpaid' ? 'bg-[#FEE2E2] text-[#DC2626]' : 'bg-[#ECFDF5] text-[#059669]'}`}>
-                            {bill.paymentStatus === 'unpaid' ? 'Unpaid' : 'Paid'}
-                          </span>
-                        </div>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleShareWhatsAppBill(bill);
-                          }}
-                          className="w-8 h-8 rounded-full bg-[#ECFDF5] hover:bg-emerald-100 text-[#059669] flex items-center justify-center transition cursor-pointer"
-                        >
-                          <Share2 size={14} />
-                        </button>
-                      </div>
+                const displayList = combinedStream.filter(tx => {
+                  if (transactionTab === "sales") return tx.typeCategory === "sale";
+                  if (transactionTab === "expenses") return tx.typeCategory === "expense";
+                  return true;
+                });
+
+                if (displayList.length === 0) {
+                  return (
+                    <div className="p-8 bg-white border border-slate-100 rounded-2xl text-center space-y-2">
+                      <Receipt size={36} className="mx-auto text-slate-300" />
+                      <p className="text-xs font-bold text-slate-700">कोई लेनदेन नहीं मिला</p>
+                      <p className="text-[11px] text-slate-400">नीचे दिए गए बटन से बिक्री या खर्च दर्ज करें</p>
                     </div>
-                  ))}
-                </div>
-              )}
+                  );
+                }
+
+                return (
+                  <div className="space-y-2">
+                    {displayList.slice(0, 8).map((tx) => (
+                      <div 
+                        key={tx._id}
+                        onClick={() => {
+                          if (tx.typeCategory === 'sale') {
+                            setSelectedBillDetail(tx.original);
+                          } else {
+                            handleOpenEditGharKharch(tx.original);
+                          }
+                        }}
+                        className="p-3.5 bg-white border border-slate-100 hover:border-indigo-200 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer transition"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm ${tx.typeCategory === 'sale' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+                            {tx.typeCategory === 'sale' ? '🧾' : '🏡'}
+                          </div>
+                          <div className="space-y-0.5">
+                            <div className="font-bold text-xs text-[#0F172A]">{tx.title}</div>
+                            <div className="text-[10px] text-slate-400">
+                              {tx.subtitle}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <div className="text-right">
+                            <div className={`font-black text-xs ${tx.typeCategory === 'sale' ? 'text-emerald-700' : 'text-amber-800'}`}>
+                              {tx.typeCategory === 'sale' ? '+' : '-'} ₹ {tx.amount.toLocaleString('en-IN')}
+                            </div>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${tx.typeCategory === 'sale' ? (tx.original.paymentStatus === 'unpaid' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700') : 'bg-amber-100 text-amber-900'}`}>
+                              {tx.typeCategory === 'sale' ? (tx.original.paymentStatus === 'unpaid' ? 'Unpaid' : 'Sale') : 'खर्च'}
+                            </span>
+                          </div>
+                          {tx.typeCategory === 'sale' && (
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleShareWhatsAppBill(tx.original);
+                              }}
+                              className="w-7 h-7 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-600 flex items-center justify-center transition cursor-pointer"
+                            >
+                              <Share2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
