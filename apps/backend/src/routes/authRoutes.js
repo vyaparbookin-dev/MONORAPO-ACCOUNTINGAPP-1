@@ -1,10 +1,21 @@
 import express from "express";
-import { register, login, verifyOtp, forgotPassword, resetPassword, googleAuth, changePassword, quickResetPassword } from "../controllers/authController.js";
+import { 
+  register, 
+  login, 
+  magicLogin,
+  quickResetPassword, 
+  verifyOtp, 
+  forgotPassword, 
+  resetPassword, 
+  googleAuth, 
+  changePassword 
+} from "../controllers/authController.js";
 import { protect } from "../middleware/authmiddleware.js";
 const router = express.Router();
 
 router.post("/register", register);
 router.post("/login", login);
+router.post("/magic-login", magicLogin);
 router.post("/quick-reset-password", quickResetPassword);
 router.post("/verify-otp", verifyOtp);
 router.post("/forgot-password", forgotPassword);

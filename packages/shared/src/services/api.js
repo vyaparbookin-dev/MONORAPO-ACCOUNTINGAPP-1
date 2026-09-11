@@ -458,7 +458,7 @@ api.interceptors.response.use(
                           (typeof localStorage !== 'undefined' && localStorage.getItem("isGuestMode") === "true");
 
     // Auth endpoints should NEVER return mock payload, they must report true backend responses
-    const isAuthRoute = url.includes('/auth') || url.includes('/login') || url.includes('/register') || url.includes('/verify-otp') || url.includes('/forgot-password') || url.includes('/reset-password');
+    const isAuthRoute = url.includes('/auth') || url.includes('/login') || url.includes('/magic-login') || url.includes('/quick-reset-password') || url.includes('/register') || url.includes('/verify-otp') || url.includes('/forgot-password') || url.includes('/reset-password');
     if (isAuthRoute) {
       if (status === 400 || status === 401 || status === 403 || status === 422) {
         return Promise.reject(err.response?.data || err);

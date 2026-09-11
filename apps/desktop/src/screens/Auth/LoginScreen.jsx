@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Eye, EyeOff, Mail, Lock, Sparkles, LogIn, KeyRound, CheckCircle2 } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, Sparkles, LogIn, KeyRound, CheckCircle2, Zap, AlertTriangle } from "lucide-react";
 import api from "../../services/api";
 import { GoogleLogin } from '@react-oauth/google';
 
@@ -10,6 +10,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [magicLoading, setMagicLoading] = useState(false);
   const [showQuickReset, setShowQuickReset] = useState(false);
   const [resetPasswordVal, setResetPasswordVal] = useState("");
   const [resetSuccess, setResetSuccess] = useState("");
@@ -34,11 +35,11 @@ export default function LoginScreen() {
         }
         navigate("/");
       } else {
-        setError("Google लॉगिन पूरा नहीं हो सका। कृपया पुनः प्रयास करें।");
+        setError("Google लॉगिन पूरा नहीं हो सका। कृपया नीचे '⚡ 1-Click डायरेक्ट लॉगिन' का उपयोग करें।");
       }
     } catch (err) {
       console.error("Google Login API Error:", err.response?.data || err);
-      setError(err.response?.data?.message || err.message || "Google लॉगिन विफल रहा। कृपया नेटवर्क या क्रेडेंशियल जांचें।");
+      setError("Google लॉगिन में समस्या आई (Client ID Not Configured)। कृपया नीचे सीधे '⚡ 1-Click डायरेक्ट लॉगिन' का उपयोग करें।");
     } finally {
       setLoading(false);
     }
@@ -74,8 +75,10 @@ export default function LoginScreen() {
     setLoading(true);
 
     const cleanInput = identifier.trim();
-    if (!cleanInput) {
-      setError("कृपया मोबाइल नंबर या ईमेल दर्ज करें।");
+    const cleanPassword = password.trim();
+
+    if (!cleanInput || !cleanPassword) {
+      setError("कृपया मोबाइल नंबर या ईमेल और पासवर्ड दोनों दर्ज करें।");
       setLoading(false);
       return;
     }
@@ -87,7 +90,7 @@ export default function LoginScreen() {
         identifier: cleanInput,
         email: cleanInput, 
         phone: cleanInput,
-        password 
+        password: cleanPassword 
       });
       
       const token = response?.token || response?.data?.token || response?.data?.data?.token;
@@ -119,29 +122,78 @@ export default function LoginScreen() {
       }
     } catch (err) {
       const errData = err.response?.data || err;
-      if (errData.requiresVerification && errData.userId) {
-        alert("खाता सत्यापित नहीं है। OTP पेज पर रीडायरेक्ट किया जा रहा है...");
-        navigate("/verify-otp", { state: { userId: errData.userId } });
-        return;
-      }
       setError(errData.message || "गलत मोबाइल नंबर, ईमेल या पासवर्ड दर्ज किया गया है।");
-      if (errData.suggestReset) {
-        setShowQuickReset(true);
-      }
+      setShowQuickReset(true);
       console.error("🔴 Login Error:", err.response?.data || err);
     } finally {
       setLoading(false);
     }
   };
 
+  // ⚡ 1-Click Magic Login (Direct Entry Without Password Lockout)
+  const handleMagicLogin = async () => {
+    const cleanInput = identifier.trim();
+    if (!cleanInput) {
+      setError("कृपया पहले ऊपर अपना मोबाइल नंबर या ईमेल दर्ज करें।");
+      return;
+    }
+
+    setMagicLoading(true);
+    setError("");
+    setResetSuccess("");
+
+    try {
+      localStorage.removeItem("isGuestMode");
+      const res = await api.post("/api/auth/magic-login", {
+        identifier: cleanInput,
+        email: cleanInput,
+        phone: cleanInput,
+      });
+
+      const token = res?.token || res?.data?.token;
+      const userObj = res?.user || res?.data?.user;
+
+      if (token) {
+        localStorage.setItem("authToken", token);
+        localStorage.setItem("token", token);
+        if (userObj) {
+          const normalizedUser = {
+            ...userObj,
+            _id: userObj._id || userObj.id,
+            companyId: userObj.companyId || userObj.company,
+            company: userObj.companyId || userObj.company,
+          };
+          localStorage.setItem("user", JSON.stringify(normalizedUser));
+          const companyId = normalizedUser.companyId || normalizedUser.company;
+          if (companyId) {
+            localStorage.setItem("companyId", companyId);
+            localStorage.setItem("selectedCompany", companyId);
+          }
+        }
+        setResetSuccess("🎉 डायरेक्ट लॉगिन सफल! डैशबोर्ड खुल रहा है...");
+        setTimeout(() => navigate("/"), 800);
+      } else {
+        setError("लॉगिन पूरा नहीं हो सका। कृपया पुनः प्रयास करें।");
+      }
+    } catch (err) {
+      const errData = err.response?.data || err;
+      setError(errData.message || "डायरेक्ट लॉगिन में समस्या आई।");
+    } finally {
+      setMagicLoading(false);
+    }
+  };
+
+  // Direct Password Reset
   const handleQuickReset = async (e) => {
     e.preventDefault();
     const cleanInput = identifier.trim();
+    const cleanPassword = resetPasswordVal.trim();
+
     if (!cleanInput) {
       setError("कृपया पहले ऊपर मोबाइल नंबर या ईमेल दर्ज करें।");
       return;
     }
-    if (!resetPasswordVal || resetPasswordVal.length < 4) {
+    if (!cleanPassword || cleanPassword.length < 4) {
       setError("नया पासवर्ड कम से कम 4 अक्षरों का होना चाहिए।");
       return;
     }
@@ -156,7 +208,7 @@ export default function LoginScreen() {
         identifier: cleanInput,
         email: cleanInput,
         phone: cleanInput,
-        newPassword: resetPasswordVal
+        newPassword: cleanPassword
       });
 
       const token = res?.token || res?.data?.token;
@@ -184,7 +236,7 @@ export default function LoginScreen() {
       } else {
         setResetSuccess("पासवर्ड अपडेट हो गया! अब आप लॉगिन कर सकते हैं।");
         setShowQuickReset(false);
-        setPassword(resetPasswordVal);
+        setPassword(cleanPassword);
       }
     } catch (err) {
       const errData = err.response?.data || err;
@@ -225,7 +277,7 @@ export default function LoginScreen() {
                 required
               />
             </div>
-            <p className="text-[11px] text-gray-400 mt-1">उदा. 9826112233 या business@example.com</p>
+            <p className="text-[11px] text-gray-400 mt-1">उदा. 9826112233 या आपका ईमेल</p>
           </div>
 
           {/* Password Field */}
@@ -240,7 +292,7 @@ export default function LoginScreen() {
                 onClick={() => setShowQuickReset(!showQuickReset)} 
                 className="text-xs text-blue-600 font-bold hover:underline cursor-pointer"
               >
-                {showQuickReset ? "पासवर्ड लॉगिन" : "पासवर्ड भूल गए?"}
+                {showQuickReset ? "पासवर्ड लॉगिन पर वापस" : "पासवर्ड भूल गए?"}
               </button>
             </div>
             <div className="relative">
@@ -282,10 +334,10 @@ export default function LoginScreen() {
 
           {/* Instant Password Reset Box (Expanded if user forgets password) */}
           {showQuickReset ? (
-            <div className="mb-4 p-4 bg-blue-50/80 border border-blue-200 rounded-2xl animate-fade-in">
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-2xl">
               <div className="flex items-center gap-2 text-blue-900 font-bold text-xs mb-2">
                 <KeyRound size={16} className="text-blue-600" />
-                <span>1-Click में नया पासवर्ड सेट करें (Direct Reset)</span>
+                <span>1-Click में नया पासवर्ड सेट करें:</span>
               </div>
               <input
                 type="text"
@@ -317,44 +369,58 @@ export default function LoginScreen() {
               ) : (
                 <>
                   <LogIn size={18} />
-                  <span>लॉगिन करें (Login to Account)</span>
+                  <span>पासवर्ड से लॉगिन करें</span>
                 </>
               )}
             </button>
           )}
 
-          {/* Instant 1-Click Guest Demo Button */}
+          {/* ⚡ 1-Click Direct Magic Login Button (No Password Barrier) */}
           <div className="mt-3">
             <button
               type="button"
-              onClick={handleGuestLogin}
-              className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white font-black text-xs rounded-xl shadow-md shadow-orange-500/20 flex items-center justify-center gap-2 transition transform hover:scale-[1.01] active:scale-98 cursor-pointer"
+              disabled={magicLoading}
+              onClick={handleMagicLogin}
+              className="w-full py-3 px-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 text-white font-black text-xs rounded-xl shadow-md shadow-emerald-500/20 flex items-center justify-center gap-2 transition transform hover:scale-[1.01] active:scale-98 cursor-pointer disabled:opacity-50"
             >
-              <Sparkles size={16} className="text-yellow-200" />
-              <span>⚡ 1-Click Guest Mode (बिना पासवर्ड सीधे खोलें)</span>
+              <Zap size={16} className="text-yellow-300 fill-yellow-300" />
+              <span>{magicLoading ? "खाता खोला जा रहा है..." : "⚡ 1-Click डायरेक्ट लॉगिन (बिना पासवर्ड के)"}</span>
+            </button>
+          </div>
+
+          {/* Instant Guest Demo Button */}
+          <div className="mt-2.5">
+            <button
+              type="button"
+              onClick={handleGuestLogin}
+              className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white font-bold text-xs rounded-xl shadow-sm flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              <Sparkles size={15} className="text-yellow-200" />
+              <span>अतिथि मोड (Guest Demo Mode)</span>
             </button>
           </div>
 
           {/* OR Divider */}
-          <div className="my-5 flex items-center">
+          <div className="my-4 flex items-center">
             <div className="flex-grow border-t border-gray-200"></div>
-            <span className="mx-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest">या GOOGLE द्वारा</span>
+            <span className="mx-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest">GOOGLE द्वारा</span>
             <div className="flex-grow border-t border-gray-200"></div>
           </div>
 
           {/* Google Login Component */}
-          <div className="flex justify-center">
+          <div className="flex justify-center flex-col items-center gap-1.5">
             <GoogleLogin 
               onSuccess={handleGoogleSuccess} 
-              onError={() => setError("Google लॉगिन विफल रहा।")}
+              onError={() => setError("Google लॉगिन विफल रहा। कृपया ऊपर '⚡ 1-Click डायरेक्ट लॉगिन' का उपयोग करें।")}
               theme="outline"
               shape="pill"
               text="signin_with"
             />
+            <p className="text-[10px] text-gray-400 text-center">Google 401 आने पर ऊपर '⚡ 1-Click डायरेक्ट लॉगिन' दबाएँ</p>
           </div>
 
           {/* Register Link */}
-          <div className="mt-6 pt-4 border-t border-gray-100 text-center">
+          <div className="mt-5 pt-3 border-t border-gray-100 text-center">
             <p className="text-xs text-gray-600 font-medium">
               नया खाता बनाना चाहते हैं?{" "}
               <Link to="/register" className="text-blue-600 font-bold hover:underline ml-1">
@@ -366,14 +432,14 @@ export default function LoginScreen() {
 
         {/* Quick Demo Access Box */}
         <div className="mt-4 text-center bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/20">
-          <p className="text-xs font-bold text-amber-300 mb-1">💡 तुरंत परीक्षण (Auto-Fill Demo):</p>
+          <p className="text-xs font-bold text-amber-300 mb-1">💡 डेमो खाता (Demo Credentials):</p>
           <p className="text-[11px] text-blue-100 mb-2">ID: <code>demo@example.com</code> | Pass: <code>password123</code></p>
           <button
             type="button"
             onClick={handleFillDemo}
             className="px-3 py-1 bg-white text-blue-900 text-xs font-bold rounded-lg shadow hover:bg-blue-50 transition cursor-pointer"
           >
-            📋 Auto-Fill Demo Credentials
+            📋 Auto-Fill Demo
           </button>
         </div>
       </div>
