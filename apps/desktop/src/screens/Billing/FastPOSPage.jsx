@@ -399,6 +399,13 @@ export default function FastPOSPage() {
     const code = couponCodeInput.trim().toUpperCase();
     if (!code) return;
 
+    // Check if single-use coupon was already redeemed
+    const redeemedList = JSON.parse(localStorage.getItem("vb_redeemed_coupons") || "[]");
+    const foundRedeemed = redeemedList.find(r => r.code === code);
+    if (foundRedeemed) {
+      return setCouponError(`🚫 यह कूपन पहले ही बिल ${foundRedeemed.billNumber || "पिछला बिल"} पर इस्तेमाल किया जा चुका है! (मिसयूज रोकथाम)`);
+    }
+
     const subtotal = cart.reduce((sum, item) => sum + (item.total || 0), 0);
 
     // 1. Flat 100 off on 500+ (e.g. SAVE100, REST100, SAVE100-XYZ)
@@ -483,8 +490,32 @@ export default function FastPOSPage() {
         status: "paid",
       };
 
+      // Log redeemed coupon in audit trail to prevent reuse
+      if (appliedCoupon) {
+        payload.couponAudit = {
+          code: appliedCoupon.code,
+          discountAmount: appliedCoupon.discount || 0,
+          type: appliedCoupon.type || "SINGLE_USE",
+          title: appliedCoupon.title || "Discount",
+          redeemedByCustomer: customerName || "Walk-in",
+          redeemedByMobile: customerMobile || "",
+          billNumber: payload.billNumber,
+          redeemedAt: new Date().toISOString()
+        };
+
+        const existingRedeemed = JSON.parse(localStorage.getItem("vb_redeemed_coupons") || "[]");
+        existingRedeemed.push({
+          code: appliedCoupon.code,
+          customerMobile: customerMobile || "",
+          customerName: customerName || "Walk-in",
+          billNumber: payload.billNumber,
+          redeemedAt: new Date().toISOString()
+        });
+        localStorage.setItem("vb_redeemed_coupons", JSON.stringify(existingRedeemed));
+      }
+
       await api.post("/api/billing", payload);
-      alert(`🎉 बिल सफलतापूर्वक तैयार हो गया! कुल: ₹${getGrandTotal()}`);
+      alert(`🎉 बिल ${payload.billNumber} सफलतापूर्वक तैयार हो गया! कुल: ₹${getGrandTotal()}`);
       setCart([]);
       setCustomerName("");
       setCustomerMobile("");
