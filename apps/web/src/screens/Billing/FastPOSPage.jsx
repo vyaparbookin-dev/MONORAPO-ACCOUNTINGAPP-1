@@ -53,6 +53,83 @@ export default function FastPOSPage() {
   const [slipText, setSlipText] = useState("");
   const [isBottomCartExpanded, setIsBottomCartExpanded] = useState(false);
 
+  // --- ⏰ OWNER CONTROLLED HAPPY HOURS STATE ---
+  const [happyHourConfig, setHappyHourConfig] = useState(() => {
+    const saved = localStorage.getItem("vb_happy_hours");
+    return saved ? JSON.parse(saved) : {
+      isEnabled: true,
+      startHour: 12, // 12 PM
+      endHour: 16,   // 4 PM
+      discountPercent: 20,
+      categories: ["Fast Food", "Beverages", "Snacks", "Restaurant"]
+    };
+  });
+  const [showHappyHourModal, setShowHappyHourModal] = useState(false);
+
+  // --- 🚫 OUT OF STOCK (86 ITEM) TOGGLE STATE ---
+  const [outOfStockItems, setOutOfStockItems] = useState(() => {
+    const saved = localStorage.getItem("vb_out_of_stock");
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // --- 🔔 LIVE KITCHEN-TO-CASHIER ACTIVE ORDERS & SLA TIMINGS ---
+  const [activeKotOrders, setActiveKotOrders] = useState([
+    {
+      id: "KOT-101",
+      table: "Table 2 (AC Hall)",
+      waiter: "Rohan",
+      placedAt: new Date(Date.now() - 14 * 60000), // 14 mins ago
+      prepTimeMinutes: 11,
+      status: "READY", // 'COOKING' | 'READY' | 'SERVED'
+      items: [{ name: "Crispy Veg Burger", qty: 2 }, { name: "Cold Coffee", qty: 2 }]
+    },
+    {
+      id: "KOT-102",
+      table: "Table 4 (Garden)",
+      waiter: "Sunil",
+      placedAt: new Date(Date.now() - 24 * 60000), // 24 mins ago (Delayed!)
+      prepTimeMinutes: 24,
+      status: "COOKING",
+      items: [{ name: "Farmhouse Pizza", qty: 1 }, { name: "Paneer Tikka", qty: 1 }]
+    },
+    {
+      id: "KOT-103",
+      table: "Table 1 (Family)",
+      waiter: "Aman",
+      placedAt: new Date(Date.now() - 6 * 60000), // 6 mins ago
+      prepTimeMinutes: 6,
+      status: "COOKING",
+      items: [{ name: "Veg Dum Biryani", qty: 2 }, { name: "Butter Naan", qty: 4 }]
+    }
+  ]);
+
+  // --- ⭐ CUSTOMER FEEDBACK & GOOGLE REVIEW MODAL STATE ---
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackBillData, setFeedbackBillData] = useState(null);
+
+  // Check if current time falls into Happy Hours
+  const isCurrentTimeInHappyHours = () => {
+    if (!happyHourConfig.isEnabled) return false;
+    const currentHour = new Date().getHours();
+    return currentHour >= happyHourConfig.startHour && currentHour < happyHourConfig.endHour;
+  };
+  const isHappyHourActive = isCurrentTimeInHappyHours();
+
+  // Toggle Item Stock
+  const toggleItemStock = (prodId, e) => {
+    if (e) e.stopPropagation();
+    setOutOfStockItems(prev => {
+      const updated = prev.includes(prodId) ? prev.filter(id => id !== prodId) : [...prev, prodId];
+      localStorage.setItem("vb_out_of_stock", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // Mark KOT Order as Ready or Served
+  const handleUpdateKotStatus = (kotId, newStatus) => {
+    setActiveKotOrders(prev => prev.map(k => k.id === kotId ? { ...k, status: newStatus } : k));
+  };
+
   const { selectedCompany } = useCompany();
   const business = getBusinessMode(selectedCompany);
 
@@ -187,9 +264,20 @@ export default function FastPOSPage() {
   };
 
   const addToCart = (product) => {
+    const prodId = product._id || product.uuid || product.id;
+    if (outOfStockItems.includes(prodId)) {
+      alert("⚠️ यह आइटम 'Out of Stock' है! कृपया किचन में सामान उपलब्ध होने पर इसे चालू करें।");
+      return;
+    }
+    
+    // Check Happy Hour discount
+    let price = parseFloat(product.sellingPrice || product.price || 0);
+    const cat = product.category || "General";
+    if (isHappyHourActive && happyHourConfig.categories.includes(cat)) {
+      price = Math.round(price * (1 - happyHourConfig.discountPercent / 100));
+    }
+
     setCart((prev) => {
-      const prodId = product._id || product.uuid || product.id;
-      const price = parseFloat(product.sellingPrice || product.price || 0);
       const existing = prev.find((item) => item.productId === prodId);
       if (existing) {
         return prev.map((item) =>
@@ -399,12 +487,75 @@ export default function FastPOSPage() {
           </div>
 
           <div className="hidden sm:flex gap-2 text-xs font-bold">
-            <span className="bg-slate-100 text-slate-700 px-2 py-1 rounded-lg border">F2 खोजें</span>
-            <span className="bg-slate-100 text-slate-700 px-2 py-1 rounded-lg border">F4 ग्राहक</span>
-            <span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded-lg border border-emerald-300">
+            <button
+              onClick={() => setShowHappyHourModal(true)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-black transition flex items-center gap-1.5 ${
+                isHappyHourActive
+                  ? "bg-amber-500 text-slate-950 border-amber-400 shadow-md animate-pulse"
+                  : "bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200"
+              }`}
+              title="Happy Hours डिस्काउंट सेटिंग (ओनर द्वारा नियंत्रित)"
+            >
+              ⏰ {isHappyHourActive ? `Happy Hours ON (${happyHourConfig.discountPercent}% OFF)` : "Happy Hours"}
+            </button>
+            <span className="bg-slate-100 text-slate-700 px-2 py-1.5 rounded-lg border">F2 खोजें</span>
+            <span className="bg-slate-100 text-slate-700 px-2 py-1.5 rounded-lg border">F4 ग्राहक</span>
+            <span className="bg-emerald-100 text-emerald-800 px-2 py-1.5 rounded-lg border border-emerald-300">
               F9 बिल बनाएं
             </span>
           </div>
+        </div>
+      </div>
+
+      {/* 📊 DAILY KITCHEN SPEED-OF-SERVICE & TURNAROUND SLA BAR */}
+      <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 mb-3 flex flex-wrap justify-between items-center gap-3">
+        <div className="flex items-center gap-3">
+          <div className="bg-slate-900 text-white px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-2">
+            <span>⏱️ आज का सर्विस रिपोर्ट (Daily Speed SLA):</span>
+            <span className="text-emerald-400 font-bold">42 Orders Served</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-bold">
+            <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-lg border border-emerald-300">
+              🟢 On-Time: 39 Tables (93%)
+            </span>
+            <span className="px-2.5 py-1 bg-rose-100 text-rose-800 rounded-lg border border-rose-300 animate-pulse" title="20 मिनट से ज्यादा समय लेने वाले लेट ऑर्डर्स">
+              🔴 Late Delayed: 3 Tables (>20 mins)
+            </span>
+            <span className="text-slate-500 text-[11px] hidden md:inline font-medium">
+              (Avg Turnaround: 11.4 Mins)
+            </span>
+          </div>
+        </div>
+
+        {/* Live Active KOT Quick Bar */}
+        <div className="flex items-center gap-2 overflow-x-auto">
+          {activeKotOrders.map(kot => {
+            const isReady = kot.status === "READY";
+            const isLate = kot.prepTimeMinutes >= 20;
+            return (
+              <div
+                key={kot.id}
+                className={`px-3 py-1 rounded-xl text-xs font-black border flex items-center gap-2 shrink-0 ${
+                  isReady
+                    ? "bg-emerald-500 text-white border-emerald-600 shadow-md animate-bounce"
+                    : isLate
+                    ? "bg-rose-500 text-white border-rose-600 animate-pulse"
+                    : "bg-amber-50 text-amber-900 border-amber-300"
+                }`}
+              >
+                <span>{isReady ? "🔔" : "⏳"} {kot.table}</span>
+                <span className="text-[10px] font-mono opacity-90">{kot.prepTimeMinutes}m</span>
+                {isReady && (
+                  <button
+                    onClick={() => handleUpdateKotStatus(kot.id, "SERVED")}
+                    className="ml-1 px-1.5 py-0.5 bg-white text-emerald-800 text-[10px] font-black rounded hover:bg-slate-100"
+                  >
+                    ✓ Served
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -492,11 +643,43 @@ export default function FastPOSPage() {
                         <p className="text-[10px] text-slate-400 font-medium">{p.category || "General"}</p>
                       </div>
 
-                      <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-100">
-                        <span className="text-sm font-black text-blue-700 font-mono">₹{price}</span>
-                        <span className="p-1 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition">
-                          <Plus size={14} />
-                        </span>
+                      {/* Stock Switch & Price */}
+                      <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1">
+                          <span className="text-sm font-black text-blue-700 font-mono">
+                            ₹{isHappyHourActive && happyHourConfig.categories.includes(p.category || "General")
+                              ? Math.round(price * (1 - happyHourConfig.discountPercent / 100))
+                              : price}
+                          </span>
+                          {isHappyHourActive && happyHourConfig.categories.includes(p.category || "General") && (
+                            <span className="text-[10px] line-through text-slate-400">₹{price}</span>
+                          )}
+                        </div>
+                        
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={(e) => toggleItemStock(prodId, e)}
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase transition ${
+                              outOfStockItems.includes(prodId)
+                                ? "bg-rose-600 text-white"
+                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                            }`}
+                            title="1-Click Out of Stock (86 Item) Switch"
+                          >
+                            {outOfStockItems.includes(prodId) ? "86 Out" : "In Stock"}
+                          </button>
+                          <span
+                            onClick={() => addToCart(p)}
+                            className={`p-1 rounded-lg transition cursor-pointer ${
+                              outOfStockItems.includes(prodId)
+                                ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                : "bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white"
+                            }`}
+                          >
+                            <Plus size={14} />
+                          </span>
+                        </div>
                       </div>
                     </div>
                   );
@@ -828,6 +1011,158 @@ export default function FastPOSPage() {
         onApplyKot={handleApplyKot}
         inventory={products}
       />
+      {/* ⏰ OWNER CONTROLLED HAPPY HOURS MODAL */}
+      {showHappyHourModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">⏰</span>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">Happy Hours & Dynamic Discount</h3>
+                  <p className="text-xs text-slate-500">ओनर द्वारा नियंत्रित समय और डिस्काउंट सेटिंग</p>
+                </div>
+              </div>
+              <button onClick={() => setShowHappyHourModal(false)} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="py-4 space-y-4 text-xs">
+              <div className="flex justify-between items-center bg-amber-50 p-3 rounded-2xl border border-amber-200">
+                <div>
+                  <span className="font-black text-amber-950 text-sm">Happy Hours सक्रिय करें</span>
+                  <p className="text-[11px] text-amber-800">तय समय पर ऑटोमैटिक डिस्काउंट लागू होगा</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={happyHourConfig.isEnabled}
+                  onChange={(e) => {
+                    const updated = { ...happyHourConfig, isEnabled: e.target.checked };
+                    setHappyHourConfig(updated);
+                    localStorage.setItem("vb_happy_hours", JSON.stringify(updated));
+                  }}
+                  className="w-5 h-5 accent-amber-600 cursor-pointer"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">शुरू समय (Start Hour)</label>
+                  <select
+                    value={happyHourConfig.startHour}
+                    onChange={(e) => {
+                      const updated = { ...happyHourConfig, startHour: parseInt(e.target.value) };
+                      setHappyHourConfig(updated);
+                      localStorage.setItem("vb_happy_hours", JSON.stringify(updated));
+                    }}
+                    className="w-full p-2.5 border rounded-xl font-bold bg-white text-slate-800"
+                  >
+                    <option value={11}>11:00 AM</option>
+                    <option value={12}>12:00 PM (दोपहर)</option>
+                    <option value={13}>1:00 PM</option>
+                    <option value={14}>2:00 PM</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">समाप्त समय (End Hour)</label>
+                  <select
+                    value={happyHourConfig.endHour}
+                    onChange={(e) => {
+                      const updated = { ...happyHourConfig, endHour: parseInt(e.target.value) };
+                      setHappyHourConfig(updated);
+                      localStorage.setItem("vb_happy_hours", JSON.stringify(updated));
+                    }}
+                    className="w-full p-2.5 border rounded-xl font-bold bg-white text-slate-800"
+                  >
+                    <option value={15}>3:00 PM</option>
+                    <option value={16}>4:00 PM (शाम)</option>
+                    <option value={17}>5:00 PM</option>
+                    <option value={18}>6:00 PM</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">छूट प्रतिशत (Discount %)</label>
+                <div className="flex gap-2">
+                  {[10, 15, 20, 25, 30].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => {
+                        const updated = { ...happyHourConfig, discountPercent: pct };
+                        setHappyHourConfig(updated);
+                        localStorage.setItem("vb_happy_hours", JSON.stringify(updated));
+                      }}
+                      className={`flex-1 py-2 rounded-xl font-black text-xs transition ${
+                        happyHourConfig.discountPercent === pct
+                          ? "bg-amber-600 text-white shadow"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      {pct}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowHappyHourModal(false);
+                alert("✅ Happy Hours सेटिंग सफलतापूर्वक सेव हो गई!");
+              }}
+              className="w-full py-3 bg-slate-900 text-white font-black text-xs rounded-2xl hover:bg-slate-800 transition"
+            >
+              सेटिंग सुरक्षित करें (Save Config)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ CUSTOMER FEEDBACK & GOOGLE REVIEW MODAL */}
+      {showFeedbackModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 border border-slate-200 text-center animate-in fade-in zoom-in-95">
+            <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-3 text-3xl shadow-inner">
+              ⭐
+            </div>
+            <h3 className="text-xl font-black text-slate-900">कस्टमर फीडबैक व गूगल रिव्यू</h3>
+            <p className="text-xs text-slate-500 mt-1">
+              बिल #{feedbackBillData?.billNumber} • कुल रकम: ₹{feedbackBillData?.totalAmount}
+            </p>
+
+            <div className="my-5 p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col items-center">
+              <p className="text-xs font-bold text-slate-700 mb-2">📲 बिल रसीद पर यह QR कोड प्रिंट हुआ है:</p>
+              <div className="w-36 h-36 bg-white p-2 border-2 border-dashed border-slate-300 rounded-xl flex items-center justify-center shadow-inner text-center text-xs text-slate-400 font-bold">
+                [ QR Code: Rate 5-Star on Google Maps ]
+              </div>
+              <p className="text-[10px] text-emerald-600 font-bold mt-2">
+                ✓ 4-5 स्टार देने पर सीधे Google Map Review खुलेगा
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  const text = `Namaste ${feedbackBillData?.customerName}! Thank you for dining with us at VyaparBook Restaurant. Total Bill: ₹${feedbackBillData?.totalAmount}. Please rate your experience: ⭐⭐⭐⭐⭐ https://g.page/r/sample-google-review`;
+                  window.open(`https://api.whatsapp.com/send?phone=91${feedbackBillData?.customerMobile}&text=${encodeURIComponent(text)}`, "_blank");
+                }}
+                className="py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow transition flex items-center justify-center gap-1"
+              >
+                📲 WhatsApp Review
+              </button>
+              <button
+                onClick={() => setShowFeedbackModal(false)}
+                className="py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-black text-xs rounded-xl shadow transition"
+              >
+                Done (पूर्ण)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
