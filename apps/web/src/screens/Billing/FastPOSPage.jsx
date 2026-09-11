@@ -54,6 +54,9 @@ export default function FastPOSPage() {
   const [isBottomCartExpanded, setIsBottomCartExpanded] = useState(false);
 
   // --- ⏰ OWNER CONTROLLED HAPPY HOURS STATE ---
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponCodeInput, setCouponCodeInput] = useState("");
+  const [couponError, setCouponError] = useState("");
   const [happyHourConfig, setHappyHourConfig] = useState(() => {
     const saved = localStorage.getItem("vb_happy_hours");
     return saved ? JSON.parse(saved) : {
@@ -390,8 +393,68 @@ export default function FastPOSPage() {
     setCart((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const handleApplyCoupon = (e) => {
+    if (e) e.preventDefault();
+    setCouponError("");
+    const code = couponCodeInput.trim().toUpperCase();
+    if (!code) return;
+
+    const subtotal = cart.reduce((sum, item) => sum + (item.total || 0), 0);
+
+    // 1. Flat 100 off on 500+ (e.g. SAVE100, REST100, SAVE100-XYZ)
+    if (code.startsWith("SAVE100") || code.startsWith("REST100") || code.includes("100")) {
+      if (subtotal < 500) {
+        return setCouponError("⚠️ यह कूपन ₹500 या उससे अधिक के बिल पर ही मान्य है!");
+      }
+      setAppliedCoupon({ code, type: "FLAT", discount: 100, title: "₹100 की फ्लैट छूट (Min ₹500)" });
+      setCouponCodeInput("");
+      return;
+    }
+
+    // 2. Fries Deal @ Rs 50 (e.g. FRIES50)
+    if (code === "FRIES50") {
+      setAppliedCoupon({ code, type: "ITEM_DEAL", item: "French Fries", specialPrice: 50, discount: 40, title: "Fries Deal @ ₹50 Only (Save ₹40)" });
+      setCouponCodeInput("");
+      return;
+    }
+
+    // 3. Burger Deal @ Rs 30 (e.g. BURGER30)
+    if (code === "BURGER30") {
+      setAppliedCoupon({ code, type: "ITEM_DEAL", item: "Crispy Burger", specialPrice: 30, discount: 90, title: "Burger Deal @ ₹30 Only (Save ₹90)" });
+      setCouponCodeInput("");
+      return;
+    }
+
+    // 4. Percentage Discount (e.g. FLAT20, VIP15)
+    if (code.includes("20")) {
+      const disc = Math.round(subtotal * 0.20);
+      setAppliedCoupon({ code, type: "PERCENT", percent: 20, discount: disc, title: "20% की छूट (All Items)" });
+      setCouponCodeInput("");
+      return;
+    }
+
+    if (code.includes("10") || code.includes("OFF")) {
+      const disc = Math.round(subtotal * 0.10);
+      setAppliedCoupon({ code, type: "PERCENT", percent: 10, discount: disc, title: "10% की छूट (Special Customer)" });
+      setCouponCodeInput("");
+      return;
+    }
+
+    // Default custom coupon
+    const disc = Math.min(100, Math.round(subtotal * 0.15));
+    setAppliedCoupon({ code, type: "CUSTOM", discount: disc, title: `विशेष ऑफर: ₹${disc} की छूट (${code})` });
+    setCouponCodeInput("");
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponError("");
+  };
+
   const getGrandTotal = () => {
-    return cart.reduce((sum, item) => sum + (item.total || 0), 0);
+    const rawTotal = cart.reduce((sum, item) => sum + (item.total || 0), 0);
+    const discount = appliedCoupon ? (appliedCoupon.discount || 0) : 0;
+    return Math.max(0, rawTotal - discount);
   };
 
   const getTotalItemsCount = () => {
@@ -946,6 +1009,47 @@ export default function FastPOSPage() {
                   </div>
                 </div>
               ))
+            )}
+          </div>
+
+          {/* 🎟️ COUPON & LOYALTY VOUCHER BOX */}
+          <div className="px-4 py-2 bg-slate-800/60 border-t border-slate-800">
+            {appliedCoupon ? (
+              <div className="bg-emerald-950/80 border border-emerald-500/50 p-2 rounded-xl flex items-center justify-between text-xs animate-in zoom-in-95">
+                <div className="flex items-center gap-1.5">
+                  <Gift size={14} className="text-emerald-400" />
+                  <div>
+                    <span className="font-bold text-emerald-300 font-mono">{appliedCoupon.code}</span>
+                    <p className="text-[10px] text-emerald-400">{appliedCoupon.title} (-₹{appliedCoupon.discount})</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleRemoveCoupon}
+                  className="text-rose-400 hover:text-rose-300 font-black text-xs px-1.5 py-0.5"
+                >
+                  ✕ हटाएं
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleApplyCoupon} className="space-y-1">
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    placeholder="कूपन कोड (उदा. SAVE100, FRIES50)"
+                    value={couponCodeInput}
+                    onChange={(e) => setCouponCodeInput(e.target.value)}
+                    className="flex-1 px-2.5 py-1.5 bg-slate-700 border border-slate-600 rounded-xl text-xs text-white placeholder-slate-400 outline-none uppercase font-mono font-bold"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!couponCodeInput.trim()}
+                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition disabled:opacity-50"
+                  >
+                    लागू करें
+                  </button>
+                </div>
+                {couponError && <p className="text-[10px] text-rose-400 font-medium">{couponError}</p>}
+              </form>
             )}
           </div>
 
