@@ -48,6 +48,7 @@ export default function DashboardLayout() {
   const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
   const [calcModalOpen, setCalcModalOpen] = useState(false);
   const [showQuickCreateBusinessModal, setShowQuickCreateBusinessModal] = useState(false);
+  const [showFullMenu, setShowFullMenu] = useState(false);
   const [newBusinessForm, setNewBusinessForm] = useState({
     name: "",
     industryType: "restaurant",
@@ -107,64 +108,199 @@ export default function DashboardLayout() {
   };
 
   // Get the selected industry type and make it lowercase for easy checking
-  const indType = selectedCompany?.industryType?.toLowerCase() || '';
+  // Dynamic Industry-Tailored Menu Generator
+  const getMenuForBusiness = (company, fullMode = false) => {
+    const indType = (company?.industryType || company?.businessType || '').toLowerCase();
 
-  const menuItems = [
-    { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-    { icon: Home, label: "Dashboard", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
-    { icon: FileText, label: "Invoices", href: "/billing", color: "text-green-600", roles: ['admin', 'manager', 'cashier'] },
-    { icon: ShoppingCart, label: "Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
-    { icon: Package, label: "Inventory", href: "/inventory", color: "text-purple-600", roles: ['admin', 'manager'] },
-    { icon: Users, label: "Parties", href: "/parties", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
-    { icon: Briefcase, label: "B2B Bills", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
-    { icon: Users, label: "Leads", href: "/leads", color: "text-purple-600", roles: ['admin', 'manager'] },
-    { icon: FileText, label: "Quotations", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
-    
-    // INDUSTRY SPECIFIC FEATURES
-    // 1. Electronics / Mobile
-    ...(indType.includes('electronic') || indType.includes('mobile') || indType.includes('computer')
-      ? [
-          { icon: Smartphone, label: "IMEI Tracking", href: "/serial-tracking", color: "text-cyan-500", roles: ['admin', 'manager'] },
-          { icon: ShieldCheck, label: "Warranty Claims", href: "/warranty", color: "text-emerald-500", roles: ['admin', 'manager'] }
-        ] 
-      : []),
+    // 1. FULL VIEW (ALL 30+ FEATURES)
+    if (fullMode) {
+      return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "Dashboard", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
+        { icon: ShoppingCart, label: "Fast POS & KOT", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "Invoices & Billing", href: "/billing", color: "text-green-600", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Briefcase, label: "B2B Bills", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
+        { icon: Package, label: "Inventory Stock", href: "/inventory", color: "text-purple-600", roles: ['admin', 'manager'] },
+        { icon: Users, label: "Parties & Khata", href: "/parties", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Users, label: "Leads CRM", href: "/leads", color: "text-purple-600", roles: ['admin', 'manager'] },
+        { icon: FileText, label: "Quotations", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: Smartphone, label: "IMEI Serial Tracking", href: "/serial-tracking", color: "text-cyan-500", roles: ['admin', 'manager'] },
+        { icon: ShieldCheck, label: "Warranty Claims", href: "/warranty", color: "text-emerald-500", roles: ['admin', 'manager'] },
+        { icon: PenTool, label: "Batch & Cut-Loss", href: "/inventory/batch", color: "text-orange-700", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "Expenses (Ghar Kharch)", href: "/expenses", color: "text-orange-600", roles: ['admin', 'manager'] },
+        { icon: Landmark, label: "Cash & Banking", href: "/banking", color: "text-cyan-600", roles: ['admin', 'manager'] },
+        { icon: Gift, label: "Coupons & Offers", href: "/coupons", color: "text-pink-600", roles: ['admin', 'manager'] },
+        { icon: Users, label: "Membership / Loyalty", href: "/membership", color: "text-teal-600", roles: ['admin', 'manager', 'cashier'] },
+        { icon: UserCheck, label: "Staff & Attendance", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
+        { icon: Receipt, label: "Salary & Pagar", href: "/salary", color: "text-cyan-600", roles: ['admin'] },
+        { icon: CheckCircle, label: "Approvals", href: "/approvals", color: "text-emerald-500", roles: ['admin', 'manager'] },
+        { icon: BarChart3, label: "Category Analytics", href: "/inventory/analytics", color: "text-blue-600", roles: ['admin', 'manager'] },
+        { icon: ArrowRightLeft, label: "Stock Transfer", href: "/inventory/transfer", color: "text-indigo-500", roles: ['admin', 'manager'] },
+        { icon: Package, label: "E-Way Bill", href: "/reports/eway-bill", color: "text-indigo-500", roles: ['admin'] },
+        { icon: FileText, label: "GST Tax Report", href: "/reports/gst", color: "text-blue-500", roles: ['admin'] },
+        { icon: DollarSign, label: "Profit & Loss", href: "/reports/profitloss", color: "text-emerald-500", roles: ['admin'] },
+        { icon: BookOpen, label: "Day Book (Cashflow)", href: "/reports/daybook", color: "text-rose-500", roles: ['admin'] },
+        { icon: Bot, label: "AI मुनीम जी (Advisor)", href: "/ai-advisor", color: "text-purple-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Building2, label: "Company Switcher", href: "/company", color: "text-indigo-600", roles: ['admin'] },
+        { icon: Clock, label: "Laterpad", href: "/laterpad", color: "text-lime-600", roles: ['admin', 'manager', 'cashier'] }
+      ];
+    }
 
-    // 2. Hardware / Electricals
-    ...(indType.includes('hardware') || indType.includes('electrical') || indType.includes('sanitary') || indType.includes('paint')
-      ? [
-          { icon: PenTool, label: "Batch & Stock", href: "/inventory/batch", color: "text-orange-700", roles: ['admin', 'manager'] }
-        ] 
-      : []),
+    // 2. RESTAURANT & CAFE
+    if (indType.includes('restaurant') || indType.includes('cafe') || indType.includes('food') || indType.includes('dining')) {
+      return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "🍽️ Restaurant Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: ShoppingCart, label: "⚡ Table KOT & Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "🧾 Bills & Invoices", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Package, label: "🥘 Recipe BOM & Stock", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
+        { icon: Users, label: "👥 Regular Diners", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: DollarSign, label: "💸 Kitchen & Daily Expenses", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: UserCheck, label: "👨‍🍳 Chef & Staff Attendance", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
+        { icon: Gift, label: "⏰ Happy Hours & Offers", href: "/coupons", color: "text-pink-500", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "📊 Sales & Profit/Loss", href: "/reports/profitloss", color: "text-emerald-400", roles: ['admin'] },
+        { icon: BookOpen, label: "📖 Daily Cash Register (Daybook)", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] },
+        { icon: Bot, label: "🤖 AI मुनीम जी Advisor", href: "/ai-advisor", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] }
+      ];
+    }
 
-    // If businessType is an array, check if it ONLY contains 'service' or if it includes others. By default, show inventory analytics unless strictly service.
-    { icon: CheckCircle, label: "Approvals", href: "/approvals", color: "text-emerald-500", roles: ['admin', 'manager'] },
-    ...(!Array.isArray(selectedCompany?.businessType) || selectedCompany?.businessType.length === 0 || selectedCompany?.businessType.some(t => t !== 'service') ? [{ icon: BarChart3, label: "Category Analytics", href: "/inventory/analytics", color: "text-blue-600", roles: ['admin', 'manager'] }] : []),
-    ...(!Array.isArray(selectedCompany?.businessType) || selectedCompany?.businessType.length === 0 || selectedCompany?.businessType.some(t => t !== 'service') ? [{ icon: ArrowRightLeft, label: "Transfer", href: "/inventory/transfer", color: "text-indigo-500", roles: ['admin', 'manager'] }] : []),
-    { icon: Landmark, label: "Cash & Bank", href: "/banking", color: "text-cyan-600", roles: ['admin', 'manager'] },
-    { icon: AlertTriangle, label: "Non-Moving Stock", href: "/reports/non-moving-stock", color: "text-red-500", roles: ['admin', 'manager'] },
-    { icon: DollarSign, label: "Expenses", href: "/expenses", color: "text-orange-600", roles: ['admin', 'manager'] },
-    { icon: Building2, label: "Company", href: "/company", color: "text-indigo-600", roles: ['admin'] },
-    { icon: Gift, label: "Coupons", href: "/coupons", color: "text-pink-600", roles: ['admin', 'manager'] },
-    { icon: Users, label: "Membership", href: "/membership", color: "text-teal-600", roles: ['admin', 'manager', 'cashier'] },
-    { icon: Inbox, label: "Notifications", href: "/notifications", color: "text-yellow-600", roles: ['admin', 'manager', 'cashier'] },
-    { icon: BarChart3, label: "Reports", href: "/reports", color: "text-red-600", roles: ['admin'] },
-    { icon: BarChart3, label: "Graphical Analytics", href: "/reports/analytics", color: "text-indigo-500", roles: ['admin', 'manager'] },
-    { icon: DollarSign, label: "Profit & Loss", href: "/reports/profitloss", color: "text-emerald-500", roles: ['admin'] },
-    { icon: FileText, label: "GST Report", href: "/reports/gst", color: "text-blue-500", roles: ['admin'] },
-    { icon: Receipt, label: "Bank Recon", href: "/reports/bank-reconciliation", color: "text-cyan-500", roles: ['admin'] },
-    { icon: Package, label: "E-Way Bill", href: "/reports/eway-bill", color: "text-indigo-500", roles: ['admin'] },
-    { icon: FileText, label: "TDS / TCS", href: "/reports/tds-tcs", color: "text-purple-500", roles: ['admin'] },
-    { icon: Clock, label: "Aging Analysis", href: "/reports/aging", color: "text-rose-500", roles: ['admin', 'manager'] },
-    { icon: BookOpen, label: "Day Book", href: "/reports/daybook", color: "text-rose-500", roles: ['admin'] },
-    { icon: Receipt, label: "Salary", href: "/salary", color: "text-cyan-600", roles: ['admin'] },
-    { icon: UserCheck, label: "Attendance", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
-    { icon: Bot, label: "AI मुनीम जी", href: "/ai-advisor", color: "text-purple-500", roles: ['admin', 'manager', 'cashier'] },
-    { icon: ShieldCheck, label: "Super Admin Hub", href: "/admin", color: "text-red-500", roles: ['admin'] },
-    { icon: Smartphone, label: "Mobile App (Live)", href: "http://localhost:8082", isExternal: true, color: "text-indigo-400", roles: ['admin', 'manager', 'cashier'] },
-    { icon: Clock, label: "Laterpad", href: "/laterpad", color: "text-lime-600", roles: ['admin', 'manager', 'cashier'] },
-    ...(Array.isArray(selectedCompany?.businessType) && selectedCompany?.businessType.includes('manufacturing') ? [{ icon: Warehouse, label: "Warehouse", href: "/warehouse", color: "text-amber-600", roles: ['admin', 'manager'] }] : []),
-  ];
+    // 3. GAMEZONE & VR PARK
+    if (indType.includes('gamezone') || indType.includes('gaming') || indType.includes('vr') || indType.includes('arcade')) {
+      return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "🎮 Gamezone Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Bot, label: "🕹️ RFID & PS5 Arena Hub", href: "/gamezone-operations", color: "text-cyan-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: ShoppingCart, label: "⚡ Recharge & Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "🧾 Player Receipts", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Users, label: "🏆 VIP Players & Wallets", href: "/membership", color: "text-teal-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Package, label: "🎁 Prize & Token Inventory", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "💸 Game Maintenance Costs", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: BookOpen, label: "📖 Shift Cash Counter", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] },
+        { icon: DollarSign, label: "📊 Daily Revenue & Profit", href: "/reports/profitloss", color: "text-emerald-400", roles: ['admin'] }
+      ];
+    }
 
+    // 4. HARDWARE, PLYWOOD & PAINTS
+    if (indType.includes('hardware') || indType.includes('plywood') || indType.includes('paint') || indType.includes('sanitary') || indType.includes('electrical')) {
+      return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "🔧 Hardware Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "🧾 Retail & Counter Bills", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Briefcase, label: "🏢 B2B GST Invoices", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
+        { icon: PenTool, label: "📐 Dimensions & Cut-Loss Batch", href: "/inventory/batch", color: "text-orange-600", roles: ['admin', 'manager'] },
+        { icon: Package, label: "📦 Hardware & Timber Stock", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
+        { icon: Users, label: "👥 Contractor & Supplier Khata", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "📝 Estimates & Quotations", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: Package, label: "🚚 E-Way Bill & Transport", href: "/reports/eway-bill", color: "text-indigo-500", roles: ['admin'] },
+        { icon: Landmark, label: "🏦 Bank & Cash Balances", href: "/banking", color: "text-cyan-500", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "💸 Shop Kharch & Transport", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: FileText, label: "📑 GST Tax Reports", href: "/reports/gst", color: "text-blue-500", roles: ['admin'] },
+        { icon: BookOpen, label: "📖 Day Book Ledger", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] }
+      ];
+    }
+
+    // 5. MOBILE & ELECTRONICS
+    if (indType.includes('electronic') || indType.includes('mobile') || indType.includes('computer') || indType.includes('telecom')) {
+      return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "📱 Electronics Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Smartphone, label: "🔍 IMEI / Serial Tracking", href: "/serial-tracking", color: "text-cyan-400", roles: ['admin', 'manager'] },
+        { icon: ShieldCheck, label: "🛡️ Warranty & Service Cards", href: "/warranty", color: "text-emerald-500", roles: ['admin', 'manager'] },
+        { icon: ShoppingCart, label: "⚡ Counter POS Billing", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "🧾 Sales Invoices", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Briefcase, label: "🏢 B2B Dealer Billing", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
+        { icon: Package, label: "📦 Phones & Accessories Stock", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
+        { icon: Users, label: "👥 Distributor & Client Khata", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: DollarSign, label: "💸 Store Expenses", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "📊 Sales & Profit/Loss", href: "/reports/profitloss", color: "text-emerald-400", roles: ['admin'] },
+        { icon: BookOpen, label: "📖 Day Book Cashflow", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] }
+      ];
+    }
+
+    // 6. SUPERMARKET & KIRANA
+    if (indType.includes('supermarket') || indType.includes('kirana') || indType.includes('grocery') || indType.includes('provision')) {
+      return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "🛒 Supermarket Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: ShoppingCart, label: "⚡ Barcode POS & Scanner", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "🧾 Customer Bills", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Package, label: "📦 FMCG Stock & Expiry", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
+        { icon: Users, label: "👥 Customer Udhar Khata", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Gift, label: "🏷️ Combo Offers & Coupons", href: "/coupons", color: "text-pink-500", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "💸 Store & Daily Expenses", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: UserCheck, label: "👥 Staff Attendance & Pagar", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
+        { icon: BookOpen, label: "📖 Daily Cash Register", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] }
+      ];
+    }
+
+    // 7. HOTEL & BANQUET
+    if (indType.includes('banquet') || indType.includes('hotel') || indType.includes('resort') || indType.includes('event')) {
+      return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "🏨 Banquet Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "🎉 Event Bookings & Bills", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "📝 Pax Quotations & Proposal", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: Users, label: "👥 Event Hosts & Planners", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Package, label: "🍽️ Crockery & Event Assets", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "💸 Catering & Event Costs", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: UserCheck, label: "👨‍🍳 Halwai & Waiter Staff", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "📊 Advance Receipts & Profit", href: "/reports/profitloss", color: "text-emerald-400", roles: ['admin'] },
+        { icon: BookOpen, label: "📖 Day Book Cashflow", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] }
+      ];
+    }
+
+    // 8. SALON, SPA & BEAUTY
+    if (indType.includes('salon') || indType.includes('spa') || indType.includes('beauty') || indType.includes('parlor')) {
+      return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "💇‍♀️ Salon Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: ShoppingCart, label: "⚡ Fast Appointment POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "🧾 Service Invoices", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Users, label: "👑 VIP Club & Packages", href: "/membership", color: "text-teal-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: UserCheck, label: "💇 Beautician Attendance & Tips", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
+        { icon: Package, label: "🧴 Salon Products & Care", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
+        { icon: Users, label: "👥 Client Khata & History", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: DollarSign, label: "💸 Parlor Rent & Expenses", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: BookOpen, label: "📖 Daily Collection Register", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] }
+      ];
+    }
+
+    // 9. GARMENTS & FOOTWEAR
+    if (indType.includes('garment') || indType.includes('apparel') || indType.includes('cloth') || indType.includes('fashion') || indType.includes('footwear')) {
+      return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "👗 Garments Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: ShoppingCart, label: "⚡ Fast Barcode POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "🧾 Counter Bills", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Package, label: "👗 Size / Color Matrix Stock", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
+        { icon: Users, label: "👥 Retail & Wholesale Khata", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Gift, label: "🏷️ Seasonal Offers & Discounts", href: "/coupons", color: "text-pink-500", roles: ['admin', 'manager'] },
+        { icon: BarChart3, label: "📈 Best Seller Matrix", href: "/inventory/analytics", color: "text-blue-500", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "💸 Showroom Expenses", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: BookOpen, label: "📖 Day Book Cashflow", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] }
+      ];
+    }
+
+    // DEFAULT / GENERAL TRADING
+    return [
+      { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+      { icon: Home, label: "Dashboard", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
+      { icon: ShoppingCart, label: "⚡ Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+      { icon: FileText, label: "Invoices", href: "/billing", color: "text-green-600", roles: ['admin', 'manager', 'cashier'] },
+      { icon: Briefcase, label: "B2B Bills", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
+      { icon: Package, label: "Inventory", href: "/inventory", color: "text-purple-600", roles: ['admin', 'manager'] },
+      { icon: Users, label: "Parties & Khata", href: "/parties", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+      { icon: FileText, label: "Quotations", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
+      { icon: DollarSign, label: "Expenses", href: "/expenses", color: "text-orange-600", roles: ['admin', 'manager'] },
+      { icon: Landmark, label: "Cash & Bank", href: "/banking", color: "text-cyan-600", roles: ['admin', 'manager'] },
+      { icon: UserCheck, label: "Staff & Attendance", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
+      { icon: DollarSign, label: "Profit & Loss", href: "/reports/profitloss", color: "text-emerald-500", roles: ['admin'] },
+      { icon: BookOpen, label: "Day Book", href: "/reports/daybook", color: "text-rose-500", roles: ['admin'] },
+      { icon: Bot, label: "AI मुनीम जी", href: "/ai-advisor", color: "text-purple-500", roles: ['admin', 'manager', 'cashier'] }
+    ];
+  };
+
+  const menuItems = getMenuForBusiness(selectedCompany, showFullMenu);
   const userRole = user?.role || 'admin'; // Default to admin if no role found
 
   return (
@@ -200,6 +336,26 @@ export default function DashboardLayout() {
 
         {/* Menu Items */}
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          {/* Vertical Badge & Toggle */}
+          {sidebarOpen && (
+            <div className="mb-3 px-2 py-2 bg-slate-800/80 rounded-lg border border-slate-700/60 flex items-center justify-between">
+              <div className="truncate pr-1">
+                <p className="text-[10px] uppercase font-bold tracking-wider text-blue-400">
+                  {showFullMenu ? "🌐 Full Suite (30+ Features)" : `🎯 ${(selectedCompany?.industryType || "Business").toUpperCase()} VIEW`}
+                </p>
+                <p className="text-xs text-gray-300 font-medium truncate">
+                  {selectedCompany?.name || "Active Business"}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowFullMenu(!showFullMenu)}
+                className="text-[10px] px-2 py-1 bg-slate-700 hover:bg-blue-600 text-white rounded transition shrink-0 font-medium"
+                title={showFullMenu ? "Switch to industry-specific view" : "View all available features"}
+              >
+                {showFullMenu ? "Focused View" : "All (30+)"}
+              </button>
+            </div>
+          )}
           {menuItems.filter(item => !item.roles || item.roles.includes(userRole)).map((item) => (
             <button
               key={item.label}

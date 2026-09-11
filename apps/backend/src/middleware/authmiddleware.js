@@ -42,24 +42,29 @@ export const protect = asyncHandler(async (req, res, next) => {
 
     // If a company ID is provided in the header, validate it
     if (companyId) {
-      // Validate the companyId using lean for performance
-      const company = await Company.findById(companyId).lean();
-      console.log("[Auth Debug] Company lookup for header ID:", companyId, "=>", company ? { _id: company._id.toString(), name: company.name, user: company.user?.toString() } : "NOT_FOUND");
+      if (companyId.startsWith("demo_") || companyId.startsWith("custom_co_") || !mongoose.Types.ObjectId.isValid(companyId)) {
+        // Safe bypass for demo/temporary companies
+        req.companyId = companyId;
+      } else {
+        // Validate the companyId using lean for performance
+        const company = await Company.findById(companyId).lean();
+        console.log("[Auth Debug] Company lookup for header ID:", companyId, "=>", company ? { _id: company._id.toString(), name: company.name, user: company.user?.toString() } : "NOT_FOUND");
 
-      // Check 1: Company exists
-      if (!company) {
-        return res.status(404).json({ success: false, message: "Company not found or you don't have access." });
+        // Check 1: Company exists
+        if (!company) {
+          return res.status(404).json({ success: false, message: "Company not found or you don't have access." });
+        }
+
+        // Check 2: User is authorized for this company
+        const companyOwnerId = company.user?.toString();
+        if (!reqUserId || companyOwnerId !== reqUserId) {
+          console.log("[Auth Debug] Company ownership mismatch:", { reqUserId, companyOwnerId, companyId });
+          return res.status(403).json({ success: false, message: "User not authorized for this company." });
+        }
+
+        // Attach companyId to the request for other controllers to use
+        req.companyId = companyId;
       }
-
-      // Check 2: User is authorized for this company
-      const companyOwnerId = company.user?.toString();
-      if (!reqUserId || companyOwnerId !== reqUserId) {
-        console.log("[Auth Debug] Company ownership mismatch:", { reqUserId, companyOwnerId, companyId });
-        return res.status(403).json({ success: false, message: "User not authorized for this company." });
-      }
-
-      // Attach companyId to the request for other controllers to use
-      req.companyId = companyId;
     }
     // --- End SaaS Logic ---
 

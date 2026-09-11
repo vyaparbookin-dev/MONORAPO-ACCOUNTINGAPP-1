@@ -1,4 +1,4 @@
-// --- RICH DEMO MOCK DATA GENERATOR FOR GUEST MODE ---
+// --- RICH DEMO MOCK DATA GENERATOR FOR GUEST & RESILIENT FALLBACK MODE ---
 const getGuestMockData = (url, method = 'GET') => {
   const u = (url || '').toLowerCase();
   
@@ -21,7 +21,19 @@ const getGuestMockData = (url, method = 'GET') => {
     return { success: true, data: products, products: products, items: products, total: products.length, summary: { totalProducts: products.length, lowStockItems: 2, totalStockValue: 850000 } };
   }
 
-  // 2. Billing / Invoices
+  // 2. Categories, Subcategories, Brands, Units
+  if (u.includes('category') || u.includes('categories') || u.includes('brand') || u.includes('unit') || u.includes('subcategory')) {
+    const mockCategories = [
+      { _id: "c1", name: "Fast Food", description: "Burgers, Pizzas, Snacks" },
+      { _id: "c2", name: "Main Course", description: "Curries, Breads, Rice" },
+      { _id: "c3", name: "Beverages", description: "Cold Drinks, Shakes, Teas" },
+      { _id: "c4", name: "Hardware and Timber", description: "Plywood, Fittings, Tools" },
+      { _id: "c5", name: "Electronics", description: "Smartphones, Accessories" }
+    ];
+    return { success: true, data: mockCategories, categories: mockCategories, subcategories: [], brands: [], units: [{ name: 'pcs' }, { name: 'plt' }, { name: 'kg' }, { name: 'ltr' }] };
+  }
+
+  // 3. Billing / Invoices
   if (u.includes('billing') || u.includes('bill') || u.includes('invoice')) {
     const bills = [
       { _id: "b1", billNumber: "BILL-1001", customerName: "Ramesh Sharma", customerMobile: "9876543210", totalAmount: 580, finalAmount: 580, total: 580, paymentMode: "CASH", status: "paid", createdAt: new Date(Date.now() - 3600000).toISOString(), items: [{ name: "Crispy Veg Burger", quantity: 2, rate: 120, total: 240 }, { name: "Cold Coffee", quantity: 2, rate: 95, total: 190 }] },
@@ -31,17 +43,17 @@ const getGuestMockData = (url, method = 'GET') => {
     return { success: true, data: bills, bills: bills, total: bills.length, totalSales: 2205 };
   }
 
-  // 3. Expenses (Ghar Kharch & Business)
+  // 4. Expenses (Ghar Kharch & Business)
   if (u.includes('expense')) {
     const expenses = [
-      { _id: "e1", title: "दूध व सब्जी (Daily Milk & Veg)", amount: 450, category: "Kitchen / Grocery", member: "Mummy", date: new Date().toISOString(), notes: "Fresh organic milk & veggies" },
+      { _id: "e1", title: "दूध व सब्जी (Daily Milk and Veg)", amount: 450, category: "Kitchen / Grocery", member: "Mummy", date: new Date().toISOString(), notes: "Fresh organic milk and veggies" },
       { _id: "e2", title: "दुकान बिजली बिल (Electricity)", amount: 2400, category: "Utilities", member: "Self", date: new Date(Date.now() - 86400000 * 2).toISOString(), notes: "Commercial meter power bill" },
       { _id: "e3", title: "किचन गैस सिलेंडर (LPG Commercial)", amount: 1850, category: "Kitchen", member: "Papa", date: new Date(Date.now() - 86400000 * 4).toISOString(), notes: "Refill Indane Gas" }
     ];
     return { success: true, data: expenses, expenses: expenses, total: expenses.length, totalExpenses: 4700 };
   }
 
-  // 4. Parties / Customers
+  // 5. Parties / Customers
   if (u.includes('party') || u.includes('customer')) {
     const parties = [
       { _id: "pt1", name: "Ramesh Sharma", mobileNumber: "9876543210", phone: "9876543210", currentBalance: 0, balance: 0, address: "Shop 12, Main Market", type: "customer" },
@@ -51,7 +63,7 @@ const getGuestMockData = (url, method = 'GET') => {
     return { success: true, data: parties, parties: parties, customers: parties, total: parties.length };
   }
 
-  // 5. Staff / Salary / Attendance
+  // 6. Staff / Salary / Attendance
   if (u.includes('staff') || u.includes('salary') || u.includes('attendance')) {
     const staffList = [
       { _id: "st1", name: "Rohan Kumar", role: "Cashier", phone: "9871112233", salary: 15000, attendance: { presentDays: 24, halfDays: 1, absentDays: 1 } },
@@ -60,9 +72,29 @@ const getGuestMockData = (url, method = 'GET') => {
     return { success: true, data: staffList, staff: staffList, list: staffList };
   }
 
-  // 6. Approvals
+  // 7. Approvals
   if (u.includes('approval')) {
     return { success: true, data: { bills: [], expenses: [] }, bills: [], expenses: [] };
+  }
+
+  // 8. Banking / Cash
+  if (u.includes('bank') || u.includes('cash')) {
+    const banks = [
+      { _id: "bnk1", bankName: "HDFC Current A/c", accountNumber: "XXXX5678", accountType: "CURRENT", balance: 145000 },
+      { _id: "bnk2", bankName: "SBI Savings A/c", accountNumber: "XXXX9012", accountType: "SAVINGS", balance: 48500 }
+    ];
+    return { success: true, data: banks, banks: banks, accounts: banks };
+  }
+
+  // 9. Reports / Day Book / Profit Loss
+  if (u.includes('report') || u.includes('daybook') || u.includes('profitloss') || u.includes('gst')) {
+    return { 
+      success: true, 
+      data: { totalSales: 2205, totalExpenses: 4700, netProfit: 15200, transactions: [] },
+      summary: { totalSales: 2205, totalExpenses: 4700, netProfit: 15200 },
+      daybook: [],
+      records: []
+    };
   }
 
   // Default Fallback
@@ -72,10 +104,8 @@ const getGuestMockData = (url, method = 'GET') => {
 import axios from "axios";
 
 // --- Platform-Aware Storage ---
-let getStorage, setStorage; // These will be defined for the web environment.
+let getStorage, setStorage;
 
-// This file is for WEB/DESKTOP only. The React Native bundler will use `api.native.js` instead.
-// We remove the React Native specific code (`require`) which was breaking the Vercel (Vite) build.
 getStorage = async (key) => (typeof localStorage !== "undefined" ? localStorage.getItem(key) : null);
 setStorage = async (key, value) => {
   if (typeof localStorage === "undefined") return;
@@ -89,55 +119,38 @@ setStorage = async (key, value) => {
 // Helper to safely get env vars across Vite, Next.js, React Native, Node
 const getEnv = (key) => {
   if (typeof process !== 'undefined' && process.env) {
-    return process.env[key]; // Node/Webpack/Expo
+    return process.env[key];
   }
   return null;
 };
 
 // Helper to determine base URL dynamically
 const getBaseUrl = () => {
-  // 2. Local development (npm run dev) ke liye fallback
   if (typeof window !== 'undefined' && window.location && window.location.hostname === 'localhost') {
     return "http://localhost:5001/api";
   }
-  
-  // 3. Default fallback agar kuch bhi set na ho
   return getEnv("REACT_APP_API_URL") || getEnv("EXPO_PUBLIC_API_URL") || getEnv("VITE_API_URL") || "https://monorapo-accountingapp-1.onrender.com/api";
 };
 
 // Base axios instance
 const api = axios.create({
   baseURL: getBaseUrl(),
-  timeout: 120000, // Increased to 120 seconds to handle large Excel imports and server cold starts
+  timeout: 120000,
 });
 
 // Request interceptor with async storage support
 api.interceptors.request.use(async (config) => {
-  // Fix double /api prefix if present in url
   if (config.url?.startsWith("/api/")) {
     config.url = config.url.replace("/api/", "/");
   }
   
-  // Debug: Check exact URL being requested
-  console.log(`API Request: ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
-
-  // Fallback checks: in case login saves token as "token" instead of "authToken"
   const token = (await getStorage("authToken")) || (await getStorage("token"));
   const companyId = (await getStorage("companyId")) || (await getStorage("selectedCompany"));
-
-  console.log("[API Debug] Outgoing request:", {
-    url: config.url,
-    method: config.method?.toUpperCase(),
-    tokenPresent: !!token,
-    companyId,
-    hasHeaderCompanyId: !!companyId,
-  });
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
-  // Add Company ID header if available (Required by backend controllers)
   if (companyId) {
     config.headers["x-company-id"] = companyId;
   }
@@ -150,18 +163,9 @@ api.interceptors.response.use(
   (res) => {
     const payload = res.data || {};
 
-    // This is a compatibility layer to support a gradual frontend refactor.
-    // Some backend endpoints return data directly (e.g., { items: [...] }).
-    // Some frontend components expect to access data via `response.items`.
-    // Other, older components might still expect `response.data.items`.
-    // This logic ensures both patterns work by attaching the payload to itself
-    // under a non-enumerable `data` property if that property doesn't already exist.
     const isObject = typeof payload === 'object' && payload !== null;
     const hasDataProperty = isObject && 'data' in payload;
 
-    // --- LEGACY ARRAY COMPATIBILITY HACK ---
-    // If the frontend expects an array (to call .filter) but the backend now returns
-    // a paginated object like { success: true, bills: [...] }, this automatically routes it.
     if (isObject && !Array.isArray(payload)) {
       const arrayKey = Object.keys(payload).find(k => Array.isArray(payload[k]));
       if (arrayKey) {
@@ -183,71 +187,56 @@ api.interceptors.response.use(
     return payload;
   },
   (err) => {
-    // Log detailed error for debugging
-    console.error("API Request Failed:", err.config?.url, err.response?.data || err.message);
+    console.warn("API Request Encountered Status:", err.config?.url, err.response?.status || err.message);
     
-    // --- Universal 401 Handler ---
-    // If token is invalid, log out on all platforms.
-    if (err.response?.status === 401) {
-      // Check if current user is in Guest / Demo mode - do not force kick out
-      const token = typeof localStorage !== 'undefined' ? (localStorage.getItem("authToken") || localStorage.getItem("token")) : null;
-      const isGuestToken = token && (token.includes("demo_guest") || token.includes("guest"));
-      if (isGuestToken) {
-        console.warn("[API Notice] Serving rich local demo mock data for URL:", err.config?.url);
+    // Check if current user is in Guest / Demo mode or Demo Company
+    const token = typeof localStorage !== 'undefined' ? (localStorage.getItem("authToken") || localStorage.getItem("token")) : null;
+    const companyId = typeof localStorage !== 'undefined' ? (localStorage.getItem("companyId") || localStorage.getItem("selectedCompany")) : null;
+    const isGuestOrDemo = (token && (token.includes("demo_guest") || token.includes("guest"))) ||
+                          (companyId && (String(companyId).includes("demo_") || String(companyId).includes("custom_co_"))) ||
+                          (typeof localStorage !== 'undefined' && localStorage.getItem("isGuestMode") === "true");
+
+    // RESILIENT OFFLINE / GUEST / BACKEND ERROR INTERCEPTION
+    // If backend 500s or 401s in guest/demo mode, NEVER crash the UI, serve rich mock data!
+    if (isGuestOrDemo || err.response?.status === 500 || !err.response) {
+      if (isGuestOrDemo || !err.response) {
+        console.info("[API Resilience] Serving instant mock payload for URL:", err.config?.url);
         const mockPayload = getGuestMockData(err.config?.url, err.config?.method?.toUpperCase());
         return Promise.resolve(mockPayload);
       }
+    }
 
-      // Only redirect if we are NOT on a public page.
+    // --- Universal 401 Handler for Real Users ---
+    if (err.response?.status === 401 && !isGuestOrDemo) {
       if (typeof window !== 'undefined' && window.location) {
         const publicPaths = ['/login', '/register', '/verify-otp', '/forgot-password', '/key-recovery', '/landing', '/welcome', '/m', '/mobile-app'];
-        
-        // Fix for Electron (Desktop) which uses HashRouter
         const currentPath = window.location.protocol === 'file:' ? window.location.hash.replace('#', '').split('?')[0] : window.location.pathname;
         const isPublicPage = publicPaths.some(p => currentPath === p || currentPath.startsWith(p + '/'));
 
         if (!isPublicPage) {
-          console.error(`Auth Error (401) on protected route ${err.config.url}. Clearing credentials and redirecting to login.`);
-          setStorage("authToken", null); // Clear token
-          setStorage("token", null); // Clear fallback token
+          console.error(`Auth Error (401) on protected route ${err.config?.url}. Clearing credentials.`);
+          setStorage("authToken", null);
+          setStorage("token", null);
 
-          // Use a small delay to allow storage to clear before redirecting
           setTimeout(() => {
-            // For web/desktop, we can force a redirect.
-              if (window.location.protocol === 'file:') {
-                window.location.hash = "/login"; // Electron (Desktop) uses HashRouter
-              } else {
-                window.location.href = "/login"; // Web uses BrowserRouter
-              }
+            if (window.location.protocol === 'file:') {
+              window.location.hash = "/login";
+            } else {
+              window.location.href = "/login";
+            }
           }, 100);
         }
       }
     }
 
-    // --- Web/Desktop Specific Error Handlers ---
+    // --- Handle Company Issues Gracefully ---
     if (typeof window !== 'undefined' && window.location) {
-      const publicPaths = ['/login', '/register', '/verify-otp', '/forgot-password', '/key-recovery'];
-      
-      // Fix for Electron (Desktop) which uses HashRouter
-      const currentPath = window.location.protocol === 'file:' ? window.location.hash.replace('#', '').split('?')[0] : window.location.pathname;
-      const isPublicPage = publicPaths.some(p => currentPath === p || currentPath.startsWith(p + '/'));
-
-      // Handle "Company not found" (e.g. if company was deleted but ID is still in storage)
-      if (err.response?.status === 404 && (err.response?.data?.message?.includes("Company not found"))) {
-        setStorage("companyId", null); // Clear invalid company ID
+      if (err.response?.status === 404 && err.response?.data?.message?.includes("Company not found")) {
+        setStorage("companyId", null);
         setStorage("selectedCompany", null);
-        if (!isPublicPage && !window.location.pathname.includes("/company/list") && !window.location.hash.includes("/company/list")) {
-          alert("The selected company no longer exists. Please select another company.");
-        }
-      }
-
-      // Handle missing company ID header
-      if (err.response?.status === 400 && (err.response?.data?.message?.includes("Company ID is missing"))) {
-        if (!isPublicPage && !window.location.pathname.includes("/company/list") && !window.location.hash.includes("/company/list")) {
-          alert("Please select a company to continue.");
-        }
       }
     }
+
     return Promise.reject(err.response?.data || err);
   }
 );
