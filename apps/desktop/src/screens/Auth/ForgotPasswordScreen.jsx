@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Mail, Lock, KeyRound, ArrowLeft, CheckCircle2, Sparkles, LogIn, Eye, EyeOff } from "lucide-react";
+import { Mail, Lock, KeyRound, ArrowLeft, CheckCircle2, Sparkles, Eye, EyeOff } from "lucide-react";
 import api from "../../services/api";
 
 export default function ForgotPasswordScreen() {
@@ -15,11 +15,13 @@ export default function ForgotPasswordScreen() {
   const handleInstantReset = async (e) => {
     e.preventDefault();
     const cleanInput = identifier.trim();
+    const cleanPassword = newPassword.trim();
+
     if (!cleanInput) {
       setError("कृपया अपना मोबाइल नंबर या ईमेल दर्ज करें।");
       return;
     }
-    if (!newPassword || newPassword.length < 4) {
+    if (!cleanPassword || cleanPassword.length < 4) {
       setError("नया पासवर्ड कम से कम 4 अक्षरों का होना चाहिए।");
       return;
     }
@@ -34,11 +36,11 @@ export default function ForgotPasswordScreen() {
         identifier: cleanInput,
         email: cleanInput,
         phone: cleanInput,
-        newPassword 
+        newPassword: cleanPassword 
       });
 
-      const token = res?.token || res?.data?.token;
-      const userObj = res?.user || res?.data?.user;
+      const token = res?.token || res?.data?.token || res?.data?.data?.token;
+      const userObj = res?.user || res?.data?.user || res?.data?.data?.user;
 
       if (token) {
         localStorage.setItem("authToken", token);
@@ -47,8 +49,8 @@ export default function ForgotPasswordScreen() {
           const normalizedUser = {
             ...userObj,
             _id: userObj._id || userObj.id,
-            companyId: userObj.companyId || userObj.company,
-            company: userObj.companyId || userObj.company,
+            companyId: userObj.companyId || userObj.company || userObj.company_id,
+            company: userObj.companyId || userObj.company || userObj.company_id,
           };
           localStorage.setItem("user", JSON.stringify(normalizedUser));
           const companyId = normalizedUser.companyId || normalizedUser.company;
@@ -57,17 +59,17 @@ export default function ForgotPasswordScreen() {
             localStorage.setItem("selectedCompany", companyId);
           }
         }
-        setMessage("🎉 पासवर्ड सफलतापूर्वक बदल गया! सीधे डैशबोर्ड पर रीडायरेक्ट किया जा रहा है...");
+        setMessage("🎉 पासवर्ड सफलतापूर्वक बदल गया! सीधे डैशबोर्ड पर ले जाया जा रहा है...");
         setTimeout(() => {
           navigate("/");
-        }, 1200);
+        }, 1000);
       } else {
         setMessage(res?.message || "पासवर्ड अपडेट हो गया है! अब लॉगिन करें।");
-        setTimeout(() => navigate("/login"), 1500);
+        setTimeout(() => navigate("/login"), 1200);
       }
     } catch (err) {
       const errData = err.response?.data || err;
-      setError(errData.message || err.message || "पासवर्ड बदलने में असमर्थ। कृपया पुनः प्रयास करें।");
+      setError(errData.message || err.message || "पासवर्ड बदलने में समस्या आई।");
     } finally {
       setLoading(false);
     }

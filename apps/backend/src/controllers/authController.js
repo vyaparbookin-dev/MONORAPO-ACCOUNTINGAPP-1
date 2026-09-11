@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import User from "../model/user.js";
 import bcryptjs from "bcryptjs";
 import { generateToken } from "../config/jwt.js";
@@ -26,7 +27,6 @@ export const register = async (req, res) => {
     });
 
     if (user) {
-      // User exists, update password if requested or activate
       user.password = await bcryptjs.hash(cleanPassword, 10);
       user.isVerified = true;
       if (cleanPhone) user.phone = cleanPhone;
@@ -35,34 +35,32 @@ export const register = async (req, res) => {
     }
 
     const hashedPassword = await bcryptjs.hash(cleanPassword, 10);
-    const otp = generateOtp();
-    const otpExpires = Date.now() + 30 * 60 * 1000;
+    const userId = new mongoose.Types.ObjectId();
+    const companyId = new mongoose.Types.ObjectId();
 
     user = new User({
+      _id: userId,
       name: name || normalizedEmail.split('@')[0],
       email: normalizedEmail,
       password: hashedPassword,
       phone: cleanPhone,
       role: role || 'admin',
-      otp,
-      otpExpires,
-      isVerified: true, // Auto-verify on registration
+      companyId: companyId,
+      isVerified: true,
     });
-
     await user.save();
 
     const company = new Company({
+      _id: companyId,
       name: businessName?.trim() || `${name || 'My'}'s Company`,
       ownerName: name || normalizedEmail,
       ownerEmail: normalizedEmail,
-      user: user._id,
+      user: userId,
       phone: cleanPhone || "",
       industryType: industryType || "general",
-      businessType: industryType || "general",
+      businessType: [industryType || "general"],
     });
     await company.save();
-    user.companyId = company._id;
-    await user.save();
 
     return res.status(201).json({ 
       success: true, 
@@ -89,10 +87,9 @@ export const login = async (req, res) => {
     console.log("[Auth Debug] login attempt for input:", rawInput, "Password length:", cleanPassword.length);
 
     if (!rawInput || !cleanPassword) {
-      return res.status(400).json({ message: "मोबाइल नंबर/ईमेल और पासवर्ड दर्ज करना अनिवार्य है。" });
+      return res.status(400).json({ message: "मोबाइल नंबर/ईमेल और पासवर्ड दर्ज करना अनिवार्य है।" });
     }
 
-    // Exact and regex case-insensitive email match
     const escapedEmail = normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const emailRegex = new RegExp(`^${escapedEmail}$`, 'i');
 
@@ -124,12 +121,10 @@ export const login = async (req, res) => {
       });
     }
 
-    // Compare password with whitespace trimming protection
     let match = await bcryptjs.compare(cleanPassword, user.password);
     if (!match && password !== cleanPassword) {
       match = await bcryptjs.compare(password, user.password);
     }
-    // Check plaintext fallback (legacy dev seeds)
     if (!match && (user.password === cleanPassword || user.password === password)) {
       match = true;
       user.password = await bcryptjs.hash(cleanPassword, 10);
@@ -138,7 +133,7 @@ export const login = async (req, res) => {
 
     if (!match) {
       return res.status(400).json({ 
-        message: "गलत पासवर्ड (Incorrect Password)! यदि आप पासवर्ड भूल गए हैं, तो नीचे '⚡ 1-Click डायरेक्ट लॉगिन / नया पासवर्ड' चुनें।",
+        message: "गलत पासवर्ड दर्ज किया गया है। यदि आप पासवर्ड भूल गए हैं तो नीचे 'पासवर्ड भूल गए?' या '⚡ 1-Click डायरेक्ट लॉगिन' चुनें।",
         suggestReset: true,
         suggestMagic: true,
         identifier: rawInput
@@ -146,31 +141,28 @@ export const login = async (req, res) => {
     }
 
     user.isVerified = true;
+
+    if (!user.companyId) {
+      let existingCo = await Company.findOne({ user: user._id });
+      if (!existingCo) {
+        existingCo = new Company({
+          name: `${user.name || 'My'} Company`,
+          ownerName: user.name || user.email,
+          ownerEmail: user.email,
+          user: user._id,
+          phone: user.phone || "",
+          industryType: "general",
+          businessType: ["general"],
+        });
+        await existingCo.save();
+      }
+      user.companyId = existingCo._id;
+    }
     await user.save();
 
     let userCompanies = await Company.find({ user: user._id }).select('_id name user').lean();
 
-    if (!user.companyId && userCompanies.length > 0) {
-      user.companyId = userCompanies[0]._id;
-      await user.save();
-    }
-
-    if (!user.companyId) {
-      const fallbackCompany = new Company({
-        name: `${user.name || 'My'} Company`,
-        ownerName: user.name || normalizedEmail,
-        ownerEmail: normalizedEmail,
-        user: user._id,
-        email: normalizedEmail,
-      });
-      await fallbackCompany.save();
-      user.companyId = fallbackCompany._id;
-      await user.save();
-      userCompanies = [{ _id: fallbackCompany._id, name: fallbackCompany.name, user: user._id }];
-    }
-
     const token = generateToken(user._id, user.companyId);
-
     const userResponse = user.toObject();
     delete userResponse.password;
     delete userResponse.otp;
@@ -184,7 +176,7 @@ export const login = async (req, res) => {
   }
 };
 
-// ⚡ 1-Click Instant Magic Login (Zero Barrier Access)
+// ⚡ 1-Click Instant Magic Login
 export const magicLogin = async (req, res) => {
   try {
     const { identifier, email, phone } = req.body;
@@ -225,37 +217,57 @@ export const magicLogin = async (req, res) => {
       const derivedName = isEmail ? rawInput.split("@")[0] : `User ${last10Digits}`;
       const userEmail = isEmail ? normalizedEmail : `${last10Digits}@vyapar.local`;
 
-      const company = new Company({
-        name: `${derivedName}'s Business`,
-        ownerName: derivedName,
-        ownerEmail: userEmail,
-        phone: numericOnly || "",
-        industryType: "general",
-        businessType: "general",
-      });
-      await company.save();
+      const userId = new mongoose.Types.ObjectId();
+      const companyId = new mongoose.Types.ObjectId();
 
       user = new User({
+        _id: userId,
         name: derivedName,
         email: userEmail,
         phone: numericOnly || "",
         password: await bcryptjs.hash(`magic-${Date.now()}`, 10),
-        companyId: company._id,
+        companyId: companyId,
         isVerified: true,
         role: "admin",
       });
       await user.save();
-      company.user = user._id;
+
+      const company = new Company({
+        _id: companyId,
+        name: `${derivedName}'s Business`,
+        ownerName: derivedName,
+        ownerEmail: userEmail,
+        user: userId,
+        phone: numericOnly || "",
+        industryType: "general",
+        businessType: ["general"],
+      });
       await company.save();
     } else {
       user.isVerified = true;
+      if (!user.companyId) {
+        let existingCo = await Company.findOne({ user: user._id });
+        if (!existingCo) {
+          existingCo = new Company({
+            name: `${user.name || 'My'} Company`,
+            ownerName: user.name || user.email,
+            ownerEmail: user.email,
+            user: user._id,
+            phone: user.phone || "",
+            industryType: "general",
+            businessType: ["general"],
+          });
+          await existingCo.save();
+        }
+        user.companyId = existingCo._id;
+      }
       await user.save();
     }
 
     let userCompanies = await Company.find({ user: user._id }).select('_id name user').lean();
-    if (!user.companyId && userCompanies.length > 0) {
-      user.companyId = userCompanies[0]._id;
-      await user.save();
+    if (userCompanies.length === 0 && user.companyId) {
+      const co = await Company.findById(user.companyId).select('_id name user').lean();
+      if (co) userCompanies = [co];
     }
 
     const token = generateToken(user._id, user.companyId);
@@ -287,7 +299,7 @@ export const quickResetPassword = async (req, res) => {
     const last10Digits = numericOnly.length >= 10 ? numericOnly.slice(-10) : numericOnly;
     const cleanNewPassword = String(newPassword || "").trim();
 
-    console.log("[Auth Debug] Quick Reset attempt for:", rawInput);
+    console.log("[Auth Debug] Quick Reset attempt for:", rawInput, "New Password length:", cleanNewPassword.length);
 
     if (!rawInput || !cleanNewPassword || cleanNewPassword.length < 4) {
       return res.status(400).json({ 
@@ -323,40 +335,61 @@ export const quickResetPassword = async (req, res) => {
       const userEmail = isEmail ? normalizedEmail : `${last10Digits}@vyapar.local`;
       const hashedPassword = await bcryptjs.hash(cleanNewPassword, 10);
 
-      const company = new Company({
-        name: `${derivedName}'s Business`,
-        ownerName: derivedName,
-        ownerEmail: userEmail,
-        phone: numericOnly || "",
-        industryType: "general",
-        businessType: "general",
-      });
-      await company.save();
+      const userId = new mongoose.Types.ObjectId();
+      const companyId = new mongoose.Types.ObjectId();
 
       user = new User({
+        _id: userId,
         name: derivedName,
         email: userEmail,
         phone: numericOnly || "",
         password: hashedPassword,
-        companyId: company._id,
+        companyId: companyId,
         isVerified: true,
         role: "admin",
       });
       await user.save();
-      company.user = user._id;
+
+      const company = new Company({
+        _id: companyId,
+        name: `${derivedName}'s Business`,
+        ownerName: derivedName,
+        ownerEmail: userEmail,
+        user: userId,
+        phone: numericOnly || "",
+        industryType: "general",
+        businessType: ["general"],
+      });
       await company.save();
     } else {
       user.password = await bcryptjs.hash(cleanNewPassword, 10);
       user.isVerified = true;
       user.otp = undefined;
       user.otpExpires = undefined;
+
+      if (!user.companyId) {
+        let existingCo = await Company.findOne({ user: user._id });
+        if (!existingCo) {
+          existingCo = new Company({
+            name: `${user.name || 'My'} Company`,
+            ownerName: user.name || user.email,
+            ownerEmail: user.email,
+            user: user._id,
+            phone: user.phone || "",
+            industryType: "general",
+            businessType: ["general"]
+          });
+          await existingCo.save();
+        }
+        user.companyId = existingCo._id;
+      }
       await user.save();
     }
 
     let userCompanies = await Company.find({ user: user._id }).select('_id name user').lean();
-    if (!user.companyId && userCompanies.length > 0) {
-      user.companyId = userCompanies[0]._id;
-      await user.save();
+    if (userCompanies.length === 0 && user.companyId) {
+      const co = await Company.findById(user.companyId).select('_id name user').lean();
+      if (co) userCompanies = [co];
     }
 
     const token = generateToken(user._id, user.companyId);
@@ -365,7 +398,7 @@ export const quickResetPassword = async (req, res) => {
     delete userResponse.otp;
     delete userResponse.otpExpires;
 
-    console.log("[Auth Debug] Quick password reset successful for:", rawInput);
+    console.log("[Auth Debug] Quick password reset successful for:", rawInput, "User:", user._id.toString());
     return res.json({ 
       success: true, 
       message: "पासवर्ड सफलतापूर्वक अपडेट हो गया और आप लॉगिन हो गए हैं! 🎉", 
@@ -528,26 +561,29 @@ export const googleAuth = async (req, res) => {
     let user = await User.findOne({ email: email.toLowerCase() });
 
     if (!user) {
-      console.log(`[Google Auth] New user: ${email}. Creating user and company.`);
-      const company = new Company({
-        name: `${name}'s Company`,
-        ownerName: name,
-        industryType: 'General',
-        businessType: 'General',
-        ownerEmail: email.toLowerCase(),
-      });
-      await company.save();
+      const userId = new mongoose.Types.ObjectId();
+      const companyId = new mongoose.Types.ObjectId();
 
       user = new User({
+        _id: userId,
         name,
         email: email.toLowerCase(),
         password: await bcryptjs.hash(`google-auth-${Date.now()}-${Math.random()}`, 10),
-        companyId: company._id,
+        companyId: companyId,
         isVerified: true,
         role: 'admin',
       });
       await user.save();
-      company.user = user._id;
+
+      const company = new Company({
+        _id: companyId,
+        name: `${name}'s Company`,
+        ownerName: name,
+        industryType: 'General',
+        businessType: ['General'],
+        ownerEmail: email.toLowerCase(),
+        user: userId,
+      });
       await company.save();
     } else {
       user.isVerified = true;
@@ -558,7 +594,9 @@ export const googleAuth = async (req, res) => {
             name: `${user.name || name}'s Company`, 
             ownerName: user.name || name, 
             ownerEmail: email.toLowerCase(),
-            user: user._id 
+            user: user._id,
+            industryType: 'General',
+            businessType: ['General'],
           });
           await existingCo.save();
         }
