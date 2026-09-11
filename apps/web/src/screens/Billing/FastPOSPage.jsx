@@ -23,16 +23,13 @@ import {
   Gift,
   CheckCircle,
   Users,
-  Sliders,
   Store,
-  Layers,
-  Phone,
   ChefHat,
   Flame,
-  AlertTriangle,
   Printer,
   ShieldCheck,
-  HelpCircle
+  Eye,
+  Receipt
 } from "lucide-react";
 import RestaurantKotModal from "../../components/modals/RestaurantKotModal";
 import { getBusinessMode } from "../../utils/businessMode";
@@ -48,6 +45,7 @@ const DEFAULT_RESTAURANT_DISHES = [
     currentStock: 80,
     unit: "Plate",
     barcode: "1001",
+    isVeg: true,
     image: "https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=300"
   },
   {
@@ -59,6 +57,7 @@ const DEFAULT_RESTAURANT_DISHES = [
     currentStock: 200,
     unit: "pc",
     barcode: "1002",
+    isVeg: true,
     image: "https://images.unsplash.com/photo-1601050690597-df0568f70950?w=300"
   },
   {
@@ -70,6 +69,7 @@ const DEFAULT_RESTAURANT_DISHES = [
     currentStock: 50,
     unit: "Plate",
     barcode: "1003",
+    isVeg: true,
     image: "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=300"
   },
   {
@@ -81,6 +81,7 @@ const DEFAULT_RESTAURANT_DISHES = [
     currentStock: 100,
     unit: "Glass",
     barcode: "1004",
+    isVeg: true,
     image: "https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=300"
   },
   {
@@ -92,6 +93,7 @@ const DEFAULT_RESTAURANT_DISHES = [
     currentStock: 60,
     unit: "pc",
     barcode: "1005",
+    isVeg: true,
     image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300"
   },
   {
@@ -103,6 +105,7 @@ const DEFAULT_RESTAURANT_DISHES = [
     currentStock: 40,
     unit: "pc",
     barcode: "1006",
+    isVeg: true,
     image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=300"
   },
   {
@@ -114,6 +117,7 @@ const DEFAULT_RESTAURANT_DISHES = [
     currentStock: 70,
     unit: "Plate",
     barcode: "1007",
+    isVeg: true,
     image: "https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=300"
   },
   {
@@ -125,6 +129,7 @@ const DEFAULT_RESTAURANT_DISHES = [
     currentStock: 45,
     unit: "Plate",
     barcode: "1008",
+    isVeg: true,
     image: "https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=300"
   },
   {
@@ -136,6 +141,7 @@ const DEFAULT_RESTAURANT_DISHES = [
     currentStock: 120,
     unit: "Glass",
     barcode: "1009",
+    isVeg: true,
     image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=300"
   },
   {
@@ -147,6 +153,7 @@ const DEFAULT_RESTAURANT_DISHES = [
     currentStock: 90,
     unit: "Portion",
     barcode: "1010",
+    isVeg: true,
     image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300"
   }
 ];
@@ -161,7 +168,7 @@ export default function FastPOSPage() {
       cart: [],
       customerName: "Rahul Verma",
       customerMobile: "7828289433",
-      customerAddress: "Main Market Road",
+      customerAddress: "Table 3 (AC Hall)",
       selectedTable: "Table 3 (AC Hall - 6 Seater)",
       appliedCoupon: null
     },
@@ -169,10 +176,10 @@ export default function FastPOSPage() {
       id: "counter_2",
       counterName: "Counter 2 (Takeaway / Bar)",
       cart: [],
-      customerName: "",
+      customerName: "Walk-in Guest",
       customerMobile: "",
-      customerAddress: "",
-      selectedTable: "🛍️ Parcel / Takeaway (No Table)",
+      customerAddress: "Takeaway Counter",
+      selectedTable: "🛍️ Parcel / Takeaway",
       appliedCoupon: null
     }
   ]);
@@ -213,19 +220,17 @@ export default function FastPOSPage() {
   const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Dual View Mode: 'tiles' (Food/Visual Grid with images) or 'list' (Fast Table/Keyboard mode)
+  // Dual View Mode: 'tiles' (Food Grid with images) or 'list' (High-speed POS rows)
   const [viewMode, setViewMode] = useState("tiles");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchFilter, setSearchFilter] = useState("");
 
-  // Customer Insights
-  const [customerInsight, setCustomerInsight] = useState(null);
-
-  // Modals & Bottom Bar State
+  // Modals State
   const [showKotModal, setShowKotModal] = useState(false);
   const [showHappyHourModal, setShowHappyHourModal] = useState(false);
   const [showEmergencyHandoverModal, setShowEmergencyHandoverModal] = useState(false);
   const [showKitchenKdsModal, setShowKitchenKdsModal] = useState(false);
+  const [showRecentBillsModal, setShowRecentBillsModal] = useState(false);
 
   // --- ⏰ OWNER CONTROLLED HAPPY HOURS STATE ---
   const [couponCodeInput, setCouponCodeInput] = useState("");
@@ -253,51 +258,66 @@ export default function FastPOSPage() {
       id: "KOT-101",
       table: "Table 2 (AC Hall)",
       capacity: 4,
-      waiter: "Rohan",
+      waiter: "Rohan Captain",
       placedAt: new Date(Date.now() - 14 * 60000),
       prepTimeMinutes: 14,
-      status: "COOKING", // 'COOKING' | 'SERVED' | 'BILLED'
+      status: "COOKING",
       amount: 480,
-      items: [{ name: "Crispy Veg Burger", qty: 2, station: "Pizza & Fast Food" }, { name: "Cold Coffee", qty: 2, station: "Bar & Drinks" }]
+      items: [
+        { name: "Crispy Cheese Veg Burger", qty: 2, rate: 110, station: "Pizza & Fast Food" },
+        { name: "Cold Coffee with Ice Cream", qty: 2, rate: 95, station: "Bar & Drinks" }
+      ]
     },
     {
       id: "KOT-102",
       table: "Table 3 (AC Hall)",
       capacity: 6,
-      waiter: "Sunil",
+      waiter: "Sunil Chef",
       placedAt: new Date(Date.now() - 28 * 60000),
       prepTimeMinutes: 28,
       status: "SERVED",
       amount: 800,
-      items: [{ name: "Shahi Paneer", qty: 1, station: "Main Kitchen" }, { name: "Butter Garlic Naan", qty: 4, station: "Tandoor" }]
+      items: [
+        { name: "Shahi Paneer Butter Masala", qty: 1, rate: 240, station: "Main Kitchen" },
+        { name: "Butter Garlic Tandoori Naan", qty: 4, rate: 45, station: "Tandoor" },
+        { name: "Veg Dum Biryani with Raita", qty: 1, rate: 190, station: "Main Kitchen" },
+        { name: "Cold Coffee with Ice Cream", qty: 2, rate: 95, station: "Bar & Drinks" }
+      ]
     },
     {
       id: "KOT-103",
       table: "Table 4 (Garden)",
       capacity: 8,
-      waiter: "Aman",
+      waiter: "Aman Steward",
       placedAt: new Date(Date.now() - 42 * 60000),
       prepTimeMinutes: 42,
       status: "BILLED",
       amount: 1250,
-      items: [{ name: "Veg Dum Biryani", qty: 2, station: "Main Kitchen" }, { name: "Paneer Tikka", qty: 2, station: "Tandoor" }]
+      items: [
+        { name: "Veg Dum Biryani with Raita", qty: 2, rate: 190, station: "Main Kitchen" },
+        { name: "Paneer Tikka Dry", qty: 2, rate: 210, station: "Tandoor" },
+        { name: "Farmhouse Loaded Pizza (8 inch)", qty: 2, rate: 220, station: "Pizza & Fast Food" }
+      ]
     },
     {
       id: "KOT-104",
       table: "Table 1 (Dine-in)",
       capacity: 2,
-      waiter: "Rohan",
+      waiter: "Rohan Captain",
       placedAt: new Date(Date.now() - 6 * 60000),
       prepTimeMinutes: 6,
       status: "COOKING",
       amount: 320,
-      items: [{ name: "Dal Makhani Special", qty: 1, station: "Main Kitchen" }, { name: "Tandoori Roti", qty: 4, station: "Tandoor" }]
+      items: [
+        { name: "Dal Makhani Special", qty: 1, rate: 180, station: "Main Kitchen" },
+        { name: "Butter Garlic Tandoori Naan", qty: 3, rate: 45, station: "Tandoor" }
+      ]
     }
   ]);
 
-  // Emergency Shift Handover Form State
+  // Emergency Handover Form State
   const [handoverForm, setHandoverForm] = useState({
-    outgoingCashier: "Current Cashier (You)",
+    outgoingCashier: "Deepa Cashier",
     incomingCashier: "Rohan Captain",
     emergencyReason: "Personal Emergency / Shift Swap",
     openingCash: 2000,
@@ -306,11 +326,10 @@ export default function FastPOSPage() {
     handoverTime: new Date().toLocaleTimeString("hi-IN")
   });
 
-  // Calculate Real-time Floor Counts
   const cookingCount = activeFloorOrders.filter(o => o.status === "COOKING").length;
   const servedCount = activeFloorOrders.filter(o => o.status === "SERVED").length;
   const billedCount = activeFloorOrders.filter(o => o.status === "BILLED").length;
-  const vacantCount = 4; // Tables 5, 6, P1, SW
+  const vacantCount = 4;
 
   const isCurrentTimeInHappyHours = () => {
     if (!happyHourConfig.isEnabled) return false;
@@ -339,15 +358,30 @@ export default function FastPOSPage() {
     setActiveFloorOrders(prev => prev.map(k => k.id === kotId ? { ...k, status: newStatus } : k));
   };
 
-  const { selectedCompany } = useCompany();
-  const business = getBusinessMode(selectedCompany);
-
   const searchInputRef = useRef(null);
   const customerNameInputRef = useRef(null);
 
   useEffect(() => {
     fetchProducts();
     fetchBills();
+  }, []);
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "F2") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (e.key === "F4") {
+        e.preventDefault();
+        customerNameInputRef.current?.focus();
+      } else if (e.key === "F9") {
+        e.preventDefault();
+        triggerCheckout();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   const fetchProducts = async () => {
@@ -470,32 +504,43 @@ export default function FastPOSPage() {
   };
   const getGrandTotal = () => Math.max(0, getSubTotal() - getCouponDiscount());
 
+  // 1-Click Generate Bill from Cart
   const triggerCheckout = async () => {
     if (cart.length === 0) return alert("कृपया बिल बनाने के लिए कार्ट में आइटम जोड़ें!");
     try {
       setLoading(true);
-      const payload = {
-        billNumber: `BILL-${Date.now().toString().slice(-6)}`,
-        customerName: customerName || "Walk-in Customer",
+      const newBill = {
+        _id: `b_live_${Date.now()}`,
+        billNumber: `BILL-REST-${Date.now().toString().slice(-4)}`,
+        customerName: customerName || "Walk-in Guest",
         customerMobile: customerMobile || "",
         customerAddress: customerAddress || "",
+        table: selectedTable || "Table 1",
         selectedTable: selectedTable || "Table 1",
         counter: currentActiveTab.counterName,
-        items: cart,
+        items: [...cart],
         subTotal: getSubTotal(),
         discountAmount: getCouponDiscount(),
         finalAmount: getGrandTotal(),
+        totalAmount: getGrandTotal(),
         total: getGrandTotal(),
-        paymentMethod: "cash",
-        paymentStatus: "paid",
+        paymentMethod: "UPI / Cash",
+        paymentMode: "Paid",
+        status: "paid",
+        createdAt: new Date().toISOString(),
         date: new Date().toISOString()
       };
 
-      await api.post("/api/billing", payload).catch(() => {});
-      alert(`🎉 [${currentActiveTab.counterName}] बिल ${payload.billNumber} सफलतापूर्वक तैयार हो गया! कुल: ₹${getGrandTotal()}`);
+      await api.post("/api/billing", newBill).catch(() => {});
+      
+      // Update local bills immediately
+      setBills(prev => [newBill, ...prev]);
+      
+      alert(`🎉 [${currentActiveTab.counterName}] बिल #${newBill.billNumber} सफलतापूर्वक तैयार हो गया!\n\nटेबल: ${newBill.selectedTable}\nग्राहक: ${newBill.customerName}\nकुल रकम: ₹${getGrandTotal()}`);
+      
+      // Clear Cart
       setCart([]);
       setAppliedCoupon(null);
-      fetchBills();
     } catch (err) {
       alert("Error creating bill: " + err.message);
     } finally {
@@ -507,7 +552,7 @@ export default function FastPOSPage() {
     setCart((prev) => [
       ...prev,
       ...kotData.items.map((i) => ({
-        productId: "",
+        productId: `kot_${Date.now()}_${Math.random()}`,
         name: i.name,
         category: i.category || "Restaurant",
         rate: i.rate,
@@ -519,151 +564,132 @@ export default function FastPOSPage() {
     setSelectedTable(kotData.table);
   };
 
+  // Transfer KDS Order directly to Billing Cart
+  const handleLoadKdsOrderToBilling = (ord) => {
+    const loadedCartItems = ord.items.map(it => {
+      const rate = it.rate || (it.amount ? Math.round(it.amount / it.qty) : 150);
+      return {
+        productId: `kds_${Date.now()}_${Math.random()}`,
+        name: it.name,
+        category: "Restaurant",
+        rate: rate,
+        quantity: it.qty,
+        unit: "PLT",
+        image: "",
+        total: rate * it.qty
+      };
+    });
+
+    setCart(loadedCartItems);
+    setSelectedTable(ord.table);
+    setCustomerName(ord.customerName || `${ord.waiter}'s Guest`);
+    handleUpdateKotStatus(ord.id, "BILLED");
+    setShowKitchenKdsModal(false);
+
+    alert(`🎉 [${ord.table}] के सभी ${loadedCartItems.length} आइटम्स (कुल ₹${ord.amount}) बिलिंग कार्ट में लोड कर दिए गए हैं!\n\nअब नीचे '⚡ पक्का बिल बनाएं (F9)' पर क्लिक करें।`);
+  };
+
   // Perform Emergency Shift Handover
   const handleExecuteEmergencyHandover = () => {
-    alert(`🚨 आपातकालीन गल्ला हैंडओवर संपन्न!
-
-आउटगोइंग: ${handoverForm.outgoingCashier}
-इनकमिंग: ${handoverForm.incomingCashier}
-गल्ला कैश: ₹${handoverForm.countedCash}
-कारण: ${handoverForm.emergencyReason}
-समय: ${handoverForm.handoverTime}
-
-नया कैशियर सेशन प्रारंभ हो गया!`);
+    alert(`🚨 आपातकालीन गल्ला हैंडओवर संपन्न!\n\nआउटगोइंग: ${handoverForm.outgoingCashier}\nइनकमिंग: ${handoverForm.incomingCashier}\nगल्ला कैश: ₹${handoverForm.countedCash}\nकारण: ${handoverForm.emergencyReason}\nसमय: ${handoverForm.handoverTime}\n\nनया कैशियर सेशन प्रारंभ हो गया!`);
     setShowEmergencyHandoverModal(false);
   };
 
   return (
-    <div className="h-[calc(100vh-100px)] flex flex-col bg-slate-100 -m-6 p-6 overflow-hidden relative">
-      {/* Header */}
-      <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 mb-2.5 flex justify-between items-center shrink-0 flex-wrap gap-2">
+    <div className="h-[calc(100vh-80px)] flex flex-col bg-slate-100 -m-6 p-4 gap-2 overflow-hidden relative">
+      {/* 🚀 COMPACT UNIFIED HEADER */}
+      <div className="bg-white px-4 py-2.5 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <div className="bg-gradient-to-tr from-amber-600 to-orange-600 p-2 rounded-xl text-white shadow-md">
-            <Utensils size={20} />
+            <Utensils size={18} />
           </div>
           <div>
-            <h1 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <span>Fast POS Touch & Kitchen Operations</span>
+            <h1 className="text-base font-black text-slate-900 flex items-center gap-2 leading-none">
+              <span>Fast POS Touch & Kitchen Billing</span>
               <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold">
-                Live POS
+                Restaurant
               </span>
             </h1>
-            <p className="text-xs text-slate-500 font-medium">लाइव टेबल फ्लोर स्टेटस, KOT किचन ट्रैकिंग व इमरजेंसी गल्ला हैंडओवर</p>
+            <p className="text-[11px] text-slate-500 font-medium mt-0.5">टचस्क्रीन टाइल्स, लाइव KOT व 2-काउंटर बिलिंग</p>
           </div>
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Emergency Shift Handover Button */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Recent Bills Button */}
           <button
-            onClick={() => setShowEmergencyHandoverModal(true)}
-            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1.5"
-            title="किसी भी समय बीच शिफ्ट में गल्ला हैंडओवर करें"
+            onClick={() => setShowRecentBillsModal(true)}
+            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1"
+            title="हाल ही में बने बिल देखें"
           >
-            <ShieldCheck size={14} /> 🚨 इमरजेंसी गल्ला हैंडओवर
+            <Receipt size={13} /> 🧾 बने बिल ({bills.length})
           </button>
 
           {/* Kitchen KDS Live Tracker Button */}
           <button
             onClick={() => setShowKitchenKdsModal(true)}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1.5"
+            className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1"
             title="लाइव किचन डिस्प्ले सिस्टम (KDS)"
           >
-            <ChefHat size={14} /> 🍳 लाइव किचन ऑर्डर्स ({cookingCount})
+            <ChefHat size={13} /> 🍳 किचन ऑर्डर्स ({cookingCount})
           </button>
 
           {/* Table KOT Button */}
           <button
             onClick={() => setShowKotModal(true)}
-            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1.5"
+            className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1"
           >
-            <Utensils size={14} /> 🍽️ Table KOT & Seater
+            <Utensils size={13} /> 🍽️ Table KOT
           </button>
 
           {/* Tiles vs List Switcher */}
-          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200">
             <button
               onClick={() => setViewMode("tiles")}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                viewMode === "tiles" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+              className={`px-2.5 py-1 rounded-lg text-xs font-black transition flex items-center gap-1 ${
+                viewMode === "tiles" ? "bg-amber-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              <LayoutGrid size={14} /> 🍱 Food Tiles
+              <LayoutGrid size={13} /> 🍱 Tiles View
             </button>
             <button
               onClick={() => setViewMode("list")}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                viewMode === "list" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+              className={`px-2.5 py-1 rounded-lg text-xs font-black transition flex items-center gap-1 ${
+                viewMode === "list" ? "bg-amber-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              <List size={14} /> 📋 List
+              <List size={13} /> 📋 List View
             </button>
           </div>
 
           {/* Happy Hours Button */}
           <button
             onClick={() => setShowHappyHourModal(true)}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-black transition flex items-center gap-1.5 ${
+            className={`px-2.5 py-1.5 rounded-xl border text-xs font-black transition flex items-center gap-1 ${
               isHappyHourActive
-                ? "bg-amber-500 text-slate-950 border-amber-400 shadow-md animate-pulse"
+                ? "bg-amber-500 text-slate-950 border-amber-400 shadow-sm animate-pulse"
                 : "bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200"
             }`}
-            title="Happy Hours डिस्काउंट % व समय बदलें"
           >
-            ⏰ {isHappyHourActive ? `Happy Hours ON (${happyHourConfig.discountPercent}% OFF)` : "Happy Hours %"}
+            ⏰ {isHappyHourActive ? `${happyHourConfig.discountPercent}% OFF` : "Happy Hours"}
           </button>
-        </div>
-      </div>
 
-      {/* 📊 LIVE RESTAURANT FLOOR & KITCHEN STATUS BAR */}
-      <div className="bg-white p-2.5 rounded-2xl shadow-sm border border-slate-200 mb-2.5 flex items-center justify-between gap-2 flex-wrap text-xs font-black">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-slate-700 flex items-center gap-1.5 pl-1">
-            <Flame size={15} className="text-orange-500" />
-            <span>रेस्टोरेंट लाइव स्टेटस:</span>
-          </span>
-
-          {/* Cooking in Kitchen */}
+          {/* Emergency Shift Handover Button */}
           <button
-            onClick={() => setShowKitchenKdsModal(true)}
-            className="px-3 py-1 rounded-xl bg-blue-100 text-blue-900 border border-blue-300 flex items-center gap-1.5 hover:bg-blue-200 transition"
+            onClick={() => setShowEmergencyHandoverModal(true)}
+            className="px-2 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1"
+            title="इमरजेंसी गल्ला हैंडओवर"
           >
-            <span>🔵 किचन में चल रहे (Cooking):</span>
-            <span className="px-1.5 py-0.5 rounded bg-blue-600 text-white font-mono text-[11px]">{cookingCount} Tables</span>
+            <ShieldCheck size={13} /> 🚨 गल्ला
           </button>
-
-          {/* Food Served */}
-          <div className="px-3 py-1 rounded-xl bg-amber-100 text-amber-950 border border-amber-300 flex items-center gap-1.5">
-            <span>🟡 खाना सर्व हो चुका (Served):</span>
-            <span className="px-1.5 py-0.5 rounded bg-amber-600 text-white font-mono text-[11px]">{servedCount} Tables</span>
-          </div>
-
-          {/* Billed / Payment Pending */}
-          <div className="px-3 py-1 rounded-xl bg-rose-100 text-rose-900 border border-rose-300 flex items-center gap-1.5">
-            <span>🔴 बिल तैयार / पेमेंट बाकी (Billed):</span>
-            <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white font-mono text-[11px]">{billedCount} Tables</span>
-          </div>
-
-          {/* Vacant Tables */}
-          <div className="px-3 py-1 rounded-xl bg-emerald-100 text-emerald-900 border border-emerald-300 flex items-center gap-1.5">
-            <span>🟢 खाली टेबल (Vacant):</span>
-            <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-mono text-[11px]">{vacantCount} Tables</span>
-          </div>
         </div>
-
-        <button
-          onClick={() => setShowKitchenKdsModal(true)}
-          className="text-blue-700 hover:text-blue-900 text-xs font-bold flex items-center gap-1 underline"
-        >
-          पूरा किचन KDS देखें &gt;
-        </button>
       </div>
 
-      {/* 🏢 2 COUNTERS SIMULTANEOUS MULTI-TAB SWITCHER */}
-      <div className="bg-slate-900 p-2 rounded-2xl shadow-sm border border-slate-800 mb-2.5 flex items-center justify-between gap-3 text-white">
+      {/* 📊 COMBINED COUNTERS & LIVE FLOOR STATUS BAR */}
+      <div className="bg-slate-900 px-3 py-2 rounded-2xl shadow-sm border border-slate-800 flex items-center justify-between gap-2 text-white shrink-0 flex-wrap">
         <div className="flex items-center gap-2 overflow-x-auto">
-          <span className="text-xs font-black text-amber-400 flex items-center gap-1.5 pl-2 shrink-0">
-            <Store size={15} /> काउंटर चुनें:
+          <span className="text-xs font-black text-amber-400 flex items-center gap-1 pl-1 shrink-0">
+            <Store size={14} /> काउंटर:
           </span>
           {counterTabs.map((tab) => {
             const isActive = tab.id === activeCounterTab;
@@ -672,7 +698,7 @@ export default function FastPOSPage() {
               <button
                 key={tab.id}
                 onClick={() => setActiveCounterTab(tab.id)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-2 shrink-0 ${
+                className={`px-3 py-1 rounded-xl text-xs font-black transition flex items-center gap-1.5 shrink-0 ${
                   isActive
                     ? "bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md ring-2 ring-amber-300"
                     : "bg-slate-800 text-slate-300 hover:bg-slate-700"
@@ -680,10 +706,10 @@ export default function FastPOSPage() {
               >
                 <span>🏷️ {tab.counterName}</span>
                 {tab.cart.length > 0 && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-black ${
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-black ${
                     isActive ? "bg-slate-950 text-amber-300" : "bg-slate-700 text-white"
                   }`}>
-                    {tab.cart.length} items (₹{tabTotal})
+                    {tab.cart.length} (₹{tabTotal})
                   </span>
                 )}
               </button>
@@ -691,28 +717,36 @@ export default function FastPOSPage() {
           })}
         </div>
 
-        {/* Selected Table Badge */}
-        <div className="hidden md:flex items-center gap-2 pr-2 text-xs">
-          <span className="text-slate-400">एक्टिव टेबल:</span>
-          <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 rounded-xl border border-amber-500/40 font-bold">
-            🍽️ {selectedTable}
+        {/* Live Status Indicators */}
+        <div className="flex items-center gap-2 text-[11px] font-black">
+          <span className="px-2 py-0.5 rounded-lg bg-blue-900/80 text-blue-200 border border-blue-700">
+            🔵 कुकिंग: {cookingCount}
+          </span>
+          <span className="px-2 py-0.5 rounded-lg bg-amber-900/80 text-amber-200 border border-amber-700">
+            🟡 सर्वड: {servedCount}
+          </span>
+          <span className="px-2 py-0.5 rounded-lg bg-rose-900/80 text-rose-200 border border-rose-700">
+            🔴 बिल पेंडिंग: {billedCount}
+          </span>
+          <span className="px-2 py-0.5 rounded-lg bg-emerald-900/80 text-emerald-200 border border-emerald-700 hidden sm:inline">
+            🟢 खाली: {vacantCount}
           </span>
         </div>
       </div>
 
       {/* Main Content Layout */}
-      <div className="flex gap-4 flex-1 min-h-0 pb-6">
+      <div className="flex gap-3 flex-1 min-h-0 overflow-hidden">
         {/* Left Side: Product Selector (Tiles Grid vs Barcode List) */}
         <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
           {/* Category Tabs & Search Bar */}
-          <div className="p-3 border-b border-slate-200 bg-slate-50 flex flex-col gap-2 shrink-0">
+          <div className="p-2.5 border-b border-slate-200 bg-slate-50 flex flex-col gap-1.5 shrink-0">
             <div className="relative">
-              <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
+              <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
               <input
                 ref={searchInputRef}
                 type="text"
-                placeholder="बारकोड स्कैन करें या व्यंजन / प्रोडक्ट खोजें... (F2)"
-                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-amber-500 outline-none font-bold text-slate-800"
+                placeholder="व्यंजन या प्रोडक्ट खोजें / बारकोड स्कैन करें... (F2)"
+                className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-amber-500 outline-none font-bold text-slate-800"
                 value={barcode || searchFilter}
                 onChange={(e) => {
                   setBarcode(e.target.value);
@@ -723,12 +757,12 @@ export default function FastPOSPage() {
             </div>
 
             {/* Category Scrollable Tabs */}
-            <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+            <div className="flex gap-1 overflow-x-auto pb-0.5 no-scrollbar">
               {categories.map((cat) => (
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+                  className={`px-3 py-1 rounded-xl text-[11px] font-black whitespace-nowrap transition ${
                     selectedCategory === cat
                       ? "bg-amber-600 text-white shadow-sm"
                       : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
@@ -742,8 +776,8 @@ export default function FastPOSPage() {
 
           {/* Product Items: Tiles View vs List View */}
           {viewMode === "tiles" ? (
-            <div className="flex-1 p-3 overflow-y-auto bg-slate-50/50">
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            <div className="flex-1 p-2.5 overflow-y-auto bg-slate-50/50">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
                 {filteredProducts.map((p) => {
                   const prodId = p._id || p.uuid || p.id;
                   const inCartItem = cart.find((i) => i.productId === prodId);
@@ -753,13 +787,13 @@ export default function FastPOSPage() {
                     <div
                       key={prodId}
                       onClick={() => addToCart(p)}
-                      className={`bg-white rounded-2xl border p-2.5 shadow-sm hover:shadow-md transition cursor-pointer flex flex-col justify-between group relative overflow-hidden ${
+                      className={`bg-white rounded-2xl border p-2 shadow-sm hover:shadow-md transition cursor-pointer flex flex-col justify-between group relative overflow-hidden ${
                         inCartItem
                           ? "border-amber-500 ring-2 ring-amber-500/30 bg-amber-50/30"
                           : "border-slate-200 hover:border-amber-400"
                       }`}
                     >
-                      <div className="w-full h-24 rounded-xl bg-slate-100 overflow-hidden mb-2 flex items-center justify-center border border-slate-100 relative">
+                      <div className="w-full h-20 rounded-xl bg-slate-100 overflow-hidden mb-1.5 flex items-center justify-center border border-slate-100 relative">
                         {p.image ? (
                           <img
                             src={p.image}
@@ -770,34 +804,32 @@ export default function FastPOSPage() {
                           <ImageIcon className="w-8 h-8 text-slate-300" />
                         )}
                         {inCartItem && (
-                          <span className="absolute top-1.5 right-1.5 bg-amber-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow">
+                          <span className="absolute top-1 right-1 bg-amber-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow">
                             {inCartItem.quantity}
                           </span>
                         )}
                       </div>
 
                       <div>
-                        <h4 className="text-xs font-bold text-slate-800 line-clamp-2 leading-snug">{p.name}</h4>
-                        <p className="text-[10px] text-slate-400 font-medium">{p.category || "Restaurant"}</p>
+                        <div className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                          <h4 className="text-xs font-bold text-slate-800 line-clamp-1 leading-snug">{p.name}</h4>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-medium pl-3">{p.category || "Restaurant"}</p>
                       </div>
 
-                      <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-100">
-                        <div className="flex items-center gap-1">
-                          <span className="text-sm font-black text-amber-900 font-mono">
-                            ₹{isHappyHourActive && (happyHourConfig.categories.includes(p.category) || happyHourConfig.categories.includes("All"))
-                              ? Math.round(price * (1 - happyHourConfig.discountPercent / 100))
-                              : price}
-                          </span>
-                          {isHappyHourActive && (
-                            <span className="text-[10px] line-through text-slate-400">₹{price}</span>
-                          )}
-                        </div>
+                      <div className="flex items-center justify-between mt-1.5 pt-1 border-t border-slate-100">
+                        <span className="text-xs font-black text-amber-900 font-mono">
+                          ₹{isHappyHourActive && (happyHourConfig.categories.includes(p.category) || happyHourConfig.categories.includes("All"))
+                            ? Math.round(price * (1 - happyHourConfig.discountPercent / 100))
+                            : price}
+                        </span>
                         
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1">
                           <button
                             type="button"
                             onClick={(e) => toggleItemStock(prodId, e)}
-                            className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase transition ${
+                            className={`px-1 py-0.5 rounded text-[8px] font-black uppercase transition ${
                               outOfStockItems.includes(prodId)
                                 ? "bg-rose-600 text-white"
                                 : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -810,7 +842,7 @@ export default function FastPOSPage() {
                             onClick={() => addToCart(p)}
                             className="p-1 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-600 hover:text-white transition"
                           >
-                            <Plus size={14} />
+                            <Plus size={13} />
                           </span>
                         </div>
                       </div>
@@ -820,36 +852,42 @@ export default function FastPOSPage() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 overflow-auto bg-white">
+            /* Enhanced POS List View */
+            <div className="flex-1 overflow-y-auto bg-white">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-100 sticky top-0 font-bold text-slate-700 border-b">
                   <tr>
-                    <th className="p-3">व्यंजन / आइटम (Item Name)</th>
-                    <th className="p-3">कैटेगरी</th>
-                    <th className="p-3 text-right">कीमत (Price)</th>
-                    <th className="p-3 text-center">स्टॉक</th>
-                    <th className="p-3 text-center">एक्शन</th>
+                    <th className="p-2.5">व्यंजन / आइटम</th>
+                    <th className="p-2.5">कैटेगरी</th>
+                    <th className="p-2.5 text-right">कीमत</th>
+                    <th className="p-2.5 text-center">स्टॉक</th>
+                    <th className="p-2.5 text-center">एक्शन</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredProducts.map((p) => {
                     const prodId = p._id || p.uuid || p.id;
+                    const inCartItem = cart.find((i) => i.productId === prodId);
                     const price = p.sellingPrice || p.price || 0;
                     return (
-                      <tr key={prodId} className="border-b hover:bg-amber-50/50">
-                        <td className="p-3 font-bold text-slate-800 flex items-center gap-2">
-                          {p.image && <img src={p.image} alt={p.name} className="w-6 h-6 rounded object-cover" />}
-                          <span>{p.name}</span>
+                      <tr key={prodId} className={`border-b hover:bg-amber-50/50 transition ${inCartItem ? "bg-amber-50/30" : ""}`}>
+                        <td className="p-2.5 font-bold text-slate-800 flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
+                          {p.image && <img src={p.image} alt={p.name} className="w-7 h-7 rounded-lg object-cover" />}
+                          <div>
+                            <span className="font-bold text-slate-900 block">{p.name}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">Barcode: {p.barcode}</span>
+                          </div>
                         </td>
-                        <td className="p-3 text-slate-500">{p.category || "Restaurant"}</td>
-                        <td className="p-3 text-right font-black text-amber-900 font-mono">₹{price}</td>
-                        <td className="p-3 text-center text-slate-600">{p.currentStock || 50} {p.unit || "pcs"}</td>
-                        <td className="p-3 text-center">
+                        <td className="p-2.5 text-slate-500 font-medium">{p.category || "Restaurant"}</td>
+                        <td className="p-2.5 text-right font-black text-amber-900 font-mono text-sm">₹{price}</td>
+                        <td className="p-2.5 text-center text-slate-600 font-mono">{p.currentStock || 50} {p.unit || "pcs"}</td>
+                        <td className="p-2.5 text-center">
                           <button
                             onClick={() => addToCart(p)}
-                            className="px-3 py-1 bg-amber-600 text-white rounded-lg font-bold hover:bg-amber-700 transition"
+                            className="px-3 py-1 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-lg font-black transition text-xs shadow-sm flex items-center gap-1 mx-auto"
                           >
-                            + जोड़ें (+ Add)
+                            <Plus size={12} /> + जोड़ें {inCartItem ? `(${inCartItem.quantity})` : ""}
                           </button>
                         </td>
                       </tr>
@@ -863,74 +901,53 @@ export default function FastPOSPage() {
 
         {/* Right Side: Customer Info & Cart Sidebar */}
         <div className="w-96 bg-slate-900 text-white rounded-2xl shadow-xl flex flex-col shrink-0 overflow-hidden">
-          {/* Customer Input & Full Visibility Details */}
-          <div className="p-3.5 border-b border-slate-800 bg-slate-800/90 space-y-2">
+          {/* Customer Input & Clean Visible Details */}
+          <div className="p-3 border-b border-slate-800 bg-slate-800/90 space-y-1.5 shrink-0">
             <div className="flex items-center justify-between">
               <span className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
                 <UserCheck size={14} />
-                <span>ग्राहक विवरण (Customer Info)</span>
+                <span>ग्राहक विवरण (Customer)</span>
               </span>
-              <span className="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full font-bold">
-                {currentActiveTab.counterName.split(" ")[0]}
+              <span className="text-[10px] bg-slate-700 text-amber-300 px-2 py-0.5 rounded-full font-bold">
+                🍽️ {selectedTable}
               </span>
             </div>
 
-            <div className="space-y-1.5 text-xs">
-              <div>
-                <input
-                  ref={customerNameInputRef}
-                  type="text"
-                  placeholder="ग्राहक का नाम (Customer Name)"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-slate-700/90 border border-slate-600 rounded-xl text-xs text-white placeholder-slate-400 outline-none focus:border-amber-500 font-bold"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
+            <div className="space-y-1 text-xs">
+              <input
+                ref={customerNameInputRef}
+                type="text"
+                placeholder="ग्राहक का नाम (Customer Name)"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                className="w-full px-3 py-1 bg-slate-700/90 border border-slate-600 rounded-xl text-xs text-white placeholder-slate-400 outline-none focus:border-amber-500 font-bold"
+              />
+              <div className="grid grid-cols-2 gap-1">
                 <input
                   type="text"
                   placeholder="मोबाइल नंबर (F4)"
                   value={customerMobile}
                   onChange={(e) => setCustomerMobile(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-slate-700/90 border border-slate-600 rounded-xl text-xs text-white placeholder-slate-400 outline-none focus:border-amber-500 font-black font-mono"
+                  className="w-full px-2.5 py-1 bg-slate-700/90 border border-slate-600 rounded-xl text-xs text-white placeholder-slate-400 outline-none focus:border-amber-500 font-black font-mono"
                 />
                 <input
                   type="text"
                   placeholder="पता / टेबल"
                   value={customerAddress}
                   onChange={(e) => setCustomerAddress(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-slate-700/90 border border-slate-600 rounded-xl text-xs text-white placeholder-slate-400 outline-none focus:border-amber-500 font-medium"
+                  className="w-full px-2.5 py-1 bg-slate-700/90 border border-slate-600 rounded-xl text-xs text-white placeholder-slate-400 outline-none focus:border-amber-500 font-medium"
                 />
               </div>
             </div>
-
-            {customerMobile.length >= 10 && !appliedCoupon && (
-              <div className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/40 p-2 rounded-xl flex items-center justify-between text-xs animate-in slide-in-from-top-2">
-                <div className="flex items-center gap-1.5">
-                  <Gift size={14} className="text-amber-400 shrink-0" />
-                  <div>
-                    <p className="font-black text-amber-300 text-[11px]">🎉 1 कूपन: SAVE100 (₹100 छूट)</p>
-                    <p className="text-[9px] text-slate-300">Min ₹500 बिल पर मान्य</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setAppliedCoupon({ code: `SAVE100-${customerMobile.slice(-4)}`, type: "FLAT", discount: 100, title: "₹100 की फ्लैट छूट" })}
-                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] rounded-lg transition shrink-0 shadow"
-                >
-                  ✓ लागू करें
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Cart Items List */}
-          <div className="flex-1 p-3 overflow-y-auto space-y-1.5">
+          <div className="flex-1 p-2.5 overflow-y-auto space-y-1.5">
             {cart.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs py-8">
-                <ShoppingCart size={32} className="mb-2 opacity-40 text-amber-400" />
-                <p>कार्ट खाली है</p>
-                <p className="text-[10px] text-slate-400">व्यंजन पर क्लिक करें या Table KOT से ट्रांसफर करें</p>
+              <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs py-6">
+                <ShoppingCart size={28} className="mb-1.5 opacity-40 text-amber-400" />
+                <p className="font-bold">कार्ट खाली है</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">व्यंजन पर क्लिक करें या Table KOT / KDS से लोड करें</p>
               </div>
             ) : (
               cart.map((item, idx) => (
@@ -938,14 +955,7 @@ export default function FastPOSPage() {
                   key={idx}
                   className="bg-slate-800 p-2 rounded-xl border border-slate-700 flex items-center justify-between text-xs"
                 >
-                  <div className="flex items-center gap-2 flex-1 pr-2">
-                    {item.image ? (
-                      <img src={item.image} alt={item.name} className="w-8 h-8 rounded-lg object-cover" />
-                    ) : (
-                      <div className="w-8 h-8 rounded-lg bg-slate-700 flex items-center justify-center">
-                        <ImageIcon size={14} className="text-slate-400" />
-                      </div>
-                    )}
+                  <div className="flex items-center gap-2 flex-1 pr-1">
                     <div>
                       <h5 className="font-bold text-white line-clamp-1">{item.name}</h5>
                       <span className="text-[10px] text-slate-400">
@@ -960,19 +970,19 @@ export default function FastPOSPage() {
                         onClick={() => handleQuantityChange(idx, item.quantity - 1)}
                         className="p-1 text-slate-300 hover:text-white"
                       >
-                        <Minus size={12} />
+                        <Minus size={11} />
                       </button>
-                      <span className="px-2 font-mono font-bold text-white text-xs">{item.quantity}</span>
+                      <span className="px-1.5 font-mono font-bold text-white text-xs">{item.quantity}</span>
                       <button
                         onClick={() => handleQuantityChange(idx, item.quantity + 1)}
                         className="p-1 text-slate-300 hover:text-white"
                       >
-                        <Plus size={12} />
+                        <Plus size={11} />
                       </button>
                     </div>
-                    <span className="font-mono font-bold text-amber-400 w-12 text-right">₹{item.total}</span>
-                    <button onClick={() => removeFromCart(idx)} className="text-slate-500 hover:text-red-400 p-1">
-                      <Trash2 size={13} />
+                    <span className="font-mono font-bold text-amber-400 w-11 text-right">₹{item.total}</span>
+                    <button onClick={() => removeFromCart(idx)} className="text-slate-500 hover:text-red-400 p-0.5">
+                      <Trash2 size={12} />
                     </button>
                   </div>
                 </div>
@@ -981,22 +991,22 @@ export default function FastPOSPage() {
           </div>
 
           {/* Bill Summary & 1-Click Pay */}
-          <div className="p-3.5 border-t border-slate-800 bg-slate-950 space-y-2 text-xs">
-            <div className="flex justify-between text-slate-400">
+          <div className="p-3 border-t border-slate-800 bg-slate-950 space-y-1.5 text-xs shrink-0">
+            <div className="flex justify-between text-slate-400 text-[11px]">
               <span>उप-योग (Subtotal)</span>
               <span className="font-mono font-bold text-white">₹{getSubTotal()}</span>
             </div>
 
             {appliedCoupon && (
-              <div className="flex justify-between text-emerald-400 font-bold">
+              <div className="flex justify-between text-emerald-400 font-bold text-[11px]">
                 <span>कूपन छूट ({appliedCoupon.code})</span>
                 <span className="font-mono">-₹{getCouponDiscount()}</span>
               </div>
             )}
 
-            <div className="flex justify-between items-center text-sm font-black text-white pt-2 border-t border-slate-800">
+            <div className="flex justify-between items-center text-xs font-black text-white pt-1.5 border-t border-slate-800">
               <span>कुल राशि (Grand Total)</span>
-              <span className="text-xl text-amber-400 font-mono font-black">₹{getGrandTotal()}</span>
+              <span className="text-lg text-amber-400 font-mono font-black">₹{getGrandTotal()}</span>
             </div>
 
             <button
@@ -1014,7 +1024,166 @@ export default function FastPOSPage() {
         </div>
       </div>
 
-      {/* 🚨 MODAL: EMERGENCY MID-SHIFT CASHIER HANDOVER (ON-THE-SPOT Z-REPORT) */}
+      {/* 🧾 MODAL: RECENT BILLS LIST (हाल ही में बने बिल) */}
+      {showRecentBillsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl p-6 border border-slate-200 animate-in zoom-in-95 flex flex-col max-h-[85vh]">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2 text-slate-900">
+                <Receipt size={20} className="text-amber-600" />
+                <h3 className="font-black text-sm">हाल ही में बने बिल (Recent Bills List)</h3>
+              </div>
+              <button onClick={() => setShowRecentBillsModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="py-3 overflow-y-auto flex-1 space-y-2 text-xs">
+              {bills.length === 0 ? (
+                <p className="text-slate-500 text-center py-6">अभी कोई बिल नहीं बना है</p>
+              ) : (
+                bills.map((b, i) => (
+                  <div key={i} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-between items-center">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-slate-900">{b.billNumber}</span>
+                        <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-bold text-[10px]">
+                          {b.table || b.selectedTable || "Counter"}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        ग्राहक: <span className="font-bold text-slate-700">{b.customerName || "Walk-in"}</span> • {b.items?.length || 1} आइटम्स
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-sm font-black text-emerald-700 font-mono">₹{b.total || b.finalAmount || b.totalAmount}</span>
+                      <span className="block text-[10px] text-emerald-600 font-bold">✓ Paid (UPI/Cash)</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🍳 MODAL: LIVE KITCHEN DISPLAY SYSTEM (KDS) & FLOOR ORDERS TRACKER */}
+      {showKitchenKdsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl p-6 border border-slate-200 animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2.5 text-blue-700">
+                <ChefHat size={24} />
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">लाइव किचन डिस्प्ले व टेबल ट्रैकर (Kitchen KDS)</h3>
+                  <p className="text-xs text-slate-500">किचन में चल रहे आर्डर, वेटर, तैयारी समय व 1-क्लिक बिलिंग</p>
+                </div>
+              </div>
+              <button onClick={() => setShowKitchenKdsModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="py-4 space-y-4 overflow-y-auto flex-1 text-xs">
+              {/* Summary Badges */}
+              <div className="grid grid-cols-4 gap-3 text-center">
+                <div className="p-3 bg-blue-50 rounded-2xl border border-blue-200">
+                  <span className="text-[11px] text-blue-700 font-bold block">किचन में कुकिंग</span>
+                  <span className="text-2xl font-black text-blue-900 font-mono">{cookingCount} Tables</span>
+                </div>
+                <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200">
+                  <span className="text-[11px] text-amber-700 font-bold block">खाना सर्व हो चुका</span>
+                  <span className="text-2xl font-black text-amber-900 font-mono">{servedCount} Tables</span>
+                </div>
+                <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200">
+                  <span className="text-[11px] text-rose-700 font-bold block">बिल तैयार / पेंडिंग</span>
+                  <span className="text-2xl font-black text-rose-900 font-mono">{billedCount} Tables</span>
+                </div>
+                <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200">
+                  <span className="text-[11px] text-emerald-700 font-bold block">खाली टेबल्स</span>
+                  <span className="text-2xl font-black text-emerald-900 font-mono">{vacantCount} Tables</span>
+                </div>
+              </div>
+
+              {/* Live Order Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {activeFloorOrders.map((ord) => {
+                  const isCooking = ord.status === "COOKING";
+                  const isServed = ord.status === "SERVED";
+                  const isLate = ord.prepTimeMinutes >= 20;
+
+                  return (
+                    <div
+                      key={ord.id}
+                      className={`p-4 rounded-2xl border-2 transition ${
+                        isCooking
+                          ? isLate ? "bg-rose-50/70 border-rose-400" : "bg-blue-50/70 border-blue-400"
+                          : isServed ? "bg-amber-50/70 border-amber-400" : "bg-slate-50 border-slate-300"
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h4 className="font-black text-slate-900 text-sm flex items-center gap-2">
+                            <span>{ord.table}</span>
+                            <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded-full border text-slate-600">
+                              👤 {ord.capacity} Pax
+                            </span>
+                          </h4>
+                          <p className="text-[10px] text-slate-500 mt-0.5">
+                            कैप्टन: <span className="font-bold text-slate-800">{ord.waiter}</span> • KOT: <span className="font-mono">{ord.id}</span>
+                          </p>
+                        </div>
+
+                        <div className="text-right">
+                          <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
+                            isCooking
+                              ? isLate ? "bg-rose-600 text-white animate-pulse" : "bg-blue-600 text-white"
+                              : isServed ? "bg-amber-500 text-slate-950" : "bg-rose-600 text-white"
+                          }`}>
+                            {ord.status} ({ord.prepTimeMinutes}m)
+                          </span>
+                          <p className="font-black text-slate-900 font-mono mt-1 text-sm">₹{ord.amount}</p>
+                        </div>
+                      </div>
+
+                      {/* Items Cooking List */}
+                      <div className="mt-3 pt-2 border-t border-slate-200/80 space-y-1">
+                        <p className="text-[10px] font-bold text-slate-600 uppercase">ऑर्डर में शामिल व्यंजन:</p>
+                        {ord.items.map((it, i) => (
+                          <div key={i} className="flex justify-between items-center text-[11px] bg-white p-1.5 rounded-lg border border-slate-100">
+                            <span className="font-bold text-slate-800">{it.name} <span className="text-slate-500 font-mono">×{it.qty}</span></span>
+                            <span className="text-[10px] font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded">{it.station}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="mt-3 flex gap-2">
+                        {isCooking && (
+                          <button
+                            onClick={() => handleUpdateKotStatus(ord.id, "SERVED")}
+                            className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl font-bold text-xs transition"
+                          >
+                            ✓ खाना सर्व हो गया (Mark Served)
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleLoadKdsOrderToBilling(ord)}
+                          className="flex-1 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl font-black text-xs transition shadow-md flex items-center justify-center gap-1"
+                        >
+                          <Receipt size={13} /> 🧾 बिल बनाएं (+ Load to Cart)
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🚨 MODAL: EMERGENCY MID-SHIFT HANDOVER */}
       {showEmergencyHandoverModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 border border-slate-200 animate-in zoom-in-95">
@@ -1109,128 +1278,6 @@ export default function FastPOSPage() {
                 <Printer size={15} />
                 <span>🧾 Z-Report हैंडओवर स्लिप बनाएं व नया कैशियर सेट करें</span>
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 🍳 MODAL: LIVE KITCHEN DISPLAY SYSTEM (KDS) & FLOOR ORDERS TRACKER */}
-      {showKitchenKdsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl p-6 border border-slate-200 animate-in zoom-in-95 flex flex-col max-h-[90vh]">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100 shrink-0">
-              <div className="flex items-center gap-2.5 text-blue-700">
-                <ChefHat size={24} />
-                <div>
-                  <h3 className="font-black text-slate-900 text-base">लाइव किचन डिस्प्ले व टेबल ट्रैकर (Kitchen KDS)</h3>
-                  <p className="text-xs text-slate-500">किचन में चल रहे आर्डर, वेटर, तैयारी समय (SLA) व स्थिति</p>
-                </div>
-              </div>
-              <button onClick={() => setShowKitchenKdsModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="py-4 space-y-4 overflow-y-auto flex-1 text-xs">
-              {/* Summary Badges */}
-              <div className="grid grid-cols-4 gap-3 text-center">
-                <div className="p-3 bg-blue-50 rounded-2xl border border-blue-200">
-                  <span className="text-[11px] text-blue-700 font-bold block">किचन में कुकिंग (Cooking)</span>
-                  <span className="text-2xl font-black text-blue-900 font-mono">{cookingCount} Tables</span>
-                </div>
-                <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200">
-                  <span className="text-[11px] text-amber-700 font-bold block">खाना सर्व हो चुका (Served)</span>
-                  <span className="text-2xl font-black text-amber-900 font-mono">{servedCount} Tables</span>
-                </div>
-                <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200">
-                  <span className="text-[11px] text-rose-700 font-bold block">बिल तैयार / पेंडिंग</span>
-                  <span className="text-2xl font-black text-rose-900 font-mono">{billedCount} Tables</span>
-                </div>
-                <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200">
-                  <span className="text-[11px] text-emerald-700 font-bold block">खाली टेबल्स (Vacant)</span>
-                  <span className="text-2xl font-black text-emerald-900 font-mono">{vacantCount} Tables</span>
-                </div>
-              </div>
-
-              {/* Live Order Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {activeFloorOrders.map((ord) => {
-                  const isCooking = ord.status === "COOKING";
-                  const isServed = ord.status === "SERVED";
-                  const isLate = ord.prepTimeMinutes >= 20;
-
-                  return (
-                    <div
-                      key={ord.id}
-                      className={`p-4 rounded-2xl border-2 transition ${
-                        isCooking
-                          ? isLate
-                            ? "bg-rose-50/70 border-rose-400"
-                            : "bg-blue-50/70 border-blue-400"
-                          : isServed
-                          ? "bg-amber-50/70 border-amber-400"
-                          : "bg-slate-50 border-slate-300"
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className="font-black text-slate-900 text-sm flex items-center gap-2">
-                            <span>{ord.table}</span>
-                            <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded-full border text-slate-600">
-                              👤 {ord.capacity} Pax
-                            </span>
-                          </h4>
-                          <p className="text-[10px] text-slate-500 mt-0.5">
-                            कैप्टन: <span className="font-bold text-slate-800">{ord.waiter}</span> • KOT: <span className="font-mono">{ord.id}</span>
-                          </p>
-                        </div>
-
-                        <div className="text-right">
-                          <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
-                            isCooking
-                              ? isLate ? "bg-rose-600 text-white animate-pulse" : "bg-blue-600 text-white"
-                              : isServed ? "bg-amber-500 text-slate-950" : "bg-rose-600 text-white"
-                          }`}>
-                            {ord.status} ({ord.prepTimeMinutes}m)
-                          </span>
-                          <p className="font-black text-slate-900 font-mono mt-1 text-sm">₹{ord.amount}</p>
-                        </div>
-                      </div>
-
-                      {/* Items Cooking List */}
-                      <div className="mt-3 pt-2 border-t border-slate-200/80 space-y-1">
-                        <p className="text-[10px] font-bold text-slate-600 uppercase">ऑर्डर में शामिल व्यंजन:</p>
-                        {ord.items.map((it, i) => (
-                          <div key={i} className="flex justify-between items-center text-[11px] bg-white p-1.5 rounded-lg border border-slate-100">
-                            <span className="font-bold text-slate-800">{it.name} <span className="text-slate-500 font-mono">×{it.qty}</span></span>
-                            <span className="text-[10px] font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded">{it.station}</span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div className="mt-3 flex gap-2">
-                        {isCooking && (
-                          <button
-                            onClick={() => handleUpdateKotStatus(ord.id, "SERVED")}
-                            className="flex-1 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl font-bold text-xs transition"
-                          >
-                            ✓ खाना सर्व हो गया (Mark Served)
-                          </button>
-                        )}
-                        {isServed && (
-                          <button
-                            onClick={() => handleUpdateKotStatus(ord.id, "BILLED")}
-                            className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition"
-                          >
-                            🧾 बिल बनाएं (Generate Bill)
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
           </div>
         </div>
