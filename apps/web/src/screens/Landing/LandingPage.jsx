@@ -36,23 +36,24 @@ import {
   Info
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useCompany } from "../../contexts/CompanyContext";
 
 export default function LandingPage() {
+  const { enterDemoModule } = useCompany() || {};
+
+  const handleLaunchModule = (vertId) => {
+    const idToUse = vertId || selectedVertical || "restaurant";
+    if (enterDemoModule) {
+      enterDemoModule(idToUse);
+    }
+    const target = verticalsData[idToUse] || verticalsData[selectedVertical] || verticalsData.restaurant;
+    navigate(target?.route || "/billing");
+  };
+
   const enterGuestMode = () => {
-    const demoUser = {
-      _id: "demo_guest_user_101",
-      name: "Guest Explorer (अतिथि)",
-      email: "demo@vyaparbook.in",
-      role: "admin",
-      companyId: "demo_company_101",
-      company: "demo_company_101",
-      isGuest: true
-    };
-    localStorage.setItem("authToken", "demo_guest_token_2026_valid");
-    localStorage.setItem("token", "demo_guest_token_2026_valid");
-    localStorage.setItem("user", JSON.stringify(demoUser));
-    localStorage.setItem("companyId", "demo_company_101");
-    localStorage.setItem("selectedCompany", "demo_company_101");
+    if (enterDemoModule) {
+      enterDemoModule(selectedVertical || "restaurant");
+    }
     navigate("/dashboard");
   };
 
@@ -533,7 +534,7 @@ export default function LandingPage() {
               </div>
 
               <button
-                onClick={() => navigate(currentVertical.route)}
+                onClick={() => handleLaunchModule(currentVertical.id)}
                 className="w-full md:w-auto px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs rounded-xl shadow-lg flex items-center justify-center gap-2 transition cursor-pointer shrink-0"
               >
                 <span>यह मॉड्यूल अभी चलाएँ</span>
@@ -580,7 +581,7 @@ export default function LandingPage() {
               return (
                 <div
                   key={item.id}
-                  onClick={() => navigate(item.route)}
+                  onClick={() => handleLaunchModule(item.id)}
                   className="p-5 bg-slate-900 border border-slate-800 hover:border-purple-500 rounded-3xl transition duration-200 cursor-pointer space-y-3 hover:shadow-xl hover:shadow-purple-500/10 group flex flex-col justify-between"
                 >
                   <div className="space-y-3">

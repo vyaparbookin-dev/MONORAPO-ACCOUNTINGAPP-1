@@ -103,7 +103,7 @@ export default function DashboardLayout() {
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
-  const { companies, selectedCompany, selectCompany, loading } = useCompany();
+  const { companies, selectedCompany, selectCompany, loading, enterDemoModule, exitDemoModule, allDemoCompanies } = useCompany() || {};
 
   useEffect(() => {
     // Get user from localStorage
@@ -429,6 +429,31 @@ export default function DashboardLayout() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden md:ml-0" style={{ marginLeft: sidebarOpen ? 0 : 0 }}>
+        {/* Sandbox Demo Sticky Alert */}
+        {(selectedCompany?.isDemo || localStorage.getItem("isDemoActive") === "true") && (
+          <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-slate-900 px-4 py-2 font-bold text-xs flex flex-wrap items-center justify-between gap-2 shadow-md z-40 sticky top-0">
+            <div className="flex items-center gap-2">
+              <span className="bg-slate-900 text-amber-300 text-[10px] px-2 py-0.5 rounded font-black tracking-wide uppercase">
+                ⚡ सैंडबॉक्स टेस्ट मोड (Sandbox Demo)
+              </span>
+              <span>
+                आप अभी <b>{selectedCompany?.name || "डेमो मॉड्यूल"}</b> टेस्ट कर रहे हैं। आपका असली बिज़नेस डेटा 100% सुरक्षित और अलग है।
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (exitDemoModule) exitDemoModule();
+                  navigate("/dashboard");
+                }}
+                className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white text-xs font-black rounded-lg transition shadow flex items-center gap-1 cursor-pointer"
+              >
+                <span>⬅️ वापस अपने असली बिज़नेस पर जाएं</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Top Header */}
         <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-30">
           <div className="px-6 py-4 flex items-center justify-between">
@@ -523,22 +548,50 @@ export default function DashboardLayout() {
                       <div className="p-4 border-b border-gray-200">
                         <h3 className="font-semibold text-gray-900">Select Company</h3>
                       </div>
-                      <div className="space-y-1 p-2 max-h-64 overflow-y-auto">
-                        {companies.map((company) => (
-                          <button
-                            key={company._id}
-                            onClick={() => {
-                              selectCompany(company);
-                              setCompanyMenuOpen(false);
-                            }}
-                            className={`w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition ${
-                              selectedCompany && selectedCompany._id === company._id ? "bg-blue-50 text-blue-700" : "text-gray-700"
-                            }`}
-                          >
-                            <div className="font-medium">{company.name}</div>
-                            <div className="text-xs text-gray-500 capitalize">{Array.isArray(company.businessType) ? company.businessType.join(', ') : company.businessType}</div>
-                          </button>
-                        ))}
+                      <div className="space-y-1 p-2 max-h-72 overflow-y-auto">
+                        <div className="px-2 py-1 text-[11px] font-black uppercase text-slate-500 tracking-wider">
+                          🏢 आपकी वास्तविक दुकानें (Real Business)
+                        </div>
+                        {companies.filter(c => !c.isDemo).map((company) => {
+                          const isSelected = selectedCompany && (selectedCompany._id === company._id || selectedCompany.id === company.id) && !selectedCompany.isDemo;
+                          return (
+                            <button
+                              key={company._id || company.id}
+                              onClick={() => {
+                                if (exitDemoModule) exitDemoModule();
+                                selectCompany(company);
+                                setCompanyMenuOpen(false);
+                              }}
+                              className={`w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition ${
+                                isSelected ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700"
+                              }`}
+                            >
+                              <div className="font-medium text-xs sm:text-sm">{company.name}</div>
+                              <div className="text-[10px] text-gray-500 capitalize">{Array.isArray(company.businessType) ? company.businessType.join(', ') : (company.businessType || 'business')}</div>
+                            </button>
+                          );
+                        })}
+
+                        <div className="px-2 pt-3 pb-1 text-[11px] font-black uppercase text-amber-600 tracking-wider border-t border-slate-100 mt-2">
+                          🧪 परीक्षण / डेमो मॉड्यूल्स (सुरक्षित सैंडबॉक्स)
+                        </div>
+                        {(allDemoCompanies || []).map((demoCo) => {
+                          const isSelected = selectedCompany?._id === demoCo._id;
+                          return (
+                            <button
+                              key={demoCo._id}
+                              onClick={() => {
+                                if (enterDemoModule) enterDemoModule(demoCo.industryType);
+                                setCompanyMenuOpen(false);
+                              }}
+                              className={`w-full text-left px-3 py-1.5 rounded-lg hover:bg-amber-50 transition ${
+                                isSelected ? "bg-amber-100 text-amber-900 font-bold" : "text-slate-600"
+                              }`}
+                            >
+                              <div className="font-semibold text-xs">{demoCo.name}</div>
+                            </button>
+                          );
+                        })}
                       </div>
                       <div className="p-2 border-t border-gray-200">
                         <button

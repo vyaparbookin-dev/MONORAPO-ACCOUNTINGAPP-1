@@ -8,16 +8,6 @@ export const useCompany = () => useContext(CompanyContext);
 export const CompanyProvider = ({ children }) => {
   const allDemoCompanies = [
     {
-      _id: "demo_company_hardware",
-      name: "🔧 Bharat Hardware, Plywood & Paints",
-      businessType: "hardware",
-      industryType: "hardware",
-      address: "Timber & Hardware Market, Plot 44",
-      phone: "9876543215",
-      gstin: "07AAAAA0000A1Z5",
-      isDemo: true
-    },
-    {
       _id: "demo_company_restaurant",
       name: "🍽️ Royal Spice Restaurant & Cafe",
       businessType: "restaurant",
@@ -28,12 +18,72 @@ export const CompanyProvider = ({ children }) => {
       isDemo: true
     },
     {
+      _id: "demo_company_gamezone",
+      name: "🎮 FunZone Arcade, VR & Bowling",
+      businessType: "gamezone",
+      industryType: "gamezone",
+      address: "Phoenix Mall, 3rd Floor, Bangalore",
+      phone: "9876543219",
+      gstin: "29AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_hardware",
+      name: "🔧 Bharat Hardware, Plywood & Paints",
+      businessType: "hardware",
+      industryType: "hardware",
+      address: "Timber & Hardware Market, Plot 44",
+      phone: "9876543215",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
       _id: "demo_company_supermarket",
       name: "🛒 Apna Bazaar Supermarket & Kirana",
       businessType: "supermarket",
       industryType: "supermarket",
       address: "Main Market, Gandhi Chowk",
       phone: "9876543213",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_banquet",
+      name: "🏨 Royal Palace Hotel & Banquet",
+      businessType: "banquet",
+      industryType: "banquet",
+      address: "Ring Road, Civil Lines, Jaipur",
+      phone: "9876543211",
+      gstin: "08AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_mobile",
+      name: "📱 Galaxy Mobile & Electronics Store",
+      businessType: "mobile",
+      industryType: "mobile",
+      address: "Nehru Place IT Hub, Shop 14",
+      phone: "9876543212",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_salon",
+      name: "💇‍♀️ Glamour Look Salon & Spa",
+      businessType: "salon",
+      industryType: "salon",
+      address: "Link Road, Bandra West, Mumbai",
+      phone: "9876543214",
+      gstin: "27AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_core",
+      name: "📖 Shri Ganesh Trading Co. (डे-बुक व रोकड़)",
+      businessType: "core",
+      industryType: "core",
+      address: "Naya Bazaar, Chandni Chowk, Delhi",
+      phone: "9876543216",
       gstin: "07AAAAA0000A1Z5",
       isDemo: true
     }
@@ -56,10 +106,11 @@ export const CompanyProvider = ({ children }) => {
   const fetchCompanies = async () => {
     try {
       const isGuestMode = localStorage.getItem("isGuestMode") === "true";
+      const isDemoActive = localStorage.getItem("isDemoActive") === "true";
       const token = localStorage.getItem("authToken") || localStorage.getItem("token");
       const isDemoGuest = token && token.includes("demo_guest");
 
-      if (isGuestMode || isDemoGuest) {
+      if (isDemoActive || isGuestMode || isDemoGuest) {
         setCompanies(allDemoCompanies);
         const storedCoId = localStorage.getItem("companyId");
         const found = allDemoCompanies.find(c => c._id === storedCoId) || allDemoCompanies[0];
@@ -191,6 +242,72 @@ export const CompanyProvider = ({ children }) => {
     }
   };
 
+  const enterDemoModule = (industry = "restaurant") => {
+    const cleanInd = String(industry).toLowerCase();
+    const matched = allDemoCompanies.find(c => 
+      c.industryType?.toLowerCase() === cleanInd || 
+      c.businessType?.toLowerCase() === cleanInd ||
+      c._id?.toLowerCase().includes(cleanInd) ||
+      c.name?.toLowerCase().includes(cleanInd)
+    ) || allDemoCompanies[0]; // default to restaurant
+
+    // If currently in a real company, safely back it up
+    if (selectedCompany && !selectedCompany.isDemo) {
+      if (selectedCompany._id) {
+        localStorage.setItem("real_backup_companyId", selectedCompany._id);
+      }
+      const realToken = localStorage.getItem("authToken") || localStorage.getItem("token");
+      if (realToken && !realToken.includes("demo_guest")) {
+        localStorage.setItem("real_backup_token", realToken);
+      }
+    }
+
+    // If guest visitor without auth token, provide instant safe guest token
+    const currentToken = localStorage.getItem("authToken") || localStorage.getItem("token");
+    if (!currentToken) {
+      const demoUser = {
+        _id: "demo_guest_user_101",
+        name: "Guest Explorer (सैंडबॉक्स)",
+        email: "demo@vyaparbook.in",
+        role: "admin",
+        companyId: matched._id,
+        isGuest: true
+      };
+      localStorage.setItem("authToken", "demo_guest_token_2026_valid");
+      localStorage.setItem("token", "demo_guest_token_2026_valid");
+      localStorage.setItem("user", JSON.stringify(demoUser));
+    }
+
+    localStorage.setItem("isDemoActive", "true");
+    localStorage.setItem("companyId", matched._id);
+    localStorage.setItem("selectedCompany", matched._id);
+    setSelectedCompany(matched);
+    return matched;
+  };
+
+  const exitDemoModule = () => {
+    localStorage.removeItem("isDemoActive");
+    const realCoId = localStorage.getItem("real_backup_companyId");
+    localStorage.removeItem("real_backup_companyId");
+
+    const realToken = localStorage.getItem("real_backup_token");
+    if (realToken) {
+      localStorage.setItem("authToken", realToken);
+      localStorage.setItem("token", realToken);
+      localStorage.removeItem("real_backup_token");
+    }
+
+    const realCo = (realCoId && companies.find(c => c._id === realCoId || c.id === realCoId)) || 
+                   companies.find(c => !c.isDemo) || 
+                   companies[0];
+    if (realCo) {
+      const id = realCo._id || realCo.id;
+      localStorage.setItem("companyId", id);
+      localStorage.setItem("selectedCompany", id);
+      setSelectedCompany(realCo);
+    }
+  };
+
   return (
     <CompanyContext.Provider value={{
       companies,
@@ -200,6 +317,9 @@ export const CompanyProvider = ({ children }) => {
       addCompany,
       updateCompany,
       deleteCompany,
+      enterDemoModule,
+      exitDemoModule,
+      allDemoCompanies,
       refetchCompanies: fetchCompanies
     }}>
       {children}

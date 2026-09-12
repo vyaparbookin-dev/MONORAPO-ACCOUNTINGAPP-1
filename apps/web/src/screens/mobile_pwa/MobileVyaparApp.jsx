@@ -102,7 +102,7 @@ class MobileErrorBoundary extends React.Component {
 
 function MobileVyaparAppContent() {
   const navigate = useNavigate();
-  const { selectedCompany, companies, selectCompany } = useCompany();
+  const { selectedCompany, companies, selectCompany, enterDemoModule, exitDemoModule, allDemoCompanies } = useCompany() || {};
 
   const [user, setUser] = useState(() => {
     try {
@@ -1477,6 +1477,25 @@ function MobileVyaparAppContent() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans pb-28 select-none">
+      {/* 🧪 SANDBOX DEMO STICKY BANNER */}
+      {(selectedCompany?.isDemo || (typeof localStorage !== 'undefined' && localStorage.getItem("isDemoActive") === "true")) && (
+        <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-slate-900 px-3 py-2 font-bold text-xs flex items-center justify-between gap-2 shadow-md sticky top-0 z-50">
+          <div className="flex items-center gap-1.5 truncate">
+            <span className="bg-slate-900 text-amber-300 text-[9px] px-1.5 py-0.5 rounded font-black uppercase shrink-0">डेमो मोड</span>
+            <span className="truncate text-[11px] font-extrabold">{companyDisplayName} (सैंडबॉक्स)</span>
+          </div>
+          <button
+            onClick={() => {
+              if (exitDemoModule) exitDemoModule();
+              setTimeout(() => window.location.reload(), 100);
+            }}
+            className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-black rounded-lg transition shrink-0 cursor-pointer shadow"
+          >
+            ⬅️ असली बिज़नेस
+          </button>
+        </div>
+      )}
+
       {/* 📱 1. TOP WHITE HEADER */}
       <header className="sticky top-0 z-30 bg-white border-b border-slate-100 px-4 py-3 flex justify-between items-center shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
         <div className="flex items-center gap-1.5 cursor-pointer" onClick={() => setShowCompanySelectModal(true)}>
@@ -4574,28 +4593,61 @@ function MobileVyaparAppContent() {
               </button>
             </div>
 
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {(companies && companies.length > 0 ? companies : [{ _id: selectedCompany?._id, name: companyDisplayName }]).map(c => {
-                const cId = c._id || c.id;
-                const isSelected = selectedCompany?._id === cId || selectedCompany?.id === cId;
-                return (
-                  <div
-                    key={cId || Math.random()}
-                    onClick={() => {
-                      if (selectCompany) selectCompany(c);
-                      setShowCompanySelectModal(false);
-                      setTimeout(() => window.location.reload(), 100);
-                    }}
-                    className={`p-3 rounded-2xl border flex justify-between items-center cursor-pointer transition ${isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-900 font-extrabold' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 font-bold'}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span>🏪</span>
-                      <span className="text-xs">{c.name || c.companyName || "My Company"}</span>
-                    </div>
-                    {isSelected && <CheckCircle size={16} className="text-indigo-600" />}
-                  </div>
-                );
-              })}
+            <div className="space-y-3 max-h-72 overflow-y-auto">
+              <div>
+                <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1 px-1">
+                  🏢 आपकी वास्तविक कंपनियाँ
+                </div>
+                <div className="space-y-1.5">
+                  {(companies && companies.length > 0 ? companies.filter(c => !c.isDemo) : [{ _id: selectedCompany?._id, name: companyDisplayName, isDemo: false }]).map(c => {
+                    const cId = c._id || c.id;
+                    const isSelected = (selectedCompany?._id === cId || selectedCompany?.id === cId) && !selectedCompany?.isDemo;
+                    return (
+                      <div
+                        key={cId || Math.random()}
+                        onClick={() => {
+                          if (exitDemoModule) exitDemoModule();
+                          if (selectCompany) selectCompany(c);
+                          setShowCompanySelectModal(false);
+                          setTimeout(() => window.location.reload(), 100);
+                        }}
+                        className={`p-3 rounded-2xl border flex justify-between items-center cursor-pointer transition ${isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-900 font-extrabold' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 font-bold'}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>🏪</span>
+                          <span className="text-xs">{c.name || c.companyName || "My Company"}</span>
+                        </div>
+                        {isSelected && <CheckCircle size={16} className="text-indigo-600" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100">
+                <div className="text-[10px] font-black uppercase text-amber-600 tracking-wider mb-1 px-1">
+                  🧪 डेमो व सैंडबॉक्स मॉड्यूल्स (सुरक्षित परीक्षण)
+                </div>
+                <div className="space-y-1.5">
+                  {(allDemoCompanies || []).map(demoCo => {
+                    const isSelected = selectedCompany?._id === demoCo._id;
+                    return (
+                      <div
+                        key={demoCo._id}
+                        onClick={() => {
+                          if (enterDemoModule) enterDemoModule(demoCo.industryType);
+                          setShowCompanySelectModal(false);
+                          setTimeout(() => window.location.reload(), 100);
+                        }}
+                        className={`p-2.5 rounded-xl border flex justify-between items-center cursor-pointer transition ${isSelected ? 'bg-amber-100 border-amber-300 text-amber-900 font-extrabold' : 'bg-amber-50/50 border-amber-200/60 text-slate-700 hover:bg-amber-100/50 font-medium'}`}
+                      >
+                        <span className="text-xs">{demoCo.name}</span>
+                        {isSelected && <CheckCircle size={15} className="text-amber-700" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             <div className="pt-2 border-t border-slate-100">
