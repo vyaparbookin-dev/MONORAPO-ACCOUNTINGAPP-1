@@ -399,6 +399,7 @@ export const getProfitLoss = async (req, res) => {
     let gasAndPower = 0;
     let rentAndProperty = 0;
     let otherExpenses = 0;
+    let gharKharch = 0;
 
     for (const exp of expenses) {
       const amt = Number(exp.amount) || 0;
@@ -406,8 +407,11 @@ export const getProfitLoss = async (req, res) => {
       const cat = String(exp.category || "").toLowerCase();
       const desc = String(exp.description || "").toLowerCase();
       const combined = `${title} ${cat} ${desc}`;
+      const isDrawing = exp.expenseType === 'drawings' || (exp.familyMember && String(exp.familyMember).trim() !== '');
 
-      if (/दूध|सब्जी|राशन|raw|grocery|food|kitchen|paneer|dairy|चिकन|मसाले|किराना|सब्जियां/.test(combined)) {
+      if (isDrawing) {
+        gharKharch += amt;
+      } else if (/दूध|सब्जी|राशन|raw|grocery|food|kitchen|paneer|dairy|चिकन|मसाले|किराना|सब्जियां/.test(combined)) {
         foodCost += amt;
       } else if (/गैस|सिलेंडर|lpg|gas|bijli|बिजली|power|electric/.test(combined)) {
         gasAndPower += amt;
@@ -421,7 +425,8 @@ export const getProfitLoss = async (req, res) => {
     }
 
     const totalPurchase = foodCost;
-    const totalExpenses = foodCost + staffSalaries + gasAndPower + rentAndProperty + otherExpenses;
+    const businessExpenses = foodCost + staffSalaries + gasAndPower + rentAndProperty + otherExpenses;
+    const totalExpenses = businessExpenses + gharKharch;
     const netProfit = totalSales - totalExpenses;
 
     const dailyAvgSales = Math.round(totalSales / daysCount);
@@ -434,6 +439,8 @@ export const getProfitLoss = async (req, res) => {
         totalSales,
         totalPurchase,
         totalExpenses,
+        businessExpenses,
+        gharKharch,
         netProfit,
         daysCount,
         dailyAvgSales,
@@ -444,6 +451,7 @@ export const getProfitLoss = async (req, res) => {
           staffSalaries,
           gasAndPower,
           rentAndProperty,
+          gharKharch,
           otherExpenses
         },
         billsCount: bills.length,

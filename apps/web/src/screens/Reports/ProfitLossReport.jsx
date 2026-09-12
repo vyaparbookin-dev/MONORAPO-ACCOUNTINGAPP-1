@@ -94,6 +94,16 @@ const ProfitLossReportPage = () => {
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       setStartDate(startOfMonth.toISOString().split("T")[0]);
       setEndDate(now.toISOString().split("T")[0]);
+    } else if (p === "quarter") {
+      const curQ = Math.floor(now.getMonth() / 3);
+      const startOfQ = new Date(now.getFullYear(), curQ * 3, 1);
+      setStartDate(startOfQ.toISOString().split("T")[0]);
+      setEndDate(now.toISOString().split("T")[0]);
+    } else if (p === "half_year") {
+      const startMonth = now.getMonth() < 6 ? 0 : 6;
+      const startOfHalf = new Date(now.getFullYear(), startMonth, 1);
+      setStartDate(startOfHalf.toISOString().split("T")[0]);
+      setEndDate(now.toISOString().split("T")[0]);
     } else if (p === "last_month") {
       const startOfLast = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const endOfLast = new Date(now.getFullYear(), now.getMonth(), 0);
@@ -103,6 +113,9 @@ const ProfitLossReportPage = () => {
       const startOfYear = new Date(now.getFullYear(), 0, 1);
       setStartDate(startOfYear.toISOString().split("T")[0]);
       setEndDate(now.toISOString().split("T")[0]);
+    } else if (p === "all") {
+      setStartDate("");
+      setEndDate("");
     }
   };
 
@@ -110,8 +123,12 @@ const ProfitLossReportPage = () => {
     setLoading(true);
     setError(null);
     try {
+      let plUrl = "/api/reports/profitloss";
+      if (startDate && endDate) {
+        plUrl += `?startDate=${startDate}&endDate=${endDate}`;
+      }
       const [plRes, billsRes, invRes] = await Promise.all([
-        api.get(`/api/reports/profitloss?startDate=${startDate}&endDate=${endDate}`).catch(() => null),
+        api.get(plUrl).catch(() => null),
         api.get('/api/billing?limit=500').catch(() => null),
         api.get('/api/inventory').catch(() => null)
       ]);
@@ -234,8 +251,10 @@ const ProfitLossReportPage = () => {
   const staffCost = Number(report?.breakdown?.staffSalaries ?? 0);
   const gasAndPower = Number(report?.breakdown?.gasAndPower ?? 0);
   const rentCost = Number(report?.breakdown?.rentAndProperty ?? 0);
+  const gharKharch = Number(report?.breakdown?.gharKharch ?? report?.gharKharch ?? 0);
   const otherExpenses = Number(report?.breakdown?.otherExpenses ?? 0);
-  const totalExpenses = report?.totalExpenses !== undefined ? Number(report.totalExpenses) : (foodCost + staffCost + gasAndPower + rentCost + otherExpenses);
+  const businessExpenses = report?.businessExpenses !== undefined ? Number(report.businessExpenses) : (foodCost + staffCost + gasAndPower + rentCost + otherExpenses);
+  const totalExpenses = report?.totalExpenses !== undefined ? Number(report.totalExpenses) : (businessExpenses + gharKharch);
   const netProfit = report?.netProfit !== undefined ? Number(report.netProfit) : (sales - totalExpenses);
 
   // Percentage Calculations
@@ -243,12 +262,13 @@ const ProfitLossReportPage = () => {
   const staffPercent = sales > 0 ? ((staffCost / sales) * 100).toFixed(1) : 0;
   const rentPercent = sales > 0 ? ((rentCost / sales) * 100).toFixed(1) : 0;
   const gasPowerPercent = sales > 0 ? ((gasAndPower / sales) * 100).toFixed(1) : 0;
+  const gharKharchPercent = sales > 0 ? ((gharKharch / sales) * 100).toFixed(1) : 0;
   const netProfitPercent = sales > 0 ? ((netProfit / sales) * 100).toFixed(1) : 0;
 
   // WhatsApp Flash Report with MoM Comparison & Break-Even
   const shareWhatsAppSummary = () => {
     let msg = `*📊 HOSPITALITY P&L & BUDGET FORECAST REPORT*\n`;
-    msg += `*Period:* ${startDate} to ${endDate}\n`;
+    msg += `*Period:* ${startDate || "All Time"} to ${endDate || "Present"}\n`;
     msg += `----------------------------------\n`;
     msg += `*🟢 Total Sales:* ₹${sales.toLocaleString("en-IN")}\n`;
     msg += `  • Daily Sales Pace: ₹${predictiveBudget.currentMonthDailyAvgSales.toLocaleString("en-IN")}/day (Last Mo: ₹${predictiveBudget.lastMonthDailyAvgSales.toLocaleString("en-IN")}/day, *${predictiveBudget.salesPaceVariancePercent}%*)\n`;
@@ -259,6 +279,9 @@ const ProfitLossReportPage = () => {
     msg += `  • 👨‍🍳 Staff Salaries: ₹${staffCost.toLocaleString("en-IN")} (*${staffPercent}%*)\n`;
     msg += `  • 🏢 Shop/Hall Rent: ₹${rentCost.toLocaleString("en-IN")} (*${rentPercent}%*)\n`;
     msg += `  • 🔥 Gas & Electricity: ₹${gasAndPower.toLocaleString("en-IN")} (*${gasPowerPercent}%*)\n`;
+    if (gharKharch > 0) {
+      msg += `  • 🏡 Family Drawings (घर खर्च): ₹${gharKharch.toLocaleString("en-IN")} (*${gharKharchPercent}%*)\n`;
+    }
     msg += `----------------------------------\n`;
     msg += `*💰 NET SHUDDH PROFIT (EBITDA):* *₹${netProfit.toLocaleString("en-IN")} (${netProfitPercent}% Margin)*\n`;
     msg += `*🎯 Budget Gap Status:* *${predictiveBudget.isUnderBudget ? `Saved ₹${predictiveBudget.budgetVarianceGap} Under Budget ✓` : "Over Budget"}*\n`;
@@ -308,16 +331,20 @@ const ProfitLossReportPage = () => {
         {/* Period Filter Tabs */}
         <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-wrap items-center gap-2 print:hidden">
           {[
+            { id: "all", label: "📊 All Time (सभी समय)" },
             { id: "today", label: "📅 Today (आज)" },
             { id: "week", label: "📆 This Week (इस हफ्ते)" },
             { id: "month", label: "🗓️ This Month (इस महीने)" },
-            { id: "last_month", label: "⏮️ Last Month (पिछला महीना)" },
+            { id: "last_month", label: "⏮️ Last Month (पिछला)" },
+            { id: "quarter", label: "🕒 3 Months (त्रैमासिक)" },
+            { id: "half_year", label: "🌗 6 Months (छमाही)" },
             { id: "year", label: "📈 Full Year (सालाना)" },
+            { id: "custom", label: "⚙️ Custom Range" },
           ].map((p) => (
             <button
               key={p.id}
               onClick={() => handlePeriodChange(p.id)}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
                 period === p.id
                   ? "bg-emerald-700 text-white shadow"
                   : "bg-slate-100 text-gray-700 hover:bg-slate-200"
@@ -326,8 +353,31 @@ const ProfitLossReportPage = () => {
               {p.label}
             </button>
           ))}
+
+          {period === "custom" && (
+            <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-2 py-0.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-emerald-600"
+              />
+              <span className="text-xs text-gray-500 font-semibold">to</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-2 py-0.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-emerald-600"
+              />
+            </div>
+          )}
+
           <span className="text-xs text-gray-400 font-medium ml-auto">
-            Range: <strong>{startDate}</strong> to <strong>{endDate}</strong>
+            {startDate && endDate ? (
+              <>Range: <strong className="text-gray-700">{startDate}</strong> to <strong className="text-gray-700">{endDate}</strong></>
+            ) : (
+              <strong className="text-emerald-700">📊 सभी उपलब्ध डेटा (All Time)</strong>
+            )}
           </span>
         </div>
 
@@ -496,6 +546,22 @@ const ProfitLossReportPage = () => {
                   </div>
                   <span className="text-[10px] text-gray-500 mt-1 block">Target: 4% - 6%</span>
                 </div>
+
+                {gharKharch > 0 && (
+                  <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-amber-900">🏡 Family Drawings (घर खर्च)</span>
+                      <span className="text-xs font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded">
+                        {gharKharchPercent}%
+                      </span>
+                    </div>
+                    <p className="text-lg font-black text-amber-800 mt-1">₹{gharKharch.toLocaleString("en-IN")}</p>
+                    <div className="w-full bg-gray-200 h-2 rounded-full mt-2 overflow-hidden">
+                      <div className="bg-amber-600 h-full" style={{ width: `${Math.min(100, gharKharchPercent)}%` }}></div>
+                    </div>
+                    <span className="text-[10px] text-amber-700 font-semibold mt-1 block">निजी / परिवार खर्च</span>
+                  </div>
+                )}
               </div>
             </div>
 
