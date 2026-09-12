@@ -109,7 +109,12 @@ export default function DashboardLayout() {
   // Get the selected industry type and make it lowercase for easy checking
   // Dynamic Industry-Tailored Menu Generator (Strict Industry Business Logic)
   const getMenuForBusiness = (company) => {
-    const indType = (company?.industryType || company?.businessType || '').toLowerCase();
+    const rawInd = typeof company?.industryType === 'string' 
+      ? company.industryType 
+      : (typeof company?.businessType === 'string' 
+          ? company.businessType 
+          : (company?.industryType?.name || company?.businessType?.name || company?.industryType?.value || company?.businessType?.value || String(company?.industryType || company?.businessType || '')));
+    const indType = String(rawInd || '').toLowerCase();
 
     // 2. RESTAURANT & CAFE
     if (indType.includes('restaurant') || indType.includes('cafe') || indType.includes('food') || indType.includes('dining')) {
@@ -305,7 +310,7 @@ export default function DashboardLayout() {
           {sidebarOpen && (
             <div className="mb-3 px-3 py-2 bg-slate-800/80 rounded-xl border border-slate-700/60">
               <p className="text-[10px] uppercase font-black tracking-wider text-indigo-400">
-                🎯 {(selectedCompany?.industryType || selectedCompany?.businessType || "Business").toUpperCase()} SUITE
+                🎯 {String(typeof selectedCompany?.industryType === "string" ? selectedCompany.industryType : (typeof selectedCompany?.businessType === "string" ? selectedCompany.businessType : (selectedCompany?.industryType?.name || selectedCompany?.businessType?.name || selectedCompany?.industryType || selectedCompany?.businessType || "Business"))).toUpperCase()} SUITE
               </p>
               <p className="text-xs text-gray-200 font-bold truncate mt-0.5">
                 {selectedCompany?.name || "My Business"}

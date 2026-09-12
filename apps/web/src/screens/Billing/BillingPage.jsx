@@ -273,7 +273,7 @@ export default function BillingPage() {
     if (searchTerm) {
       filtered = filtered.filter(
         (bill) =>
-          bill.billNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          String(bill?.billNumber || '').toLowerCase().includes(String(searchTerm || '').toLowerCase()) ||
           bill.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
@@ -461,7 +461,7 @@ export default function BillingPage() {
     }
 
     // Auto-save unit if it's completely new (Tally-style feature)
-    const currentUnit = (newItem.unit || "pcs").toLowerCase();
+    const currentUnit = String(newItem?.unit || "pcs").toLowerCase();
     if (!unitsList.includes(currentUnit)) {
       // Background me save kar denge, UI block nahi karenge
       api.post("/api/unit", { name: currentUnit, shortCode: currentUnit.substring(0, 3).toUpperCase() })
@@ -471,7 +471,7 @@ export default function BillingPage() {
 
     // NEW: Auto Save to Inventory Checkbox Logic via API
     if (saveToInventory) {
-      const exists = inventory.find(p => p.name.toLowerCase() === newItem.name.toLowerCase());
+      const exists = inventory.find(p => String(p?.name || '').toLowerCase() === String(newItem?.name || '').toLowerCase());
       if (!exists) {
         api.post('/api/inventory', {
           name: newItem.name,
@@ -487,7 +487,7 @@ export default function BillingPage() {
       }
     }
 
-    const matched = inventory.find(p => p.name.toLowerCase() === newItem.name.toLowerCase() || p._id === newItem.productId);
+    const matched = inventory.find(p => String(p?.name || '').toLowerCase() === String(newItem?.name || '').toLowerCase() || p._id === newItem.productId);
     const itemImage = newItem.image || matched?.image || "";
 
     const itemTotal = newItem.quantity * (newItem.rate ?? 0);
@@ -602,7 +602,7 @@ export default function BillingPage() {
     setShowScanner(false);
     try {
       const product = inventory.find((p) => 
-        (p.sku && p.sku.toLowerCase() === decodedText.toLowerCase()) || 
+        (p.sku && String(p.sku).toLowerCase() === String(decodedText).toLowerCase()) || 
         (p.barcode && p.barcode === decodedText) ||
         (p.name && p.name.toLowerCase() === decodedText.toLowerCase())
       );
@@ -1611,7 +1611,7 @@ export default function BillingPage() {
       className="w-24 px-1.5 py-0.5 text-center font-bold text-gray-900 border rounded focus:ring-1 focus:ring-blue-500 text-xs"
     />
     {(() => {
-      const matchedProd = inventory.find(p => p._id === item.productId || p.name?.toLowerCase() === item.name?.toLowerCase());
+      const matchedProd = inventory.find(p => p._id === item.productId || String(p?.name || '').toLowerCase() === String(item?.name || '').toLowerCase());
       if (!matchedProd) return null;
       const rateA = matchedProd.sellingPrice || matchedProd.price || 0;
       const rateB = matchedProd.wholesalePrice || rateA;

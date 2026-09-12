@@ -84,11 +84,12 @@ const ExpensesPage = () => {
     }
 
     if (searchTerm) {
+      const q = String(searchTerm || '').toLowerCase();
       filtered = filtered.filter((exp) =>
-        exp.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        exp.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        exp.familyMember?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        exp.category?.toLowerCase().includes(searchTerm.toLowerCase())
+        String(exp.title || '').toLowerCase().includes(q) ||
+        String(exp.description || '').toLowerCase().includes(q) ||
+        String(exp.familyMember || '').toLowerCase().includes(q) ||
+        String(exp.category || '').toLowerCase().includes(q)
       );
     }
 
@@ -97,7 +98,7 @@ const ExpensesPage = () => {
     }
 
     if (memberFilter !== "all") {
-      filtered = filtered.filter((exp) => (exp.familyMember || 'Unassigned').toLowerCase() === memberFilter.toLowerCase());
+      filtered = filtered.filter((exp) => String(exp.familyMember || 'Unassigned').toLowerCase() === String(memberFilter || '').toLowerCase());
     }
 
     setFilteredExpenses(filtered);
@@ -314,7 +315,7 @@ const ExpensesPage = () => {
               <button
                 key={mem}
                 onClick={() => setMemberFilter(memberFilter === mem ? "all" : mem)}
-                className={`p-3 rounded-xl border text-left transition cursor-pointer ${memberFilter.toLowerCase() === mem.toLowerCase() ? 'bg-amber-600 text-white border-amber-600 shadow-sm' : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'}`}
+                className={`p-3 rounded-xl border text-left transition cursor-pointer ${String(memberFilter || '').toLowerCase() === String(mem || '').toLowerCase() ? 'bg-amber-600 text-white border-amber-600 shadow-sm' : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'}`}
               >
                 <span className="text-xs font-bold block truncate">👤 {mem}</span>
                 <span className="text-sm font-black mt-0.5 block">₹{familyMembersMap[mem].toLocaleString('en-IN')}</span>

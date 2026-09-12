@@ -58,7 +58,7 @@ const ItemMasterPage = () => {
       if (currentTab.endpoint === 'unit') {
         const defaultUnits = ["pcs", "kg", "ltr", "ft", "mtr", "dozen", "box", "bag", "nag", "cartoon", "set", "pair"];
         defaultUnits.forEach(defUnit => {
-          if (!normalizedList.some(u => (u.name || "").toLowerCase() === defUnit.toLowerCase())) {
+          if (!normalizedList.some(u => String(u?.name || "").toLowerCase() === String(defUnit || "").toLowerCase())) {
             normalizedList.push({
               _id: `default-${defUnit}`,
               name: defUnit,
@@ -140,7 +140,7 @@ const ItemMasterPage = () => {
   };
 
   const filteredData = dataList.filter(item => 
-    (item.name || "").toLowerCase().includes(searchTerm.toLowerCase())
+    String(item?.name || "").toLowerCase().includes(String(searchTerm || "").toLowerCase())
   );
 
   return (

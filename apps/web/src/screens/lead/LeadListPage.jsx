@@ -25,7 +25,7 @@ export default function LeadListPage() {
   }, []);
 
   const filteredLeads = leads.filter(lead =>
-    lead.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    String(lead?.name || '').toLowerCase().includes(String(searchTerm || '').toLowerCase()) ||
     lead.mobileNumber?.includes(searchTerm)
   );
 

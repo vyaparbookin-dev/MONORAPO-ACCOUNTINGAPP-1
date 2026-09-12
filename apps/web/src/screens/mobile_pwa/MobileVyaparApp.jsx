@@ -746,7 +746,7 @@ function MobileVyaparAppContent() {
     const allItems = gharKharchList;
     const filtered = memberFilter === "all"
       ? allItems
-      : allItems.filter(it => (it.familyMember || 'Unassigned').toLowerCase() === memberFilter.toLowerCase());
+      : allItems.filter(it => String(it.familyMember || 'Unassigned').toLowerCase() === String(memberFilter || 'all').toLowerCase());
     
     const total = filtered.reduce((s, it) => s + (Number(it.amount) || 0), 0);
     const titleHeader = memberFilter === "all"
@@ -957,7 +957,7 @@ function MobileVyaparAppContent() {
     };
 
     // Auto-create party locally if it doesn't exist
-    if (finalCustomer && finalCustomer !== "नकद ग्राहक (Walk-in)" && !parties.some(p => p.name.toLowerCase() === finalCustomer.toLowerCase())) {
+    if (finalCustomer && finalCustomer !== "नकद ग्राहक (Walk-in)" && !parties.some(p => String(p?.name || '').toLowerCase() === String(finalCustomer || '').toLowerCase())) {
       const newP = {
         id: `party-${Date.now()}`,
         name: finalCustomer,
@@ -1461,7 +1461,7 @@ function MobileVyaparAppContent() {
 
   // Filter 1600+ items live by search
   const filteredProducts = items.filter(it => 
-    (it.name || '').toLowerCase().includes(itemSearchTerm.toLowerCase())
+    String(it?.name || '').toLowerCase().includes(String(itemSearchTerm || '').toLowerCase())
   ).slice(0, 8); // Top 8 matches for speed
 
   return (
@@ -1943,7 +1943,7 @@ function MobileVyaparAppContent() {
 
             <div className="space-y-2">
               {parties
-                .filter(p => (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (p.phone && p.phone.includes(searchQuery)))
+                .filter(p => String(p?.name || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) || String(p?.phone || p?.mobileNumber || '').includes(searchQuery))
                 .map((p) => (
                 <div 
                   key={p.id}
@@ -1984,8 +1984,8 @@ function MobileVyaparAppContent() {
 
           // Filter items based on search, category, brand, and stock status
           const filteredItems = items.filter(it => {
-            const itemCat = (it.category || 'General').trim().toLowerCase();
-            const itemBrand = (it.brand || 'General').trim().toLowerCase();
+            const itemCat = String(typeof it?.category === 'string' ? it.category : (it?.category?.name || 'General')).trim().toLowerCase();
+            const itemBrand = String(typeof it?.brand === 'string' ? it.brand : (it?.brand?.name || 'General')).trim().toLowerCase();
             const q = searchQuery.trim().toLowerCase();
 
             const matchesSearch = !q || 
@@ -2248,7 +2248,7 @@ function MobileVyaparAppContent() {
             {/* 2-Column Grid of 20+ Reports */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {allReportsList
-                .filter(r => r.title.toLowerCase().includes(reportSearchQuery.toLowerCase()) || r.desc.toLowerCase().includes(reportSearchQuery.toLowerCase()))
+                .filter(r => String(r?.title || '').toLowerCase().includes(String(reportSearchQuery || '').toLowerCase()) || String(r?.desc || '').toLowerCase().includes(String(reportSearchQuery || '').toLowerCase()))
                 .map((r) => (
                 <div 
                   key={r.id}
@@ -2535,7 +2535,7 @@ function MobileVyaparAppContent() {
                   {showPartySuggestions && (
                     <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-44 overflow-y-auto divide-y divide-slate-100">
                       {parties
-                        .filter(p => (p.name || '').toLowerCase().includes(billCustomer.toLowerCase()) || (p.phone || '').includes(billCustomer))
+                        .filter(p => String(p?.name || '').toLowerCase().includes(String(billCustomer || '').toLowerCase()) || String(p?.phone || p?.mobileNumber || '').includes(String(billCustomer || '')))
                         .slice(0, 6)
                         .map(p => (
                           <div
@@ -3418,7 +3418,7 @@ function MobileVyaparAppContent() {
 
               const filteredItems = gharKharchMemberFilter === "all"
                 ? allItems
-                : allItems.filter(it => (it.familyMember || 'Unassigned').toLowerCase() === gharKharchMemberFilter.toLowerCase());
+                : allItems.filter(it => String(it.familyMember || 'Unassigned').toLowerCase() === String(gharKharchMemberFilter || 'all').toLowerCase());
               
               const filteredTotal = filteredItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
 
@@ -3475,7 +3475,7 @@ function MobileVyaparAppContent() {
                         <button
                           key={m}
                           onClick={() => setGharKharchMemberFilter(m)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap flex items-center gap-1 ${gharKharchMemberFilter.toLowerCase() === m.toLowerCase() ? 'bg-amber-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap flex items-center gap-1 ${String(gharKharchMemberFilter || '').toLowerCase() === String(m || '').toLowerCase() ? 'bg-amber-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                         >
                           <span>👤 {m}</span>
                           <span className="text-[10px] opacity-80">₹{membersMap[m]}</span>
@@ -3907,7 +3907,7 @@ function MobileVyaparAppContent() {
 
             <div className="grid grid-cols-2 gap-2">
               {["ALL", "General", "Paints", "Hardware", "Pipes & Fittings", "Electricals", "Sanitary", "Plywood & Beat", "Tools", ...new Set(items.map(it => it.category).filter(Boolean))].map(cat => {
-                const count = cat === "ALL" ? items.length : items.filter(it => (it.category || '').toLowerCase() === cat.toLowerCase()).length;
+                const count = cat === "ALL" ? items.length : items.filter(it => String(it?.category || '').toLowerCase() === String(cat || '').toLowerCase()).length;
                 return (
                   <button
                     key={cat}
@@ -3952,7 +3952,7 @@ function MobileVyaparAppContent() {
 
             <div className="grid grid-cols-2 gap-2">
               {["ALL", "General", "Asian Paints", "Berger", "Kamdhenu", "Astral", "Supreme", "Pidilite", "Havells", "Finolex", ...new Set(items.map(it => it.brand).filter(Boolean))].map(br => {
-                const count = br === "ALL" ? items.length : items.filter(it => (it.brand || '').toLowerCase() === br.toLowerCase()).length;
+                const count = br === "ALL" ? items.length : items.filter(it => String(it?.brand || '').toLowerCase() === String(br || '').toLowerCase()).length;
                 return (
                   <button
                     key={br}

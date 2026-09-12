@@ -50,10 +50,10 @@ export default function SuperAdminDashboardPage() {
 
   const filteredCompanies = companies.filter(c => {
     const matchesSearch = !searchQuery || 
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(c?.name || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) ||
       c.phone.includes(searchQuery) ||
       c.ownerName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesPlan = planFilter === 'all' || (c.planType || 'pro').toLowerCase() === planFilter;
+    const matchesPlan = planFilter === 'all' || String(c?.planType || 'pro').toLowerCase() === String(planFilter || 'all').toLowerCase();
     return matchesSearch && matchesPlan;
   });
 

@@ -26,7 +26,7 @@ export default function QuotationListPage() {
   }, []);
 
   const filteredQuotations = quotations.filter(q =>
-    q.quotationNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    String(q?.quotationNumber || '').toLowerCase().includes(String(searchTerm || '').toLowerCase()) ||
     q.partyId?.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 

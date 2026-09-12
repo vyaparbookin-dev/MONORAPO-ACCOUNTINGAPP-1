@@ -135,9 +135,9 @@ const ScheemApplyModel = ({ isOpen, onClose, cartItems, onApply }) => {
     
     // Try to find exact match in inventory
     const foundItem = inventory.find(item => 
-      (item.sku && item.sku.toLowerCase() === decodedText.toLowerCase()) || 
+      (item.sku && String(item.sku).toLowerCase() === String(decodedText).toLowerCase()) || 
       (item.barcode && item.barcode === decodedText) ||
-      (item.name && item.name.toLowerCase() === decodedText.toLowerCase())
+      (item.name && String(item.name).toLowerCase() === String(decodedText).toLowerCase())
     );
     
     if (foundItem) {
@@ -146,8 +146,8 @@ const ScheemApplyModel = ({ isOpen, onClose, cartItems, onApply }) => {
   };
 
   const filteredInventory = inventory.filter(item => 
-    item.name.toLowerCase().includes(customItemSearch.toLowerCase()) || 
-    item.sku?.toLowerCase().includes(customItemSearch.toLowerCase())
+    String(item?.name || '').toLowerCase().includes(String(customItemSearch || '').toLowerCase()) || 
+    String(item?.sku || '').toLowerCase().includes(String(customItemSearch || '').toLowerCase())
   );
 
   if (!isOpen) return null;

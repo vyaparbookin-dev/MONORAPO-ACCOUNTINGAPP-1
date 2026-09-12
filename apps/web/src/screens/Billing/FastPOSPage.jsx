@@ -418,7 +418,7 @@ export default function FastPOSPage() {
     const matchesCat = selectedCategory === "All" || (p.category || "General") === selectedCategory;
     const matchesSearch =
       !searchFilter ||
-      p.name?.toLowerCase().includes(searchFilter.toLowerCase()) ||
+      String(p?.name || '').toLowerCase().includes(String(searchFilter || '').toLowerCase()) ||
       p.barcode?.includes(searchFilter) ||
       p.sku?.toLowerCase().includes(searchFilter.toLowerCase());
     return matchesCat && matchesSearch;
