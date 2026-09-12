@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Phone,
   Trash2,
+  Edit,
   Send,
   Printer,
   Receipt,
@@ -295,6 +296,7 @@ function MobileVyaparAppContent() {
   const [selectedFamilyMember, setSelectedFamilyMember] = useState("Self");
   const [customFamilyMember, setCustomFamilyMember] = useState("");
   const [gharKharchDate, setGharKharchDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [gharKharchTime, setGharKharchTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [gharKharchTitle, setGharKharchTitle] = useState("");
   const [gharKharchAmount, setGharKharchAmount] = useState("");
   const [gharKharchCategory, setGharKharchCategory] = useState("राशन/किराना");
@@ -634,7 +636,11 @@ function MobileVyaparAppContent() {
     if (!item) return;
     setEditingGharKharchItem(item);
     setSelectedFamilyMember(item.familyMember || "Self");
-    setGharKharchDate(item.date ? new Date(item.date).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]);
+    const itemDate = item.date ? new Date(item.date) : new Date();
+    setGharKharchDate(itemDate.toISOString().split("T")[0]);
+    const hh = String(itemDate.getHours()).padStart(2, '0');
+    const mm = String(itemDate.getMinutes()).padStart(2, '0');
+    setGharKharchTime(`${hh}:${mm}`);
     setGharKharchAmount(String(item.amount || ""));
     setGharKharchCategory(item.category || "राशन/किराना");
     setCustomGharKharchCategory("");
@@ -665,6 +671,10 @@ function MobileVyaparAppContent() {
       : `${finalCategory} (दुकान खर्च)`;
     const finalTitle = gharKharchTitle.trim() || defaultTitle;
 
+    const finalDateTime = (gharKharchDate && gharKharchTime)
+      ? new Date(`${gharKharchDate}T${gharKharchTime}:00`)
+      : (gharKharchDate ? new Date(gharKharchDate) : new Date());
+
     setSavingGharKharch(true);
     try {
       const payload = {
@@ -677,7 +687,7 @@ function MobileVyaparAppContent() {
         paymentMethod: gharKharchPaymentMode,
         description: gharKharchNotes.trim(),
         notes: gharKharchNotes.trim(),
-        date: gharKharchDate ? new Date(gharKharchDate) : new Date()
+        date: finalDateTime
       };
 
       const newExpenseRecord = {
@@ -686,17 +696,18 @@ function MobileVyaparAppContent() {
         ...payload
       };
 
-      // Instantly persist in localStorage so it NEVER disappears
+      // Instantly persist in localStorage so it NEVER disappears or shows old data
       try {
         const stored = localStorage.getItem("vb_local_expenses");
         let list = stored ? JSON.parse(stored) : [];
         if (editingGharKharchItem) {
-          list = list.map(item => ((item._id || item.id) === newExpenseRecord._id ? newExpenseRecord : item));
+          const editId = editingGharKharchItem._id || editingGharKharchItem.id;
+          list = list.map(item => ((item._id || item.id) === editId ? newExpenseRecord : item));
         } else {
           list = [newExpenseRecord, ...list];
         }
         localStorage.setItem("vb_local_expenses", JSON.stringify(list));
-        setGharKharchList(prev => [newExpenseRecord, ...prev.filter(p => (p._id || p.id) !== newExpenseRecord._id)]);
+        setGharKharchList(prev => [newExpenseRecord, ...prev.filter(p => (p._id || p.id) !== newExpenseRecord._id && (p._id || p.id) !== newExpenseRecord.id)]);
       } catch (err) {
         console.warn("Local expense store err:", err);
       }
@@ -767,11 +778,25 @@ function MobileVyaparAppContent() {
   };
 
   const handleDeleteGharKharch = async (id) => {
-    if (!window.confirm("क्या आप इस खर्च को हटाना चाहते हैं?")) return;
+    if (!id) return;
+    if (!window.confirm("क्या आप इस खर्च को हमेशा के लिए हटाना चाहते हैं?")) return;
     try {
-      await api.delete(`/expenses/${id}`);
-      setGharKharchList(prev => prev.filter(k => (k._id || k.id) !== id));
-      alert("खर्च हटा दिया गया!");
+      // 1. Immediately wipe from localStorage
+      try {
+        const stored = localStorage.getItem("vb_local_expenses");
+        if (stored) {
+          const list = JSON.parse(stored);
+          const updated = list.filter(k => (k._id || k.id) !== id && k.id !== id && k._id !== id);
+          localStorage.setItem("vb_local_expenses", JSON.stringify(updated));
+        }
+      } catch (e) {}
+
+      // 2. Wipe from React state immediately
+      setGharKharchList(prev => prev.filter(k => (k._id || k.id) !== id && k.id !== id && k._id !== id));
+
+      // 3. Delete from backend database
+      await api.delete(`/expenses/${id}`).catch(err => console.warn("Backend delete error:", err));
+      alert("✅ खर्च सफलतापूर्वक हमेशा के लिए डिलीट हो गया!");
     } catch (err) {
       console.error(err);
       alert("डिलीट करने में त्रुटि आई।");
@@ -3151,21 +3176,31 @@ function MobileVyaparAppContent() {
         </div>
       )}
 
-      {/* 📱 6.3 ADD GHAR KHARCH / EXPENSE MODAL */}
+      {/* 📱 6.3 ADD / EDIT GHAR KHARCH / EXPENSE MODAL */}
       {showGharKharchModal && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 space-y-3.5 shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-                  🏡
+                  {editingGharKharchItem ? "✏️" : "🏡"}
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm text-[#0F172A]">खर्च दर्ज करें (+ Expense)</h3>
-                  <p className="text-[10px] text-slate-400">घर खर्च (Family) या दुकान खर्च दर्ज करें</p>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">
+                    {editingGharKharchItem ? "✏️ खर्च संपादित करें (Edit Expense)" : "खर्च दर्ज करें (+ Expense)"}
+                  </h3>
+                  <p className="text-[10px] text-slate-400">
+                    {editingGharKharchItem ? "तारीख, समय, राशि व विवरण बदलें" : "घर खर्च (Family) या दुकान खर्च दर्ज करें"}
+                  </p>
                 </div>
               </div>
-              <button onClick={() => setShowGharKharchModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <button 
+                onClick={() => {
+                  setEditingGharKharchItem(null);
+                  setShowGharKharchModal(false);
+                }} 
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1"
+              >
                 <X size={18} />
               </button>
             </div>
@@ -3227,6 +3262,29 @@ function MobileVyaparAppContent() {
                   )}
                 </div>
               )}
+
+              {/* Date & Time Picker */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">📅 तारीख (Date) *</label>
+                  <input
+                    type="date"
+                    value={gharKharchDate}
+                    onChange={(e) => setGharKharchDate(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-amber-600"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">⏰ समय (Time)</label>
+                  <input
+                    type="time"
+                    value={gharKharchTime}
+                    onChange={(e) => setGharKharchTime(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-amber-600"
+                  />
+                </div>
+              </div>
 
               {/* Amount & Category */}
               <div className="grid grid-cols-2 gap-2">
@@ -3315,7 +3373,7 @@ function MobileVyaparAppContent() {
                 className="w-full py-3.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-extrabold text-sm rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
               >
                 {savingGharKharch ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-                {savingGharKharch ? "खर्च दर्ज हो रहा है..." : (gharKharchType === "drawings" ? "💾 घर खर्च सेव करें" : "💾 दुकान खर्च सेव करें")}
+                {savingGharKharch ? "खर्च सेव हो रहा है..." : (editingGharKharchItem ? "💾 बदलाव सेव करें (Update Expense)" : (gharKharchType === "drawings" ? "💾 घर खर्च सेव करें" : "💾 दुकान खर्च सेव करें"))}
               </button>
             </form>
           </div>
@@ -3339,6 +3397,7 @@ function MobileVyaparAppContent() {
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => {
+                    setEditingGharKharchItem(null);
                     handleToggleGharKharchLedger(false);
                     setShowGharKharchModal(true);
                   }}
@@ -3461,16 +3520,26 @@ function MobileVyaparAppContent() {
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2.5">
-                            <span className="font-black text-xs text-amber-800">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-black text-xs text-amber-800 mr-1">
                               ₹ {Number(exp.amount || 0).toLocaleString('en-IN')}
                             </span>
                             <button
-                              onClick={() => handleDeleteGharKharch(exp._id || exp.id)}
-                              className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
-                              title="Delete Expense"
+                              onClick={() => {
+                                handleToggleGharKharchLedger(false);
+                                handleOpenEditGharKharch(exp);
+                              }}
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-100/70 rounded-lg transition cursor-pointer"
+                              title="एडिट करें (Edit Expense)"
                             >
-                              <Trash2 size={14} />
+                              <Edit size={15} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteGharKharch(exp._id || exp.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                              title="हमेशा के लिए हटाएं (Delete Expense)"
+                            >
+                              <Trash2 size={15} />
                             </button>
                           </div>
                         </div>

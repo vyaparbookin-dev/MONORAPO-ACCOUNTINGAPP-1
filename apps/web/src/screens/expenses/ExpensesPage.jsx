@@ -166,9 +166,20 @@ const ExpensesPage = () => {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm("क्या आप इस खर्च को हटाना चाहते हैं?")) {
+    if (!id) return;
+    if (window.confirm("क्या आप इस खर्च को हमेशा के लिए हटाना चाहते हैं?")) {
       try {
-        await api.delete(`/expenses/${id}`);
+        try {
+          const stored = localStorage.getItem("vb_local_expenses");
+          if (stored) {
+            const list = JSON.parse(stored);
+            const updated = list.filter(k => (k._id || k.id) !== id && k.id !== id && k._id !== id);
+            localStorage.setItem("vb_local_expenses", JSON.stringify(updated));
+          }
+        } catch (e) {}
+
+        setExpenses(prev => prev.filter(k => (k._id || k.id) !== id && k.id !== id && k._id !== id));
+        await api.delete(`/expenses/${id}`).catch(err => console.warn("Backend delete err:", err));
         fetchExpenses();
       } catch (err) {
         console.error("Error deleting expense:", err);

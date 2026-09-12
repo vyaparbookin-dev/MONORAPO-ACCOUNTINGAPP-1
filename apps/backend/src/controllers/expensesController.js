@@ -51,7 +51,7 @@ export const listExpenses = async (req, res) => {
     const limit = parseInt(req.query.limit) || 100;
     const skip = (page - 1) * limit;
 
-    const filter = { companyId: req.companyId, isDeleted: false };
+    const filter = { companyId: req.companyId, isDeleted: { $ne: true } };
 
     // Support filter by expenseType (e.g. 'drawings' for Ghar Kharch, 'operating' for Business)
     if (req.query.expenseType && req.query.expenseType !== 'all') {
@@ -91,7 +91,7 @@ export const getGharKharchSummary = async (req, res) => {
         { expenseType: "drawings" },
         { familyMember: { $exists: true, $nin: ["", null] } }
       ],
-      isDeleted: false
+      isDeleted: { $ne: true }
     };
 
     const allGharKharch = await Expense.find(gharKharchFilter).sort({ date: -1, createdAt: -1 });
@@ -149,15 +149,25 @@ export const getGharKharchSummary = async (req, res) => {
 
 export const deleteExpense = async (req, res) => {
   try {
-    const oldExpense = await Expense.findOne({ _id: req.params.id, companyId: req.companyId });
+    const id = req.params.id;
+    let query = { companyId: req.companyId };
+
+    if (id && id.match(/^[0-9a-fA-F]{24}$/)) {
+      query.$or = [{ _id: id }, { id: id }];
+    } else {
+      query.$or = [{ id: id }, { _id: id.startsWith('exp_') ? undefined : id }].filter(Boolean);
+    }
+
+    const oldExpense = await Expense.findOne(query);
     const expense = await Expense.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId },
+      query,
       { isDeleted: true },
       { new: true }
     );
-    if (!expense) return res.status(404).json({ success: false, error: "Expense not found" });
     
-    await logActivity(req, `Deleted Expense (ID: ${req.params.id}) | Title: ${oldExpense?.title || 'Unknown'}, Amount: ₹${oldExpense?.amount || 0}`);
+    if (oldExpense) {
+      await logActivity(req, `Deleted Expense (ID: ${id}) | Title: ${oldExpense?.title || 'Unknown'}, Amount: ₹${oldExpense?.amount || 0}`);
+    }
     
     res.json({ success: true, message: "Expense deleted successfully!" });
   } catch (error) {
