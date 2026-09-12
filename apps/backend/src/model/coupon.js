@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 
 const coupanSchema = new mongoose.Schema({
+  companyId: { type: mongoose.Schema.Types.Mixed, required: false },
   code: { type: String, required: true },
   discount: Number,
   expiryDate: Date,

@@ -3,7 +3,9 @@ import SchemeUsage from "../model/schemeusage.js";
 
 export const addScheme = async (req, res) => {
   try {
-    const scheme = new Scheme(req.body);
+    const schemeData = { ...req.body };
+    if (req.companyId) schemeData.companyId = req.companyId;
+    const scheme = new Scheme(schemeData);
     await scheme.save();
     res.status(201).json({ success: true, scheme });
   } catch (error) {
@@ -13,7 +15,8 @@ export const addScheme = async (req, res) => {
 
 export const listSchemes = async (req, res) => {
   try {
-    const schemes = await Scheme.find();
+    const filter = req.companyId ? { companyId: req.companyId } : {};
+    const schemes = await Scheme.find(filter);
     res.json({ success: true, schemes });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

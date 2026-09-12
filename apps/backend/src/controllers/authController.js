@@ -9,6 +9,78 @@ import Company from "../model/company.js";
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
 
+export const resolveUserCompanies = async (user) => {
+  const coConditions = [{ user: user._id }];
+  if (user.email) {
+    coConditions.push(
+      { ownerEmail: user.email.toLowerCase() },
+      { email: user.email.toLowerCase() }
+    );
+  }
+  if (user.phone) {
+    const rawPhone = String(user.phone).trim();
+    const numericOnly = rawPhone.replace(/[^0-9]/g, "");
+    const last10 = numericOnly.length >= 10 ? numericOnly.slice(-10) : numericOnly;
+    if (numericOnly) {
+      coConditions.push(
+        { phone: rawPhone },
+        { phone: numericOnly },
+        { phone: last10 },
+        { phone: `+91${last10}` },
+        { phone: `91${last10}` }
+      );
+    }
+  }
+
+  let companies = await Company.find({ $or: coConditions })
+    .select('_id name user ownerName ownerEmail phone industryType businessType address gstin isDemo')
+    .lean();
+
+  if (companies.length === 0 && user.companyId) {
+    const directCo = await Company.findById(user.companyId)
+      .select('_id name user ownerName ownerEmail phone industryType businessType address gstin isDemo')
+      .lean();
+    if (directCo) companies = [directCo];
+  }
+
+  // Ensure active companyId is set on user
+  let activeCompany = companies.find(c => c._id?.toString() === user.companyId?.toString());
+  if (!activeCompany) {
+    if (companies.length > 0) {
+      activeCompany = companies[0];
+      user.companyId = activeCompany._id;
+      await user.save();
+    } else {
+      const newCo = new Company({
+        name: `${user.name || 'My'} Business`,
+        ownerName: user.name || user.email || "Owner",
+        ownerEmail: user.email || "",
+        user: user._id,
+        phone: user.phone || "",
+        industryType: "general",
+        businessType: ["general"],
+      });
+      await newCo.save();
+      user.companyId = newCo._id;
+      await user.save();
+      companies = [newCo.toObject()];
+      activeCompany = companies[0];
+    }
+  }
+
+  // Link any unlinked company to this user
+  for (const c of companies) {
+    if (!c.user || c.user.toString() !== user._id.toString()) {
+      try {
+        await Company.findByIdAndUpdate(c._id, { user: user._id });
+      } catch (e) {}
+    }
+  }
+
+  return companies;
+};
+
+
 // Register
 export const register = async (req, res) => {
   try {
@@ -141,26 +213,7 @@ export const login = async (req, res) => {
     }
 
     user.isVerified = true;
-
-    if (!user.companyId) {
-      let existingCo = await Company.findOne({ user: user._id });
-      if (!existingCo) {
-        existingCo = new Company({
-          name: `${user.name || 'My'} Company`,
-          ownerName: user.name || user.email,
-          ownerEmail: user.email,
-          user: user._id,
-          phone: user.phone || "",
-          industryType: "general",
-          businessType: ["general"],
-        });
-        await existingCo.save();
-      }
-      user.companyId = existingCo._id;
-    }
-    await user.save();
-
-    let userCompanies = await Company.find({ user: user._id }).select('_id name user').lean();
+    const userCompanies = await resolveUserCompanies(user);
 
     const token = generateToken(user._id, user.companyId);
     const userResponse = user.toObject();
@@ -243,32 +296,9 @@ export const magicLogin = async (req, res) => {
         businessType: ["general"],
       });
       await company.save();
-    } else {
-      user.isVerified = true;
-      if (!user.companyId) {
-        let existingCo = await Company.findOne({ user: user._id });
-        if (!existingCo) {
-          existingCo = new Company({
-            name: `${user.name || 'My'} Company`,
-            ownerName: user.name || user.email,
-            ownerEmail: user.email,
-            user: user._id,
-            phone: user.phone || "",
-            industryType: "general",
-            businessType: ["general"],
-          });
-          await existingCo.save();
-        }
-        user.companyId = existingCo._id;
-      }
-      await user.save();
     }
-
-    let userCompanies = await Company.find({ user: user._id }).select('_id name user').lean();
-    if (userCompanies.length === 0 && user.companyId) {
-      const co = await Company.findById(user.companyId).select('_id name user').lean();
-      if (co) userCompanies = [co];
-    }
+    user.isVerified = true;
+    const userCompanies = await resolveUserCompanies(user);
 
     const token = generateToken(user._id, user.companyId);
     const userResponse = user.toObject();
@@ -366,31 +396,10 @@ export const quickResetPassword = async (req, res) => {
       user.isVerified = true;
       user.otp = undefined;
       user.otpExpires = undefined;
-
-      if (!user.companyId) {
-        let existingCo = await Company.findOne({ user: user._id });
-        if (!existingCo) {
-          existingCo = new Company({
-            name: `${user.name || 'My'} Company`,
-            ownerName: user.name || user.email,
-            ownerEmail: user.email,
-            user: user._id,
-            phone: user.phone || "",
-            industryType: "general",
-            businessType: ["general"]
-          });
-          await existingCo.save();
-        }
-        user.companyId = existingCo._id;
-      }
       await user.save();
     }
 
-    let userCompanies = await Company.find({ user: user._id }).select('_id name user').lean();
-    if (userCompanies.length === 0 && user.companyId) {
-      const co = await Company.findById(user.companyId).select('_id name user').lean();
-      if (co) userCompanies = [co];
-    }
+    const userCompanies = await resolveUserCompanies(user);
 
     const token = generateToken(user._id, user.companyId);
     const userResponse = user.toObject();
@@ -585,27 +594,9 @@ export const googleAuth = async (req, res) => {
         user: userId,
       });
       await company.save();
-    } else {
-      user.isVerified = true;
-      if (!user.companyId) {
-        let existingCo = await Company.findOne({ user: user._id });
-        if (!existingCo) {
-          existingCo = new Company({ 
-            name: `${user.name || name}'s Company`, 
-            ownerName: user.name || name, 
-            ownerEmail: email.toLowerCase(),
-            user: user._id,
-            industryType: 'General',
-            businessType: ['General'],
-          });
-          await existingCo.save();
-        }
-        user.companyId = existingCo._id;
-        await user.save();
-      }
     }
-
-    let userCompanies = await Company.find({ user: user._id }).select('_id name user').lean();
+    user.isVerified = true;
+    const userCompanies = await resolveUserCompanies(user);
 
     const userResponse = user.toObject();
     delete userResponse.password;

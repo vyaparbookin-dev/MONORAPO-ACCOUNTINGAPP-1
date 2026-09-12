@@ -6,29 +6,32 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load .env explicitly from apps/backend/.env
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-dotenv.config(); // Also load default if present
+dotenv.config();
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+const supabaseUrl = process.env.SUPABASE_URL || "";
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
 
-// Admin / Service-Role Supabase Client (bypasses RLS for backend operations)
-export const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
+const isConfigured = Boolean(supabaseUrl && (supabaseServiceRoleKey || supabaseAnonKey));
 
-// Public / Anon Client (uses RLS)
-export const supabaseAnon = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = isConfigured
+  ? createClient(supabaseUrl, supabaseServiceRoleKey || supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
+  : null;
 
-// Helper to get client scoped to a user's JWT
+export const supabaseAnon = isConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey || supabaseServiceRoleKey)
+  : null;
+
 export const getSupabaseClientForUser = (userJwt) => {
+  if (!isConfigured) return null;
   if (!userJwt) return supabase;
-  return createClient(supabaseUrl, supabaseAnonKey, {
+  return createClient(supabaseUrl, supabaseAnonKey || supabaseServiceRoleKey, {
     global: {
       headers: {
         Authorization: `Bearer ${userJwt}`,
