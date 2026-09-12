@@ -14,7 +14,7 @@ export default function SupplierLedgerPage() {
         try {
             const res = await api.get("/api/inventory");
             const items = res.data?.products || res.data || [];
-            const uniqueSuppliers = [...new Set(items.map(i => i.supplier).filter(Boolean))];
+            const uniqueSuppliers = [...new Set((Array.isArray(items) ? items : []).map(i => i?.supplier).filter(Boolean))];
             setSuppliers(uniqueSuppliers);
         } catch (e) {
             console.error(e);

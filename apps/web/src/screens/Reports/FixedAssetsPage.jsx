@@ -65,12 +65,14 @@ export default function FixedAssetsPage() {
         api.get('/api/capital')
       ]);
 
-      if (assetRes.data.success) {
-        setAssets(assetRes.data.assets || []);
+      const aData = assetRes?.data || assetRes;
+      if (aData?.success || aData?.assets) {
+        setAssets(Array.isArray(aData?.assets) ? aData.assets : []);
       }
-      if (capitalRes.data.success) {
-        setCapitalEntries(capitalRes.data.data?.entries || []);
-        setCapitalSummary(capitalRes.data.data?.summary || {});
+      const cData = capitalRes?.data || capitalRes;
+      if (cData?.success || cData?.data) {
+        setCapitalEntries(Array.isArray(cData?.data?.entries) ? cData.data.entries : (Array.isArray(cData?.entries) ? cData.entries : []));
+        setCapitalSummary(cData?.data?.summary || cData?.summary || {});
       }
     } catch (error) {
       console.error("Error fetching capital/assets data:", error);

@@ -54,7 +54,7 @@ export default function DayBookPage() {
         url = `/api/daybook?date=${startDate}`;
       }
       const res = await api.get(url);
-      const data = res.data?.data;
+      const data = res?.data?.data || res?.data || res;
       if (data) {
         setRawData(data);
         calculateSummary(data);

@@ -49,10 +49,11 @@ export default function BankReconciliationPage() {
       try {
         // API Call
         const response = await api.post('/api/bank-rec/reconcile', { statementEntries });
-        if (response.data.success) {
+        const resData = response?.data || response;
+        if (resData?.success || resData?.matched) {
           setResults({
-            matched: response.data.matched,
-            unmatched: response.data.unmatched
+            matched: Array.isArray(resData?.matched) ? resData.matched : [],
+            unmatched: Array.isArray(resData?.unmatched) ? resData.unmatched : []
           });
         }
       } catch (error) {
@@ -150,12 +151,12 @@ export default function BankReconciliationPage() {
                   <tbody>
                     {results.matched.map((item, idx) => (
                       <tr key={idx} className="hover:bg-gray-50">
-                        <td className="py-2 px-4 border-b">{item.statementEntry.date}</td>
-                        <td className="py-2 px-4 border-b">{item.statementEntry.description}</td>
+                        <td className="py-2 px-4 border-b">{item?.statementEntry?.date || 'N/A'}</td>
+                        <td className="py-2 px-4 border-b">{item?.statementEntry?.description || 'N/A'}</td>
                         <td className="py-2 px-4 border-b text-sm text-gray-600">
-                          {item.matchDetails.model} - {item.matchDetails.data?.details || item.matchDetails.data?.title}
+                          {item?.matchDetails?.model || 'Entry'} - {item.matchDetails.data?.details || item.matchDetails.data?.title}
                         </td>
-                        <td className="py-2 px-4 border-b font-semibold text-green-700">{item.statementEntry.amount}</td>
+                        <td className="py-2 px-4 border-b font-semibold text-green-700">{item?.statementEntry?.amount || 0}</td>
                       </tr>
                     ))}
                   </tbody>

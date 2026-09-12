@@ -12,7 +12,7 @@ const BillWiseReportPage = () => {
     setError(null);
     try {
       const res = await api.post("/report/generate", { type: "billwise" });
-      const d = res.reports;
+      const d = res?.reports || res?.data?.reports || res?.data || (Array.isArray(res) ? res : []);
       setData(Array.isArray(d) ? d : []);
     } catch (err) {
       console.error(err);

@@ -27,10 +27,11 @@ export default function AIBusinessAdvisorPage() {
   const fetchStats = async () => {
     try {
       const res = await api.get('/api/ai-advisor/usage-stats');
-      if (res.data.success) {
+      const sData = res?.data?.data || res?.data || res;
+      if (sData) {
         setUsageStats({
-          totalTokens: res.data.data.totalTokens || 0,
-          monthlyQuota: res.data.data.monthlyQuota || 50000
+          totalTokens: sData?.totalTokens || 0,
+          monthlyQuota: sData?.monthlyQuota || 50000
         });
       }
     } catch (err) {

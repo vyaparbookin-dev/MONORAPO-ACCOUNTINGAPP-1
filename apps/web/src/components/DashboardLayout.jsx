@@ -432,6 +432,14 @@ export default function DashboardLayout() {
                 {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
               </button>
 
+              <button
+                onClick={() => navigate('/m')}
+                className="lg:hidden px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold rounded-xl flex items-center gap-1 shadow-xs transition"
+                title="Go back to Mobile PWA"
+              >
+                📱 मोबाइल ऐप
+              </button>
+
               <div className="hidden md:flex items-center gap-2 bg-gray-100 rounded-lg px-4 py-2 flex-1 max-w-md">
                 <Search className="text-gray-400" size={20} />
                 <input
