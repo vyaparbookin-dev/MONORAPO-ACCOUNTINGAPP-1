@@ -80,15 +80,15 @@ export default function LoginScreen() {
       name: "Guest Explorer (अतिथि)",
       email: "guest@vyaparbook.in",
       role: "admin",
-      companyId: "demo_company_restaurant",
-      company: "demo_company_restaurant",
+      companyId: "6a8314470d93e58ad0920952",
+      company: "6a8314470d93e58ad0920952",
       isGuest: true
     };
     localStorage.setItem("authToken", "demo_guest_token_2026_valid");
     localStorage.setItem("token", "demo_guest_token_2026_valid");
     localStorage.setItem("user", JSON.stringify(demoUser));
-    localStorage.setItem("companyId", "demo_company_restaurant");
-    localStorage.setItem("selectedCompany", "demo_company_restaurant");
+    localStorage.setItem("companyId", "6a8314470d93e58ad0920952");
+    localStorage.setItem("selectedCompany", "6a8314470d93e58ad0920952");
     localStorage.setItem("isGuestMode", "true");
     localStorage.setItem("isDemoActive", "true");
     

@@ -22,7 +22,13 @@ export const protect = asyncHandler(async (req, res, next) => {
       role: "admin",
       isGuest: true
     };
-    req.companyId = req.headers['x-company-id'] || "demo_company_101";
+    let cid = req.headers['x-company-id'] || "6a8314470d93e58ad0920952";
+    if (cid === "demo_company_restaurant" || cid === "demo_company_101" || cid === "demo_company_core") {
+      cid = "6a8314470d93e58ad0920952";
+    } else if (cid === "demo_company_hardware") {
+      cid = "6a8314470d93e58ad0920950";
+    }
+    req.companyId = cid;
     return next();
   }
 
@@ -39,6 +45,11 @@ export const protect = asyncHandler(async (req, res, next) => {
 
     // --- SaaS Multi-Tenancy Logic ---
     let companyId = req.headers['x-company-id'];
+    if (companyId === "demo_company_restaurant" || companyId === "demo_company_101" || companyId === "demo_company_core") {
+      companyId = "6a8314470d93e58ad0920952";
+    } else if (companyId === "demo_company_hardware") {
+      companyId = "6a8314470d93e58ad0920950";
+    }
 
     if (companyId) {
       if (companyId.startsWith("demo_") || companyId.startsWith("custom_co_")) {

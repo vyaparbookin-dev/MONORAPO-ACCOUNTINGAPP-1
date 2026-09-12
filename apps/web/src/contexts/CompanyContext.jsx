@@ -8,7 +8,7 @@ export const useCompany = () => useContext(CompanyContext);
 export const CompanyProvider = ({ children }) => {
   const allDemoCompanies = [
     {
-      _id: "demo_company_restaurant",
+      _id: "6a8314470d93e58ad0920952",
       name: "🍽️ Royal Spice Restaurant & Cafe",
       businessType: "restaurant",
       industryType: "restaurant",
@@ -28,7 +28,7 @@ export const CompanyProvider = ({ children }) => {
       isDemo: true
     },
     {
-      _id: "demo_company_hardware",
+      _id: "6a8314470d93e58ad0920950",
       name: "🔧 Bharat Hardware, Plywood & Paints",
       businessType: "hardware",
       industryType: "hardware",
