@@ -1157,7 +1157,7 @@ export default function BanquetCateringModal({ isOpen, onClose, onApplyBanquet, 
                 <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
                   <span className="text-xs font-bold text-emerald-900 uppercase">Net Food Profit on Party</span>
                   <p className="text-2xl font-black text-emerald-700 mt-1">₹{grossProfitAmount.toLocaleString('en-IN')}</p>
-                  <p className="text-[11px] text-emerald-800 font-bold">Margin: {(100 - foodCostPercentage).toFixed(1)}%</p>
+                  <p className="text-[11px] text-emerald-800 font-bold">Margin: {Number(100 - (Number(foodCostPercentage) || 0)).toFixed(1)}%</p>
                 </div>
               </div>
 

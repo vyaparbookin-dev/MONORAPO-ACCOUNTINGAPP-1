@@ -145,21 +145,28 @@ export const CompanyProvider = ({ children }) => {
   };
 
   const selectCompany = (company) => {
-    setSelectedCompany(company);
-    const coId = company._id || company.id;
-    localStorage.setItem("companyId", coId);
-    localStorage.setItem("selectedCompany", coId);
+    if (!company) return;
+    const coId = typeof company === 'string' ? company : (company._id || company.id || '');
+    const fullCompany = typeof company === 'object' && company !== null ? company : (companies.find(c => c._id === coId || c.id === coId) || { _id: coId, name: 'My Business' });
+    setSelectedCompany(fullCompany);
+    if (coId) {
+      localStorage.setItem("companyId", coId);
+      localStorage.setItem("selectedCompany", coId);
+    }
   };
 
   const addCompany = (company) => {
-    setCompanies(prev => [...prev, company]);
+    if (!company) return false;
+    setCompanies(prev => Array.isArray(prev) ? [...prev, company] : [company]);
     if (!selectedCompany) setSelectedCompany(company);
     return true;
   };
 
   const updateCompany = (updatedCompany) => {
-    setCompanies(prev => prev.map(c => (c._id === updatedCompany._id || c.id === updatedCompany.id) ? updatedCompany : c));
-    if (selectedCompany && (selectedCompany._id === updatedCompany._id || selectedCompany.id === updatedCompany.id)) {
+    if (!updatedCompany) return;
+    const upId = updatedCompany._id || updatedCompany.id;
+    setCompanies(prev => Array.isArray(prev) ? prev.map(c => (c._id === upId || c.id === upId) ? updatedCompany : c) : [updatedCompany]);
+    if (selectedCompany && (selectedCompany._id === upId || selectedCompany.id === upId)) {
       setSelectedCompany(updatedCompany);
     }
   };

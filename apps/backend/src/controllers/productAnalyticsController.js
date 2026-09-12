@@ -20,7 +20,7 @@ export const getProductAnalytics = async (req, res) => {
     const salesData = await Bill.aggregate([
       { $match: { companyId, isDeleted: false, date: { $gte: sixMonthsAgo } } },
       { $unwind: '$items' },
-      { $match: { 'items.productId': new mongoose.Types.ObjectId(id) } },
+      { $match: { 'items.productId': mongoose.Types.ObjectId.isValid(id) ? { $in: [id, new mongoose.Types.ObjectId(id)] } : id } },
       {
         $group: {
           _id: { year: { $year: '$date' }, month: { $month: '$date' } },
@@ -33,7 +33,7 @@ export const getProductAnalytics = async (req, res) => {
     // 2. Purchase history
     const purchaseHistory = await Purchase.find({
       companyId,
-      'items.productId': new mongoose.Types.ObjectId(id),
+      'items.productId': mongoose.Types.ObjectId.isValid(id) ? { $in: [id, new mongoose.Types.ObjectId(id)] } : id,
     })
     .populate('partyId', 'name')
     .sort({ date: -1 })
@@ -44,7 +44,7 @@ export const getProductAnalytics = async (req, res) => {
     const sales = await Bill.find({ companyId, 'items.productId': new mongoose.Types.ObjectId(id) }).lean();
     let totalProfit = 0;
     sales.forEach(bill => {
-        const item = bill.items.find(i => i.productId.toString() === id);
+        const item = bill.items ? bill.items.find(i => String(i?.productId || '') === String(id)) : null;
         if(item) {
             const profit = (item.price - (product.costPrice || 0)) * item.quantity;
             totalProfit += profit;

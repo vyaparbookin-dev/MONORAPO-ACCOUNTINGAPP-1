@@ -372,14 +372,16 @@ export const getChartData = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const companyObjectId = new mongoose.Types.ObjectId(req.companyId);
+    const coFilter = mongoose.Types.ObjectId.isValid(req.companyId)
+      ? { $in: [req.companyId, new mongoose.Types.ObjectId(req.companyId)] }
+      : req.companyId;
 
     // 1. Sales Trend (Last 7 Days) - Line/Bar Chart ke liye
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
     const salesTrend = await Bill.aggregate([
-      { $match: { companyId: companyObjectId, isDeleted: false, date: { $gte: sevenDaysAgo } } },
+      { $match: { companyId: coFilter, isDeleted: false, date: { $gte: sevenDaysAgo } } },
       { $group: {
           _id: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
           totalSales: { $sum: { $ifNull: ["$finalAmount", "$total"] } }
@@ -390,7 +392,7 @@ export const getChartData = async (req, res) => {
 
     // 2. Top 5 Selling Products - Pie Chart/Donut Chart ke liye
     const topProducts = await Bill.aggregate([
-      { $match: { companyId: companyObjectId, isDeleted: false } },
+      { $match: { companyId: coFilter, isDeleted: false } },
       { $unwind: "$items" },
       { $group: {
           _id: "$items.name",
@@ -404,7 +406,7 @@ export const getChartData = async (req, res) => {
 
     // 3. Sitewise Revenue (Builder / Contractor ke Bar Chart ke liye)
     const siteRevenue = await Bill.aggregate([
-      { $match: { companyId: companyObjectId, isDeleted: false, siteName: { $exists: true, $ne: "" } } },
+      { $match: { companyId: coFilter, isDeleted: false, siteName: { $exists: true, $ne: "" } } },
       { $group: {
           _id: "$siteName",
           totalRevenue: { $sum: { $ifNull: ["$finalAmount", "$total"] } }

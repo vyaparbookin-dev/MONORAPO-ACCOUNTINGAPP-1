@@ -361,7 +361,13 @@ function MobileVyaparAppContent() {
       let localList = [];
       try {
         const stored = localStorage.getItem("vb_local_expenses");
-        if (stored) localList = JSON.parse(stored);
+        if (stored) {
+      try {
+        localList = JSON.parse(stored);
+      } catch (e) {
+        localList = [];
+      }
+    }
       } catch (e) {}
 
       const [res1, res2] = await Promise.allSettled([
@@ -693,7 +699,12 @@ function MobileVyaparAppContent() {
       // Instantly persist in localStorage so it NEVER disappears or shows old data
       try {
         const stored = localStorage.getItem("vb_local_expenses");
-        let list = stored ? JSON.parse(stored) : [];
+        let list = [];
+      try {
+        list = stored ? JSON.parse(stored) : [];
+      } catch (e) {
+        list = [];
+      }
         if (editingGharKharchItem) {
           const editId = editingGharKharchItem._id || editingGharKharchItem.id;
           list = list.map(item => ((item._id || item.id) === editId ? newExpenseRecord : item));

@@ -74,7 +74,7 @@ export default function QuotationDetailPage() {
               <tr key={index} className="border-b">
                 <td className="p-2 font-medium">{item.itemName}</td>
                 <td className="p-2 text-right">{item.quantity}</td>
-                <td className="p-2 text-right">₹{item.rate.toFixed(2)}</td>
+                <td className="p-2 text-right">₹{Number(item?.rate || 0).toFixed(2)}</td>
                 <td className="p-2 text-right">₹{(item.quantity * item.rate).toFixed(2)}</td>
               </tr>
             ))}
@@ -85,9 +85,9 @@ export default function QuotationDetailPage() {
       {/* Totals */}
       <div className="mt-4 flex justify-end">
         <div className="w-64">
-          <div className="flex justify-between p-2"><span className="text-gray-600">Subtotal:</span> <span>₹{subTotal.toFixed(2)}</span></div>
-          <div className="flex justify-between p-2"><span className="text-gray-600">Tax ({quotation.taxRate || 0}%):</span> <span>₹{quotation.taxAmount.toFixed(2)}</span></div>
-          <div className="flex justify-between p-2 border-t font-bold text-lg"><span >Total:</span> <span>₹{quotation.totalAmount.toFixed(2)}</span></div>
+          <div className="flex justify-between p-2"><span className="text-gray-600">Subtotal:</span> <span>₹{Number(subTotal || 0).toFixed(2)}</span></div>
+          <div className="flex justify-between p-2"><span className="text-gray-600">Tax ({quotation.taxRate || 0}%):</span> <span>₹{Number(quotation?.taxAmount || 0).toFixed(2)}</span></div>
+          <div className="flex justify-between p-2 border-t font-bold text-lg"><span >Total:</span> <span>₹{Number(quotation?.totalAmount || 0).toFixed(2)}</span></div>
         </div>
       </div>
     </div>

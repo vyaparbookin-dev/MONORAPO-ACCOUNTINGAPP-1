@@ -1677,7 +1677,7 @@ export default function BillingPage() {
             <div className="bg-gray-50 p-4 rounded-lg flex flex-col gap-3 mt-4 border border-gray-200">
               <div className="flex justify-end items-center gap-4">
                  <label className="text-sm font-medium text-gray-700">Subtotal:</label>
-                 <span className="text-lg font-semibold w-32 text-right">₹{formData.total.toFixed(2)}</span>
+                 <span className="text-lg font-semibold w-32 text-right">₹{Number(formData?.total || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-end items-center gap-4">
                  <label className="text-sm font-medium text-gray-700">Tax / GST (₹):</label>
@@ -2108,8 +2108,8 @@ export default function BillingPage() {
                   </div>
                   <p className="text-sm text-gray-600 mb-3">{history.changesSummary || 'Updated bill details.'}</p>
                   <div className="flex gap-4 text-sm font-bold">
-                    <div className="bg-red-50 text-red-700 px-3 py-1.5 rounded border border-red-100">Old Total: ₹{history.previousTotal?.toFixed(2)}</div>
-                    <div className="bg-green-50 text-green-700 px-3 py-1.5 rounded border border-green-100">New Total: ₹{history.newTotal?.toFixed(2)}</div>
+                    <div className="bg-red-50 text-red-700 px-3 py-1.5 rounded border border-red-100">Old Total: ₹{Number(history?.previousTotal || 0).toFixed(2)}</div>
+                    <div className="bg-green-50 text-green-700 px-3 py-1.5 rounded border border-green-100">New Total: ₹{Number(history?.newTotal || 0).toFixed(2)}</div>
                   </div>
                 </div>
               ))}

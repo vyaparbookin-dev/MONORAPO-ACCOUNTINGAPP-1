@@ -53,8 +53,12 @@ export default function GamezoneStationModal({ isOpen, onClose, onApplyItems, in
 
   const [activeTab, setActiveTab] = useState("stations"); // 'stations' | 'tokens' | 'rfid_wallet' | 'redemption'
   const [stations, setStations] = useState(() => {
-    const saved = localStorage.getItem("gamezone_stations");
-    return saved ? JSON.parse(saved) : defaultStations;
+    try {
+      const saved = localStorage.getItem("gamezone_stations");
+      return saved ? JSON.parse(saved) : defaultStations;
+    } catch (e) {
+      return defaultStations;
+    }
   });
 
   const [tokenCart, setTokenCart] = useState([]);

@@ -41,6 +41,50 @@ import { useCompany } from "../contexts/CompanyContext";
 import { SecurityTracker } from "@repo/shared";
 import CloudSyncToggel from "./CloudSyncToggel";
 
+// Resilient Page-Level Error Boundary to protect sidebar & topbar navigation
+class ContentErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error("Dashboard page render error:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm text-center max-w-lg mx-auto my-12 animate-in fade-in">
+          <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-3">
+            ⚠️
+          </div>
+          <h3 className="font-extrabold text-base text-slate-900 mb-1">पेज लोड करने में अस्थायी समस्या</h3>
+          <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+            इस पेज पर कोई डेटा प्रारूप मिसमैच हुआ है। आप सुरक्षित रूप से डैशबोर्ड पर लौट सकते हैं या पुनः प्रयास कर सकते हैं।
+          </p>
+          <div className="flex justify-center gap-3">
+            <button
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="px-5 py-2.5 bg-indigo-600 text-white font-extrabold text-xs rounded-xl shadow-xs hover:bg-indigo-700 transition cursor-pointer"
+            >
+              🔄 पुनः प्रयास करें (Retry)
+            </button>
+            <a
+              href="/dashboard"
+              className="px-5 py-2.5 bg-slate-100 text-slate-700 font-extrabold text-xs rounded-xl hover:bg-slate-200 transition"
+            >
+              🏠 मुख्य डैशबोर्ड
+            </a>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -65,7 +109,11 @@ export default function DashboardLayout() {
     // Get user from localStorage
     const storedUser = localStorage.getItem("user");
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (e) {
+        console.warn("Invalid stored user", e);
+      }
     }
   }, []);
 
@@ -625,7 +673,9 @@ export default function DashboardLayout() {
         {/* Page Content */}
         <main className="flex-1 overflow-auto">
           <div className="p-6 lg:p-8">
-            <Outlet />
+            <ContentErrorBoundary>
+              <Outlet />
+            </ContentErrorBoundary>
           </div>
           <Footer />
         </main>

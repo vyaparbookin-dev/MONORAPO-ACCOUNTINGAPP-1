@@ -189,7 +189,12 @@ export default function RestaurantKotModal({ isOpen, onClose, onApplyKot, invent
       setKotItems(kotItems.filter(i => i.id !== itemToDelete.id));
       
       // Record Anti-Theft Audit Trail
-      const auditLog = JSON.parse(localStorage.getItem("vb_kot_cancel_audits") || "[]");
+      let auditLog = [];
+    try {
+      auditLog = JSON.parse(localStorage.getItem("vb_kot_cancel_audits") || "[]");
+    } catch (e) {
+      auditLog = [];
+    }
       auditLog.push({
         item: itemToDelete.name,
         qty: itemToDelete.quantity,

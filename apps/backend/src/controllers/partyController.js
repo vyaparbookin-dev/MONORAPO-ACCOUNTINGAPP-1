@@ -42,7 +42,7 @@ export const getPartyQuickSummary = async (req, res) => {
 
     // Find the last bill for this party
     const lastBill = await Bill.findOne({
-      partyId: new mongoose.Types.ObjectId(id),
+      partyId: mongoose.Types.ObjectId.isValid(id) ? { $in: [id, new mongoose.Types.ObjectId(id)] } : id,
       companyId: req.companyId,
       isDeleted: false,
     })

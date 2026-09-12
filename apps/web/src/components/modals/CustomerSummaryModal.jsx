@@ -49,7 +49,7 @@ export default function CustomerSummaryModal({ partyId, onClose }) {
               {(user.role === 'owner' || user.role === 'manager') && (
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <p className="text-sm text-gray-500 font-medium">Lifetime Value</p>
-                  <p className="text-2xl font-bold text-blue-600">₹{customer.lifetimeValue?.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-blue-600">₹{Number(customer?.lifetimeValue || 0).toFixed(2)}</p>
                 </div>
               )}
               <div className="bg-gray-50 p-4 rounded-lg">
@@ -58,12 +58,12 @@ export default function CustomerSummaryModal({ partyId, onClose }) {
               </div>
               <div className="bg-red-50 p-4 rounded-lg">
                 <p className="text-sm text-red-500 font-medium">Returns ({customer.returnCount || 0})</p>
-                <p className="text-2xl font-bold text-red-600">₹{customer.totalReturnValue?.toFixed(2)}</p>
+                <p className="text-2xl font-bold text-red-600">₹{Number(customer?.totalReturnValue || 0).toFixed(2)}</p>
               </div>
               <div className="bg-gray-50 p-4 rounded-lg">
                 <p className="text-sm text-gray-500 font-medium">First / Last Visit</p>
                 <p className="text-sm font-semibold text-gray-700">
-                  {new Date(customer.firstVisit).toLocaleDateString()} / {new Date(customer.lastVisit).toLocaleDateString()}
+                  {customer.firstVisit ? new Date(customer.firstVisit).toLocaleDateString() : 'N/A'} / {customer.lastVisit ? new Date(customer.lastVisit).toLocaleDateString() : 'N/A'}
                 </p>
               </div>
             </div>
@@ -95,7 +95,7 @@ export default function CustomerSummaryModal({ partyId, onClose }) {
                           <p className="text-xs text-gray-500">{new Date(tx.date).toLocaleDateString()}</p>
                         </div>
                         <span className={`font-bold ${tx.type === 'Sale' ? 'text-green-600' : 'text-red-600'}`}>
-                          {tx.type === 'Sale' ? `+₹${tx.amount.toFixed(2)}` : `-₹${Math.abs(tx.amount).toFixed(2)}`}
+                          {tx.type === 'Sale' ? `+₹${Number(tx?.amount || 0).toFixed(2)}` : `-₹${Math.abs(Number(tx?.amount || 0)).toFixed(2)}`}
                         </span>
                       </li>
                     ))}

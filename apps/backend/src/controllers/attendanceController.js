@@ -81,7 +81,7 @@ export const getMonthlyReport = async (req, res) => {
       { $lookup: { from: "staffs", localField: "staffId", foreignField: "_id", as: "staff" } },
       { $unwind: "$staff" },
       // Security: Only match staff belonging to the logged-in company
-      { $match: { "staff.companyId": new mongoose.Types.ObjectId(req.companyId) } },
+      { $match: { "staff.companyId": mongoose.Types.ObjectId.isValid(req.companyId) ? { $in: [req.companyId, new mongoose.Types.ObjectId(req.companyId)] } : req.companyId } },
       {
         $group: {
           _id: "$staffId",

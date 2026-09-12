@@ -70,8 +70,8 @@ const ItemWiseReportPage = () => {
                     </button>
                   </td>
                   <td className="p-3 text-center">{item.totalQuantitySold}</td>
-                  <td className="p-3 text-right">₹{item.averageSalePrice.toFixed(2)}</td>
-                  <td className="p-3 text-right font-bold">₹{item.totalSalesValue.toFixed(2)}</td>
+                  <td className="p-3 text-right">₹{Number(item?.averageSalePrice || 0).toFixed(2)}</td>
+                  <td className="p-3 text-right font-bold">₹{Number(item?.totalSalesValue || 0).toFixed(2)}</td>
                 </tr>
               ))}
               {reportData.length === 0 && (

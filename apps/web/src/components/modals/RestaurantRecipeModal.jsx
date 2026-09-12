@@ -204,7 +204,12 @@ export default function RestaurantRecipeModal({ isOpen, onClose, inventory = [],
 
       // Save locally to localStorage so Kitchen Production Planner can read it
       try {
-        const savedRecipes = JSON.parse(localStorage.getItem("restaurant_recipes") || "[]");
+        let savedRecipes = [];
+    try {
+      savedRecipes = JSON.parse(localStorage.getItem("restaurant_recipes") || "[]");
+    } catch (e) {
+      savedRecipes = [];
+    }
         const updatedRecipes = savedRecipes.filter((r) => r.dishName !== dishName.trim());
         updatedRecipes.unshift({
           id: `REC-${Date.now()}`,
@@ -357,7 +362,7 @@ export default function RestaurantRecipeModal({ isOpen, onClose, inventory = [],
                 Raw Materials & Recipe BOM ({ingredients.length} Ingredients)
               </h3>
               <span className="text-xs text-gray-500">
-                Live Kitchen Raw Cost: <strong className="text-gray-900">₹{currentRawMaterialCost.toFixed(2)}</strong>
+                Live Kitchen Raw Cost: <strong className="text-gray-900">₹{Number(currentRawMaterialCost || 0).toFixed(2)}</strong>
               </span>
             </div>
 
@@ -469,7 +474,7 @@ export default function RestaurantRecipeModal({ isOpen, onClose, inventory = [],
                           )}
                         </td>
                         <td className="p-2.5 text-right font-black text-gray-900">
-                          ₹{ing.totalCost.toFixed(2)}
+                          ₹{Number(ing?.totalCost || 0).toFixed(2)}
                         </td>
                         <td className="p-2.5 text-center">
                           <button

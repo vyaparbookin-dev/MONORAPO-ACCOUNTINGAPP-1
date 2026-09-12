@@ -88,7 +88,7 @@ export default function QuotationListPage() {
                   <td className="p-4 font-medium">{q.quotationNumber}</td>
                   <td className="p-4">{q.partyId?.name || 'N/A'}</td>
                   <td className="p-4">{new Date(q.date).toLocaleDateString()}</td>
-                  <td className="p-4 text-right">₹{q.totalAmount.toFixed(2)}</td>
+                  <td className="p-4 text-right">₹{Number(q?.totalAmount || 0).toFixed(2)}</td>
                   <td className="p-4 text-center"><span className={`px-2 py-1 rounded-full text-xs font-bold ${q.status === 'accepted' ? 'bg-green-100 text-green-800' : q.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{q.status.toUpperCase()}</span></td>
                   <td className="p-4 text-center flex justify-center gap-2">
                     <Link to={`/quotations/edit/${q._id}`} className="text-blue-600 hover:text-blue-800"><Edit size={18} /></Link>

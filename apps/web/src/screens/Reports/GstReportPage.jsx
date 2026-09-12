@@ -140,9 +140,9 @@ const DataTable = ({ records, type, emptyMsg }) => (
             <td className="p-3 text-sm">{new Date(r.date).toLocaleDateString()}</td>
             <td className="p-3 text-sm">{r.customer || r.supplier}</td>
             <td className="p-3 text-sm font-mono text-gray-600">{r.gstin}</td>
-            <td className="p-3 text-sm text-right text-gray-700">₹{r.taxableValue.toFixed(2)}</td>
-            <td className="p-3 text-sm text-right text-purple-600 font-semibold">₹{r.gstAmount.toFixed(2)}</td>
-            <td className="p-3 text-sm text-right font-bold">₹{r.totalValue.toFixed(2)}</td>
+            <td className="p-3 text-sm text-right text-gray-700">₹{Number(r?.taxableValue || 0).toFixed(2)}</td>
+            <td className="p-3 text-sm text-right text-purple-600 font-semibold">₹{Number(r?.gstAmount || 0).toFixed(2)}</td>
+            <td className="p-3 text-sm text-right font-bold">₹{Number(r?.totalValue || 0).toFixed(2)}</td>
           </tr>
         ))}
       </tbody>

@@ -269,7 +269,7 @@ export default function PharmaBatchModal({ isOpen, onClose, onApplyItem, invento
           <div className="bg-slate-900 text-white rounded-xl p-4 flex items-center justify-between">
             <div>
               <div className="text-xs text-teal-400 font-bold">
-                {quantity} {packType === "strip" ? "Strips" : "Tablets"} @ ₹{calculatedRate.toFixed(2)}
+                {quantity} {packType === "strip" ? "Strips" : "Tablets"} @ ₹{Number(calculatedRate || 0).toFixed(2)}
               </div>
               <div className="text-sm font-black">
                 कुल रकम: <span className="text-amber-400 font-mono text-base">₹{totalAmount}</span>
