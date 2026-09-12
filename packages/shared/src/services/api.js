@@ -506,12 +506,7 @@ api.interceptors.response.use(
     }
 
     // --- Handle Company Issues Gracefully ---
-    if (typeof window !== 'undefined' && window.location) {
-      if (status === 404 && err.response?.data?.message?.includes("Company not found")) {
-        setStorage("companyId", null);
-        setStorage("selectedCompany", null);
-      }
-    }
+    // Do not wipe companyId on transient 404, let background fallback resolve it smoothly
 
     return Promise.reject(err.response?.data || err);
   }

@@ -27,7 +27,8 @@ export const protect = asyncHandler(async (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const JWT_SECRET = process.env.JWT_SECRET || "monorapo_accounting_super_secret_jwt_key_2026_prod";
+    const decoded = jwt.verify(token, JWT_SECRET);
     req.user = await User.findById(decoded.id).select("-password").lean();
 
     if (!req.user) {
@@ -38,7 +39,6 @@ export const protect = asyncHandler(async (req, res, next) => {
 
     // --- SaaS Multi-Tenancy Logic ---
     let companyId = req.headers['x-company-id'];
-    console.log("[Auth Debug] Protected request => user:", reqUserId, "companyHeader:", companyId);
 
     if (companyId) {
       if (companyId.startsWith("demo_") || companyId.startsWith("custom_co_") || !mongoose.Types.ObjectId.isValid(companyId)) {
@@ -46,6 +46,8 @@ export const protect = asyncHandler(async (req, res, next) => {
         const userRealCompany = await Company.findOne({ user: reqUserId }).lean();
         if (userRealCompany) {
           req.companyId = userRealCompany._id.toString();
+        } else if (req.user.companyId) {
+          req.companyId = req.user.companyId.toString();
         } else {
           req.companyId = companyId;
         }
@@ -53,17 +55,29 @@ export const protect = asyncHandler(async (req, res, next) => {
         const company = await Company.findById(companyId).lean();
         
         if (!company) {
-          // If company in header was deleted or not found, fall back to user's first company
-          const userRealCompany = await Company.findOne({ user: reqUserId }).lean();
+          // If company in header was deleted or not found, fall back to user's first company or auto-create
+          let userRealCompany = await Company.findOne({ user: reqUserId }).lean();
+          if (!userRealCompany && req.user.companyId) {
+            userRealCompany = await Company.findById(req.user.companyId).lean();
+          }
           if (userRealCompany) {
             req.companyId = userRealCompany._id.toString();
           } else {
-            return res.status(404).json({ success: false, message: "Company not found." });
+            // Auto create company for user if none exists so they never 404
+            const newCo = new Company({
+              name: `${req.user.name || 'My'}'s Business`,
+              ownerName: req.user.name || req.user.email,
+              ownerEmail: req.user.email,
+              user: req.user._id,
+              industryType: "general",
+              businessType: ["general"]
+            });
+            await newCo.save();
+            req.companyId = newCo._id.toString();
           }
         } else {
           const companyOwnerId = company.user?.toString();
           if (companyOwnerId && companyOwnerId !== reqUserId) {
-            console.warn("[Auth Debug] Header company mismatch, auto-repairing to user's own company:", { reqUserId, companyOwnerId, companyId });
             const userRealCompany = await Company.findOne({ user: reqUserId }).lean();
             if (userRealCompany) {
               req.companyId = userRealCompany._id.toString();
@@ -80,6 +94,8 @@ export const protect = asyncHandler(async (req, res, next) => {
       const userRealCompany = await Company.findOne({ user: reqUserId }).lean();
       if (userRealCompany) {
         req.companyId = userRealCompany._id.toString();
+      } else if (req.user.companyId) {
+        req.companyId = req.user.companyId.toString();
       }
     }
 

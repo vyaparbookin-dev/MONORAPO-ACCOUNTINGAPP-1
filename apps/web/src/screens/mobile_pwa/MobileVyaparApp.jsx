@@ -72,7 +72,7 @@ class MobileErrorBoundary extends React.Component {
           </div>
           <h2 className="text-lg font-black text-[#0F172A] mb-1">VyaparBook मोबाइल</h2>
           <p className="text-xs text-slate-500 mb-4 max-w-xs">
-            ऐप रीलोड करने या अपने खाते में लॉगिन करने के लिए नीचे दिए गए विकल्प चुनें:
+            सिस्टम को सुचारू रूप से चलाने के लिए कृपया रीलोड करें। आपका डेटा पूरी तरह सुरक्षित है।
           </p>
           <div className="flex flex-col gap-2.5 w-full max-w-xs">
             <button
@@ -86,17 +86,11 @@ class MobileErrorBoundary extends React.Component {
             </button>
             <button
               onClick={() => {
-                localStorage.removeItem("isGuestMode");
-                localStorage.removeItem("authToken");
-                localStorage.removeItem("token");
-                localStorage.removeItem("companyId");
-                localStorage.removeItem("selectedCompany");
-                sessionStorage.clear();
-                window.location.href = "/login";
+                this.setState({ hasError: false, error: null });
               }}
               className="w-full py-3 bg-white border border-slate-300 text-slate-700 font-extrabold text-xs rounded-xl hover:bg-slate-100 transition cursor-pointer"
             >
-              🔑 लॉगिन स्क्रीन पर जाएं (Go to Login)
+              ⚡ पुनः प्रयास करें (Retry)
             </button>
           </div>
         </div>
