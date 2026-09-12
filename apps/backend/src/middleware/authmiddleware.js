@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import User from "../model/user.js";
 import Company from "../model/company.js";
 import { asyncHandler } from "./errormiddleware.js";
+import mongoose from "mongoose";
 
 export const protect = asyncHandler(async (req, res, next) => {
   let token;
@@ -25,7 +26,6 @@ export const protect = asyncHandler(async (req, res, next) => {
     return next();
   }
 
-
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = await User.findById(decoded.id).select("-password").lean();
@@ -37,39 +37,55 @@ export const protect = asyncHandler(async (req, res, next) => {
     const reqUserId = req.user._id?.toString() || req.user.id?.toString();
 
     // --- SaaS Multi-Tenancy Logic ---
-    const companyId = req.headers['x-company-id'];
+    let companyId = req.headers['x-company-id'];
     console.log("[Auth Debug] Protected request => user:", reqUserId, "companyHeader:", companyId);
 
-    // If a company ID is provided in the header, validate it
     if (companyId) {
       if (companyId.startsWith("demo_") || companyId.startsWith("custom_co_") || !mongoose.Types.ObjectId.isValid(companyId)) {
-        // Safe bypass for demo/temporary companies
-        req.companyId = companyId;
+        // Check if user has a real registered company, prefer their real company over demo header
+        const userRealCompany = await Company.findOne({ user: reqUserId }).lean();
+        if (userRealCompany) {
+          req.companyId = userRealCompany._id.toString();
+        } else {
+          req.companyId = companyId;
+        }
       } else {
-        // Validate the companyId using lean for performance
         const company = await Company.findById(companyId).lean();
-        console.log("[Auth Debug] Company lookup for header ID:", companyId, "=>", company ? { _id: company._id.toString(), name: company.name, user: company.user?.toString() } : "NOT_FOUND");
-
-        // Check 1: Company exists
+        
         if (!company) {
-          return res.status(404).json({ success: false, message: "Company not found or you don't have access." });
+          // If company in header was deleted or not found, fall back to user's first company
+          const userRealCompany = await Company.findOne({ user: reqUserId }).lean();
+          if (userRealCompany) {
+            req.companyId = userRealCompany._id.toString();
+          } else {
+            return res.status(404).json({ success: false, message: "Company not found." });
+          }
+        } else {
+          const companyOwnerId = company.user?.toString();
+          if (companyOwnerId && companyOwnerId !== reqUserId) {
+            console.warn("[Auth Debug] Header company mismatch, auto-repairing to user's own company:", { reqUserId, companyOwnerId, companyId });
+            const userRealCompany = await Company.findOne({ user: reqUserId }).lean();
+            if (userRealCompany) {
+              req.companyId = userRealCompany._id.toString();
+            } else {
+              req.companyId = companyId;
+            }
+          } else {
+            req.companyId = companyId;
+          }
         }
-
-        // Check 2: User is authorized for this company
-        const companyOwnerId = company.user?.toString();
-        if (!reqUserId || companyOwnerId !== reqUserId) {
-          console.log("[Auth Debug] Company ownership mismatch:", { reqUserId, companyOwnerId, companyId });
-          return res.status(403).json({ success: false, message: "User not authorized for this company." });
-        }
-
-        // Attach companyId to the request for other controllers to use
-        req.companyId = companyId;
+      }
+    } else {
+      // If no company header was sent, auto-attach user's real company
+      const userRealCompany = await Company.findOne({ user: reqUserId }).lean();
+      if (userRealCompany) {
+        req.companyId = userRealCompany._id.toString();
       }
     }
-    // --- End SaaS Logic ---
 
     next();
   } catch (error) {
+    console.error("🔴 Auth middleware token verify failed:", error.message);
     res.status(401).json({ success: false, message: "Not authorized, token failed" });
   }
 });
@@ -95,10 +111,6 @@ export const requireCompany = (req, res, next) => {
   next();
 };
 
-/**
- * @desc    Protect routes meant for internal services like AI Gateway
- * @access  Internal
- */
 export const protectAIGateway = (req, res, next) => {
   const internalToken = req.headers['x-internal-api-token'];
   if (internalToken && internalToken === process.env.INTERNAL_API_TOKEN) {

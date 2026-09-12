@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Eye, EyeOff, Mail, Lock, Sparkles, LogIn, KeyRound, CheckCircle2, Zap, AlertTriangle } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, Sparkles, LogIn, KeyRound, CheckCircle2, Zap } from "lucide-react";
 import api from "../../services/api";
 import { GoogleLogin } from '@react-oauth/google';
 
@@ -17,29 +17,55 @@ export default function LoginScreen() {
   const [resetLoading, setResetLoading] = useState(false);
 
   const navigate = useNavigate();
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  const isGoogleConfigured = !!googleClientId && googleClientId !== "dummy-client-id-for-dev";
+
+  const handleSuccessfulAuth = (token, userObj) => {
+    localStorage.removeItem("isGuestMode");
+    localStorage.setItem("authToken", token);
+    localStorage.setItem("token", token);
+    localStorage.setItem("last_login_timestamp", String(Date.now()));
+
+    if (userObj) {
+      const normalizedUser = {
+        ...userObj,
+        _id: userObj._id || userObj.id,
+        companyId: userObj.companyId || userObj.company || userObj.company_id,
+        company: userObj.companyId || userObj.company || userObj.company_id,
+      };
+      localStorage.setItem("user", JSON.stringify(normalizedUser));
+
+      const companyId = normalizedUser.companyId || normalizedUser.company;
+      if (companyId) {
+        localStorage.setItem("companyId", companyId);
+        localStorage.setItem("selectedCompany", companyId);
+      }
+    }
+
+    // Check if mobile device
+    const isMobile = window.innerWidth < 768;
+    if (isMobile) {
+      navigate("/m");
+    } else {
+      navigate("/");
+    }
+  };
 
   const handleGoogleSuccess = async (credentialResponse) => {
     setLoading(true);
     setError("");
     try {
-      localStorage.removeItem("isGuestMode");
       const response = await api.post("/api/auth/google", { credential: credentialResponse.credential });
-      const { token, user } = response.data || response;
-      if (token && user) {
-        localStorage.setItem("authToken", token);
-        localStorage.setItem("token", token);
-        localStorage.setItem("user", JSON.stringify(user));
-        if (user.companyId) {
-          localStorage.setItem("companyId", user.companyId);
-          localStorage.setItem("selectedCompany", user.companyId);
-        }
-        navigate("/");
+      const token = response?.token || response?.data?.token;
+      const userObj = response?.user || response?.data?.user;
+      if (token) {
+        handleSuccessfulAuth(token, userObj);
       } else {
-        setError("Google लॉगिन पूरा नहीं हो सका। कृपया नीचे '⚡ 1-Click डायरेक्ट लॉगिन' का उपयोग करें।");
+        setError("Google लॉगिन पूरा नहीं हो सका। कृपया '⚡ 1-Click डायरेक्ट लॉगिन' का उपयोग करें।");
       }
     } catch (err) {
-      console.error("Google Login API Error:", err.response?.data || err);
-      setError("Google लॉगिन में समस्या आई (Client ID Not Configured)। कृपया नीचे सीधे '⚡ 1-Click डायरेक्ट लॉगिन' का उपयोग करें।");
+      console.error("Google Login API Error:", err);
+      setError("Google लॉगिन में समस्या आई। कृपया नीचे '⚡ 1-Click डायरेक्ट लॉगिन' दबाएँ।");
     } finally {
       setLoading(false);
     }
@@ -61,7 +87,12 @@ export default function LoginScreen() {
     localStorage.setItem("companyId", "demo_company_101");
     localStorage.setItem("selectedCompany", "demo_company_101");
     localStorage.setItem("isGuestMode", "true");
-    navigate("/dashboard");
+    
+    if (window.innerWidth < 768) {
+      navigate("/m");
+    } else {
+      navigate("/dashboard");
+    }
   };
 
   const handleFillDemo = () => {
@@ -84,8 +115,6 @@ export default function LoginScreen() {
     }
 
     try {
-      localStorage.removeItem("isGuestMode");
-
       const response = await api.post("/api/auth/login", { 
         identifier: cleanInput,
         email: cleanInput, 
@@ -97,26 +126,7 @@ export default function LoginScreen() {
       const userObj = response?.user || response?.data?.user || response?.data?.data?.user;
       
       if (token) {
-        localStorage.setItem("authToken", token);
-        localStorage.setItem("token", token);
-
-        if (userObj) {
-          const normalizedUser = {
-            ...userObj,
-            _id: userObj._id || userObj.id,
-            companyId: userObj.companyId || userObj.company || userObj.company_id,
-            company: userObj.companyId || userObj.company || userObj.company_id,
-          };
-          localStorage.setItem("user", JSON.stringify(normalizedUser));
-
-          const companyId = normalizedUser.companyId || normalizedUser.company;
-          if (companyId) {
-            localStorage.setItem("companyId", companyId);
-            localStorage.setItem("selectedCompany", companyId);
-          }
-        }
-
-        navigate("/");
+        handleSuccessfulAuth(token, userObj);
       } else {
         setError("लॉगिन टोकन प्राप्त नहीं हुआ। कृपया पुनः प्रयास करें।");
       }
@@ -124,7 +134,6 @@ export default function LoginScreen() {
       const errData = err.response?.data || err;
       setError(errData.message || "गलत मोबाइल नंबर, ईमेल या पासवर्ड दर्ज किया गया है।");
       setShowQuickReset(true);
-      console.error("🔴 Login Error:", err.response?.data || err);
     } finally {
       setLoading(false);
     }
@@ -143,7 +152,6 @@ export default function LoginScreen() {
     setResetSuccess("");
 
     try {
-      localStorage.removeItem("isGuestMode");
       const res = await api.post("/api/auth/magic-login", {
         identifier: cleanInput,
         email: cleanInput,
@@ -154,24 +162,8 @@ export default function LoginScreen() {
       const userObj = res?.user || res?.data?.user;
 
       if (token) {
-        localStorage.setItem("authToken", token);
-        localStorage.setItem("token", token);
-        if (userObj) {
-          const normalizedUser = {
-            ...userObj,
-            _id: userObj._id || userObj.id,
-            companyId: userObj.companyId || userObj.company,
-            company: userObj.companyId || userObj.company,
-          };
-          localStorage.setItem("user", JSON.stringify(normalizedUser));
-          const companyId = normalizedUser.companyId || normalizedUser.company;
-          if (companyId) {
-            localStorage.setItem("companyId", companyId);
-            localStorage.setItem("selectedCompany", companyId);
-          }
-        }
-        setResetSuccess("🎉 डायरेक्ट लॉगिन सफल! डैशबोर्ड खुल रहा है...");
-        setTimeout(() => navigate("/"), 800);
+        setResetSuccess("🎉 डायरेक्ट लॉगिन सफल! अकाउंट खुल रहा है...");
+        setTimeout(() => handleSuccessfulAuth(token, userObj), 500);
       } else {
         setError("लॉगिन पूरा नहीं हो सका। कृपया पुनः प्रयास करें।");
       }
@@ -203,7 +195,6 @@ export default function LoginScreen() {
     setResetSuccess("");
 
     try {
-      localStorage.removeItem("isGuestMode");
       const res = await api.post("/api/auth/quick-reset-password", {
         identifier: cleanInput,
         email: cleanInput,
@@ -215,24 +206,8 @@ export default function LoginScreen() {
       const userObj = res?.user || res?.data?.user;
 
       if (token) {
-        localStorage.setItem("authToken", token);
-        localStorage.setItem("token", token);
-        if (userObj) {
-          const normalizedUser = {
-            ...userObj,
-            _id: userObj._id || userObj.id,
-            companyId: userObj.companyId || userObj.company,
-            company: userObj.companyId || userObj.company,
-          };
-          localStorage.setItem("user", JSON.stringify(normalizedUser));
-          const companyId = normalizedUser.companyId || normalizedUser.company;
-          if (companyId) {
-            localStorage.setItem("companyId", companyId);
-            localStorage.setItem("selectedCompany", companyId);
-          }
-        }
         setResetSuccess("🎉 नया पासवर्ड सेट हो गया! तुरंत लॉगिन किया जा रहा है...");
-        setTimeout(() => navigate("/"), 1000);
+        setTimeout(() => handleSuccessfulAuth(token, userObj), 600);
       } else {
         setResetSuccess("पासवर्ड अपडेट हो गया! अब आप लॉगिन कर सकते हैं।");
         setShowQuickReset(false);
@@ -332,7 +307,7 @@ export default function LoginScreen() {
             </div>
           )}
 
-          {/* Instant Password Reset Box (Expanded if user forgets password) */}
+          {/* Instant Password Reset Box */}
           {showQuickReset ? (
             <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-2xl">
               <div className="flex items-center gap-2 text-blue-900 font-bold text-xs mb-2">
@@ -400,24 +375,26 @@ export default function LoginScreen() {
             </button>
           </div>
 
-          {/* OR Divider */}
-          <div className="my-4 flex items-center">
-            <div className="flex-grow border-t border-gray-200"></div>
-            <span className="mx-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest">GOOGLE द्वारा</span>
-            <div className="flex-grow border-t border-gray-200"></div>
-          </div>
+          {/* Google Login Component (Render only if configured, otherwise show direct entry) */}
+          {isGoogleConfigured && (
+            <>
+              <div className="my-4 flex items-center">
+                <div className="flex-grow border-t border-gray-200"></div>
+                <span className="mx-3 text-[11px] font-bold text-gray-400 uppercase tracking-widest">GOOGLE द्वारा</span>
+                <div className="flex-grow border-t border-gray-200"></div>
+              </div>
 
-          {/* Google Login Component */}
-          <div className="flex justify-center flex-col items-center gap-1.5">
-            <GoogleLogin 
-              onSuccess={handleGoogleSuccess} 
-              onError={() => setError("Google लॉगिन विफल रहा। कृपया ऊपर '⚡ 1-Click डायरेक्ट लॉगिन' का उपयोग करें।")}
-              theme="outline"
-              shape="pill"
-              text="signin_with"
-            />
-            <p className="text-[10px] text-gray-400 text-center">Google 401 आने पर ऊपर '⚡ 1-Click डायरेक्ट लॉगिन' दबाएँ</p>
-          </div>
+              <div className="flex justify-center flex-col items-center gap-1.5">
+                <GoogleLogin 
+                  onSuccess={handleGoogleSuccess} 
+                  onError={() => setError("Google लॉगिन विफल रहा।")}
+                  theme="outline"
+                  shape="pill"
+                  text="signin_with"
+                />
+              </div>
+            </>
+          )}
 
           {/* Register Link */}
           <div className="mt-5 pt-3 border-t border-gray-100 text-center">

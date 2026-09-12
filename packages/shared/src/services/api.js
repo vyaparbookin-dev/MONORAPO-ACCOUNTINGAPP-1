@@ -491,23 +491,16 @@ api.interceptors.response.use(
 
     // --- Universal 401 Handler for Real Users ---
     if (status === 401 && !isGuestOrDemo) {
-      if (typeof window !== 'undefined' && window.location) {
+      const loginTime = typeof localStorage !== 'undefined' ? Number(localStorage.getItem("last_login_timestamp") || 0) : 0;
+      const isFreshLogin = (Date.now() - loginTime) < 15000; // 15 second grace period after login
+
+      if (!isFreshLogin && typeof window !== 'undefined' && window.location) {
         const publicPaths = ['/login', '/register', '/verify-otp', '/forgot-password', '/key-recovery', '/landing', '/welcome', '/m', '/mobile-app'];
         const currentPath = window.location.protocol === 'file:' ? window.location.hash.replace('#', '').split('?')[0] : window.location.pathname;
         const isPublicPage = publicPaths.some(p => currentPath === p || currentPath.startsWith(p + '/'));
 
         if (!isPublicPage) {
-          console.error(`Auth Error (401) on protected route ${url}. Clearing credentials.`);
-          setStorage("authToken", null);
-          setStorage("token", null);
-
-          setTimeout(() => {
-            if (window.location.protocol === 'file:') {
-              window.location.hash = "/login";
-            } else {
-              window.location.href = "/login";
-            }
-          }, 100);
+          console.warn(`Auth Error (401) on route ${url}.`);
         }
       }
     }
