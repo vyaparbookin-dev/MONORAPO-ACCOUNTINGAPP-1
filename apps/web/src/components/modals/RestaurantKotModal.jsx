@@ -40,11 +40,7 @@ export default function RestaurantKotModal({ isOpen, onClose, onApplyKot, invent
   const [viewStationFilter, setViewStationFilter] = useState("ALL");
 
   // Multi-Station KOT Items
-  const [kotItems, setKotItems] = useState([
-    { id: 1, name: "Shahi Paneer Butter Masala", quantity: 2, rate: 240, total: 480, station: "MAIN_KITCHEN", stationName: "🍳 Main Kitchen", notes: "Medium Spicy" },
-    { id: 2, name: "Butter Garlic Tandoori Naan", quantity: 6, rate: 45, total: 270, station: "TANDOOR", stationName: "🫓 Tandoor", notes: "Extra Crispy" },
-    { id: 3, name: "Cold Coffee with Ice Cream", quantity: 2, rate: 95, total: 190, station: "BAR_BEVERAGES", stationName: "🍹 Bar", notes: "Chilled with extra chocolate" }
-  ]);
+  const [kotItems, setKotItems] = useState([]);
 
   // Modals inside KOT
   const [showAddTableModal, setShowAddTableModal] = useState(false);

@@ -287,7 +287,13 @@ const getGuestMockData = (url, method = 'GET') => {
       { _id: "e3", id: "e3", title: "किचन गैस सिलेंडर (LPG Commercial)", amount: 1850, category: "रसोई गैस/सिलेंडर", member: "Papa", date: new Date(Date.now() - 86400000 * 4).toISOString(), notes: "Refill Indane Gas", expenseType: "drawings", familyMember: "Papa", transactionFlow: "given" }
     ];
 
-    const combined = [...localExpenses, ...defaultExpenses];
+    const dedupMap = new Map();
+    [...localExpenses, ...defaultExpenses].forEach(item => {
+      if (!item) return;
+      const key = item._id || item.id || `${item.title}_${item.amount}_${item.date}`;
+      if (!dedupMap.has(key)) dedupMap.set(key, item);
+    });
+    const combined = Array.from(dedupMap.values());
     const totalExp = combined.reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const drawingsExp = combined.filter(x => x.expenseType === 'drawings').reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const operatingExp = combined.filter(x => x.expenseType !== 'drawings').reduce((s, x) => s + (Number(x.amount) || 0), 0);

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import api from "../../services/api";
+import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 
 export default function ExpansesList() {
   const [expanses, setExpanses] = useState([]);
@@ -10,22 +11,16 @@ export default function ExpansesList() {
       try {
         const stored = localStorage.getItem("vb_local_expenses");
         if (stored) {
-      try {
-        localList = JSON.parse(stored);
-      } catch (e) {
-        localList = [];
-      }
-    }
+          try {
+            localList = JSON.parse(stored);
+          } catch (e) {
+            localList = [];
+          }
+        }
       } catch (e) {}
       const res = await api.get("/expenses?limit=300").catch(() => null);
       const serverList = res?.recentExpenses || res?.expenses || res?.data?.recentExpenses || res?.data?.expenses || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
-      const combinedMap = new Map();
-      [...localList, ...(Array.isArray(serverList) ? serverList : [])].forEach(item => {
-        if (!item) return;
-        const key = item._id || item.id || `${item.title}_${item.amount}_${item.date}`;
-        if (!combinedMap.has(key)) combinedMap.set(key, item);
-      });
-      const list = Array.from(combinedMap.values());
+      const list = deduplicateExpenses([...(Array.isArray(serverList) ? serverList : []), ...localList]);
       setExpanses(list);
     } catch (error) {
       console.error("Failed to load expenses:", error);

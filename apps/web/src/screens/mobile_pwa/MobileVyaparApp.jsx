@@ -50,6 +50,7 @@ import { useNavigate } from "react-router-dom";
 import { useCompany } from "../../contexts/CompanyContext";
 import api from "../../services/api";
 import PagarBookHub from "../../components/PagarBookHub";
+import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 
 
 class MobileErrorBoundary extends React.Component {
@@ -312,7 +313,7 @@ function MobileVyaparAppContent() {
       const stored = localStorage.getItem("vb_local_expenses");
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return deduplicateExpenses(parsed);
       }
     } catch (e) {}
     return [];
@@ -387,15 +388,8 @@ function MobileVyaparAppContent() {
         }
       }
       
-      const combinedMap = new Map();
-      [...localList, ...(Array.isArray(serverList) ? serverList : [])].forEach(item => {
-        if (!item) return;
-        const key = item._id || item.id || `${item.title}_${item.amount}_${item.date}`;
-        if (!combinedMap.has(key)) {
-          combinedMap.set(key, item);
-        }
-      });
-      const combined = Array.from(combinedMap.values());
+      // Authoritative deduplication: server records always supersede temp local entries
+      const combined = deduplicateExpenses([...(Array.isArray(serverList) ? serverList : []), ...localList]);
       setGharKharchList(combined);
       try {
         localStorage.setItem("vb_local_expenses", JSON.stringify(combined));
@@ -686,9 +680,10 @@ function MobileVyaparAppContent() {
         date: finalDateTime
       };
 
+      const tempId = editingGharKharchItem ? (editingGharKharchItem._id || editingGharKharchItem.id) : `exp_${Date.now()}`;
       const newExpenseRecord = {
-        _id: editingGharKharchItem ? (editingGharKharchItem._id || editingGharKharchItem.id) : `exp_${Date.now()}`,
-        id: editingGharKharchItem ? (editingGharKharchItem._id || editingGharKharchItem.id) : `exp_${Date.now()}`,
+        _id: tempId,
+        id: tempId,
         ...payload
       };
 
@@ -696,19 +691,20 @@ function MobileVyaparAppContent() {
       try {
         const stored = localStorage.getItem("vb_local_expenses");
         let list = [];
-      try {
-        list = stored ? JSON.parse(stored) : [];
-      } catch (e) {
-        list = [];
-      }
+        try {
+          list = stored ? JSON.parse(stored) : [];
+        } catch (e) {
+          list = [];
+        }
         if (editingGharKharchItem) {
           const editId = editingGharKharchItem._id || editingGharKharchItem.id;
           list = list.map(item => ((item._id || item.id) === editId ? newExpenseRecord : item));
         } else {
           list = [newExpenseRecord, ...list];
         }
-        localStorage.setItem("vb_local_expenses", JSON.stringify(list));
-        setGharKharchList(prev => [newExpenseRecord, ...prev.filter(p => (p._id || p.id) !== newExpenseRecord._id && (p._id || p.id) !== newExpenseRecord.id)]);
+        const cleanList = deduplicateExpenses(list);
+        localStorage.setItem("vb_local_expenses", JSON.stringify(cleanList));
+        setGharKharchList(cleanList);
       } catch (err) {
         console.warn("Local expense store err:", err);
       }
@@ -718,7 +714,18 @@ function MobileVyaparAppContent() {
         await api.put(`/expenses/${expId}`, payload).catch(() => {});
         alert(`✅ ${finalMember} का खर्च (₹${gharKharchAmount}) सफलता से अपडेट हो गया!`);
       } else {
-        await api.post("/expenses", payload).catch(() => {});
+        const createRes = await api.post("/expenses", payload).catch(() => null);
+        const serverExpense = createRes?.expense || createRes?.data?.expense;
+        if (serverExpense && (serverExpense._id || serverExpense.id)) {
+          try {
+            const stored = localStorage.getItem("vb_local_expenses");
+            let list = stored ? JSON.parse(stored) : [];
+            list = list.map(item => ((item._id === tempId || item.id === tempId) ? serverExpense : item));
+            const cleanList = deduplicateExpenses(list);
+            localStorage.setItem("vb_local_expenses", JSON.stringify(cleanList));
+            setGharKharchList(cleanList);
+          } catch (e) {}
+        }
         const successMsg = gharKharchType === 'drawings'
           ? `🏡 ${finalMember} के लिए ${finalCategory} (₹${gharKharchAmount}) सफलतापूर्वक दर्ज हो गया!`
           : `🏢 दुकान खर्च ₹${gharKharchAmount} दर्ज हो गया!`;
@@ -782,18 +789,41 @@ function MobileVyaparAppContent() {
     if (!id) return;
     if (!window.confirm("क्या आप इस खर्च को हमेशा के लिए हटाना चाहते हैं?")) return;
     try {
+      const targetItem = (Array.isArray(gharKharchList) ? gharKharchList : []).find(k => (k._id || k.id) === id || k.id === id || k._id === id);
+      const targetTitle = targetItem ? String(targetItem.title || "").trim().toLowerCase() : "";
+      const targetAmt = targetItem ? Number(targetItem.amount || 0).toFixed(2) : "";
+
       // 1. Immediately wipe from localStorage
       try {
         const stored = localStorage.getItem("vb_local_expenses");
         if (stored) {
           const list = JSON.parse(stored);
-          const updated = list.filter(k => (k._id || k.id) !== id && k.id !== id && k._id !== id);
-          localStorage.setItem("vb_local_expenses", JSON.stringify(updated));
+          const updated = list.filter(k => {
+            const matchId = (k._id || k.id) === id || k.id === id || k._id === id;
+            if (matchId) return false;
+            if (targetItem && (String(k._id || "").startsWith("exp_") || String(k.id || "").startsWith("exp_"))) {
+              const kTitle = String(k.title || "").trim().toLowerCase();
+              const kAmt = Number(k.amount || 0).toFixed(2);
+              if (kTitle === targetTitle && kAmt === targetAmt) return false;
+            }
+            return true;
+          });
+          const cleanList = deduplicateExpenses(updated);
+          localStorage.setItem("vb_local_expenses", JSON.stringify(cleanList));
         }
       } catch (e) {}
 
       // 2. Wipe from React state immediately
-      setGharKharchList(prev => prev.filter(k => (k._id || k.id) !== id && k.id !== id && k._id !== id));
+      setGharKharchList(prev => deduplicateExpenses(prev.filter(k => {
+        const matchId = (k._id || k.id) === id || k.id === id || k._id === id;
+        if (matchId) return false;
+        if (targetItem && (String(k._id || "").startsWith("exp_") || String(k.id || "").startsWith("exp_"))) {
+          const kTitle = String(k.title || "").trim().toLowerCase();
+          const kAmt = Number(k.amount || 0).toFixed(2);
+          if (kTitle === targetTitle && kAmt === targetAmt) return false;
+        }
+        return true;
+      })));
 
       // 3. Delete from backend database
       await api.delete(`/expenses/${id}`).catch(err => console.warn("Backend delete error:", err));

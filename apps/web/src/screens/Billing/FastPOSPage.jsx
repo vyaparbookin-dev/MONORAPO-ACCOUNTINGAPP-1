@@ -253,67 +253,22 @@ export default function FastPOSPage() {
   });
 
   // --- 🔔 LIVE KITCHEN & TABLE FLOOR ORDERS REALTIME STATE ---
-  const [activeFloorOrders, setActiveFloorOrders] = useState([
-    {
-      id: "KOT-101",
-      table: "Table 2 (AC Hall)",
-      capacity: 4,
-      waiter: "Rohan Captain",
-      placedAt: new Date(Date.now() - 14 * 60000),
-      prepTimeMinutes: 14,
-      status: "COOKING",
-      amount: 480,
-      items: [
-        { name: "Crispy Cheese Veg Burger", qty: 2, rate: 110, station: "Pizza & Fast Food" },
-        { name: "Cold Coffee with Ice Cream", qty: 2, rate: 95, station: "Bar & Drinks" }
-      ]
-    },
-    {
-      id: "KOT-102",
-      table: "Table 3 (AC Hall)",
-      capacity: 6,
-      waiter: "Sunil Chef",
-      placedAt: new Date(Date.now() - 28 * 60000),
-      prepTimeMinutes: 28,
-      status: "SERVED",
-      amount: 800,
-      items: [
-        { name: "Shahi Paneer Butter Masala", qty: 1, rate: 240, station: "Main Kitchen" },
-        { name: "Butter Garlic Tandoori Naan", qty: 4, rate: 45, station: "Tandoor" },
-        { name: "Veg Dum Biryani with Raita", qty: 1, rate: 190, station: "Main Kitchen" },
-        { name: "Cold Coffee with Ice Cream", qty: 2, rate: 95, station: "Bar & Drinks" }
-      ]
-    },
-    {
-      id: "KOT-103",
-      table: "Table 4 (Garden)",
-      capacity: 8,
-      waiter: "Aman Steward",
-      placedAt: new Date(Date.now() - 42 * 60000),
-      prepTimeMinutes: 42,
-      status: "BILLED",
-      amount: 1250,
-      items: [
-        { name: "Veg Dum Biryani with Raita", qty: 2, rate: 190, station: "Main Kitchen" },
-        { name: "Paneer Tikka Dry", qty: 2, rate: 210, station: "Tandoor" },
-        { name: "Farmhouse Loaded Pizza (8 inch)", qty: 2, rate: 220, station: "Pizza & Fast Food" }
-      ]
-    },
-    {
-      id: "KOT-104",
-      table: "Table 1 (Dine-in)",
-      capacity: 2,
-      waiter: "Rohan Captain",
-      placedAt: new Date(Date.now() - 6 * 60000),
-      prepTimeMinutes: 6,
-      status: "COOKING",
-      amount: 320,
-      items: [
-        { name: "Dal Makhani Special", qty: 1, rate: 180, station: "Main Kitchen" },
-        { name: "Butter Garlic Tandoori Naan", qty: 3, rate: 45, station: "Tandoor" }
-      ]
-    }
-  ]);
+  const [activeFloorOrders, setActiveFloorOrders] = useState(() => {
+    try {
+      const saved = localStorage.getItem("vb_floor_orders");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("vb_floor_orders", JSON.stringify(activeFloorOrders));
+    } catch (e) {}
+  }, [activeFloorOrders]);
 
   // Emergency Handover Form State
   const [handoverForm, setHandoverForm] = useState({
@@ -552,16 +507,33 @@ export default function FastPOSPage() {
     setCart((prev) => [
       ...prev,
       ...kotData.items.map((i) => ({
-        productId: `kot_${Date.now()}_${Math.random()}`,
+        productId: i.productId || `kot_${Date.now()}_${Math.random()}`,
         name: i.name,
         category: i.category || "Restaurant",
         rate: i.rate,
         quantity: i.quantity,
         unit: i.unit || "PLT",
-        total: i.total,
+        total: i.total || i.rate * i.quantity,
       })),
     ]);
     setSelectedTable(kotData.table);
+    const newKotOrder = {
+      id: kotData.kotId || `KOT-${Date.now().toString().slice(-4)}`,
+      table: kotData.table,
+      capacity: kotData.capacity || 4,
+      waiter: kotData.waiter || "Rohan Captain",
+      placedAt: new Date(),
+      prepTimeMinutes: 1,
+      status: "COOKING",
+      amount: (kotData.items || []).reduce((s, it) => s + (it.total || it.rate * it.quantity), 0),
+      items: (kotData.items || []).map(it => ({
+        name: it.name,
+        qty: it.quantity,
+        rate: it.rate,
+        station: it.stationName || "Main Kitchen"
+      }))
+    };
+    setActiveFloorOrders(prev => [newKotOrder, ...prev.filter(o => o.id !== newKotOrder.id)]);
   };
 
   // Transfer KDS Order directly to Billing Cart

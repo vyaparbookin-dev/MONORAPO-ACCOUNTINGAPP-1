@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Search, Download, Edit, Trash2, DollarSign, Calendar, Tag, PieChart, Users, Home, Building2, CheckCircle2 } from "lucide-react";
 import api from "../../services/api";
+import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 
 const ExpensesPage = () => {
   const [expenses, setExpenses] = useState(() => {
@@ -8,7 +9,7 @@ const ExpensesPage = () => {
       const stored = localStorage.getItem("vb_local_expenses");
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return deduplicateExpenses(parsed);
       }
     } catch (e) {}
     return [];
@@ -55,15 +56,8 @@ const ExpensesPage = () => {
       const response = await api.get("/expenses?limit=300").catch(() => null);
       const serverList = response?.recentExpenses || response?.expenses || response?.data?.recentExpenses || response?.data?.expenses || (Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : []));
 
-      const combinedMap = new Map();
-      [...localList, ...(Array.isArray(serverList) ? serverList : [])].forEach(item => {
-        if (!item) return;
-        const key = item._id || item.id || `${item.title}_${item.amount}_${item.date}`;
-        if (!combinedMap.has(key)) {
-          combinedMap.set(key, item);
-        }
-      });
-      const combined = Array.from(combinedMap.values());
+      // Authoritative deduplication
+      const combined = deduplicateExpenses([...(Array.isArray(serverList) ? serverList : []), ...localList]);
       setExpenses(combined);
       try {
         localStorage.setItem("vb_local_expenses", JSON.stringify(combined));
@@ -155,7 +149,16 @@ const ExpensesPage = () => {
         await api.put(`/expenses/${editingId}`, payload);
         alert("खर्च सफलतापूर्वक अपडेट हो गया!");
       } else {
-        await api.post("/expenses", payload);
+        const createRes = await api.post("/expenses", payload);
+        const newExp = createRes?.expense || createRes?.data?.expense;
+        if (newExp && (newExp._id || newExp.id)) {
+          try {
+            const stored = localStorage.getItem("vb_local_expenses");
+            const list = stored ? JSON.parse(stored) : [];
+            const clean = deduplicateExpenses([newExp, ...list]);
+            localStorage.setItem("vb_local_expenses", JSON.stringify(clean));
+          } catch (e) {}
+        }
         alert(payload.expenseType === 'drawings' ? `🏡 ${payload.familyMember} का घर खर्च ₹${payload.amount} दर्ज हो गया!` : `🏢 दुकान खर्च ₹${payload.amount} दर्ज हो गया!`);
       }
       fetchExpenses();
@@ -170,16 +173,39 @@ const ExpensesPage = () => {
     if (!id) return;
     if (window.confirm("क्या आप इस खर्च को हमेशा के लिए हटाना चाहते हैं?")) {
       try {
+        const targetItem = (Array.isArray(expenses) ? expenses : []).find(k => (k._id || k.id) === id || k.id === id || k._id === id);
+        const targetTitle = targetItem ? String(targetItem.title || "").trim().toLowerCase() : "";
+        const targetAmt = targetItem ? Number(targetItem.amount || 0).toFixed(2) : "";
+
         try {
           const stored = localStorage.getItem("vb_local_expenses");
           if (stored) {
             const list = JSON.parse(stored);
-            const updated = list.filter(k => (k._id || k.id) !== id && k.id !== id && k._id !== id);
-            localStorage.setItem("vb_local_expenses", JSON.stringify(updated));
+            const updated = list.filter(k => {
+              const matchId = (k._id || k.id) === id || k.id === id || k._id === id;
+              if (matchId) return false;
+              if (targetItem && (String(k._id || "").startsWith("exp_") || String(k.id || "").startsWith("exp_"))) {
+                const kTitle = String(k.title || "").trim().toLowerCase();
+                const kAmt = Number(k.amount || 0).toFixed(2);
+                if (kTitle === targetTitle && kAmt === targetAmt) return false;
+              }
+              return true;
+            });
+            const cleanList = deduplicateExpenses(updated);
+            localStorage.setItem("vb_local_expenses", JSON.stringify(cleanList));
           }
         } catch (e) {}
 
-        setExpenses(prev => prev.filter(k => (k._id || k.id) !== id && k.id !== id && k._id !== id));
+        setExpenses(prev => deduplicateExpenses(prev.filter(k => {
+          const matchId = (k._id || k.id) === id || k.id === id || k._id === id;
+          if (matchId) return false;
+          if (targetItem && (String(k._id || "").startsWith("exp_") || String(k.id || "").startsWith("exp_"))) {
+            const kTitle = String(k.title || "").trim().toLowerCase();
+            const kAmt = Number(k.amount || 0).toFixed(2);
+            if (kTitle === targetTitle && kAmt === targetAmt) return false;
+          }
+          return true;
+        })));
         await api.delete(`/expenses/${id}`).catch(err => console.warn("Backend delete err:", err));
         fetchExpenses();
       } catch (err) {
