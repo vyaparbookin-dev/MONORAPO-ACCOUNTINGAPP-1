@@ -48,7 +48,6 @@ export default function DashboardLayout() {
   const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
   const [calcModalOpen, setCalcModalOpen] = useState(false);
   const [showQuickCreateBusinessModal, setShowQuickCreateBusinessModal] = useState(false);
-  const [showFullMenu, setShowFullMenu] = useState(false);
   const [newBusinessForm, setNewBusinessForm] = useState({
     name: "",
     industryType: "restaurant",
@@ -108,43 +107,9 @@ export default function DashboardLayout() {
   };
 
   // Get the selected industry type and make it lowercase for easy checking
-  // Dynamic Industry-Tailored Menu Generator
-  const getMenuForBusiness = (company, fullMode = false) => {
+  // Dynamic Industry-Tailored Menu Generator (Strict Industry Business Logic)
+  const getMenuForBusiness = (company) => {
     const indType = (company?.industryType || company?.businessType || '').toLowerCase();
-
-    // 1. FULL VIEW (ALL 30+ FEATURES)
-    if (fullMode) {
-      return [
-        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Home, label: "Dashboard", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
-        { icon: ShoppingCart, label: "Fast POS & KOT", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
-        { icon: FileText, label: "Invoices & Billing", href: "/billing", color: "text-green-600", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Briefcase, label: "B2B Bills", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
-        { icon: Package, label: "Inventory Stock", href: "/inventory", color: "text-purple-600", roles: ['admin', 'manager'] },
-        { icon: Users, label: "Parties & Khata", href: "/parties", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Users, label: "Leads CRM", href: "/leads", color: "text-purple-600", roles: ['admin', 'manager'] },
-        { icon: FileText, label: "Quotations", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
-        { icon: Smartphone, label: "IMEI Serial Tracking", href: "/serial-tracking", color: "text-cyan-500", roles: ['admin', 'manager'] },
-        { icon: ShieldCheck, label: "Warranty Claims", href: "/warranty", color: "text-emerald-500", roles: ['admin', 'manager'] },
-        { icon: PenTool, label: "Batch & Cut-Loss", href: "/inventory/batch", color: "text-orange-700", roles: ['admin', 'manager'] },
-        { icon: DollarSign, label: "Expenses (Ghar Kharch)", href: "/expenses", color: "text-orange-600", roles: ['admin', 'manager'] },
-        { icon: Landmark, label: "Cash & Banking", href: "/banking", color: "text-cyan-600", roles: ['admin', 'manager'] },
-        { icon: Gift, label: "Coupons & Offers", href: "/coupons", color: "text-pink-600", roles: ['admin', 'manager'] },
-        { icon: Users, label: "Membership / Loyalty", href: "/membership", color: "text-teal-600", roles: ['admin', 'manager', 'cashier'] },
-        { icon: UserCheck, label: "Staff & Attendance", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
-        { icon: Receipt, label: "Salary & Pagar", href: "/salary", color: "text-cyan-600", roles: ['admin'] },
-        { icon: CheckCircle, label: "Approvals", href: "/approvals", color: "text-emerald-500", roles: ['admin', 'manager'] },
-        { icon: BarChart3, label: "Category Analytics", href: "/inventory/analytics", color: "text-blue-600", roles: ['admin', 'manager'] },
-        { icon: ArrowRightLeft, label: "Stock Transfer", href: "/inventory/transfer", color: "text-indigo-500", roles: ['admin', 'manager'] },
-        { icon: Package, label: "E-Way Bill", href: "/reports/eway-bill", color: "text-indigo-500", roles: ['admin'] },
-        { icon: FileText, label: "GST Tax Report", href: "/reports/gst", color: "text-blue-500", roles: ['admin'] },
-        { icon: DollarSign, label: "Profit & Loss", href: "/reports/profitloss", color: "text-emerald-500", roles: ['admin'] },
-        { icon: BookOpen, label: "Day Book (Cashflow)", href: "/reports/daybook", color: "text-rose-500", roles: ['admin'] },
-        { icon: Bot, label: "AI मुनीम जी (Advisor)", href: "/ai-advisor", color: "text-purple-500", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Building2, label: "Company Switcher", href: "/company", color: "text-indigo-600", roles: ['admin'] },
-        { icon: Clock, label: "Laterpad", href: "/laterpad", color: "text-lime-600", roles: ['admin', 'manager', 'cashier'] }
-      ];
-    }
 
     // 2. RESTAURANT & CAFE
     if (indType.includes('restaurant') || indType.includes('cafe') || indType.includes('food') || indType.includes('dining')) {
@@ -300,7 +265,7 @@ export default function DashboardLayout() {
     ];
   };
 
-  const menuItems = getMenuForBusiness(selectedCompany, showFullMenu);
+  const menuItems = getMenuForBusiness(selectedCompany);
   const userRole = user?.role || 'admin'; // Default to admin if no role found
 
   return (
@@ -336,24 +301,15 @@ export default function DashboardLayout() {
 
         {/* Menu Items */}
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          {/* Vertical Badge & Toggle */}
+          {/* Vertical Badge */}
           {sidebarOpen && (
-            <div className="mb-3 px-2 py-2 bg-slate-800/80 rounded-lg border border-slate-700/60 flex items-center justify-between">
-              <div className="truncate pr-1">
-                <p className="text-[10px] uppercase font-bold tracking-wider text-blue-400">
-                  {showFullMenu ? "🌐 Full Suite (30+ Features)" : `🎯 ${(selectedCompany?.industryType || "Business").toUpperCase()} VIEW`}
-                </p>
-                <p className="text-xs text-gray-300 font-medium truncate">
-                  {selectedCompany?.name || "Active Business"}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowFullMenu(!showFullMenu)}
-                className="text-[10px] px-2 py-1 bg-slate-700 hover:bg-blue-600 text-white rounded transition shrink-0 font-medium"
-                title={showFullMenu ? "Switch to industry-specific view" : "View all available features"}
-              >
-                {showFullMenu ? "Focused View" : "All (30+)"}
-              </button>
+            <div className="mb-3 px-3 py-2 bg-slate-800/80 rounded-xl border border-slate-700/60">
+              <p className="text-[10px] uppercase font-black tracking-wider text-indigo-400">
+                🎯 {(selectedCompany?.industryType || selectedCompany?.businessType || "Business").toUpperCase()} SUITE
+              </p>
+              <p className="text-xs text-gray-200 font-bold truncate mt-0.5">
+                {selectedCompany?.name || "My Business"}
+              </p>
             </div>
           )}
           {menuItems.filter(item => !item.roles || item.roles.includes(userRole)).map((item) => (
