@@ -247,9 +247,9 @@ export default function BillingPage() {
       if (pageNumber === 1) setLoading(true);
       else setLoadingMore(true);
 
-      const response = await api.get(`/api/billing?page=${pageNumber}&limit=20`);
+      const response = await api.get(`/api/billing?page=${pageNumber}&limit=500`);
       const fetchedBills = response?.bills || response?.data?.bills || (Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : []));
-      const totalPages = response?.pagination?.totalPages || 1;
+      const totalPages = response?.pages || response?.pagination?.totalPages || 1;
 
       if (pageNumber === 1) {
         setBills(Array.isArray(fetchedBills) ? fetchedBills : []);
@@ -897,7 +897,10 @@ export default function BillingPage() {
     }
   };
 
-  const totalRevenue = filteredBills.reduce((sum, b) => sum + ((b.total || 0) - (b.discount || 0)), 0);
+  const totalRevenue = filteredBills.reduce((sum, b) => {
+    const amt = b.finalAmount !== undefined && b.finalAmount !== null ? Number(b.finalAmount) : ((Number(b.total) || 0) - (Number(b.discount) || 0));
+    return sum + (isNaN(amt) ? 0 : amt);
+  }, 0);
   const totalPending = filteredBills.filter((b) => b.status !== "paid").length;
 
   return (

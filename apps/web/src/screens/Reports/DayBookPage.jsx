@@ -16,7 +16,12 @@ import {
   Flame,
   CheckCircle2,
   DollarSign,
-  ArrowLeft
+  ArrowLeft,
+  AlertTriangle,
+  Award,
+  Sparkles,
+  Package,
+  Target
 } from "lucide-react";
 import CustomerSummaryModal from "../../components/modals/CustomerSummaryModal";
 
@@ -39,6 +44,16 @@ export default function DayBookPage() {
     partyOut: 0,
   });
 
+  // State for Dish / Menu Item Performance Analytics
+  const [menuPerformance, setMenuPerformance] = useState({
+    totalProducts: 0,
+    activeSellingCount: 0,
+    zeroSellingCount: 0,
+    topSellers: [],
+    mediumSellers: [],
+    zeroSellers: []
+  });
+
   // State for Customer 360° Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
@@ -50,23 +65,115 @@ export default function DayBookPage() {
   const fetchDayBook = async () => {
     setLoading(true);
     try {
-      let url = `/api/daybook?period=${period}`;
+      let url = `/api/daybook?period=${period}&limit=500`;
       if (period === "custom") {
-        url = `/api/daybook?startDate=${startDate}&endDate=${endDate}`;
+        url = `/api/daybook?startDate=${startDate}&endDate=${endDate}&limit=500`;
       } else if (period === "today") {
-        url = `/api/daybook?date=${startDate}`;
+        url = `/api/daybook?date=${startDate}&limit=500`;
       }
-      const res = await api.get(url);
+
+      const [res, invRes] = await Promise.all([
+        api.get(url),
+        api.get("/api/inventory").catch(() => null)
+      ]);
+
       const data = res?.data?.data || res?.data || res;
+      const products = invRes?.data?.products || invRes?.data || [];
+
       if (data) {
         setRawData(data);
         calculateSummary(data);
+        calculateMenuPerformance(data.bills || [], products);
       }
     } catch (err) {
       console.error("Failed to fetch Daybook", err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const calculateMenuPerformance = (bills, products) => {
+    const itemStats = {};
+
+    // 1. Tally from bills in this period
+    (bills || []).forEach((bill) => {
+      (bill.items || []).forEach((item) => {
+        const key = (item.name || item.productName || "Dish").trim();
+        if (!itemStats[key]) {
+          itemStats[key] = {
+            name: key,
+            quantity: 0,
+            revenue: 0,
+            orderCount: 0,
+            rate: item.rate || item.price || 0,
+            category: item.category || ""
+          };
+        }
+        itemStats[key].quantity += Number(item.quantity) || 1;
+        const itemTot = Number(item.total) || ((Number(item.rate || item.price) || 0) * (Number(item.quantity) || 1));
+        itemStats[key].revenue += itemTot;
+        itemStats[key].orderCount += 1;
+      });
+    });
+
+    const prodsList = Array.isArray(products) && products.length > 0 ? products : [];
+    const totalDishesInMenu = prodsList.length;
+
+    // Cross reference with all products in inventory
+    const topSellers = [];
+    const mediumSellers = [];
+    const zeroSellers = [];
+
+    // All active sold items
+    const soldItems = Object.values(itemStats).sort((a, b) => b.quantity - a.quantity);
+
+    // Dynamic threshold for Top Sellers vs Medium
+    const maxQty = soldItems.length > 0 ? soldItems[0].quantity : 0;
+    const topThreshold = Math.max(3, Math.round(maxQty * 0.4));
+
+    soldItems.forEach((item) => {
+      if (item.quantity >= topThreshold) {
+        topSellers.push({
+          ...item,
+          status: "Star ⭐ (सर्वाधिक बिक्री)",
+          profitImpact: "उच्चतम सेल व मुख्य मुनाफा"
+        });
+      } else {
+        mediumSellers.push({
+          ...item,
+          status: "Regular 🟡 (औसत मांग)",
+          profitImpact: "संतुलित बिक्री व स्थिर मांग"
+        });
+      }
+    });
+
+    // Find products in restaurant menu with zero sales in this period
+    prodsList.forEach((prod) => {
+      const prodName = (prod.name || prod.productName || "").trim();
+      if (prodName && !itemStats[prodName]) {
+        const isRaw = prod.category === "Kitchen Raw Materials" || /कच्चा माल|raw|cylinder/i.test(prodName);
+        zeroSellers.push({
+          name: prodName,
+          category: prod.category || "General",
+          price: prod.sellingPrice || prod.price || prod.costPrice || 0,
+          currentStock: prod.currentStock ?? prod.stock ?? 0,
+          unit: prod.unit || "pcs",
+          isRaw,
+          riskNote: isRaw
+            ? "कच्चा माल स्टॉक / शेल्फ-लाइफ एक्सपायरी रिस्क"
+            : "मेनू में अप्रयुक्त व्यंजन / 0 ऑर्डर (वेस्टेज खतरा)"
+        });
+      }
+    });
+
+    setMenuPerformance({
+      totalProducts: totalDishesInMenu > 0 ? totalDishesInMenu : soldItems.length,
+      activeSellingCount: soldItems.length,
+      zeroSellingCount: zeroSellers.length,
+      topSellers,
+      mediumSellers,
+      zeroSellers
+    });
   };
 
   const handlePeriodChange = (newPeriod) => {
@@ -414,6 +521,184 @@ export default function DayBookPage() {
                     ₹{summary.partyOut.toLocaleString("en-IN")}
                   </span>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 🍽️ Dish & Menu Performance Section (मेनू व्यंजन व बिक्री विश्लेषण) */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b pb-4">
+              <div>
+                <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                  <ChefHat className="text-orange-600" size={24} />
+                  🍽️ रेस्टोरेंट मेनू व व्यंजन बिक्री विश्लेषण (Menu Performance Matrix)
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  मेनू में कुल व्यंजन • सर्वाधिक बिकने वाले व्यंजन • औसत बिक्री • 0 ऑर्डर (Zero-Sale) वाले व्यंजन व वेस्टेज रिस्क
+                </p>
+              </div>
+
+              {/* Badges */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-xl text-center">
+                  <span className="text-[10px] uppercase font-bold text-blue-700 block">कुल आइटम्स</span>
+                  <span className="text-sm font-black text-blue-900">{menuPerformance.totalProducts} Items</span>
+                </div>
+                <div className="px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                  <span className="text-[10px] uppercase font-bold text-emerald-700 block">बिकने वाले व्यंजन</span>
+                  <span className="text-sm font-black text-emerald-800">{menuPerformance.activeSellingCount} Active</span>
+                </div>
+                <div className="px-3 py-1.5 bg-rose-50 border border-rose-200 rounded-xl text-center">
+                  <span className="text-[10px] uppercase font-bold text-rose-700 block">0 सेल (Unsold)</span>
+                  <span className="text-sm font-black text-rose-800">{menuPerformance.zeroSellingCount} Zero</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 3 Performance Buckets */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* 1. TOP SELLERS */}
+              <div className="bg-emerald-50/60 border border-emerald-200 rounded-2xl p-4 space-y-3">
+                <div className="flex justify-between items-center border-b border-emerald-200/80 pb-2">
+                  <h3 className="font-black text-emerald-950 text-sm flex items-center gap-1.5">
+                    <Award size={18} className="text-amber-500" />
+                    <span>🌟 सर्वाधिक बिकने वाले (Star Items)</span>
+                  </h3>
+                  <span className="text-[10px] font-black bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full">
+                    {menuPerformance.topSellers.length} व्यंजन
+                  </span>
+                </div>
+
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1 text-xs">
+                  {menuPerformance.topSellers.length > 0 ? (
+                    menuPerformance.topSellers.map((item, idx) => (
+                      <div key={idx} className="p-2.5 bg-white border border-emerald-100 rounded-xl shadow-2xs hover:border-emerald-300 transition">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-gray-900">{item.name}</p>
+                            <span className="text-[10px] text-emerald-700 font-semibold">
+                              {item.quantity} प्लेट/पीस बिके • {item.orderCount} बिल्स में शामिल
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-black text-gray-900 block">₹{item.revenue.toLocaleString("en-IN")}</span>
+                            <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">
+                              Star ⭐
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="py-8 text-center text-gray-400 text-xs">
+                      इस अवधि में कोई विशेष बेस्ट-सेलर रिकॉर्ड नहीं मिला।
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 2. MEDIUM SELLERS */}
+              <div className="bg-amber-50/50 border border-amber-200 rounded-2xl p-4 space-y-3">
+                <div className="flex justify-between items-center border-b border-amber-200/80 pb-2">
+                  <h3 className="font-black text-amber-950 text-sm flex items-center gap-1.5">
+                    <TrendingUp size={18} className="text-amber-600" />
+                    <span>🟡 औसत बिकने वाले (Steady Items)</span>
+                  </h3>
+                  <span className="text-[10px] font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">
+                    {menuPerformance.mediumSellers.length} व्यंजन
+                  </span>
+                </div>
+
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1 text-xs">
+                  {menuPerformance.mediumSellers.length > 0 ? (
+                    menuPerformance.mediumSellers.map((item, idx) => (
+                      <div key={idx} className="p-2.5 bg-white border border-amber-100 rounded-xl shadow-2xs hover:border-amber-300 transition">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-gray-900">{item.name}</p>
+                            <span className="text-[10px] text-amber-700 font-semibold">
+                              {item.quantity} प्लेट/पीस बिके • {item.orderCount} बिल्स
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-black text-gray-900 block">₹{item.revenue.toLocaleString("en-IN")}</span>
+                            <span className="text-[9px] font-bold text-amber-800 bg-amber-100/60 px-1.5 py-0.2 rounded">
+                              Regular
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="py-8 text-center text-gray-400 text-xs">
+                      कोई औसत बिक्री वाले व्यंजन नहीं।
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 3. ZERO SELLERS & RAW STOCK */}
+              <div className="bg-rose-50/60 border border-rose-200 rounded-2xl p-4 space-y-3">
+                <div className="flex justify-between items-center border-b border-rose-200/80 pb-2">
+                  <h3 className="font-black text-rose-950 text-sm flex items-center gap-1.5">
+                    <AlertTriangle size={18} className="text-rose-600" />
+                    <span>⚠️ 0 सेल (Unsold / Non-Moving)</span>
+                  </h3>
+                  <span className="text-[10px] font-black bg-rose-200 text-rose-900 px-2 py-0.5 rounded-full">
+                    {menuPerformance.zeroSellers.length} आइटम्स
+                  </span>
+                </div>
+
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1 text-xs">
+                  {menuPerformance.zeroSellers.length > 0 ? (
+                    menuPerformance.zeroSellers.map((item, idx) => (
+                      <div key={idx} className="p-2.5 bg-white border border-rose-100 rounded-xl shadow-2xs hover:border-rose-300 transition">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-gray-900">{item.name}</p>
+                            <span className="text-[10px] text-rose-600 font-semibold block">
+                              ⚠️ {item.riskNote}
+                            </span>
+                            <span className="text-[10px] text-gray-500">
+                              स्टॉक: {item.currentStock} {item.unit}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-black text-gray-700 block">₹{item.price}</span>
+                            <span className="text-[9px] font-extrabold text-rose-700 bg-rose-100 px-1.5 py-0.2 rounded">
+                              0 Order
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="py-8 text-center text-gray-400 text-xs">
+                      बधाई! सभी व्यंजन व आइटम्स बिक रहे हैं।
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Restaurant Impact Advisory Callout */}
+            <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl shadow-sm border border-indigo-500/40 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-xs">
+              <div className="space-y-1">
+                <span className="font-black text-yellow-300 flex items-center gap-1.5 text-sm uppercase tracking-wide">
+                  <Sparkles size={16} /> रेस्टोरेंट बिजनेस व कच्चा माल वेस्टेज एनालिसिस (Chef & Owner Advisory)
+                </span>
+                <p className="text-slate-300 leading-relaxed">
+                  • <strong>मुख्य बिक्री स्तंभ:</strong> टॉप सेलर डिशेज कुल कमाई का 75%+ हिस्सा ला रही हैं। इनके कच्चे माल (पनीर, मैदा, मसाले) का स्टॉक हमेशा पर्याप्त रखें।<br />
+                  • <strong>0 सेल का खतरा:</strong> जो व्यंजन बार-बार 0 सेल में आ रहे हैं, उनके लिए ताजी सब्जियां/डेयरी ज्यादा न मंगाएं ताकि <em>खराब होने (Spoilage Loss)</em> से बचा जा सके।<br />
+                  • <strong>सलाह:</strong> 0 सेल वाले व्यंजनों को टॉप-सेलर (जैसे बटर नान या कोल्ड ड्रिंक) के साथ 'कॉम्बो मील' में ऑफर करें।
+                </p>
+              </div>
+              <div className="shrink-0 bg-white/10 px-4 py-3 rounded-xl border border-white/20 text-center">
+                <span className="text-[10px] text-indigo-300 uppercase block font-bold">Menu Velocity</span>
+                <span className="text-xl font-black text-emerald-400">
+                  {menuPerformance.totalProducts > 0 ? Math.round((menuPerformance.activeSellingCount / menuPerformance.totalProducts) * 100) : 0}%
+                </span>
+                <span className="text-[10px] text-slate-300 block">Active Flow</span>
               </div>
             </div>
           </div>

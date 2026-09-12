@@ -2,6 +2,8 @@ import Report from "../model/report.js";
 import Bill from "../model/bill.js";
 import Product from "../model/product.js";
 import Expance from "../model/expenses.js";
+import Purchase from "../model/purchase.js";
+import Salary from "../model/salary.js";
 import User from "../model/user.js"; // User model ko import karein
 import mongoose from "mongoose";
 
@@ -350,16 +352,104 @@ export const getProfitLoss = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const bills = await Bill.find({ companyId: req.companyId, isDeleted: false });
-    const expenses = await Expance.find({ companyId: req.companyId, isDeleted: false });
-    
-    const totalSales = bills.reduce((sum, b) => sum + (b.finalAmount || b.total || 0), 0);
-    const totalPurchase = 0; // Future purchase logic can be added here
-    const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-    
-    const netProfit = totalSales - totalPurchase - totalExpenses;
-    
-    res.json({ success: true, data: { totalSales, totalPurchase, totalExpenses, netProfit } });
+    const { startDate, endDate } = req.query;
+    const coFilter = mongoose.Types.ObjectId.isValid(req.companyId)
+      ? { $in: [req.companyId, new mongoose.Types.ObjectId(req.companyId)] }
+      : req.companyId;
+
+    let dateFilter = {};
+    let daysCount = 30; // default period days
+    if (startDate && endDate) {
+      const s = new Date(new Date(startDate).setHours(0, 0, 0, 0));
+      const e = new Date(new Date(endDate).setHours(23, 59, 59, 999));
+      dateFilter = { $gte: s, $lte: e };
+      daysCount = Math.max(1, Math.round((e - s) / (1000 * 60 * 60 * 24)));
+    }
+
+    const billQuery = { companyId: coFilter, isDeleted: { $ne: true } };
+    const expenseQuery = { companyId: coFilter, isDeleted: { $ne: true } };
+    const purchaseQuery = { companyId: coFilter, isDeleted: { $ne: true } };
+    const salaryQuery = { companyId: coFilter, isDeleted: { $ne: true } };
+
+    if (startDate && endDate) {
+      billQuery.$or = [{ date: dateFilter }, { createdAt: dateFilter }];
+      expenseQuery.$or = [{ date: dateFilter }, { createdAt: dateFilter }];
+      purchaseQuery.$or = [{ date: dateFilter }, { createdAt: dateFilter }];
+      salaryQuery.$or = [{ date: dateFilter }, { paymentDate: dateFilter }, { createdAt: dateFilter }];
+    }
+
+    const [bills, expenses, purchases, salaries] = await Promise.all([
+      Bill.find(billQuery),
+      Expance.find(expenseQuery),
+      Purchase.find(purchaseQuery),
+      Salary.find(salaryQuery)
+    ]);
+
+    const totalSales = bills.reduce((sum, b) => {
+      const val = b.finalAmount !== undefined && b.finalAmount !== null ? Number(b.finalAmount) : ((Number(b.total) || 0) - (Number(b.discount) || 0));
+      return sum + (isNaN(val) ? 0 : val);
+    }, 0);
+
+    // Direct Purchases (Raw Materials / Groceries)
+    const directPurchases = purchases.reduce((sum, p) => sum + (Number(p.totalAmount || p.amountPaid || p.total) || 0), 0);
+
+    // Categorize Expenses dynamically
+    let foodCost = directPurchases;
+    let staffSalaries = salaries.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+    let gasAndPower = 0;
+    let rentAndProperty = 0;
+    let otherExpenses = 0;
+
+    for (const exp of expenses) {
+      const amt = Number(exp.amount) || 0;
+      const title = String(exp.title || "").toLowerCase();
+      const cat = String(exp.category || "").toLowerCase();
+      const desc = String(exp.description || "").toLowerCase();
+      const combined = `${title} ${cat} ${desc}`;
+
+      if (/दूध|सब्जी|राशन|raw|grocery|food|kitchen|paneer|dairy|चिकन|मसाले|किराना|सब्जियां/.test(combined)) {
+        foodCost += amt;
+      } else if (/गैस|सिलेंडर|lpg|gas|bijli|बिजली|power|electric/.test(combined)) {
+        gasAndPower += amt;
+      } else if (/salary|वेतन|staff|मजदूरी|wage|chef|waiter|cashier/.test(combined)) {
+        staffSalaries += amt;
+      } else if (/rent|किराया|shop|दुकान|hall/.test(combined)) {
+        rentAndProperty += amt;
+      } else {
+        otherExpenses += amt;
+      }
+    }
+
+    const totalPurchase = foodCost;
+    const totalExpenses = foodCost + staffSalaries + gasAndPower + rentAndProperty + otherExpenses;
+    const netProfit = totalSales - totalExpenses;
+
+    const dailyAvgSales = Math.round(totalSales / daysCount);
+    const dailyAvgExpenses = Math.round(totalExpenses / daysCount);
+    const breakEvenDailySalesNeeded = Math.round(dailyAvgExpenses / 0.6);
+
+    res.json({
+      success: true,
+      data: {
+        totalSales,
+        totalPurchase,
+        totalExpenses,
+        netProfit,
+        daysCount,
+        dailyAvgSales,
+        dailyAvgExpenses,
+        breakEvenDailySalesNeeded,
+        breakdown: {
+          foodCost,
+          staffSalaries,
+          gasAndPower,
+          rentAndProperty,
+          otherExpenses
+        },
+        billsCount: bills.length,
+        expensesCount: expenses.length
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

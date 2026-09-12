@@ -173,9 +173,9 @@ export const listBills = async (req, res) => {
     if (!companyId) {
       return res.status(400).json({ success: false, message: "Company ID is missing. Please provide 'x-company-id' header." });
     }
-    const { page = 1, limit = 20, search = "", startDate, endDate, partyId, status } = req.query;
+    const { page = 1, limit, search = "", startDate, endDate, partyId, status } = req.query;
 
-    const query = { companyId, isDeleted: false };
+    const query = { companyId, isDeleted: { $ne: true } };
 
     if (search) {
       query.$or = [
@@ -193,20 +193,22 @@ export const listBills = async (req, res) => {
     if (partyId) query.partyId = partyId;
     if (status) query.status = status;
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = limit === 'all' ? 10000 : (parseInt(limit) || 200);
+    const skip = (pageNum - 1) * limitNum;
     const total = await Bill.countDocuments(query);
     const bills = await Bill.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit));
+      .limit(limitNum);
 
     res.json({
       success: true,
       data: bills,
       bills: bills,
       total,
-      page: parseInt(page),
-      pages: Math.ceil(total / parseInt(limit))
+      page: pageNum,
+      pages: Math.ceil(total / limitNum) || 1
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
