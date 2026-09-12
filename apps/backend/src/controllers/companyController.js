@@ -3,7 +3,8 @@ import { supabase } from "../config/supabase.js";
 
 export const addCompany = async (req, res) => {
   try {
-    const companyData = { ...req.body, user: req.user.id };
+    const userId = req.user?._id || req.user?.id;
+    const companyData = { ...req.body, user: userId };
     const company = new Company(companyData);
     await company.save();
 
@@ -30,29 +31,49 @@ export const addCompany = async (req, res) => {
 
 export const listCompanies = async (req, res) => {
   try {
-    const userEmail = req.user.email?.toLowerCase();
-    const companies = await Company.find({
-      $or: [
-        { user: req.user.id },
-        ...(userEmail ? [{ ownerEmail: userEmail }, { email: userEmail }] : [])
-      ]
-    });
+    const userId = req.user?._id || req.user?.id;
+    const userEmail = req.user?.email?.toLowerCase();
+    
+    console.log("[Company Debug] listCompanies for userId:", userId?.toString?.() || userId, "email:", userEmail);
+
+    const queryConditions = [];
+    if (userId) {
+      queryConditions.push({ user: userId });
+    }
+    if (userEmail) {
+      queryConditions.push({ ownerEmail: userEmail });
+      queryConditions.push({ email: userEmail });
+    }
+
+    const companies = await Company.find(
+      queryConditions.length > 0 ? { $or: queryConditions } : {}
+    ).lean();
+
+    console.log("[Company Debug] Found companies count:", companies.length);
     res.json({ success: true, companies });
   } catch (error) {
+    console.error("🔴 listCompanies Error:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
 
 export const getCompany = async (req, res) => {
   try {
-    const userEmail = req.user.email?.toLowerCase();
+    const userId = req.user?._id || req.user?.id;
+    const userEmail = req.user?.email?.toLowerCase();
+    
+    const queryConditions = [];
+    if (userId) queryConditions.push({ user: userId });
+    if (userEmail) {
+      queryConditions.push({ ownerEmail: userEmail });
+      queryConditions.push({ email: userEmail });
+    }
+
     const company = await Company.findOne({
       _id: req.params.id,
-      $or: [
-        { user: req.user.id },
-        ...(userEmail ? [{ ownerEmail: userEmail }, { email: userEmail }] : [])
-      ]
-    });
+      ...(queryConditions.length > 0 ? { $or: queryConditions } : {})
+    }).lean();
+
     if (!company) return res.status(404).json({ success: false, message: 'Company not found' });
     res.json({ success: true, company });
   } catch (error) {
@@ -62,7 +83,7 @@ export const getCompany = async (req, res) => {
 
 export const updateCompany = async (req, res) => {
   try {
-    // Explicitly define which fields can be updated for security and clarity.
+    const userId = req.user?._id || req.user?.id;
     const { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, enableGst } = req.body;
     
     let finalEnableGst = enableGst;
@@ -72,13 +93,12 @@ export const updateCompany = async (req, res) => {
     if (finalEnableGst !== undefined) updateData.enableGst = finalEnableGst;
 
     const company = await Company.findOneAndUpdate(
-      { _id: req.params.id, user: req.user.id }, // Security ke liye user ID check
+      { _id: req.params.id, user: userId },
       { $set: updateData },
       { new: true, runValidators: true }
     );
     if (!company) return res.status(404).json({ success: false, message: 'Company not found' });
 
-    // Sync company update to Supabase
     try {
       await supabase.from("companies").update({
         name: company.name,
@@ -101,7 +121,8 @@ export const updateCompany = async (req, res) => {
 
 export const deleteCompany = async (req, res) => {
   try {
-    const company = await Company.findOneAndDelete({ _id: req.params.id, user: req.user.id });
+    const userId = req.user?._id || req.user?.id;
+    const company = await Company.findOneAndDelete({ _id: req.params.id, user: userId });
     if (!company) return res.status(404).json({ success: false, message: 'Company not found' });
     res.json({ success: true, message: 'Company deleted successfully' });
   } catch (error) {

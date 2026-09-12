@@ -6,16 +6,16 @@ const CompanyContext = createContext();
 export const useCompany = () => useContext(CompanyContext);
 
 export const CompanyProvider = ({ children }) => {
-    const allDemoCompanies = [
+  const allDemoCompanies = [
     {
-      _id: "co_royal_spice_9425574230",
-      name: "🍽️ श्री गणेश रॉयल डाइन & कैफे (Royal Dine)",
-      businessType: "restaurant",
-      industryType: "restaurant",
-      address: "Main City Center Road, Near Gandhi Chowk",
-      phone: "9425574230",
-      gstin: "22AAAAA0000A1Z5",
-      isDemo: false
+      _id: "demo_company_hardware",
+      name: "🔧 Bharat Hardware, Plywood & Paints",
+      businessType: "hardware",
+      industryType: "hardware",
+      address: "Timber & Hardware Market, Plot 44",
+      phone: "9876543215",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
     },
     {
       _id: "demo_company_restaurant",
@@ -28,26 +28,6 @@ export const CompanyProvider = ({ children }) => {
       isDemo: true
     },
     {
-      _id: "demo_company_banquet",
-      name: "🏨 Grand Imperial Hotel & Banquet",
-      businessType: "banquet",
-      industryType: "banquet",
-      address: "Ring Road Express, New Delhi",
-      phone: "9876543211",
-      gstin: "07AAAAA0000A1Z5",
-      isDemo: true
-    },
-    {
-      _id: "demo_company_gamezone",
-      name: "🎮 CyberVerse VR & Gamezone Park",
-      businessType: "gamezone",
-      industryType: "gamezone",
-      address: "Mall Level 3, Sector 18, Noida",
-      phone: "9876543212",
-      gstin: "07AAAAA0000A1Z5",
-      isDemo: true
-    },
-    {
       _id: "demo_company_supermarket",
       name: "🛒 Apna Bazaar Supermarket & Kirana",
       businessType: "supermarket",
@@ -56,88 +36,109 @@ export const CompanyProvider = ({ children }) => {
       phone: "9876543213",
       gstin: "07AAAAA0000A1Z5",
       isDemo: true
-    },
-    {
-      _id: "demo_company_electronics",
-      name: "📱 Apex Mobile & Electronics Hub (IMEI)",
-      businessType: "electronics",
-      industryType: "electronics",
-      address: "Nehru Place Tech Market, New Delhi",
-      phone: "9876543214",
-      gstin: "07AAAAA0000A1Z5",
-      isDemo: true
-    },
-    {
-      _id: "demo_company_hardware",
-      name: "🔧 Bharat Hardware, Plywood & Paints",
-      businessType: "hardware",
-      industryType: "hardware",
-      address: "Timber & Hardware Market, Plot 44",
-      phone: "9876543215",
-      gstin: "07AAAAA0000A1Z5",
-      isDemo: true
-    },
-    {
-      _id: "demo_company_salon",
-      name: "💇‍♀️ Glamour Locks Salon & Spa",
-      businessType: "salon",
-      industryType: "salon",
-      address: "High Street Plaza, 2nd Floor",
-      phone: "9876543216",
-      gstin: "07AAAAA0000A1Z5",
-      isDemo: true
-    },
-    {
-      _id: "demo_company_garments",
-      name: "👗 Trendz Garments & Footwear Matrix",
-      businessType: "garments",
-      industryType: "garments",
-      address: "Fashion Hub, Shop 108",
-      phone: "9876543217",
-      gstin: "07AAAAA0000A1Z5",
-      isDemo: true
     }
   ];
-  const fallbackDemoCompany = allDemoCompanies[0];
-
 
   const [companies, setCompanies] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // FIX: Only fetch companies if a token exists. This prevents 401 errors on public pages like login/register.
     const token = localStorage.getItem("authToken") || localStorage.getItem("token");
     if (token && token !== "null" && token !== "undefined") {
       fetchCompanies();
     } else {
       console.log("[Company Debug] No token found, skipping company fetch.");
-      setLoading(false); // If no token, stop loading and show children (e.g., Login screen)
+      setLoading(false);
     }
   }, []);
 
   const fetchCompanies = async () => {
     try {
+      const isGuestMode = localStorage.getItem("isGuestMode") === "true";
+      const token = localStorage.getItem("authToken") || localStorage.getItem("token");
+      const isDemoGuest = token && token.includes("demo_guest");
+
+      if (isGuestMode || isDemoGuest) {
+        setCompanies(allDemoCompanies);
+        const storedCoId = localStorage.getItem("companyId");
+        const found = allDemoCompanies.find(c => c._id === storedCoId) || allDemoCompanies[0];
+        setSelectedCompany(found);
+        localStorage.setItem("companyId", found._id);
+        setLoading(false);
+        return;
+      }
+
+      // Real User Mode: Fetch from backend
       const response = await api.get('/api/company');
       const rawList = response?.companies || response?.data?.companies || response?.data || response;
-      const companyList = Array.isArray(rawList) ? rawList : (Array.isArray(rawList?.companies) ? rawList.companies : allDemoCompanies);
-      
-      const finalCompanies = (companyList && companyList.length > 0) ? companyList : allDemoCompanies;
-      setCompanies(finalCompanies);
+      const serverCompanies = Array.isArray(rawList) ? rawList : (Array.isArray(rawList?.companies) ? rawList.companies : []);
 
-      const storedCompanyId = localStorage.getItem("companyId") || localStorage.getItem("selectedCompany");
-      const foundCompany = finalCompanies.find(c => c._id === storedCompanyId || c._id?.toString() === storedCompanyId?.toString());
+      if (serverCompanies.length > 0) {
+        setCompanies(serverCompanies);
 
-      if (foundCompany) {
-        setSelectedCompany(foundCompany);
+        // Check user object in localStorage for default companyId
+        let defaultCompanyId = localStorage.getItem("companyId") || localStorage.getItem("selectedCompany");
+        try {
+          const userStr = localStorage.getItem("user");
+          if (userStr) {
+            const u = JSON.parse(userStr);
+            if (u.companyId) defaultCompanyId = u.companyId;
+          }
+        } catch (e) {}
+
+        const matchedCo = serverCompanies.find(c => 
+          c._id === defaultCompanyId || 
+          c._id?.toString() === defaultCompanyId?.toString() ||
+          c.id === defaultCompanyId
+        ) || serverCompanies[0];
+
+        setSelectedCompany(matchedCo);
+        localStorage.setItem("companyId", matchedCo._id || matchedCo.id);
+        localStorage.setItem("selectedCompany", matchedCo._id || matchedCo.id);
       } else {
-        setSelectedCompany(finalCompanies[0]);
-        localStorage.setItem("companyId", finalCompanies[0]._id);
+        // Create user fallback company representation from localStorage
+        let fallbackName = "My Business";
+        let fallbackCoId = localStorage.getItem("companyId") || "my_primary_company";
+        try {
+          const userStr = localStorage.getItem("user");
+          if (userStr) {
+            const u = JSON.parse(userStr);
+            if (u.companyName) fallbackName = u.companyName;
+            else if (u.name) fallbackName = `${u.name}'s Business`;
+            if (u.companyId) fallbackCoId = u.companyId;
+          }
+        } catch (e) {}
+
+        const fallbackUserCo = {
+          _id: fallbackCoId,
+          name: fallbackName,
+          businessType: "general",
+          industryType: "general",
+          isDemo: false
+        };
+
+        setCompanies([fallbackUserCo]);
+        setSelectedCompany(fallbackUserCo);
+        localStorage.setItem("companyId", fallbackCoId);
       }
     } catch (error) {
-      console.warn('Applying demo companies fallback:', error);
-      setCompanies(allDemoCompanies);
-      setSelectedCompany(fallbackDemoCompany);
+      console.warn('[CompanyContext] Error fetching companies:', error);
+      // Don't overwrite real user company on transient error
+      const storedCoId = localStorage.getItem("companyId");
+      if (storedCoId && !storedCoId.includes("demo_")) {
+        let coName = "My Business";
+        try {
+          const u = JSON.parse(localStorage.getItem("user") || "{}");
+          if (u.name) coName = `${u.name}'s Business`;
+        } catch (e) {}
+        const preservedCo = { _id: storedCoId, name: coName, isDemo: false };
+        setCompanies([preservedCo]);
+        setSelectedCompany(preservedCo);
+      } else {
+        setCompanies(allDemoCompanies);
+        setSelectedCompany(allDemoCompanies[0]);
+      }
     } finally {
       setLoading(false);
     }
@@ -145,70 +146,41 @@ export const CompanyProvider = ({ children }) => {
 
   const selectCompany = (company) => {
     setSelectedCompany(company);
-    localStorage.setItem("companyId", company._id);
+    const coId = company._id || company.id;
+    localStorage.setItem("companyId", coId);
+    localStorage.setItem("selectedCompany", coId);
   };
 
   const addCompany = (company) => {
-    // 1. Check Limit for Free Plan (Assuming 'basic' is free)
-    // You might want to fetch the user's plan from a UserContext or similar
-    const isPremium = false; // Replace with actual check: user?.plan === 'premium'
-    const limit = isPremium ? 10 : 2;
-    
-    if (companies.length >= limit) {
-      alert(`Free plan limit reached! You can only create ${limit} companies. Upgrade to Premium for more.`);
-      return false; // Indicate failure
-    }
-
-    // 2. Check for Duplicate Names and Auto-rename
-    const newName = company.name.trim();
-    const existingNames = companies.map(c => c.name.toLowerCase());
-    
-    if (existingNames.includes(newName.toLowerCase())) {
-      // STOP: Do not auto-rename. Warn the user instead.
-      alert(`Company name "${newName}" already exists!\n\nPlease use a unique name for your list (e.g., "${newName} - Unit 2" or "${newName} Mumbai").\n\nYou can set the 'Print Name' separately for billing.`);
-      return false; // Indicate failure
-    }
-    
-    // Logic for Billing Name:
-    // If the UI passes 'printName', use it. Otherwise, default to the internal name.
-    // Ideally, your Add Company form should have a separate "Print Name" field.
-    if (!company.printName) {
-      company.printName = newName;
-    }
-
     setCompanies(prev => [...prev, company]);
     if (!selectedCompany) setSelectedCompany(company);
-    return true; // Indicate success
+    return true;
   };
 
   const updateCompany = (updatedCompany) => {
-    setCompanies(prev => prev.map(c => c._id === updatedCompany._id ? updatedCompany : c));
-    if (selectedCompany && selectedCompany._id === updatedCompany._id) {
+    setCompanies(prev => prev.map(c => (c._id === updatedCompany._id || c.id === updatedCompany.id) ? updatedCompany : c));
+    if (selectedCompany && (selectedCompany._id === updatedCompany._id || selectedCompany.id === updatedCompany.id)) {
       setSelectedCompany(updatedCompany);
     }
   };
 
   const deleteCompany = async (companyId) => {
     try {
-      // NOTE: This assumes a DELETE endpoint exists at /api/company/:id
-      // You may need to add this to your backend and api service file.
       await api.delete(`/api/company/${companyId}`);
-
-      setCompanies(prev => prev.filter(c => c._id !== companyId));
-
-      // If the deleted company was selected, clear it or select another one.
-      if (selectedCompany && selectedCompany._id === companyId) {
-        const remainingCompanies = companies.filter(c => c._id !== companyId);
-        if (remainingCompanies.length > 0) {
-          selectCompany(remainingCompanies[0]);
+      setCompanies(prev => prev.filter(c => c._id !== companyId && c.id !== companyId));
+      if (selectedCompany && (selectedCompany._id === companyId || selectedCompany.id === companyId)) {
+        const remaining = companies.filter(c => c._id !== companyId && c.id !== companyId);
+        if (remaining.length > 0) {
+          selectCompany(remaining[0]);
         } else {
           setSelectedCompany(null);
           localStorage.removeItem("companyId");
+          localStorage.removeItem("selectedCompany");
         }
       }
     } catch (error) {
       console.error('Failed to delete company:', error);
-      alert("Failed to delete company. Please check your connection or try again.");
+      alert("Failed to delete company. Please try again.");
     }
   };
 
