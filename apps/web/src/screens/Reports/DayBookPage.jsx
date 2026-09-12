@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import {
   Calendar,
@@ -14,11 +15,13 @@ import {
   Users,
   Flame,
   CheckCircle2,
-  DollarSign
+  DollarSign,
+  ArrowLeft
 } from "lucide-react";
 import CustomerSummaryModal from "../../components/modals/CustomerSummaryModal";
 
 export default function DayBookPage() {
+  const navigate = useNavigate();
   const [period, setPeriod] = useState("today");
   const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
@@ -182,14 +185,24 @@ export default function DayBookPage() {
       {/* Header & Preset Filter Bar */}
       <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-4">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2">
-              <Calendar className="text-blue-600" size={24} />
-              Day Book & Daily Shuddh Munafa Register
-            </h1>
-            <p className="text-gray-500 text-xs mt-0.5">
-              दैनिक शुद्ध मुनाफा • पाई-पाई का हिसाब (आवक vs जावक vs शुद्ध बचत)
-            </p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate('/m')}
+              className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl transition flex items-center gap-1 text-xs font-bold shadow-xs cursor-pointer"
+              title="वापस मोबाइल ऐप पर जाएं"
+            >
+              <ArrowLeft size={16} />
+              <span>वापस</span>
+            </button>
+            <div>
+              <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2">
+                <Calendar className="text-blue-600" size={24} />
+                Day Book & Daily Shuddh Munafa Register
+              </h1>
+              <p className="text-gray-500 text-xs mt-0.5">
+                दैनिक शुद्ध मुनाफा • पाई-पाई का हिसाब (आवक vs जावक vs शुद्ध बचत)
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -414,15 +427,15 @@ export default function DayBookPage() {
               </span>
             </h2>
             <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto pr-1">
-              {rawdata?.bills?.length > 0 ? (
+              {Array.isArray(rawdata?.bills) && rawdata.bills.length > 0 ? (
                 rawdata.bills.map((bill) => (
-                  <div key={bill._id} className="py-3 flex justify-between items-center hover:bg-slate-50 px-2 rounded-lg transition">
+                  <div key={bill._id || bill.id || Math.random()} className="py-3 flex justify-between items-center hover:bg-slate-50 px-2 rounded-lg transition">
                     <div>
-                      <span className="font-bold text-gray-900">#{bill.billNumber}</span>
+                      <span className="font-bold text-gray-900">#{bill.billNumber || bill.invoiceNo || 'N/A'}</span>
                       <button
-                        onClick={() => handleCustomerClick(bill.partyId?._id)}
+                        onClick={() => handleCustomerClick(bill.partyId?._id || bill.partyId?.id)}
                         className="ml-3 text-blue-600 hover:underline font-semibold disabled:text-gray-600 disabled:no-underline"
-                        disabled={!bill.partyId?._id}
+                        disabled={!bill.partyId?._id && !bill.partyId?.id}
                       >
                         {bill.partyId?.name || bill.customerName || "Walk-in Guest"}
                       </button>
@@ -451,24 +464,24 @@ export default function DayBookPage() {
               📝 Expense, Staff & Vendor Transaction Logs
             </h2>
             <div className="divide-y max-h-80 overflow-y-auto pr-1 text-xs">
-              {rawdata?.expenses?.map((e) => (
-                <div key={e._id} className="py-2.5 flex justify-between items-center hover:bg-slate-50 px-2 rounded">
+              {Array.isArray(rawdata?.expenses) && rawdata.expenses.map((e) => (
+                <div key={e._id || e.id || Math.random()} className="py-2.5 flex justify-between items-center hover:bg-slate-50 px-2 rounded">
                   <span className="font-bold text-gray-800">
                     {e.title || "Expense Entry"} <span className="text-[10px] text-gray-500 font-normal">({e.category || "General"})</span>
                   </span>
                   <span className="font-black text-rose-600">- ₹{e.amount}</span>
                 </div>
               ))}
-              {rawdata?.salaries?.map((s) => (
-                <div key={s._id} className="py-2.5 flex justify-between items-center hover:bg-slate-50 px-2 rounded">
+              {Array.isArray(rawdata?.salaries) && rawdata.salaries.map((s) => (
+                <div key={s._id || s.id || Math.random()} className="py-2.5 flex justify-between items-center hover:bg-slate-50 px-2 rounded">
                   <span className="font-bold text-gray-800">
                     👨‍🍳 Staff Salary / Daily Wage Payout ({s.staffId?.name || s.staffName || "Staff"})
                   </span>
                   <span className="font-black text-rose-600">- ₹{s.amount}</span>
                 </div>
               ))}
-              {rawdata?.partyTransactions?.map((t) => (
-                <div key={t._id} className="py-2.5 flex justify-between items-center hover:bg-slate-50 px-2 rounded">
+              {Array.isArray(rawdata?.partyTransactions) && rawdata.partyTransactions.map((t) => (
+                <div key={t._id || t.id || Math.random()} className="py-2.5 flex justify-between items-center hover:bg-slate-50 px-2 rounded">
                   <span className="font-bold text-gray-800">
                     {t.details || "Party Transaction"} ({t.partyId?.name || "Party"})
                   </span>

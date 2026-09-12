@@ -13,13 +13,11 @@ export default function CustomerSummaryModal({ partyId, onClose }) {
   useEffect(() => {
     const fetchSummary = async () => {
       if (!partyId) return;
-      setLoading(true);
       try {
-        const res = await api.get(`/api/party/${partyId}/summary`); // Corrected API endpoint
-        setCustomer(res.data.summary);
+        const res = await api.get(`/api/party/${partyId}/summary`);
+        setCustomer(res?.data?.summary || res?.summary || res?.data || res);
       } catch (err) {
         console.error("Failed to fetch customer summary", err);
-        alert("Could not load customer data.");
       } finally {
         setLoading(false);
       }

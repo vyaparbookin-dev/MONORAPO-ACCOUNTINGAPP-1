@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Bill from "../model/bill.js";
 import Purchase from "../model/purchase.js";
 import Expance from "../model/expenses.js";
@@ -15,6 +16,10 @@ export const getDayBook = async (req, res) => {
     const skip = (page - 1) * limit;
 
     if (!companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
+
+    const coFilter = mongoose.Types.ObjectId.isValid(companyId) 
+      ? { $in: [companyId, new mongoose.Types.ObjectId(companyId)] }
+      : companyId;
 
     // Calculate Start and End range based on parameters
     let startOfDay;
@@ -57,11 +62,11 @@ export const getDayBook = async (req, res) => {
     const timeQuery = { $gte: startOfDay, $lte: endOfDay };
     
     // Filter queries
-    const billQuery = { companyId, $or: [{ date: timeQuery }, { createdAt: timeQuery }], isDeleted: false };
-    const purchaseQuery = { companyId, $or: [{ date: timeQuery }, { createdAt: timeQuery }], isDeleted: false };
-    const expanceQuery = { companyId, $or: [{ date: timeQuery }, { createdAt: timeQuery }], isDeleted: false };
-    const partyTxQuery = { companyId, date: timeQuery, type: 'manual', isDeleted: false };
-    const salaryQuery = { companyId, $or: [{ date: timeQuery }, { paymentDate: timeQuery }, { createdAt: timeQuery }], isDeleted: false };
+    const billQuery = { companyId: coFilter, $or: [{ date: timeQuery }, { createdAt: timeQuery }], isDeleted: { $ne: true } };
+    const purchaseQuery = { companyId: coFilter, $or: [{ date: timeQuery }, { createdAt: timeQuery }], isDeleted: { $ne: true } };
+    const expanceQuery = { companyId: coFilter, $or: [{ date: timeQuery }, { createdAt: timeQuery }], isDeleted: { $ne: true } };
+    const partyTxQuery = { companyId: coFilter, date: timeQuery, isDeleted: { $ne: true } };
+    const salaryQuery = { companyId: coFilter, $or: [{ date: timeQuery }, { paymentDate: timeQuery }, { createdAt: timeQuery }], isDeleted: { $ne: true } };
 
     // Sabhi collections me ek sath request bhejenge (Maximum Speed)
     const [
