@@ -368,8 +368,26 @@ function MobileVyaparAppContent() {
         if (stored) localList = JSON.parse(stored);
       } catch (e) {}
 
-      const res = await api.get("/expenses/ghar-kharch-summary").catch(() => api.get("/expenses?limit=300"));
-      const serverList = res?.recentExpenses || res?.expenses || res?.data?.recentExpenses || res?.data?.expenses || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+      const [res1, res2] = await Promise.allSettled([
+        api.get("/expenses?limit=500"),
+        api.get("/expenses/ghar-kharch-summary")
+      ]);
+
+      let serverList = [];
+      if (res1.status === "fulfilled" && res1.value) {
+        const v = res1.value;
+        const list = v?.expenses || v?.recentExpenses || v?.data?.expenses || v?.data?.recentExpenses || (Array.isArray(v?.data) ? v.data : (Array.isArray(v) ? v : []));
+        if (Array.isArray(list) && list.length > 0) {
+          serverList = list;
+        }
+      }
+      if (serverList.length === 0 && res2.status === "fulfilled" && res2.value) {
+        const v = res2.value;
+        const list = v?.recentExpenses || v?.expenses || v?.data?.recentExpenses || v?.data?.expenses || (Array.isArray(v?.data) ? v.data : (Array.isArray(v) ? v : []));
+        if (Array.isArray(list) && list.length > 0) {
+          serverList = list;
+        }
+      }
       
       const combinedMap = new Map();
       [...localList, ...(Array.isArray(serverList) ? serverList : [])].forEach(item => {
