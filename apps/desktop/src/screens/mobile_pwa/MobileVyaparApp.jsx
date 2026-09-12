@@ -109,6 +109,35 @@ function MobileVyaparAppContent() {
   const navigate = useNavigate();
   const { selectedCompany, companies, selectCompany } = useCompany();
 
+  const [user, setUser] = useState(() => {
+    try {
+      const u = localStorage.getItem("user") || localStorage.getItem("auth_user");
+      return u ? JSON.parse(u) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  const isGuestMode = localStorage.getItem("isGuestMode") === "true";
+
+  const handleExitGuestMode = () => {
+    localStorage.removeItem("isGuestMode");
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("token");
+    sessionStorage.clear();
+    window.location.href = "/login";
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("token");
+    localStorage.removeItem("isGuestMode");
+    sessionStorage.clear();
+    window.location.href = "/login";
+  };
+
+  const companyDisplayName = selectedCompany?.name || selectedCompany?.companyName || selectedCompany?.businessName || "VyaparBook";
+
   const [activeTab, setActiveTab] = useState(() => {
     return sessionStorage.getItem("mobile_active_tab") || "dashboard";
   });
@@ -820,8 +849,6 @@ function MobileVyaparAppContent() {
   const todayCash = todayBills.filter(b => b.type === "CASH").reduce((sum, b) => sum + Number(b.amount || 0), 0);
   const todayUpi = todayBills.filter(b => b.type === "UPI" || b.type === "ONLINE").reduce((sum, b) => sum + Number(b.amount || 0), 0);
   const todayCredit = todayBills.filter(b => b.type === "UDHAR" || b.type === "CREDIT").reduce((sum, b) => sum + Number(b.amount || 0), 0);
-
-  const companyDisplayName = selectedCompany?.name || selectedCompany?.companyName || "VyaparBook";
 
   const handleShareWhatsAppBill = (bill) => {
     if (!bill) return;
