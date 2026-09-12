@@ -41,16 +41,11 @@ export const protect = asyncHandler(async (req, res, next) => {
     let companyId = req.headers['x-company-id'];
 
     if (companyId) {
-      if (companyId.startsWith("demo_") || companyId.startsWith("custom_co_") || !mongoose.Types.ObjectId.isValid(companyId)) {
-        // Check if user has a real registered company, prefer their real company over demo header
-        const userRealCompany = await Company.findOne({ user: reqUserId }).lean();
-        if (userRealCompany) {
-          req.companyId = userRealCompany._id.toString();
-        } else if (req.user.companyId) {
-          req.companyId = req.user.companyId.toString();
-        } else {
-          req.companyId = companyId;
-        }
+      if (companyId.startsWith("demo_") || companyId.startsWith("custom_co_")) {
+        // Pure sandboxed demo or custom sandbox requested: NEVER override with real company!
+        req.companyId = companyId;
+      } else if (!mongoose.Types.ObjectId.isValid(companyId)) {
+        req.companyId = companyId;
       } else {
         const company = await Company.findById(companyId).lean();
         

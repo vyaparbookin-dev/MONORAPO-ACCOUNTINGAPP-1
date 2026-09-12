@@ -145,13 +145,12 @@ export default function DashboardLayout() {
   };
 
   const handleLogout = () => {
-    SecurityTracker.track('USER_LOGOUT', { userId: user?._id, email: user?.email });
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("companyId");
-    localStorage.removeItem("selectedCompany");
-    navigate("/login");
+    try {
+      SecurityTracker.track('USER_LOGOUT', { userId: user?._id, email: user?.email });
+    } catch (e) {}
+    localStorage.clear();
+    sessionStorage.clear();
+    window.location.href = "/login";
   };
 
   // Get the selected industry type and make it lowercase for easy checking

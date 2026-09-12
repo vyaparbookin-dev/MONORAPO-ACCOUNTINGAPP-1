@@ -72,27 +72,28 @@ export default function LoginScreen() {
   };
 
   const handleGuestLogin = () => {
+    localStorage.clear();
+    sessionStorage.clear();
+
     const demoUser = {
       _id: "demo_guest_user_101",
       name: "Guest Explorer (अतिथि)",
-      email: "demo@vyaparbook.in",
+      email: "guest@vyaparbook.in",
       role: "admin",
-      companyId: "demo_company_101",
-      company: "demo_company_101",
+      companyId: "demo_company_restaurant",
+      company: "demo_company_restaurant",
       isGuest: true
     };
     localStorage.setItem("authToken", "demo_guest_token_2026_valid");
     localStorage.setItem("token", "demo_guest_token_2026_valid");
     localStorage.setItem("user", JSON.stringify(demoUser));
-    localStorage.setItem("companyId", "demo_company_101");
-    localStorage.setItem("selectedCompany", "demo_company_101");
+    localStorage.setItem("companyId", "demo_company_restaurant");
+    localStorage.setItem("selectedCompany", "demo_company_restaurant");
     localStorage.setItem("isGuestMode", "true");
+    localStorage.setItem("isDemoActive", "true");
     
-    if (window.innerWidth < 768) {
-      navigate("/m");
-    } else {
-      navigate("/dashboard");
-    }
+    const target = window.innerWidth < 768 ? "/m" : "/dashboard";
+    window.location.href = target;
   };
 
   const handleFillDemo = () => {

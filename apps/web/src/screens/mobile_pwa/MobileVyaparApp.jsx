@@ -116,17 +116,13 @@ function MobileVyaparAppContent() {
   const isGuestMode = localStorage.getItem("isGuestMode") === "true";
 
   const handleExitGuestMode = () => {
-    localStorage.removeItem("isGuestMode");
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("token");
+    localStorage.clear();
     sessionStorage.clear();
     window.location.href = "/login";
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("token");
-    localStorage.removeItem("isGuestMode");
+    localStorage.clear();
     sessionStorage.clear();
     window.location.href = "/login";
   };

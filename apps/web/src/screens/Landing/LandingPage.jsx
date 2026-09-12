@@ -51,10 +51,14 @@ export default function LandingPage() {
   };
 
   const enterGuestMode = () => {
+    localStorage.clear();
+    sessionStorage.clear();
     if (enterDemoModule) {
       enterDemoModule(selectedVertical || "restaurant");
     }
-    navigate("/dashboard");
+    localStorage.setItem("isGuestMode", "true");
+    localStorage.setItem("isDemoActive", "true");
+    window.location.href = "/dashboard";
   };
 
   const navigate = useNavigate();

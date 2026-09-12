@@ -94,13 +94,22 @@ export const CompanyProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken") || localStorage.getItem("token");
-    if (token && token !== "null" && token !== "undefined") {
-      fetchCompanies();
-    } else {
-      console.log("[Company Debug] No token found, skipping company fetch.");
-      setLoading(false);
-    }
+    const checkAndFetch = () => {
+      const token = localStorage.getItem("authToken") || localStorage.getItem("token");
+      const isGuestMode = localStorage.getItem("isGuestMode") === "true";
+      const isDemoActive = localStorage.getItem("isDemoActive") === "true";
+      if ((token && token !== "null" && token !== "undefined") || isGuestMode || isDemoActive) {
+        fetchCompanies();
+      } else {
+        setSelectedCompany(null);
+        setCompanies([]);
+        setLoading(false);
+      }
+    };
+
+    checkAndFetch();
+    window.addEventListener("storage", checkAndFetch);
+    return () => window.removeEventListener("storage", checkAndFetch);
   }, []);
 
   const fetchCompanies = async () => {
