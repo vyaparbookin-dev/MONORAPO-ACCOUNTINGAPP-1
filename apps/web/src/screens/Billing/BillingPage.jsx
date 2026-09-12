@@ -248,7 +248,7 @@ export default function BillingPage() {
       else setLoadingMore(true);
 
       const response = await api.get(`/api/billing?page=${pageNumber}&limit=20`);
-      const fetchedBills = response?.bills || [];
+      const fetchedBills = response?.bills || response?.data?.bills || (Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : []));
       const totalPages = response?.pagination?.totalPages || 1;
 
       if (pageNumber === 1) {

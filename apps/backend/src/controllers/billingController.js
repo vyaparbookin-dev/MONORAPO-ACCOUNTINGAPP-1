@@ -203,6 +203,7 @@ export const listBills = async (req, res) => {
     res.json({
       success: true,
       data: bills,
+      bills: bills,
       total,
       page: parseInt(page),
       pages: Math.ceil(total / parseInt(limit))
