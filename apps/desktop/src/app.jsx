@@ -84,6 +84,9 @@ const CreateReturnScreen = safeLazy(() => import("./screens/returns/CreateReturn
 const B2bDocumentListPage = safeLazy(() => import("./screens/Billing/B2bDocumentListPage"));
 const CreateB2bDocumentPage = safeLazy(() => import("./screens/Billing/CreateB2bDocumentPage"));
 
+// Banquet & Events Module
+const BanquetHubPage = safeLazy(() => import("./screens/Banquet/BanquetHubPage"));
+
 // Inventory
 const InventoryPage = safeLazy(() => import("./screens/inventory/InventoryPage"));
 const AddProductPage = safeLazy(() => import("./screens/inventory/AddProductPage"));
@@ -288,6 +291,10 @@ const App = () => {
                     <Route path="/billing/b2b" element={<B2bDocumentListPage />} />
                     <Route path="/billing/b2b/create" element={<CreateB2bDocumentPage />} />
                     <Route path="/billing/:id" element={<BillDetailPage />} />
+
+                    {/* Banquet & Events */}
+                    <Route path="/banquet" element={<BanquetHubPage />} />
+                    <Route path="/banquet/bookings" element={<BanquetHubPage />} />
 
                     {/* Inventory */}
                     <Route path="/inventory" element={<InventoryPage />} />

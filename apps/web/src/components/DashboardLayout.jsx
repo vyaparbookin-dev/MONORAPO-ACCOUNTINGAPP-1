@@ -169,6 +169,7 @@ export default function DashboardLayout() {
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "🍽️ Restaurant Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: ShoppingCart, label: "⚡ Table KOT & Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Building2, label: "🏰 बैंक्वेट हॉल व इवेंट्स", href: "/banquet", color: "text-amber-500", roles: ['admin', 'manager'] },
         { icon: FileText, label: "🧾 Bills & Invoices", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: Package, label: "🥘 Recipe BOM & Stock", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
         { icon: Users, label: "👥 Regular Diners", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
@@ -255,6 +256,7 @@ export default function DashboardLayout() {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "🏨 Banquet Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Building2, label: "🏰 बैंक्वेट हॉल व इवेंट्स (Hub)", href: "/banquet", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: FileText, label: "🎉 Event Bookings & Bills", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: FileText, label: "📝 Pax Quotations & Proposal", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
         { icon: Users, label: "👥 Event Hosts & Planners", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
@@ -303,6 +305,7 @@ export default function DashboardLayout() {
       { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
       { icon: Home, label: "Dashboard", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
       { icon: ShoppingCart, label: "⚡ Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+      { icon: Building2, label: "🏰 बैंक्वेट हॉल व इवेंट्स", href: "/banquet", color: "text-amber-500", roles: ['admin', 'manager'] },
       { icon: FileText, label: "Invoices", href: "/billing", color: "text-green-600", roles: ['admin', 'manager', 'cashier'] },
       { icon: Briefcase, label: "B2B Bills", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
       { icon: Package, label: "Inventory", href: "/inventory", color: "text-purple-600", roles: ['admin', 'manager'] },
