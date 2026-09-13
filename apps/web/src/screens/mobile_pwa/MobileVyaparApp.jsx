@@ -368,8 +368,8 @@ function MobileVyaparAppContent() {
       } catch (e) {}
 
       const [res1, res2] = await Promise.allSettled([
-        api.get("/expenses?limit=500"),
-        api.get("/expenses/ghar-kharch-summary")
+        api.get("/api/expenses?limit=500"),
+        api.get("/api/expenses/ghar-kharch-summary")
       ]);
 
       let serverList = [];
@@ -429,7 +429,7 @@ function MobileVyaparAppContent() {
         return { ...prev, staff: updatedStaff };
       });
 
-      await api.post("/staff/quick-attendance", {
+      await api.post("/api/staff/quick-attendance", {
         staffId,
         status,
         date: new Date()
@@ -464,7 +464,7 @@ function MobileVyaparAppContent() {
         commissionPercent: Number(newStaffCommission) || 0
       };
 
-      await api.post("/staff", payload);
+      await api.post("/api/staff", payload);
       alert(`✅ स्टाफ '${newStaffName}' (${newStaffWageType === 'daily' ? 'दैनिक ₹' + newStaffSalary + '/दिन' : 'मासिक ₹' + newStaffSalary + '/माह'}) सफलतापूर्वक जुड़ गया!`);
       
       setNewStaffName("");
@@ -525,7 +525,7 @@ function MobileVyaparAppContent() {
           alert("कृपया सही एडवांस राशि (₹) दर्ज करें!");
           return;
         }
-        await api.post("/staff/advance", {
+        await api.post("/api/staff/advance", {
           staffId: actionStaffTarget._id,
           amount: Number(actionAmount),
           notes: actionNotes.trim() || "Advance Payment",
@@ -533,7 +533,7 @@ function MobileVyaparAppContent() {
         });
         alert(`💵 ₹${actionAmount} एडवांस दर्ज हो गया!`);
       } else if (actionType === "overtime") {
-        await api.post("/staff/overtime", {
+        await api.post("/api/staff/overtime", {
           staffId: actionStaffTarget._id,
           hours: Number(actionHours) || 0,
           amount: Number(actionAmount) || 0,
@@ -546,7 +546,7 @@ function MobileVyaparAppContent() {
           alert("कृपया सही कमीशन राशि (₹) दर्ज करें!");
           return;
         }
-        await api.post("/staff/commission", {
+        await api.post("/api/staff/commission", {
           staffId: actionStaffTarget._id,
           amount: Number(actionAmount),
           notes: actionNotes.trim() || "Sales Commission",
@@ -711,10 +711,10 @@ function MobileVyaparAppContent() {
 
       if (editingGharKharchItem) {
         const expId = editingGharKharchItem._id || editingGharKharchItem.id;
-        await api.put(`/expenses/${expId}`, payload).catch(() => {});
+        await api.put(`/api/expenses/${expId}`, payload).catch(() => {});
         alert(`✅ ${finalMember} का खर्च (₹${gharKharchAmount}) सफलता से अपडेट हो गया!`);
       } else {
-        const createRes = await api.post("/expenses", payload).catch(() => null);
+        const createRes = await api.post("/api/expenses", payload).catch(() => null);
         const serverExpense = createRes?.expense || createRes?.data?.expense;
         if (serverExpense && (serverExpense._id || serverExpense.id)) {
           try {
@@ -838,8 +838,8 @@ function MobileVyaparAppContent() {
     setLoading(true);
     try {
       const [billsRes, partiesRes, invRes, catRes, brandRes] = await Promise.allSettled([
-        api.get("/billing"),
-        api.get("/parties"),
+        api.get("/api/billing?limit=500"),
+        api.get("/api/party").catch(() => api.get("/api/parties")),
         api.get("/api/inventory").catch(() => api.get("/inventory")),
         api.get("/api/category").catch(() => ({ data: [] })),
         api.get("/api/brand").catch(() => ({ data: [] }))
@@ -980,15 +980,26 @@ function MobileVyaparAppContent() {
     const finalPhone = billCustomerPhone.trim();
     const finalAddress = billCustomerAddress.trim() || "Local";
 
+    const genBillNo = `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
     const billPayload = {
+      billNumber: genBillNo,
       partyName: finalCustomer,
       customerName: finalCustomer,
       customerPhone: finalPhone,
-      customerMobile: finalPhone,
+      customerMobile: finalPhone || undefined,
       customerAddress: finalAddress,
       paymentMode: billPaymentMode,
+      paymentMethod: billPaymentMode === "CASH" ? "cash" : billPaymentMode === "UPI" ? "online" : "credit",
       paymentStatus: billPaymentMode === "UDHAR" ? "unpaid" : "paid",
-      items: billCart.map(i => ({ productId: i.id, name: i.name, quantity: i.qty, price: i.salePrice, total: i.salePrice * i.qty })),
+      status: billPaymentMode === "UDHAR" ? "issued" : "paid",
+      items: billCart.map(i => ({ 
+        productId: i.id, 
+        name: i.name, 
+        quantity: Number(i.qty) || 1, 
+        price: Number(i.salePrice) || 0, 
+        total: (Number(i.salePrice) || 0) * (Number(i.qty) || 1) 
+      })),
+      total: totalBillAmount,
       finalAmount: totalBillAmount,
       date: new Date()
     };
@@ -1007,7 +1018,7 @@ function MobileVyaparAppContent() {
     }
 
     try {
-      const res = await api.post("/billing", billPayload).catch(() => null);
+      const res = await api.post("/api/billing", billPayload).catch(() => null);
       const createdBill = {
         _id: res?.data?.bill?._id || Date.now().toString(),
         id: res?.data?.bill?.billNumber || `INV-${Date.now().toString().slice(-4)}`,
@@ -1124,7 +1135,7 @@ function MobileVyaparAppContent() {
         address: newPartyAddress.trim() || "Local"
       };
 
-      const res = await api.post("/parties", payload);
+      const res = await api.post("/api/party", payload).catch(() => api.post("/api/parties", payload));
       const createdParty = {
         id: res?.data?.party?._id || res?.data?._id || `party-${Date.now()}`,
         name: payload.name,
@@ -1161,14 +1172,21 @@ function MobileVyaparAppContent() {
     try {
       const saleAmt = Number(manualSaleAmount);
       const partyTitle = manualSaleCustomer.trim() || (manualSalePaymentMode === 'CASH' ? "काउंटर नकद बिक्री" : manualSalePaymentMode === 'UPI' ? "UPI ऑनलाइन बिक्री" : "उधारी ग्राहक");
+      const genBillNo = `SALE-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
+      
       const payload = {
+        billNumber: genBillNo,
         partyName: partyTitle,
+        customerName: partyTitle,
         customerPhone: manualSalePhone.trim(),
+        customerMobile: manualSalePhone.trim() || undefined,
         paymentMode: manualSalePaymentMode,
+        paymentMethod: manualSalePaymentMode === "CASH" ? "cash" : manualSalePaymentMode === "UPI" ? "online" : "credit",
         paymentStatus: manualSalePaymentMode === "UDHAR" ? "unpaid" : "paid",
+        status: manualSalePaymentMode === "UDHAR" ? "issued" : "paid",
+        total: saleAmt,
         finalAmount: saleAmt,
         grandTotal: saleAmt,
-        total: saleAmt,
         date: manualSaleDate ? new Date(manualSaleDate) : new Date(),
         items: [{
           name: manualSaleNotes.trim() || `दैनिक बिक्री (${manualSalePaymentMode})`,
@@ -1179,12 +1197,13 @@ function MobileVyaparAppContent() {
         notes: manualSaleNotes.trim()
       };
 
-      const res = await api.post("/billing", payload).catch(() => null);
+      const res = await api.post("/api/billing", payload);
+      const savedBill = res?.data?.bill || res?.data?.data || res?.data || {};
       
       const createdBill = {
-        _id: res?.data?.bill?._id || Date.now().toString(),
-        id: res?.data?.bill?.billNumber || `SALE-${Date.now().toString().slice(-4)}`,
-        customerName: payload.partyName,
+        _id: savedBill._id || genBillNo,
+        id: savedBill.billNumber || genBillNo,
+        customerName: partyTitle,
         phone: payload.customerPhone,
         amount: saleAmt,
         type: manualSalePaymentMode,
@@ -1206,7 +1225,8 @@ function MobileVyaparAppContent() {
       fetchLiveDashboardData();
     } catch (err) {
       console.error("Manual sale error:", err);
-      alert("बिक्री दर्ज करने में त्रुटि आई।");
+      const errMsg = err?.response?.data?.message || err?.response?.data?.error || "बिक्री दर्ज करने में त्रुटि आई।";
+      alert(`त्रुटि: ${errMsg}`);
     } finally {
       setSavingManualSale(false);
     }
@@ -1236,7 +1256,7 @@ function MobileVyaparAppContent() {
       setOcrStatusText(`🤖 AI Vision ${files.length} बिलों को पढ़ रहा है...`);
 
       // Call Backend Multi-Image AI Endpoint
-      const res = await api.post("/billing/parse-image", {
+      const res = await api.post("/api/billing/parse-image", {
         images: base64List,
         openaiApiKey: openaiApiKey.trim() || undefined,
         geminiApiKey: geminiApiKey.trim() || undefined
@@ -1424,25 +1444,34 @@ function MobileVyaparAppContent() {
 
     try {
       const createdList = [];
-      for (const b of scannedBillsBatch) {
+      for (const [idx, b] of scannedBillsBatch.entries()) {
         if (b.items.length === 0) continue;
+        const genScanBillNo = `SCAN-${Date.now().toString().slice(-6)}-${idx + 1}`;
+        const partyTitle = b.partyName.trim() || "कच्ची पर्ची ग्राहक";
         const payload = {
-          partyName: b.partyName.trim() || "कच्ची पर्ची ग्राहक",
+          billNumber: genScanBillNo,
+          partyName: partyTitle,
+          customerName: partyTitle,
           customerPhone: b.partyPhone.trim(),
+          customerMobile: b.partyPhone.trim() || undefined,
           paymentMode: b.paymentMode,
+          paymentMethod: b.paymentMode === "CASH" ? "cash" : b.paymentMode === "UPI" ? "online" : "credit",
+          paymentStatus: b.paymentMode === "UDHAR" ? "unpaid" : "paid",
+          status: b.paymentMode === "UDHAR" ? "issued" : "paid",
           items: b.items.map(i => ({
             productId: i.matchedCatalogItem?.id || i.id,
             name: i.name,
-            quantity: i.qty,
-            price: i.price,
-            total: i.total
+            quantity: Number(i.qty) || 1,
+            price: Number(i.price) || 0,
+            total: Number(i.total) || ((Number(i.price) || 0) * (Number(i.qty) || 1))
           })),
-          finalAmount: b.totalAmount,
+          total: Number(b.totalAmount) || 0,
+          finalAmount: Number(b.totalAmount) || 0,
           billImageUrl: b.imagePreview,
           date: new Date()
         };
 
-        const res = await api.post("/billing", payload).catch(() => null);
+        const res = await api.post("/api/billing", payload).catch(() => null);
         const createdBill = {
           _id: res?.data?.bill?._id || Date.now().toString(),
           id: res?.data?.bill?.billNumber || `INV-${Date.now().toString().slice(-4)}`,
