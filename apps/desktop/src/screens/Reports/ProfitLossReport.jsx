@@ -207,15 +207,16 @@ const ProfitLossReportPage = () => {
       // Dynamic Predictive Budget
       const curSales = Number(plData?.totalSales) || 0;
       const curExpenses = Number(plData?.totalExpenses) || 0;
-      const days = Number(plData?.daysCount) || 7;
-      const dailyBurn = Math.round(curExpenses / days);
-      const dailyAvgSales = Math.round(curSales / days);
+      const days = Number(plData?.daysCount) || (period === 'daily' ? 1 : period === 'weekly' ? 7 : period === 'monthly' ? 30 : 7);
+      const dailyBurn = Math.round(curExpenses / Math.max(1, days));
+      const dailyAvgSales = Math.round(curSales / Math.max(1, days));
       const breakEven = Math.round(dailyBurn / 0.6);
-      const monthlyBudget = Math.round(curExpenses * (30 / days)) || 10389;
+      const monthlyBudget = Math.round(curExpenses * (30 / Math.max(1, days))) || 10389;
 
       setPredictiveBudget({
         monthlyBudgetTotal: monthlyBudget,
         dailyBurnRate: dailyBurn,
+        daysCount: days,
         breakEvenDailySalesNeeded: breakEven,
         lastMonthDailyAvgSales: Math.round(dailyAvgSales * 0.94),
         currentMonthDailyAvgSales: dailyAvgSales,
@@ -413,7 +414,11 @@ const ProfitLossReportPage = () => {
                 <div className="p-3 bg-white/5 rounded-xl border border-white/10">
                   <span className="text-gray-300 font-bold block">🔥 Daily Fixed Burn Rate</span>
                   <p className="text-xl font-black text-rose-400 mt-1">₹{predictiveBudget.dailyBurnRate.toLocaleString("en-IN")}<span className="text-xs font-normal text-gray-300">/day</span></p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">Staff (₹1,500) + Rent (₹1,166) + Power</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    {predictiveBudget.daysCount > 1 
+                      ? `${predictiveBudget.daysCount} दिनों का औसत खर्च (रेंट + वेतन + राशन)`
+                      : "आज का वास्तविक दैनिक खर्च"}
+                  </p>
                 </div>
 
                 <div className="p-3 bg-white/5 rounded-xl border border-white/10">

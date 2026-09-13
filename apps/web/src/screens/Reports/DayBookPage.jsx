@@ -49,9 +49,20 @@ export default function DayBookPage() {
     totalProducts: 0,
     activeSellingCount: 0,
     zeroSellingCount: 0,
+    totalMenuRevenue: 0,
     topSellers: [],
     mediumSellers: [],
     zeroSellers: []
+  });
+
+  // State for Diners Repeat Frequency & Customer Loyalty (Petpooja Benchmark)
+  const [customerLoyalty, setCustomerLoyalty] = useState({
+    uniqueDinersCount: 0,
+    firstTimeDinersCount: 0,
+    repeatDinersCount: 0,
+    vipDinersCount: 0,
+    repeatRatePercent: 0,
+    topLoyalDiners: []
   });
 
   // State for Customer 360° Modal
@@ -68,13 +79,11 @@ export default function DayBookPage() {
       let url = `/api/daybook?period=${period}&limit=500`;
       if (period === "custom") {
         url = `/api/daybook?startDate=${startDate}&endDate=${endDate}&limit=500`;
-      } else if (period === "today") {
-        url = `/api/daybook?date=${startDate}&limit=500`;
       }
 
       const [res, invRes] = await Promise.all([
         api.get(url),
-        api.get("/api/inventory").catch(() => null)
+        api.get("/api/inventory").catch(() => ({ data: { products: [] } }))
       ]);
 
       const data = res?.data?.data || res?.data || res;
@@ -84,12 +93,69 @@ export default function DayBookPage() {
         setRawData(data);
         calculateSummary(data);
         calculateMenuPerformance(data.bills || [], products);
+        calculateCustomerLoyalty(data.bills || []);
       }
     } catch (err) {
       console.error("Failed to fetch Daybook", err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const calculateCustomerLoyalty = (bills) => {
+    const customerVisitsMap = {};
+    (bills || []).forEach((b) => {
+      const cName = (b.customerName || "Walk-in Guest").trim();
+      const cPhone = (b.customerMobile || "").trim();
+      if (!cName || cName === "Walk-in Guest" || cName === "नकद ग्राहक") return;
+
+      const key = cPhone || cName.toLowerCase();
+      if (!customerVisitsMap[key]) {
+        customerVisitsMap[key] = {
+          name: cName,
+          phone: cPhone,
+          visits: 0,
+          totalSpent: 0,
+          itemsCount: {},
+          lastVisit: b.date || b.createdAt
+        };
+      }
+      customerVisitsMap[key].visits += 1;
+      customerVisitsMap[key].totalSpent += Number(b.finalAmount || b.total || 0);
+      (b.items || []).forEach(it => {
+        if (it.name) {
+          customerVisitsMap[key].itemsCount[it.name] = (customerVisitsMap[key].itemsCount[it.name] || 0) + (it.quantity || 1);
+        }
+      });
+    });
+
+    const customersList = Object.values(customerVisitsMap).map(c => {
+      const favDishEntry = Object.entries(c.itemsCount).sort((a, b) => b[1] - a[1])[0];
+      return {
+        ...c,
+        favoriteDish: favDishEntry ? `${favDishEntry[0]} (${favDishEntry[1]} बार)` : "Regular Thali"
+      };
+    });
+
+    const uniqueDinersCount = customersList.length;
+    const firstTimeDiners = customersList.filter(c => c.visits === 1);
+    const repeatDiners = customersList.filter(c => c.visits >= 2 && c.visits <= 3);
+    const vipDiners = customersList.filter(c => c.visits >= 4);
+
+    const repeatRatePercent = uniqueDinersCount > 0 
+      ? Math.round(((repeatDiners.length + vipDiners.length) / uniqueDinersCount) * 100)
+      : 0;
+
+    const topLoyalDiners = customersList.sort((a, b) => b.visits - a.visits || b.totalSpent - a.totalSpent).slice(0, 8);
+
+    setCustomerLoyalty({
+      uniqueDinersCount,
+      firstTimeDinersCount: firstTimeDiners.length,
+      repeatDinersCount: repeatDiners.length,
+      vipDinersCount: vipDiners.length,
+      repeatRatePercent,
+      topLoyalDiners
+    });
   };
 
   const calculateMenuPerformance = (bills, products) => {
@@ -117,7 +183,18 @@ export default function DayBookPage() {
     });
 
     const prodsList = Array.isArray(products) && products.length > 0 ? products : [];
-    const totalDishesInMenu = prodsList.length;
+    
+    // Filter out raw materials & kitchen supplies (like LPG gas cylinders) from sellable menu dishes
+    const menuOnlyProducts = prodsList.filter(p => {
+      const pName = (p.name || p.productName || "").toLowerCase();
+      const pCat = (p.category || "").toLowerCase();
+      const isRaw = pCat.includes("raw") || pCat.includes("कच्चा माल") ||
+                    pName.includes("cylinder") || pName.includes("सिलेंडर") ||
+                    pName.includes("lpg") || pName.includes("दूध") || pName.includes("गैस");
+      return !isRaw;
+    });
+
+    const totalDishesInMenu = menuOnlyProducts.length;
 
     // Cross reference with all products in inventory
     const topSellers = [];
@@ -126,42 +203,49 @@ export default function DayBookPage() {
 
     // All active sold items
     const soldItems = Object.values(itemStats).sort((a, b) => b.quantity - a.quantity);
+    const totalMenuRevenue = soldItems.reduce((s, it) => s + it.revenue, 0);
 
-    // Dynamic threshold for Top Sellers vs Medium
-    const maxQty = soldItems.length > 0 ? soldItems[0].quantity : 0;
-    const topThreshold = Math.max(3, Math.round(maxQty * 0.4));
+    // Dynamic threshold for Top Sellers vs Medium (Petpooja Benchmark: Average/Median Volume)
+    const totalSoldQty = soldItems.reduce((s, it) => s + it.quantity, 0);
+    const avgSoldQty = soldItems.length > 0 ? (totalSoldQty / soldItems.length) : 0;
+    const topPercentileCutoff = Math.max(1, Math.ceil(soldItems.length * 0.35));
 
-    soldItems.forEach((item) => {
-      if (item.quantity >= topThreshold) {
+    soldItems.forEach((item, idx) => {
+      const revPercent = totalMenuRevenue > 0 
+        ? Number(((item.revenue / totalMenuRevenue) * 100).toFixed(1)) 
+        : 0;
+
+      // Item is Star if it's in the top 35% percentile OR sold above average volume
+      const isStar = idx < topPercentileCutoff || item.quantity >= Math.max(3, Math.round(avgSoldQty * 0.8));
+
+      if (isStar) {
         topSellers.push({
           ...item,
+          revSharePercent: revPercent,
           status: "Star ⭐ (सर्वाधिक बिक्री)",
-          profitImpact: "उच्चतम सेल व मुख्य मुनाफा"
+          profitImpact: `कुल मेनू का ${revPercent}% रेवेन्यू`
         });
       } else {
         mediumSellers.push({
           ...item,
+          revSharePercent: revPercent,
           status: "Regular 🟡 (औसत मांग)",
-          profitImpact: "संतुलित बिक्री व स्थिर मांग"
+          profitImpact: `कुल मेनू का ${revPercent}% रेवेन्यू`
         });
       }
     });
 
-    // Find products in restaurant menu with zero sales in this period
-    prodsList.forEach((prod) => {
+    // Find products in restaurant menu with zero sales in this period (excluding raw materials)
+    menuOnlyProducts.forEach((prod) => {
       const prodName = (prod.name || prod.productName || "").trim();
       if (prodName && !itemStats[prodName]) {
-        const isRaw = prod.category === "Kitchen Raw Materials" || /कच्चा माल|raw|cylinder/i.test(prodName);
         zeroSellers.push({
           name: prodName,
-          category: prod.category || "General",
+          category: prod.category || "Restaurant",
           price: prod.sellingPrice || prod.price || prod.costPrice || 0,
           currentStock: prod.currentStock ?? prod.stock ?? 0,
           unit: prod.unit || "pcs",
-          isRaw,
-          riskNote: isRaw
-            ? "कच्चा माल स्टॉक / शेल्फ-लाइफ एक्सपायरी रिस्क"
-            : "मेनू में अप्रयुक्त व्यंजन / 0 ऑर्डर (वेस्टेज खतरा)"
+          riskNote: "मेनू में अप्रयुक्त व्यंजन / 0 ऑर्डर (वेस्टेज खतरा)"
         });
       }
     });
@@ -170,6 +254,7 @@ export default function DayBookPage() {
       totalProducts: totalDishesInMenu > 0 ? totalDishesInMenu : soldItems.length,
       activeSellingCount: soldItems.length,
       zeroSellingCount: zeroSellers.length,
+      totalMenuRevenue,
       topSellers,
       mediumSellers,
       zeroSellers
@@ -582,7 +667,8 @@ export default function DayBookPage() {
                           </div>
                           <div className="text-right">
                             <span className="font-black text-gray-900 block">₹{item.revenue.toLocaleString("en-IN")}</span>
-                            <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">
+                            <span className="text-[10px] text-emerald-700 font-bold block">{item.revSharePercent}% रेवेन्यू</span>
+                            <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded mt-0.5 inline-block">
                               Star ⭐
                             </span>
                           </div>
@@ -622,7 +708,8 @@ export default function DayBookPage() {
                           </div>
                           <div className="text-right">
                             <span className="font-black text-gray-900 block">₹{item.revenue.toLocaleString("en-IN")}</span>
-                            <span className="text-[9px] font-bold text-amber-800 bg-amber-100/60 px-1.5 py-0.2 rounded">
+                            <span className="text-[10px] text-amber-700 font-bold block">{item.revSharePercent}% रेवेन्यू</span>
+                            <span className="text-[9px] font-bold text-amber-800 bg-amber-100/60 px-1.5 py-0.2 rounded mt-0.5 inline-block">
                               Regular
                             </span>
                           </div>
@@ -674,7 +761,7 @@ export default function DayBookPage() {
                     ))
                   ) : (
                     <div className="py-8 text-center text-gray-400 text-xs">
-                      बधाई! सभी व्यंजन व आइटम्स बिक रहे हैं।
+                      बधाई! सभी मेनू व्यंजन बिक रहे हैं (कच्चा माल अलग कर दिया गया है)।
                     </div>
                   )}
                 </div>
@@ -685,12 +772,12 @@ export default function DayBookPage() {
             <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl shadow-sm border border-indigo-500/40 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-xs">
               <div className="space-y-1">
                 <span className="font-black text-yellow-300 flex items-center gap-1.5 text-sm uppercase tracking-wide">
-                  <Sparkles size={16} /> रेस्टोरेंट बिजनेस व कच्चा माल वेस्टेज एनालिसिस (Chef & Owner Advisory)
+                  <Sparkles size={16} /> रेस्टोरेंट बिजनेस व 80/20 रेवेन्यू एनालिसिस (Menu Engineering Pareto Rule)
                 </span>
                 <p className="text-slate-300 leading-relaxed">
-                  • <strong>मुख्य बिक्री स्तंभ:</strong> टॉप सेलर डिशेज कुल कमाई का 75%+ हिस्सा ला रही हैं। इनके कच्चे माल (पनीर, मैदा, मसाले) का स्टॉक हमेशा पर्याप्त रखें।<br />
-                  • <strong>0 सेल का खतरा:</strong> जो व्यंजन बार-बार 0 सेल में आ रहे हैं, उनके लिए ताजी सब्जियां/डेयरी ज्यादा न मंगाएं ताकि <em>खराब होने (Spoilage Loss)</em> से बचा जा सके।<br />
-                  • <strong>सलाह:</strong> 0 सेल वाले व्यंजनों को टॉप-सेलर (जैसे बटर नान या कोल्ड ड्रिंक) के साथ 'कॉम्बो मील' में ऑफर करें।
+                  • <strong>80/20 नियम:</strong> आपके मेनू के टॉप {menuPerformance.topSellers.length} व्यंजन कुल रेवेन्यू का अधिकांश हिस्सा ला रहे हैं। इनके आवश्यक कच्चे माल (पनीर, घी, सब्जियां) की कमी कभी न होने दें।<br />
+                  • <strong>0 सेल का खतरा:</strong> जो व्यंजन बार-बार 0 सेल में आ रहे हैं, उनके लिए ताजी सामग्री ज्यादा न मंगाएं ताकि <em>खराब होने (Spoilage Loss)</em> से बचा जा सके।<br />
+                  • <strong>कच्चा माल सेपरेशन:</strong> एलपीजी गैस सिलेंडर व रसोई राशन को मेनू डिशेज से अलग कर दिया गया है, ताकि केवल असली व्यंजन ही अनसोल्ड में दिखें।
                 </p>
               </div>
               <div className="shrink-0 bg-white/10 px-4 py-3 rounded-xl border border-white/20 text-center">
@@ -699,6 +786,123 @@ export default function DayBookPage() {
                   {menuPerformance.totalProducts > 0 ? Math.round((menuPerformance.activeSellingCount / menuPerformance.totalProducts) * 100) : 0}%
                 </span>
                 <span className="text-[10px] text-slate-300 block">Active Flow</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 👥 CUSTOMER REPEAT FREQUENCY & DINERS LOYALTY MATRIX (कस्टमर रिपीट विज़िट व वफादारी विश्लेषण) */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b pb-4">
+              <div>
+                <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                  <Users className="text-indigo-600" size={24} />
+                  👥 कस्टमर रिपीट विज़िट व वफादारी विश्लेषण (Diners Repeat Frequency & Loyalty)
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  पेटपूजा बेंचमार्क: महीने में ग्राहक कितनी बार आया • 1-विजिट vs 2-3 विजिट्स vs वीआईपी डाइनर्स (4+) • पसंदीदा व्यंजन
+                </p>
+              </div>
+
+              <div className="px-4 py-2 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-2xl text-center">
+                <span className="text-[10px] uppercase font-black text-indigo-700 block">कस्टमर रिपीट रेट (Repeat Rate)</span>
+                <span className="text-xl font-black text-indigo-950 font-mono">{customerLoyalty.repeatRatePercent}%</span>
+              </div>
+            </div>
+
+            {/* Loyalty Scorecard Badges */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                <span className="text-[11px] font-bold text-slate-600 block">कुल डाइनर्स (Unique Customers)</span>
+                <span className="text-2xl font-black text-slate-900 font-mono mt-0.5 block">{customerLoyalty.uniqueDinersCount}</span>
+                <span className="text-[10px] text-slate-400">कुल ग्राहक</span>
+              </div>
+
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl">
+                <span className="text-[11px] font-bold text-blue-700 block">🚶 नए ग्राहक (1 Visit)</span>
+                <span className="text-2xl font-black text-blue-900 font-mono mt-0.5 block">{customerLoyalty.firstTimeDinersCount}</span>
+                <span className="text-[10px] text-blue-600">पहली बार आए</span>
+              </div>
+
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl">
+                <span className="text-[11px] font-bold text-amber-800 block">🔁 रेगुलर डाइनर्स (2-3 Visits)</span>
+                <span className="text-2xl font-black text-amber-950 font-mono mt-0.5 block">{customerLoyalty.repeatDinersCount}</span>
+                <span className="text-[10px] text-amber-700">बार-बार आने वाले</span>
+              </div>
+
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                <span className="text-[11px] font-bold text-emerald-800 block">👑 वीआईपी लॉयलिस्ट (4+ Visits)</span>
+                <span className="text-2xl font-black text-emerald-950 font-mono mt-0.5 block">{customerLoyalty.vipDinersCount}</span>
+                <span className="text-[10px] text-emerald-700">अति-वफादार ग्राहक</span>
+              </div>
+            </div>
+
+            {/* Top Diners Leaderboard Table */}
+            <div>
+              <h3 className="font-bold text-gray-800 mb-3 text-xs uppercase tracking-wider flex items-center justify-between">
+                <span>🌟 सर्वाधिक बार आने वाले ग्राहक (Top Regular & VIP Diners):</span>
+                <span className="text-[11px] text-gray-400 font-normal">विजिट्स व पसंदीदा व्यंजन</span>
+              </h3>
+
+              <div className="border border-gray-200 rounded-2xl overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-gray-100 border-b border-gray-200 font-bold text-gray-700">
+                    <tr>
+                      <th className="p-3">ग्राहक का नाम</th>
+                      <th className="p-3">मोबाइल नंबर</th>
+                      <th className="p-3 text-center">कुल विजिट्स (महीने में)</th>
+                      <th className="p-3">पसंदीदा व्यंजन (Favorite Dish)</th>
+                      <th className="p-3 text-right">कुल खर्च (Spent)</th>
+                      <th className="p-3 text-center">लॉयल्टी स्टेटस</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {customerLoyalty.topLoyalDiners.length > 0 ? (
+                      customerLoyalty.topLoyalDiners.map((cust, idx) => (
+                        <tr key={idx} className="hover:bg-indigo-50/30 transition">
+                          <td className="p-3 font-black text-gray-900 flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">
+                              {idx + 1}
+                            </span>
+                            <span>{cust.name}</span>
+                          </td>
+                          <td className="p-3 font-mono text-gray-600">{cust.phone || "Walk-in"}</td>
+                          <td className="p-3 text-center">
+                            <span className="px-2.5 py-1 rounded-full font-black text-xs font-mono bg-indigo-100 text-indigo-900 inline-block">
+                              {cust.visits} बार आए
+                            </span>
+                          </td>
+                          <td className="p-3 font-medium text-amber-900">
+                            🍲 {cust.favoriteDish}
+                          </td>
+                          <td className="p-3 text-right font-black font-mono text-emerald-700">
+                            ₹{cust.totalSpent.toLocaleString("en-IN")}
+                          </td>
+                          <td className="p-3 text-center">
+                            {cust.visits >= 4 ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                👑 VIP Diner
+                              </span>
+                            ) : cust.visits >= 2 ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300">
+                                🔁 Regular
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-700">
+                                🚶 1-Time
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="6" className="p-6 text-center text-gray-400">
+                          इस अवधि में कोई विशेष ग्राहक विज़िट रिकॉर्ड नहीं मिला।
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>

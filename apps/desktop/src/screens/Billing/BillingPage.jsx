@@ -117,6 +117,10 @@ export default function BillingPage() {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedHistoryBill, setSelectedHistoryBill] = useState(null);
   
+  // 🧾 Quick Invoice Preview Modal (Instant view without leaving page)
+  const [quickViewBill, setQuickViewBill] = useState(null);
+  const [showQuickViewModal, setShowQuickViewModal] = useState(false);
+  
   // NEW: Missing States for Advanced Features
   const [inventory, setInventory] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -247,9 +251,9 @@ export default function BillingPage() {
       if (pageNumber === 1) setLoading(true);
       else setLoadingMore(true);
 
-      const response = await api.get(`/api/billing?page=${pageNumber}&limit=20`);
-      const fetchedBills = response?.bills || [];
-      const totalPages = response?.pagination?.totalPages || 1;
+      const response = await api.get(`/api/billing?page=${pageNumber}&limit=500`);
+      const fetchedBills = response?.bills || response?.data?.bills || (Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : []));
+      const totalPages = response?.pages || response?.pagination?.totalPages || 1;
 
       if (pageNumber === 1) {
         setBills(Array.isArray(fetchedBills) ? fetchedBills : []);
@@ -273,7 +277,7 @@ export default function BillingPage() {
     if (searchTerm) {
       filtered = filtered.filter(
         (bill) =>
-          bill.billNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          String(bill?.billNumber || '').toLowerCase().includes(String(searchTerm || '').toLowerCase()) ||
           bill.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
@@ -461,7 +465,7 @@ export default function BillingPage() {
     }
 
     // Auto-save unit if it's completely new (Tally-style feature)
-    const currentUnit = (newItem.unit || "pcs").toLowerCase();
+    const currentUnit = String(newItem?.unit || "pcs").toLowerCase();
     if (!unitsList.includes(currentUnit)) {
       // Background me save kar denge, UI block nahi karenge
       api.post("/api/unit", { name: currentUnit, shortCode: currentUnit.substring(0, 3).toUpperCase() })
@@ -471,7 +475,7 @@ export default function BillingPage() {
 
     // NEW: Auto Save to Inventory Checkbox Logic via API
     if (saveToInventory) {
-      const exists = inventory.find(p => p.name.toLowerCase() === newItem.name.toLowerCase());
+      const exists = inventory.find(p => String(p?.name || '').toLowerCase() === String(newItem?.name || '').toLowerCase());
       if (!exists) {
         api.post('/api/inventory', {
           name: newItem.name,
@@ -487,7 +491,7 @@ export default function BillingPage() {
       }
     }
 
-    const matched = inventory.find(p => p.name.toLowerCase() === newItem.name.toLowerCase() || p._id === newItem.productId);
+    const matched = inventory.find(p => String(p?.name || '').toLowerCase() === String(newItem?.name || '').toLowerCase() || p._id === newItem.productId);
     const itemImage = newItem.image || matched?.image || "";
 
     const itemTotal = newItem.quantity * (newItem.rate ?? 0);
@@ -602,7 +606,7 @@ export default function BillingPage() {
     setShowScanner(false);
     try {
       const product = inventory.find((p) => 
-        (p.sku && p.sku.toLowerCase() === decodedText.toLowerCase()) || 
+        (p.sku && String(p.sku).toLowerCase() === String(decodedText).toLowerCase()) || 
         (p.barcode && p.barcode === decodedText) ||
         (p.name && p.name.toLowerCase() === decodedText.toLowerCase())
       );
@@ -897,7 +901,10 @@ export default function BillingPage() {
     }
   };
 
-  const totalRevenue = filteredBills.reduce((sum, b) => sum + ((b.total || 0) - (b.discount || 0)), 0);
+  const totalRevenue = filteredBills.reduce((sum, b) => {
+    const amt = b.finalAmount !== undefined && b.finalAmount !== null ? Number(b.finalAmount) : ((Number(b.total) || 0) - (Number(b.discount) || 0));
+    return sum + (isNaN(amt) ? 0 : amt);
+  }, 0);
   const totalPending = filteredBills.filter((b) => b.status !== "paid").length;
 
   return (
@@ -1611,7 +1618,7 @@ export default function BillingPage() {
       className="w-24 px-1.5 py-0.5 text-center font-bold text-gray-900 border rounded focus:ring-1 focus:ring-blue-500 text-xs"
     />
     {(() => {
-      const matchedProd = inventory.find(p => p._id === item.productId || p.name?.toLowerCase() === item.name?.toLowerCase());
+      const matchedProd = inventory.find(p => p._id === item.productId || String(p?.name || '').toLowerCase() === String(item?.name || '').toLowerCase());
       if (!matchedProd) return null;
       const rateA = matchedProd.sellingPrice || matchedProd.price || 0;
       const rateB = matchedProd.wholesalePrice || rateA;
@@ -1677,7 +1684,7 @@ export default function BillingPage() {
             <div className="bg-gray-50 p-4 rounded-lg flex flex-col gap-3 mt-4 border border-gray-200">
               <div className="flex justify-end items-center gap-4">
                  <label className="text-sm font-medium text-gray-700">Subtotal:</label>
-                 <span className="text-lg font-semibold w-32 text-right">₹{formData.total.toFixed(2)}</span>
+                 <span className="text-lg font-semibold w-32 text-right">₹{Number(formData?.total || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-end items-center gap-4">
                  <label className="text-sm font-medium text-gray-700">Tax / GST (₹):</label>
@@ -1977,9 +1984,17 @@ export default function BillingPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <FileText className="text-blue-600" size={18} />
-                        <span className="font-semibold text-gray-900">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQuickViewBill(bill);
+                            setShowQuickViewModal(true);
+                          }}
+                          className="font-semibold text-blue-600 hover:text-blue-800 hover:underline text-left"
+                          title="क्लिक करके बिल का त्वरित प्रीव्यू देखें"
+                        >
                           {bill.billNumber}
-                        </span>
+                        </button>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -2012,9 +2027,12 @@ export default function BillingPage() {
                     <td className="px-6 py-4">
                       <div className="flex justify-center gap-2">
                         <button
-                          onClick={() => navigate(`/billing/${bill._id}`)}
+                          onClick={() => {
+                            setQuickViewBill(bill);
+                            setShowQuickViewModal(true);
+                          }}
                           className="p-2 hover:bg-blue-100 rounded-lg text-blue-600 transition"
-                          title="View"
+                          title="त्वरित प्रीव्यू देखें (Quick Preview)"
                         >
                           <Eye size={18} />
                         </button>
@@ -2108,8 +2126,8 @@ export default function BillingPage() {
                   </div>
                   <p className="text-sm text-gray-600 mb-3">{history.changesSummary || 'Updated bill details.'}</p>
                   <div className="flex gap-4 text-sm font-bold">
-                    <div className="bg-red-50 text-red-700 px-3 py-1.5 rounded border border-red-100">Old Total: ₹{history.previousTotal?.toFixed(2)}</div>
-                    <div className="bg-green-50 text-green-700 px-3 py-1.5 rounded border border-green-100">New Total: ₹{history.newTotal?.toFixed(2)}</div>
+                    <div className="bg-red-50 text-red-700 px-3 py-1.5 rounded border border-red-100">Old Total: ₹{Number(history?.previousTotal || 0).toFixed(2)}</div>
+                    <div className="bg-green-50 text-green-700 px-3 py-1.5 rounded border border-green-100">New Total: ₹{Number(history?.newTotal || 0).toFixed(2)}</div>
                   </div>
                 </div>
               ))}
@@ -2228,6 +2246,198 @@ export default function BillingPage() {
               <p className="text-[11px] text-slate-500 mt-1 font-medium">
                 (स्क्रीन देखने के लिए — बिल प्रिंट में नहीं छपेगा)
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🧾 INSTANT INVOICE QUICK PREVIEW MODAL (बिना पेज छोड़े तुरंत बिल देखें) */}
+      {showQuickViewModal && quickViewBill && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-400/30 flex items-center justify-center font-bold text-lg">
+                  🧾
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-black text-base text-white">{quickViewBill.billNumber}</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-amber-400 text-slate-950">
+                      {quickViewBill.orderType || (quickViewBill.customerAddress?.includes("Parcel") ? "Takeaway" : "Dine-in")}
+                    </span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                      quickViewBill.status === 'paid' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
+                    }`}>
+                      {quickViewBill.status || 'Paid'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    {new Date(quickViewBill.createdAt || quickViewBill.date).toLocaleString('hi-IN', {
+                      dateStyle: 'medium',
+                      timeStyle: 'short'
+                    })}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowQuickViewModal(false);
+                  setQuickViewBill(null);
+                }}
+                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-4 text-xs">
+              {/* Customer & Dining Info Bar */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">ग्राहक (Customer)</span>
+                  <p className="font-black text-slate-900 mt-0.5">{quickViewBill.customerName || "Walk-in Guest"}</p>
+                  {quickViewBill.customerMobile && (
+                    <p className="text-[11px] font-mono text-slate-500">{quickViewBill.customerMobile}</p>
+                  )}
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">टेबल / पता (Table / Location)</span>
+                  <p className="font-bold text-slate-800 mt-0.5">
+                    🍽️ {quickViewBill.tableNo || quickViewBill.customerAddress || quickViewBill.table || "Dine-in Hall"}
+                  </p>
+                  {quickViewBill.waiter && (
+                    <p className="text-[11px] text-slate-500">कैप्टन: <b className="text-slate-700">{quickViewBill.waiter}</b></p>
+                  )}
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">भुगतान विधि (Payment Method)</span>
+                  <p className="font-bold text-emerald-700 mt-0.5 capitalize">
+                    💳 {quickViewBill.paymentMethod || quickViewBill.paymentMode || "UPI / Cash"}
+                  </p>
+                  <p className="text-[11px] text-slate-500">स्टेटस: <b className="text-emerald-600">सफल (Completed)</b></p>
+                </div>
+              </div>
+
+              {/* Special Table Notes (if any) */}
+              {quickViewBill.tableNotes && (
+                <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 flex items-start gap-2">
+                  <span className="text-base">📝</span>
+                  <div>
+                    <span className="font-bold text-amber-900 block text-[11px]">विशेष टेबल निर्देश:</span>
+                    <p className="text-slate-700 font-medium text-xs">{quickViewBill.tableNotes}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Items List Table */}
+              <div>
+                <h4 className="font-bold text-slate-800 mb-2 text-xs uppercase tracking-wider">आर्डर किए गए व्यंजन व उत्पाद (Ordered Items):</h4>
+                <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 border-b border-slate-200 font-bold text-slate-700">
+                      <tr>
+                        <th className="p-2.5">व्यंजन / आइटम का नाम</th>
+                        <th className="p-2.5 text-center">मात्रा</th>
+                        <th className="p-2.5 text-right">दर (Rate)</th>
+                        <th className="p-2.5 text-right">रकम (Total)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(quickViewBill.items || []).map((it, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          <td className="p-2.5">
+                            <span className="font-bold text-slate-900 block">{it.name}</span>
+                            {it.cookingInstructions && (
+                              <span className="inline-block mt-0.5 text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded font-medium">
+                                👨‍🍳 निर्देश: {it.cookingInstructions}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-2.5 text-center font-mono font-bold text-slate-700">
+                            {it.quantity} {it.unit || "pcs"}
+                          </td>
+                          <td className="p-2.5 text-right font-mono text-slate-600">
+                            ₹{it.rate || it.price}
+                          </td>
+                          <td className="p-2.5 text-right font-mono font-bold text-slate-900">
+                            ₹{it.total || (it.rate * it.quantity)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Financial Calculation Breakdown */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1.5 text-xs max-w-sm ml-auto">
+                <div className="flex justify-between text-slate-600">
+                  <span>उप-योग (Subtotal):</span>
+                  <span className="font-mono font-bold text-slate-800">
+                    ₹{quickViewBill.total || quickViewBill.subTotal || 0}
+                  </span>
+                </div>
+
+                {quickViewBill.discountAmount > 0 && (
+                  <div className="flex justify-between text-emerald-600 font-medium">
+                    <span>कूपन छूट (Discount):</span>
+                    <span className="font-mono">-₹{quickViewBill.discountAmount}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between text-slate-600">
+                  <span>जीएसटी (GST / Tax):</span>
+                  <span className="font-mono font-bold text-slate-800">
+                    ₹{quickViewBill.tax || 0}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center text-sm font-black text-slate-900 pt-2 border-t border-slate-200">
+                  <span>कुल देय राशि (Grand Total):</span>
+                  <span className="text-base text-amber-700 font-mono font-black">
+                    ₹{(quickViewBill.finalAmount || quickViewBill.total || 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions Footer */}
+            <div className="p-4 bg-slate-100 border-t border-slate-200 flex justify-between items-center gap-2 shrink-0 flex-wrap">
+              <button
+                onClick={() => {
+                  navigate(`/billing/${quickViewBill._id}`);
+                  setShowQuickViewModal(false);
+                }}
+                className="px-3 py-2 rounded-xl text-blue-600 hover:bg-blue-50 font-bold text-xs flex items-center gap-1.5 transition"
+              >
+                <span>↗️ पूर्ण पेज पर खोलें (Full Page)</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleDownloadPDF(quickViewBill)}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-black text-xs shadow-sm flex items-center gap-1.5 transition"
+                >
+                  <Download size={14} />
+                  <span>🖨️ PDF / प्रिंट</span>
+                </button>
+                <WhatsappSender bill={quickViewBill} />
+                <button
+                  onClick={() => {
+                    setShowQuickViewModal(false);
+                    setQuickViewBill(null);
+                  }}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs transition"
+                >
+                  बंद करें (Close)
+                </button>
+              </div>
             </div>
           </div>
         </div>

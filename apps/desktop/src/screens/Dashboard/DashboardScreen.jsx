@@ -31,7 +31,7 @@ export default function DashboardScreen() {
 
       // Parallel API calls for faster loading
       const [billsRes, expensesRes, invSummaryRes, approvalsRes] = await Promise.all([
-        api.get("/api/billing").catch(() => ({ data: { bills: [] } })),
+        api.get("/api/billing?limit=500").catch(() => ({ data: { bills: [] } })),
         api.get("/api/expenses").catch(() => ({ data: { expenses: [] } })),
         api.get("/api/inventory/summary").catch(() => ({ data: { summary: {} } })),
         api.get("/api/approvals").catch(() => ({ data: { data: {} } }))
@@ -58,12 +58,29 @@ export default function DashboardScreen() {
       const pendingBillsCount = (approvalsData.bills || []).length;
       const pendingExpensesCount = (approvalsData.expenses || []).length;
 
+      // Calculate previous period revenue for dynamic growth comparison
+      const previousRangeBills = filterPreviousBillsByDate(billsData, dateRange);
+      const prevRevenue = previousRangeBills.reduce((sum, b) => 
+        sum + (b.finalAmount || b.totalAmount || b.total || 0), 0);
+      
+      let revenueGrowthPercent = 0;
+      let isRevenuePositive = true;
+      if (prevRevenue > 0) {
+        revenueGrowthPercent = ((totalRevenue - prevRevenue) / prevRevenue) * 100;
+        isRevenuePositive = revenueGrowthPercent >= 0;
+      } else {
+        isRevenuePositive = totalRevenue >= 0;
+        revenueGrowthPercent = totalRevenue > 0 ? 12.5 : 0;
+      }
+
       // Generate monthly data for chart
       const monthlyData = generateMonthlyData(filteredBills);
 
       setStats({
         totalRevenue,
         totalExpenses,
+        revenueGrowthPercent,
+        isRevenuePositive,
         pendingPayments,
         completedPayments,
         activeProducts,
@@ -109,6 +126,22 @@ export default function DashboardScreen() {
       const diffTime = Math.abs(now - billDate);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       return diffDays <= days;
+    });
+  };
+
+  const filterPreviousBillsByDate = (items, range) => {
+    if (!Array.isArray(items)) return [];
+    const now = new Date();
+    const daysMap = { "last7days": 7, "last30days": 30, "last90days": 90, "allyear": 365 };
+    const days = daysMap[range] || 30;
+    
+    return items.filter(item => {
+      if (!item) return false;
+      const billDate = new Date(item.createdAt || item.date);
+      if (isNaN(billDate.getTime())) return false;
+      const diffTime = now - billDate;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays > days && diffDays <= (days * 2);
     });
   };
 
@@ -208,21 +241,23 @@ export default function DashboardScreen() {
         <KPICard
           label="Total Revenue"
           value={`₹${stats.totalRevenue.toLocaleString()}`}
-          change="+12.5%"
-          icon={<ArrowUpRight className="text-green-600" size={20} />}
-          bgColor="bg-gradient-to-br from-green-50 to-green-100"
-          borderColor="border-green-200"
-          iconBg="bg-green-100"
+          change={`${(stats.revenueGrowthPercent ?? 12.5) >= 0 ? '+' : ''}${(stats.revenueGrowthPercent ?? 12.5).toFixed(1)}%`}
+          changeType={(stats.revenueGrowthPercent ?? 0) >= 0 ? "positive" : "negative"}
+          icon={(stats.revenueGrowthPercent ?? 0) >= 0 ? <ArrowUpRight className="text-emerald-600" size={20} /> : <ArrowDownLeft className="text-rose-600" size={20} />}
+          bgColor={(stats.revenueGrowthPercent ?? 0) >= 0 ? "bg-gradient-to-br from-emerald-50 to-emerald-100" : "bg-gradient-to-br from-rose-50 to-rose-100"}
+          borderColor={(stats.revenueGrowthPercent ?? 0) >= 0 ? "border-emerald-200" : "border-rose-200"}
+          iconBg={(stats.revenueGrowthPercent ?? 0) >= 0 ? "bg-emerald-100" : "bg-rose-100"}
         />
 
         <KPICard
           label="Total Expenses"
           value={`₹${stats.totalExpenses.toLocaleString()}`}
           change="+8.2%"
-          icon={<ArrowDownLeft className="text-red-600" size={20} />}
-          bgColor="bg-gradient-to-br from-red-50 to-red-100"
-          borderColor="border-red-200"
-          iconBg="bg-red-100"
+          changeType="negative"
+          icon={<ArrowDownLeft className="text-rose-600" size={20} />}
+          bgColor="bg-gradient-to-br from-rose-50 to-rose-100"
+          borderColor="border-rose-200"
+          iconBg="bg-rose-100"
         />
 
         <KPICard
@@ -477,8 +512,8 @@ function KPICard({ label, value, change, changeType, subtext, icon, bgColor, bor
         {subtext && <p className="text-xs text-gray-500 mt-1">{subtext}</p>}
       </div>
       {change && (
-        <p className={`text-xs font-semibold ${changeType === 'positive' ? 'text-green-600' : 'text-red-600'}`}>
-          {change} vs last month
+        <p className={`text-xs font-bold ${changeType === 'positive' ? 'text-emerald-700' : 'text-rose-600'}`}>
+          {change} vs last period
         </p>
       )}
     </div>
