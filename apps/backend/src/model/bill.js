@@ -3,8 +3,8 @@ import mongoose from "mongoose";
 const billSchema = new mongoose.Schema({
   billNumber: { type: String, required: true, unique: true },
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
-  partyId: { type: mongoose.Schema.Types.ObjectId, ref: "Party", required: true },
-  salesmanId: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" }, // Track salesman for incentives (Clothes/Retail)
+  partyId: { type: mongoose.Schema.Types.ObjectId, ref: "Party" }, // Optional for POS walk-in customers
+  salesmanId: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" }, // Track salesman for incentives (Clothes/Retail/Restaurant)
   customerName: { type: String, required: true },
   customerMobile: { type: String },
   customerAddress: String,
@@ -14,8 +14,27 @@ const billSchema = new mongoose.Schema({
   billImageUrl: { type: String }, // Field to store the URL of the bill image
   date: { type: Date, default: Date.now },
   dueDate: Date,
+  // 🍽️ RESTAURANT SPECIFIC FIELDS (Petpooja Benchmark)
+  orderType: { 
+    type: String, 
+    enum: ["dine_in", "takeaway", "delivery"], 
+    default: "dine_in" 
+  },
+  tableNo: { type: String, default: "" },
+  tableNotes: { type: String, default: "" }, // Special table instructions (e.g. VIP guest, Birthday, High chair)
+  waiter: { type: String, default: "" },
+  kotNumber: { type: String, default: "" },
+  pax: { type: Number, default: 2 },
+  review: {
+    foodRating: { type: Number, min: 1, max: 5 },
+    staffRating: { type: Number, min: 1, max: 5 },
+    ambienceRating: { type: Number, min: 1, max: 5 },
+    comment: { type: String, default: "" },
+    reviewedStaffName: { type: String, default: "" }
+  },
   items: [
     {
+      productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
       name: String,
       quantity: { type: Number, default: 1 },
       rate: { type: Number, default: 0 },
@@ -23,6 +42,8 @@ const billSchema = new mongoose.Schema({
       hsnCode: { type: String, default: "" },
       taxable: { type: Number, default: 0 },
       total: { type: Number, default: 0 },
+      station: { type: String, default: "MAIN_KITCHEN" },
+      cookingInstructions: { type: String, default: "" }, // Special food notes (e.g. Jain / No onion-garlic, Extra spicy, Crispy naan)
       // Jewellery Specific Fields in Bill
       weight: { type: Number },
       purity: { type: String },

@@ -6,6 +6,7 @@ import {
   getProfitLoss,
   getStaffPerformanceReport,
   getNonMovingItems, // Import the new controller
+  getRestaurantAnalytics,
 } from "../controllers/reportController.js";
 import { protect } from "../middleware/authmiddleware.js";
 import { authorizeRoles } from "../middleware/roleMiddleware.js";
@@ -15,6 +16,9 @@ const router = express.Router();
 router.use(protect);
 
 router.route("/generate").post(generateReport);
+
+// Restaurant Deep Analytics (Petpooja Benchmark: Dine-in vs Takeaway, Notes & Reviews)
+router.get("/restaurant-analytics", getRestaurantAnalytics);
 
 // Staff Performance Report
 router.get("/staff-performance", authorizeRoles("owner", "admin", "manager"), getStaffPerformanceReport);

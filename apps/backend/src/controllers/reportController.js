@@ -338,8 +338,10 @@ export const getStaffPerformanceReport = async (req, res) => {
 
     const staffMembers = Array.from(staffMap.values());
 
-    // 2. Get all bills for the company
-    const bills = await Bill.find({ companyId: coFilter, isDeleted: { $ne: true } }).select('salesmanId waiter finalAmount items total').lean();
+    // 2. Get all bills for the company with review data
+    const bills = await Bill.find({ companyId: coFilter, isDeleted: { $ne: true } })
+      .select('salesmanId waiter finalAmount items total review customerName billNumber date')
+      .lean();
 
     // 3. Process data to calculate performance for each staff member
     const performanceData = staffMembers.map(staff => {
@@ -353,10 +355,28 @@ export const getStaffPerformanceReport = async (req, res) => {
           const w = String(bill.waiter).toLowerCase().trim();
           if (w.includes(staffName) || staffTokens.some(tok => tok.length > 2 && w.includes(tok))) return true;
         }
+        if (bill.review?.reviewedStaffName) {
+          const rw = String(bill.review.reviewedStaffName).toLowerCase().trim();
+          if (rw.includes(staffName) || staffTokens.some(tok => tok.length > 2 && rw.includes(tok))) return true;
+        }
         return false;
       });
 
       const totalRevenue = staffBills.reduce((sum, b) => sum + (b.finalAmount || b.total || 0), 0);
+
+      // Customer review analytics for this staff
+      const reviewedBills = staffBills.filter(b => b.review && (b.review.staffRating || b.review.comment));
+      const ratings = reviewedBills.map(b => Number(b.review.staffRating)).filter(r => r > 0);
+      const avgRating = ratings.length > 0 ? Number((ratings.reduce((a, c) => a + c, 0) / ratings.length).toFixed(1)) : 5.0;
+      const positiveCount = ratings.filter(r => r >= 4).length;
+      const customerFeedback = reviewedBills.filter(b => b.review.comment).map(b => ({
+        billNumber: b.billNumber,
+        customerName: b.customerName,
+        rating: b.review.staffRating || 5,
+        foodRating: b.review.foodRating || 5,
+        comment: b.review.comment,
+        date: b.date
+      }));
 
       return {
         _id: staff._id,
@@ -365,7 +385,11 @@ export const getStaffPerformanceReport = async (req, res) => {
         revenue: totalRevenue,
         bills: staffBills.length,
         salesTarget: staff.salesTarget || 50000,
-        averageOrderValue: staffBills.length > 0 ? Math.round(totalRevenue / staffBills.length) : 0
+        averageOrderValue: staffBills.length > 0 ? Math.round(totalRevenue / staffBills.length) : 0,
+        rating: avgRating,
+        ratingCount: ratings.length,
+        positiveCount: positiveCount,
+        customerFeedback: customerFeedback.slice(0, 10)
       };
     });
 
@@ -612,6 +636,138 @@ export const getNonMovingItems = async (req, res) => {
     res.status(200).json({ success: true, message: "Non-moving items report is under development.", data: [] });
 
   } catch (error) {
+    res.status(500).json({ success: false, message: "Server Error", error: error.message });
+  }
+};
+
+/**
+ * @desc    Get Restaurant Deep Analytics (Petpooja Benchmark: Order types, Table Rush, Notes & Reviews)
+ * @route   GET /api/reports/restaurant-analytics
+ * @access  Private
+ */
+export const getRestaurantAnalytics = async (req, res) => {
+  try {
+    const { companyId } = req;
+    if (!companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    const coFilter = mongoose.Types.ObjectId.isValid(companyId)
+      ? { $in: [companyId, new mongoose.Types.ObjectId(companyId)] }
+      : companyId;
+
+    const bills = await Bill.find({ companyId: coFilter, isDeleted: { $ne: true } }).lean();
+
+    // 1. Order Type Breakdown (Dine-in vs Takeaway vs Delivery)
+    const orderTypes = {
+      dine_in: { count: 0, revenue: 0, avgTicket: 0 },
+      takeaway: { count: 0, revenue: 0, avgTicket: 0 },
+      delivery: { count: 0, revenue: 0, avgTicket: 0 },
+    };
+
+    let totalTableNotesCount = 0;
+    let totalFoodNotesCount = 0;
+    const specialNotesList = [];
+
+    // Review metrics
+    const allFoodRatings = [];
+    const allStaffRatings = [];
+    const allAmbienceRatings = [];
+    const customerReviewsList = [];
+
+    bills.forEach(b => {
+      const type = b.orderType || (b.tableNo?.toLowerCase().includes("parcel") || b.customerAddress?.toLowerCase().includes("takeaway") ? "takeaway" : "dine_in");
+      const rev = Number(b.finalAmount || b.total || 0);
+
+      if (orderTypes[type]) {
+        orderTypes[type].count += 1;
+        orderTypes[type].revenue += rev;
+      } else {
+        orderTypes.dine_in.count += 1;
+        orderTypes.dine_in.revenue += rev;
+      }
+
+      // Check for Table Notes
+      if (b.tableNotes && b.tableNotes.trim()) {
+        totalTableNotesCount += 1;
+      }
+
+      // Check for Food-wise Cooking Instructions
+      let hasFoodNote = false;
+      if (Array.isArray(b.items)) {
+        b.items.forEach(it => {
+          if (it.cookingInstructions && it.cookingInstructions.trim()) {
+            totalFoodNotesCount += 1;
+            hasFoodNote = true;
+          }
+        });
+      }
+
+      if ((b.tableNotes && b.tableNotes.trim()) || hasFoodNote) {
+        specialNotesList.push({
+          billNumber: b.billNumber,
+          table: b.tableNo || b.table || "Table",
+          waiter: b.waiter || "Staff",
+          tableNotes: b.tableNotes || "",
+          foodNotes: (b.items || [])
+            .filter(it => it.cookingInstructions)
+            .map(it => `${it.name}: ${it.cookingInstructions}`),
+          date: b.date
+        });
+      }
+
+      // Reviews
+      if (b.review) {
+        if (b.review.foodRating) allFoodRatings.push(Number(b.review.foodRating));
+        if (b.review.staffRating) allStaffRatings.push(Number(b.review.staffRating));
+        if (b.review.ambienceRating) allAmbienceRatings.push(Number(b.review.ambienceRating));
+        if (b.review.comment) {
+          customerReviewsList.push({
+            billNumber: b.billNumber,
+            customerName: b.customerName || "Customer",
+            table: b.tableNo || b.table || "Dine-in",
+            staffName: b.review.reviewedStaffName || b.waiter || "Staff",
+            foodRating: b.review.foodRating || 5,
+            staffRating: b.review.staffRating || 5,
+            ambienceRating: b.review.ambienceRating || 5,
+            comment: b.review.comment,
+            date: b.date
+          });
+        }
+      }
+    });
+
+    Object.keys(orderTypes).forEach(k => {
+      orderTypes[k].avgTicket = orderTypes[k].count > 0 
+        ? Math.round(orderTypes[k].revenue / orderTypes[k].count) 
+        : 0;
+    });
+
+    const avg = arr => arr.length > 0 ? Number((arr.reduce((a, c) => a + c, 0) / arr.length).toFixed(1)) : 5.0;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalBills: bills.length,
+        totalRevenue: bills.reduce((s, b) => s + (b.finalAmount || b.total || 0), 0),
+        orderTypes,
+        notesAnalytics: {
+          totalBillsWithNotes: specialNotesList.length,
+          totalTableNotes: totalTableNotesCount,
+          totalFoodNotes: totalFoodNotesCount,
+          sampleNotes: specialNotesList.slice(0, 15)
+        },
+        reviewsAnalytics: {
+          totalReviews: customerReviewsList.length,
+          avgFoodRating: avg(allFoodRatings),
+          avgStaffRating: avg(allStaffRatings),
+          avgAmbienceRating: avg(allAmbienceRatings),
+          recentReviews: customerReviewsList.slice(0, 15)
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Error in getRestaurantAnalytics:", error);
     res.status(500).json({ success: false, message: "Server Error", error: error.message });
   }
 };
