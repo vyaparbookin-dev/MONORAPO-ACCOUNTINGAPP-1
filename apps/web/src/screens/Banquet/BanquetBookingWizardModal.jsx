@@ -58,6 +58,63 @@ export default function BanquetBookingWizardModal({ isOpen, onClose, onBookingSu
   const [slotAvailable, setSlotAvailable] = useState(true);
   const [slotLockedDetails, setSlotLockedDetails] = useState(null);
 
+  // Customer History & CRM Details
+  const [customerHistory, setCustomerHistory] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [attendedByStaff, setAttendedByStaff] = useState("विक्रम सिंह (हॉल मैनेजर)");
+  const [referredBy, setReferredBy] = useState("डायरेक्ट वॉक-इन (Direct Walk-in)");
+
+  // Staffing Team (Internal + External Freelance Labor)
+  const [floorCaptain, setFloorCaptain] = useState("कैप्टन अमित राय");
+  const [headChef, setHeadChef] = useState("मास्टर शेफ राजवीर सिंह");
+  const [internalStaffCount, setInternalStaffCount] = useState(8);
+  const [externalWaitersCount, setExternalWaitersCount] = useState(6);
+  const [waiterWage, setWaiterWage] = useState(600);
+  const [externalHalwaiCount, setExternalHalwaiCount] = useState(2);
+  const [halwaiWage, setHalwaiWage] = useState(1200);
+
+  // Food Service Timeline & Special Setup
+  const [startersTime, setStartersTime] = useState("07:00 PM - 08:30 PM");
+  const [buffetTime, setBuffetTime] = useState("08:30 PM - 10:30 PM");
+  const [dessertsTime, setDessertsTime] = useState("10:00 PM onwards");
+  const [specialArrangements, setSpecialArrangements] = useState([
+    "स्टेज फ्लोरल आर्च व वार्म लाइटिंग",
+    "कोल्ड पायरो एंट्री",
+    "डीजे साउंड परमिट अप्रूव्ड"
+  ]);
+  const [specialFoodNotes, setSpecialFoodNotes] = useState("40 पैक्स के लिए अलग शुद्ध जैन काउंटर");
+
+  // Split Payment Breakdown (Cash, UPI, Cheque, Card)
+  const [splitCash, setSplitCash] = useState(10000);
+  const [splitUpi, setSplitUpi] = useState(15000);
+  const [splitCheque, setSplitCheque] = useState(0);
+  const [chequeNo, setChequeNo] = useState("");
+  const [chequeBank, setChequeBank] = useState("");
+  const [splitCard, setSplitCard] = useState(0);
+
+  // Auto-fetch Customer History (Diner & Banquet)
+  useEffect(() => {
+    if (customerMobile && customerMobile.trim().length >= 10) {
+      fetchCustomerHistory(customerMobile.trim());
+    } else {
+      setCustomerHistory(null);
+    }
+  }, [customerMobile]);
+
+  const fetchCustomerHistory = async (mobile) => {
+    setHistoryLoading(true);
+    try {
+      const res = await api.get(`/api/banquet/customer-history?mobile=${mobile}`);
+      if (res.data?.success) {
+        setCustomerHistory(res.data);
+      }
+    } catch (e) {
+      console.warn("History lookup failed:", e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   // STEP 2: Menu & Swapping
   const defaultPackages = [
     {
@@ -285,10 +342,11 @@ export default function BanquetBookingWizardModal({ isOpen, onClose, onBookingSu
 
   const addonsTotal = addonsList.reduce((sum, a) => sum + (a.isIncluded ? Number(a.price || 0) : 0), 0);
   const grandTotal = foodTotal + effectiveHallRent + addonsTotal;
-  const balanceDue = Math.max(0, grandTotal - Number(advancePaid || 0));
+  const effectiveAdvance = Number(splitCash || 0) + Number(splitUpi || 0) + Number(splitCheque || 0) + Number(splitCard || 0);
+  const balanceDue = Math.max(0, grandTotal - effectiveAdvance);
 
-  // Save / Confirm Booking
-  const handleSaveBooking = async () => {
+  // Submit Booking
+  const handleCreateBooking = async () => {
     if (!customerName.trim() || !customerMobile.trim()) {
       alert("कृपया आयोजक का नाम और मोबाइल नंबर दर्ज करें!");
       setCurrentStep(1);
@@ -341,12 +399,106 @@ export default function BanquetBookingWizardModal({ isOpen, onClose, onBookingSu
           glasswareCount: pax + 20,
           cutlerySet: "SS Mirror Finish"
         },
-        advancePaid: Number(advancePaid || 0),
-        advancePaymentMethod: advanceMethod,
+        advancePaid: effectiveAdvance,
+        advancePaymentMethod: splitUpi > 0 ? "upi" : (splitCash > 0 ? "cash" : "split"),
         totalEstimatedAmount: grandTotal,
         finalSettlementAmount: grandTotal,
         balanceDue,
         kitchenSyncMode: kitchenMode,
+        attendedByStaff,
+        handledByStaff: attendedByStaff,
+        referralSource: referredBy,
+        customerHistorySnippet: customerHistory ? {
+          isRepeatDiner: customerHistory.isRepeatDiner,
+          dinerVisitsCount: customerHistory.dinerVisitsCount,
+          dinerTotalSpend: customerHistory.dinerTotalSpend,
+          isRepeatBanquetHost: customerHistory.isRepeatBanquetHost,
+          previousBanquetCount: customerHistory.previousBanquetsCount
+        } : undefined,
+        staffingRoster: {
+          bookedBy: attendedByStaff,
+          eventManager: floorCaptain,
+          headChef: headChef,
+          internalStaffCount: Number(internalStaffCount),
+          externalStaff: [
+            {
+              role: "कैटरिंग वेटर (Freelance Waiter)",
+              vendorOrAgency: "स्थानीय वेटर यूनियन",
+              staffCount: Number(externalWaitersCount),
+              wagePerPerson: Number(waiterWage),
+              totalWage: Number(externalWaitersCount) * Number(waiterWage),
+              isPaid: false
+            },
+            {
+              role: "सहायक हलवाई (Halwai Assistant)",
+              vendorOrAgency: "हलवाई कारीगर एसोसिएशन",
+              staffCount: Number(externalHalwaiCount),
+              wagePerPerson: Number(halwaiWage),
+              totalWage: Number(externalHalwaiCount) * Number(halwaiWage),
+              isPaid: false
+            }
+          ]
+        },
+        serviceTimeline: {
+          welcomeDrinksStartersTime: startersTime,
+          buffetOpeningTime: buffetTime,
+          dessertsTime: dessertsTime,
+          closeTime: timeSlot === "morning" ? "04:00 PM" : "12:00 AM",
+          specialArrangements: specialArrangements,
+          specialFoodInstructions: specialFoodNotes
+        },
+        paymentInstallments: [
+          {
+            milestoneName: "प्रथम किस्त: टोकन एडवांस (बुकिंग फाइनल)",
+            percent: 25,
+            dueDate: eventDate,
+            amount: effectiveAdvance,
+            status: effectiveAdvance > 0 ? "paid" : "due",
+            paidDate: effectiveAdvance > 0 ? new Date() : null,
+            paymentModeBreakdown: {
+              cash: Number(splitCash || 0),
+              upi: Number(splitUpi || 0),
+              cheque: {
+                chequeNo: chequeNo.trim(),
+                bankName: chequeBank.trim(),
+                amount: Number(splitCheque || 0)
+              },
+              card: Number(splitCard || 0)
+            }
+          },
+          {
+            milestoneName: "द्वितीय किस्त: प्री-इवेंट 50% (7 दिन पूर्व - टेस्टिंग व मेनू लॉक)",
+            percent: 50,
+            dueDate: "फंक्शन से 7 दिन पूर्व",
+            amount: Math.round(grandTotal * 0.50),
+            status: "due"
+          },
+          {
+            milestoneName: "तृतीय किस्त: फाइनल सेटलमेंट 25% (फंक्शन के दिन)",
+            percent: 25,
+            dueDate: "फंक्शन के दिन (हॉल हैंडओवर से पहले)",
+            amount: Math.round(grandTotal * 0.25),
+            status: "due"
+          }
+        ],
+        cancellationPolicy: {
+          noticeDays30PlusRefundPercent: 90,
+          noticeDays15To30RefundPercent: 50,
+          noticeDaysBelow15RefundPercent: 0,
+          isCancelled: false
+        },
+        plateAudit: {
+          agreedPlates: pax,
+          actualPlatesCounted: pax,
+          extraPlatesUsed: 0,
+          extraPlateRate: finalPlateRate,
+          extraPlatesTotalCost: 0,
+          verifiedByHostName: customerName.trim(),
+          verifiedByHostPhone: customerMobile.trim(),
+          hostRelation: "Host",
+          hostSignatureNotes: "बुकिंग समय पर सहमति दर्ज",
+          isSigned: false
+        },
         notes
       };
 
@@ -538,7 +690,77 @@ export default function BanquetBookingWizardModal({ isOpen, onClose, onBookingSu
                     className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium outline-none"
                   />
                 </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">हॉल किसने दिखाया / अटेंड किया:</label>
+                  <input
+                    type="text"
+                    value={attendedByStaff}
+                    onChange={(e) => setAttendedByStaff(e.target.value)}
+                    placeholder="उदा. विक्रम सिंह (हॉल मैनेजर)"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">किसके रेफरेंस से आए (Referral):</label>
+                  <input
+                    type="text"
+                    value={referredBy}
+                    onChange={(e) => setReferredBy(e.target.value)}
+                    placeholder="उदा. डॉ. सुनील शर्मा / सोशल मीडिया / वॉक-इन"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium outline-none"
+                  />
+                </div>
               </div>
+
+              {/* 🌟 CUSTOMER REPUTATION & HISTORY AUTO-LOOKUP BADGE */}
+              {historyLoading && (
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-2xl flex items-center gap-2 text-indigo-700 text-xs">
+                  <RefreshCw size={14} className="animate-spin" />
+                  <span>ग्राहक का पूर्व इतिहास व रेस्टोरेंट रिकॉर्ड जांचा जा रहा है...</span>
+                </div>
+              )}
+
+              {customerHistory && !historyLoading && (
+                <div className="p-3.5 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 rounded-2xl text-slate-800 space-y-1.5 shadow-xs animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-xs text-amber-900 flex items-center gap-1.5">
+                      <Sparkles size={16} className="text-amber-600" />
+                      स्मार्ट ग्राहक इतिहास प्रोफाइल (Customer CRM Intelligence):
+                    </span>
+                    <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-2 py-0.5 rounded-md">
+                      {customerHistory.isRepeatDiner ? "🌟 रेस्टोरेंट डाइनर" : "नया ग्राहक"}
+                      {customerHistory.isRepeatBanquetHost && " + 🏰 पूर्व बैंक्वेट होस्ट"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] pt-1 border-t border-amber-200">
+                    <div className="bg-white/80 p-2 rounded-xl border border-amber-200">
+                      <span className="text-slate-500 block text-[10px]">रेस्टोरेंट विज़िट्स व खर्च</span>
+                      <strong className="text-slate-900 font-mono">
+                        {customerHistory.dinerVisitsCount} विज़िट्स | ₹{customerHistory.dinerTotalSpend.toLocaleString("en-IN")}
+                      </strong>
+                    </div>
+
+                    <div className="bg-white/80 p-2 rounded-xl border border-amber-200">
+                      <span className="text-slate-500 block text-[10px]">सबसे पसंदीदा व्यंजन</span>
+                      <strong className="text-amber-800">
+                        {customerHistory.favoriteDish || "पनीर लबाबदार / बटर नान"}
+                      </strong>
+                    </div>
+
+                    <div className="bg-white/80 p-2 rounded-xl border border-amber-200">
+                      <span className="text-slate-500 block text-[10px]">पूर्व बैंक्वेट बुकिंग्स</span>
+                      <strong className="text-indigo-800">
+                        {customerHistory.previousBanquetsCount > 0 
+                          ? `${customerHistory.previousBanquetsCount} इवेंट्स आयोजित`
+                          : "पहला बैंक्वेट इवेंट"}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Date & Shift Selector */}
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
@@ -929,6 +1151,137 @@ export default function BanquetBookingWizardModal({ isOpen, onClose, onBookingSu
                   </label>
                 </div>
               </div>
+
+              {/* ⏰ FOOD SERVICE TIMELINE & SPECIAL ARRANGEMENTS */}
+              <div className="p-4 bg-indigo-50/60 border border-indigo-200 rounded-2xl space-y-3">
+                <span className="font-black text-indigo-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                  <Clock size={15} className="text-indigo-600" />
+                  सर्विंग टाइमलाइन व विशेष व्यवस्था (Service Rundown & Setup):
+                </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">🥤 वेलकम ड्रिंक्स व स्टार्टर्स समय:</label>
+                    <input
+                      type="text"
+                      value={startersTime}
+                      onChange={(e) => setStartersTime(e.target.value)}
+                      placeholder="07:00 PM - 08:30 PM"
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl font-medium outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">🍲 मुख्य बुफे खुलने का समय:</label>
+                    <input
+                      type="text"
+                      value={buffetTime}
+                      onChange={(e) => setBuffetTime(e.target.value)}
+                      placeholder="08:30 PM - 10:30 PM"
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl font-medium outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">🍨 डेजर्ट्स व पान काउंटर समय:</label>
+                    <input
+                      type="text"
+                      value={dessertsTime}
+                      onChange={(e) => setDessertsTime(e.target.value)}
+                      placeholder="10:00 PM onwards"
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl font-medium outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    खास खान-पान निर्देश (Special Food / Jain / Allergy Notes):
+                  </label>
+                  <input
+                    type="text"
+                    value={specialFoodNotes}
+                    onChange={(e) => setSpecialFoodNotes(e.target.value)}
+                    placeholder="उदा. 40 प्लेट शुद्ध जैन काउंटर बिना प्याज लहसुन"
+                    className="w-full p-2 bg-white border border-slate-300 rounded-xl font-medium outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* 👨‍🍳 OPERATIONAL STAFFING & EXTERNAL LABOR (WAITERS / HALWAI) */}
+              <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-2xl space-y-3">
+                <span className="font-black text-amber-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                  <ChefHat size={15} className="text-amber-600" />
+                  इवेंट ऑपरेशनल टीम व बाहरी लेबर (Floor Staff & External Freelancers):
+                </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">🤵 फ्लोर कैप्टन / इवेंट मैनेजर:</label>
+                    <input
+                      type="text"
+                      value={floorCaptain}
+                      onChange={(e) => setFloorCaptain(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl font-medium outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">👨‍🍳 मुख्य हेड शेफ का नाम:</label>
+                    <input
+                      type="text"
+                      value={headChef}
+                      onChange={(e) => setHeadChef(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl font-medium outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-amber-200">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">बाहरी वेटर संख्या:</label>
+                    <input
+                      type="number"
+                      value={externalWaitersCount}
+                      onChange={(e) => setExternalWaitersCount(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl font-mono font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">वेटर दिहाड़ी दर (₹):</label>
+                    <input
+                      type="number"
+                      value={waiterWage}
+                      onChange={(e) => setWaiterWage(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl font-mono font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">बाहरी हलवाई संख्या:</label>
+                    <input
+                      type="number"
+                      value={externalHalwaiCount}
+                      onChange={(e) => setExternalHalwaiCount(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl font-mono font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">हलवाई दिहाड़ी दर (₹):</label>
+                    <input
+                      type="number"
+                      value={halwaiWage}
+                      onChange={(e) => setHalwaiWage(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl font-mono font-bold"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-amber-800 font-medium">
+                  💡 कुल बाहरी लेबर खर्च: <strong>₹{((externalWaitersCount * waiterWage) + (externalHalwaiCount * halwaiWage)).toLocaleString("en-IN")}</strong> (यह इवेंट P&L कॉस्ट शीट में अलग से जुड़ेगा)।
+                </p>
+              </div>
             </div>
           )}
 
@@ -1056,24 +1409,159 @@ export default function BanquetBookingWizardModal({ isOpen, onClose, onBookingSu
                   </p>
                 </div>
 
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">एडवांस टोकन जमा (Advance):</label>
-                  <input
-                    type="number"
-                    value={advancePaid}
-                    onChange={(e) => setAdvancePaid(e.target.value)}
-                    className="w-full p-2 bg-white border border-slate-300 rounded-xl font-mono font-black text-base text-emerald-700"
-                  />
-                  <select
-                    value={advanceMethod}
-                    onChange={(e) => setAdvanceMethod(e.target.value)}
-                    className="w-full mt-1.5 p-1 bg-white border border-slate-200 rounded-lg text-[10px] font-bold"
-                  >
-                    <option value="upi">UPI / QR कोड</option>
-                    <option value="cash">नकद (Cash)</option>
-                    <option value="card">कार्ड (POS Machine)</option>
-                    <option value="bank">बैंक ट्रांसफर (NEFT/RTGS)</option>
-                  </select>
+                <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
+                  <label className="font-bold text-slate-800 block mb-1">
+                    कुल एडवांस टोकन (Auto-Sum of Split):
+                  </label>
+                  <div className="font-mono font-black text-xl text-emerald-700">
+                    ₹{effectiveAdvance.toLocaleString("en-IN")}
+                  </div>
+                  <span className="text-[10px] text-emerald-800 font-bold block mt-0.5">
+                    ✓ कैश, यूपीआई व चेक का संयुक्त भुगतान
+                  </span>
+                </div>
+              </div>
+
+              {/* 💳 MULTI-MODE SPLIT PAYMENT BREAKDOWN */}
+              <div className="p-4 bg-white border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="font-black text-slate-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <DollarSign size={15} className="text-emerald-600" />
+                    स्प्लिट पेमेंट ब्रेकडाउन (Multi-Mode Split Advance Payment):
+                  </span>
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    कुल प्राप्त: ₹{effectiveAdvance.toLocaleString("en-IN")}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">💵 नकद (Cash ₹):</label>
+                    <input
+                      type="number"
+                      value={splitCash}
+                      onChange={(e) => setSplitCash(Number(e.target.value))}
+                      className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-slate-800 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">📱 UPI / QR (₹):</label>
+                    <input
+                      type="number"
+                      value={splitUpi}
+                      onChange={(e) => setSplitUpi(Number(e.target.value))}
+                      className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-indigo-700 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">🏦 चेक राशि (Cheque ₹):</label>
+                    <input
+                      type="number"
+                      value={splitCheque}
+                      onChange={(e) => setSplitCheque(Number(e.target.value))}
+                      className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-slate-800 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">💳 कार्ड (Card ₹):</label>
+                    <input
+                      type="number"
+                      value={splitCard}
+                      onChange={(e) => setSplitCard(Number(e.target.value))}
+                      className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-slate-800 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {splitCheque > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-amber-50 rounded-xl border border-amber-200">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">चेक नंबर (Cheque No):</label>
+                      <input
+                        type="text"
+                        value={chequeNo}
+                        onChange={(e) => setChequeNo(e.target.value)}
+                        placeholder="उदा. 004521"
+                        className="w-full p-2 bg-white border border-slate-300 rounded-xl font-mono font-bold outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">बैंक का नाम (Bank Name):</label>
+                      <input
+                        type="text"
+                        value={chequeBank}
+                        onChange={(e) => setChequeBank(e.target.value)}
+                        placeholder="उदा. SBI Civil Lines"
+                        className="w-full p-2 bg-white border border-slate-300 rounded-xl font-medium outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 📅 3-MILESTONE INSTALLMENT SCHEDULE & CANCELLATION RULES */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Milestone Schedule */}
+                <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-2xl space-y-2.5">
+                  <span className="font-black text-indigo-950 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <Calendar size={14} className="text-indigo-600" />
+                    किस्तों की तय समय-सारिणी (3-Milestone Payment Schedule):
+                  </span>
+
+                  <div className="space-y-2 text-[11px]">
+                    <div className="p-2.5 bg-white rounded-xl border border-indigo-100 flex justify-between items-center">
+                      <div>
+                        <strong className="text-slate-900 block font-bold">1. टोकन एडवांस (25%)</strong>
+                        <span className="text-slate-500 text-[10px]">आज बुकिंग के समय देय</span>
+                      </div>
+                      <span className="font-mono font-black text-emerald-700">₹{effectiveAdvance.toLocaleString("en-IN")} (प्राप्त)</span>
+                    </div>
+
+                    <div className="p-2.5 bg-white rounded-xl border border-indigo-100 flex justify-between items-center">
+                      <div>
+                        <strong className="text-slate-900 block font-bold">2. प्री-इवेंट 50%</strong>
+                        <span className="text-slate-500 text-[10px]">फंक्शन से 7 दिन पूर्व (मेनू व अरेंजमेंट लॉक)</span>
+                      </div>
+                      <span className="font-mono font-black text-indigo-900">₹{Math.round(grandTotal * 0.50).toLocaleString("en-IN")}</span>
+                    </div>
+
+                    <div className="p-2.5 bg-white rounded-xl border border-indigo-100 flex justify-between items-center">
+                      <div>
+                        <strong className="text-slate-900 block font-bold">3. फाइनल सेटलमेंट (शेष 25%)</strong>
+                        <span className="text-slate-500 text-[10px]">फंक्शन के दिन (हॉल हैंडओवर से पूर्व)</span>
+                      </div>
+                      <span className="font-mono font-black text-rose-700">₹{Math.max(0, grandTotal - effectiveAdvance - Math.round(grandTotal * 0.50)).toLocaleString("en-IN")}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cancellation Policy */}
+                <div className="p-4 bg-rose-50/70 border border-rose-200 rounded-2xl space-y-2.5">
+                  <span className="font-black text-rose-950 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <ShieldAlert size={14} className="text-rose-600" />
+                    रिफंड व कैंसिलेशन नियम (Standard Cancellation Terms):
+                  </span>
+
+                  <div className="space-y-1.5 text-[11px] text-slate-700 leading-relaxed">
+                    <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-rose-100">
+                      <span>30 दिन से अधिक पहले रद्द करने पर:</span>
+                      <strong className="text-emerald-700 font-mono">90% रिफंड (10% टोकन कटौती)</strong>
+                    </div>
+                    <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-rose-100">
+                      <span>15 से 30 दिन पहले रद्द करने पर:</span>
+                      <strong className="text-amber-700 font-mono">50% रिफंड (50% कटौती)</strong>
+                    </div>
+                    <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-rose-100">
+                      <span>15 दिन से कम में रद्द करने पर:</span>
+                      <strong className="text-rose-700 font-mono">0% रिफंड (टोकन पूर्णतः जब्त)</strong>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500 italic mt-1">
+                    * BEO स्लिप और होस्ट कॉन्ट्रैक्ट पर यह पॉलिसी स्वतः प्रिंट होकर जाएगी।
+                  </p>
                 </div>
               </div>
 
@@ -1159,7 +1647,7 @@ export default function BanquetBookingWizardModal({ isOpen, onClose, onBookingSu
                   <span className="text-xl font-black text-rose-400 font-mono mt-0.5 block">
                     ₹{balanceDue.toLocaleString("en-IN")}
                   </span>
-                  <span className="text-[10px] text-emerald-300 font-bold">टोकन: ₹{advancePaid} जमा</span>
+                  <span className="text-[10px] text-emerald-300 font-bold">टोकन: ₹{effectiveAdvance.toLocaleString("en-IN")} जमा</span>
                 </div>
               </div>
             </div>

@@ -1,5 +1,7 @@
 import BanquetHall from "../model/banquetHall.js";
 import BanquetBooking from "../model/banquetBooking.js";
+import BanquetInquiry from "../model/banquetInquiry.js";
+import Bill from "../model/bill.js";
 
 // 1. GET ALL HALLS (Auto-seed if empty)
 export const getHalls = async (req, res) => {
@@ -299,3 +301,265 @@ export const generateKitchenIndent = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// 9. LOOKUP CUSTOMER HISTORY (Restaurant Diner + Banquet Repeat Host)
+export const lookupCustomerHistory = async (req, res) => {
+  try {
+    const { mobile } = req.query;
+    if (!mobile || mobile.trim().length < 6) {
+      return res.status(400).json({ success: false, message: "वैध मोबाइल नंबर आवश्यक है।" });
+    }
+
+    const cleanMobile = mobile.trim();
+
+    // 1. Restaurant Diner History
+    const bills = await Bill.find({ customerMobile: cleanMobile });
+    const dinerVisitsCount = bills.length;
+    const dinerTotalSpend = bills.reduce((s, b) => s + (Number(b.finalAmount) || 0), 0);
+
+    // Calculate favorite dish
+    const dishMap = {};
+    bills.forEach(b => {
+      (b.items || []).forEach(item => {
+        if (item && item.name) {
+          dishMap[item.name] = (dishMap[item.name] || 0) + (Number(item.quantity) || 1);
+        }
+      });
+    });
+    const sortedDishes = Object.entries(dishMap).sort((a, b) => b[1] - a[1]);
+    const favoriteDish = sortedDishes.length > 0 ? sortedDishes[0][0] : null;
+
+    // 2. Previous Banquet Bookings
+    const pastBookings = await BanquetBooking.find({ customerMobile: cleanMobile }).sort({ eventDate: -1 });
+
+    res.json({
+      success: true,
+      mobile: cleanMobile,
+      isRepeatDiner: dinerVisitsCount > 0,
+      dinerVisitsCount,
+      dinerTotalSpend,
+      favoriteDish,
+      isRepeatBanquetHost: pastBookings.length > 0,
+      previousBanquetsCount: pastBookings.length,
+      previousBanquets: pastBookings.map(b => ({
+        bookingNo: b.bookingNo,
+        eventName: b.eventName,
+        eventDate: b.eventDate,
+        pax: b.minGuaranteedPax,
+        hallName: b.hallName,
+        totalAmount: b.totalEstimatedAmount,
+        status: b.status
+      }))
+    });
+  } catch (error) {
+    console.error("Error looking up customer history:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 10. SAVE PHYSICAL PLATE COUNT AUDIT & HOST SIGN-OFF
+export const savePlateAudit = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const {
+      actualPlatesCounted,
+      verifiedByHostName,
+      verifiedByHostPhone,
+      hostRelation,
+      hostSignatureNotes,
+      isSigned
+    } = req.body;
+
+    const booking = await BanquetBooking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "बुकिंग नहीं मिली।" });
+    }
+
+    const agreed = Number(booking.minGuaranteedPax) || 50;
+    const counted = Number(actualPlatesCounted) || agreed;
+    const extra = Math.max(0, counted - agreed);
+    const extraRate = Number(booking.finalRatePerPlate) || Number(booking.baseRatePerPlate) || 600;
+    const extraCost = extra * extraRate;
+
+    booking.actualCountedPax = counted;
+    booking.plateAudit = {
+      agreedPlates: agreed,
+      actualPlatesCounted: counted,
+      extraPlatesUsed: extra,
+      extraPlateRate: extraRate,
+      extraPlatesTotalCost: extraCost,
+      verifiedByHostName: verifiedByHostName || booking.customerName,
+      verifiedByHostPhone: verifiedByHostPhone || booking.customerMobile,
+      hostRelation: hostRelation || "Host",
+      hostSignatureNotes: hostSignatureNotes || "Buffet plate count verified by host.",
+      auditTimestamp: new Date(),
+      isSigned: Boolean(isSigned)
+    };
+
+    // Update final settlement
+    booking.finalSettlementAmount = (Number(booking.totalEstimatedAmount) || 0) + extraCost;
+    booking.balanceDue = Math.max(0, booking.finalSettlementAmount - (Number(booking.advancePaid) || 0));
+
+    await booking.save();
+
+    res.json({
+      success: true,
+      message: "प्लेट गिनती सत्यापन व होस्ट साइन-ऑफ सफलतापूर्वक सुरक्षित हो गया!",
+      booking
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 11. RECORD EVENT EXPENSE (Dedicated Groceries, Cylinders, External Labor)
+export const recordEventExpense = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { expenseType, data } = req.body; // expenseType: 'grocery' | 'gas' | 'external_staff'
+
+    const booking = await BanquetBooking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "बुकिंग नहीं मिली।" });
+    }
+
+    if (expenseType === "grocery") {
+      booking.eventGroceryExpenses.push({
+        itemName: data.itemName,
+        qty: Number(data.qty) || 1,
+        unit: data.unit || "kg",
+        cost: Number(data.cost) || 0,
+        vendorName: data.vendorName || "Local Mandi Vendor",
+        billNo: data.billNo || `MANDI-${Date.now().toString().slice(-4)}`,
+        isDirectExpense: Boolean(data.isDirectExpense !== false),
+        isSharedKitchenStock: Boolean(data.isSharedKitchenStock),
+        date: new Date()
+      });
+    } else if (expenseType === "gas") {
+      const count = Number(data.cylinderCount) || 1;
+      const rate = Number(data.ratePerCylinder) || 1850;
+      booking.gasCylinderUsage.push({
+        cylinderCount: count,
+        ratePerCylinder: rate,
+        totalCost: count * rate,
+        supplierName: data.supplierName || "Commercial Gas Agency",
+        date: new Date()
+      });
+    } else if (expenseType === "external_staff") {
+      const staffCount = Number(data.staffCount) || 1;
+      const wagePerPerson = Number(data.wagePerPerson) || 600;
+      booking.staffingRoster.externalStaff.push({
+        role: data.role || "Waiter",
+        vendorOrAgency: data.vendorOrAgency || "Catering Labor Union",
+        staffCount,
+        wagePerPerson,
+        totalWage: staffCount * wagePerPerson,
+        isPaid: Boolean(data.isPaid)
+      });
+    }
+
+    await booking.save();
+
+    res.json({
+      success: true,
+      message: "इवेंट खर्च सफलतापूर्वक लेजर में दर्ज हो गया!",
+      booking
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 12. CANCEL BOOKING WITH REFUND SLAB
+export const cancelBookingWithRefund = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { cancellationReason } = req.body;
+
+    const booking = await BanquetBooking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "बुकिंग नहीं मिली।" });
+    }
+
+    const eventDate = new Date(booking.eventDate);
+    const today = new Date();
+    const diffTime = eventDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    const advance = Number(booking.advancePaid) || 0;
+    let refundPercent = 0;
+
+    if (diffDays >= 30) {
+      refundPercent = booking.cancellationPolicy?.noticeDays30PlusRefundPercent ?? 90;
+    } else if (diffDays >= 15) {
+      refundPercent = booking.cancellationPolicy?.noticeDays15To30RefundPercent ?? 50;
+    } else {
+      refundPercent = booking.cancellationPolicy?.noticeDaysBelow15RefundPercent ?? 0;
+    }
+
+    const refundAmount = Math.round((advance * refundPercent) / 100);
+    const deductionAmount = advance - refundAmount;
+
+    booking.status = "cancelled";
+    booking.cancellationPolicy = {
+      ...booking.cancellationPolicy,
+      isCancelled: true,
+      cancellationDate: new Date(),
+      refundAmount,
+      deductionAmount,
+      cancellationReason: cancellationReason || "Host requested cancellation."
+    };
+
+    await booking.save();
+
+    res.json({
+      success: true,
+      message: `बुकिंग निरस्त कर दी गई। नियम अनुसार ${diffDays} दिन पूर्व सूचना पर ${refundPercent}% रिफंड (₹${refundAmount}) बनेगा और ₹${deductionAmount} टोकन कटौती रहेगी।`,
+      refundAmount,
+      deductionAmount,
+      refundPercent,
+      diffDays,
+      booking
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 13. INQUIRY / CRM ENDPOINTS
+export const getInquiries = async (req, res) => {
+  try {
+    const inquiries = await BanquetInquiry.find().sort({ createdAt: -1 });
+    res.json({ success: true, inquiries });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const createInquiry = async (req, res) => {
+  try {
+    const count = await BanquetInquiry.countDocuments();
+    const inquiryNo = `INQ-${new Date().getFullYear()}-${(count + 1).toString().padStart(4, "0")}`;
+
+    const inquiry = new BanquetInquiry({
+      inquiryNo,
+      ...req.body
+    });
+
+    await inquiry.save();
+    res.status(201).json({ success: true, inquiry });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+export const updateInquiry = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updated = await BanquetInquiry.findByIdAndUpdate(id, req.body, { new: true });
+    res.json({ success: true, inquiry: updated });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
