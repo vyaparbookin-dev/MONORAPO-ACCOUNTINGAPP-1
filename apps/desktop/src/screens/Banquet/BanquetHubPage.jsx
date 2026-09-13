@@ -44,8 +44,11 @@ import {
   Package
 } from "lucide-react";
 import BanquetBookingWizardModal from "./BanquetBookingWizardModal";
+import { useLanguage } from "../../contexts/LanguageContext";
+import LanguageSwitchButton from "../../components/LanguageSwitchButton";
 
 export default function BanquetHubPage() {
+  const { t, isEnglish, invoicePrintLanguage, setInvoicePrintLanguage, toggleInvoicePrintLanguage } = useLanguage();
   // Navigation Tabs: 'bookings' | 'crm' | 'plate_audit' | 'event_pl' | 'hotel_rooms' | 'spoc_matrix'
   const [activeTab, setActiveTab] = useState("bookings");
 
@@ -482,14 +485,17 @@ export default function BanquetHubPage() {
               </div>
             </div>
 
-            {/* Quick Actions */}
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            {/* Quick Actions & Language Switcher */}
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              {/* Language Switcher */}
+              <LanguageSwitchButton />
+
               <button
                 onClick={() => setShowNewInquiryModal(true)}
                 className="flex-1 sm:flex-none px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl font-black text-xs border border-indigo-200 flex items-center justify-center gap-1.5 transition cursor-pointer"
               >
                 <Phone size={14} />
-                <span>+ नई लीड पूछताछ (CRM)</span>
+                <span>{t("new_lead_inquiry", "+ नई लीड पूछताछ (CRM)")}</span>
               </button>
 
               <button
@@ -497,7 +503,7 @@ export default function BanquetHubPage() {
                 className="flex-1 sm:flex-none px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl font-black text-xs shadow-md flex items-center justify-center gap-1.5 transition cursor-pointer"
               >
                 <Plus size={16} />
-                <span>+ नया बैंक्वेट बुक करें</span>
+                <span>{t("book_new_banquet", "+ नया बैंक्वेट बुक करें")}</span>
               </button>
             </div>
           </div>
@@ -513,7 +519,7 @@ export default function BanquetHubPage() {
               }`}
             >
               <Calendar size={14} />
-              <span>📋 आगामी कार्यक्रम व बुकिंग्स ({bookings.length})</span>
+              <span>{t("tab_upcoming_bookings", "📋 आगामी कार्यक्रम व बुकिंग्स")} ({bookings.length})</span>
             </button>
 
             <button
@@ -525,7 +531,7 @@ export default function BanquetHubPage() {
               }`}
             >
               <Users size={14} />
-              <span>📞 लीड्स व इंक्वायरी CRM ({inquiries.length})</span>
+              <span>{t("tab_crm_leads", "📞 लीड्स व इंक्वायरी CRM")} ({inquiries.length})</span>
             </button>
 
             <button
@@ -537,7 +543,7 @@ export default function BanquetHubPage() {
               }`}
             >
               <FileCheck size={14} />
-              <span>🍽️ प्लेट गिनती सत्यापन व साइन-ऑफ</span>
+              <span>{t("tab_plate_audit", "🍽️ प्लेट गिनती सत्यापन व साइन-ऑफ")}</span>
             </button>
 
             <button
@@ -549,7 +555,7 @@ export default function BanquetHubPage() {
               }`}
             >
               <DollarSign size={14} />
-              <span>💰 इवेंट P&L व अलग खर्च लेजर</span>
+              <span>{t("tab_event_pl", "💰 इवेंट P&L व अलग खर्च लेजर")}</span>
             </button>
 
             <button
@@ -566,7 +572,7 @@ export default function BanquetHubPage() {
               }`}
             >
               <Bed size={14} />
-              <span>🏨 होटल रूम्स व रिसॉर्ट PMS</span>
+              <span>{t("tab_hotel_rooms", "🏨 होटल रूम्स व रिसॉर्ट PMS")}</span>
             </button>
 
             <button
@@ -583,7 +589,7 @@ export default function BanquetHubPage() {
               }`}
             >
               <UserCheck size={14} />
-              <span>👔 डिपार्टमेंटल SPOC व मैनेजर्स</span>
+              <span>{t("tab_spoc_matrix", "👔 डिपार्टमेंटल SPOC व मैनेजर्स")}</span>
             </button>
           </div>
         </div>
@@ -1780,7 +1786,9 @@ export default function BanquetHubPage() {
                 <Printer size={18} className="text-amber-400" />
                 <div>
                   <h3 className="font-black text-sm">
-                    BEO (Banquet Event Order) अनुबंध व मेनू स्लिप
+                    {invoicePrintLanguage === "en"
+                      ? "BEO (Banquet Event Order) Contract & Menu Slip"
+                      : "BEO (Banquet Event Order) अनुबंध व मेनू स्लिप"}
                   </h3>
                   <p className="text-[11px] text-slate-400">
                     BEO No: {selectedBookingForBeo.bookingNo} • {selectedBookingForBeo.eventName}
@@ -1789,16 +1797,25 @@ export default function BanquetHubPage() {
               </div>
 
               <div className="flex items-center gap-2">
+                {/* Print Language Toggle */}
+                <button
+                  type="button"
+                  onClick={toggleInvoicePrintLanguage}
+                  className="px-2.5 py-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-amber-300 flex items-center gap-1.5 transition cursor-pointer"
+                  title="स्लिप प्रिंट भाषा बदलें / Change Print Language"
+                >
+                  <span>{invoicePrintLanguage === "en" ? "🇬🇧 English Bill" : "🇮🇳 हिन्दी बिल"}</span>
+                </button>
                 <button
                   onClick={() => window.print()}
-                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-xs flex items-center gap-1"
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-xs flex items-center gap-1 cursor-pointer"
                 >
                   <Printer size={14} />
-                  <span>प्रिंट (Print)</span>
+                  <span>{invoicePrintLanguage === "en" ? "Print" : "प्रिंट (Print)"}</span>
                 </button>
                 <button
                   onClick={() => setSelectedBookingForBeo(null)}
-                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300"
+                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
                 >
                   <X size={16} />
                 </button>
@@ -1808,41 +1825,51 @@ export default function BanquetHubPage() {
             {/* Slip Printable Content */}
             <div className="p-6 overflow-y-auto space-y-4 text-xs">
               <div className="text-center border-b pb-3">
-                <h2 className="text-lg font-black text-slate-900 uppercase">रॉयल पैलेस बैंक्वेट व कन्वेंशन सेंटर</h2>
-                <p className="text-slate-500 text-[11px]">मेन जी.टी. रोड, जबलपुर • फोन: 98765-43210 • GSTIN: 23AAAAA0000A1Z5</p>
+                <h2 className="text-lg font-black text-slate-900 uppercase">
+                  {invoicePrintLanguage === "en" ? "Royal Palace Banquet & Convention Center" : "रॉयल पैलेस बैंक्वेट व कन्वेंशन सेंटर"}
+                </h2>
+                <p className="text-slate-500 text-[11px]">
+                  {invoicePrintLanguage === "en" 
+                    ? "Main G.T. Road, Jabalpur • Phone: 98765-43210 • GSTIN: 23AAAAA0000A1Z5"
+                    : "मेन जी.टी. रोड, जबलपुर • फोन: 98765-43210 • GSTIN: 23AAAAA0000A1Z5"}
+                </p>
                 <div className="inline-block mt-1 px-3 py-0.5 rounded-full bg-slate-100 font-bold text-[10px] uppercase text-slate-800 border">
-                  ★ आधिकारिक बैंक्वेट इवेंट ऑर्डर (BEO Contract) ★
+                  {invoicePrintLanguage === "en" 
+                    ? "★ OFFICIAL BANQUET EVENT ORDER (BEO CONTRACT) ★" 
+                    : "★ आधिकारिक बैंक्वेट इवेंट ऑर्डर (BEO Contract) ★"}
                 </div>
               </div>
 
               {/* Host & Event Info */}
               <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                 <div>
-                  <p><strong>आयोजक (Host):</strong> {selectedBookingForBeo.customerName}</p>
-                  <p><strong>मोबाइल:</strong> {selectedBookingForBeo.customerMobile}</p>
-                  <p><strong>पता:</strong> {selectedBookingForBeo.customerAddress}, {selectedBookingForBeo.city}</p>
-                  <p><strong>हॉल किसने बुक किया:</strong> {selectedBookingForBeo.handledByStaff || "मैनेजर"}</p>
+                  <p><strong>{invoicePrintLanguage === "en" ? "Host / Customer:" : "आयोजक (Host):"}</strong> {selectedBookingForBeo.customerName}</p>
+                  <p><strong>{invoicePrintLanguage === "en" ? "Mobile:" : "मोबाइल:"}</strong> {selectedBookingForBeo.customerMobile}</p>
+                  <p><strong>{invoicePrintLanguage === "en" ? "Address:" : "पता:"}</strong> {selectedBookingForBeo.customerAddress}, {selectedBookingForBeo.city}</p>
+                  <p><strong>{invoicePrintLanguage === "en" ? "Booked By (Staff):" : "हॉल किसने बुक किया:"}</strong> {selectedBookingForBeo.handledByStaff || (invoicePrintLanguage === "en" ? "Manager" : "मैनेजर")}</p>
                 </div>
                 <div>
-                  <p><strong>कार्यक्रम:</strong> {selectedBookingForBeo.eventName}</p>
-                  <p><strong>तारीख व शिफ्ट:</strong> {selectedBookingForBeo.eventDate} ({selectedBookingForBeo.timeSlot.toUpperCase()})</p>
-                  <p><strong>वेन्यू हॉल:</strong> {selectedBookingForBeo.hallName}</p>
-                  <p><strong>न्यूनतम गारंटीकृत प्लेट्स:</strong> {selectedBookingForBeo.minGuaranteedPax} Pax</p>
+                  <p><strong>{invoicePrintLanguage === "en" ? "Event Name:" : "कार्यक्रम:"}</strong> {selectedBookingForBeo.eventName}</p>
+                  <p><strong>{invoicePrintLanguage === "en" ? "Date & Slot:" : "तारीख व शिफ्ट:"}</strong> {selectedBookingForBeo.eventDate} ({selectedBookingForBeo.timeSlot.toUpperCase()})</p>
+                  <p><strong>{invoicePrintLanguage === "en" ? "Venue Hall:" : "वेन्यू हॉल:"}</strong> {selectedBookingForBeo.hallName}</p>
+                  <p><strong>{invoicePrintLanguage === "en" ? "Min Guaranteed Pax:" : "न्यूनतम गारंटीकृत प्लेट्स:"}</strong> {selectedBookingForBeo.minGuaranteedPax} Pax</p>
                 </div>
               </div>
 
               {/* Service Timeline Rundown */}
               {selectedBookingForBeo.serviceTimeline && (
                 <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl space-y-1">
-                  <h5 className="font-bold uppercase text-indigo-900 text-[11px]">⏰ सर्विंग टाइमलाइन (Food Service Rundown):</h5>
+                  <h5 className="font-bold uppercase text-indigo-900 text-[11px]">
+                    {invoicePrintLanguage === "en" ? "⏰ Food Service Rundown Timeline:" : "⏰ सर्विंग टाइमलाइन (Food Service Rundown):"}
+                  </h5>
                   <div className="grid grid-cols-3 gap-2 text-[11px]">
-                    <p>• स्टार्टर्स: <strong>{selectedBookingForBeo.serviceTimeline.welcomeDrinksStartersTime}</strong></p>
-                    <p>• बुफे खुलना: <strong>{selectedBookingForBeo.serviceTimeline.buffetOpeningTime}</strong></p>
-                    <p>• डेजर्ट्स: <strong>{selectedBookingForBeo.serviceTimeline.dessertsTime}</strong></p>
+                    <p>• {invoicePrintLanguage === "en" ? "Starters:" : "स्टार्टर्स:"} <strong>{selectedBookingForBeo.serviceTimeline.welcomeDrinksStartersTime}</strong></p>
+                    <p>• {invoicePrintLanguage === "en" ? "Buffet Open:" : "बुफे खुलना:"} <strong>{selectedBookingForBeo.serviceTimeline.buffetOpeningTime}</strong></p>
+                    <p>• {invoicePrintLanguage === "en" ? "Desserts:" : "डेजर्ट्स:"} <strong>{selectedBookingForBeo.serviceTimeline.dessertsTime}</strong></p>
                   </div>
                   {selectedBookingForBeo.serviceTimeline.specialFoodInstructions && (
                     <p className="text-[11px] text-indigo-950 font-bold mt-1">
-                      ★ खास निर्देश: {selectedBookingForBeo.serviceTimeline.specialFoodInstructions}
+                      ★ {invoicePrintLanguage === "en" ? "Special Instructions:" : "खास निर्देश:"} {selectedBookingForBeo.serviceTimeline.specialFoodInstructions}
                     </p>
                   )}
                 </div>
@@ -1852,19 +1879,21 @@ export default function BanquetHubPage() {
               <div className="p-3.5 border border-slate-300 rounded-xl space-y-2">
                 <div className="flex justify-between items-center border-b pb-1">
                   <h5 className="font-black text-slate-900 uppercase">
-                    मेनू कॉम्बो: {selectedBookingForBeo.packageName} (@ ₹{selectedBookingForBeo.finalRatePerPlate}/प्लेट)
+                    {invoicePrintLanguage === "en" ? "Menu Package:" : "मेनू कॉम्बो:"} {selectedBookingForBeo.packageName} (@ ₹{selectedBookingForBeo.finalRatePerPlate}/{invoicePrintLanguage === "en" ? "plate" : "प्लेट"})
                   </h5>
                   <span className="text-[10px] text-slate-500">
-                    बेस: ₹{selectedBookingForBeo.baseRatePerPlate} {selectedBookingForBeo.swappedDishesDifferential > 0 && `(+₹${selectedBookingForBeo.swappedDishesDifferential} स्वैप अंतर)`}
+                    {invoicePrintLanguage === "en" ? "Base:" : "बेस:"} ₹{selectedBookingForBeo.baseRatePerPlate} {selectedBookingForBeo.swappedDishesDifferential > 0 && `(+₹${selectedBookingForBeo.swappedDishesDifferential} ${invoicePrintLanguage === "en" ? "swap diff" : "स्वैप अंतर"})`}
                   </span>
                 </div>
 
                 {selectedBookingForBeo.swappedDishes?.length > 0 && (
                   <div className="p-2 bg-amber-50 rounded-lg border border-amber-200">
-                    <span className="text-[10px] font-bold text-amber-900 block">बदली गई डिशेज़ (Swapped Dishes):</span>
+                    <span className="text-[10px] font-bold text-amber-900 block">
+                      {invoicePrintLanguage === "en" ? "Swapped Dishes:" : "बदली गई डिशेज़ (Swapped Dishes):"}
+                    </span>
                     {selectedBookingForBeo.swappedDishes.map((s, i) => (
                       <p key={i} className="text-slate-700 text-[11px]">
-                        • <s>{s.originalDish}</s> ➔ <strong>{s.replacementDish}</strong> (+₹{s.priceDiff}/प्लेट)
+                        • <s>{s.originalDish}</s> ➔ <strong>{s.replacementDish}</strong> (+₹{s.priceDiff}/{invoicePrintLanguage === "en" ? "plate" : "प्लेट"})
                       </p>
                     ))}
                   </div>
@@ -1883,71 +1912,84 @@ export default function BanquetHubPage() {
               {/* Infrastructure & Add-ons Checklist */}
               <div className="grid grid-cols-2 gap-4 text-[11px]">
                 <div className="p-3 border border-slate-300 rounded-xl space-y-1">
-                  <h5 className="font-bold uppercase text-slate-900 border-b pb-1">🛋️ इंफ्रास्ट्रक्चर व सिटिंग:</h5>
-                  <p>• सिटिंग स्टाइल: <strong>{selectedBookingForBeo.seatingConfig?.style}</strong></p>
-                  <p>• VIP सोफे: <strong>{selectedBookingForBeo.seatingConfig?.sofaCount || 8} सोफे</strong></p>
-                  <p>• कवर्ड कुर्सियां: <strong>{selectedBookingForBeo.seatingConfig?.chairCount || 120} कुर्सियां</strong></p>
-                  <p>• क्रॉकरी टाइप: <strong>{selectedBookingForBeo.crockeryConfig?.plateType}</strong></p>
-                  <p>• चफिंग डिशेज़: <strong>{selectedBookingForBeo.crockeryConfig?.chafingDishesCount} वार्मर्स</strong></p>
+                  <h5 className="font-bold uppercase text-slate-900 border-b pb-1">
+                    {invoicePrintLanguage === "en" ? "🛋️ Setup & Seating:" : "🛋️ इंफ्रास्ट्रक्चर व सिटिंग:"}
+                  </h5>
+                  <p>• {invoicePrintLanguage === "en" ? "Seating Style:" : "सिटिंग स्टाइल:"} <strong>{selectedBookingForBeo.seatingConfig?.style}</strong></p>
+                  <p>• {invoicePrintLanguage === "en" ? "VIP Sofas:" : "VIP सोफे:"} <strong>{selectedBookingForBeo.seatingConfig?.sofaCount || 8} {invoicePrintLanguage === "en" ? "Sofas" : "सोफे"}</strong></p>
+                  <p>• {invoicePrintLanguage === "en" ? "Covered Chairs:" : "कवर्ड कुर्सियां:"} <strong>{selectedBookingForBeo.seatingConfig?.chairCount || 120} {invoicePrintLanguage === "en" ? "Chairs" : "कुर्सियां"}</strong></p>
+                  <p>• {invoicePrintLanguage === "en" ? "Crockery Type:" : "क्रॉकरी टाइप:"} <strong>{selectedBookingForBeo.crockeryConfig?.plateType}</strong></p>
+                  <p>• {invoicePrintLanguage === "en" ? "Chafing Dishes:" : "चफिंग डिशेज़:"} <strong>{selectedBookingForBeo.crockeryConfig?.chafingDishesCount} {invoicePrintLanguage === "en" ? "Warmers" : "वार्मर्स"}</strong></p>
                 </div>
 
                 <div className="p-3 border border-slate-300 rounded-xl space-y-1">
-                  <h5 className="font-bold uppercase text-slate-900 border-b pb-1">💐 डेकोरेशन व स्टाफ:</h5>
-                  <p>• फ्लोर कैप्टन: <strong>{selectedBookingForBeo.staffingRoster?.eventManager || "कैप्टन अमित"}</strong></p>
-                  <p>• हेड शेफ: <strong>{selectedBookingForBeo.staffingRoster?.headChef || "शेफ राजवीर"}</strong></p>
-                  <p>• स्टेज थीम: <strong>{selectedBookingForBeo.seatingConfig?.stageTheme}</strong></p>
-                  <p>• विशेष निर्देश: <em>{selectedBookingForBeo.notes || "N/A"}</em></p>
+                  <h5 className="font-bold uppercase text-slate-900 border-b pb-1">
+                    {invoicePrintLanguage === "en" ? "💐 Decor & Staffing:" : "💐 डेकोरेशन व स्टाफ:"}
+                  </h5>
+                  <p>• {invoicePrintLanguage === "en" ? "Floor Captain:" : "फ्लोर कैप्टन:"} <strong>{selectedBookingForBeo.staffingRoster?.eventManager || (invoicePrintLanguage === "en" ? "Captain Amit" : "कैप्टन अमित")}</strong></p>
+                  <p>• {invoicePrintLanguage === "en" ? "Head Chef:" : "हेड शेफ:"} <strong>{selectedBookingForBeo.staffingRoster?.headChef || (invoicePrintLanguage === "en" ? "Chef Rajveer" : "शेफ राजवीर")}</strong></p>
+                  <p>• {invoicePrintLanguage === "en" ? "Stage Theme:" : "स्टेज थीम:"} <strong>{selectedBookingForBeo.seatingConfig?.stageTheme}</strong></p>
+                  <p>• {invoicePrintLanguage === "en" ? "Special Notes:" : "विशेष निर्देश:"} <em>{selectedBookingForBeo.notes || "N/A"}</em></p>
                 </div>
               </div>
 
               {/* Commercial Settlement Box */}
               <div className="p-4 bg-slate-100 border-2 border-slate-900 rounded-xl space-y-2">
                 <div className="flex justify-between items-center">
-                  <span>कैटरिंग भोजन कुल ({selectedBookingForBeo.minGuaranteedPax} × ₹{selectedBookingForBeo.finalRatePerPlate}):</span>
+                  <span>{invoicePrintLanguage === "en" 
+                    ? `Catering Food Total (${selectedBookingForBeo.minGuaranteedPax} × ₹${selectedBookingForBeo.finalRatePerPlate}):` 
+                    : `कैटरिंग भोजन कुल (${selectedBookingForBeo.minGuaranteedPax} × ₹${selectedBookingForBeo.finalRatePerPlate}):`}</span>
                   <span className="font-mono font-bold">
                     ₹{((selectedBookingForBeo.minGuaranteedPax || 50) * (selectedBookingForBeo.finalRatePerPlate || 500)).toLocaleString("en-IN")}
                   </span>
                 </div>
                 {selectedBookingForBeo.hallRent > 0 && (
                   <div className="flex justify-between items-center text-slate-700">
-                    <span>हॉल किराया (कम प्लेट्स होने पर):</span>
+                    <span>{invoicePrintLanguage === "en" ? "Hall Rent (Low Pax Charge):" : "हॉल किराया (कम प्लेट्स होने पर):"}</span>
                     <span className="font-mono">₹{selectedBookingForBeo.hallRent.toLocaleString("en-IN")}</span>
                   </div>
                 )}
                 <div className="flex justify-between items-center font-black text-sm border-t border-slate-300 pt-1.5 text-slate-900">
-                  <span>कुल देय अनुमानित बजट (Total):</span>
+                  <span>{invoicePrintLanguage === "en" ? "Total Estimated Budget:" : "कुल देय अनुमानित बजट (Total):"}</span>
                   <span className="font-mono">
                     ₹{(selectedBookingForBeo.totalEstimatedAmount || 0).toLocaleString("en-IN")}
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-emerald-700 font-bold">
-                  <span>जमा एडवांस टोकन (Advance Paid):</span>
+                  <span>{invoicePrintLanguage === "en" ? "Advance Token Paid:" : "जमा एडवांस टोकन (Advance Paid):"}</span>
                   <span className="font-mono">-₹{(selectedBookingForBeo.advancePaid || 0).toLocaleString("en-IN")}</span>
                 </div>
                 <div className="flex justify-between items-center font-black text-sm text-rose-700 border-t border-slate-300 pt-1">
-                  <span>शेष देय राशि (Balance Due on Function Night):</span>
+                  <span>{invoicePrintLanguage === "en" ? "Balance Due on Function Night:" : "शेष देय राशि (Balance Due on Function Night):"}</span>
                   <span className="font-mono">₹{(selectedBookingForBeo.balanceDue || 0).toLocaleString("en-IN")}</span>
                 </div>
               </div>
 
               {/* Cancellation Policy Note */}
               <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-[10px] text-rose-900 leading-relaxed">
-                <strong>कैंसिलेशन व रिफंड नियम:</strong> फंक्शन से 30 दिन पूर्व रद्द करने पर 90% रिफंड (10% टोकन कटौती), 15-30 दिन पूर्व 50% रिफंड, तथा 15 दिन से कम में रद्द करने पर 0% रिफंड (टोकन पूर्णतः जब्त)।
+                <strong>{invoicePrintLanguage === "en" ? "Cancellation & Refund Terms:" : "कैंसिलेशन व रिफंड नियम:"}</strong>{" "}
+                {invoicePrintLanguage === "en"
+                  ? "Cancellation 30+ days prior to event: 90% refund (10% token deduction). 15-30 days prior: 50% refund. Less than 15 days prior: 0% refund (advance token forfeited)."
+                  : "फंक्शन से 30 दिन पूर्व रद्द करने पर 90% रिफंड (10% टोकन कटौती), 15-30 दिन पूर्व 50% रिफंड, तथा 15 दिन से कम में रद्द करने पर 0% रिफंड (टोकन पूर्णतः जब्त)।"}
               </div>
 
               {/* Signatures Footer */}
               <div className="grid grid-cols-2 gap-8 pt-8 text-center text-xs">
                 <div>
                   <div className="border-t border-slate-800 pt-1 font-bold">
-                    आयोजक / ग्राहक के हस्ताक्षर (Host Signature)
+                    {invoicePrintLanguage === "en" ? "Host / Customer Signature" : "आयोजक / ग्राहक के हस्ताक्षर (Host Signature)"}
                   </div>
-                  <p className="text-[10px] text-slate-500 mt-0.5">मैंने सभी नियम व शर्तें स्वीकार की हैं</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    {invoicePrintLanguage === "en" ? "I have verified and accept all event terms & conditions" : "मैंने सभी नियम व शर्तें स्वीकार की हैं"}
+                  </p>
                 </div>
                 <div>
                   <div className="border-t border-slate-800 pt-1 font-bold">
-                    बैंक्वेट मैनेजर के हस्ताक्षर (Authorized Signatory)
+                    {invoicePrintLanguage === "en" ? "Authorized Signatory (Banquet Manager)" : "बैंक्वेट मैनेजर के हस्ताक्षर (Authorized Signatory)"}
                   </div>
-                  <p className="text-[10px] text-slate-500 mt-0.5">रॉयल पैलेस बैंक्वेट व कन्वेंशन सेंटर</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    {invoicePrintLanguage === "en" ? "Royal Palace Banquet & Convention Center" : "रॉयल पैलेस बैंक्वेट व कन्वेंशन सेंटर"}
+                  </p>
                 </div>
               </div>
             </div>
@@ -2494,19 +2536,29 @@ export default function BanquetHubPage() {
               <div className="flex items-center gap-2">
                 <FileCheck size={18} className="text-teal-300" />
                 <h3 className="font-black text-sm">
-                  प्लेट गिनती सत्यापन पत्र (Plate Count Verification Slip)
+                  {invoicePrintLanguage === "en" 
+                    ? "Plate Count Verification Slip" 
+                    : "प्लेट गिनती सत्यापन पत्र (Plate Count Verification Slip)"}
                 </h3>
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => window.print()}
-                  className="px-3 py-1 bg-teal-600 hover:bg-teal-500 text-white rounded-lg font-bold text-xs"
+                  type="button"
+                  onClick={toggleInvoicePrintLanguage}
+                  className="px-2.5 py-1 rounded-xl border border-teal-700 bg-teal-800 hover:bg-teal-700 text-xs font-bold text-teal-200 cursor-pointer"
+                  title="स्लिप प्रिंट भाषा बदलें / Change Print Language"
                 >
-                  प्रिंट
+                  <span>{invoicePrintLanguage === "en" ? "🇬🇧 English" : "🇮🇳 हिन्दी"}</span>
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1 bg-teal-600 hover:bg-teal-500 text-white rounded-lg font-bold text-xs cursor-pointer"
+                >
+                  {invoicePrintLanguage === "en" ? "Print" : "प्रिंट"}
                 </button>
                 <button
                   onClick={() => setShowPlateSlipModal(false)}
-                  className="p-1.5 rounded-xl bg-teal-800 text-teal-200"
+                  className="p-1.5 rounded-xl bg-teal-800 text-teal-200 cursor-pointer"
                 >
                   <X size={16} />
                 </button>
@@ -2515,34 +2567,40 @@ export default function BanquetHubPage() {
 
             <div className="p-6 overflow-y-auto space-y-4 text-xs">
               <div className="text-center border-b pb-2">
-                <h3 className="font-black text-base uppercase text-slate-900">रॉयल पैलेस बैंक्वेट्स</h3>
-                <p className="text-slate-500 text-[11px]">भौतिक प्लेट सत्यापन व स्वीकृति रसीद</p>
+                <h3 className="font-black text-base uppercase text-slate-900">
+                  {invoicePrintLanguage === "en" ? "Royal Palace Banquets" : "रॉयल पैलेस बैंक्वेट्स"}
+                </h3>
+                <p className="text-slate-500 text-[11px]">
+                  {invoicePrintLanguage === "en" 
+                    ? "Physical Plate Count Verification & Acknowledgment Slip" 
+                    : "भौतिक प्लेट सत्यापन व स्वीकृति रसीद"}
+                </p>
               </div>
 
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
-                <p><strong>इवेंट:</strong> {selectedBookingForPlateAudit.eventName} ({selectedBookingForPlateAudit.bookingNo})</p>
-                <p><strong>तारीख व शिफ्ट:</strong> {selectedBookingForPlateAudit.eventDate} ({selectedBookingForPlateAudit.timeSlot})</p>
-                <p><strong>वेन्यू:</strong> {selectedBookingForPlateAudit.hallName}</p>
-                <p><strong>सत्यापनकर्ता:</strong> {plateAuditForm.verifiedByHostName} ({plateAuditForm.hostRelation})</p>
+                <p><strong>{invoicePrintLanguage === "en" ? "Event:" : "इवेंट:"}</strong> {selectedBookingForPlateAudit.eventName} ({selectedBookingForPlateAudit.bookingNo})</p>
+                <p><strong>{invoicePrintLanguage === "en" ? "Date & Slot:" : "तारीख व शिफ्ट:"}</strong> {selectedBookingForPlateAudit.eventDate} ({selectedBookingForPlateAudit.timeSlot})</p>
+                <p><strong>{invoicePrintLanguage === "en" ? "Venue:" : "वेन्यू:"}</strong> {selectedBookingForPlateAudit.hallName}</p>
+                <p><strong>{invoicePrintLanguage === "en" ? "Verified By:" : "सत्यापनकर्ता:"}</strong> {plateAuditForm.verifiedByHostName} ({plateAuditForm.hostRelation})</p>
               </div>
 
               <div className="p-4 bg-teal-50/70 border border-teal-200 rounded-xl space-y-2">
                 <div className="flex justify-between">
-                  <span>न्यूनतम गारंटीकृत प्लेट्स:</span>
-                  <strong className="font-mono">{selectedBookingForPlateAudit.minGuaranteedPax} प्लेट्स</strong>
+                  <span>{invoicePrintLanguage === "en" ? "Guaranteed Pax:" : "न्यूनतम गारंटीकृत प्लेट्स:"}</span>
+                  <strong className="font-mono">{selectedBookingForPlateAudit.minGuaranteedPax} {invoicePrintLanguage === "en" ? "Plates" : "प्लेट्स"}</strong>
                 </div>
                 <div className="flex justify-between font-bold text-teal-950">
-                  <span>वास्तविक गिने गए कुल प्लेट्स:</span>
-                  <strong className="font-mono text-base">{plateAuditForm.actualPlatesCounted} प्लेट्स</strong>
+                  <span>{invoicePrintLanguage === "en" ? "Actual Counted Plates:" : "वास्तविक गिने गए कुल प्लेट्स:"}</span>
+                  <strong className="font-mono text-base">{plateAuditForm.actualPlatesCounted} {invoicePrintLanguage === "en" ? "Plates" : "प्लेट्स"}</strong>
                 </div>
                 <div className="flex justify-between text-rose-700 font-bold border-t border-teal-200 pt-1">
-                  <span>अतिरिक्त प्लेट्स:</span>
+                  <span>{invoicePrintLanguage === "en" ? "Extra Plates Count:" : "अतिरिक्त प्लेट्स:"}</span>
                   <span className="font-mono">
-                    +{Math.max(0, plateAuditForm.actualPlatesCounted - selectedBookingForPlateAudit.minGuaranteedPax)} प्लेट्स (@ ₹{selectedBookingForPlateAudit.finalRatePerPlate})
+                    +{Math.max(0, plateAuditForm.actualPlatesCounted - selectedBookingForPlateAudit.minGuaranteedPax)} {invoicePrintLanguage === "en" ? "Plates" : "प्लेट्स"} (@ ₹{selectedBookingForPlateAudit.finalRatePerPlate})
                   </span>
                 </div>
                 <div className="flex justify-between font-black text-sm text-slate-900 border-t border-teal-200 pt-1">
-                  <span>अतिरिक्त देय राशि:</span>
+                  <span>{invoicePrintLanguage === "en" ? "Extra Plates Amount Due:" : "अतिरिक्त देय राशि:"}</span>
                   <span className="font-mono">
                     +₹{(Math.max(0, plateAuditForm.actualPlatesCounted - selectedBookingForPlateAudit.minGuaranteedPax) * (selectedBookingForPlateAudit.finalRatePerPlate || 600)).toLocaleString("en-IN")}
                   </span>
@@ -2550,21 +2608,23 @@ export default function BanquetHubPage() {
               </div>
 
               <p className="text-[10px] text-slate-600 italic">
-                स्वीकृति नोट: "{plateAuditForm.hostSignatureNotes}"
+                {invoicePrintLanguage === "en" ? "Acknowledgment Note:" : "स्वीकृति नोट:"} "{plateAuditForm.hostSignatureNotes}"
               </p>
 
               <div className="grid grid-cols-2 gap-6 pt-6 text-center text-xs">
                 <div>
                   <div className="border-t border-slate-800 pt-1 font-bold">
-                    सत्यापनकर्ता हस्ताक्षर (Host Signee)
+                    {invoicePrintLanguage === "en" ? "Host / Signee Signature" : "सत्यापनकर्ता हस्ताक्षर (Host Signee)"}
                   </div>
                   <p className="text-[10px] text-slate-500 mt-0.5">{plateAuditForm.verifiedByHostName}</p>
                 </div>
                 <div>
                   <div className="border-t border-slate-800 pt-1 font-bold">
-                    फ्लोर कैप्टन हस्ताक्षर
+                    {invoicePrintLanguage === "en" ? "Floor Captain Signature" : "फ्लोर कैप्टन हस्ताक्षर"}
                   </div>
-                  <p className="text-[10px] text-slate-500 mt-0.5">बैंक्वेट ऑपरेशंस टीम</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    {invoicePrintLanguage === "en" ? "Banquet Operations Team" : "बैंक्वेट ऑपरेशंस टीम"}
+                  </p>
                 </div>
               </div>
             </div>
@@ -3018,19 +3078,29 @@ export default function BanquetHubPage() {
               <div className="flex items-center gap-2">
                 <Bed size={18} className="text-purple-300" />
                 <h3 className="font-black text-sm">
-                  कमरा चाबी व वेलकम स्लिप (Room Key Card Slip)
+                  {invoicePrintLanguage === "en" 
+                    ? "Room Key Card & Welcome Slip" 
+                    : "कमरा चाबी व वेलकम स्लिप (Room Key Card Slip)"}
                 </h3>
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => window.print()}
-                  className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold text-xs"
+                  type="button"
+                  onClick={toggleInvoicePrintLanguage}
+                  className="px-2.5 py-1 rounded-xl border border-purple-700 bg-purple-900 hover:bg-purple-800 text-xs font-bold text-purple-200 cursor-pointer"
+                  title="स्लिप प्रिंट भाषा बदलें / Change Print Language"
                 >
-                  प्रिंट
+                  <span>{invoicePrintLanguage === "en" ? "🇬🇧 English" : "🇮🇳 हिन्दी"}</span>
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold text-xs cursor-pointer"
+                >
+                  {invoicePrintLanguage === "en" ? "Print" : "प्रिंट"}
                 </button>
                 <button
                   onClick={() => setSelectedRoomForSlip(null)}
-                  className="p-1.5 rounded-xl bg-purple-800 text-purple-200"
+                  className="p-1.5 rounded-xl bg-purple-800 text-purple-200 cursor-pointer"
                 >
                   <X size={16} />
                 </button>
@@ -3039,35 +3109,49 @@ export default function BanquetHubPage() {
 
             <div className="p-6 overflow-y-auto space-y-4 text-xs">
               <div className="text-center border-b pb-3 space-y-1">
-                <h3 className="font-black text-base uppercase text-purple-950">रॉयल पैलेस रिसॉर्ट व बैंक्वेट्स</h3>
-                <p className="text-[10px] text-slate-500">कमरा आवंटन व अतिथि स्वागत पर्ची</p>
+                <h3 className="font-black text-base uppercase text-purple-950">
+                  {invoicePrintLanguage === "en" ? "Royal Palace Resort & Banquets" : "रॉयल पैलेस रिसॉर्ट व बैंक्वेट्स"}
+                </h3>
+                <p className="text-[10px] text-slate-500">
+                  {invoicePrintLanguage === "en" ? "Room Key Slip & Guest Welcome Note" : "कमरा आवंटन व अतिथि स्वागत पर्ची"}
+                </p>
                 <div className="inline-block px-4 py-1 rounded-full bg-purple-100 text-purple-900 font-mono font-black text-lg border border-purple-200 mt-1">
-                  कमरा सं. #{selectedRoomForSlip.roomNumber}
+                  {invoicePrintLanguage === "en" ? "Room No. #" : "कमरा सं. #"}{selectedRoomForSlip.roomNumber}
                 </div>
               </div>
 
               <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1.5 text-xs">
-                <p><strong>अतिथि का नाम:</strong> {selectedRoomForSlip.guestName || "आदरणीय अतिथि"}</p>
-                <p><strong>मोबाइल:</strong> {selectedRoomForSlip.guestPhone || "-"}</p>
-                <p><strong>कमरा श्रेणी:</strong> {selectedRoomForSlip.roomType?.replace("_", " ")}</p>
-                <p><strong>चेक-इन:</strong> {selectedRoomForSlip.checkInDate ? new Date(selectedRoomForSlip.checkInDate).toLocaleDateString("hi-IN") : "-"}</p>
-                <p><strong>चेक-आउट:</strong> {selectedRoomForSlip.checkOutDate ? new Date(selectedRoomForSlip.checkOutDate).toLocaleDateString("hi-IN") : "-"}</p>
-                <p><strong>अतिरिक्त बिस्तर:</strong> {selectedRoomForSlip.extraBedsCount || 0} बिस्तर आवंटित</p>
+                <p><strong>{invoicePrintLanguage === "en" ? "Guest Name:" : "अतिथि का नाम:"}</strong> {selectedRoomForSlip.guestName || (invoicePrintLanguage === "en" ? "Honored Guest" : "आदरणीय अतिथि")}</p>
+                <p><strong>{invoicePrintLanguage === "en" ? "Mobile:" : "मोबाइल:"}</strong> {selectedRoomForSlip.guestPhone || "-"}</p>
+                <p><strong>{invoicePrintLanguage === "en" ? "Category:" : "कमरा श्रेणी:"}</strong> {selectedRoomForSlip.roomType?.replace("_", " ")}</p>
+                <p><strong>{invoicePrintLanguage === "en" ? "Check-in:" : "चेक-इन:"}</strong> {selectedRoomForSlip.checkInDate ? new Date(selectedRoomForSlip.checkInDate).toLocaleDateString(invoicePrintLanguage === "en" ? "en-IN" : "hi-IN") : "-"}</p>
+                <p><strong>{invoicePrintLanguage === "en" ? "Check-out:" : "चेक-आउट:"}</strong> {selectedRoomForSlip.checkOutDate ? new Date(selectedRoomForSlip.checkOutDate).toLocaleDateString(invoicePrintLanguage === "en" ? "en-IN" : "hi-IN") : "-"}</p>
+                <p><strong>{invoicePrintLanguage === "en" ? "Extra Beds:" : "अतिरिक्त बिस्तर:"}</strong> {selectedRoomForSlip.extraBedsCount || 0} {invoicePrintLanguage === "en" ? "Bed(s) Allocated" : "बिस्तर आवंटित"}</p>
               </div>
 
               <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-xl space-y-1 text-[11px]">
-                <strong className="text-purple-950 block">🛎️ रूम सर्विस व डाइनिंग नीति:</strong>
+                <strong className="text-purple-950 block">
+                  {invoicePrintLanguage === "en" ? "🛎️ Room Service & Dining Policy:" : "🛎️ रूम सर्विस व डाइनिंग नीति:"}
+                </strong>
                 <p className="text-slate-700">
                   {selectedRoomForSlip.roomServiceBillingMode === "HOST_MASTER_FOLIO"
-                    ? "• रूम सर्विस का समस्त बिल आयोजक के मुख्य खाते में जोड़ा जाएगा।"
-                    : "• रूम सर्विस व अन्य उपभोग का भुगतान अतिथि चेकआउट के समय सीधे कैश/UPI से करेंगे।"}
+                    ? (invoicePrintLanguage === "en" ? "• All room service charges will be billed directly to the Host Master Folio." : "• रूम सर्विस का समस्त बिल आयोजक के मुख्य खाते में जोड़ा जाएगा।")
+                    : (invoicePrintLanguage === "en" ? "• Room service orders must be settled directly by the guest at checkout via Cash/UPI." : "• रूम सर्विस व अन्य उपभोग का भुगतान अतिथि चेकआउट के समय सीधे कैश/UPI से करेंगे।")}
                 </p>
-                <p className="text-slate-600 mt-1">• रिसेप्शन के लिए डायल करें: <strong>9</strong> • रूम सर्विस के लिए डायल करें: <strong>8</strong></p>
-                <p className="text-slate-600">• फ्री हाई-स्पीड वाईफाई: <strong>RoyalPalace_Guest</strong> (पासवर्ड: royal2026)</p>
+                <p className="text-slate-600 mt-1">
+                  {invoicePrintLanguage === "en" 
+                    ? "• Dial 9 for Reception • Dial 8 for Room Service" 
+                    : "• रिसेप्शन के लिए डायल करें: 9 • रूम सर्विस के लिए डायल करें: 8"}
+                </p>
+                <p className="text-slate-600">
+                  • {invoicePrintLanguage === "en" ? "Free High-Speed Wi-Fi:" : "फ्री हाई-स्पीड वाईफाई:"} <strong>RoyalPalace_Guest</strong> ({invoicePrintLanguage === "en" ? "Password" : "पासवर्ड"}: royal2026)
+                </p>
               </div>
 
               <div className="border-t border-slate-200 pt-3 text-center text-[10px] text-slate-500">
-                हम आपके सुखद और आरामदायक प्रवास की कामना करते हैं। धन्यवाद!
+                {invoicePrintLanguage === "en" 
+                  ? "We wish you a pleasant and memorable stay. Thank you!" 
+                  : "हम आपके सुखद और आरामदायक प्रवास की कामना करते हैं। धन्यवाद!"}
               </div>
             </div>
           </div>
@@ -3244,7 +3328,9 @@ export default function BanquetHubPage() {
                 <UserCheck size={18} className="text-amber-400" />
                 <div>
                   <h3 className="font-black text-sm">
-                    इवेंट आयोजक संपर्क निर्देशिका (Host SPOC Card)
+                    {invoicePrintLanguage === "en" 
+                      ? "Host SPOC Contact Directory Card" 
+                      : "इवेंट आयोजक संपर्क निर्देशिका (Host SPOC Card)"}
                   </h3>
                   <p className="text-[11px] text-slate-400">
                     {selectedBookingForManagers.eventName} • {selectedBookingForManagers.customerName}
@@ -3253,14 +3339,22 @@ export default function BanquetHubPage() {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => window.print()}
-                  className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg font-black text-xs"
+                  type="button"
+                  onClick={toggleInvoicePrintLanguage}
+                  className="px-2.5 py-1 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-amber-300 cursor-pointer"
+                  title="स्लिप प्रिंट भाषा बदलें / Change Print Language"
                 >
-                  प्रिंट (Print)
+                  <span>{invoicePrintLanguage === "en" ? "🇬🇧 English" : "🇮🇳 हिन्दी"}</span>
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg font-black text-xs cursor-pointer"
+                >
+                  {invoicePrintLanguage === "en" ? "Print" : "प्रिंट (Print)"}
                 </button>
                 <button
                   onClick={() => setShowSpocPrintModal(false)}
-                  className="p-1.5 rounded-xl bg-slate-800 text-slate-300"
+                  className="p-1.5 rounded-xl bg-slate-800 text-slate-300 cursor-pointer"
                 >
                   <X size={16} />
                 </button>
@@ -3269,21 +3363,29 @@ export default function BanquetHubPage() {
 
             <div className="p-6 overflow-y-auto space-y-4 text-xs">
               <div className="text-center border-b pb-3 space-y-1">
-                <h2 className="text-lg font-black uppercase text-slate-900">रॉयल पैलेस बैंक्वेट्स व रिसॉर्ट</h2>
-                <p className="text-[11px] text-slate-500">आधिकारिक विभागीय प्रमुख व संपर्क निर्देशिका (Official Duty Roster)</p>
+                <h2 className="text-lg font-black uppercase text-slate-900">
+                  {invoicePrintLanguage === "en" ? "Royal Palace Banquets & Resort" : "रॉयल पैलेस बैंक्वेट्स व रिसॉर्ट"}
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  {invoicePrintLanguage === "en" 
+                    ? "Official Department Heads & Emergency SPOC Duty Roster" 
+                    : "आधिकारिक विभागीय प्रमुख व संपर्क निर्देशिका (Official Duty Roster)"}
+                </p>
                 <div className="inline-block px-3 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200 font-bold text-[10px]">
-                  ★ किसी भी आवश्यकता हेतु सीधे संबंधित विभाग प्रमुख से संपर्क करें ★
+                  {invoicePrintLanguage === "en" 
+                    ? "★ For any requirement during the event, directly reach out to your department lead ★" 
+                    : "★ किसी भी आवश्यकता हेतु सीधे संबंधित विभाग प्रमुख से संपर्क करें ★"}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px]">
                 <div>
-                  <p><strong>कार्यक्रम:</strong> {selectedBookingForManagers.eventName}</p>
-                  <p><strong>आयोजक (Host):</strong> {selectedBookingForManagers.customerName}</p>
+                  <p><strong>{invoicePrintLanguage === "en" ? "Event Name:" : "कार्यक्रम:"}</strong> {selectedBookingForManagers.eventName}</p>
+                  <p><strong>{invoicePrintLanguage === "en" ? "Host / Customer:" : "आयोजक (Host):"}</strong> {selectedBookingForManagers.customerName}</p>
                 </div>
                 <div>
-                  <p><strong>तारीख व शिफ्ट:</strong> {selectedBookingForManagers.eventDate} ({selectedBookingForManagers.timeSlot})</p>
-                  <p><strong>वेन्यू हॉल:</strong> {selectedBookingForManagers.hallName}</p>
+                  <p><strong>{invoicePrintLanguage === "en" ? "Date & Shift:" : "तारीख व शिफ्ट:"}</strong> {selectedBookingForManagers.eventDate} ({selectedBookingForManagers.timeSlot})</p>
+                  <p><strong>{invoicePrintLanguage === "en" ? "Venue Hall:" : "वेन्यू हॉल:"}</strong> {selectedBookingForManagers.hallName}</p>
                 </div>
               </div>
 
@@ -3292,21 +3394,21 @@ export default function BanquetHubPage() {
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-900 text-white uppercase text-[10px]">
                     <tr>
-                      <th className="p-2.5">विभाग / भूमिका</th>
-                      <th className="p-2.5">प्रमुख का नाम</th>
-                      <th className="p-2.5">सीधा मोबाइल फोन</th>
-                      <th className="p-2.5">ड्यूटी क्षेत्र व कार्य</th>
+                      <th className="p-2.5">{invoicePrintLanguage === "en" ? "Department / Role" : "विभाग / भूमिका"}</th>
+                      <th className="p-2.5">{invoicePrintLanguage === "en" ? "Head Name" : "प्रमुख का नाम"}</th>
+                      <th className="p-2.5">{invoicePrintLanguage === "en" ? "Direct Phone" : "सीधा मोबाइल फोन"}</th>
+                      <th className="p-2.5">{invoicePrintLanguage === "en" ? "Duty Scope & Responsibilities" : "ड्यूटी क्षेत्र व कार्य"}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
                     {(selectedBookingForManagers.departmentalManagers?.length > 0
                       ? selectedBookingForManagers.departmentalManagers
                       : [
-                          { roleTitle: "प्रधान रसोईया (हेड शेफ)", name: "शेफ रमेश कुमार", phone: "98261-12345", responsibilityNotes: "भोजन स्वाद, गरम बफे रीफिलिंग, स्टार्टर्स" },
-                          { roleTitle: "फ्लोर सर्विस कैप्टन", name: "विक्रम सिंह", phone: "98261-67890", responsibilityNotes: "बफे टेबल, वेटर तत्परता, वीआईपी सोफा सर्विस" },
-                          { roleTitle: "होटल रूम्स मैनेजर", name: "सुनील वर्मा", phone: "98261-55443", responsibilityNotes: "अतिथि चेक-इन, अतिरिक्त गद्दे, रूम सर्विस" },
-                          { roleTitle: "साउंड, डीजे व लाइट", name: "रोहित डीजे", phone: "98261-99887", responsibilityNotes: "स्टेज माइक, बैकग्राउंड संगीत, जनरेटर बैकअप" },
-                          { roleTitle: "हाउसकीपिंग व स्वच्छता", name: "राकेश सुपरवाइजर", phone: "98261-33221", responsibilityNotes: "हॉल, स्टेज व वॉशरूम्स की निरंतर सफाई" }
+                          { roleTitle: invoicePrintLanguage === "en" ? "Executive Head Chef" : "प्रधान रसोईया (हेड शेफ)", name: invoicePrintLanguage === "en" ? "Chef Ramesh Kumar" : "शेफ रमेश कुमार", phone: "98261-12345", responsibilityNotes: invoicePrintLanguage === "en" ? "Food taste, hot buffet refilling, starters" : "भोजन स्वाद, गरम बफे रीफिलिंग, स्टार्टर्स" },
+                          { roleTitle: invoicePrintLanguage === "en" ? "Floor Service Captain" : "फ्लोर सर्विस कैप्टन", name: invoicePrintLanguage === "en" ? "Vikram Singh" : "विक्रम सिंह", phone: "98261-67890", responsibilityNotes: invoicePrintLanguage === "en" ? "Buffet layout, waiter readiness, VIP sofa service" : "बफे टेबल, वेटर तत्परता, वीआईपी सोफा सर्विस" },
+                          { roleTitle: invoicePrintLanguage === "en" ? "Hotel Rooms Manager" : "होटल रूम्स मैनेजर", name: invoicePrintLanguage === "en" ? "Sunil Verma" : "सुनील वर्मा", phone: "98261-55443", responsibilityNotes: invoicePrintLanguage === "en" ? "Guest check-in, extra rollaways, room service" : "अतिथि चेक-इन, अतिरिक्त गद्दे, रूम सर्विस" },
+                          { roleTitle: invoicePrintLanguage === "en" ? "Sound, DJ & Lighting" : "साउंड, डीजे व लाइट", name: invoicePrintLanguage === "en" ? "Rohit DJ" : "रोहित डीजे", phone: "98261-99887", responsibilityNotes: invoicePrintLanguage === "en" ? "Stage microphones, background ambience, generator backup" : "स्टेज माइक, बैकग्राउंड संगीत, जनरेटर बैकअप" },
+                          { roleTitle: invoicePrintLanguage === "en" ? "Housekeeping Supervisor" : "हाउसकीपिंग व स्वच्छता", name: invoicePrintLanguage === "en" ? "Rakesh Supervisor" : "राकेश सुपरवाइजर", phone: "98261-33221", responsibilityNotes: invoicePrintLanguage === "en" ? "Hall, stage, dining and restroom continuous upkeep" : "हॉल, स्टेज व वॉशरूम्स की निरंतर सफाई" }
                         ]
                     ).map((mgr, i) => (
                       <tr key={i} className="hover:bg-slate-50">
@@ -3321,7 +3423,9 @@ export default function BanquetHubPage() {
               </div>
 
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-center text-[11px] text-amber-950 font-bold">
-                ★ 24×7 केंद्रीय रिसेप्शन हेल्पलाइन: एक्सटेंशन 100 या मोबाइल: 98765-43210
+                {invoicePrintLanguage === "en" 
+                  ? "★ 24×7 Central Reception Helpline: Ext. 100 or Direct Mobile: 98765-43210" 
+                  : "★ 24×7 केंद्रीय रिसेप्शन हेल्पलाइन: एक्सटेंशन 100 या मोबाइल: 98765-43210"}
               </div>
             </div>
           </div>

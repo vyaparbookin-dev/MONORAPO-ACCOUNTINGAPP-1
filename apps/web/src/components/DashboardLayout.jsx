@@ -38,8 +38,10 @@ import {
 import Footer from "./Footer";
 import { useNavigate, Outlet, useLocation } from "react-router-dom";
 import { useCompany } from "../contexts/CompanyContext";
+import { useLanguage } from "../contexts/LanguageContext";
 import { SecurityTracker } from "@repo/shared";
 import CloudSyncToggel from "./CloudSyncToggel";
+import LanguageSwitchButton from "./LanguageSwitchButton";
 
 // Resilient Page-Level Error Boundary to protect sidebar & topbar navigation
 class ContentErrorBoundary extends React.Component {
@@ -104,6 +106,7 @@ export default function DashboardLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { companies, selectedCompany, selectCompany, loading, enterDemoModule, exitDemoModule, allDemoCompanies } = useCompany() || {};
+  const { t, isEnglish } = useLanguage();
 
   useEffect(() => {
     // Get user from localStorage
@@ -386,7 +389,13 @@ export default function DashboardLayout() {
               <item.icon className={`w-5 h-5 ${item.color} flex-shrink-0`} />
               {sidebarOpen && (
                 <span className="text-sm font-medium group-hover:translate-x-1 transition-transform">
-                  {item.label}
+                  {isEnglish
+                    ? item.label
+                        .replace("🏰 बैंक्वेट हॉल व इवेंट्स (Hub)", "🏰 Banquet & Events Hub")
+                        .replace("🏰 बैंक्वेट हॉल व इवेंट्स", "🏰 Banquet & Events")
+                        .replace("🤖 AI मुनीम जी Advisor", "🤖 AI Munim Ji Advisor")
+                        .replace("AI मुनीम जी", "AI Munim Ji")
+                    : item.label}
                 </span>
               )}
             </button>
@@ -480,7 +489,7 @@ export default function DashboardLayout() {
                 <Search className="text-gray-400" size={20} />
                 <input
                   type="text"
-                  placeholder="Search invoices, products..."
+                  placeholder={t("search_placeholder", "Search invoices, products...")}
                   className="bg-transparent outline-none text-gray-700 placeholder-gray-500 w-full text-sm"
                 />
               </div>
@@ -488,45 +497,48 @@ export default function DashboardLayout() {
 
             {/* Right Side - Header Tools, Company Selector, Notifications & Profile */}
             <div className="flex items-center gap-2 sm:gap-3">
+              {/* Language Switcher (EN / HI) */}
+              <LanguageSwitchButton />
+
               {/* 1. Fast Calculator Button */}
               <button
                 onClick={() => setCalcModalOpen(true)}
-                className="p-2 bg-gray-100 hover:bg-blue-50 text-gray-700 hover:text-blue-600 rounded-xl transition border border-gray-200 flex items-center gap-1.5 shadow-sm"
+                className="p-2 bg-gray-100 hover:bg-blue-50 text-gray-700 hover:text-blue-600 rounded-xl transition border border-gray-200 flex items-center gap-1.5 shadow-sm cursor-pointer"
                 title="Open Fast Calculator"
               >
                 <Calculator size={18} />
-                <span className="hidden xl:inline text-xs font-bold">Calculator</span>
+                <span className="hidden xl:inline text-xs font-bold">{t("calculator", "Calculator")}</span>
               </button>
 
               {/* 2. Refer & Earn Cash Tokens (Gift Icon) */}
               <button
                 onClick={() => setReferralModalOpen(true)}
-                className="px-3 py-2 bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 text-indigo-700 rounded-xl transition border border-indigo-200 flex items-center gap-1.5 shadow-sm"
+                className="px-3 py-2 bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 text-indigo-700 rounded-xl transition border border-indigo-200 flex items-center gap-1.5 shadow-sm cursor-pointer"
                 title="Refer & Earn Cash Tokens"
               >
                 <Gift size={18} className="text-indigo-600 animate-bounce" />
-                <span className="hidden md:inline text-xs font-extrabold text-indigo-900">Refer & Earn</span>
+                <span className="hidden md:inline text-xs font-extrabold text-indigo-900">{t("refer_earn", "Refer & Earn")}</span>
                 <span className="text-[10px] font-black bg-indigo-600 text-white px-1.5 py-0.5 rounded-full">₹500</span>
               </button>
 
               {/* 3. Multi-Platform Ecosystem Showcase (Phone & Screen Icon) */}
               <button
                 onClick={() => setEcosystemModalOpen(true)}
-                className="px-3 py-2 bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 text-emerald-800 rounded-xl transition border border-emerald-200 flex items-center gap-1.5 shadow-sm"
+                className="px-3 py-2 bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 text-emerald-800 rounded-xl transition border border-emerald-200 flex items-center gap-1.5 shadow-sm cursor-pointer"
                 title="Mobile, Desktop & Web Features"
               >
                 <Smartphone size={17} className="text-emerald-600" />
-                <span className="hidden lg:inline text-xs font-extrabold text-emerald-900">All Apps</span>
+                <span className="hidden lg:inline text-xs font-extrabold text-emerald-900">{t("all_apps", "All Apps")}</span>
               </button>
 
               {/* 4. AI Munim Ji (Copilot Button) */}
               <button
                 onClick={() => navigate('/ai-advisor')}
-                className="px-3 py-2 bg-gradient-to-r from-purple-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 text-purple-800 rounded-xl transition border border-purple-200 flex items-center gap-1.5 shadow-sm"
+                className="px-3 py-2 bg-gradient-to-r from-purple-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 text-purple-800 rounded-xl transition border border-purple-200 flex items-center gap-1.5 shadow-sm cursor-pointer"
                 title="Ask AI Munim Ji (Smart Business Advisor)"
               >
                 <Bot size={17} className="text-purple-600" />
-                <span className="hidden md:inline text-xs font-black text-purple-900">AI मुनीम जी</span>
+                <span className="hidden md:inline text-xs font-black text-purple-900">{t("ai_advisor", "AI मुनीम जी")}</span>
               </button>
 
               {/* Cloud Sync Toggle */}

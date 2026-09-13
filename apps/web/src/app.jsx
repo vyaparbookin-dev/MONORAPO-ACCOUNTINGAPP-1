@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Outlet } from "react-router-dom
 import { CompanyProvider } from "./contexts/CompanyContext";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import { SettingsProvider } from "./contexts/SettingsContext"; // Import SettingsProvider
+import { LanguageProvider } from "./contexts/LanguageContext"; // Import LanguageProvider
 import { SecurityTracker } from "./components/SecurityTracker";
 import DashboardLayout from "./components/DashboardLayout";
 import Loader from "./components/Loader";
@@ -287,7 +288,8 @@ const App = () => {
     <GoogleOAuthProvider clientId={googleClientId || "dummy-client-id-for-dev"}>
       <ErrorBoundary>
         <SettingsProvider>
-          <CompanyProvider>
+          <LanguageProvider>
+            <CompanyProvider>
             <Router>
               <Suspense fallback={<Loader />}>
                 <Routes>
@@ -459,6 +461,7 @@ const App = () => {
               </Suspense>
             </Router>
           </CompanyProvider>
+        </LanguageProvider>
         </SettingsProvider>
       </ErrorBoundary>
     </GoogleOAuthProvider>

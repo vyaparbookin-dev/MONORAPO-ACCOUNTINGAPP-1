@@ -38,8 +38,54 @@ import {
 import Footer from "./Footer";
 import { useNavigate, Outlet, useLocation } from "react-router-dom";
 import { useCompany } from "../contexts/CompanyContext";
+import { useLanguage } from "../contexts/LanguageContext";
 import { SecurityTracker } from "@repo/shared";
 import CloudSyncToggel from "./CloudSyncToggel";
+import LanguageSwitchButton from "./LanguageSwitchButton";
+
+// Resilient Page-Level Error Boundary to protect sidebar & topbar navigation
+class ContentErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error("Dashboard page render error:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm text-center max-w-lg mx-auto my-12 animate-in fade-in">
+          <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-3">
+            ⚠️
+          </div>
+          <h3 className="font-extrabold text-base text-slate-900 mb-1">पेज लोड करने में अस्थायी समस्या</h3>
+          <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+            इस पेज पर कोई डेटा प्रारूप मिसमैच हुआ है। आप सुरक्षित रूप से डैशबोर्ड पर लौट सकते हैं या पुनः प्रयास कर सकते हैं।
+          </p>
+          <div className="flex justify-center gap-3">
+            <button
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="px-5 py-2.5 bg-indigo-600 text-white font-extrabold text-xs rounded-xl shadow-xs hover:bg-indigo-700 transition cursor-pointer"
+            >
+              🔄 पुनः प्रयास करें (Retry)
+            </button>
+            <a
+              href="/dashboard"
+              className="px-5 py-2.5 bg-slate-100 text-slate-700 font-extrabold text-xs rounded-xl hover:bg-slate-200 transition"
+            >
+              🏠 मुख्य डैशबोर्ड
+            </a>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
@@ -48,7 +94,6 @@ export default function DashboardLayout() {
   const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
   const [calcModalOpen, setCalcModalOpen] = useState(false);
   const [showQuickCreateBusinessModal, setShowQuickCreateBusinessModal] = useState(false);
-  const [showFullMenu, setShowFullMenu] = useState(false);
   const [newBusinessForm, setNewBusinessForm] = useState({
     name: "",
     industryType: "restaurant",
@@ -60,13 +105,18 @@ export default function DashboardLayout() {
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
-  const { companies, selectedCompany, selectCompany, loading } = useCompany();
+  const { companies, selectedCompany, selectCompany, loading, enterDemoModule, exitDemoModule, allDemoCompanies } = useCompany() || {};
+  const { t, isEnglish } = useLanguage();
 
   useEffect(() => {
     // Get user from localStorage
     const storedUser = localStorage.getItem("user");
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (e) {
+        console.warn("Invalid stored user", e);
+      }
     }
   }, []);
 
@@ -98,54 +148,23 @@ export default function DashboardLayout() {
   };
 
   const handleLogout = () => {
-    SecurityTracker.track('USER_LOGOUT', { userId: user?._id, email: user?.email });
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("companyId");
-    localStorage.removeItem("selectedCompany");
-    navigate("/login");
+    try {
+      SecurityTracker.track('USER_LOGOUT', { userId: user?._id, email: user?.email });
+    } catch (e) {}
+    localStorage.clear();
+    sessionStorage.clear();
+    window.location.href = "/login";
   };
 
   // Get the selected industry type and make it lowercase for easy checking
-  // Dynamic Industry-Tailored Menu Generator
-  const getMenuForBusiness = (company, fullMode = false) => {
-    const indType = (company?.industryType || company?.businessType || '').toLowerCase();
-
-    // 1. FULL VIEW (ALL 30+ FEATURES)
-    if (fullMode) {
-      return [
-        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Home, label: "Dashboard", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
-        { icon: ShoppingCart, label: "Fast POS & KOT", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Building2, label: "🏰 बैंक्वेट हॉल व इवेंट्स", href: "/banquet", color: "text-amber-500", roles: ['admin', 'manager'] },
-        { icon: FileText, label: "Invoices & Billing", href: "/billing", color: "text-green-600", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Briefcase, label: "B2B Bills", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
-        { icon: Package, label: "Inventory Stock", href: "/inventory", color: "text-purple-600", roles: ['admin', 'manager'] },
-        { icon: Users, label: "Parties & Khata", href: "/parties", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Users, label: "Leads CRM", href: "/leads", color: "text-purple-600", roles: ['admin', 'manager'] },
-        { icon: FileText, label: "Quotations", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
-        { icon: Smartphone, label: "IMEI Serial Tracking", href: "/serial-tracking", color: "text-cyan-500", roles: ['admin', 'manager'] },
-        { icon: ShieldCheck, label: "Warranty Claims", href: "/warranty", color: "text-emerald-500", roles: ['admin', 'manager'] },
-        { icon: PenTool, label: "Batch & Cut-Loss", href: "/inventory/batch", color: "text-orange-700", roles: ['admin', 'manager'] },
-        { icon: DollarSign, label: "Expenses (Ghar Kharch)", href: "/expenses", color: "text-orange-600", roles: ['admin', 'manager'] },
-        { icon: Landmark, label: "Cash & Banking", href: "/banking", color: "text-cyan-600", roles: ['admin', 'manager'] },
-        { icon: Gift, label: "Coupons & Offers", href: "/coupons", color: "text-pink-600", roles: ['admin', 'manager'] },
-        { icon: Users, label: "Membership / Loyalty", href: "/membership", color: "text-teal-600", roles: ['admin', 'manager', 'cashier'] },
-        { icon: UserCheck, label: "Staff & Attendance", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
-        { icon: Receipt, label: "Salary & Pagar", href: "/salary", color: "text-cyan-600", roles: ['admin'] },
-        { icon: CheckCircle, label: "Approvals", href: "/approvals", color: "text-emerald-500", roles: ['admin', 'manager'] },
-        { icon: BarChart3, label: "Category Analytics", href: "/inventory/analytics", color: "text-blue-600", roles: ['admin', 'manager'] },
-        { icon: ArrowRightLeft, label: "Stock Transfer", href: "/inventory/transfer", color: "text-indigo-500", roles: ['admin', 'manager'] },
-        { icon: Package, label: "E-Way Bill", href: "/reports/eway-bill", color: "text-indigo-500", roles: ['admin'] },
-        { icon: FileText, label: "GST Tax Report", href: "/reports/gst", color: "text-blue-500", roles: ['admin'] },
-        { icon: DollarSign, label: "Profit & Loss", href: "/reports/profitloss", color: "text-emerald-500", roles: ['admin'] },
-        { icon: BookOpen, label: "Day Book (Cashflow)", href: "/reports/daybook", color: "text-rose-500", roles: ['admin'] },
-        { icon: Bot, label: "AI मुनीम जी (Advisor)", href: "/ai-advisor", color: "text-purple-500", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Building2, label: "Company Switcher", href: "/company", color: "text-indigo-600", roles: ['admin'] },
-        { icon: Clock, label: "Laterpad", href: "/laterpad", color: "text-lime-600", roles: ['admin', 'manager', 'cashier'] }
-      ];
-    }
+  // Dynamic Industry-Tailored Menu Generator (Strict Industry Business Logic)
+  const getMenuForBusiness = (company) => {
+    const rawInd = typeof company?.industryType === 'string' 
+      ? company.industryType 
+      : (typeof company?.businessType === 'string' 
+          ? company.businessType 
+          : (company?.industryType?.name || company?.businessType?.name || company?.industryType?.value || company?.businessType?.value || String(company?.industryType || company?.businessType || '')));
+    const indType = String(rawInd || '').toLowerCase();
 
     // 2. RESTAURANT & CAFE
     if (indType.includes('restaurant') || indType.includes('cafe') || indType.includes('food') || indType.includes('dining')) {
@@ -304,7 +323,7 @@ export default function DashboardLayout() {
     ];
   };
 
-  const menuItems = getMenuForBusiness(selectedCompany, showFullMenu);
+  const menuItems = getMenuForBusiness(selectedCompany);
   const userRole = user?.role || 'admin'; // Default to admin if no role found
 
   return (
@@ -340,24 +359,15 @@ export default function DashboardLayout() {
 
         {/* Menu Items */}
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          {/* Vertical Badge & Toggle */}
+          {/* Vertical Badge */}
           {sidebarOpen && (
-            <div className="mb-3 px-2 py-2 bg-slate-800/80 rounded-lg border border-slate-700/60 flex items-center justify-between">
-              <div className="truncate pr-1">
-                <p className="text-[10px] uppercase font-bold tracking-wider text-blue-400">
-                  {showFullMenu ? "🌐 Full Suite (30+ Features)" : `🎯 ${(selectedCompany?.industryType || "Business").toUpperCase()} VIEW`}
-                </p>
-                <p className="text-xs text-gray-300 font-medium truncate">
-                  {selectedCompany?.name || "Active Business"}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowFullMenu(!showFullMenu)}
-                className="text-[10px] px-2 py-1 bg-slate-700 hover:bg-blue-600 text-white rounded transition shrink-0 font-medium"
-                title={showFullMenu ? "Switch to industry-specific view" : "View all available features"}
-              >
-                {showFullMenu ? "Focused View" : "All (30+)"}
-              </button>
+            <div className="mb-3 px-3 py-2 bg-slate-800/80 rounded-xl border border-slate-700/60">
+              <p className="text-[10px] uppercase font-black tracking-wider text-indigo-400">
+                🎯 {String(typeof selectedCompany?.industryType === "string" ? selectedCompany.industryType : (typeof selectedCompany?.businessType === "string" ? selectedCompany.businessType : (selectedCompany?.industryType?.name || selectedCompany?.businessType?.name || selectedCompany?.industryType || selectedCompany?.businessType || "Business"))).toUpperCase()} SUITE
+              </p>
+              <p className="text-xs text-gray-200 font-bold truncate mt-0.5">
+                {selectedCompany?.name || "My Business"}
+              </p>
             </div>
           )}
           {menuItems.filter(item => !item.roles || item.roles.includes(userRole)).map((item) => (
@@ -379,7 +389,13 @@ export default function DashboardLayout() {
               <item.icon className={`w-5 h-5 ${item.color} flex-shrink-0`} />
               {sidebarOpen && (
                 <span className="text-sm font-medium group-hover:translate-x-1 transition-transform">
-                  {item.label}
+                  {isEnglish
+                    ? item.label
+                        .replace("🏰 बैंक्वेट हॉल व इवेंट्स (Hub)", "🏰 Banquet & Events Hub")
+                        .replace("🏰 बैंक्वेट हॉल व इवेंट्स", "🏰 Banquet & Events")
+                        .replace("🤖 AI मुनीम जी Advisor", "🤖 AI Munim Ji Advisor")
+                        .replace("AI मुनीम जी", "AI Munim Ji")
+                    : item.label}
                 </span>
               )}
             </button>
@@ -424,6 +440,31 @@ export default function DashboardLayout() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden md:ml-0" style={{ marginLeft: sidebarOpen ? 0 : 0 }}>
+        {/* Sandbox Demo Sticky Alert */}
+        {(selectedCompany?.isDemo || localStorage.getItem("isDemoActive") === "true") && (
+          <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-slate-900 px-4 py-2 font-bold text-xs flex flex-wrap items-center justify-between gap-2 shadow-md z-40 sticky top-0">
+            <div className="flex items-center gap-2">
+              <span className="bg-slate-900 text-amber-300 text-[10px] px-2 py-0.5 rounded font-black tracking-wide uppercase">
+                ⚡ सैंडबॉक्स टेस्ट मोड (Sandbox Demo)
+              </span>
+              <span>
+                आप अभी <b>{selectedCompany?.name || "डेमो मॉड्यूल"}</b> टेस्ट कर रहे हैं। आपका असली बिज़नेस डेटा 100% सुरक्षित और अलग है।
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (exitDemoModule) exitDemoModule();
+                  navigate("/dashboard");
+                }}
+                className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white text-xs font-black rounded-lg transition shadow flex items-center gap-1 cursor-pointer"
+              >
+                <span>⬅️ वापस अपने असली बिज़नेस पर जाएं</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Top Header */}
         <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-30">
           <div className="px-6 py-4 flex items-center justify-between">
@@ -436,11 +477,19 @@ export default function DashboardLayout() {
                 {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
               </button>
 
+              <button
+                onClick={() => navigate('/m')}
+                className="lg:hidden px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold rounded-xl flex items-center gap-1 shadow-xs transition"
+                title="Go back to Mobile PWA"
+              >
+                📱 मोबाइल ऐप
+              </button>
+
               <div className="hidden md:flex items-center gap-2 bg-gray-100 rounded-lg px-4 py-2 flex-1 max-w-md">
                 <Search className="text-gray-400" size={20} />
                 <input
                   type="text"
-                  placeholder="Search invoices, products..."
+                  placeholder={t("search_placeholder", "Search invoices, products...")}
                   className="bg-transparent outline-none text-gray-700 placeholder-gray-500 w-full text-sm"
                 />
               </div>
@@ -448,45 +497,48 @@ export default function DashboardLayout() {
 
             {/* Right Side - Header Tools, Company Selector, Notifications & Profile */}
             <div className="flex items-center gap-2 sm:gap-3">
+              {/* Language Switcher (EN / HI) */}
+              <LanguageSwitchButton />
+
               {/* 1. Fast Calculator Button */}
               <button
                 onClick={() => setCalcModalOpen(true)}
-                className="p-2 bg-gray-100 hover:bg-blue-50 text-gray-700 hover:text-blue-600 rounded-xl transition border border-gray-200 flex items-center gap-1.5 shadow-sm"
+                className="p-2 bg-gray-100 hover:bg-blue-50 text-gray-700 hover:text-blue-600 rounded-xl transition border border-gray-200 flex items-center gap-1.5 shadow-sm cursor-pointer"
                 title="Open Fast Calculator"
               >
                 <Calculator size={18} />
-                <span className="hidden xl:inline text-xs font-bold">Calculator</span>
+                <span className="hidden xl:inline text-xs font-bold">{t("calculator", "Calculator")}</span>
               </button>
 
               {/* 2. Refer & Earn Cash Tokens (Gift Icon) */}
               <button
                 onClick={() => setReferralModalOpen(true)}
-                className="px-3 py-2 bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 text-indigo-700 rounded-xl transition border border-indigo-200 flex items-center gap-1.5 shadow-sm"
+                className="px-3 py-2 bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 text-indigo-700 rounded-xl transition border border-indigo-200 flex items-center gap-1.5 shadow-sm cursor-pointer"
                 title="Refer & Earn Cash Tokens"
               >
                 <Gift size={18} className="text-indigo-600 animate-bounce" />
-                <span className="hidden md:inline text-xs font-extrabold text-indigo-900">Refer & Earn</span>
+                <span className="hidden md:inline text-xs font-extrabold text-indigo-900">{t("refer_earn", "Refer & Earn")}</span>
                 <span className="text-[10px] font-black bg-indigo-600 text-white px-1.5 py-0.5 rounded-full">₹500</span>
               </button>
 
               {/* 3. Multi-Platform Ecosystem Showcase (Phone & Screen Icon) */}
               <button
                 onClick={() => setEcosystemModalOpen(true)}
-                className="px-3 py-2 bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 text-emerald-800 rounded-xl transition border border-emerald-200 flex items-center gap-1.5 shadow-sm"
+                className="px-3 py-2 bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 text-emerald-800 rounded-xl transition border border-emerald-200 flex items-center gap-1.5 shadow-sm cursor-pointer"
                 title="Mobile, Desktop & Web Features"
               >
                 <Smartphone size={17} className="text-emerald-600" />
-                <span className="hidden lg:inline text-xs font-extrabold text-emerald-900">All Apps</span>
+                <span className="hidden lg:inline text-xs font-extrabold text-emerald-900">{t("all_apps", "All Apps")}</span>
               </button>
 
               {/* 4. AI Munim Ji (Copilot Button) */}
               <button
                 onClick={() => navigate('/ai-advisor')}
-                className="px-3 py-2 bg-gradient-to-r from-purple-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 text-purple-800 rounded-xl transition border border-purple-200 flex items-center gap-1.5 shadow-sm"
+                className="px-3 py-2 bg-gradient-to-r from-purple-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 text-purple-800 rounded-xl transition border border-purple-200 flex items-center gap-1.5 shadow-sm cursor-pointer"
                 title="Ask AI Munim Ji (Smart Business Advisor)"
               >
                 <Bot size={17} className="text-purple-600" />
-                <span className="hidden md:inline text-xs font-black text-purple-900">AI मुनीम जी</span>
+                <span className="hidden md:inline text-xs font-black text-purple-900">{t("ai_advisor", "AI मुनीम जी")}</span>
               </button>
 
               {/* Cloud Sync Toggle */}
@@ -510,22 +562,50 @@ export default function DashboardLayout() {
                       <div className="p-4 border-b border-gray-200">
                         <h3 className="font-semibold text-gray-900">Select Company</h3>
                       </div>
-                      <div className="space-y-1 p-2 max-h-64 overflow-y-auto">
-                        {companies.map((company) => (
-                          <button
-                            key={company._id}
-                            onClick={() => {
-                              selectCompany(company);
-                              setCompanyMenuOpen(false);
-                            }}
-                            className={`w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition ${
-                              selectedCompany && selectedCompany._id === company._id ? "bg-blue-50 text-blue-700" : "text-gray-700"
-                            }`}
-                          >
-                            <div className="font-medium">{company.name}</div>
-                            <div className="text-xs text-gray-500 capitalize">{Array.isArray(company.businessType) ? company.businessType.join(', ') : company.businessType}</div>
-                          </button>
-                        ))}
+                      <div className="space-y-1 p-2 max-h-72 overflow-y-auto">
+                        <div className="px-2 py-1 text-[11px] font-black uppercase text-slate-500 tracking-wider">
+                          🏢 आपकी वास्तविक दुकानें (Real Business)
+                        </div>
+                        {companies.filter(c => !c.isDemo).map((company) => {
+                          const isSelected = selectedCompany && (selectedCompany._id === company._id || selectedCompany.id === company.id) && !selectedCompany.isDemo;
+                          return (
+                            <button
+                              key={company._id || company.id}
+                              onClick={() => {
+                                if (exitDemoModule) exitDemoModule();
+                                selectCompany(company);
+                                setCompanyMenuOpen(false);
+                              }}
+                              className={`w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition ${
+                                isSelected ? "bg-blue-50 text-blue-700 font-bold" : "text-gray-700"
+                              }`}
+                            >
+                              <div className="font-medium text-xs sm:text-sm">{company.name}</div>
+                              <div className="text-[10px] text-gray-500 capitalize">{Array.isArray(company.businessType) ? company.businessType.join(', ') : (company.businessType || 'business')}</div>
+                            </button>
+                          );
+                        })}
+
+                        <div className="px-2 pt-3 pb-1 text-[11px] font-black uppercase text-amber-600 tracking-wider border-t border-slate-100 mt-2">
+                          🧪 परीक्षण / डेमो मॉड्यूल्स (सुरक्षित सैंडबॉक्स)
+                        </div>
+                        {(allDemoCompanies || []).map((demoCo) => {
+                          const isSelected = selectedCompany?._id === demoCo._id;
+                          return (
+                            <button
+                              key={demoCo._id}
+                              onClick={() => {
+                                if (enterDemoModule) enterDemoModule(demoCo.industryType);
+                                setCompanyMenuOpen(false);
+                              }}
+                              className={`w-full text-left px-3 py-1.5 rounded-lg hover:bg-amber-50 transition ${
+                                isSelected ? "bg-amber-100 text-amber-900 font-bold" : "text-slate-600"
+                              }`}
+                            >
+                              <div className="font-semibold text-xs">{demoCo.name}</div>
+                            </button>
+                          );
+                        })}
                       </div>
                       <div className="p-2 border-t border-gray-200">
                         <button
@@ -660,7 +740,9 @@ export default function DashboardLayout() {
         {/* Page Content */}
         <main className="flex-1 overflow-auto">
           <div className="p-6 lg:p-8">
-            <Outlet />
+            <ContentErrorBoundary>
+              <Outlet />
+            </ContentErrorBoundary>
           </div>
           <Footer />
         </main>

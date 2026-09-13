@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
 import { useCompany } from "../../contexts/CompanyContext";
+import { useLanguage } from "../../contexts/LanguageContext";
 
 export default function BillDetailPage({ bill: propBill, onBack }) {
   const { id } = useParams();
@@ -12,6 +13,7 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
   const [error, setError] = useState(null);
 
   const { selectedCompany } = useCompany();
+  const { invoicePrintLanguage, toggleInvoicePrintLanguage, tInvoice } = useLanguage();
   const gstType = selectedCompany?.gstType || "regular";
   const isComposition = String(gstType).toLowerCase() === "composition";
 
@@ -83,8 +85,12 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
       
       <div className="flex justify-between items-start mb-6 border-b pb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Invoice {bill.billNumber || bill.billNo}</h1>
-          <p className="text-gray-500">Created on {new Date(bill.date || bill.createdAt).toLocaleDateString()}</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {invoicePrintLanguage === "hi" ? "टैक्स इनवॉइस / बिल" : "Tax Invoice"} #{bill.billNumber || bill.billNo}
+          </h1>
+          <p className="text-gray-500">
+            {invoicePrintLanguage === "hi" ? "तारीख:" : "Created on"} {new Date(bill.date || bill.createdAt).toLocaleDateString(invoicePrintLanguage === "hi" ? "hi-IN" : "en-IN")}
+          </p>
         </div>
         <div className={`px-4 py-1 rounded-full text-sm font-semibold capitalize ${
           bill.status === 'paid' ? 'bg-green-100 text-green-800' : 
@@ -96,15 +102,19 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
 
       <div className="grid grid-cols-2 gap-8 mb-8">
         <div>
-          <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">Bill To</h3>
+          <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">
+            {invoicePrintLanguage === "hi" ? "बिल सेवा में (Bill To)" : "Bill To"}
+          </h3>
           <p className="font-medium text-lg">{bill.customerName}</p>
           {bill.customerMobile && <p className="text-gray-600">{bill.customerMobile}</p>}
           {bill.customerAddress && <p className="text-gray-600">{bill.customerAddress}</p>}
         </div>
         <div className="text-right">
-          <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">Total Amount</h3>
-          <p className="text-3xl font-bold text-blue-600">₹{(bill.total || bill.totalAmount || 0).toLocaleString()}</p>
-          {bill.dueDate && <p className="text-sm text-red-500 mt-1">Due: {new Date(bill.dueDate).toLocaleDateString()}</p>}
+          <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">
+            {invoicePrintLanguage === "hi" ? "कुल देय राशि (Total Amount)" : "Total Amount"}
+          </h3>
+          <p className="text-3xl font-bold text-blue-600">₹{(bill.total || bill.totalAmount || 0).toLocaleString("en-IN")}</p>
+          {bill.dueDate && <p className="text-sm text-red-500 mt-1">{invoicePrintLanguage === "hi" ? "अंतिम तिथि:" : "Due:"} {new Date(bill.dueDate).toLocaleDateString(invoicePrintLanguage === "hi" ? "hi-IN" : "en-IN")}</p>}
         </div>
       </div>
 
@@ -112,10 +122,10 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
         <table className="w-full text-left">
           <thead className="bg-gray-50 border-b">
             <tr>
-              <th className="py-3 px-4 font-semibold text-gray-600">Item</th>
-              <th className="py-3 px-4 font-semibold text-gray-600 text-right">Qty</th>
-              <th className="py-3 px-4 font-semibold text-gray-600 text-right">Rate</th>
-              <th className="py-3 px-4 font-semibold text-gray-600 text-right">Total</th>
+              <th className="py-3 px-4 font-semibold text-gray-600">{invoicePrintLanguage === "hi" ? "आइटम / विवरण" : "Item"}</th>
+              <th className="py-3 px-4 font-semibold text-gray-600 text-right">{invoicePrintLanguage === "hi" ? "मात्रा (Qty)" : "Qty"}</th>
+              <th className="py-3 px-4 font-semibold text-gray-600 text-right">{invoicePrintLanguage === "hi" ? "दर (Rate)" : "Rate"}</th>
+              <th className="py-3 px-4 font-semibold text-gray-600 text-right">{invoicePrintLanguage === "hi" ? "योग (Total)" : "Total"}</th>
             </tr>
           </thead>
           <tbody>
@@ -165,7 +175,15 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
         </div>
       )}
 
-      <div className="flex justify-end gap-3 mt-6 print:hidden">
+      <div className="flex flex-wrap justify-end gap-3 mt-6 print:hidden">
+        <button
+          type="button"
+          onClick={toggleInvoicePrintLanguage}
+          className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-lg transition shadow-xs font-semibold border border-gray-300 text-xs flex items-center gap-1.5 cursor-pointer"
+          title="Toggle Bill Language / बिल प्रिंट भाषा बदलें"
+        >
+          <span>{invoicePrintLanguage === "en" ? "🇬🇧 English Bill" : "🇮🇳 हिन्दी बिल"}</span>
+        </button>
         <button
           onClick={handleWhatsAppShare}
           className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition shadow-sm font-medium"
@@ -176,7 +194,7 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
           onClick={handlePrint}
           className="bg-gray-800 text-white px-6 py-2 rounded-lg hover:bg-gray-900 transition shadow-sm font-medium"
         >
-          Print Document
+          {invoicePrintLanguage === "hi" ? "प्रिंट करें (Print)" : "Print Document"}
         </button>
         <button
           onClick={handleDownload}

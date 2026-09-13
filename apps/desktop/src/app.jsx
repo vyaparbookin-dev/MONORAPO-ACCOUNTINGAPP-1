@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Outlet } from "react-router-dom";
 import { CompanyProvider } from "./contexts/CompanyContext";
+import { LanguageProvider } from "./contexts/LanguageContext";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import { SettingsProvider } from "./contexts/SettingsContext"; // Import SettingsProvider
 import { SecurityTracker } from "./components/SecurityTracker";
@@ -250,7 +251,8 @@ const App = () => {
     <GoogleOAuthProvider clientId={googleClientId || "dummy-client-id-for-dev"}>
       <ErrorBoundary>
         <SettingsProvider>
-          <CompanyProvider>
+          <LanguageProvider>
+            <CompanyProvider>
             <Router>
               <Suspense fallback={<Loader />}>
                 <Routes>
@@ -421,7 +423,8 @@ const App = () => {
                 </Routes>
               </Suspense>
             </Router>
-          </CompanyProvider>
+            </CompanyProvider>
+          </LanguageProvider>
         </SettingsProvider>
       </ErrorBoundary>
     </GoogleOAuthProvider>
