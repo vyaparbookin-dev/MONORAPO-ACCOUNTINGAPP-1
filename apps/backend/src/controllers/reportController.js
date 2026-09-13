@@ -5,6 +5,7 @@ import Expance from "../model/expenses.js";
 import Purchase from "../model/purchase.js";
 import Salary from "../model/salary.js";
 import User from "../model/user.js"; // User model ko import karein
+import Staff from "../model/staff.js";
 import mongoose from "mongoose";
 
 export const generateReport = async (req, res) => {
@@ -315,27 +316,56 @@ export const getStaffPerformanceReport = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    // 1. Get all staff members (users) for the company
-    const staffMembers = await User.find({ companyId, role: { $ne: 'owner' } }).select('name email role salesTarget').lean();
+    const coFilter = mongoose.Types.ObjectId.isValid(companyId)
+      ? { $in: [companyId, new mongoose.Types.ObjectId(companyId)] }
+      : companyId;
 
-    // 2. Get all bills for the company to calculate performance
-    const bills = await Bill.find({ companyId }).select('salesmanId finalAmount').lean();
+    // 1. Get all staff members from User collection AND Staff collection
+    const [userStaff, directStaff] = await Promise.all([
+      User.find({ companyId: coFilter, role: { $ne: 'owner' } }).select('name email role salesTarget').lean(),
+      Staff.find({ companyId: coFilter, isActive: { $ne: false } }).select('name role salary position salesTarget').lean()
+    ]);
+
+    const staffMap = new Map();
+    (userStaff || []).forEach(s => {
+      const key = String(s.name || '').toLowerCase().trim();
+      if (key) staffMap.set(key, s);
+    });
+    (directStaff || []).forEach(s => {
+      const key = String(s.name || '').toLowerCase().trim();
+      if (key && !staffMap.has(key)) staffMap.set(key, s);
+    });
+
+    const staffMembers = Array.from(staffMap.values());
+
+    // 2. Get all bills for the company
+    const bills = await Bill.find({ companyId: coFilter, isDeleted: { $ne: true } }).select('salesmanId waiter finalAmount items total').lean();
 
     // 3. Process data to calculate performance for each staff member
     const performanceData = staffMembers.map(staff => {
-      const staffIdString = staff._id.toString();
-      
-      // Filter bills created by this staff member
-      const staffBills = bills.filter(bill => bill.salesmanId?.toString() === staffIdString);
-      
-      // Calculate total revenue from their bills
-      const totalRevenue = staffBills.reduce((sum, bill) => sum + (bill.finalAmount || 0), 0);
+      const staffIdString = String(staff._id);
+      const staffName = String(staff.name || '').toLowerCase().trim();
+      const staffTokens = staffName.split(/\s+/).filter(Boolean);
+
+      const staffBills = bills.filter(bill => {
+        if (bill.salesmanId && String(bill.salesmanId) === staffIdString) return true;
+        if (bill.waiter) {
+          const w = String(bill.waiter).toLowerCase().trim();
+          if (w.includes(staffName) || staffTokens.some(tok => tok.length > 2 && w.includes(tok))) return true;
+        }
+        return false;
+      });
+
+      const totalRevenue = staffBills.reduce((sum, b) => sum + (b.finalAmount || b.total || 0), 0);
 
       return {
+        _id: staff._id,
         name: staff.name,
+        role: staff.role || staff.position || "Staff",
         revenue: totalRevenue,
         bills: staffBills.length,
-        salesTarget: staff.salesTarget || 0,
+        salesTarget: staff.salesTarget || 50000,
+        averageOrderValue: staffBills.length > 0 ? Math.round(totalRevenue / staffBills.length) : 0
       };
     });
 

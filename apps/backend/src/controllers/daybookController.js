@@ -4,6 +4,8 @@ import Purchase from "../model/purchase.js";
 import Expance from "../model/expenses.js";
 import PartyTransaction from "../model/PartyTransaction.js";
 import Salary from "../model/salary.js";
+import Party from "../model/party.js";
+import Staff from "../model/staff.js";
 
 export const getDayBook = async (req, res) => {
   try {
@@ -52,6 +54,9 @@ export const getDayBook = async (req, res) => {
     } else if (period === 'year') {
       startOfDay = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
       endOfDay = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    } else if (period === 'all') {
+      startOfDay = new Date(2020, 0, 1, 0, 0, 0, 0);
+      endOfDay = new Date(now.getFullYear() + 1, 11, 31, 23, 59, 59, 999);
     } else {
       const targetDate = date ? new Date(date) : now;
       startOfDay = new Date(new Date(targetDate).setHours(0, 0, 0, 0));
