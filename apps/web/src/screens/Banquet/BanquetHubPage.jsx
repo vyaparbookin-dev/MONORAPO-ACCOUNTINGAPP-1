@@ -37,12 +37,16 @@ import {
   Flame,
   ShoppingBag,
   UserCheck,
-  Ban
+  Ban,
+  Bed,
+  ClipboardList,
+  CheckSquare,
+  Package
 } from "lucide-react";
 import BanquetBookingWizardModal from "./BanquetBookingWizardModal";
 
 export default function BanquetHubPage() {
-  // Navigation Tabs: 'bookings' | 'crm' | 'plate_audit' | 'event_pl'
+  // Navigation Tabs: 'bookings' | 'crm' | 'plate_audit' | 'event_pl' | 'hotel_rooms' | 'spoc_matrix'
   const [activeTab, setActiveTab] = useState("bookings");
 
   const [halls, setHalls] = useState([]);
@@ -84,6 +88,58 @@ export default function BanquetHubPage() {
   const [groceryExpense, setGroceryExpense] = useState({ itemName: "", qty: 1, unit: "kg", cost: 0, vendorName: "", billNo: "" });
   const [gasExpense, setGasExpense] = useState({ cylinderCount: 1, ratePerCylinder: 1850, supplierName: "कमर्शियल गैस एजेंसी" });
   const [staffExpense, setStaffExpense] = useState({ role: "कैटरिंग वेटर", vendorOrAgency: "स्थानीय वेटर यूनियन", staffCount: 4, wagePerPerson: 600, isPaid: true });
+
+  // Leftover Material Reconciliation Modal State
+  const [selectedBookingForLeftover, setSelectedBookingForLeftover] = useState(null);
+  const [showLeftoverModal, setShowLeftoverModal] = useState(false);
+  const [leftoverReconciledBy, setLeftoverReconciledBy] = useState("स्टोर कीपर / शेफ");
+  const [leftoverNotes, setLeftoverNotes] = useState("इवेंट उपरांत बचे माल का सत्यापन व रेस्टोरेंट किचन / वेंडर रिटर्न क्रेडिट");
+  const [leftoverItemsList, setLeftoverItemsList] = useState([]);
+  const [newLeftoverRow, setNewLeftoverRow] = useState({
+    itemName: "पनीर (अतिरिक्त ब्लॉक)",
+    category: "DAIRY",
+    quantity: 6,
+    unit: "kg",
+    unitRate: 320,
+    destination: "RESTAURANT_KITCHEN",
+    vendorName: "महालक्ष्मी डेयरी",
+    receivedBy: "हेड शेफ"
+  });
+
+  // Hotel Rooms & Resort PMS State
+  const [selectedBookingForRooms, setSelectedBookingForRooms] = useState(null);
+  const [showAddRoomModal, setShowAddRoomModal] = useState(false);
+  const [selectedRoomForSlip, setSelectedRoomForSlip] = useState(null);
+  const [roomFormData, setRoomFormData] = useState({
+    roomNumber: "101",
+    roomType: "DELUXE_AC",
+    guestName: "",
+    guestPhone: "",
+    occupantsCount: 2,
+    checkInDate: new Date().toISOString().split("T")[0],
+    checkOutDate: new Date(Date.now() + 86400000).toISOString().split("T")[0],
+    roomTariffPerNight: 2500,
+    extraBedsCount: 1,
+    extraBedCharge: 500,
+    roomServiceEnabled: true,
+    roomServiceBillingMode: "HOST_MASTER_FOLIO",
+    welcomeKitProvided: true,
+    notes: "दूल्हे/दुल्हन पक्ष के खास रिश्तेदार"
+  });
+
+  // Departmental Managers & SPOC Matrix State
+  const [selectedBookingForManagers, setSelectedBookingForManagers] = useState(null);
+  const [showAddManagerModal, setShowAddManagerModal] = useState(false);
+  const [showSpocPrintModal, setShowSpocPrintModal] = useState(false);
+  const [managerFormData, setManagerFormData] = useState({
+    department: "MAIN_KITCHEN_CHEF",
+    roleTitle: "प्रधान रसोईया (हेड शेफ)",
+    name: "मास्टर शेफ रमेश कुमार",
+    phone: "98261-12345",
+    shiftTiming: "शाम 4:00 - रात 1:00",
+    responsibilityNotes: "भोजन स्वाद, गरम बफे रीफिलिंग, स्टार्टर्स टाइमिंग",
+    isCustomerFacing: true
+  });
 
   // Inquiry / CRM Modal
   const [showNewInquiryModal, setShowNewInquiryModal] = useState(false);
@@ -239,6 +295,168 @@ export default function BanquetHubPage() {
     }
   };
 
+  // 14. LEFTOVER MATERIAL HANDLERS
+  const handleOpenLeftoverModal = (booking) => {
+    setSelectedBookingForLeftover(booking);
+    if (booking.leftoverReconciliation?.items && booking.leftoverReconciliation.items.length > 0) {
+      setLeftoverItemsList(booking.leftoverReconciliation.items);
+      setLeftoverReconciledBy(booking.leftoverReconciliation.reconciledBy || "स्टोर कीपर / शेफ");
+      setLeftoverNotes(booking.leftoverReconciliation.notes || "");
+    } else {
+      setLeftoverItemsList([
+        {
+          itemName: "पनीर (अतिरिक्त ब्लॉक)",
+          category: "DAIRY",
+          quantity: 6,
+          unit: "kg",
+          unitRate: 320,
+          totalCreditValue: 1920,
+          destination: "RESTAURANT_KITCHEN",
+          vendorName: "महालक्ष्मी डेयरी",
+          receivedBy: "हेड शेफ"
+        },
+        {
+          itemName: "कमर्शियल रसोई गैस सिलेंडर (अप्रयुक्त)",
+          category: "LPG_CYLINDER",
+          quantity: 1,
+          unit: "सिलेंडर",
+          unitRate: 1850,
+          totalCreditValue: 1850,
+          destination: "RESTAURANT_KITCHEN",
+          vendorName: "कमर्शियल गैस एजेंसी",
+          receivedBy: "किचन सुपरवाइजर"
+        }
+      ]);
+    }
+    setShowLeftoverModal(true);
+  };
+
+  const handleAddLeftoverRow = () => {
+    if (!newLeftoverRow.itemName) return;
+    const lineVal = Math.round((Number(newLeftoverRow.quantity) || 0) * (Number(newLeftoverRow.unitRate) || 0));
+    setLeftoverItemsList([
+      ...leftoverItemsList,
+      {
+        ...newLeftoverRow,
+        quantity: Number(newLeftoverRow.quantity) || 0,
+        unitRate: Number(newLeftoverRow.unitRate) || 0,
+        totalCreditValue: lineVal
+      }
+    ]);
+    setNewLeftoverRow({
+      itemName: "",
+      category: "GROCERY",
+      quantity: 1,
+      unit: "kg",
+      unitRate: 0,
+      destination: "RESTAURANT_KITCHEN",
+      vendorName: "",
+      receivedBy: "हेड शेफ"
+    });
+  };
+
+  const handleRemoveLeftoverRow = (index) => {
+    const list = [...leftoverItemsList];
+    list.splice(index, 1);
+    setLeftoverItemsList(list);
+  };
+
+  const handleSaveLeftoverReconciliation = async () => {
+    if (!selectedBookingForLeftover || leftoverItemsList.length === 0) {
+      alert("कृपया कम से कम एक बची सामग्री दर्ज करें।");
+      return;
+    }
+    try {
+      const res = await api.post(`/api/banquet/bookings/${selectedBookingForLeftover._id}/leftover-reconciliation`, {
+        reconciledBy: leftoverReconciledBy,
+        items: leftoverItemsList,
+        notes: leftoverNotes
+      });
+      alert(res.data?.message || "बचे माल का क्रेडिट सफलतापूर्वक लेजर में दर्ज हो गया!");
+      setShowLeftoverModal(false);
+      if (selectedBookingForExpense && selectedBookingForExpense._id === selectedBookingForLeftover._id) {
+        setSelectedBookingForExpense(res.data?.booking || selectedBookingForLeftover);
+      }
+      fetchBanquetData();
+    } catch (err) {
+      alert(err.response?.data?.message || "समायोजन दर्ज करने में त्रुटि हुई।");
+    }
+  };
+
+  // 15. HOTEL ROOMS PMS HANDLERS
+  const handleSaveRoomBlock = async () => {
+    if (!selectedBookingForRooms || !roomFormData.roomNumber) {
+      alert("कृपया कमरा संख्या दर्ज करें।");
+      return;
+    }
+    try {
+      const currentRooms = selectedBookingForRooms.hotelRoomBlocks || [];
+      const updatedRooms = [...currentRooms, roomFormData];
+      const res = await api.post(`/api/banquet/bookings/${selectedBookingForRooms._id}/room-blocks`, {
+        hotelRoomBlocks: updatedRooms
+      });
+      alert(res.data?.message || "होटल रूम सफलतापूर्वक आवंटित किया गया!");
+      setShowAddRoomModal(false);
+      setSelectedBookingForRooms(res.data?.booking || { ...selectedBookingForRooms, hotelRoomBlocks: updatedRooms });
+      fetchBanquetData();
+    } catch (err) {
+      alert(err.response?.data?.message || "कमरा आवंटित करने में त्रुटि हुई।");
+    }
+  };
+
+  const handleDeleteRoomBlock = async (index) => {
+    if (!selectedBookingForRooms) return;
+    if (!confirm("क्या आप इस कमरे का आवंटन हटाना चाहते हैं?")) return;
+    try {
+      const currentRooms = [...(selectedBookingForRooms.hotelRoomBlocks || [])];
+      currentRooms.splice(index, 1);
+      const res = await api.post(`/api/banquet/bookings/${selectedBookingForRooms._id}/room-blocks`, {
+        hotelRoomBlocks: currentRooms
+      });
+      setSelectedBookingForRooms(res.data?.booking || { ...selectedBookingForRooms, hotelRoomBlocks: currentRooms });
+      fetchBanquetData();
+    } catch (err) {
+      alert("त्रुटि हुई।");
+    }
+  };
+
+  // 16. DEPARTMENTAL MANAGERS HANDLERS
+  const handleSaveManager = async () => {
+    if (!selectedBookingForManagers || !managerFormData.name || !managerFormData.phone) {
+      alert("कृपया मैनेजर का नाम व मोबाइल नंबर दर्ज करें।");
+      return;
+    }
+    try {
+      const currentManagers = selectedBookingForManagers.departmentalManagers || [];
+      const updatedManagers = [...currentManagers, managerFormData];
+      const res = await api.post(`/api/banquet/bookings/${selectedBookingForManagers._id}/managers-matrix`, {
+        departmentalManagers: updatedManagers
+      });
+      alert(res.data?.message || "डिपार्टमेंटल मैनेजर सुरक्षित हो गया!");
+      setShowAddManagerModal(false);
+      setSelectedBookingForManagers(res.data?.booking || { ...selectedBookingForManagers, departmentalManagers: updatedManagers });
+      fetchBanquetData();
+    } catch (err) {
+      alert(err.response?.data?.message || "मैनेजर दर्ज करने में त्रुटि हुई।");
+    }
+  };
+
+  const handleDeleteManager = async (index) => {
+    if (!selectedBookingForManagers) return;
+    if (!confirm("क्या आप इस मैनेजर प्रविष्टि को हटाना चाहते हैं?")) return;
+    try {
+      const currentManagers = [...(selectedBookingForManagers.departmentalManagers || [])];
+      currentManagers.splice(index, 1);
+      const res = await api.post(`/api/banquet/bookings/${selectedBookingForManagers._id}/managers-matrix`, {
+        departmentalManagers: currentManagers
+      });
+      setSelectedBookingForManagers(res.data?.booking || { ...selectedBookingForManagers, departmentalManagers: currentManagers });
+      fetchBanquetData();
+    } catch (err) {
+      alert("त्रुटि हुई।");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
       {/* 1. TOP HEADER & KPI CARDS */}
@@ -284,7 +502,7 @@ export default function BanquetHubPage() {
             </div>
           </div>
 
-          {/* 4 Navigation Tabs */}
+          {/* 6 Navigation Tabs */}
           <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100 overflow-x-auto text-xs font-bold">
             <button
               onClick={() => setActiveTab("bookings")}
@@ -332,6 +550,40 @@ export default function BanquetHubPage() {
             >
               <DollarSign size={14} />
               <span>💰 इवेंट P&L व अलग खर्च लेजर</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab("hotel_rooms");
+                if (!selectedBookingForRooms && bookings.length > 0) {
+                  setSelectedBookingForRooms(bookings[0]);
+                }
+              }}
+              className={`px-4 py-2 rounded-xl flex items-center gap-1.5 transition shrink-0 ${
+                activeTab === "hotel_rooms"
+                  ? "bg-purple-600 text-white shadow-xs"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              <Bed size={14} />
+              <span>🏨 होटल रूम्स व रिसॉर्ट PMS</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab("spoc_matrix");
+                if (!selectedBookingForManagers && bookings.length > 0) {
+                  setSelectedBookingForManagers(bookings[0]);
+                }
+              }}
+              className={`px-4 py-2 rounded-xl flex items-center gap-1.5 transition shrink-0 ${
+                activeTab === "spoc_matrix"
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              <UserCheck size={14} />
+              <span>👔 डिपार्टमेंटल SPOC व मैनेजर्स</span>
             </button>
           </div>
         </div>
@@ -869,25 +1121,34 @@ export default function BanquetHubPage() {
         {/* TAB 4: EVENT P&L & DIRECT EXPENSES */}
         {activeTab === "event_pl" && (
           <div className="space-y-4 animate-in fade-in">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex justify-between items-center">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <div>
                 <h3 className="font-black text-slate-900 text-sm flex items-center gap-2">
                   <DollarSign size={18} className="text-orange-600" />
-                  इवेंट-विशिष्ट खर्च लेजर व शुद्ध लाभ (Event Dedicated Expenses & P&L)
+                  इवेंट-विशिष्ट खर्च लेजर, बची सामग्री वापसी व शुद्ध लाभ (Event Dedicated P&L)
                 </h3>
                 <p className="text-xs text-slate-500">
-                  शेयरड किचन होते हुए भी इस इवेंट की अलग खरीदी गई ग्रॉसरी, कमर्शियल गैस सिलेंडर व बाहरी लेबर की सीधी एंट्री
+                  शेयरड किचन होते हुए भी अलग ग्रॉसरी, कमर्शियल गैस सिलेंडर, बाहरी लेबर और बचे हुए माल की वापसी क्रेडिट
                 </p>
               </div>
 
               {selectedBookingForExpense && (
-                <button
-                  onClick={() => setShowAddExpenseModal(true)}
-                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-black text-xs shadow-xs flex items-center gap-1.5 transition"
-                >
-                  <Plus size={15} />
-                  <span>+ इवेंट खर्च जोड़ें (Groceries/Gas/Staff)</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => handleOpenLeftoverModal(selectedBookingForExpense)}
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Package size={15} />
+                    <span>📦 बची सामग्री वापसी/क्रेडिट</span>
+                  </button>
+                  <button
+                    onClick={() => setShowAddExpenseModal(true)}
+                    className="px-3.5 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-black text-xs shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Plus size={15} />
+                    <span>+ इवेंट खर्च जोड़ें (Groceries/Gas/Staff)</span>
+                  </button>
+                </div>
               )}
             </div>
 
@@ -920,8 +1181,12 @@ export default function BanquetHubPage() {
                   const groceryCost = (b.eventGroceryExpenses || []).reduce((s, g) => s + (Number(g.cost) || 0), 0);
                   const gasCost = (b.gasCylinderUsage || []).reduce((s, g) => s + (Number(g.totalCost) || 0), 0);
                   const staffCost = (b.staffingRoster?.externalStaff || []).reduce((s, st) => s + (Number(st.totalWage) || 0), 0);
-                  const totalDirectCost = groceryCost + gasCost + staffCost;
-                  const netProfit = rev - totalDirectCost;
+                  const grossDirectCost = groceryCost + gasCost + staffCost;
+                  const leftoverCredit = b.leftoverReconciliation?.isReconciled 
+                    ? (Number(b.leftoverReconciliation.totalCreditValue) || 0) 
+                    : 0;
+                  const netDirectCost = Math.max(0, grossDirectCost - leftoverCredit);
+                  const netProfit = rev - netDirectCost;
                   const margin = rev > 0 ? Math.round((netProfit / rev) * 100) : 0;
 
                   return (
@@ -929,19 +1194,24 @@ export default function BanquetHubPage() {
                       <div>
                         <span className="text-[10px] uppercase text-indigo-300 block">कुल रेवेन्यू (Billing)</span>
                         <span className="text-xl font-black text-white font-mono">₹{rev.toLocaleString("en-IN")}</span>
+                        <span className="text-[10px] text-slate-400">हॉल + फूड पैकेज + रूम्स</span>
                       </div>
                       <div>
-                        <span className="text-[10px] uppercase text-orange-300 block">डायरेक्ट इवेंट लागत</span>
-                        <span className="text-xl font-black text-orange-400 font-mono">₹{totalDirectCost.toLocaleString("en-IN")}</span>
+                        <span className="text-[10px] uppercase text-orange-300 block">सकल इवेंट लागत (Gross)</span>
+                        <span className="text-xl font-black text-orange-400 font-mono">₹{grossDirectCost.toLocaleString("en-IN")}</span>
                         <span className="text-[10px] text-slate-400">ग्रॉसरी + गैस + लेबर</span>
                       </div>
                       <div>
-                        <span className="text-[10px] uppercase text-emerald-300 block">इवेंट ग्रॉस प्रॉफिट (Profit)</span>
-                        <span className="text-xl font-black text-emerald-400 font-mono">₹{netProfit.toLocaleString("en-IN")}</span>
+                        <span className="text-[10px] uppercase text-emerald-300 block">बचे माल की क्रेडिट वापसी</span>
+                        <span className="text-xl font-black text-emerald-400 font-mono">
+                          {leftoverCredit > 0 ? `-₹${leftoverCredit.toLocaleString("en-IN")}` : "₹0"}
+                        </span>
+                        <span className="text-[10px] text-emerald-200">किचन ट्रांसफर / वेंडर रिटर्न</span>
                       </div>
                       <div>
-                        <span className="text-[10px] uppercase text-yellow-300 block">प्रॉफिट मार्जिन %</span>
-                        <span className="text-xl font-black text-yellow-400 font-mono">{margin}%</span>
+                        <span className="text-[10px] uppercase text-yellow-300 block">वास्तविक शुद्ध लाभ (Net Profit)</span>
+                        <span className="text-xl font-black text-yellow-400 font-mono">₹{netProfit.toLocaleString("en-IN")}</span>
+                        <span className="text-[10px] text-yellow-200 font-bold">{margin}% प्रॉफिट मार्जिन</span>
                       </div>
                     </div>
                   );
@@ -958,7 +1228,7 @@ export default function BanquetHubPage() {
                     {(selectedBookingForExpense.eventGroceryExpenses || []).length === 0 ? (
                       <p className="text-slate-400 italic text-center py-4">कोई अलग ग्रॉसरी बिल दर्ज नहीं है।</p>
                     ) : (
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
                         {selectedBookingForExpense.eventGroceryExpenses.map((g, i) => (
                           <div key={i} className="p-2 bg-slate-50 rounded-xl flex justify-between items-center">
                             <div>
@@ -981,7 +1251,7 @@ export default function BanquetHubPage() {
                     {(selectedBookingForExpense.gasCylinderUsage || []).length === 0 ? (
                       <p className="text-slate-400 italic text-center py-4">कोई सिलेंडर खर्च दर्ज नहीं है।</p>
                     ) : (
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
                         {selectedBookingForExpense.gasCylinderUsage.map((c, i) => (
                           <div key={i} className="p-2 bg-slate-50 rounded-xl flex justify-between items-center">
                             <div>
@@ -1004,7 +1274,7 @@ export default function BanquetHubPage() {
                     {(selectedBookingForExpense.staffingRoster?.externalStaff || []).length === 0 ? (
                       <p className="text-slate-400 italic text-center py-4">कोई बाहरी लेबर दर्ज नहीं है।</p>
                     ) : (
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
                         {selectedBookingForExpense.staffingRoster.externalStaff.map((st, i) => (
                           <div key={i} className="p-2 bg-slate-50 rounded-xl flex justify-between items-center">
                             <div>
@@ -1018,6 +1288,476 @@ export default function BanquetHubPage() {
                     )}
                   </div>
                 </div>
+
+                {/* 4. Leftover Material Reconciliation Details Card */}
+                <div className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-2xs space-y-3">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-emerald-100 pb-2.5">
+                    <h4 className="font-bold text-slate-900 flex items-center gap-2">
+                      <Package size={17} className="text-emerald-600" />
+                      <span>📦 बचे हुए सामान की वापसी व ट्रांसफर समायोजन (Leftover Raw Material Reconciliation):</span>
+                    </h4>
+                    <button
+                      onClick={() => handleOpenLeftoverModal(selectedBookingForExpense)}
+                      className="px-3 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg font-bold text-xs flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <Plus size={13} />
+                      <span>
+                        {selectedBookingForExpense.leftoverReconciliation?.isReconciled 
+                          ? "क्रेडिट विवरण अपडेट करें" 
+                          : "नया समायोजन दर्ज करें"}
+                      </span>
+                    </button>
+                  </div>
+
+                  {selectedBookingForExpense.leftoverReconciliation?.isReconciled ? (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs">
+                        <div>
+                          <span className="font-bold text-emerald-950">सत्यापनकर्ता: </span>
+                          <span className="text-slate-700 font-semibold">{selectedBookingForExpense.leftoverReconciliation.reconciledBy || "शेफ"}</span>
+                          <span className="text-slate-400 mx-1">•</span>
+                          <span className="text-slate-500">
+                            {new Date(selectedBookingForExpense.leftoverReconciliation.reconciledAt).toLocaleDateString("hi-IN")}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-emerald-900">कुल क्रेडिट रिकवरी:</span>
+                          <span className="font-mono font-black text-emerald-700 text-sm">
+                            +₹{(selectedBookingForExpense.leftoverReconciliation.totalCreditValue || 0).toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                        {(selectedBookingForExpense.leftoverReconciliation.items || []).map((item, idx) => (
+                          <div key={idx} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center">
+                            <div>
+                              <strong className="block text-slate-800 font-bold">{item.itemName}</strong>
+                              <span className="text-[11px] text-slate-500">
+                                {item.quantity} {item.unit} @ ₹{item.unitRate}/{item.unit}
+                              </span>
+                              <span className={`block text-[10px] font-bold mt-0.5 ${item.destination === 'RESTAURANT_KITCHEN' ? 'text-indigo-600' : 'text-amber-700'}`}>
+                                {item.destination === 'RESTAURANT_KITCHEN' ? '🏪 रेस्टोरेंट मुख्य किचन ट्रांसफर' : '🚚 वेंडर वापसी (क्रेडिट नोट)'}
+                              </span>
+                            </div>
+                            <span className="font-mono font-bold text-emerald-700 text-sm">
+                              +₹{item.totalCreditValue}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {selectedBookingForExpense.leftoverReconciliation.notes && (
+                        <p className="text-[11px] text-slate-600 italic bg-slate-50 p-2 rounded-lg">
+                          नोट: "{selectedBookingForExpense.leftoverReconciliation.notes}"
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center space-y-1">
+                      <p className="text-xs text-slate-600 font-medium">
+                        इवेंट समाप्त होने के बाद अप्रयुक्त सामग्री (पनीर, तेल, चावल, अप्रयुक्त गैस सिलेंडर) की गणना करें।
+                      </p>
+                      <p className="text-[11px] text-emerald-700 font-bold">
+                        बचा माल रेस्टोरेंट किचन में लेने से या वेंडर को लौटाने से इवेंट की लागत घट जाती है और वास्तविक शुद्ध लाभ बढ़ जाता है।
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 5: HOTEL ROOMS & RESORT PMS */}
+        {activeTab === "hotel_rooms" && (
+          <div className="space-y-4 animate-in fade-in">
+            {/* Header */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div>
+                <h3 className="font-black text-slate-900 text-sm flex items-center gap-2">
+                  <Bed size={18} className="text-purple-600" />
+                  होटल रूम्स, रिसॉर्ट ब्लॉक्स व PMS आवंटन (Hotel PMS & Room Service)
+                </h3>
+                <p className="text-xs text-slate-500">
+                  शादी/इवेंट के लिए कमरे ब्लॉक करें, अतिरिक्त बिस्तर (Extra Beds), रूम सर्विस बिलिंग मोड व वेलकम किट प्रबंधित करें
+                </p>
+              </div>
+
+              {selectedBookingForRooms && (
+                <button
+                  onClick={() => setShowAddRoomModal(true)}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-black text-xs shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Plus size={15} />
+                  <span>+ नया कमरा आवंटित करें (Assign Room)</span>
+                </button>
+              )}
+            </div>
+
+            {/* Event Picker */}
+            <div className="bg-white p-3 rounded-2xl border border-slate-200 flex items-center gap-3 text-xs">
+              <span className="font-bold text-slate-700">इवेंट चुनें:</span>
+              <select
+                value={selectedBookingForRooms?._id || ""}
+                onChange={(e) => {
+                  const b = bookings.find(x => x._id === e.target.value);
+                  setSelectedBookingForRooms(b || null);
+                }}
+                className="flex-1 bg-slate-50 border border-slate-300 rounded-xl p-2 font-bold outline-none"
+              >
+                <option value="">-- इवेंट चुनें --</option>
+                {bookings.map(b => (
+                  <option key={b._id} value={b._id}>
+                    {b.eventName} • {b.customerName} ({b.eventDate}) - {(b.hotelRoomBlocks || []).length} कमरे
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedBookingForRooms && (
+              <div className="space-y-4">
+                {/* Rooms KPI bar */}
+                {(() => {
+                  const rooms = selectedBookingForRooms.hotelRoomBlocks || [];
+                  const totalRoomsCount = rooms.length;
+                  const totalExtraBeds = rooms.reduce((s, r) => s + (Number(r.extraBedsCount) || 0), 0);
+                  const totalRoomCost = rooms.reduce((s, r) => {
+                    const tariff = Number(r.roomTariffPerNight) || 0;
+                    const bedCost = (Number(r.extraBedsCount) || 0) * (Number(r.extraBedCharge) || 500);
+                    return s + tariff + bedCost;
+                  }, 0);
+
+                  return (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-gradient-to-r from-purple-900 to-indigo-950 text-white rounded-2xl shadow-md text-center">
+                      <div>
+                        <span className="text-[10px] uppercase text-purple-200 block">कुल आरक्षित कमरे</span>
+                        <span className="text-xl font-black text-white font-mono">{totalRoomsCount} कमरे</span>
+                        <span className="text-[10px] text-purple-300">ब्लॉक व चाबियां</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase text-purple-200 block">अतिरिक्त बिस्तर (Extra Beds)</span>
+                        <span className="text-xl font-black text-amber-300 font-mono">{totalExtraBeds} गद्दे</span>
+                        <span className="text-[10px] text-purple-300">हाउसकीपिंग आवंटन</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase text-purple-200 block">रूम्स व बिस्तर बिलिंग</span>
+                        <span className="text-xl font-black text-emerald-300 font-mono">₹{totalRoomCost.toLocaleString("en-IN")}</span>
+                        <span className="text-[10px] text-purple-300">इवेंट मास्टर रेवेन्यू</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase text-purple-200 block">रूम सर्विस डिफ़ॉल्ट</span>
+                        <span className="text-sm font-black text-white block mt-1">
+                          {rooms.some(r => r.roomServiceBillingMode === "HOST_MASTER_FOLIO")
+                            ? "आयोजक मास्टर बिल"
+                            : "अतिथि डायरेक्ट पे"}
+                        </span>
+                        <span className="text-[10px] text-purple-300">F&B सर्विस एक्टिव</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Rooms Grid */}
+                {(selectedBookingForRooms.hotelRoomBlocks || []).length === 0 ? (
+                  <div className="bg-white p-12 text-center rounded-2xl border border-slate-200 space-y-3">
+                    <Bed size={36} className="mx-auto text-purple-400" />
+                    <h4 className="font-bold text-slate-800">इस इवेंट के लिए अभी कोई कमरा आवंटित नहीं है।</h4>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto">
+                      यदि इस शादी या सम्मेलन में बाहर से आने वाले मेहमानों के लिए कमरे, सुइट या रिसॉर्ट विला बुक किए गए हैं, तो ऊपर '+ नया कमरा आवंटित करें' पर क्लिक करें।
+                    </p>
+                    <button
+                      onClick={() => setShowAddRoomModal(true)}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-xs"
+                    >
+                      + पहला कमरा जोड़ें
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {selectedBookingForRooms.hotelRoomBlocks.map((room, idx) => {
+                      const bedTotal = (Number(room.extraBedsCount) || 0) * (Number(room.extraBedCharge) || 500);
+                      const roomTotal = (Number(room.roomTariffPerNight) || 0) + bedTotal;
+
+                      return (
+                        <div key={idx} className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-4 flex flex-col justify-between space-y-3">
+                          <div>
+                            <div className="flex justify-between items-start">
+                              <div className="flex items-center gap-2">
+                                <span className="p-2 rounded-xl bg-purple-100 text-purple-700 font-mono font-black text-sm">
+                                  #{room.roomNumber}
+                                </span>
+                                <div>
+                                  <h4 className="font-bold text-slate-900 text-xs">{room.guestName || "अतिथि नाम दर्ज नहीं"}</h4>
+                                  <span className="text-[10px] text-slate-500">{room.guestPhone || "फोन नहीं"}</span>
+                                </div>
+                              </div>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700 border">
+                                {room.roomType?.replace("_", " ")}
+                              </span>
+                            </div>
+
+                            <div className="mt-3 p-2.5 bg-slate-50 rounded-xl space-y-1.5 text-[11px] text-slate-700 border border-slate-100">
+                              <div className="flex justify-between">
+                                <span>तारीख:</span>
+                                <span className="font-medium text-slate-900">
+                                  {room.checkInDate ? new Date(room.checkInDate).toLocaleDateString("hi-IN") : "-"} ➔ {room.checkOutDate ? new Date(room.checkOutDate).toLocaleDateString("hi-IN") : "-"}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>अतिरिक्त बिस्तर:</span>
+                                <span className="font-bold text-amber-900">
+                                  {room.extraBedsCount || 0} बिस्तर (@ ₹{room.extraBedCharge || 500} = +₹{bedTotal})
+                                </span>
+                              </div>
+                              <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-1">
+                                <span>कुल प्रभार / रात:</span>
+                                <span className="font-mono text-purple-700">₹{roomTotal.toLocaleString("en-IN")}</span>
+                              </div>
+                            </div>
+
+                            {/* Room Service & Billing Mode */}
+                            <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                              <span className={`px-2 py-0.5 rounded-lg font-bold ${room.roomServiceEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
+                                {room.roomServiceEnabled ? "✓ रूम सर्विस चालू" : "✕ रूम सर्विस बंद"}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-lg font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                                {room.roomServiceBillingMode === "HOST_MASTER_FOLIO" && "📋 आयोजक मास्टर बिलिंग"}
+                                {room.roomServiceBillingMode === "GUEST_DIRECT_SETTLE" && "💵 अतिथि डायरेक्ट पे"}
+                                {room.roomServiceBillingMode === "COMPLIMENTARY" && "🎁 कॉम्प्लिमेंट्री"}
+                              </span>
+                            </div>
+
+                            {/* Welcome Kit Badges */}
+                            <div className="mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-500 flex items-center gap-2">
+                              <span className="font-bold text-slate-700">वेलकम किट:</span>
+                              <span title="फ्रूट बास्केट">🍎 फल</span>
+                              <span title="मिनरल वाटर">💧 पानी</span>
+                              <span title="लग्जरी बाथ किट">🧼 बाथ किट</span>
+                              <span title="वेडिंग शेड्यूल">📜 शेड्यूल</span>
+                            </div>
+
+                            {room.notes && (
+                              <p className="text-[10px] text-slate-500 italic mt-1">"{room.notes}"</p>
+                            )}
+                          </div>
+
+                          <div className="flex gap-2 pt-2 border-t border-slate-100">
+                            <button
+                              onClick={() => setSelectedRoomForSlip(room)}
+                              className="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1 transition"
+                            >
+                              <Printer size={13} />
+                              <span>की-स्लिप प्रिंट</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteRoomBlock(idx)}
+                              className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition"
+                              title="कमरा आवंटन हटाएं"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 6: DEPARTMENTAL SPOC & MANAGERS DIRECTORY */}
+        {activeTab === "spoc_matrix" && (
+          <div className="space-y-4 animate-in fade-in">
+            {/* Header */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div>
+                <h3 className="font-black text-slate-900 text-sm flex items-center gap-2">
+                  <UserCheck size={18} className="text-blue-600" />
+                  डिपार्टमेंटल मैनेजर्स व आयोजक SPOC मैट्रिक्स (Department Heads Directory)
+                </h3>
+                <p className="text-xs text-slate-500">
+                  आयोजक को स्पष्ट संपर्क कार्ड प्रदान करें ताकि शेफ, फ्लोर कैप्टन, रूम मैनेजर व साउंड वाले का फोन सीधे मिले
+                </p>
+              </div>
+
+              {selectedBookingForManagers && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setShowSpocPrintModal(true)}
+                    className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-black text-xs shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Printer size={14} />
+                    <span>🖨️ 1-क्लिक आयोजक SPOC कार्ड</span>
+                  </button>
+                  <button
+                    onClick={() => setShowAddManagerModal(true)}
+                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-xs shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Plus size={14} />
+                    <span>+ नया विभागीय प्रमुख जोड़ें</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Event Picker */}
+            <div className="bg-white p-3 rounded-2xl border border-slate-200 flex items-center gap-3 text-xs">
+              <span className="font-bold text-slate-700">इवेंट चुनें:</span>
+              <select
+                value={selectedBookingForManagers?._id || ""}
+                onChange={(e) => {
+                  const b = bookings.find(x => x._id === e.target.value);
+                  setSelectedBookingForManagers(b || null);
+                }}
+                className="flex-1 bg-slate-50 border border-slate-300 rounded-xl p-2 font-bold outline-none"
+              >
+                <option value="">-- इवेंट चुनें --</option>
+                {bookings.map(b => (
+                  <option key={b._id} value={b._id}>
+                    {b.eventName} • {b.customerName} ({b.eventDate})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedBookingForManagers && (
+              <div className="space-y-4">
+                {/* Standard / Assigned Managers Grid */}
+                {(() => {
+                  const assigned = selectedBookingForManagers.departmentalManagers || [];
+                  // If none saved yet, present the full standard 5-department roster preview
+                  const listToRender = assigned.length > 0 ? assigned : [
+                    {
+                      department: "MAIN_KITCHEN_CHEF",
+                      roleTitle: "प्रधान रसोईया (हेड शेफ)",
+                      name: "शेफ रमेश कुमार",
+                      phone: "98261-12345",
+                      shiftTiming: "शाम 4:00 - रात 1:00",
+                      responsibilityNotes: "भोजन स्वाद, गरम बफे रीफिलिंग, स्टार्टर्स टाइमिंग",
+                      isCustomerFacing: true
+                    },
+                    {
+                      department: "FLOOR_CAPTAIN",
+                      roleTitle: "फ्लोर सर्विस कैप्टन",
+                      name: "विक्रम सिंह",
+                      phone: "98261-67890",
+                      shiftTiming: "शाम 5:00 - कार्यक्रम समाप्ति",
+                      responsibilityNotes: "बफे टेबल, वेटर तत्परता, वीआईपी सोफा सर्विस, पेयजल",
+                      isCustomerFacing: true
+                    },
+                    {
+                      department: "ROOMS_MANAGER",
+                      roleTitle: "होटल रूम्स व रिसेप्शन मैनेजर",
+                      name: "सुनील वर्मा",
+                      phone: "98261-55443",
+                      shiftTiming: "24x7 ऑन कॉल",
+                      responsibilityNotes: "अतिथि चेक-इन/आउट, अतिरिक्त गद्दे, रूम सर्विस डिलीवरी",
+                      isCustomerFacing: true
+                    },
+                    {
+                      department: "SOUND_AV_TECH",
+                      roleTitle: "साउंड, डीजे व स्टेज तकनीशियन",
+                      name: "रोहित डीजे",
+                      phone: "98261-99887",
+                      shiftTiming: "शाम 6:00 - रात 12:00",
+                      responsibilityNotes: "स्टेज माइक, बैकग्राउंड संगीत, जनरेटर बैकअप",
+                      isCustomerFacing: true
+                    },
+                    {
+                      department: "HOUSEKEEPING_HEAD",
+                      roleTitle: "हाउसकीपिंग व स्वच्छता प्रमुख",
+                      name: "राकेश सुपरवाइजर",
+                      phone: "98261-33221",
+                      shiftTiming: "दोपहर 2:00 - सुबह 6:00",
+                      responsibilityNotes: "हॉल, स्टेज व वॉशरूम्स की निरंतर सफाई व टिशू रीफिल",
+                      isCustomerFacing: true
+                    }
+                  ];
+
+                  return (
+                    <div className="space-y-4">
+                      {assigned.length === 0 && (
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-900">
+                          <span>★ नीचे डिफ़ॉल्ट 5-विभागीय टीम प्रदर्शित है। इसे सुरक्षित करने या संपादित करने के लिए '+ नया विभागीय प्रमुख जोड़ें' पर क्लिक करें।</span>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const res = await api.post(`/api/banquet/bookings/${selectedBookingForManagers._id}/managers-matrix`, {
+                                  departmentalManagers: listToRender
+                                });
+                                setSelectedBookingForManagers(res.data?.booking || { ...selectedBookingForManagers, departmentalManagers: listToRender });
+                                fetchBanquetData();
+                              } catch (err) {
+                                alert("डिफ़ॉल्ट सेव करने में त्रुटि हुई।");
+                              }
+                            }}
+                            className="px-3 py-1 bg-amber-600 text-white rounded-lg font-bold"
+                          >
+                            यह 5 प्रमुख सुरक्षित करें
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {listToRender.map((mgr, idx) => (
+                          <div key={idx} className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-4 flex flex-col justify-between space-y-3">
+                            <div>
+                              <div className="flex justify-between items-start">
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-blue-50 text-blue-800 border border-blue-200">
+                                  {mgr.roleTitle}
+                                </span>
+                                {mgr.isCustomerFacing && (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    ✓ आयोजक SPOC
+                                  </span>
+                                )}
+                              </div>
+
+                              <h4 className="font-black text-slate-900 text-sm mt-2">{mgr.name}</h4>
+
+                              <div className="mt-2 p-2 bg-slate-50 rounded-xl space-y-1 text-xs">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-500 font-medium">मोबाइल:</span>
+                                  <a
+                                    href={`tel:${mgr.phone}`}
+                                    className="font-mono font-bold text-blue-600 hover:underline flex items-center gap-1"
+                                  >
+                                    <Phone size={12} />
+                                    <span>{mgr.phone}</span>
+                                  </a>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-slate-500 font-medium">शिफ्ट:</span>
+                                  <span className="font-semibold text-slate-800">{mgr.shiftTiming}</span>
+                                </div>
+                              </div>
+
+                              <div className="mt-2 text-[11px] text-slate-600">
+                                <strong className="text-slate-700 block">जिम्मेदारी:</strong>
+                                <p className="italic">{mgr.responsibilityNotes}</p>
+                              </div>
+                            </div>
+
+                            {assigned.length > 0 && (
+                              <div className="flex justify-end pt-2 border-t border-slate-100">
+                                <button
+                                  onClick={() => handleDeleteManager(idx)}
+                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition"
+                                  title="मैनेजर हटाएं"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -1826,6 +2566,762 @@ export default function BanquetHubPage() {
                   </div>
                   <p className="text-[10px] text-slate-500 mt-0.5">बैंक्वेट ऑपरेशंस टीम</p>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 10. LEFTOVER MATERIAL RECONCILIATION MODAL */}
+      {showLeftoverModal && selectedBookingForLeftover && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in"
+          onClick={() => setShowLeftoverModal(false)}
+        >
+          <div 
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 bg-emerald-900 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <Package size={20} className="text-emerald-400" />
+                <div>
+                  <h3 className="font-black text-sm">
+                    📦 बचे हुए माल की वापसी व ट्रांसफर समायोजन (Leftover Reconciliation)
+                  </h3>
+                  <p className="text-[11px] text-emerald-200">
+                    {selectedBookingForLeftover.eventName} • {selectedBookingForLeftover.customerName}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowLeftoverModal(false)}
+                className="p-1.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-emerald-200"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 text-xs">
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 leading-relaxed">
+                ★ <strong>नियम:</strong> कार्यक्रम समाप्त होने पर जो कच्चा माल (उदा. 6 kg पनीर, 1 अप्रयुक्त गैस सिलेंडर, 20 kg आटा) बच गया है, उसे रेस्टोरेंट किचन में इनवर्ड करने या वेंडर को वापस करने पर उसका पूरा मूल्य (₹) इस इवेंट के प्रत्यक्ष खर्च से घट जाएगा, जिससे इस इवेंट का वास्तविक शुद्ध लाभ (Net Profit) बढ़ेगा।
+              </div>
+
+              {/* Add New Row Form */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <h5 className="font-bold text-slate-800 text-xs">+ बची सामग्री जोड़ें:</h5>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 block mb-1">सामग्री का नाम:</label>
+                    <input
+                      type="text"
+                      placeholder="उदा. पनीर, बासमती चावल"
+                      value={newLeftoverRow.itemName}
+                      onChange={(e) => setNewLeftoverRow({ ...newLeftoverRow, itemName: e.target.value })}
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl text-xs outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 block mb-1">श्रेणी (Category):</label>
+                    <select
+                      value={newLeftoverRow.category}
+                      onChange={(e) => setNewLeftoverRow({ ...newLeftoverRow, category: e.target.value })}
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl text-xs outline-none font-medium"
+                    >
+                      <option value="DAIRY">डेयरी उत्पाद (Dairy)</option>
+                      <option value="GROCERY">किराना व ग्रॉसरी (Grocery)</option>
+                      <option value="LPG_CYLINDER">कमर्शियल गैस सिलेंडर (LPG)</option>
+                      <option value="BEVERAGES">पेयजल व बेवरेजेस (Beverages)</option>
+                      <option value="OTHERS">अन्य कच्चा माल</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 block mb-1">मात्रा व यूनिट:</label>
+                    <div className="flex gap-1">
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="any"
+                        placeholder="मात्रा"
+                        value={newLeftoverRow.quantity}
+                        onChange={(e) => setNewLeftoverRow({ ...newLeftoverRow, quantity: e.target.value })}
+                        className="w-1/2 p-2 bg-white border border-slate-300 rounded-xl text-xs outline-none font-mono"
+                      />
+                      <input
+                        type="text"
+                        placeholder="यूनिट (kg/सिलेंडर)"
+                        value={newLeftoverRow.unit}
+                        onChange={(e) => setNewLeftoverRow({ ...newLeftoverRow, unit: e.target.value })}
+                        className="w-1/2 p-2 bg-white border border-slate-300 rounded-xl text-xs outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 block mb-1">दर प्रति यूनिट (₹ Rate):</label>
+                    <input
+                      type="number"
+                      placeholder="दर (₹)"
+                      value={newLeftoverRow.unitRate}
+                      onChange={(e) => setNewLeftoverRow({ ...newLeftoverRow, unitRate: e.target.value })}
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl text-xs outline-none font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 block mb-1">क्रेडिट गंतव्य (Destination):</label>
+                    <select
+                      value={newLeftoverRow.destination}
+                      onChange={(e) => setNewLeftoverRow({ ...newLeftoverRow, destination: e.target.value })}
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl text-xs outline-none font-medium"
+                    >
+                      <option value="RESTAURANT_KITCHEN">🏪 रेस्टोरेंट किचन स्टॉक ट्रांसफर</option>
+                      <option value="VENDOR_RETURN">🚚 वेंडर को वापसी (क्रेडिट नोट)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 block mb-1">वेंडर / प्राप्तकर्ता शेफ:</label>
+                    <input
+                      type="text"
+                      placeholder="उदा. महालक्ष्मी डेयरी / शेफ"
+                      value={newLeftoverRow.vendorName || newLeftoverRow.receivedBy}
+                      onChange={(e) => setNewLeftoverRow({ ...newLeftoverRow, vendorName: e.target.value, receivedBy: e.target.value })}
+                      className="w-full p-2 bg-white border border-slate-300 rounded-xl text-xs outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={handleAddLeftoverRow}
+                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-xs flex items-center gap-1 shadow-xs transition cursor-pointer"
+                  >
+                    <Plus size={14} />
+                    <span>+ सूची में जोड़ें</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Items List Table */}
+              <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 text-slate-700 uppercase font-bold text-[10px]">
+                    <tr>
+                      <th className="p-2.5">सामग्री</th>
+                      <th className="p-2.5">मात्रा</th>
+                      <th className="p-2.5">दर</th>
+                      <th className="p-2.5">क्रेडिट मूल्य</th>
+                      <th className="p-2.5">गंतव्य</th>
+                      <th className="p-2.5 text-center">हटाएं</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {leftoverItemsList.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" className="p-6 text-center text-slate-400 italic">
+                          अभी कोई बची सामग्री नहीं जोड़ी गई है।
+                        </td>
+                      </tr>
+                    ) : (
+                      leftoverItemsList.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="p-2.5 font-bold text-slate-900">{item.itemName}</td>
+                          <td className="p-2.5 text-slate-600">{item.quantity} {item.unit}</td>
+                          <td className="p-2.5 font-mono text-slate-600">₹{item.unitRate}</td>
+                          <td className="p-2.5 font-mono font-bold text-emerald-700">+₹{item.totalCreditValue}</td>
+                          <td className="p-2.5 text-[10px]">
+                            <span className={`px-2 py-0.5 rounded-full font-bold ${item.destination === 'RESTAURANT_KITCHEN' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}`}>
+                              {item.destination === 'RESTAURANT_KITCHEN' ? 'रेस्टोरेंट किचन' : 'वेंडर रिटर्न'}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <button
+                              onClick={() => handleRemoveLeftoverRow(idx)}
+                              className="p-1 text-rose-500 hover:text-rose-700 rounded-lg hover:bg-rose-50 transition"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Total Credit Bar */}
+              <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 flex justify-between items-center text-xs">
+                <span className="font-bold text-emerald-950">कुल क्रेडिट रिकवरी (इवेंट P&L से घटेगा):</span>
+                <strong className="font-mono text-base font-black text-emerald-700">
+                  +₹{leftoverItemsList.reduce((s, it) => s + (Number(it.totalCreditValue) || 0), 0).toLocaleString("en-IN")}
+                </strong>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">सत्यापनकर्ता स्टाफ / शेफ:</label>
+                  <input
+                    type="text"
+                    value={leftoverReconciledBy}
+                    onChange={(e) => setLeftoverReconciledBy(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">रिमार्क्स / नोट्स:</label>
+                  <input
+                    type="text"
+                    value={leftoverNotes}
+                    onChange={(e) => setLeftoverNotes(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowLeftoverModal(false)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+                >
+                  रद्द करें
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveLeftoverReconciliation}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs shadow-xs transition"
+                >
+                  ✓ क्रेडिट लेजर में सुरक्षित करें
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 11. HOTEL ROOM ADD MODAL */}
+      {showAddRoomModal && selectedBookingForRooms && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in"
+          onClick={() => setShowAddRoomModal(false)}
+        >
+          <div 
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 bg-purple-900 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <Bed size={18} className="text-purple-300" />
+                <div>
+                  <h3 className="font-black text-sm">
+                    🏨 नया कमरा आवंटित करें (Assign Hotel Room)
+                  </h3>
+                  <p className="text-[11px] text-purple-200">
+                    {selectedBookingForRooms.eventName} • {selectedBookingForRooms.customerName}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAddRoomModal(false)}
+                className="p-1.5 rounded-xl bg-purple-800 hover:bg-purple-700 text-purple-200"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">कमरा संख्या (Room No.):</label>
+                  <input
+                    type="text"
+                    value={roomFormData.roomNumber}
+                    onChange={(e) => setRoomFormData({ ...roomFormData, roomNumber: e.target.value })}
+                    placeholder="उदा. 101, 202, Suite-3"
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-bold font-mono outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">कमरा प्रकार (Room Type):</label>
+                  <select
+                    value={roomFormData.roomType}
+                    onChange={(e) => {
+                      const t = e.target.value;
+                      let tariff = 2500;
+                      if (t === "SUPER_DELUXE") tariff = 3200;
+                      if (t === "EXECUTIVE_SUITE") tariff = 5000;
+                      if (t === "BRIDAL_SUITE") tariff = 6500;
+                      if (t === "VILLA") tariff = 9000;
+                      setRoomFormData({ ...roomFormData, roomType: t, roomTariffPerNight: tariff });
+                    }}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-medium outline-none"
+                  >
+                    <option value="DELUXE_AC">डीलक्स AC (₹2,500/रात)</option>
+                    <option value="SUPER_DELUXE">सुपर डीलक्स AC (₹3,200/रात)</option>
+                    <option value="EXECUTIVE_SUITE">एग्जीक्यूटिव सुइट (₹5,000/रात)</option>
+                    <option value="BRIDAL_SUITE">ब्राइडल सुइट - दूल्हा/दुल्हन (₹6,500/रात)</option>
+                    <option value="VILLA">रिसॉर्ट प्राइवेट विला (₹9,000/रात)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">अतिथि का नाम (Guest Name):</label>
+                  <input
+                    type="text"
+                    value={roomFormData.guestName}
+                    onChange={(e) => setRoomFormData({ ...roomFormData, guestName: e.target.value })}
+                    placeholder="उदा. राजेश शर्मा (चाचाजी)"
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">अतिथि मोबाइल (Mobile):</label>
+                  <input
+                    type="text"
+                    value={roomFormData.guestPhone}
+                    onChange={(e) => setRoomFormData({ ...roomFormData, guestPhone: e.target.value })}
+                    placeholder="उदा. 98261-00000"
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">चेक-इन तारीख:</label>
+                  <input
+                    type="date"
+                    value={roomFormData.checkInDate}
+                    onChange={(e) => setRoomFormData({ ...roomFormData, checkInDate: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">चेक-आउट तारीख:</label>
+                  <input
+                    type="date"
+                    value={roomFormData.checkOutDate}
+                    onChange={(e) => setRoomFormData({ ...roomFormData, checkOutDate: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Extra Beds & Tariff */}
+              <div className="p-3 bg-purple-50 border border-purple-200 rounded-2xl space-y-2">
+                <h5 className="font-bold text-purple-950">🛏️ अतिरिक्त बिस्तर व प्रभार (Extra Beds):</h5>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 block mb-1">अतिरिक्त गद्दे संख्या:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="5"
+                      value={roomFormData.extraBedsCount}
+                      onChange={(e) => setRoomFormData({ ...roomFormData, extraBedsCount: e.target.value })}
+                      className="w-full p-1.5 bg-white border border-slate-300 rounded-xl outline-none font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 block mb-1">दर प्रति गद्दा (₹):</label>
+                    <input
+                      type="number"
+                      value={roomFormData.extraBedCharge}
+                      onChange={(e) => setRoomFormData({ ...roomFormData, extraBedCharge: e.target.value })}
+                      className="w-full p-1.5 bg-white border border-slate-300 rounded-xl outline-none font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 block mb-1">कुल रात का किराया:</label>
+                    <div className="p-1.5 bg-purple-100 rounded-xl font-bold font-mono text-purple-900 text-center">
+                      ₹{((Number(roomFormData.roomTariffPerNight) || 0) + ((Number(roomFormData.extraBedsCount) || 0) * (Number(roomFormData.extraBedCharge) || 500))).toLocaleString("en-IN")}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Room Service Billing Mode */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                <h5 className="font-bold text-slate-800">🛎️ रूम सर्विस व बिलिंग नीति (Room Service Mode):</h5>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1 font-semibold cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={roomFormData.roomServiceEnabled}
+                      onChange={(e) => setRoomFormData({ ...roomFormData, roomServiceEnabled: e.target.checked })}
+                      className="rounded text-purple-600"
+                    />
+                    <span>रूम सर्विस एक्टिव रखें</span>
+                  </label>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-600 block mb-1">बिलिंग मोड (Billing Settle):</label>
+                  <select
+                    value={roomFormData.roomServiceBillingMode}
+                    onChange={(e) => setRoomFormData({ ...roomFormData, roomServiceBillingMode: e.target.value })}
+                    className="w-full p-2 bg-white border border-slate-300 rounded-xl font-medium outline-none"
+                  >
+                    <option value="HOST_MASTER_FOLIO">📋 आयोजक के मुख्य बैंक्वेट बिल में जुड़ेगा (Billed to Host)</option>
+                    <option value="GUEST_DIRECT_SETTLE">💵 अतिथि चेकआउट पर स्वयं देगा (Guest Direct Cash/UPI)</option>
+                    <option value="COMPLIMENTARY">🎁 पैकेज में शामिल (Complimentary)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">नोट्स व विशेष आवश्यकताएं:</label>
+                <input
+                  type="text"
+                  value={roomFormData.notes}
+                  onChange={(e) => setRoomFormData({ ...roomFormData, notes: e.target.value })}
+                  placeholder="उदा. ग्राउंड फ्लोर कमरा चाहिए, पानी की 4 अतिरिक्त बोतलें"
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl outline-none"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowAddRoomModal(false)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+                >
+                  रद्द करें
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveRoomBlock}
+                  className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-black rounded-xl text-xs shadow-xs transition"
+                >
+                  ✓ कमरा आवंटित करें
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 12. PRINTABLE ROOM KEY CARD SLIP MODAL */}
+      {selectedRoomForSlip && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in"
+          onClick={() => setSelectedRoomForSlip(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 bg-purple-950 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <Bed size={18} className="text-purple-300" />
+                <h3 className="font-black text-sm">
+                  कमरा चाबी व वेलकम स्लिप (Room Key Card Slip)
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold text-xs"
+                >
+                  प्रिंट
+                </button>
+                <button
+                  onClick={() => setSelectedRoomForSlip(null)}
+                  className="p-1.5 rounded-xl bg-purple-800 text-purple-200"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 text-xs">
+              <div className="text-center border-b pb-3 space-y-1">
+                <h3 className="font-black text-base uppercase text-purple-950">रॉयल पैलेस रिसॉर्ट व बैंक्वेट्स</h3>
+                <p className="text-[10px] text-slate-500">कमरा आवंटन व अतिथि स्वागत पर्ची</p>
+                <div className="inline-block px-4 py-1 rounded-full bg-purple-100 text-purple-900 font-mono font-black text-lg border border-purple-200 mt-1">
+                  कमरा सं. #{selectedRoomForSlip.roomNumber}
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1.5 text-xs">
+                <p><strong>अतिथि का नाम:</strong> {selectedRoomForSlip.guestName || "आदरणीय अतिथि"}</p>
+                <p><strong>मोबाइल:</strong> {selectedRoomForSlip.guestPhone || "-"}</p>
+                <p><strong>कमरा श्रेणी:</strong> {selectedRoomForSlip.roomType?.replace("_", " ")}</p>
+                <p><strong>चेक-इन:</strong> {selectedRoomForSlip.checkInDate ? new Date(selectedRoomForSlip.checkInDate).toLocaleDateString("hi-IN") : "-"}</p>
+                <p><strong>चेक-आउट:</strong> {selectedRoomForSlip.checkOutDate ? new Date(selectedRoomForSlip.checkOutDate).toLocaleDateString("hi-IN") : "-"}</p>
+                <p><strong>अतिरिक्त बिस्तर:</strong> {selectedRoomForSlip.extraBedsCount || 0} बिस्तर आवंटित</p>
+              </div>
+
+              <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-xl space-y-1 text-[11px]">
+                <strong className="text-purple-950 block">🛎️ रूम सर्विस व डाइनिंग नीति:</strong>
+                <p className="text-slate-700">
+                  {selectedRoomForSlip.roomServiceBillingMode === "HOST_MASTER_FOLIO"
+                    ? "• रूम सर्विस का समस्त बिल आयोजक के मुख्य खाते में जोड़ा जाएगा।"
+                    : "• रूम सर्विस व अन्य उपभोग का भुगतान अतिथि चेकआउट के समय सीधे कैश/UPI से करेंगे।"}
+                </p>
+                <p className="text-slate-600 mt-1">• रिसेप्शन के लिए डायल करें: <strong>9</strong> • रूम सर्विस के लिए डायल करें: <strong>8</strong></p>
+                <p className="text-slate-600">• फ्री हाई-स्पीड वाईफाई: <strong>RoyalPalace_Guest</strong> (पासवर्ड: royal2026)</p>
+              </div>
+
+              <div className="border-t border-slate-200 pt-3 text-center text-[10px] text-slate-500">
+                हम आपके सुखद और आरामदायक प्रवास की कामना करते हैं। धन्यवाद!
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 13. ADD DEPARTMENTAL MANAGER MODAL */}
+      {showAddManagerModal && selectedBookingForManagers && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in"
+          onClick={() => setShowAddManagerModal(false)}
+        >
+          <div 
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 bg-blue-900 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <UserCheck size={18} className="text-blue-300" />
+                <h3 className="font-black text-sm">
+                  + नया विभागीय प्रमुख व SPOC जोड़ें
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowAddManagerModal(false)}
+                className="p-1.5 rounded-xl bg-blue-800 hover:bg-blue-700 text-blue-200"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">विभाग (Department):</label>
+                <select
+                  value={managerFormData.department}
+                  onChange={(e) => {
+                    const dep = e.target.value;
+                    let title = "विभागीय प्रमुख";
+                    let notes = "";
+                    if (dep === "MAIN_KITCHEN_CHEF") {
+                      title = "प्रधान रसोईया (हेड शेफ)";
+                      notes = "भोजन गुणवत्ता, गरम बफे रीफिलिंग, स्टार्टर्स टाइमिंग";
+                    } else if (dep === "FLOOR_CAPTAIN") {
+                      title = "फ्लोर सर्विस कैप्टन";
+                      notes = "बफे टेबल, वेटर तत्परता, वीआईपी सोफा सर्विस, पेयजल";
+                    } else if (dep === "ROOMS_MANAGER") {
+                      title = "होटल रूम्स व रिसेप्शन मैनेजर";
+                      notes = "अतिथि चेक-इन/आउट, अतिरिक्त गद्दे, रूम सर्विस डिलीवरी";
+                    } else if (dep === "SOUND_AV_TECH") {
+                      title = "साउंड, डीजे व स्टेज तकनीशियन";
+                      notes = "स्टेज माइक, बैकग्राउंड संगीत, जनरेटर बैकअप";
+                    } else if (dep === "HOUSEKEEPING_HEAD") {
+                      title = "हाउसकीपिंग व स्वच्छता प्रमुख";
+                      notes = "हॉल, स्टेज व वॉशरूम्स की निरंतर सफाई व टिशू रीफिल";
+                    } else if (dep === "SECURITY_PARKING") {
+                      title = "सुरक्षा व वैलेट पार्किंग प्रमुख";
+                      notes = "गेट एंट्री, वैलेट पार्किंग, ट्रैफिक नियंत्रण";
+                    }
+                    setManagerFormData({ ...managerFormData, department: dep, roleTitle: title, responsibilityNotes: notes });
+                  }}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-medium outline-none"
+                >
+                  <option value="MAIN_KITCHEN_CHEF">👨‍🍳 प्रधान रसोईया (Main Kitchen Chef)</option>
+                  <option value="FLOOR_CAPTAIN">👔 फ्लोर सर्विस कैप्टन (Floor Captain)</option>
+                  <option value="ROOMS_MANAGER">🏨 होटल रूम्स व रिसेप्शन मैनेजर (Rooms Manager)</option>
+                  <option value="SOUND_AV_TECH">🎵 साउंड, डीजे व लाइट तकनीशियन (Sound/AV)</option>
+                  <option value="HOUSEKEEPING_HEAD">🧹 हाउसकीपिंग व स्वच्छता प्रमुख (Housekeeping)</option>
+                  <option value="SECURITY_PARKING">🛡️ सुरक्षा व वैलेट पार्किंग (Security/Valet)</option>
+                  <option value="EVENT_COORDINATOR">📋 समग्र इवेंट कोऑर्डिनेटर (Event Coordinator)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">पद नाम (Role Title):</label>
+                <input
+                  type="text"
+                  value={managerFormData.roleTitle}
+                  onChange={(e) => setManagerFormData({ ...managerFormData, roleTitle: e.target.value })}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">मैनेजर का नाम:</label>
+                  <input
+                    type="text"
+                    value={managerFormData.name}
+                    onChange={(e) => setManagerFormData({ ...managerFormData, name: e.target.value })}
+                    placeholder="उदा. शेफ रमेश कुमार"
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-bold outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">मोबाइल नंबर:</label>
+                  <input
+                    type="text"
+                    value={managerFormData.phone}
+                    onChange={(e) => setManagerFormData({ ...managerFormData, phone: e.target.value })}
+                    placeholder="उदा. 98261-12345"
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-mono outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">ड्यूटी शिफ्ट व समय:</label>
+                <input
+                  type="text"
+                  value={managerFormData.shiftTiming}
+                  onChange={(e) => setManagerFormData({ ...managerFormData, shiftTiming: e.target.value })}
+                  placeholder="उदा. शाम 4:00 - रात 1:00"
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">मुख्य जिम्मेदारियां (Responsibility Notes):</label>
+                <textarea
+                  rows={2}
+                  value={managerFormData.responsibilityNotes}
+                  onChange={(e) => setManagerFormData({ ...managerFormData, responsibilityNotes: e.target.value })}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl outline-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="isCustomerFacingToggle"
+                  checked={managerFormData.isCustomerFacing}
+                  onChange={(e) => setManagerFormData({ ...managerFormData, isCustomerFacing: e.target.checked })}
+                  className="rounded text-blue-600"
+                />
+                <label htmlFor="isCustomerFacingToggle" className="font-bold text-slate-800 cursor-pointer">
+                  आयोजक के संपर्क कार्ड (SPOC Card) में यह नंबर प्रदर्शित करें
+                </label>
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowAddManagerModal(false)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+                >
+                  रद्द करें
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveManager}
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl text-xs shadow-xs transition"
+                >
+                  ✓ सुरक्षित करें
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 14. PRINTABLE HOST SPOC CONTACT CARD MODAL */}
+      {showSpocPrintModal && selectedBookingForManagers && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in"
+          onClick={() => setShowSpocPrintModal(false)}
+        >
+          <div 
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 bg-slate-950 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <UserCheck size={18} className="text-amber-400" />
+                <div>
+                  <h3 className="font-black text-sm">
+                    इवेंट आयोजक संपर्क निर्देशिका (Host SPOC Card)
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    {selectedBookingForManagers.eventName} • {selectedBookingForManagers.customerName}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg font-black text-xs"
+                >
+                  प्रिंट (Print)
+                </button>
+                <button
+                  onClick={() => setShowSpocPrintModal(false)}
+                  className="p-1.5 rounded-xl bg-slate-800 text-slate-300"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 text-xs">
+              <div className="text-center border-b pb-3 space-y-1">
+                <h2 className="text-lg font-black uppercase text-slate-900">रॉयल पैलेस बैंक्वेट्स व रिसॉर्ट</h2>
+                <p className="text-[11px] text-slate-500">आधिकारिक विभागीय प्रमुख व संपर्क निर्देशिका (Official Duty Roster)</p>
+                <div className="inline-block px-3 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200 font-bold text-[10px]">
+                  ★ किसी भी आवश्यकता हेतु सीधे संबंधित विभाग प्रमुख से संपर्क करें ★
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px]">
+                <div>
+                  <p><strong>कार्यक्रम:</strong> {selectedBookingForManagers.eventName}</p>
+                  <p><strong>आयोजक (Host):</strong> {selectedBookingForManagers.customerName}</p>
+                </div>
+                <div>
+                  <p><strong>तारीख व शिफ्ट:</strong> {selectedBookingForManagers.eventDate} ({selectedBookingForManagers.timeSlot})</p>
+                  <p><strong>वेन्यू हॉल:</strong> {selectedBookingForManagers.hallName}</p>
+                </div>
+              </div>
+
+              {/* Department Directory Table */}
+              <div className="border border-slate-300 rounded-2xl overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-900 text-white uppercase text-[10px]">
+                    <tr>
+                      <th className="p-2.5">विभाग / भूमिका</th>
+                      <th className="p-2.5">प्रमुख का नाम</th>
+                      <th className="p-2.5">सीधा मोबाइल फोन</th>
+                      <th className="p-2.5">ड्यूटी क्षेत्र व कार्य</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {(selectedBookingForManagers.departmentalManagers?.length > 0
+                      ? selectedBookingForManagers.departmentalManagers
+                      : [
+                          { roleTitle: "प्रधान रसोईया (हेड शेफ)", name: "शेफ रमेश कुमार", phone: "98261-12345", responsibilityNotes: "भोजन स्वाद, गरम बफे रीफिलिंग, स्टार्टर्स" },
+                          { roleTitle: "फ्लोर सर्विस कैप्टन", name: "विक्रम सिंह", phone: "98261-67890", responsibilityNotes: "बफे टेबल, वेटर तत्परता, वीआईपी सोफा सर्विस" },
+                          { roleTitle: "होटल रूम्स मैनेजर", name: "सुनील वर्मा", phone: "98261-55443", responsibilityNotes: "अतिथि चेक-इन, अतिरिक्त गद्दे, रूम सर्विस" },
+                          { roleTitle: "साउंड, डीजे व लाइट", name: "रोहित डीजे", phone: "98261-99887", responsibilityNotes: "स्टेज माइक, बैकग्राउंड संगीत, जनरेटर बैकअप" },
+                          { roleTitle: "हाउसकीपिंग व स्वच्छता", name: "राकेश सुपरवाइजर", phone: "98261-33221", responsibilityNotes: "हॉल, स्टेज व वॉशरूम्स की निरंतर सफाई" }
+                        ]
+                    ).map((mgr, i) => (
+                      <tr key={i} className="hover:bg-slate-50">
+                        <td className="p-2.5 font-bold text-slate-900">{mgr.roleTitle}</td>
+                        <td className="p-2.5 font-semibold text-slate-800">{mgr.name}</td>
+                        <td className="p-2.5 font-mono font-bold text-blue-700">{mgr.phone}</td>
+                        <td className="p-2.5 text-[11px] text-slate-600">{mgr.responsibilityNotes}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-center text-[11px] text-amber-950 font-bold">
+                ★ 24×7 केंद्रीय रिसेप्शन हेल्पलाइन: एक्सटेंशन 100 या मोबाइल: 98765-43210
               </div>
             </div>
           </div>

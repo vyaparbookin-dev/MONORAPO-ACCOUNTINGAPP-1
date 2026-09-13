@@ -233,6 +233,89 @@ const banquetBookingSchema = new mongoose.Schema({
     previousBanquetCount: { type: Number, default: 0 }
   },
 
+  // Post-Event Leftover Raw Material Reconciliation & Return/Transfer
+  leftoverReconciliation: {
+    reconciledAt: Date,
+    reconciledBy: { type: String, default: "Kitchen Manager" },
+    totalCreditValue: { type: Number, default: 0 },
+    items: [
+      {
+        itemName: String,
+        leftoverQty: Number,
+        unit: String,
+        unitRate: Number,
+        totalCreditValue: Number,
+        disposition: { 
+          type: String, 
+          enum: ["transferred_to_restaurant", "returned_to_vendor"],
+          default: "transferred_to_restaurant" 
+        },
+        recipientOrVendor: String,
+        notes: String
+      }
+    ]
+  },
+
+  // 🏨 Large Banquet Resort & Hotel Room Allotment (PMS Integration)
+  hotelRoomBlocks: [
+    {
+      roomNumber: { type: String, required: true }, // e.g. "101", "Villa 1"
+      roomType: { type: String, default: "Deluxe AC" }, // "Deluxe AC", "Super Deluxe", "Luxury Suite", "Dormitory"
+      checkInDate: String,
+      checkOutDate: String,
+      guestName: { type: String, default: "" },
+      guestMobile: { type: String, default: "" },
+      guestCount: { type: Number, default: 2 },
+      extraBedsCount: { type: Number, default: 0 },
+      extraBedChargePerNight: { type: Number, default: 800 },
+      roomTariffPerNight: { type: Number, default: 4500 },
+      billingMode: { 
+        type: String, 
+        enum: ["included_in_event_package", "host_master_bill", "guest_direct_cash"], 
+        default: "included_in_event_package" 
+      },
+      roomServiceEnabled: { type: Boolean, default: true },
+      roomServiceBillingMode: { 
+        type: String, 
+        enum: ["bill_to_master_host", "guest_direct_cash", "complimentary_in_package"], 
+        default: "bill_to_master_host" 
+      },
+      welcomeKits: [{ type: String }], // ["Bottled Water 2L", "Dry Fruit Box", "Toiletry Kit", "Wedding Itinerary Badge"]
+      status: { 
+        type: String, 
+        enum: ["reserved", "checked_in", "checked_out"], 
+        default: "reserved" 
+      }
+    }
+  ],
+
+  // 📅 Multi-Hall & Multi-Day Wedding Itinerary Rundown
+  eventItineraryRundown: [
+    {
+      dayNumber: { type: Number, default: 1 },
+      dayTitle: { type: String, default: "Day 1: Mehendi & Welcome High Tea" },
+      venueHallOrLawn: { type: String, default: "Emerald Green Party Lawn" },
+      date: String,
+      timeSpan: { type: String, default: "04:00 PM - 08:00 PM" },
+      expectedPax: { type: Number, default: 100 },
+      seatingArrangement: { type: String, default: "Low Diwan Seating with Canopies" },
+      cateringType: { type: String, default: "High Tea & Live Chaat Pavilions" },
+      decorTheme: { type: String, default: "Bright Marigold & Folk Music" }
+    }
+  ],
+
+  // 👔 Departmental Managers & Customer SPOC Responsibility Matrix
+  departmentalManagers: [
+    {
+      department: { type: String, default: "Main Kitchen & F&B Production" },
+      managerName: { type: String, default: "मास्टर शेफ राजवीर सिंह" },
+      mobileNumber: { type: String, default: "98260-11223" },
+      dutyShift: { type: String, default: "Full Event" },
+      customerFacing: { type: Boolean, default: false },
+      keyResponsibilities: { type: String, default: "भोजन की गुणवत्ता, समय पर बुफे रीफिल, और शुद्ध जैन काउंटर व्यवस्था" }
+    }
+  ],
+
   notes: { type: String, default: "" },
   beoGeneratedAt: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now },

@@ -563,3 +563,129 @@ export const updateInquiry = async (req, res) => {
   }
 };
 
+// 14. LEFTOVER RAW MATERIAL RECONCILIATION & RETURN/TRANSFER
+export const reconcileLeftoverMaterial = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { reconciledBy, items, notes } = req.body;
+
+    const booking = await BanquetBooking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "बुकिंग नहीं मिली।" });
+    }
+
+    let totalCredit = 0;
+    const mappedItems = (items || []).map((it) => {
+      const lineVal = Math.round((Number(it.quantity) || 0) * (Number(it.unitRate) || 0));
+      totalCredit += lineVal;
+      return {
+        itemName: it.itemName,
+        category: it.category || "GROCERY",
+        quantity: Number(it.quantity) || 0,
+        unit: it.unit || "kg",
+        unitRate: Number(it.unitRate) || 0,
+        totalCreditValue: lineVal,
+        destination: it.destination || "RESTAURANT_KITCHEN",
+        vendorName: it.vendorName || "",
+        receivedBy: it.receivedBy || ""
+      };
+    });
+
+    booking.leftoverReconciliation = {
+      isReconciled: true,
+      reconciledAt: new Date(),
+      reconciledBy: reconciledBy || "स्टोर कीपर / शेफ",
+      items: mappedItems,
+      totalCreditValue: totalCredit,
+      notes: notes || "इवेंट उपरांत बचे माल का सत्यापन व रेस्टोरेंट किचन / वेंडर रिटर्न क्रेडिट"
+    };
+
+    await booking.save();
+
+    res.json({
+      success: true,
+      message: `बचे हुए सामान का समायोजन (Reconciliation) सफल रहा। कुल ₹${totalCredit} का क्रेडिट दर्ज किया गया।`,
+      reconciliation: booking.leftoverReconciliation,
+      booking
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 15. HOTEL ROOM ALLOTMENTS & PMS
+export const updateHotelRoomAllotment = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { hotelRoomBlocks } = req.body;
+
+    const booking = await BanquetBooking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "बुकिंग नहीं मिली।" });
+    }
+
+    booking.hotelRoomBlocks = hotelRoomBlocks || [];
+    await booking.save();
+
+    res.json({
+      success: true,
+      message: `होटल रूम्स व PMS आवंटन सफलतापूर्वक अपडेट कर दिया गया। कुल ${booking.hotelRoomBlocks.length} कमरे आवंटित।`,
+      hotelRoomBlocks: booking.hotelRoomBlocks,
+      booking
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 16. DEPARTMENTAL MANAGERS & SPOC DIRECTORY
+export const updateDepartmentalManagers = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { departmentalManagers } = req.body;
+
+    const booking = await BanquetBooking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "बुकिंग नहीं मिली।" });
+    }
+
+    booking.departmentalManagers = departmentalManagers || [];
+    await booking.save();
+
+    res.json({
+      success: true,
+      message: `डिपार्टमेंटल SPOC और मैनेजर डायरेक्टरी सुरक्षित की गई।`,
+      departmentalManagers: booking.departmentalManagers,
+      booking
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 17. MULTI-DAY EVENT ITINERARY RUNDOWN
+export const updateEventItinerary = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { eventItineraryRundown } = req.body;
+
+    const booking = await BanquetBooking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "बुकिंग नहीं मिली।" });
+    }
+
+    booking.eventItineraryRundown = eventItineraryRundown || [];
+    await booking.save();
+
+    res.json({
+      success: true,
+      message: `इवेंट रनडाउन व मल्टी-डे कार्यक्रम शेड्यूल अपडेट किया गया।`,
+      eventItineraryRundown: booking.eventItineraryRundown,
+      booking
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
