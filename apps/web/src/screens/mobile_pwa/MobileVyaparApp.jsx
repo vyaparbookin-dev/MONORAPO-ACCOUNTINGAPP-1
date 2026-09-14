@@ -50,6 +50,8 @@ import { useNavigate } from "react-router-dom";
 import { useCompany } from "../../contexts/CompanyContext";
 import api from "../../services/api";
 import PagarBookHub from "../../components/PagarBookHub";
+import MobileDayBookModal from "../../components/mobile/MobileDayBookModal";
+import MobileProfitLossModal from "../../components/mobile/MobileProfitLossModal";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 
@@ -254,6 +256,10 @@ function MobileVyaparAppContent() {
   const [newItemPriceWithTax, setNewItemPriceWithTax] = useState("");
   const [billCustomerAddress, setBillCustomerAddress] = useState("");
   const [showCustomerAddressInput, setShowCustomerAddressInput] = useState(false);
+
+  // ==================== NATIVE MOBILE REPORTS MODALS ====================
+  const [showDayBookModal, setShowDayBookModal] = useState(false);
+  const [showProfitLossModal, setShowProfitLossModal] = useState(false);
 
   // ==================== PAGARBOOK STAFF & SALARY STATE ====================
   const [showPagarBookModal, setShowPagarBookModal] = useState(() => sessionStorage.getItem("mobile_show_pagarbook") === "true");
@@ -1572,8 +1578,8 @@ function MobileVyaparAppContent() {
 
   // 20+ Comprehensive Reports Catalog
   const allReportsList = [
-    { id: "daybook", title: "📖 DayBook (रोकड़ बही)", desc: "Daily Cash In/Out & Ledger", path: "/reports/daybook", category: "Core", color: "text-emerald-600 bg-emerald-50" },
-    { id: "profitloss", title: "📊 Profit & Loss Report", desc: "Gross & Net Business Profit", path: "/reports/profitloss", category: "Core", color: "text-indigo-600 bg-indigo-50" },
+    { id: "daybook", title: "📖 DayBook (रोकड़ बही)", desc: "Daily Cash In/Out & Ledger", path: "daybook_modal", category: "Core", color: "text-emerald-600 bg-emerald-50" },
+    { id: "profitloss", title: "📊 Profit & Loss Report", desc: "Gross & Net Business Profit", path: "profitloss_modal", category: "Core", color: "text-indigo-600 bg-indigo-50" },
     { id: "gst", title: "📑 GST Summary & Tax", desc: "Output & Input Tax Breakdown", path: "/reports/gst", category: "GST", color: "text-purple-600 bg-purple-50" },
     { id: "gstr1", title: "📋 GSTR-1 Monthly Return", desc: "B2B & B2C Sales Invoices", path: "/reports/gst", category: "GST", color: "text-amber-600 bg-amber-50" },
     { id: "gstr3b", title: "📄 GSTR-3B Summary", desc: "Tax Payment & ITC Filing", path: "/reports/gstr3b", category: "GST", color: "text-rose-600 bg-rose-50" },
@@ -1826,7 +1832,7 @@ function MobileVyaparAppContent() {
               </div>
 
               <div 
-                onClick={() => navigate("/reports/daybook")}
+                onClick={() => setShowDayBookModal(true)}
                 className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
               >
                 <div className="flex justify-between items-center">
@@ -2428,6 +2434,10 @@ function MobileVyaparAppContent() {
                     } else if (r.path === 'ghar_kharch_modal') {
                       fetchGharKharchData();
                       setShowGharKharchLedgerModal(true);
+                    } else if (r.path === 'daybook_modal') {
+                      setShowDayBookModal(true);
+                    } else if (r.path === 'profitloss_modal') {
+                      setShowProfitLossModal(true);
                     } else {
                       navigate(r.path);
                     }
@@ -4141,6 +4151,23 @@ function MobileVyaparAppContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 📱 6.7 NATIVE MOBILE DAYBOOK & PROFIT LOSS REPORTS MODALS */}
+      {/* ======================================================== */}
+      {showDayBookModal && (
+        <MobileDayBookModal
+          isOpen={showDayBookModal}
+          onClose={() => setShowDayBookModal(false)}
+        />
+      )}
+
+      {showProfitLossModal && (
+        <MobileProfitLossModal
+          isOpen={showProfitLossModal}
+          onClose={() => setShowProfitLossModal(false)}
+        />
       )}
 
       {/* ======================================================== */}

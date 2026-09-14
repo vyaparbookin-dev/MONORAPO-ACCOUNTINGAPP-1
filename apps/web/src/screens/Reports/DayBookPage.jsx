@@ -543,23 +543,23 @@ export default function DayBookPage() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto bg-gray-50 min-h-screen space-y-6">
+    <div className="p-3 sm:p-6 max-w-6xl mx-auto bg-gray-50 min-h-screen space-y-4 sm:space-y-6">
       {/* Header & Preset Filter Bar */}
-      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-4">
+      <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-gray-200 space-y-4">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-3">
             <button
               onClick={() => navigate('/m')}
-              className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl transition flex items-center gap-1 text-xs font-bold shadow-xs cursor-pointer"
+              className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl transition flex items-center gap-1 text-xs font-bold shadow-xs cursor-pointer shrink-0"
               title="वापस मोबाइल ऐप पर जाएं"
             >
               <ArrowLeft size={16} />
               <span>वापस</span>
             </button>
             <div>
-              <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2">
-                <Calendar className="text-blue-600" size={24} />
-                Day Book & Daily Shuddh Munafa Register
+              <h1 className="text-lg sm:text-2xl font-black text-gray-900 flex items-center gap-2">
+                <Calendar className="text-blue-600 shrink-0" size={22} />
+                <span>Day Book & Daily Shuddh Munafa Register</span>
               </h1>
               <p className="text-gray-500 text-xs mt-0.5">
                 दैनिक शुद्ध मुनाफा • पाई-पाई का हिसाब (आवक vs जावक vs शुद्ध बचत)
@@ -567,7 +567,7 @@ export default function DayBookPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={shareDailyFlashWhatsApp}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition shadow-sm"
