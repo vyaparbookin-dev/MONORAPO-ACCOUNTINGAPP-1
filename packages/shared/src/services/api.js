@@ -3780,14 +3780,31 @@ const getGuestMockData = (url, method = 'GET') => {
 
   // 7. Billing / Invoices
   if (u.includes('billing') || u.includes('bill') || u.includes('invoice')) {
+    let localBills = [];
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem("vb_local_manual_bills");
+        if (stored) localBills = JSON.parse(stored) || [];
+      }
+    } catch (e) {}
+
+    const dedupMap = new Map();
+    [...localBills, ...fullBills].forEach(b => {
+      if (!b) return;
+      const key = b._id || b.id || b.billNumber;
+      if (!dedupMap.has(key)) dedupMap.set(key, b);
+    });
+    const combinedBills = Array.from(dedupMap.values());
+    const totalRev = combinedBills.reduce((s, b) => s + (Number(b.amount || b.finalAmount || b.total) || 0), 0);
+
     return { 
       success: true, 
-      data: fullBills, 
-      bills: fullBills, 
-      invoices: fullBills,
-      total: fullBills.length, 
-      totalSales: 48114,
-      totalRevenue: 48114
+      data: combinedBills, 
+      bills: combinedBills, 
+      invoices: combinedBills,
+      total: combinedBills.length, 
+      totalSales: totalRev,
+      totalRevenue: totalRev
     };
   }
 

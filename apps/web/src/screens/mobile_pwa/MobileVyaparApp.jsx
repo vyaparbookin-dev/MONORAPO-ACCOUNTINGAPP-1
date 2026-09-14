@@ -51,6 +51,7 @@ import { useCompany } from "../../contexts/CompanyContext";
 import api from "../../services/api";
 import PagarBookHub from "../../components/PagarBookHub";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
+import { deduplicateBills } from "../../utils/deduplicateBills";
 
 
 class MobileErrorBoundary extends React.Component {
@@ -136,7 +137,16 @@ function MobileVyaparAppContent() {
   const [showCompanySelectModal, setShowCompanySelectModal] = useState(false);
   const [parties, setParties] = useState([]);
   const [items, setItems] = useState([]);
-  const [bills, setBills] = useState([]);
+  const [bills, setBills] = useState(() => {
+    try {
+      const stored = localStorage.getItem("vb_local_manual_bills");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return deduplicateBills(parsed);
+      }
+    } catch (e) {}
+    return [];
+  });
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [reportSearchQuery, setReportSearchQuery] = useState("");
@@ -175,6 +185,7 @@ function MobileVyaparAppContent() {
   const [manualSaleNotes, setManualSaleNotes] = useState("");
   const [savingManualSale, setSavingManualSale] = useState(false);
   const [transactionTab, setTransactionTab] = useState("all"); // "all", "sales", "expenses"
+  const [dailySaleFilter, setDailySaleFilter] = useState("today"); // "today", "yesterday", "week", "all"
 
   // AI Photo Bill OCR & Multi-Bill Batch State
   const [showOcrModal, setShowOcrModal] = useState(false);
@@ -859,7 +870,21 @@ function MobileVyaparAppContent() {
           rawDate: b.date || b.createdAt || new Date(),
           items: b.items || []
         }));
-        setBills(normBills);
+
+        // Load local manual bills and merge
+        let localManualBills = [];
+        try {
+          const stored = localStorage.getItem("vb_local_manual_bills");
+          if (stored) {
+            localManualBills = JSON.parse(stored) || [];
+          }
+        } catch (e) {}
+
+        const mergedBills = deduplicateBills([...normBills, ...localManualBills]);
+        setBills(mergedBills);
+        try {
+          localStorage.setItem("vb_local_manual_bills", JSON.stringify(mergedBills));
+        } catch (e) {}
       }
 
       if (partiesRes.status === "fulfilled") {
@@ -923,6 +948,30 @@ function MobileVyaparAppContent() {
   const todayCash = todayBills.filter(b => b.type === "CASH").reduce((sum, b) => sum + Number(b.amount || 0), 0);
   const todayUpi = todayBills.filter(b => b.type === "UPI" || b.type === "ONLINE").reduce((sum, b) => sum + Number(b.amount || 0), 0);
   const todayCredit = todayBills.filter(b => b.type === "UDHAR" || b.type === "CREDIT").reduce((sum, b) => sum + Number(b.amount || 0), 0);
+
+  // Dynamic filter for Daily Sales Card (आज, कल, इस हफ़्ते, सभी)
+  const activePeriodBills = bills.filter(b => {
+    if (!b.rawDate) return true;
+    const d = new Date(b.rawDate);
+    const today = new Date();
+    if (dailySaleFilter === "today") {
+      return d.toDateString() === today.toDateString();
+    }
+    if (dailySaleFilter === "yesterday") {
+      const yest = new Date(Date.now() - 86400000);
+      return d.toDateString() === yest.toDateString();
+    }
+    if (dailySaleFilter === "week") {
+      const weekAgo = new Date(Date.now() - 7 * 86400000);
+      return d >= weekAgo;
+    }
+    return true; // "all"
+  });
+
+  const activePeriodSales = activePeriodBills.reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const activePeriodCash = activePeriodBills.filter(b => b.type === "CASH").reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const activePeriodUpi = activePeriodBills.filter(b => b.type === "UPI" || b.type === "ONLINE").reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const activePeriodCredit = activePeriodBills.filter(b => b.type === "UDHAR" || b.type === "CREDIT").reduce((sum, b) => sum + Number(b.amount || 0), 0);
 
   const handleShareWhatsAppBill = (bill) => {
     if (!bill) return;
@@ -1200,6 +1249,11 @@ function MobileVyaparAppContent() {
       const res = await api.post("/api/billing", payload);
       const savedBill = res?.data?.bill || res?.data?.data || res?.data || {};
       
+      const saleDateObj = manualSaleDate ? new Date(manualSaleDate) : new Date();
+      const saleDateDisplay = manualSaleDate 
+        ? new Date(manualSaleDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+        : "Today";
+
       const createdBill = {
         _id: savedBill._id || genBillNo,
         id: savedBill.billNumber || genBillNo,
@@ -1208,12 +1262,28 @@ function MobileVyaparAppContent() {
         amount: saleAmt,
         type: manualSalePaymentMode,
         paymentStatus: payload.paymentStatus,
-        date: "Today",
-        rawDate: new Date(),
+        date: saleDateDisplay,
+        rawDate: saleDateObj,
         items: payload.items
       };
 
-      setBills(prev => [createdBill, ...prev]);
+      // Instantly persist in localStorage so it NEVER disappears or gets wiped out
+      try {
+        const stored = localStorage.getItem("vb_local_manual_bills");
+        let list = [];
+        try {
+          list = stored ? JSON.parse(stored) : [];
+        } catch (e) {
+          list = [];
+        }
+        const updatedList = deduplicateBills([createdBill, ...list]);
+        localStorage.setItem("vb_local_manual_bills", JSON.stringify(updatedList));
+        setBills(updatedList);
+      } catch (storageErr) {
+        console.warn("Local bill storage err:", storageErr);
+        setBills(prev => [createdBill, ...prev]);
+      }
+
       setShowManualSaleModal(false);
       setManualSaleAmount("");
       setManualSaleNotes("");
@@ -1221,7 +1291,7 @@ function MobileVyaparAppContent() {
       setManualSaleCustomer("काउंटर नकद ग्राहक");
       setManualSalePaymentMode("CASH");
 
-      alert(`🎉 ₹${saleAmt.toLocaleString('en-IN')} की ${manualSalePaymentMode === 'CASH' ? 'नकद' : manualSalePaymentMode === 'UPI' ? 'UPI' : 'उधारी'} बिक्री सफलतापूर्वक दर्ज हो गई!`);
+      alert(`🎉 ₹${saleAmt.toLocaleString('en-IN')} की ${manualSalePaymentMode === 'CASH' ? 'नकद' : manualSalePaymentMode === 'UPI' ? 'UPI' : 'उधारी'} बिक्री (${saleDateDisplay}) सफलतापूर्वक दर्ज हो गई!`);
       fetchLiveDashboardData();
     } catch (err) {
       console.error("Manual sale error:", err);
@@ -1626,27 +1696,41 @@ function MobileVyaparAppContent() {
         {/* ==================== TAB 1: DASHBOARD ==================== */}
         {activeTab === "dashboard" && (
           <div className="space-y-3.5 animate-in fade-in">
-            {/* 💰 DEDICATED PROMINENT DAILY SALES CARD (आज की कुल बिक्री) */}
+            {/* 💰 DEDICATED PROMINENT DAILY SALES CARD (दैनिक / अवधि बिक्री) */}
             <div className="p-4 bg-gradient-to-br from-[#1E1B4B] via-[#312E81] to-[#4338CA] text-white rounded-3xl shadow-xl space-y-3 border border-indigo-500/40">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
                   <span className="text-xs font-black text-indigo-200 uppercase tracking-wider">
-                    आज की कुल बिक्री (Today's Total Sale)
+                    {dailySaleFilter === "today" ? "आज की कुल बिक्री (Today's Sale)" : dailySaleFilter === "yesterday" ? "कल की बिक्री (Yesterday's Sale)" : dailySaleFilter === "week" ? "इस हफ़्ते की बिक्री (7 Days Sale)" : "कुल बिक्री (All Time Sales)"}
                   </span>
                 </div>
-                <span className="text-[11px] font-bold text-indigo-200 bg-white/10 px-2.5 py-0.5 rounded-full backdrop-blur-xs">
-                  📅 {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                </span>
+                <div className="flex items-center gap-1 bg-white/10 p-0.5 rounded-lg border border-indigo-400/30 text-[10px] font-bold">
+                  {[
+                    { id: "today", label: "आज" },
+                    { id: "yesterday", label: "कल" },
+                    { id: "week", label: "हफ़्ता" },
+                    { id: "all", label: "सभी" }
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setDailySaleFilter(f.id)}
+                      className={`px-2 py-0.5 rounded-md transition cursor-pointer ${dailySaleFilter === f.id ? "bg-white text-indigo-950 font-black shadow-xs" : "text-indigo-200 hover:text-white"}`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="flex justify-between items-baseline pt-1">
                 <div>
                   <div className="text-3xl font-black tracking-tight text-white drop-shadow-sm">
-                    ₹ {todaySales.toLocaleString('en-IN')}
+                    ₹ {activePeriodSales.toLocaleString('en-IN')}
                   </div>
                   <p className="text-[11px] text-indigo-200 font-semibold mt-0.5">
-                    {todayBills.length > 0 ? `कुल ${todayBills.length} बिक्री बिल दर्ज हैं` : 'आज की बिक्री दर्ज करने हेतु बटन दबाएं'}
+                    {activePeriodBills.length > 0 ? `कुल ${activePeriodBills.length} बिक्री बिल दर्ज हैं` : 'बिक्री दर्ज करने हेतु + बटन दबाएं'}
                   </p>
                 </div>
                 <button
@@ -1661,15 +1745,15 @@ function MobileVyaparAppContent() {
               <div className="grid grid-cols-3 gap-2 pt-2 border-t border-indigo-400/30 text-center">
                 <div className="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
                   <span className="text-[10px] text-emerald-300 font-bold block">💵 नकद (Cash)</span>
-                  <span className="font-extrabold text-xs text-white">₹{todayCash.toLocaleString('en-IN')}</span>
+                  <span className="font-extrabold text-xs text-white">₹{activePeriodCash.toLocaleString('en-IN')}</span>
                 </div>
                 <div className="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
                   <span className="text-[10px] text-sky-300 font-bold block">📲 UPI / QR</span>
-                  <span className="font-extrabold text-xs text-white">₹{todayUpi.toLocaleString('en-IN')}</span>
+                  <span className="font-extrabold text-xs text-white">₹{activePeriodUpi.toLocaleString('en-IN')}</span>
                 </div>
                 <div className="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
                   <span className="text-[10px] text-rose-300 font-bold block">📒 उधारी (Udhar)</span>
-                  <span className="font-extrabold text-xs text-white">₹{todayCredit.toLocaleString('en-IN')}</span>
+                  <span className="font-extrabold text-xs text-white">₹{activePeriodCredit.toLocaleString('en-IN')}</span>
                 </div>
               </div>
             </div>
