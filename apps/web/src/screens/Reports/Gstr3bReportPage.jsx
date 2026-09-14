@@ -1,9 +1,11 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
-import { Printer } from "lucide-react";
+import { Printer, ArrowLeft } from "lucide-react";
 
 const Gstr3bReportPage = () => {
+  const navigate = useNavigate();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [loading, setLoading] = useState(false);
@@ -33,9 +35,19 @@ const Gstr3bReportPage = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-bold print:text-2xl">GSTR-3B / Quarterly Summary</h1>
-          <p className="text-sm text-gray-600">Summary of GST liabilities and collections</p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/m')}
+            className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl transition flex items-center gap-1 text-xs font-bold shadow-xs cursor-pointer shrink-0"
+            title="वापस मोबाइल ऐप पर जाएं"
+          >
+            <ArrowLeft size={16} />
+            <span>वापस</span>
+          </button>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold print:text-2xl">GSTR-3B / Summary</h1>
+            <p className="text-xs sm:text-sm text-gray-600">Summary of GST liabilities and collections</p>
+          </div>
         </div>
         <div className="flex gap-2 print:hidden">
           <button onClick={() => window.print()} className="bg-gray-700 text-white px-4 py-2 rounded-lg inline-flex items-center gap-2 hover:bg-gray-800">

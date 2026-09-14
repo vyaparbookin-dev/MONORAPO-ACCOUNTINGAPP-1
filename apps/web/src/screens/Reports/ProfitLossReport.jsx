@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   DollarSign,
   TrendingDown,
@@ -24,12 +25,25 @@ import {
   Zap,
   Target,
   BarChart3,
-  CheckCircle2
+  CheckCircle2,
+  ArrowLeft
 } from "lucide-react";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
+import { useCompany } from "../../contexts/CompanyContext";
 
 const ProfitLossReportPage = () => {
+  const navigate = useNavigate();
+  const { selectedCompany } = useCompany() || {};
+  const indType = String(
+    typeof selectedCompany?.industryType === "string"
+      ? selectedCompany.industryType
+      : typeof selectedCompany?.businessType === "string"
+      ? selectedCompany.businessType
+      : selectedCompany?.industryType?.name || selectedCompany?.businessType?.name || ""
+  ).toLowerCase();
+  const isRestaurant = indType.includes("restaurant") || indType.includes("cafe") || indType.includes("food") || indType.includes("dhaba") || indType.includes("hotel") || indType.includes("bakery");
+
   const [period, setPeriod] = useState("month"); // 'today' | 'week' | 'month' | 'last_month' | 'year'
   const [startDate, setStartDate] = useState(
     new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0]
@@ -193,14 +207,14 @@ const ProfitLossReportPage = () => {
         });
 
         setMenuMatrix({
-          bestSellers: bestSellers.length > 0 ? bestSellers : [
+          bestSellers: bestSellers.length > 0 ? bestSellers : (isRestaurant ? [
             { name: "🫓 Plain Butter Naan", orders: 30, revenue: 1200, marginPercent: 68, status: "Star ⭐" },
             { name: "🍗 Butter Chicken Boneless", orders: 16, revenue: 5440, marginPercent: 55, status: "Star ⭐" },
             { name: "🍛 Shahi Paneer Butter Masala", orders: 14, revenue: 3360, marginPercent: 58, status: "Star ⭐" }
-          ],
-          lowSellersRisk: lowSellers.length > 0 ? lowSellers : [
+          ] : []),
+          lowSellersRisk: lowSellers.length > 0 ? lowSellers : (isRestaurant ? [
             { name: "🍄 Mushroom Masala Curry", orders: 4, revenue: 880, rawRisk: "Fresh Mushroom Spoilage", lossRisk: "Medium ⚠️" }
-          ]
+          ] : [])
         });
       }
 
@@ -230,10 +244,10 @@ const ProfitLossReportPage = () => {
       // Dynamic Accrual Ledger
       const b = plData?.breakdown || {};
       setAccrualLedger([
-        { category: "Kitchen Grocery & Food Cost (राशन व सब्जी)", monthlyBudget: Math.round((b.foodCost || 0) * (30 / days)), dailyProvision: Math.round((b.foodCost || 0) / days), actualPaid: b.foodCost || 0, status: "Settled 100%" },
-        { category: "Commercial LPG Gas Cylinders (किचन गैस)", monthlyBudget: Math.round((b.gasAndPower || 0) * (30 / days)), dailyProvision: Math.round((b.gasAndPower || 0) / days), actualPaid: b.gasAndPower || 0, status: "Settled 100%" },
+        { category: isRestaurant ? "Kitchen Grocery & Food Cost (राशन व सब्जी)" : "Stock Purchases & Goods Cost (माल खरीद)", monthlyBudget: Math.round((b.foodCost || 0) * (30 / days)), dailyProvision: Math.round((b.foodCost || 0) / days), actualPaid: b.foodCost || 0, status: "Settled 100%" },
+        { category: isRestaurant ? "Commercial LPG Gas Cylinders (किचन गैस)" : "Electricity, Fuel & Utilities (बिजली व ईंधन)", monthlyBudget: Math.round((b.gasAndPower || 0) * (30 / days)), dailyProvision: Math.round((b.gasAndPower || 0) / days), actualPaid: b.gasAndPower || 0, status: "Settled 100%" },
         { category: "Staff Wages & Salaries (स्टाफ वेतन)", monthlyBudget: Math.round((b.staffSalaries || 0) * (30 / days)), dailyProvision: Math.round((b.staffSalaries || 0) / days), actualPaid: b.staffSalaries || 0, status: (b.staffSalaries || 0) > 0 ? "Settled 100%" : "Provisioned" },
-        { category: "Shop / Restaurant Rent (दुकान किराया)", monthlyBudget: Math.round((b.rentAndProperty || 0) * (30 / days)), dailyProvision: Math.round((b.rentAndProperty || 0) / days), actualPaid: b.rentAndProperty || 0, status: (b.rentAndProperty || 0) > 0 ? "Settled 100%" : "Provisioned" }
+        { category: isRestaurant ? "Shop / Restaurant Rent (दुकान/रेस्टोरेंट किराया)" : "Shop / Commercial Rent (दुकान/गोदाम किराया)", monthlyBudget: Math.round((b.rentAndProperty || 0) * (30 / days)), dailyProvision: Math.round((b.rentAndProperty || 0) / days), actualPaid: b.rentAndProperty || 0, status: (b.rentAndProperty || 0) > 0 ? "Settled 100%" : "Provisioned" }
       ]);
     } catch (err) {
       console.error("Error fetching profit/loss report:", err);
@@ -293,18 +307,30 @@ const ProfitLossReportPage = () => {
   };
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen space-y-6">
+    <div className="p-3 sm:p-6 bg-slate-50 min-h-screen space-y-6">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header & Controls */}
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
-          <div>
-            <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2">
-              <PieChart className="text-emerald-700" size={26} />
-              Hospitality Profit & Loss & Budget Forecast Audit
-            </h1>
-            <p className="text-xs text-gray-500 mt-0.5">
-              मासिक बजट पूर्वानुमान • दैनिक ब्रेक-इवन • MoM सेल तुलना • बेस्ट सेलर vs वेस्टेज रिस्क
-            </p>
+        <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate('/m')}
+              className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl transition flex items-center gap-1 text-xs font-bold shadow-xs cursor-pointer shrink-0"
+              title="वापस मोबाइल ऐप पर जाएं"
+            >
+              <ArrowLeft size={16} />
+              <span>वापस</span>
+            </button>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-black text-gray-900 flex items-center gap-2">
+                <PieChart className="text-emerald-700 shrink-0" size={24} />
+                <span>{isRestaurant ? "Hospitality Profit & Loss & Budget Forecast Audit" : "Business Profit & Loss & Financial Audit"}</span>
+              </h1>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {isRestaurant 
+                  ? "मासिक बजट पूर्वानुमान • दैनिक ब्रेक-इवन • MoM सेल तुलना • बेस्ट सेलर vs वेस्टेज रिस्क" 
+                  : "मासिक बजट पूर्वानुमान • दैनिक ब्रेक-इवन • MoM सेल तुलना • शुद्ध लाभ/हानि रजिस्टर"}
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -486,20 +512,20 @@ const ProfitLossReportPage = () => {
             </div>
 
             {/* % Percentage Cost Ratio Bars (Industry Gold Standard) */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-4">
-              <div className="flex justify-between items-center border-b pb-2">
+            <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-200 space-y-4">
+              <div className="flex justify-between items-center border-b pb-2 flex-wrap gap-2">
                 <h3 className="font-black text-gray-900 text-sm flex items-center gap-2">
                   <ChefHat size={18} className="text-emerald-700" />
-                  Hospitality Cost Breakdown & Percentage Ratios (% of Sales)
+                  {isRestaurant ? "Hospitality Cost Breakdown & Percentage Ratios (% of Sales)" : "Operating Expense Breakdown & Financial Ratios (% of Sales)"}
                 </h3>
-                <span className="text-xs text-gray-500">NRAI & Petpooja 5-Star Benchmarks</span>
+                <span className="text-xs text-gray-500">{isRestaurant ? "NRAI & Petpooja 5-Star Benchmarks" : "Commercial Financial Benchmarks"}</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-emerald-900">🥬 Food Raw Cost</span>
-                    <span className={`text-xs font-black px-2 py-0.5 rounded ${parseFloat(foodCostPercent) <= 32 ? "bg-green-200 text-green-900" : "bg-red-200 text-red-900"}`}>
+                    <span className="text-xs font-bold text-emerald-900">{isRestaurant ? "🥬 Food Raw Cost" : "📦 Cost of Goods / Stock"}</span>
+                    <span className={`text-xs font-black px-2 py-0.5 rounded ${parseFloat(foodCostPercent) <= (isRestaurant ? 32 : 60) ? "bg-green-200 text-green-900" : "bg-red-200 text-red-900"}`}>
                       {foodCostPercent}%
                     </span>
                   </div>
@@ -507,12 +533,12 @@ const ProfitLossReportPage = () => {
                   <div className="w-full bg-gray-200 h-2 rounded-full mt-2 overflow-hidden">
                     <div className="bg-emerald-600 h-full" style={{ width: `${Math.min(100, foodCostPercent)}%` }}></div>
                   </div>
-                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 28% - 32%</span>
+                  <span className="text-[10px] text-gray-500 mt-1 block">{isRestaurant ? "Target: 28% - 32%" : "Benchmark: 30% - 60%"}</span>
                 </div>
 
                 <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-blue-900">👨‍🍳 Staff & Labor</span>
+                    <span className="text-xs font-bold text-blue-900">{isRestaurant ? "👨‍🍳 Staff & Labor" : "👨‍💼 Staff & Labor Wages"}</span>
                     <span className="text-xs font-black bg-blue-200 text-blue-900 px-2 py-0.5 rounded">
                       {staffPercent}%
                     </span>
@@ -521,12 +547,12 @@ const ProfitLossReportPage = () => {
                   <div className="w-full bg-gray-200 h-2 rounded-full mt-2 overflow-hidden">
                     <div className="bg-blue-600 h-full" style={{ width: `${Math.min(100, staffPercent)}%` }}></div>
                   </div>
-                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 15% - 20%</span>
+                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 10% - 20%</span>
                 </div>
 
                 <div className="p-4 bg-purple-50/70 border border-purple-200 rounded-xl">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-purple-900">🏢 Shop / Hall Rent</span>
+                    <span className="text-xs font-bold text-purple-900">{isRestaurant ? "🏢 Shop / Hall Rent" : "🏢 Shop / Commercial Rent"}</span>
                     <span className="text-xs font-black bg-purple-200 text-purple-900 px-2 py-0.5 rounded">
                       {rentPercent}%
                     </span>
@@ -535,12 +561,12 @@ const ProfitLossReportPage = () => {
                   <div className="w-full bg-gray-200 h-2 rounded-full mt-2 overflow-hidden">
                     <div className="bg-purple-600 h-full" style={{ width: `${Math.min(100, rentPercent)}%` }}></div>
                   </div>
-                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 8% - 12%</span>
+                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 5% - 12%</span>
                 </div>
 
                 <div className="p-4 bg-orange-50/70 border border-orange-200 rounded-xl">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-orange-900">🔥 Gas & Electricity</span>
+                    <span className="text-xs font-bold text-orange-900">{isRestaurant ? "🔥 Gas & Electricity" : "⚡ Power & Utilities"}</span>
                     <span className="text-xs font-black bg-orange-200 text-orange-900 px-2 py-0.5 rounded">
                       {gasPowerPercent}%
                     </span>
@@ -549,7 +575,7 @@ const ProfitLossReportPage = () => {
                   <div className="w-full bg-gray-200 h-2 rounded-full mt-2 overflow-hidden">
                     <div className="bg-orange-600 h-full" style={{ width: `${Math.min(100, gasPowerPercent)}%` }}></div>
                   </div>
-                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 4% - 6%</span>
+                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 3% - 6%</span>
                 </div>
 
                 {gharKharch > 0 && (
@@ -570,73 +596,83 @@ const ProfitLossReportPage = () => {
               </div>
             </div>
 
-            {/* Menu Engineering & Spoilage / Food Loss Risk Matrix */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Best Sellers (Stars) */}
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-3">
-                <div className="flex justify-between items-center border-b pb-2">
-                  <h3 className="font-black text-gray-900 text-sm flex items-center gap-1.5">
-                    <Award size={18} className="text-amber-500" />
-                    Top Best Sellers & High Profit Dishes (Stars ⭐)
-                  </h3>
-                  <span className="text-[11px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">
-                    Highest Revenue Driver
-                  </span>
+            {/* Menu Engineering & Product Performance Matrix */}
+            {(isRestaurant || menuMatrix.bestSellers.length > 0 || menuMatrix.lowSellersRisk.length > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Best Sellers (Stars) */}
+                <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-gray-200 space-y-3">
+                  <div className="flex justify-between items-center border-b pb-2">
+                    <h3 className="font-black text-gray-900 text-sm flex items-center gap-1.5">
+                      <Award size={18} className="text-amber-500" />
+                      {isRestaurant ? "Top Best Sellers & High Profit Dishes (Stars ⭐)" : "Top Best Selling Products & High Margin (Stars ⭐)"}
+                    </h3>
+                    <span className="text-[11px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">
+                      Highest Revenue Driver
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {menuMatrix.bestSellers.length > 0 ? (
+                      menuMatrix.bestSellers.map((item, idx) => (
+                        <div key={idx} className="p-3 bg-slate-50 border rounded-xl flex justify-between items-center text-xs hover:bg-amber-50/40 transition">
+                          <div>
+                            <p className="font-bold text-gray-900">{item.name}</p>
+                            <span className="text-[10px] text-gray-500">
+                              {item.orders} Orders Sold • Margin: <strong>{item.marginPercent}%</strong>
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-black text-gray-900 block">₹{item.revenue.toLocaleString("en-IN")}</span>
+                            <span className="text-[10px] font-extrabold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                              {item.status}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-6 text-center text-gray-400 text-xs">इस अवधि में कोई प्रोडक्ट सेल रिकॉर्ड नहीं हुई है।</div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {menuMatrix.bestSellers.map((item, idx) => (
-                    <div key={idx} className="p-3 bg-slate-50 border rounded-xl flex justify-between items-center text-xs hover:bg-amber-50/40 transition">
-                      <div>
-                        <p className="font-bold text-gray-900">{item.name}</p>
-                        <span className="text-[10px] text-gray-500">
-                          {item.orders} Orders Sold • Margin: <strong>{item.marginPercent}%</strong>
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span className="font-black text-gray-900 block">₹{item.revenue.toLocaleString("en-IN")}</span>
-                        <span className="text-[10px] font-extrabold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
-                          {item.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                {/* Low Sellers & Risk Alert */}
+                <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-red-200 space-y-3">
+                  <div className="flex justify-between items-center border-b pb-2">
+                    <h3 className="font-black text-gray-900 text-sm flex items-center gap-1.5">
+                      <AlertTriangle size={18} className="text-red-600" />
+                      {isRestaurant ? "Low Sellers & Kitchen Raw Spoilage / Loss Alerts" : "Slow Moving Items & Dead Stock Risk"}
+                    </h3>
+                    <span className="text-[11px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-200">
+                      {isRestaurant ? "Food Loss Danger ⚠️" : "Dead Stock Risk ⚠️"}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {menuMatrix.lowSellersRisk.length > 0 ? (
+                      menuMatrix.lowSellersRisk.map((item, idx) => (
+                        <div key={idx} className="p-3 bg-red-50/40 border border-red-200 rounded-xl flex justify-between items-center text-xs">
+                          <div>
+                            <p className="font-bold text-gray-900">{item.name}</p>
+                            <span className="text-[10px] text-red-700 font-semibold block mt-0.5">
+                              ⚠️ {item.rawRisk}
+                            </span>
+                            <span className="text-[10px] text-gray-500">Only {item.orders} orders in period</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-black text-gray-900 block">₹{item.revenue.toLocaleString("en-IN")}</span>
+                            <span className="text-[10px] font-extrabold text-red-700 bg-red-100 px-1.5 py-0.5 rounded">
+                              Risk: {item.lossRisk}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-6 text-center text-gray-400 text-xs">कोई स्लो-मूविंग या जोखिम वाला आइटम नहीं मिला।</div>
+                    )}
+                  </div>
                 </div>
               </div>
-
-              {/* Low Sellers & Spoilage / Food Loss Alert */}
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-red-200 space-y-3">
-                <div className="flex justify-between items-center border-b pb-2">
-                  <h3 className="font-black text-gray-900 text-sm flex items-center gap-1.5">
-                    <AlertTriangle size={18} className="text-red-600" />
-                    Low Sellers & Kitchen Raw Spoilage / Loss Alerts
-                  </h3>
-                  <span className="text-[11px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-200">
-                    Food Loss Danger ⚠️
-                  </span>
-                </div>
-
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {menuMatrix.lowSellersRisk.map((item, idx) => (
-                    <div key={idx} className="p-3 bg-red-50/40 border border-red-200 rounded-xl flex justify-between items-center text-xs">
-                      <div>
-                        <p className="font-bold text-gray-900">{item.name}</p>
-                        <span className="text-[10px] text-red-700 font-semibold block mt-0.5">
-                          ⚠️ {item.rawRisk}
-                        </span>
-                        <span className="text-[10px] text-gray-500">Only {item.orders} orders in period</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="font-black text-gray-900 block">₹{item.revenue.toLocaleString("en-IN")}</span>
-                        <span className="text-[10px] font-extrabold text-red-700 bg-red-100 px-1.5 py-0.5 rounded">
-                          Risk: {item.lossRisk}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            )}
 
             {/* Accrued Monthly Liabilities vs Actual Paid Settlement Tracker */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-4">

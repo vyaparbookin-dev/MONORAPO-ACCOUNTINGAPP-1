@@ -34,9 +34,20 @@ import {
   ChevronRight
 } from "lucide-react";
 import CustomerSummaryModal from "../../components/modals/CustomerSummaryModal";
+import { useCompany } from "../../contexts/CompanyContext";
 
 export default function DayBookPage() {
   const navigate = useNavigate();
+  const { selectedCompany } = useCompany() || {};
+  const indType = String(
+    typeof selectedCompany?.industryType === "string"
+      ? selectedCompany.industryType
+      : typeof selectedCompany?.businessType === "string"
+      ? selectedCompany.businessType
+      : selectedCompany?.industryType?.name || selectedCompany?.businessType?.name || ""
+  ).toLowerCase();
+  const isRestaurant = indType.includes("restaurant") || indType.includes("cafe") || indType.includes("food") || indType.includes("dhaba") || indType.includes("hotel") || indType.includes("bakery");
+
   const [period, setPeriod] = useState("today");
   const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
@@ -707,7 +718,7 @@ export default function DayBookPage() {
               <div className="space-y-3 text-xs">
                 <div className="flex justify-between items-center p-2.5 bg-emerald-50/50 rounded-xl border border-emerald-100">
                   <span className="font-bold text-gray-800">
-                    🍽️ Restaurant / Counter Cash & Online Sales
+                    {isRestaurant ? "🍽️ Restaurant / Counter Cash & Online Sales" : "🏪 दुकान / काउंटर नकद व ऑनलाइन बिक्री"}
                   </span>
                   <span className="font-black text-emerald-700">
                     ₹{summary.cashSales.toLocaleString("en-IN")}
@@ -715,7 +726,7 @@ export default function DayBookPage() {
                 </div>
                 <div className="flex justify-between items-center p-2.5 bg-emerald-50/50 rounded-xl border border-emerald-100">
                   <span className="font-bold text-gray-800">
-                    🤝 Customer Collections / Party Token Jama
+                    {isRestaurant ? "🤝 Customer Collections / Party Token Jama" : "🤝 ग्राहक उधारी वसूली / पार्टी जमा (Khata)"}
                   </span>
                   <span className="font-black text-emerald-700">
                     ₹{summary.partyIn.toLocaleString("en-IN")}
@@ -735,7 +746,7 @@ export default function DayBookPage() {
               <div className="space-y-3 text-xs">
                 <div className="flex justify-between items-center p-2.5 bg-rose-50/50 rounded-xl border border-rose-100">
                   <span className="font-bold text-gray-800">
-                    🥬 Kitchen Grocery & Raw Materials Inward
+                    {isRestaurant ? "🥬 Kitchen Grocery & Raw Materials Inward" : "📦 माल / स्टॉक खरीद (Purchases)"}
                   </span>
                   <span className="font-black text-rose-700">
                     ₹{summary.cashPurchases.toLocaleString("en-IN")}
@@ -743,7 +754,7 @@ export default function DayBookPage() {
                 </div>
                 <div className="flex justify-between items-center p-2.5 bg-rose-50/50 rounded-xl border border-rose-100">
                   <span className="font-bold text-gray-800">
-                    👨‍🍳 Staff Daily Wages & Salary Disbursals
+                    👨‍💼 स्टाफ वेतन व दिहाड़ी (Staff Wages & Salary)
                   </span>
                   <span className="font-black text-rose-700">
                     ₹{summary.salaries.toLocaleString("en-IN")}
@@ -751,7 +762,7 @@ export default function DayBookPage() {
                 </div>
                 <div className="flex justify-between items-center p-2.5 bg-rose-50/50 rounded-xl border border-rose-100">
                   <span className="font-bold text-gray-800">
-                    🔥 Operating Expenses (Gas, Power, Maintenance)
+                    ⚡ दुकान व दैनिक खर्च (Power, Rent, Maintenance)
                   </span>
                   <span className="font-black text-rose-700">
                     ₹{summary.expenses.toLocaleString("en-IN")}
@@ -759,7 +770,7 @@ export default function DayBookPage() {
                 </div>
                 <div className="flex justify-between items-center p-2.5 bg-rose-50/50 rounded-xl border border-rose-100">
                   <span className="font-bold text-gray-800">
-                    🤝 Supplier & Outsource Vendor Payouts
+                    🤝 सप्लायर व पार्टी भुगतान (Vendor Payouts)
                   </span>
                   <span className="font-black text-rose-700">
                     ₹{summary.partyOut.toLocaleString("en-IN")}
@@ -769,9 +780,11 @@ export default function DayBookPage() {
             </div>
           </div>
 
-          {/* 🍽️ Dish & Menu Performance Section (मेनू व्यंजन व बिक्री विश्लेषण) */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b pb-4">
+          {/* 🍽️ Dish & Menu Performance Section (मेनू व्यंजन व बिक्री विश्लेषण) - ONLY FOR RESTAURANT */}
+          {isRestaurant && (
+            <>
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-6">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b pb-4">
               <div>
                 <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
                   <ChefHat className="text-orange-600" size={24} />
@@ -1385,6 +1398,8 @@ export default function DayBookPage() {
               </div>
             </div>
           </div>
+            </>
+          )}
 
           {/* Today's Sales Bills */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">

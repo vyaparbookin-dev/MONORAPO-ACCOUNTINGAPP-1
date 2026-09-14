@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Download,
   BarChart3,
@@ -20,11 +20,13 @@ import {
   ArrowRight,
   Sparkles,
   Layers,
-  BookOpen
+  BookOpen,
+  ArrowLeft
 } from "lucide-react";
 import api from "../../services/api";
 
 const ReportsPage = () => {
+  const navigate = useNavigate();
   const [reportType, setReportType] = useState("income");
   const [dateRange, setDateRange] = useState("month");
   const [reportCategoryTab, setReportCategoryTab] = useState("all");
@@ -507,14 +509,24 @@ const ReportsPage = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-            <span className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
-              <BarChart3 className="text-white" size={20} />
-            </span>
-            Reports & Analytics
-          </h1>
-          <p className="text-gray-600 mt-1">Business performance and financial analysis</p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/m')}
+            className="p-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl transition flex items-center gap-1 text-xs font-bold shadow-xs cursor-pointer shrink-0"
+            title="वापस मोबाइल ऐप पर जाएं"
+          >
+            <ArrowLeft size={16} />
+            <span>वापस</span>
+          </button>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center gap-3">
+              <span className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shrink-0">
+                <BarChart3 className="text-white" size={20} />
+              </span>
+              <span>Reports & Analytics</span>
+            </h1>
+            <p className="text-gray-600 mt-1 text-xs sm:text-sm">Business performance and financial analysis</p>
+          </div>
         </div>
         
         <div className="flex flex-wrap items-center gap-3">

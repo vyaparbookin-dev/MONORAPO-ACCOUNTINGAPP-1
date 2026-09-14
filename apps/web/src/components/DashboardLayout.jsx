@@ -737,9 +737,22 @@ export default function DashboardLayout() {
           </div>
         </header>
 
+        {/* Sleek Mobile Return Bar if on mobile screen */}
+        <div className="lg:hidden bg-slate-900 text-white px-3 py-2 flex items-center justify-between shadow-md sticky top-0 z-40">
+          <button
+            onClick={() => navigate('/m')}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-xs transition cursor-pointer"
+          >
+            📱 ⬅️ वापस मोबाइल ऐप (Mobile PWA)
+          </button>
+          <span className="text-[11px] font-bold text-indigo-200 truncate max-w-[150px]">
+            {selectedCompany?.name || "Vyapar App"}
+          </span>
+        </div>
+
         {/* Page Content */}
         <main className="flex-1 overflow-auto">
-          <div className="p-6 lg:p-8">
+          <div className="p-2 sm:p-4 lg:p-8">
             <ContentErrorBoundary>
               <Outlet />
             </ContentErrorBoundary>

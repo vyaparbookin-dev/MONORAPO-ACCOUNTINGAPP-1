@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
-import { Download, FileText, CheckCircle, Printer } from "lucide-react";
+import { Download, FileText, CheckCircle, Printer, ArrowLeft } from "lucide-react";
 
 const GstReportPage = () => {
+  const navigate = useNavigate();
   const [report, setReport] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -36,9 +38,19 @@ const GstReportPage = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-xl shadow-sm border border-gray-200 print:hidden">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><FileText className="text-blue-600"/> GST Filing Reports</h1>
-          <p className="text-gray-600 mt-1 text-sm">GSTR-1, GSTR-2, and GSTR-3B Summary</p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/m')}
+            className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl transition flex items-center gap-1 text-xs font-bold shadow-xs cursor-pointer shrink-0"
+            title="वापस मोबाइल ऐप पर जाएं"
+          >
+            <ArrowLeft size={16} />
+            <span>वापस</span>
+          </button>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2"><FileText className="text-blue-600"/> GST Filing Reports</h1>
+            <p className="text-gray-600 mt-1 text-xs sm:text-sm">GSTR-1, GSTR-2, and GSTR-3B Summary</p>
+          </div>
         </div>
         
         <div className="flex gap-2 mt-4 md:mt-0">

@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import api from "../../services/api";
 import Loader from "../../components/Loader";
 
 const ItemWiseReport = () => {
+  const navigate = useNavigate();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -29,12 +32,22 @@ const ItemWiseReport = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-bold">Item-wise GST</h1>
-          <p className="text-sm text-gray-600">GST and sales aggregated per item</p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/m')}
+            className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl transition flex items-center gap-1 text-xs font-bold shadow-xs cursor-pointer shrink-0"
+            title="वापस मोबाइल ऐप पर जाएं"
+          >
+            <ArrowLeft size={16} />
+            <span>वापस</span>
+          </button>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold">Item-wise GST & Stock</h1>
+            <p className="text-xs sm:text-sm text-gray-600">GST and sales aggregated per item</p>
+          </div>
         </div>
         <div>
-          <button onClick={fetchReport} className="bg-blue-600 text-white px-4 py-2 rounded">Refresh</button>
+          <button onClick={fetchReport} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-700 transition">Refresh</button>
         </div>
       </div>
 
