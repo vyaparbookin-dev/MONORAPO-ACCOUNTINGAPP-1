@@ -55,14 +55,14 @@ export default function GamezoneOperationsPage() {
 
   // Reusable Wristband Inventory & Status Tracker
   const [wristbandInventory, setWristbandInventory] = useState([
-    { uid: "WB-RED-101", color: "Red (30m)", status: "IN_USE", childAssigned: "Aarav Sharma" },
-    { uid: "WB-BLUE-204", color: "Blue (60m)", status: "IN_USE", childAssigned: "Ananya Verma" },
-    { uid: "WB-GREEN-305", color: "Green (60m)", status: "IN_USE", childAssigned: "Kabir Patel" },
-    { uid: "WB-VIP-009", color: "Gold (VIP)", status: "IN_USE", childAssigned: "Rohan & Riya" },
+    { uid: "WB-RED-101", color: "Red (30m)", status: "AVAILABLE", childAssigned: null },
     { uid: "WB-RED-102", color: "Red (30m)", status: "AVAILABLE", childAssigned: null },
     { uid: "WB-RED-103", color: "Red (30m)", status: "AVAILABLE", childAssigned: null },
+    { uid: "WB-BLUE-204", color: "Blue (60m)", status: "AVAILABLE", childAssigned: null },
     { uid: "WB-BLUE-205", color: "Blue (60m)", status: "AVAILABLE", childAssigned: null },
     { uid: "WB-BLUE-206", color: "Blue (60m)", status: "AVAILABLE", childAssigned: null },
+    { uid: "WB-GREEN-305", color: "Green (60m)", status: "AVAILABLE", childAssigned: null },
+    { uid: "WB-VIP-009", color: "Gold (VIP)", status: "AVAILABLE", childAssigned: null },
     { uid: "WB-VIP-010", color: "Gold (VIP)", status: "AVAILABLE", childAssigned: null },
   ]);
 
@@ -78,18 +78,13 @@ export default function GamezoneOperationsPage() {
   // Indoor Soft Play & Trampoline Arena Management Engine (1200-1800 Sq.Ft)
   const [softPlayCapacity, setSoftPlayCapacity] = useState({
     maxKidsAllowed: 40,
-    currentKidsInside: 26,
+    currentKidsInside: 0,
     totalAreaSqFt: 1500,
-    gripSocksSoldToday: 38,
-    overtimePenaltyCollected: 1450
+    gripSocksSoldToday: 0,
+    overtimePenaltyCollected: 0
   });
 
-  const [activePlaySessions, setActivePlaySessions] = useState([
-    { id: "SESS-01", wristband: "WB-RED-101", childName: "Aarav Sharma (Age 5)", parentName: "Rajesh Sharma", parentPhone: "9826199881", durationMins: 60, elapsedMins: 45, status: "ACTIVE_PLAYING", antiSkidSocks: true, guardiansCount: 1, overstayPenalty: 0 },
-    { id: "SESS-02", wristband: "WB-BLUE-204", childName: "Ananya Verma (Age 4)", parentName: "Pooja Verma", parentPhone: "9826199882", durationMins: 30, elapsedMins: 38, status: "OVERSTAY_ALERT", antiSkidSocks: true, guardiansCount: 1, overstayPenalty: 80 },
-    { id: "SESS-03", wristband: "WB-GREEN-305", childName: "Kabir Patel (Age 7)", parentName: "Vikram Patel", parentPhone: "9826199883", durationMins: 60, elapsedMins: 15, status: "ACTIVE_PLAYING", antiSkidSocks: true, guardiansCount: 2, overstayPenalty: 0 },
-    { id: "SESS-04", wristband: "WB-VIP-009", childName: "Rohan & Riya (Twin Pass)", parentName: "Sunita Roy", parentPhone: "9826199884", durationMins: 120, elapsedMins: 70, status: "ACTIVE_PLAYING", antiSkidSocks: true, guardiansCount: 1, overstayPenalty: 0 },
-  ]);
+  const [activePlaySessions, setActivePlaySessions] = useState([]);
 
   const [newSessionForm, setNewSessionForm] = useState({
     wristband: "",
@@ -139,16 +134,13 @@ export default function GamezoneOperationsPage() {
     machineId: "MC-02",
     machineName: "Soft Toy Claw Machine A",
     initialStockLoaded: 50,
-    opticalSensorDrops: 8,
-    physicalStockRemaining: 42,
+    opticalSensorDrops: 0,
+    physicalStockRemaining: 50,
     unaccountedLoss: 0, // 0 = 100% Safe, >0 = Theft Alert
     cabinetDoorStatus: "CLOSED_LOCKED", // 'CLOSED_LOCKED' | 'DOOR_OPEN_UNAUTHORIZED'
     clawGripVoltage: "Strong (32V Pulse on Win Cycle)",
     winRatioConfig: "1 Win per 12 Plays (Target Margin: 65%)",
-    doorOpenLogs: [
-      { time: "09:30 AM", event: "Restock: +20 Teddy Bears loaded", operator: "Manager Vikram", status: "AUTHORIZED" },
-      { time: "Yesterday 08:15 PM", event: "Routine maintenance & cleaning", operator: "Staff Sunil", status: "VERIFIED" }
-    ]
+    doorOpenLogs: []
   });
 
 
@@ -173,10 +165,7 @@ export default function GamezoneOperationsPage() {
     lastAutoAlertSent: null
   });
 
-  const [incidentReports, setIncidentReports] = useState([
-    { id: "INC-881", branch: "BSP-02 (Bilaspur)", machine: "MC-02 (Claw Machine)", issue: "Coin wire relay pulse timeout (50ms)", reportedAt: "10:14 AM", status: "AUTO_EMAILED_TO_DEV", severity: "HIGH" },
-    { id: "INC-880", branch: "RPR-01 (Raipur)", machine: "MC-06 (VR Arena)", issue: "USB Reader disconnected - Switched to Manual Mode", reportedAt: "09:40 AM", status: "RESOLVED", severity: "MEDIUM" },
-  ]);
+  const [incidentReports, setIncidentReports] = useState([]);
 
   const [manualCardInput, setManualCardInput] = useState("");
   const [isSelfTesting, setIsSelfTesting] = useState(false);
@@ -884,7 +873,12 @@ export default function GamezoneOperationsPage() {
             </div>
 
             <div className="space-y-2">
-              {incidentReports.map((inc) => (
+              {incidentReports.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-xs">
+                  ✓ कोई सक्रिय खराबी या एरर रिपोर्ट नहीं है (ऑल सिस्टम्स नॉर्मल)
+                </div>
+              ) : (
+                incidentReports.map((inc) => (
                 <div key={inc.id} className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row justify-between sm:items-center gap-3 text-xs">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
@@ -911,7 +905,8 @@ export default function GamezoneOperationsPage() {
                     </button>
                   </div>
                 </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -1131,18 +1126,24 @@ export default function GamezoneOperationsPage() {
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <h3 className="font-black text-base text-slate-900">क्लॉ मशीन डोर ओपन व रीस्टॉक ऑडिट लॉग</h3>
             <div className="space-y-2">
-              {clawSecurityAudit.doorOpenLogs.map((log, idx) => (
-                <div key={idx} className="p-3 bg-slate-50 rounded-xl border flex justify-between items-center text-xs">
-                  <div className="flex items-center gap-3">
-                    <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded font-bold text-[10px]">
-                      {log.status}
-                    </span>
-                    <span className="font-bold text-slate-800">{log.event}</span>
-                    <span className="text-slate-500">({log.operator})</span>
-                  </div>
-                  <span className="text-slate-400 font-mono text-[10px]">{log.time}</span>
+              {clawSecurityAudit.doorOpenLogs.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-xs">
+                  कोई डोर ओपन या रीस्टॉक ऑडिट लॉग दर्ज नहीं है
                 </div>
-              ))}
+              ) : (
+                clawSecurityAudit.doorOpenLogs.map((log, idx) => (
+                  <div key={idx} className="p-3 bg-slate-50 rounded-xl border flex justify-between items-center text-xs">
+                    <div className="flex items-center gap-3">
+                      <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded font-bold text-[10px]">
+                        {log.status}
+                      </span>
+                      <span className="font-bold text-slate-800">{log.event}</span>
+                      <span className="text-slate-500">({log.operator})</span>
+                    </div>
+                    <span className="text-slate-400 font-mono text-[10px]">{log.time}</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -1329,7 +1330,13 @@ export default function GamezoneOperationsPage() {
               </div>
 
               <div className="space-y-3 max-h-[450px] overflow-y-auto">
-                {activePlaySessions.map((sess) => {
+                {activePlaySessions.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400">
+                    <p className="text-sm font-semibold">अखाड़े में फिलहाल कोई एक्टिव सेशन नहीं है</p>
+                    <p className="text-xs text-slate-400 mt-1">नया बच्चा प्रवेश करने के लिए बाईं तरफ का फॉर्म भरें।</p>
+                  </div>
+                ) : (
+                  activePlaySessions.map((sess) => {
                   const timeLeft = sess.durationMins - sess.elapsedMins;
                   const rawExtraTime = sess.elapsedMins - sess.durationMins;
                   const effectiveOvertime = Math.max(0, rawExtraTime - softPlayRules.gracePeriodMins);
@@ -1384,7 +1391,8 @@ export default function GamezoneOperationsPage() {
                       </div>
                     </div>
                   );
-                })}
+                })
+              )}
               </div>
             </div>
           </div>

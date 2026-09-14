@@ -33,15 +33,10 @@ const ScheemApplyModel = ({ isOpen, onClose, cartItems, onApply }) => {
       // Fetch active schemes from backend
       const response = await api.get("/api/schemes/active");
       const data = response.data || response;
-      // Fallback mock data if API is empty for demonstration
-      const mockSchemes = [
-        { _id: "1", name: "Diwali Dhamaka", type: "flat", minAmount: 5000, discountPercent: 10, description: "Flat 10% off on bill above ₹5000" },
-        { _id: "2", name: "Buy 1 Get 1 Rice", type: "bogo", triggerProduct: "Rice", freeProduct: "Rice", description: "Buy 1kg Rice get 1kg Free" },
-        { _id: "3", name: "Combo Offer", type: "combo", triggerProduct: "Sugar", freeProduct: "Tea", description: "Free Tea packet with 5kg Sugar" }
-      ];
-      setSchemes(Array.isArray(data) && data.length > 0 ? data : mockSchemes);
+      setSchemes(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Error fetching schemes:", error);
+      setSchemes([]);
     } finally {
       setLoading(false);
     }

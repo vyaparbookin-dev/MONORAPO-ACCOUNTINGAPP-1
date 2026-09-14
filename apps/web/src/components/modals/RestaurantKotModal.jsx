@@ -8,9 +8,9 @@ const INITIAL_DEFAULT_TABLES = [
   { id: "P1", name: "🛍️ Parcel / Takeaway", zone: "Counter", capacity: 1, status: "vacant", activeKotId: null, runningTotal: 0, orderStartedAt: null },
   { id: "SW", name: "🛵 Swiggy / Zomato Delivery", zone: "Delivery", capacity: 1, status: "vacant", activeKotId: null, runningTotal: 0, orderStartedAt: null },
   { id: "T1", name: "Table 1 (Dine-in)", zone: "AC Hall", capacity: 2, status: "vacant", activeKotId: null, runningTotal: 0, orderStartedAt: null },
-  { id: "T2", name: "Table 2 (Dine-in)", zone: "AC Hall", capacity: 4, status: "cooking", activeKotId: "KOT-101", runningTotal: 480, orderStartedAt: Date.now() - 15 * 60000 },
-  { id: "T3", name: "Table 3 (Dine-in)", zone: "AC Hall", capacity: 6, status: "served", activeKotId: "KOT-102", runningTotal: 800, orderStartedAt: Date.now() - 35 * 60000 },
-  { id: "T4", name: "Table 4 (Family)", zone: "Garden", capacity: 8, status: "billed", activeKotId: "KOT-103", runningTotal: 1250, orderStartedAt: Date.now() - 45 * 60000 },
+  { id: "T2", name: "Table 2 (Dine-in)", zone: "AC Hall", capacity: 4, status: "vacant", activeKotId: null, runningTotal: 0, orderStartedAt: null },
+  { id: "T3", name: "Table 3 (Dine-in)", zone: "AC Hall", capacity: 6, status: "vacant", activeKotId: null, runningTotal: 0, orderStartedAt: null },
+  { id: "T4", name: "Table 4 (Family)", zone: "Garden", capacity: 8, status: "vacant", activeKotId: null, runningTotal: 0, orderStartedAt: null },
   { id: "T5", name: "Table 5 (Garden)", zone: "Garden", capacity: 4, status: "vacant", activeKotId: null, runningTotal: 0, orderStartedAt: null },
   { id: "T6", name: "Table 6 (Rooftop View)", zone: "Rooftop", capacity: 4, status: "vacant", activeKotId: null, runningTotal: 0, orderStartedAt: null }
 ];
@@ -31,7 +31,7 @@ export default function RestaurantKotModal({ isOpen, onClose, onApplyKot, invent
   });
 
   const [selectedTable, setSelectedTable] = useState(tablesList[2] || INITIAL_DEFAULT_TABLES[2]);
-  const [waiterName, setWaiterName] = useState("Rohan Captain");
+  const [waiterName, setWaiterName] = useState("");
   const [cookingNotes, setCookingNotes] = useState("");
   const [selectedItemName, setSelectedItemName] = useState("");
   const [itemQty, setItemQty] = useState(1);
@@ -416,7 +416,7 @@ export default function RestaurantKotModal({ isOpen, onClose, onApplyKot, invent
                     const matched = inventory.find(p => p.name?.toLowerCase() === e.target.value.toLowerCase());
                     if (matched) setItemRate(matched.sellingPrice || matched.price || 0);
                   }}
-                  placeholder="आइटम चुनें (e.g. Butter Naan, Cold Coffee, Pizza)"
+                  placeholder="आइटम का नाम खोजें या चुनें..."
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold bg-white"
                 />
                 <datalist id="rest-menu-list">

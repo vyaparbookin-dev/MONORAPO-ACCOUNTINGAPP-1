@@ -35,129 +35,6 @@ import RestaurantKotModal from "../../components/modals/RestaurantKotModal";
 import { getBusinessMode } from "../../utils/businessMode";
 import { useCompany } from "../../contexts/CompanyContext";
 
-const DEFAULT_RESTAURANT_DISHES = [
-  {
-    _id: "dish_1",
-    name: "Shahi Paneer Butter Masala",
-    sellingPrice: 240,
-    price: 240,
-    category: "Main Course",
-    currentStock: 80,
-    unit: "Plate",
-    barcode: "1001",
-    isVeg: true,
-    image: "https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=300"
-  },
-  {
-    _id: "dish_2",
-    name: "Butter Garlic Tandoori Naan",
-    sellingPrice: 45,
-    price: 45,
-    category: "Breads",
-    currentStock: 200,
-    unit: "pc",
-    barcode: "1002",
-    isVeg: true,
-    image: "https://images.unsplash.com/photo-1601050690597-df0568f70950?w=300"
-  },
-  {
-    _id: "dish_3",
-    name: "Veg Dum Biryani with Raita",
-    sellingPrice: 190,
-    price: 190,
-    category: "Rice & Biryani",
-    currentStock: 50,
-    unit: "Plate",
-    barcode: "1003",
-    isVeg: true,
-    image: "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=300"
-  },
-  {
-    _id: "dish_4",
-    name: "Cold Coffee with Ice Cream",
-    sellingPrice: 95,
-    price: 95,
-    category: "Beverages",
-    currentStock: 100,
-    unit: "Glass",
-    barcode: "1004",
-    isVeg: true,
-    image: "https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=300"
-  },
-  {
-    _id: "dish_5",
-    name: "Crispy Cheese Veg Burger",
-    sellingPrice: 110,
-    price: 110,
-    category: "Fast Food",
-    currentStock: 60,
-    unit: "pc",
-    barcode: "1005",
-    isVeg: true,
-    image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300"
-  },
-  {
-    _id: "dish_6",
-    name: "Farmhouse Loaded Pizza (8 inch)",
-    sellingPrice: 220,
-    price: 220,
-    category: "Fast Food",
-    currentStock: 40,
-    unit: "pc",
-    barcode: "1006",
-    isVeg: true,
-    image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=300"
-  },
-  {
-    _id: "dish_7",
-    name: "Dal Makhani Special",
-    sellingPrice: 180,
-    price: 180,
-    category: "Main Course",
-    currentStock: 70,
-    unit: "Plate",
-    barcode: "1007",
-    isVeg: true,
-    image: "https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=300"
-  },
-  {
-    _id: "dish_8",
-    name: "Paneer Tikka Dry",
-    sellingPrice: 210,
-    price: 210,
-    category: "Starters",
-    currentStock: 45,
-    unit: "Plate",
-    barcode: "1008",
-    isVeg: true,
-    image: "https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=300"
-  },
-  {
-    _id: "dish_9",
-    name: "Fresh Lime Soda / Mojito",
-    sellingPrice: 70,
-    price: 70,
-    category: "Beverages",
-    currentStock: 120,
-    unit: "Glass",
-    barcode: "1009",
-    isVeg: true,
-    image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=300"
-  },
-  {
-    _id: "dish_10",
-    name: "Gulab Jamun with Rabdi (2 pcs)",
-    sellingPrice: 80,
-    price: 80,
-    category: "Desserts",
-    currentStock: 90,
-    unit: "Portion",
-    barcode: "1010",
-    isVeg: true,
-    image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300"
-  }
-];
-
 export default function FastPOSPage() {
   // --- 🏢 MULTI-COUNTER BILLING TABS ---
   const [activeCounterTab, setActiveCounterTab] = useState("counter_1");
@@ -227,7 +104,7 @@ export default function FastPOSPage() {
   };
 
   const [barcode, setBarcode] = useState("");
-  const [products, setProducts] = useState(DEFAULT_RESTAURANT_DISHES);
+  const [products, setProducts] = useState([]);
   const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -305,12 +182,12 @@ export default function FastPOSPage() {
 
   // Emergency Handover Form State
   const [handoverForm, setHandoverForm] = useState({
-    outgoingCashier: "Deepa Cashier",
-    incomingCashier: "Rohan Captain",
-    emergencyReason: "Personal Emergency / Shift Swap",
-    openingCash: 2000,
-    countedCash: 16800,
-    expectedCash: 16800,
+    outgoingCashier: "",
+    incomingCashier: "",
+    emergencyReason: "Shift Swap",
+    openingCash: 0,
+    countedCash: 0,
+    expectedCash: 0,
     handoverTime: new Date().toLocaleTimeString("hi-IN")
   });
 
@@ -377,14 +254,10 @@ export default function FastPOSPage() {
       setLoading(true);
       const res = await api.get("/api/inventory").catch(() => ({ data: [] }));
       const productList = res.data?.products || res.data || [];
-      if (productList.length > 0) {
-        setProducts(productList.filter(Boolean));
-      } else {
-        setProducts(DEFAULT_RESTAURANT_DISHES);
-      }
+      setProducts(productList.length > 0 ? productList.filter(Boolean) : []);
     } catch (err) {
       console.error(err);
-      setProducts(DEFAULT_RESTAURANT_DISHES);
+      setProducts([]);
     } finally {
       setLoading(false);
     }
@@ -560,7 +433,7 @@ export default function FastPOSPage() {
       id: kotData.kotId || `KOT-${Date.now().toString().slice(-4)}`,
       table: kotData.table,
       capacity: kotData.capacity || 4,
-      waiter: kotData.waiter || "Rohan Captain",
+      waiter: kotData.waiter || "Staff",
       placedAt: new Date(),
       prepTimeMinutes: 1,
       status: "COOKING",
@@ -1512,15 +1385,15 @@ export default function FastPOSPage() {
                 <div className="flex items-center gap-4 text-xs">
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-                    🍽️ डाइन-इन: <b>125 बिल</b> (₹1,74,888)
+                    🍽️ डाइन-इन: <b>{restaurantAnalytics?.orderTypes?.dine_in?.count || 0} बिल</b> (₹{(restaurantAnalytics?.orderTypes?.dine_in?.revenue || 0).toLocaleString('en-IN')})
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                    🛍️ टेकअवे (पार्सल): <b>50 बिल</b> (₹92,009)
+                    🛍️ टेकअवे: <b>{restaurantAnalytics?.orderTypes?.takeaway?.count || 0} बिल</b> (₹{(restaurantAnalytics?.orderTypes?.takeaway?.revenue || 0).toLocaleString('en-IN')})
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-rose-400"></span>
-                    🛵 ऑनलाइन डिलीवरी: <b>25 बिल</b> (₹55,694)
+                    🛵 डिलीवरी: <b>{restaurantAnalytics?.orderTypes?.delivery?.count || 0} बिल</b> (₹{(restaurantAnalytics?.orderTypes?.delivery?.revenue || 0).toLocaleString('en-IN')})
                   </span>
                 </div>
               </div>
@@ -1532,30 +1405,28 @@ export default function FastPOSPage() {
                   <span>स्टाफ-वाइज परफॉरमेंस व रेटिंग्स लीडरबोर्ड (Staff Ratings)</span>
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {(staffPerformance.length > 0 ? staffPerformance : [
-                    { name: "Sunil Chef", role: "Head Chef", rating: 5.0, ratingCount: 17, positiveCount: 17, revenue: 85000 },
-                    { name: "Aman Steward", role: "Steward", rating: 5.0, ratingCount: 23, positiveCount: 23, revenue: 68400 },
-                    { name: "Rohan Captain", role: "Captain / Waiter", rating: 4.7, ratingCount: 26, positiveCount: 26, revenue: 115095 },
-                    { name: "Deepa Cashier", role: "Cashier", rating: 4.5, ratingCount: 19, positiveCount: 18, revenue: 147703 }
-                  ]).map((st, i) => (
-                    <div key={i} className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-black text-slate-900 text-xs">{st.name}</span>
-                          <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.2 rounded-full font-bold">{st.role}</span>
+                  {staffPerformance.length > 0 ? (
+                    staffPerformance.map((st, i) => (
+                      <div key={i} className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-slate-900 text-xs">{st.name}</span>
+                            <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.2 rounded-full font-bold">{st.role}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 mt-0.5">
+                            {st.ratingCount || 0} कस्टमर रिव्यु • कुल सेल: ₹{(st.revenue || 0).toLocaleString('en-IN')}
+                          </p>
                         </div>
-                        <p className="text-[10px] text-slate-500 mt-0.5">
-                          {st.ratingCount || 20}+ कस्टमर रिव्यु • कुल सेल: ₹{(st.revenue || 0).toLocaleString('en-IN')}
-                        </p>
+                        <div className="text-right">
+                          <span className="px-2.5 py-1 bg-amber-100 text-amber-900 rounded-xl font-black text-xs inline-block">
+                            ⭐ {st.rating || 5.0} / 5.0
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <span className="px-2.5 py-1 bg-amber-100 text-amber-900 rounded-xl font-black text-xs inline-block">
-                          ⭐ {st.rating || 5.0} / 5.0
-                        </span>
-                        <span className="block text-[9px] text-emerald-700 font-bold mt-0.5">100% संतोषजनक</span>
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <div className="col-span-2 py-4 text-center text-xs text-slate-400">कोई स्टाफ रेटिंग डेटा उपलब्ध नहीं है।</div>
+                  )}
                 </div>
               </div>
 
@@ -1566,36 +1437,32 @@ export default function FastPOSPage() {
                   <span>हाल ही में प्राप्त कस्टमर रिव्यूज व स्पेशल कुकिंग निर्देश (Recent Customer Feedback)</span>
                 </h4>
                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                  {(restaurantAnalytics?.reviewsAnalytics?.recentReviews?.length > 0 
-                    ? restaurantAnalytics.reviewsAnalytics.recentReviews 
-                    : [
-                      { customerName: "Amitabh Sharma", table: "Table 4", staffName: "Aman Steward", staffRating: 5, comment: "Super fast bread refills by Aman Steward during peak rush! Great hospitality.", billNumber: "BILL-RUSH-2004" },
-                      { customerName: "Pooja Malhotra", table: "Table 2", staffName: "Rohan Captain", staffRating: 5, comment: "Strict Jain instructions were followed 100% accurately. Very trustworthy kitchen.", billNumber: "BILL-RUSH-2008" },
-                      { customerName: "Rajesh Singhania", table: "Table 6", staffName: "Sunil Chef", staffRating: 5, comment: "Dal Makhani Bukhara is unmatched in Delhi! Huge compliments to Chef Sunil.", billNumber: "BILL-RUSH-2015" },
-                      { customerName: "Neha Gupta", table: "Parcel Counter", staffName: "Deepa Cashier", staffRating: 5, comment: "Deepa Cashier processed our bill and split payment in 30 seconds. Seamless takeaway!", billNumber: "BILL-RUSH-2022" }
-                    ]
-                  ).map((rev, i) => (
-                    <div key={i} className="p-3 bg-amber-50/40 border border-amber-200/80 rounded-2xl">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                          <span className="font-black text-slate-900 text-xs">{rev.customerName}</span>
-                          <span className="text-[10px] bg-white px-2 py-0.5 rounded-md border text-slate-600 font-medium">
-                            {rev.table || "Dine-in"}
+                  {restaurantAnalytics?.reviewsAnalytics?.recentReviews?.length > 0 ? (
+                    restaurantAnalytics.reviewsAnalytics.recentReviews.map((rev, i) => (
+                      <div key={i} className="p-3 bg-amber-50/40 border border-amber-200/80 rounded-2xl">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-slate-900 text-xs">{rev.customerName}</span>
+                            <span className="text-[10px] bg-white px-2 py-0.5 rounded-md border text-slate-600 font-medium">
+                              {rev.table || "Dine-in"}
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400">#{rev.billNumber}</span>
+                          </div>
+                          <span className="text-xs font-black text-amber-600 font-mono">
+                            ⭐ {rev.staffRating || 5}/5
                           </span>
-                          <span className="text-[10px] font-mono text-slate-400">#{rev.billNumber}</span>
                         </div>
-                        <span className="text-xs font-black text-amber-600 font-mono">
-                          ⭐ {rev.staffRating || 5}/5
-                        </span>
+                        <p className="text-xs text-slate-700 italic mt-1 bg-white/70 p-2 rounded-xl border border-amber-100">
+                          "{rev.comment}"
+                        </p>
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          समीक्षित स्टाफ: <b className="text-slate-800">{rev.staffName || "Service Staff"}</b>
+                        </p>
                       </div>
-                      <p className="text-xs text-slate-700 italic mt-1 bg-white/70 p-2 rounded-xl border border-amber-100">
-                        "{rev.comment}"
-                      </p>
-                      <p className="text-[10px] text-slate-500 mt-1">
-                        समीक्षित स्टाफ: <b className="text-slate-800">{rev.staffName || "Service Staff"}</b>
-                      </p>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <div className="py-4 text-center text-xs text-slate-400">कोई हालिया कस्टमर रिव्यू दर्ज नहीं है।</div>
+                  )}
                 </div>
               </div>
             </div>

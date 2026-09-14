@@ -55,40 +55,26 @@ const ProfitLossReportPage = () => {
 
   // Month-over-Month (MoM) & Predictive Budgeting State
   const [predictiveBudget, setPredictiveBudget] = useState({
-    monthlyBudgetTotal: 106000,
-    dailyBurnRate: 3533, // ₹106,000 / 30 days
-    breakEvenDailySalesNeeded: 5888, // At ~60% gross food margin
-    lastMonthDailyAvgSales: 10000, // ₹3,00,000 / 30 days
-    currentMonthDailyAvgSales: 8166, // Current pace
-    salesPaceVariancePercent: -18.3, // 18.3% slower than last month
-    projectedMonthEndSales: 245000,
-    actualExpensesDisbursed: 102700,
-    budgetVarianceGap: 3300, // Under-budget savings
+    monthlyBudgetTotal: 0,
+    dailyBurnRate: 0,
+    breakEvenDailySalesNeeded: 0,
+    lastMonthDailyAvgSales: 0,
+    currentMonthDailyAvgSales: 0,
+    salesPaceVariancePercent: 0,
+    projectedMonthEndSales: 0,
+    actualExpensesDisbursed: 0,
+    budgetVarianceGap: 0,
     isUnderBudget: true
   });
 
   // Active Menu Engineering & Spoilage Matrix
   const [menuMatrix, setMenuMatrix] = useState({
-    bestSellers: [
-      { name: "Shahi Paneer (Special Gravy)", orders: 184, revenue: 47840, marginPercent: 54, status: "Star ⭐" },
-      { name: "Butter Naan / Laccha Paratha", orders: 420, revenue: 16800, marginPercent: 68, status: "Star ⭐" },
-      { name: "Dal Makhani Slow Cooked", orders: 142, revenue: 28400, marginPercent: 60, status: "Star ⭐" },
-      { name: "Cold Coffee with Ice Cream", orders: 110, revenue: 13200, marginPercent: 62, status: "High Margin" },
-    ],
-    lowSellersRisk: [
-      { name: "Mushroom Malai Kadhai", orders: 6, revenue: 1680, rawRisk: "Fresh Mushroom & Cream Spoilage Risk", lossRisk: "High ⚠️" },
-      { name: "Pina Colada Mocktail", orders: 4, revenue: 720, rawRisk: "Pineapple Puree Expiry", lossRisk: "Medium ⚠️" },
-      { name: "Paneer Lababdar Deluxe", orders: 8, revenue: 2240, rawRisk: "Duplicate Menu Cannibalization", lossRisk: "Low" },
-    ]
+    bestSellers: [],
+    lowSellersRisk: []
   });
 
   // Accrued Monthly Liabilities vs Actual Paid Settlement Tracker
-  const [accrualLedger, setAccrualLedger] = useState([
-    { category: "Restaurant Shop Rent", monthlyBudget: 35000, dailyProvision: 1166, actualPaid: 35000, status: "Settled 100%" },
-    { category: "Chef & Waitstaff Salary", monthlyBudget: 45000, dailyProvision: 1500, actualPaid: 42000, status: "Pending ₹3,000" },
-    { category: "Electricity & Power Bill", monthlyBudget: 12000, dailyProvision: 400, actualPaid: 11450, status: "Settled 100%" },
-    { category: "Commercial LPG Gas (5 Cyl)", monthlyBudget: 9000, dailyProvision: 300, actualPaid: 9250, status: "Over-budget ₹250" },
-  ]);
+  const [accrualLedger, setAccrualLedger] = useState([]);
 
   const handlePeriodChange = (p) => {
     setPeriod(p);
@@ -207,14 +193,8 @@ const ProfitLossReportPage = () => {
         });
 
         setMenuMatrix({
-          bestSellers: bestSellers.length > 0 ? bestSellers : (isRestaurant ? [
-            { name: "🫓 Plain Butter Naan", orders: 30, revenue: 1200, marginPercent: 68, status: "Star ⭐" },
-            { name: "🍗 Butter Chicken Boneless", orders: 16, revenue: 5440, marginPercent: 55, status: "Star ⭐" },
-            { name: "🍛 Shahi Paneer Butter Masala", orders: 14, revenue: 3360, marginPercent: 58, status: "Star ⭐" }
-          ] : []),
-          lowSellersRisk: lowSellers.length > 0 ? lowSellers : (isRestaurant ? [
-            { name: "🍄 Mushroom Masala Curry", orders: 4, revenue: 880, rawRisk: "Fresh Mushroom Spoilage", lossRisk: "Medium ⚠️" }
-          ] : [])
+          bestSellers: bestSellers,
+          lowSellersRisk: lowSellers
         });
       }
 

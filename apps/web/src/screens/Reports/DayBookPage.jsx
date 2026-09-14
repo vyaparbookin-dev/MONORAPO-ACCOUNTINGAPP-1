@@ -1323,20 +1323,20 @@ export default function DayBookPage() {
               <div>
                 <span className="text-[10px] uppercase font-bold text-emerald-300 block">💎 सर्वाधिक मुनाफा (Highest Margin Driver)</span>
                 <p className="text-base font-black text-emerald-400 mt-0.5">
-                  🍹 मॉकटेल, शेक्स व बेवरेजेस (74% Margin)
+                  {categoryPerformance[1]?.name ? `${categoryPerformance[1].name} (${categoryPerformance[1].revSharePercent || 0}% Share)` : "डाटा उपलब्ध नहीं"}
                 </p>
                 <p className="text-[11px] text-slate-300">
-                  कम लागत, अत्यधिक मुनाफा — प्रत्येक टेबल पर वेटर को ड्रिंक्स अपसेल करने का निर्देश दें।
+                  कम लागत, अत्यधिक मुनाफा — प्रत्येक ऑर्डर/बिल के साथ अपसेल करने का निर्देश दें।
                 </p>
               </div>
 
               <div>
                 <span className="text-[10px] uppercase font-bold text-cyan-300 block">🫓 हाईएस्ट वॉल्यूम ड्राइवर (Attachment Item)</span>
                 <p className="text-base font-black text-cyan-300 mt-0.5">
-                  तंदूरी रोटी व नान (526 यूनिट्स)
+                  {categoryPerformance[2]?.name ? `${categoryPerformance[2].name} (${categoryPerformance[2].qty || 0} यूनिट्स)` : "डाटा उपलब्ध नहीं"}
                 </p>
                 <p className="text-[11px] text-slate-300">
-                  तंदूर की भट्टी चालू रखने पर लगभग हर मेन कोर्स ऑर्डर के साथ रोटी/नान अनिवार्य रूप से बिकती है।
+                  नियमित ऑर्डर्स के साथ अनिवार्य रूप से बिकने वाली सर्वाधिक वॉल्यूम कैटेगरी।
                 </p>
               </div>
             </div>
@@ -1380,8 +1380,7 @@ export default function DayBookPage() {
                   <h4 className="font-black text-amber-950">मॉकटेल व बेवरेज अपसेल गैप (Attach Rate)</h4>
                 </div>
                 <p className="text-slate-700 leading-relaxed">
-                  डाइन-इन में केवल <strong>18% डाइनर्स</strong> ने मॉकटेल या शेक्स ऑर्डर किए। 
-                  वेटर्स को ऑर्डर लेते समय <em>"सर, फ्रेश वर्जिन मोजितो या कोल्ड कॉफी लाऊं?"</em> पूछने की ट्रेनिंग दें, इससे रेस्टोरेंट का औसत बिल साइज ₹150–₹200 बढ़ जाएगा!
+                  डाइन-इन और टेकअवे ऑर्डर्स के साथ बेवरेज या डेसर्ट का अटैच रेट बढ़ाने के लिए वेटर/स्टाफ को पसंदीदा ड्रिंक्स या कॉम्बो पूछने की ट्रेनिंग दें, जिससे औसत बिल साइज आसानी से बढ़ सके!
                 </p>
               </div>
 
