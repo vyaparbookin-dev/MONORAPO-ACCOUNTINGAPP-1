@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const partySchema = new mongoose.Schema({
   name: { type: String, required: true },
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
-  partyType: { type: String, enum: ["supplier", "customer", "both"], default: "both" },
+  partyType: { type: String, enum: ["supplier", "customer", "both", "personal"], default: "both" },
   contactPerson: String,
   email: String,
   mobileNumber: { type: String, required: true },

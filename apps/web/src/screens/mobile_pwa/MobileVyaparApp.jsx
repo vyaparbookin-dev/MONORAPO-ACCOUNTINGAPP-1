@@ -52,6 +52,7 @@ import api from "../../services/api";
 import PagarBookHub from "../../components/PagarBookHub";
 import MobileDayBookModal from "../../components/mobile/MobileDayBookModal";
 import MobileProfitLossModal from "../../components/mobile/MobileProfitLossModal";
+import MobileReportViewerModal from "../../components/mobile/MobileReportViewerModal";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 
@@ -216,6 +217,14 @@ function MobileVyaparAppContent() {
   const [newPartyBalance, setNewPartyBalance] = useState("0");
   const [newPartyType, setNewPartyType] = useState("customer");
   const [savingParty, setSavingParty] = useState(false);
+  const [partyFilterTab, setPartyFilterTab] = useState("all"); // 'all', 'customer', 'supplier', 'personal'
+  const [partyStatementLoading, setPartyStatementLoading] = useState(false);
+  const [partyTransactions, setPartyTransactions] = useState([]);
+  const [showPartyTxForm, setShowPartyTxForm] = useState(false);
+  const [partyTxType, setPartyTxType] = useState('paid'); // 'paid' (मैंने दिए) or 'received' (मुझे मिले)
+  const [partyTxAmount, setPartyTxAmount] = useState('');
+  const [partyTxNotes, setPartyTxNotes] = useState('');
+  const [savingPartyTx, setSavingPartyTx] = useState(false);
   // Sync tab & modal states to sessionStorage
   const handleTabChange = (tab) => {
     setActiveTab(tab);
@@ -260,6 +269,7 @@ function MobileVyaparAppContent() {
   // ==================== NATIVE MOBILE REPORTS MODALS ====================
   const [showDayBookModal, setShowDayBookModal] = useState(false);
   const [showProfitLossModal, setShowProfitLossModal] = useState(false);
+  const [activeMobileReport, setActiveMobileReport] = useState(null);
 
   // ==================== PAGARBOOK STAFF & SALARY STATE ====================
   const [showPagarBookModal, setShowPagarBookModal] = useState(() => sessionStorage.getItem("mobile_show_pagarbook") === "true");
@@ -1216,6 +1226,103 @@ function MobileVyaparAppContent() {
     }
   };
 
+  const fetchPartyStatement = async (partyId) => {
+    if (!partyId) return;
+    setPartyStatementLoading(true);
+    try {
+      const res = await api.get(`/api/party/${partyId}/statement`).catch(() => api.get(`/api/parties/${partyId}/statement`));
+      if (res?.data?.transactions) {
+        setPartyTransactions(res.data.transactions);
+      } else {
+        setPartyTransactions([]);
+      }
+    } catch (e) {
+      setPartyTransactions([]);
+    } finally {
+      setPartyStatementLoading(false);
+    }
+  };
+
+  const handleOpenPartyDetail = (party) => {
+    setSelectedPartyDetail(party);
+    setShowPartyTxForm(false);
+    setPartyTxAmount('');
+    setPartyTxNotes('');
+    const pId = party.id || party._id;
+    if (pId) {
+      fetchPartyStatement(pId);
+    }
+  };
+
+  const handleSavePartyTx = async () => {
+    if (!selectedPartyDetail) return;
+    const amt = Number(partyTxAmount);
+    if (!partyTxAmount || isNaN(amt) || amt <= 0) {
+      alert("कृपया सही राशि (₹) दर्ज करें!");
+      return;
+    }
+    setSavingPartyTx(true);
+    try {
+      const partyId = selectedPartyDetail.id || selectedPartyDetail._id;
+      const type = partyTxType === 'paid' ? 'paid' : 'received';
+      const notes = partyTxNotes.trim() || (type === 'paid' ? 'मैंने दिए' : 'मुझे मिले');
+
+      await api.post("/api/payment/entry", {
+        partyId,
+        amount: amt,
+        type,
+        notes
+      });
+
+      // 'paid' increases outstanding (+amt, You'll Get), 'received' decreases outstanding (-amt)
+      const diff = type === 'paid' ? amt : -amt;
+      const updatedBalance = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0) + diff;
+
+      setSelectedPartyDetail(prev => ({
+        ...prev,
+        balance: updatedBalance,
+        currentBalance: updatedBalance
+      }));
+
+      setParties(prev => prev.map(p => {
+        const id = p.id || p._id;
+        if (id === partyId) {
+          return { ...p, balance: updatedBalance, currentBalance: updatedBalance };
+        }
+        return p;
+      }));
+
+      setPartyTxAmount('');
+      setPartyTxNotes('');
+      setShowPartyTxForm(false);
+      fetchPartyStatement(partyId);
+      alert(`✅ ₹${amt.toLocaleString('en-IN')} का लेन-देन (${type === 'paid' ? 'मैंने दिए' : 'मुझे मिले'}) दर्ज हुआ!`);
+    } catch (err) {
+      console.error("Party transaction error:", err);
+      alert("लेन-देन दर्ज करने में त्रुटि आई।");
+    } finally {
+      setSavingPartyTx(false);
+    }
+  };
+
+  const handleSharePartyStatementWhatsApp = (party) => {
+    if (!party) return;
+    const bal = Number(party.balance ?? party.currentBalance ?? 0);
+    const balText = bal > 0 
+      ? `कुल बकाया (लेने हैं): ₹${bal.toLocaleString('en-IN')}` 
+      : bal < 0 
+        ? `कुल बकाया (देने हैं): ₹${Math.abs(bal).toLocaleString('en-IN')}` 
+        : `हिसाब चुकता (₹0)`;
+    
+    const pTypeTag = (party.type || party.partyType) === 'personal' ? 'पर्सनल खाता' : 'व्यापारिक खाता';
+    const msg = `नमस्ते ${party.name} जी,\n\nयह आपका हिसाब-किताब विवरण (${pTypeTag}) है:\n${balText}\n\nधन्यवाद!`;
+    const cleanPhone = String(party.phone || party.mobileNumber || '').replace(/[^0-9]/g, '');
+    const url = cleanPhone 
+      ? `https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+  };
+
   // ==================== FAST MANUAL DAILY SALE HANDLER ====================
   const handleSaveManualSale = async (e) => {
     if (e) e.preventDefault();
@@ -2093,57 +2200,117 @@ function MobileVyaparAppContent() {
         )}
 
         {/* ==================== TAB 2: PARTIES ==================== */}
-        {activeTab === "parties" && (
-          <div className="space-y-3 animate-in fade-in">
-            <div className="flex justify-between items-center">
-              <h2 className="font-extrabold text-base text-[#0F172A]">Parties ({parties.length})</h2>
-              <button 
-                onClick={() => setShowAddPartyModal(true)}
-                className="px-3.5 py-1.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer"
-              >
-                + Add Party
-              </button>
-            </div>
+        {activeTab === "parties" && (() => {
+          const filteredParties = parties.filter(p => {
+            const matchesSearch = !searchQuery || String(p?.name || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) || String(p?.phone || p?.mobileNumber || '').includes(searchQuery);
+            const pType = (p?.type || p?.partyType || 'customer').toLowerCase();
+            let matchesType = true;
+            if (partyFilterTab === "customer") matchesType = pType === "customer" || pType === "both";
+            else if (partyFilterTab === "supplier") matchesType = pType === "supplier" || pType === "both";
+            else if (partyFilterTab === "personal") matchesType = pType === "personal";
+            return matchesSearch && matchesType;
+          });
 
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-              <input 
-                type="text" 
-                placeholder="Search party by name or mobile..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
-              />
-            </div>
-
-            <div className="space-y-2">
-              {parties
-                .filter(p => String(p?.name || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) || String(p?.phone || p?.mobileNumber || '').includes(searchQuery))
-                .map((p) => (
-                <div 
-                  key={p.id}
-                  onClick={() => setSelectedPartyDetail(p)}
-                  className="p-3.5 bg-white border border-slate-100 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer hover:border-indigo-100 transition"
-                >
-                  <div>
-                    <div className="font-bold text-xs text-[#0F172A]">{p.name}</div>
-                    <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                      <Phone size={11} /> {p.phone || "No Phone"}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className={`font-black text-xs ${Number(p.balance || 0) >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>
-                      {Number(p.balance || 0) >= 0 ? `+ ₹${Number(p.balance || 0).toLocaleString('en-IN')}` : `- ₹${Math.abs(Number(p.balance || 0)).toLocaleString('en-IN')}`}
-                    </div>
-                    <span className="text-[10px] text-slate-400 font-medium block">
-                      {Number(p.balance || 0) >= 0 ? "You'll Get" : "You'll Give"}
-                    </span>
-                  </div>
+          return (
+            <div className="space-y-3 animate-in fade-in">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="font-extrabold text-base text-[#0F172A]">Parties ({filteredParties.length})</h2>
+                  <p className="text-[10px] text-slate-400 font-medium">व्यापारिक ग्राहक, सप्लायर व पर्सनल खाते</p>
                 </div>
-              ))}
+                <button 
+                  onClick={() => setShowAddPartyModal(true)}
+                  className="px-3.5 py-1.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer"
+                >
+                  + Add Party
+                </button>
+              </div>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                <input 
+                  type="text" 
+                  placeholder="पार्टी का नाम या मोबाइल नंबर खोजें..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
+                />
+              </div>
+
+              {/* Filter Tabs: All / Customer / Supplier / Personal */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                {[
+                  { id: "all", label: "सभी (All)" },
+                  { id: "customer", label: "🛒 ग्राहक" },
+                  { id: "supplier", label: "🏢 सप्लायर" },
+                  { id: "personal", label: "👤 पर्सनल खाता" }
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setPartyFilterTab(tab.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                      partyFilterTab === tab.id
+                        ? tab.id === "personal"
+                          ? "bg-amber-600 text-white shadow-sm"
+                          : "bg-[#4338CA] text-white shadow-sm"
+                        : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {filteredParties.length === 0 ? (
+                <div className="p-8 text-center bg-white rounded-2xl border border-slate-100 text-slate-400 text-xs">
+                  कोई पार्टी नहीं मिली। "+ Add Party" दबाकर नई पार्टी या पर्सनल खाता जोड़ें।
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredParties.map((p) => {
+                    const isPersonal = (p.type || p.partyType) === 'personal';
+                    const bal = Number(p.balance ?? p.currentBalance ?? 0);
+                    return (
+                      <div 
+                        key={p.id || p._id}
+                        onClick={() => handleOpenPartyDetail(p)}
+                        className={`p-3.5 bg-white border rounded-2xl flex justify-between items-center shadow-sm cursor-pointer transition ${
+                          isPersonal ? "border-amber-200 hover:border-amber-400 hover:bg-amber-50/20" : "border-slate-100 hover:border-indigo-200"
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs text-[#0F172A]">{p.name}</span>
+                            {isPersonal ? (
+                              <span className="text-[9px] bg-amber-100 text-amber-800 font-extrabold px-1.5 py-0.5 rounded-full border border-amber-300">
+                                👤 पर्सनल
+                              </span>
+                            ) : (p.type || p.partyType) === 'supplier' ? (
+                              <span className="text-[9px] bg-purple-100 text-purple-700 font-bold px-1.5 py-0.5 rounded-full">
+                                सप्लायर
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                            <Phone size={11} /> {p.phone || p.mobileNumber || "No Phone"}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`font-black text-xs ${bal >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>
+                            {bal >= 0 ? `+ ₹${bal.toLocaleString('en-IN')}` : `- ₹${Math.abs(bal).toLocaleString('en-IN')}`}
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-medium block">
+                            {bal > 0 ? "लेने हैं (You'll Get)" : bal < 0 ? "देने हैं (You'll Give)" : "हिसाब चुकता"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ==================== TAB 3: ITEMS ==================== */}
         {activeTab === "items" && (() => {
@@ -2439,7 +2606,8 @@ function MobileVyaparAppContent() {
                     } else if (r.path === 'profitloss_modal') {
                       setShowProfitLossModal(true);
                     } else {
-                      navigate(r.path);
+                      // Open native mobile report viewer modal
+                      setActiveMobileReport({ type: r.id, title: r.title });
                     }
                   }}
                   className="p-3 bg-white border border-slate-100 hover:border-indigo-200 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer transition"
@@ -3793,41 +3961,252 @@ function MobileVyaparAppContent() {
       {/* 📱 9. ADD PARTY MODAL */}
       {showAddPartyModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3 shadow-2xl">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3.5 shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-              <h3 className="font-extrabold text-sm text-[#0F172A]">+ Add Party</h3>
+              <h3 className="font-extrabold text-sm text-[#0F172A]">+ Add Party / नया खाता जोड़ें</h3>
               <button onClick={() => setShowAddPartyModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X size={18} />
               </button>
             </div>
+
+            {/* Party Type Selector Tabs */}
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">खाता प्रकार (Party Type)</label>
+              <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl">
+                {[
+                  { id: "customer", label: "🛒 ग्राहक" },
+                  { id: "supplier", label: "🏢 सप्लायर" },
+                  { id: "personal", label: "👤 पर्सनल" }
+                ].map(t => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setNewPartyType(t.id)}
+                    className={`py-1.5 text-xs font-extrabold rounded-lg transition cursor-pointer ${
+                      newPartyType === t.id
+                        ? t.id === "personal"
+                          ? "bg-amber-600 text-white shadow-sm"
+                          : "bg-[#4338CA] text-white shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {newPartyType === "personal" && (
+              <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 leading-relaxed">
+                💡 <strong>गैर-व्यावसायिक खाता:</strong> यह बिज़नेस की बिक्री या देनदारों में नहीं जुड़ेगा। इसका हिसाब अलग पर्सनल लेजर में सुरक्षित रहेगा।
+              </div>
+            )}
+
             <input 
               type="text" 
-              placeholder="Party Name *" 
+              placeholder="पार्टी / व्यक्ति का नाम *" 
               value={newPartyName}
               onChange={(e) => setNewPartyName(e.target.value)}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none font-bold"
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none font-bold focus:border-[#4338CA]"
             />
             <input 
               type="tel" 
-              placeholder="Mobile Number" 
+              placeholder="मोबाइल नंबर (WhatsApp के लिए)" 
               value={newPartyPhone}
               onChange={(e) => setNewPartyPhone(e.target.value)}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
             />
             <input 
               type="number" 
-              placeholder="Opening Balance (₹)" 
+              placeholder="शुरुआती बाकी / Opening Balance (₹)" 
               value={newPartyBalance}
               onChange={(e) => setNewPartyBalance(e.target.value)}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
             />
             <button
               onClick={handleSaveNewParty}
               disabled={savingParty}
-              className="w-full py-2.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow cursor-pointer"
+              className="w-full py-2.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow cursor-pointer transition"
             >
-              {savingParty ? "Saving..." : "Save Party"}
+              {savingParty ? "Saving..." : "खाता सुरक्षित करें (Save Party)"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 📱 9.1 NATIVE PARTY DETAIL & RUNNING LEDGER MODAL */}
+      {selectedPartyDetail && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 space-y-4 shadow-2xl max-h-[92vh] flex flex-col">
+            {/* Header */}
+            <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-base text-[#0F172A]">{selectedPartyDetail.name}</h3>
+                  {(selectedPartyDetail.type || selectedPartyDetail.partyType) === 'personal' ? (
+                    <span className="text-[10px] bg-amber-100 text-amber-800 font-extrabold px-2 py-0.5 rounded-full border border-amber-300">
+                      👤 पर्सनल खाता
+                    </span>
+                  ) : (selectedPartyDetail.type || selectedPartyDetail.partyType) === 'supplier' ? (
+                    <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded-full">
+                      🏢 सप्लायर
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">
+                      🛒 ग्राहक
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                  <Phone size={12} /> {selectedPartyDetail.phone || selectedPartyDetail.mobileNumber || "कोई फोन नहीं"}
+                </div>
+              </div>
+              <button 
+                onClick={() => { setSelectedPartyDetail(null); setShowPartyTxForm(false); }} 
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Balance Card */}
+            {(() => {
+              const bal = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0);
+              return (
+                <div className={`p-4 rounded-2xl border text-center transition ${
+                  bal > 0 
+                    ? "bg-emerald-50/70 border-emerald-200" 
+                    : bal < 0 
+                      ? "bg-rose-50/70 border-rose-200" 
+                      : "bg-slate-50 border-slate-200"
+                }`}>
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    {bal > 0 ? "कुल बकाया राशि (आपको लेने हैं)" : bal < 0 ? "कुल बकाया राशि (आपको देने हैं)" : "हिसाब-किताब स्थिति"}
+                  </div>
+                  <div className={`text-2xl font-black mt-0.5 ${bal > 0 ? "text-emerald-700" : bal < 0 ? "text-rose-700" : "text-slate-700"}`}>
+                    ₹ {Math.abs(bal).toLocaleString('en-IN')}
+                  </div>
+                  <div className="text-[11px] font-semibold text-slate-500 mt-0.5">
+                    {bal > 0 ? "🟢 You'll Get" : bal < 0 ? "🔴 You'll Give" : "✅ हिसाब चुकता है"}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Action Buttons: मैंने दिए, मुझे मिले, WhatsApp, Call */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  setPartyTxType('paid');
+                  setShowPartyTxForm(true);
+                }}
+                className="py-2.5 px-3 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                🔴 मैंने दिए (You Gave)
+              </button>
+              <button
+                onClick={() => {
+                  setPartyTxType('received');
+                  setShowPartyTxForm(true);
+                }}
+                className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                🟢 मुझे मिले (You Got)
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleSharePartyStatementWhatsApp(selectedPartyDetail)}
+                className="flex-1 py-2 bg-[#25D366] hover:bg-green-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                💬 WhatsApp पर भेजें
+              </button>
+              {(selectedPartyDetail.phone || selectedPartyDetail.mobileNumber) && (
+                <a
+                  href={`tel:${selectedPartyDetail.phone || selectedPartyDetail.mobileNumber}`}
+                  className="py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <Phone size={13} /> कॉल
+                </a>
+              )}
+            </div>
+
+            {/* Inline Transaction Entry Form */}
+            {showPartyTxForm && (
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5 animate-in fade-in">
+                <div className="flex justify-between items-center">
+                  <span className={`font-extrabold text-xs ${partyTxType === 'paid' ? 'text-rose-600' : 'text-emerald-600'}`}>
+                    {partyTxType === 'paid' ? '🔴 मैंने दिए (You Gave)' : '🟢 मुझे मिले (You Got)'}
+                  </span>
+                  <button onClick={() => setShowPartyTxForm(false)} className="text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer">
+                    रद्द करें
+                  </button>
+                </div>
+                <input 
+                  type="number"
+                  placeholder="राशि दर्ज करें (₹) *"
+                  value={partyTxAmount}
+                  onChange={(e) => setPartyTxAmount(e.target.value)}
+                  className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-[#0F172A] outline-none"
+                  autoFocus
+                />
+                <input 
+                  type="text"
+                  placeholder="विवरण / नोट (उदा. गाड़ी रिपेयर, सामान का खर्च, आदि)"
+                  value={partyTxNotes}
+                  onChange={(e) => setPartyTxNotes(e.target.value)}
+                  className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
+                />
+                <button
+                  onClick={handleSavePartyTx}
+                  disabled={savingPartyTx}
+                  className={`w-full py-2 font-bold text-xs rounded-xl text-white shadow-sm cursor-pointer ${
+                    partyTxType === 'paid' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
+                >
+                  {savingPartyTx ? "सेव हो रहा है..." : "सुरक्षित करें (Save Entry)"}
+                </button>
+              </div>
+            )}
+
+            {/* Ledger History Title */}
+            <div className="flex items-center justify-between pt-1">
+              <span className="font-extrabold text-xs text-[#0F172A]">हिसाब-किताब का इतिहास (Statement)</span>
+              {partyStatementLoading && <span className="text-[10px] text-slate-400">लोड हो रहा है...</span>}
+            </div>
+
+            {/* Transaction List (Scrollable) */}
+            <div className="flex-1 overflow-y-auto space-y-2 min-h-[120px] max-h-[220px] pr-1">
+              {partyTransactions.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-xs">
+                  अभी तक कोई लेन-देन दर्ज नहीं है। ऊपर दिए गए "मैंने दिए" या "मुझे मिले" बटन से प्रविष्टि शुरू करें।
+                </div>
+              ) : (
+                partyTransactions.map((tx, idx) => {
+                  const isDebit = Number(tx.debit || 0) > 0;
+                  const amt = isDebit ? tx.debit : tx.credit;
+                  return (
+                    <div key={tx._id || idx} className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl flex justify-between items-center text-xs">
+                      <div>
+                        <div className="font-bold text-[#0F172A]">{tx.details || (isDebit ? "मैंने दिए" : "मुझे मिले")}</div>
+                        <div className="text-[10px] text-slate-400">
+                          {tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'आज'}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`font-black ${isDebit ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {isDebit ? `- ₹${Number(amt).toLocaleString('en-IN')}` : `+ ₹${Number(amt).toLocaleString('en-IN')}`}
+                        </div>
+                        <span className="text-[9px] text-slate-400 font-semibold">
+                          {isDebit ? "दिए (Gave)" : "मिले (Got)"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -4167,6 +4546,15 @@ function MobileVyaparAppContent() {
         <MobileProfitLossModal
           isOpen={showProfitLossModal}
           onClose={() => setShowProfitLossModal(false)}
+        />
+      )}
+
+      {activeMobileReport && (
+        <MobileReportViewerModal
+          isOpen={!!activeMobileReport}
+          onClose={() => setActiveMobileReport(null)}
+          reportType={activeMobileReport.type}
+          reportTitle={activeMobileReport.title}
         />
       )}
 

@@ -46,7 +46,7 @@ export default function DayBookPage() {
       ? selectedCompany.businessType
       : selectedCompany?.industryType?.name || selectedCompany?.businessType?.name || ""
   ).toLowerCase();
-  const isRestaurant = indType.includes("restaurant") || indType.includes("cafe") || indType.includes("food") || indType.includes("dhaba") || indType.includes("hotel") || indType.includes("bakery");
+  const isRestaurant = indType === "restaurant" || indType === "cafe" || indType === "dhaba";
 
   const [period, setPeriod] = useState("today");
   const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
@@ -125,20 +125,62 @@ export default function DayBookPage() {
       }
 
       const [res, invRes] = await Promise.all([
-        api.get(url),
+        api.get(url).catch(() => ({ data: { data: { bills: [], expenses: [] } } })),
         api.get("/api/inventory").catch(() => ({ data: { products: [] } }))
       ]);
 
-      const data = res?.data?.data || res?.data || res;
+      const data = res?.data?.data || res?.data || res || {};
       const products = invRes?.data?.products || invRes?.data || [];
 
-      if (data) {
-        setRawData(data);
-        calculateSummary(data);
-        calculateMenuPerformance(data.bills || [], products);
-        calculateCategoryPerformance(data.bills || [], products);
-        calculateCustomerLoyalty(data.bills || []);
-      }
+      // Merge local manual bills from localStorage
+      let localBills = [];
+      try {
+        const stored = localStorage.getItem("vb_local_manual_bills");
+        if (stored) localBills = JSON.parse(stored) || [];
+      } catch (e) {}
+
+      const serverBills = Array.isArray(data?.bills) ? data.bills : [];
+      const mergedBills = [...serverBills];
+
+      localBills.forEach(lb => {
+        const lbDate = lb.rawDate ? new Date(lb.rawDate) : (lb.date ? new Date(lb.date) : new Date());
+        const dStr = !isNaN(lbDate.getTime()) ? lbDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
+        let inRange = false;
+        const todayStr = new Date().toISOString().split("T")[0];
+        const yestStr = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+        if (period === "today") inRange = dStr === todayStr;
+        else if (period === "yesterday") inRange = dStr === yestStr;
+        else inRange = (!startDate || dStr >= startDate) && (!endDate || dStr <= endDate);
+
+        if (inRange) {
+          const exists = mergedBills.some(sb => 
+            (sb.billNumber && (sb.billNumber === lb.id || sb.billNumber === lb.billNumber)) ||
+            (sb._id && (sb._id === lb._id || sb._id === lb.id))
+          );
+          if (!exists) {
+            mergedBills.push({
+              _id: lb._id || lb.id,
+              billNumber: lb.id || lb.billNumber || "SALE-CASH",
+              customerName: lb.customerName || "काउंटर नकद ग्राहक",
+              finalAmount: Number(lb.amount || lb.finalAmount || 0),
+              total: Number(lb.amount || lb.total || 0),
+              paymentMode: lb.type || "CASH",
+              paymentMethod: lb.type || "CASH",
+              date: lb.rawDate || new Date(),
+              createdAt: lb.rawDate || new Date(),
+              items: lb.items || []
+            });
+          }
+        }
+      });
+
+      const combinedData = { ...data, bills: mergedBills };
+
+      setRawData(combinedData);
+      calculateSummary(combinedData);
+      calculateMenuPerformance(mergedBills, products);
+      calculateCategoryPerformance(mergedBills, products);
+      calculateCustomerLoyalty(mergedBills);
     } catch (err) {
       console.error("Failed to fetch Daybook", err);
     } finally {
@@ -150,10 +192,10 @@ export default function DayBookPage() {
     const prodCatMap = {};
     (products || []).forEach(p => {
       const name = (p.name || p.productName || "").trim();
-      if (name) prodCatMap[name] = p.category || "Main Course";
+      if (name) prodCatMap[name] = p.category || (isRestaurant ? "Main Course" : "General");
     });
 
-    const catStats = {
+    const catStats = isRestaurant ? {
       "Main Course": { name: "मुख्य भोजन (Main Course)", revenue: 0, qty: 0, estMargin: 48, icon: "🍛", badge: "👑 रेवेन्यू पावरहाउस" },
       "Starters & Snacks": { name: "स्टार्टर्स व स्नैक्स (Starters)", revenue: 0, qty: 0, estMargin: 60, icon: "🍢", badge: "⚡ हाई-स्पीड ऑर्डर" },
       "Rice & Dum Biryani": { name: "बिरयानी व चावल (Rice & Biryani)", revenue: 0, qty: 0, estMargin: 52, icon: "🍚", badge: "🔥 प्रीमियम डिमांड" },
@@ -161,33 +203,34 @@ export default function DayBookPage() {
       "Beverages & Shakes": { name: "मॉकटेल, शेक्स व पेय (Beverages)", revenue: 0, qty: 0, estMargin: 74, icon: "🍹", badge: "💎 सर्वाधिक मुनाफा (74%)" },
       "Tandoori Breads": { name: "तंदूरी रोटी व नान (Breads)", revenue: 0, qty: 0, estMargin: 65, icon: "🫓", badge: "🥖 हाईएस्ट वॉल्यूम" },
       "Desserts & Sweets": { name: "मीठा व आइसक्रीम (Desserts)", revenue: 0, qty: 0, estMargin: 68, icon: "🍨", badge: "✨ स्वीट डिलाइट" }
-    };
+    } : {};
 
-    let totalFoodRev = 0;
+    let totalRev = 0;
 
     (bills || []).forEach(b => {
       (b.items || []).forEach(it => {
         if (!it.name) return;
         const itName = it.name.trim();
-        let cat = prodCatMap[itName] || it.category || "Main Course";
+        let cat = prodCatMap[itName] || it.category || "General";
         
         if (cat.toLowerCase().includes("raw") || cat.includes("कच्चा माल") || itName.includes("सिलेंडर") || itName.includes("LPG")) return;
         
         if (!catStats[cat]) {
-          if (itName.includes("Naan") || itName.includes("Roti") || itName.includes("Paratha")) cat = "Tandoori Breads";
-          else if (itName.includes("Shake") || itName.includes("Coffee") || itName.includes("Mojito") || itName.includes("Lassi") || itName.includes("Tea")) cat = "Beverages & Shakes";
-          else if (itName.includes("Biryani") || itName.includes("Pulao") || itName.includes("Rice")) cat = "Rice & Dum Biryani";
-          else if (itName.includes("Tikka") || itName.includes("Roll") || itName.includes("Kebab") || itName.includes("Paneer 65")) cat = "Starters & Snacks";
-          else if (itName.includes("Pizza") || itName.includes("Burger") || itName.includes("Sandwich") || itName.includes("Fries") || itName.includes("Noodles")) cat = "Pizza & Fast Food";
-          else if (itName.includes("Ice") || itName.includes("Gulab") || itName.includes("Dessert") || itName.includes("Halwa") || itName.includes("Brownie")) cat = "Desserts & Sweets";
-          else cat = "Main Course";
+          catStats[cat] = {
+            name: cat,
+            revenue: 0,
+            qty: 0,
+            estMargin: 35,
+            icon: "📦",
+            badge: "बिक्री कैटेगरी"
+          };
         }
 
         const amt = Number(it.total) || ((Number(it.rate || it.price) || 0) * (Number(it.quantity) || 1));
         const qty = Number(it.quantity) || 1;
         catStats[cat].revenue += amt;
         catStats[cat].qty += qty;
-        totalFoodRev += amt;
+        totalRev += amt;
       });
     });
 

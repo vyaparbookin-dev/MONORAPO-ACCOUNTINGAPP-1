@@ -91,13 +91,99 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
         url = `/api/daybook?startDate=${startDate}&endDate=${endDate}&limit=500`;
       }
 
-      const res = await api.get(url);
-      const data = res?.data?.data || res?.data || res;
-
-      if (data) {
-        setRawData(data);
-        calculateSummary(data);
+      let data = null;
+      try {
+        const res = await api.get(url);
+        data = res?.data?.data || res?.data || res;
+      } catch (e) {
+        console.warn("Server daybook fetch err, using local data", e);
       }
+
+      // Merge local manual bills from localStorage (ensures offline / recent manual sales ALWAYS show)
+      let localBills = [];
+      try {
+        const stored = localStorage.getItem("vb_local_manual_bills");
+        if (stored) localBills = JSON.parse(stored) || [];
+      } catch (e) {}
+
+      // Also merge local expenses from localStorage
+      let localExpenses = [];
+      try {
+        const storedExp = localStorage.getItem("vb_local_expenses");
+        if (storedExp) localExpenses = JSON.parse(storedExp) || [];
+      } catch (e) {}
+
+      const serverBills = Array.isArray(data?.bills) ? data.bills : [];
+      const mergedBills = [...serverBills];
+
+      localBills.forEach(lb => {
+        const lbDate = lb.rawDate ? new Date(lb.rawDate) : (lb.date ? new Date(lb.date) : new Date());
+        const dStr = !isNaN(lbDate.getTime()) ? lbDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
+        
+        let inRange = false;
+        const todayStr = new Date().toISOString().split("T")[0];
+        const yestStr = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+        if (period === "today") {
+          inRange = dStr === todayStr;
+        } else if (period === "yesterday") {
+          inRange = dStr === yestStr;
+        } else {
+          inRange = (!startDate || dStr >= startDate) && (!endDate || dStr <= endDate);
+        }
+
+        if (inRange) {
+          const exists = mergedBills.some(sb => 
+            (sb.billNumber && (sb.billNumber === lb.id || sb.billNumber === lb.billNumber)) ||
+            (sb._id && (sb._id === lb._id || sb._id === lb.id))
+          );
+          if (!exists) {
+            mergedBills.push({
+              _id: lb._id || lb.id,
+              billNumber: lb.id || lb.billNumber || "SALE-CASH",
+              customerName: lb.customerName || "काउंटर नकद ग्राहक",
+              finalAmount: Number(lb.amount || lb.finalAmount || 0),
+              total: Number(lb.amount || lb.total || 0),
+              paymentMode: lb.type || "CASH",
+              paymentMethod: lb.type || "CASH",
+              date: lb.rawDate || new Date(),
+              createdAt: lb.rawDate || new Date(),
+              items: lb.items || []
+            });
+          }
+        }
+      });
+
+      const serverExpenses = Array.isArray(data?.expenses) ? data.expenses : [];
+      const mergedExpenses = [...serverExpenses];
+      localExpenses.forEach(le => {
+        const leDate = le.date ? new Date(le.date) : new Date();
+        const dStr = !isNaN(leDate.getTime()) ? leDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
+        let inRange = false;
+        const todayStr = new Date().toISOString().split("T")[0];
+        const yestStr = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+        if (period === "today") inRange = dStr === todayStr;
+        else if (period === "yesterday") inRange = dStr === yestStr;
+        else inRange = (!startDate || dStr >= startDate) && (!endDate || dStr <= endDate);
+
+        if (inRange) {
+          const exists = mergedExpenses.some(se => se._id === le._id || se._id === le.id);
+          if (!exists) {
+            mergedExpenses.push(le);
+          }
+        }
+      });
+
+      const combinedData = {
+        ...(data || {}),
+        bills: mergedBills,
+        expenses: mergedExpenses,
+        purchases: Array.isArray(data?.purchases) ? data.purchases : [],
+        salaries: Array.isArray(data?.salaries) ? data.salaries : [],
+        partyTransactions: Array.isArray(data?.partyTransactions) ? data.partyTransactions : []
+      };
+
+      setRawData(combinedData);
+      calculateSummary(combinedData);
     } catch (err) {
       console.error("Failed to fetch Mobile Daybook", err);
     } finally {
@@ -110,15 +196,18 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
       tOut = 0;
 
     const cashSales = (data.bills || [])
-      .filter((b) => b.paymentMethod !== "credit")
-      .reduce((sum, b) => sum + (b.finalAmount || b.total || 0), 0);
+      .filter((b) => {
+        const pm = String(b.paymentMethod || b.paymentMode || "").toLowerCase();
+        return pm !== "credit" && pm !== "udhar";
+      })
+      .reduce((sum, b) => sum + Number(b.finalAmount || b.total || 0), 0);
     const partyIn = (data.partyTransactions || []).reduce((sum, t) => sum + (t.credit || 0), 0);
     tIn = cashSales + partyIn;
 
-    const cashPurchases = (data.purchases || []).reduce((sum, p) => sum + (p.amountPaid || 0), 0);
-    const expenses = (data.expenses || []).reduce((sum, e) => sum + (e.amount || 0), 0);
-    const salaries = (data.salaries || []).reduce((sum, s) => sum + (s.amount || 0), 0);
-    const partyOut = (data.partyTransactions || []).reduce((sum, t) => sum + (t.debit || 0), 0);
+    const cashPurchases = (data.purchases || []).reduce((sum, p) => sum + Number(p.amountPaid || p.total || 0), 0);
+    const expenses = (data.expenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const salaries = (data.salaries || []).reduce((sum, s) => sum + Number(s.amount || 0), 0);
+    const partyOut = (data.partyTransactions || []).reduce((sum, t) => sum + Number(t.debit || 0), 0);
     tOut = cashPurchases + expenses + salaries + partyOut;
 
     setSummary({

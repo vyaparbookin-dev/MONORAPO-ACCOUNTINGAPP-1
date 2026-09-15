@@ -42,7 +42,7 @@ const ProfitLossReportPage = () => {
       ? selectedCompany.businessType
       : selectedCompany?.industryType?.name || selectedCompany?.businessType?.name || ""
   ).toLowerCase();
-  const isRestaurant = indType.includes("restaurant") || indType.includes("cafe") || indType.includes("food") || indType.includes("dhaba") || indType.includes("hotel") || indType.includes("bakery");
+  const isRestaurant = indType === "restaurant" || indType === "cafe" || indType === "dhaba";
 
   const [period, setPeriod] = useState("month"); // 'today' | 'week' | 'month' | 'last_month' | 'year'
   const [startDate, setStartDate] = useState(
