@@ -141,3 +141,68 @@ export const addAccountTransaction = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// Record monthly interest (System Auto Calculated vs Actual Statement Interest)
+export const addMonthlyInterest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { month, monthName, calculatedInterest, actualInterest, date, note, postToExpenses } = req.body;
+
+    const account = await BankAccount.findById(id);
+    if (!account) {
+      return res.status(404).json({ success: false, message: "खाता नहीं मिला (Account not found)" });
+    }
+
+    const interestAmt = Number(actualInterest) || 0;
+    const calcAmt = Number(calculatedInterest) || 0;
+    const recordDate = date ? new Date(date) : new Date();
+
+    if (!account.monthlyInterests) {
+      account.monthlyInterests = [];
+    }
+
+    const monthKey = month || new Date().toISOString().slice(0, 7);
+    const existingIndex = account.monthlyInterests.findIndex((m) => m.month === monthKey);
+    const newEntry = {
+      month: monthKey,
+      monthName: monthName || monthKey,
+      calculatedInterest: calcAmt,
+      actualInterest: interestAmt,
+      date: recordDate,
+      note: note || "",
+      postedToExpenses: postToExpenses !== false,
+    };
+
+    if (existingIndex >= 0) {
+      account.monthlyInterests[existingIndex] = newEntry;
+    } else {
+      account.monthlyInterests.push(newEntry);
+    }
+
+    // Also record in transactions history
+    account.transactions.push({
+      date: recordDate,
+      type: "interest_debit",
+      amount: interestAmt,
+      note: note || `मासिक ब्याज (${monthName || monthKey}) - असली ब्याज डेबिट`,
+      referenceNo: `INT-${monthKey}`,
+    });
+
+    if (account.accountType === "CC_OVERDRAFT") {
+      account.currentOutstanding = (Number(account.currentOutstanding) || 0) + interestAmt;
+    } else {
+      account.currentBalance = (Number(account.currentBalance) || 0) - interestAmt;
+    }
+
+    await account.save();
+
+    res.status(200).json({
+      success: true,
+      data: account,
+      message: `${monthName || monthKey} का बैंक ब्याज ₹${interestAmt.toLocaleString("en-IN")} सफलतापूर्वक दर्ज हो गया!`,
+    });
+  } catch (error) {
+    console.error("Error adding monthly interest:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

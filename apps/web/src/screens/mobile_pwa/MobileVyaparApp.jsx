@@ -1753,7 +1753,7 @@ function MobileVyaparAppContent() {
     { id: "stock_aging", title: "⏳ Aging Report (Udhar Analysis)", desc: "Overdue Credit Days", path: "/reports/aging", category: "Udhar", color: "text-orange-600 bg-orange-50" },
     { id: "stock_alert", title: "⚠️ Low Stock & Reorder Alert", desc: "Items Below Minimum Limit", path: "/inventory", category: "Stock", color: "text-red-600 bg-red-50" },
     { id: "category_analytics", title: "🏷️ Category Analytics", desc: "Department & Group Sales", path: "/inventory/analytics", category: "Stock", color: "text-cyan-600 bg-cyan-50" },
-    { id: "bank_rec", title: "🏦 Bank Auto-Tally Reco", desc: "Bank Statement Verification", path: "/reports/bank-reconciliation", category: "Banking", color: "text-indigo-600 bg-indigo-50" },
+    { id: "bank_rec", title: "🏦 Bank Auto-Tally Reco", desc: "Bank Statement Verification & Accounts", path: "bank_cc_modal", category: "Banking", color: "text-indigo-600 bg-indigo-50" },
     { id: "eway_bill", title: "🚚 E-Way Bill Register", desc: "Govt Transport E-Way Invoices", path: "/reports/eway-bill", category: "Tax", color: "text-emerald-600 bg-emerald-50" },
     { id: "fixed_assets", title: "🏢 Fixed Assets & Capital", desc: "Shop Furniture, Machines & Equip", path: "/reports/fixed-assets", category: "Finance", color: "text-purple-600 bg-purple-50" },
     { id: "customer_builder", title: "🎯 Customer Report Builder", desc: "Custom Filtered Demographics", path: "/reports/customer", category: "CRM", color: "text-blue-600 bg-blue-50" },
@@ -1996,7 +1996,7 @@ function MobileVyaparAppContent() {
               </div>
 
               <div 
-                onClick={() => setShowDayBookModal(true)}
+                onClick={() => setShowBankCCModal(true)}
                 className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
               >
                 <div className="flex justify-between items-center">

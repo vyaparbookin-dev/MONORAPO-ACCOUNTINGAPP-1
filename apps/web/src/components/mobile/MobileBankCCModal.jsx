@@ -24,9 +24,10 @@ import api from "../../services/api";
 import { useCompany } from "../../contexts/CompanyContext";
 
 const ACCOUNT_TYPES = [
+  { id: "CURRENT", label: "करंट अकाउंट (Current A/C)", icon: "🏛️", desc: "बिजनेस का मुख्य चालू खाता" },
+  { id: "PERSONAL_BUSINESS", label: "पर्सनल बैंक खाता (Business Use)", icon: "👤", desc: "निजी खाता जो बिजनेस लेन-देन के लिए उपयोग होता है" },
   { id: "CC_OVERDRAFT", label: "Cash Credit (CC) / OD Limit", icon: "💳", desc: "कैश क्रेडिट व ओवरड्राफ्ट लिमिट खाता" },
-  { id: "CURRENT", label: "Current Account", icon: "🏛️", desc: "बिजनेस करंट अकाउंट" },
-  { id: "SAVINGS", label: "Savings Account", icon: "🏦", desc: "बैंक बचत खाता" }
+  { id: "SAVINGS", label: "Savings Account (बचत खाता)", icon: "🏦", desc: "बैंक बचत खाता" }
 ];
 
 export default function MobileBankCCModal({ isOpen, onClose }) {
@@ -35,7 +36,7 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
   const { selectedCompany } = useCompany() || {};
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("ALL"); // ALL, CC_OVERDRAFT, CURRENT
+  const [activeTab, setActiveTab] = useState("ALL"); // ALL, CURRENT, PERSONAL_BUSINESS, CC_OVERDRAFT
 
   // Add / Edit Account Modal
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -45,7 +46,7 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
     bankName: "",
     accountNumber: "",
     ifscCode: "",
-    accountType: "CC_OVERDRAFT",
+    accountType: "CURRENT",
     sanctionedLimit: "",
     currentOutstanding: "",
     openingBalance: "",
@@ -65,6 +66,20 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
     referenceNo: ""
   });
   const [processingTx, setProcessingTx] = useState(false);
+
+  // Monthly Interest Modal (Auto Calculate vs Manual Original Entry)
+  const [isInterestOpen, setIsInterestOpen] = useState(false);
+  const [selectedAccForInterest, setSelectedAccForInterest] = useState(null);
+  const [interestData, setInterestData] = useState({
+    month: new Date().toISOString().slice(0, 7),
+    monthName: "",
+    calculatedInterest: 0,
+    actualInterest: "",
+    date: new Date().toISOString().split("T")[0],
+    note: "",
+    postToExpenses: true
+  });
+  const [savingInterest, setSavingInterest] = useState(false);
 
   // History Modal
   const [historyAcc, setHistoryAcc] = useState(null);
@@ -179,13 +194,184 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
       bankName: "",
       accountNumber: "",
       ifscCode: "",
-      accountType: "CC_OVERDRAFT",
+      accountType: "CURRENT",
       sanctionedLimit: "",
       currentOutstanding: "",
       openingBalance: "",
       interestRate: "",
       notes: ""
     });
+  };
+
+  const calculateAutoMonthlyInterest = (acc) => {
+    if (!acc) return 0;
+    const rate = Number(acc.interestRate || 0);
+    if (rate <= 0) return 0;
+    let baseAmt = 0;
+    if (acc.accountType === "CC_OVERDRAFT") {
+      baseAmt = Number(acc.currentOutstanding || 0);
+    } else {
+      baseAmt = Number(acc.balance || acc.currentBalance || 0);
+    }
+    if (baseAmt <= 0) return 0;
+    return Math.round((baseAmt * rate) / 1200);
+  };
+
+  const getMonthNameHindi = (monthKey) => {
+    if (!monthKey) return "";
+    const [y, m] = monthKey.split("-");
+    const months = [
+      "जनवरी", "फरवरी", "मार्च", "अप्रैल", "मई", "जून",
+      "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"
+    ];
+    const idx = parseInt(m, 10) - 1;
+    return `${months[idx] || m} ${y}`;
+  };
+
+  const handleOpenMonthlyInterest = (acc) => {
+    setSelectedAccForInterest(acc);
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const monthTitle = getMonthNameHindi(currentMonthKey);
+    const autoEst = calculateAutoMonthlyInterest(acc);
+
+    const existingEntry = (acc.monthlyInterests || []).find(m => m.month === currentMonthKey);
+
+    setInterestData({
+      month: currentMonthKey,
+      monthName: monthTitle,
+      calculatedInterest: autoEst,
+      actualInterest: existingEntry ? String(existingEntry.actualInterest || "") : (autoEst > 0 ? String(autoEst) : ""),
+      date: existingEntry && existingEntry.date ? String(existingEntry.date).split("T")[0] : now.toISOString().split("T")[0],
+      note: existingEntry ? (existingEntry.note || "") : `${monthTitle} बैंक ब्याज डेबिट (${acc.bankName || acc.accountName})`,
+      postToExpenses: true
+    });
+    setIsInterestOpen(true);
+  };
+
+  const handleMonthSelectForInterest = (mKey) => {
+    if (!selectedAccForInterest) return;
+    const monthTitle = getMonthNameHindi(mKey);
+    const autoEst = calculateAutoMonthlyInterest(selectedAccForInterest);
+    const existingEntry = (selectedAccForInterest.monthlyInterests || []).find(m => m.month === mKey);
+
+    setInterestData(prev => ({
+      ...prev,
+      month: mKey,
+      monthName: monthTitle,
+      calculatedInterest: autoEst,
+      actualInterest: existingEntry ? String(existingEntry.actualInterest || "") : (autoEst > 0 ? String(autoEst) : ""),
+      date: existingEntry && existingEntry.date ? String(existingEntry.date).split("T")[0] : `${mKey}-28`,
+      note: existingEntry ? (existingEntry.note || "") : `${monthTitle} बैंक ब्याज डेबिट (${selectedAccForInterest.bankName || selectedAccForInterest.accountName})`
+    }));
+  };
+
+  const handleSaveMonthlyInterest = async (e) => {
+    e.preventDefault();
+    if (!selectedAccForInterest) return;
+    const actualAmt = Number(interestData.actualInterest);
+    if (isNaN(actualAmt) || actualAmt < 0) {
+      alert("कृपया मान्य ब्याज राशि (₹) दर्ज करें!");
+      return;
+    }
+
+    setSavingInterest(true);
+    const acc = selectedAccForInterest;
+    const id = acc._id || acc.id;
+
+    const payload = {
+      month: interestData.month,
+      monthName: interestData.monthName || getMonthNameHindi(interestData.month),
+      calculatedInterest: Number(interestData.calculatedInterest || 0),
+      actualInterest: actualAmt,
+      date: interestData.date,
+      note: interestData.note,
+      postToExpenses: interestData.postToExpenses
+    };
+
+    try {
+      // 1. Try server API
+      try {
+        await api.post(`/api/bank-accounts/${id}/interest`, payload);
+      } catch (err) {
+        console.warn("Backend interest endpoint err, saving locally:", err);
+      }
+
+      // 2. Post to shop expenses if checked
+      if (interestData.postToExpenses && actualAmt > 0) {
+        const autoExp = {
+          id: "exp_bank_int_" + Date.now(),
+          _id: "exp_bank_int_" + Date.now(),
+          title: `बैंक ब्याज (${payload.monthName}) - ${acc.bankName || acc.accountName}`,
+          description: interestData.note || `मासिक बैंक ब्याज डेबिट: ${acc.bankName}`,
+          amount: actualAmt,
+          expenseType: "business",
+          category: "बैंक ब्याज व शुल्क (Bank Interest & Charges)",
+          paymentMode: "BANK_ACCOUNT",
+          date: interestData.date,
+          createdAt: new Date().toISOString()
+        };
+        try {
+          await api.post("/api/expense", autoExp);
+        } catch (err) {}
+        let localExp = JSON.parse(localStorage.getItem("vb_local_expenses") || "[]");
+        localExp.unshift(autoExp);
+        localStorage.setItem("vb_local_expenses", JSON.stringify(localExp));
+      }
+
+      // 3. Update localStorage
+      let local = JSON.parse(localStorage.getItem("vb_local_bank_accounts") || "[]");
+      local = local.map(a => {
+        if ((a._id || a.id) === id) {
+          const miList = Array.isArray(a.monthlyInterests) ? [...a.monthlyInterests] : [];
+          const existingIdx = miList.findIndex(m => m.month === payload.month);
+          if (existingIdx >= 0) {
+            miList[existingIdx] = payload;
+          } else {
+            miList.unshift(payload);
+          }
+
+          const newTx = {
+            id: "tx_int_" + Date.now(),
+            type: "INTEREST_DEBIT",
+            amount: actualAmt,
+            date: interestData.date,
+            description: `मासिक ब्याज: ${payload.monthName} (असली ब्याज)`,
+            referenceNo: `INT-${payload.month}`,
+            createdAt: new Date().toISOString()
+          };
+          const txList = Array.isArray(a.transactions) ? [newTx, ...a.transactions] : [newTx];
+
+          let updatedOutstanding = Number(a.currentOutstanding || 0);
+          let updatedBalance = Number(a.balance || a.currentBalance || 0);
+          if (a.accountType === "CC_OVERDRAFT") {
+            updatedOutstanding += actualAmt;
+          } else {
+            updatedBalance -= actualAmt;
+          }
+
+          return {
+            ...a,
+            monthlyInterests: miList,
+            transactions: txList,
+            currentOutstanding: updatedOutstanding,
+            balance: updatedBalance,
+            currentBalance: updatedBalance
+          };
+        }
+        return a;
+      });
+      localStorage.setItem("vb_local_bank_accounts", JSON.stringify(local));
+
+      alert(`✅ ${payload.monthName} का ब्याज ₹${actualAmt.toLocaleString("en-IN")} सफलतापूर्वक दर्ज हो गया!`);
+      setIsInterestOpen(false);
+      setSelectedAccForInterest(null);
+      fetchAccounts();
+    } catch (err) {
+      alert("ब्याज सहेजने में त्रुटि: " + (err.message || err));
+    } finally {
+      setSavingInterest(false);
+    }
   };
 
   const handleOpenEdit = (acc) => {
@@ -414,12 +600,19 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
 
         <div className="flex items-center gap-1.5">
           <button
+            onClick={() => { resetForm(); setIsFormOpen(true); }}
+            className="px-2.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white transition flex items-center gap-1 text-xs font-black shadow-md cursor-pointer shrink-0"
+            title="नया बैंक खाता जोड़ें"
+          >
+            <Plus size={15} className="stroke-[3]" />
+            <span>+ खाता जोड़ें</span>
+          </button>
+          <button
             onClick={shareWhatsApp}
-            className="p-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white transition flex items-center gap-1 text-xs font-bold shadow-xs cursor-pointer"
+            className="p-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white transition flex items-center gap-1 text-xs font-bold cursor-pointer"
             title="WhatsApp Share"
           >
             <Share2 size={16} />
-            <span className="hidden sm:inline">शेयर</span>
           </button>
           <button
             onClick={fetchAccounts}
@@ -434,9 +627,11 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
       {/* Tabs */}
       <div className="bg-white border-b border-slate-200 px-3 py-2 flex items-center gap-2 overflow-x-auto shrink-0 scrollbar-none">
         {[
-          { id: "ALL", label: `📊 सभी खाते (${accounts.length})` },
-          { id: "CC_OVERDRAFT", label: "💳 CC / OD लिमिट खाता" },
-          { id: "CURRENT", label: "🏛️ करंट / सेविंग्स" }
+          { id: "ALL", label: `📊 सभी (${accounts.length})` },
+          { id: "CURRENT", label: "🏛️ करंट खाता" },
+          { id: "PERSONAL_BUSINESS", label: "👤 पर्सनल (बिजनेस)" },
+          { id: "CC_OVERDRAFT", label: "💳 CC / OD लिमिट" },
+          { id: "SAVINGS", label: "🏦 सेविंग्स" }
         ].map(tab => (
           <button
             key={tab.id}
@@ -452,8 +647,164 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
         ))}
       </div>
 
+      {/* Quick Action Top Banner */}
+      <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-900 text-white px-3.5 py-2.5 flex items-center justify-between shadow-xs shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-base shrink-0">⚡</span>
+          <div className="min-w-0">
+            <div className="text-xs font-black truncate leading-tight">
+              2 बैंक खाते (करंट + पर्सनल बिज़नेस) व ब्याज
+            </div>
+            <div className="text-[10px] text-blue-100 truncate">
+              ब्याज दर दर्ज करें • सिस्टम खुद हिसाब लगाएगा या असली ब्याज डालें
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={() => { resetForm(); setIsFormOpen(true); }}
+          className="px-3 py-1.5 rounded-xl bg-white text-blue-900 font-black text-xs shadow-md active:scale-95 transition flex items-center gap-1 cursor-pointer shrink-0 ml-2"
+        >
+          <Plus size={13} className="stroke-[3]" />
+          <span>+ नया खाता जोड़ें</span>
+        </button>
+      </div>
+
       {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-28">
+        {/* ⚡ 2 LINKED BUSINESS ACCOUNTS QUICK OVERVIEW */}
+        {(() => {
+          const currentAcc = accounts.find(a => a.accountType === "CURRENT");
+          const personalBizAcc = accounts.find(a => a.accountType === "PERSONAL_BUSINESS");
+          const totalLinked = (currentAcc ? 1 : 0) + (personalBizAcc ? 1 : 0);
+
+          return (
+            <div className="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center text-sm font-black">
+                    ⚡
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black text-slate-900 leading-tight">
+                      बिज़नेस के 2 मुख्य बैंक खाते (Linked Accounts)
+                    </h3>
+                    <p className="text-[10px] text-slate-500">करंट अकाउंट + पर्सनल बिज़नेस अकाउंट</p>
+                  </div>
+                </div>
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                  totalLinked === 2 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                }`}>
+                  {totalLinked} / 2 लिंक
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* Slot 1: Business Current Account */}
+                <div className={`p-3 rounded-xl border transition ${
+                  currentAcc ? "bg-blue-50/60 border-blue-200" : "bg-slate-50/80 border-dashed border-slate-300"
+                }`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xl shrink-0">🏛️</span>
+                      <div className="min-w-0">
+                        <div className="text-xs font-black text-slate-900 truncate">
+                          {currentAcc ? (currentAcc.bankName || currentAcc.accountName) : "1. मुख्य करंट खाता"}
+                        </div>
+                        <div className="text-[10px] text-slate-500 truncate">
+                          {currentAcc ? (
+                            <span>
+                              बैलेंस: <strong className="text-slate-800">₹{Number(currentAcc.balance || currentAcc.currentBalance || 0).toLocaleString("en-IN")}</strong>
+                              {currentAcc.interestRate ? ` • ${currentAcc.interestRate}% ब्याज` : ""}
+                            </span>
+                          ) : (
+                            "बिजनेस का मुख्य करंट चालू खाता लिंक नहीं"
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {currentAcc ? (
+                      <button
+                        onClick={() => handleOpenMonthlyInterest(currentAcc)}
+                        className="px-2 py-1 bg-blue-700 active:bg-blue-800 text-white rounded-lg text-[10px] font-black cursor-pointer shrink-0 shadow-xs flex items-center gap-0.5"
+                        title="मासिक ब्याज दर्ज करें"
+                      >
+                        <Percent size={11} /> ब्याज
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          resetForm();
+                          setFormData(prev => ({
+                            ...prev,
+                            accountType: "CURRENT",
+                            accountName: "मुख्य करंट खाता"
+                          }));
+                          setIsFormOpen(true);
+                        }}
+                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-lg text-[10px] font-black cursor-pointer shrink-0 shadow-xs flex items-center gap-1"
+                      >
+                        <Plus size={12} /> + जोड़ें
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Slot 2: Personal Business Account */}
+                <div className={`p-3 rounded-xl border transition ${
+                  personalBizAcc ? "bg-purple-50/60 border-purple-200" : "bg-slate-50/80 border-dashed border-slate-300"
+                }`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xl shrink-0">👤</span>
+                      <div className="min-w-0">
+                        <div className="text-xs font-black text-slate-900 truncate">
+                          {personalBizAcc ? (personalBizAcc.bankName || personalBizAcc.accountName) : "2. पर्सनल (बिज़नेस उपयोग)"}
+                        </div>
+                        <div className="text-[10px] text-slate-500 truncate">
+                          {personalBizAcc ? (
+                            <span>
+                              बैलेंस: <strong className="text-slate-800">₹{Number(personalBizAcc.balance || personalBizAcc.currentBalance || 0).toLocaleString("en-IN")}</strong>
+                              {personalBizAcc.interestRate ? ` • ${personalBizAcc.interestRate}% ब्याज` : ""}
+                            </span>
+                          ) : (
+                            "निजी बैंक खाता जो बिज़नेस के लिए प्रयोग होता है"
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {personalBizAcc ? (
+                      <button
+                        onClick={() => handleOpenMonthlyInterest(personalBizAcc)}
+                        className="px-2 py-1 bg-purple-700 active:bg-purple-800 text-white rounded-lg text-[10px] font-black cursor-pointer shrink-0 shadow-xs flex items-center gap-0.5"
+                        title="मासिक ब्याज दर्ज करें"
+                      >
+                        <Percent size={11} /> ब्याज
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          resetForm();
+                          setFormData(prev => ({
+                            ...prev,
+                            accountType: "PERSONAL_BUSINESS",
+                            accountName: "पर्सनल बिज़नेस खाता"
+                          }));
+                          setIsFormOpen(true);
+                        }}
+                        className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white rounded-lg text-[10px] font-black cursor-pointer shrink-0 shadow-xs flex items-center gap-1"
+                      >
+                        <Plus size={12} /> + जोड़ें
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* CC Limit Meter Card (If CC accounts exist) */}
         {totalSanctionedLimit > 0 && (
           <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl p-4 shadow-md border border-indigo-900/50 space-y-3">
@@ -512,6 +863,12 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
             <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider">
               बैंक खाते ({filteredAccounts.length})
             </h3>
+            <button
+              onClick={() => { resetForm(); setIsFormOpen(true); }}
+              className="text-xs font-black text-blue-700 hover:text-blue-900 flex items-center gap-1 cursor-pointer"
+            >
+              <Plus size={14} className="stroke-[3]" /> + नया खाता
+            </button>
           </div>
 
           {loading ? (
@@ -526,25 +883,30 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
               </div>
               <h4 className="text-sm font-bold text-slate-800 mb-1">कोई बैंक खाता नहीं मिला</h4>
               <p className="text-xs text-slate-500 max-w-xs mx-auto mb-4">
-                यहाँ अपना CC ओवरड्राफ्ट लिमिट खाता या करंट अकाउंट जोड़ें और जमा, निकासी व ब्याज का हिसाब रखें।
+                यहाँ अपना करंट अकाउंट, पर्सनल बिजनेस खाता या CC लिमिट जोड़ें और हर माह का ब्याज हिसाब रखें।
               </p>
               <button
                 onClick={() => { resetForm(); setIsFormOpen(true); }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-xs active:scale-95 transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-black shadow-md active:scale-95 transition cursor-pointer"
               >
-                <Plus size={16} /> + नया बैंक / CC खाता जोड़ें
+                <Plus size={16} /> + नया बैंक खाता जोड़ें
               </button>
             </div>
           ) : (
             filteredAccounts.map(acc => {
               const id = acc._id || acc.id;
               const isCC = acc.accountType === "CC_OVERDRAFT";
+              const isCurrent = acc.accountType === "CURRENT";
+              const isPersonalBiz = acc.accountType === "PERSONAL_BUSINESS";
               const limit = Number(acc.sanctionedLimit || 0);
               const out = Number(acc.currentOutstanding || 0);
               const avail = Math.max(0, limit - out);
               const balance = Number(acc.balance || acc.currentBalance || 0);
               const txCount = (acc.transactions || []).length;
               const pct = limit > 0 ? (out / limit) * 100 : 0;
+              const autoEstInterest = calculateAutoMonthlyInterest(acc);
+              const hasInterests = (acc.monthlyInterests || []).length > 0;
+              const latestInterest = hasInterests ? acc.monthlyInterests[0] : null;
 
               return (
                 <div
@@ -554,9 +916,9 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-start gap-2.5">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 ${
-                        isCC ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"
+                        isCC ? "bg-amber-50 text-amber-700" : isPersonalBiz ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700"
                       }`}>
-                        {isCC ? "💳" : "🏛️"}
+                        {isCC ? "💳" : isPersonalBiz ? "👤" : "🏛️"}
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -564,14 +926,14 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
                             {acc.bankName || acc.accountName}
                           </h4>
                           <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-black ${
-                            isCC ? "bg-amber-100 text-amber-900" : "bg-blue-100 text-blue-900"
+                            isCC ? "bg-amber-100 text-amber-900" : isPersonalBiz ? "bg-purple-100 text-purple-900" : "bg-blue-100 text-blue-900"
                           }`}>
-                            {isCC ? "CC / OD लिमिट" : "करंट / सेविंग्स"}
+                            {isCC ? "CC / OD लिमिट" : isPersonalBiz ? "पर्सनल (बिज़नेस)" : (isCurrent ? "करंट खाता" : "सेविंग्स")}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500 mt-0.5">
                           {acc.accountNumber ? `A/C: ••••${String(acc.accountNumber).slice(-4)}` : "अकाउंट नंबर दर्ज नहीं"}
-                          {acc.interestRate ? ` • ${acc.interestRate}% ब्याज` : ""}
+                          {acc.interestRate ? ` • ${acc.interestRate}% वार्षिक ब्याज` : ""}
                         </p>
                       </div>
                     </div>
@@ -595,7 +957,7 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
                     </div>
                   </div>
 
-                  {/* CC Meter details */}
+                  {/* CC Meter details if CC */}
                   {isCC && (
                     <div className="bg-slate-50 rounded-xl p-3 space-y-2 border border-slate-100">
                       <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
@@ -624,6 +986,36 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
                     </div>
                   )}
 
+                  {/* ⚡ MONTHLY INTEREST CALCULATION STRIP */}
+                  <div className="bg-gradient-to-r from-indigo-50/80 via-blue-50/60 to-purple-50/80 rounded-xl p-2.5 border border-indigo-100/80 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
+                          <Percent size={11} className="text-indigo-600" />
+                          <span>ब्याज दर: <strong>{acc.interestRate ? `${acc.interestRate}% p.a.` : "दर्ज नहीं"}</strong></span>
+                        </div>
+                        <div className="text-xs font-black text-indigo-900 mt-0.5">
+                          ⚡ अनुमानित ब्याज: <span className="text-indigo-700">₹{autoEstInterest.toLocaleString("en-IN")} / माह</span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleOpenMonthlyInterest(acc)}
+                        className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl text-[11px] font-black cursor-pointer shadow-xs flex items-center gap-1 shrink-0"
+                      >
+                        <Percent size={12} className="stroke-[2.5]" />
+                        <span>मासिक ब्याज दर्ज करें</span>
+                      </button>
+                    </div>
+
+                    {latestInterest && (
+                      <div className="text-[10px] text-indigo-800 font-medium pt-1 border-t border-indigo-100 flex items-center justify-between">
+                        <span>हालिया दर्ज: <strong>{latestInterest.monthName || latestInterest.month}</strong></span>
+                        <span className="font-black text-slate-900">असली ब्याज: ₹{Number(latestInterest.actualInterest || 0).toLocaleString("en-IN")}</span>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Action Buttons */}
                   <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-100">
                     <button
@@ -638,33 +1030,22 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
                     >
                       <ArrowUpRight size={14} /> निकासी
                     </button>
-                    {isCC ? (
-                      <button
-                        onClick={() => handleOpenTx(acc, "INTEREST_DEBIT")}
-                        className="py-1.5 px-2 rounded-xl bg-amber-50 active:bg-amber-100 text-amber-800 text-xs font-black flex items-center justify-center gap-1 cursor-pointer border border-amber-200"
-                      >
-                        <Percent size={13} /> ब्याज / चार्ज
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setHistoryAcc(acc)}
-                        className="py-1.5 px-2 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer"
-                      >
-                        <Clock size={14} /> इतिहास ({txCount})
-                      </button>
-                    )}
+                    <button
+                      onClick={() => setHistoryAcc(acc)}
+                      className="py-1.5 px-2 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <Clock size={14} /> इतिहास ({txCount})
+                    </button>
                   </div>
 
                   {/* History & Edit bar */}
                   <div className="flex items-center justify-between pt-1 text-[11px] text-slate-400">
-                    {isCC && (
-                      <button
-                        onClick={() => setHistoryAcc(acc)}
-                        className="text-indigo-600 font-bold hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <Clock size={13} /> लेन-देन विवरण ({txCount})
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleOpenMonthlyInterest(acc)}
+                      className="text-indigo-600 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Percent size={12} /> ब्याज इतिहास ({((acc.monthlyInterests || []).length)})
+                    </button>
                     <div className="flex items-center gap-2 ml-auto">
                       <button
                         onClick={() => handleOpenEdit(acc)}
@@ -1071,6 +1452,194 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
                 })
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📊 Monthly Interest Entry Drawer (Auto Calculate vs Actual Statement Interest) */}
+      {isInterestOpen && selectedAccForInterest && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-black">
+                  <Percent size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">
+                    मासिक बैंक ब्याज दर्ज करें
+                  </h3>
+                  <p className="text-[11px] text-slate-500 truncate max-w-[220px]">
+                    {selectedAccForInterest.bankName || selectedAccForInterest.accountName}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setIsInterestOpen(false); setSelectedAccForInterest(null); }}
+                className="p-1 rounded-full text-slate-400 hover:bg-slate-100 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveMonthlyInterest} className="space-y-3.5">
+              {/* Month Selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">महीना चुनें (Select Month) *</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(() => {
+                    const now = new Date();
+                    const options = [];
+                    for (let i = 0; i < 6; i++) {
+                      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+                      const label = getMonthNameHindi(key);
+                      options.push({ key, label });
+                    }
+                    return options.map(opt => (
+                      <button
+                        type="button"
+                        key={opt.key}
+                        onClick={() => handleMonthSelectForInterest(opt.key)}
+                        className={`py-2 px-1 rounded-xl text-[11px] font-black transition cursor-pointer text-center truncate ${
+                          interestData.month === opt.key
+                            ? "bg-indigo-600 text-white shadow-xs"
+                            : "bg-slate-100 text-slate-700 active:bg-slate-200"
+                        }`}
+                      >
+                        {opt.label.split(" ")[0]} '{opt.label.split(" ")[1]?.slice(-2)}
+                      </button>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+              {/* System Auto-Calculated vs Actual Comparison Box */}
+              <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200/80 rounded-2xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-600 font-medium">⚡ सिस्टम अनुमानित ब्याज:</span>
+                  <span className="font-black text-indigo-950 text-sm">
+                    ₹{Number(interestData.calculatedInterest || 0).toLocaleString("en-IN")}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-500 leading-relaxed">
+                  वार्षिक ब्याज दर: <strong>{selectedAccForInterest.interestRate || 0}% p.a.</strong> के आधार पर {interestData.monthName} का अनुमानित ब्याज।
+                </div>
+              </div>
+
+              {/* Actual Interest from Bank Statement (Editable Input) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  बैंक स्टेटमेंट में आया असली ब्याज (Actual Interest ₹) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base font-black text-slate-400">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="उदा. 2450.00"
+                    value={interestData.actualInterest}
+                    onChange={e => setInterestData({ ...interestData, actualInterest: e.target.value })}
+                    className="w-full text-base font-black pl-8 pr-3 py-2.5 rounded-xl border-2 border-indigo-500 bg-indigo-50/20 text-slate-900 focus:outline-none focus:bg-white transition"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  💡 बैंक स्टेटमेंट या SMS में जो असली ब्याज रकम कटी है, वह यहाँ दर्ज करें।
+                </p>
+              </div>
+
+              {/* Date & Note */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">तारीख (Date)</label>
+                  <input
+                    type="date"
+                    value={interestData.date}
+                    onChange={e => setInterestData({ ...interestData, date: e.target.value })}
+                    className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">टिप्पणी / नोट</label>
+                  <input
+                    type="text"
+                    placeholder="उदा. HDFC Bank ब्याज"
+                    value={interestData.note}
+                    onChange={e => setInterestData({ ...interestData, note: e.target.value })}
+                    className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50"
+                  />
+                </div>
+              </div>
+
+              {/* Post to expenses checkbox */}
+              <label className="flex items-start gap-2.5 p-2.5 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={interestData.postToExpenses}
+                  onChange={e => setInterestData({ ...interestData, postToExpenses: e.target.checked })}
+                  className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500"
+                />
+                <div className="text-xs">
+                  <span className="font-bold text-slate-800 block">व्यापार खर्चे (Shop Expense) में ऑटो-जोड़ें</span>
+                  <span className="text-[10px] text-slate-500 block">
+                    यह ब्याज अपने आप DayBook और Profit & Loss रिपोर्ट में खर्च के रूप में जुड़ेगा।
+                  </span>
+                </div>
+              </label>
+
+              {/* Submit Buttons */}
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => { setIsInterestOpen(false); setSelectedAccForInterest(null); }}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold cursor-pointer"
+                >
+                  रद्द करें
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingInterest}
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 active:bg-indigo-700 text-white text-xs font-black shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {savingInterest ? "सहेज रहे हैं..." : "💾 असली ब्याज दर्ज करें"}
+                </button>
+              </div>
+            </form>
+
+            {/* Past Monthly Interests History */}
+            {((selectedAccForInterest.monthlyInterests || []).length > 0) && (
+              <div className="pt-3 border-t border-slate-100 space-y-2">
+                <h4 className="text-xs font-black text-slate-800">
+                  पिछले महीनों का ब्याज इतिहास ({selectedAccForInterest.monthlyInterests.length})
+                </h4>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {selectedAccForInterest.monthlyInterests.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs"
+                    >
+                      <div>
+                        <div className="font-bold text-slate-800">
+                          {item.monthName || item.month}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          अनुमान: ₹{Number(item.calculatedInterest || 0).toLocaleString("en-IN")} • {item.date ? String(item.date).split("T")[0] : ""}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 block">असली ब्याज</span>
+                        <span className="text-sm font-black text-rose-600">
+                          ₹{Number(item.actualInterest || 0).toLocaleString("en-IN")}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
