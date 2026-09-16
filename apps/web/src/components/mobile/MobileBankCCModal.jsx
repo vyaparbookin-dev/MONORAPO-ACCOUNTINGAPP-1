@@ -18,10 +18,15 @@ import {
   ArrowUpRight,
   AlertCircle,
   ShieldAlert,
-  Wallet
+  Wallet,
+  QrCode,
+  Copy,
+  Download,
+  Check
 } from "lucide-react";
 import api from "../../services/api";
 import { useCompany } from "../../contexts/CompanyContext";
+import { speakUpiPayment } from "../../utils/soundBox";
 
 const ACCOUNT_TYPES = [
   { id: "CURRENT", label: "करंट अकाउंट (Current A/C)", icon: "🏛️", desc: "बिजनेस का मुख्य चालू खाता" },
@@ -46,7 +51,9 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
     bankName: "",
     accountNumber: "",
     ifscCode: "",
+    upiId: "",
     accountType: "CURRENT",
+    hasCcLimit: false,
     sanctionedLimit: "",
     currentOutstanding: "",
     openingBalance: "",
@@ -80,6 +87,12 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
     postToExpenses: true
   });
   const [savingInterest, setSavingInterest] = useState(false);
+
+  // Payment QR Code Modal (Generate QR & WhatsApp Share)
+  const [isQrOpen, setIsQrOpen] = useState(false);
+  const [selectedAccForQr, setSelectedAccForQr] = useState(null);
+  const [qrAmount, setQrAmount] = useState("");
+  const [copiedUpi, setCopiedUpi] = useState(false);
 
   // History Modal
   const [historyAcc, setHistoryAcc] = useState(null);
@@ -154,15 +167,21 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
       return;
     }
 
+    const isCcActive = Boolean(formData.hasCcLimit || formData.accountType === "CC_OVERDRAFT");
+    const sLimit = Number(formData.sanctionedLimit || 0);
+    const cOutstanding = Number(formData.currentOutstanding || 0);
+    const oBalance = Number(formData.openingBalance || 0);
+    const availBalance = isCcActive ? Math.max(0, sLimit - cOutstanding) : oBalance;
+
     const payload = {
       ...formData,
       accountName: formData.accountName || formData.bankName,
-      sanctionedLimit: Number(formData.sanctionedLimit || 0),
-      currentOutstanding: Number(formData.currentOutstanding || 0),
-      openingBalance: Number(formData.openingBalance || 0),
-      currentBalance: formData.accountType === "CC_OVERDRAFT"
-        ? (Number(formData.sanctionedLimit || 0) - Number(formData.currentOutstanding || 0))
-        : Number(formData.openingBalance || 0),
+      hasCcLimit: isCcActive,
+      sanctionedLimit: isCcActive ? sLimit : 0,
+      currentOutstanding: isCcActive ? cOutstanding : 0,
+      openingBalance: availBalance,
+      currentBalance: availBalance,
+      balance: availBalance,
       interestRate: Number(formData.interestRate || 0),
       updatedAt: new Date().toISOString()
     };
@@ -213,7 +232,8 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
               bankName: payload.bankName,
               accountName: payload.accountName,
               accountNumber: payload.accountNumber,
-              ifscCode: payload.ifscCode
+              ifscCode: payload.ifscCode,
+              upiId: payload.upiId || selectedCompany.upiId
             });
           } catch (coErr) {}
         }
@@ -231,19 +251,77 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
     }
   };
 
-  const resetForm = () => {
+  const resetForm = (type = "CURRENT", hasCc = false) => {
     setFormData({
       accountName: "",
       bankName: "",
       accountNumber: "",
       ifscCode: "",
-      accountType: "CURRENT",
+      upiId: selectedCompany?.upiId || "",
+      accountType: type,
+      hasCcLimit: hasCc || type === "CC_OVERDRAFT",
       sanctionedLimit: "",
       currentOutstanding: "",
       openingBalance: "",
       interestRate: "",
       notes: ""
     });
+  };
+
+  // QR Code & Payment Utilities
+  const getAccountUpiId = (acc) => {
+    if (!acc) return selectedCompany?.upiId || "";
+    if (acc.upiId && acc.upiId.trim()) return acc.upiId.trim();
+    if (selectedCompany?.upiId && selectedCompany.upiId.trim()) return selectedCompany.upiId.trim();
+    if (selectedCompany?.phone) return `${selectedCompany.phone}@upi`;
+    return "vyapar@upi";
+  };
+
+  const getAccountQrUrl = (acc, amount = "") => {
+    const upiId = getAccountUpiId(acc);
+    const payeeName = acc?.accountName || selectedCompany?.name || "Vyapar Merchant";
+    const amtNum = Number(amount);
+    let upiString = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&cu=INR`;
+    if (!isNaN(amtNum) && amtNum > 0) {
+      upiString += `&am=${amtNum.toFixed(2)}`;
+    }
+    return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(upiString)}&margin=12`;
+  };
+
+  const shareAccountWhatsApp = (acc, customAmount = "") => {
+    const upiId = getAccountUpiId(acc);
+    const coName = selectedCompany?.name || "मेरी दुकान";
+    const bName = acc?.bankName || acc?.accountName || "Bank";
+    const amtNum = Number(customAmount);
+    const payeeName = acc?.accountName || coName;
+
+    let upiString = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&cu=INR`;
+    if (!isNaN(amtNum) && amtNum > 0) {
+      upiString += `&am=${amtNum.toFixed(2)}`;
+    }
+
+    let msg = `🏦 *${coName} - बैंक भुगतान QR विवरण (Bank Payment Details)*\n`;
+    msg += `----------------------------------\n`;
+    msg += `🏛️ *बैंक:* ${bName}\n`;
+    if (acc?.accountNumber) msg += `🔢 *खाता नं.:* ••••${String(acc.accountNumber).slice(-4)}\n`;
+    if (acc?.ifscCode) msg += `📍 *IFSC कोड:* ${acc.ifscCode}\n`;
+    msg += `📲 *UPI ID:* ${upiId}\n`;
+    if (!isNaN(amtNum) && amtNum > 0) {
+      msg += `💰 *रकम:* ₹${amtNum.toLocaleString("en-IN")}\n`;
+    }
+    msg += `----------------------------------\n`;
+    msg += `📲 *GPay / PhonePe / Paytm से 1-क्लिक भुगतान हेतु लिंक:*\n`;
+    msg += `${upiString}\n\n`;
+    msg += `_धन्यवाद! - ${coName}_`;
+
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
+  };
+
+  const handleOpenQrModal = (acc) => {
+    setSelectedAccForQr(acc);
+    setQrAmount("");
+    setCopiedUpi(false);
+    setIsQrOpen(true);
   };
 
   const calculateAutoMonthlyInterest = (acc) => {
@@ -1000,31 +1078,43 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
                     </div>
                   </div>
 
-                  {/* CC Meter details if CC */}
-                  {isCC && (
-                    <div className="bg-slate-50 rounded-xl p-3 space-y-2 border border-slate-100">
-                      <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
-                        <div>
-                          <span className="text-slate-400 block">कुल स्वीकृत लिमिट</span>
-                          <span className="font-bold text-slate-800">₹{limit.toLocaleString("en-IN")}</span>
+                  {/* CC 3-BOX SYSTEM */}
+                  {(isCC || acc.hasCcLimit) && (
+                    <div className="bg-slate-50/90 rounded-2xl p-3 space-y-2.5 border border-slate-200/90 shadow-2xs">
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        {/* Box 1: कुल स्वीकृत लिमिट */}
+                        <div className="p-2 rounded-xl bg-blue-50/90 border border-blue-200/70 flex flex-col justify-center">
+                          <span className="text-[10px] text-blue-700 font-bold block leading-tight">1. कुल CC लिमिट</span>
+                          <span className="text-xs font-black text-blue-900 mt-1">₹{limit.toLocaleString("en-IN")}</span>
                         </div>
-                        <div>
-                          <span className="text-slate-400 block">बाकी कर्ज़ (Used)</span>
-                          <span className="font-bold text-rose-600">₹{out.toLocaleString("en-IN")}</span>
+
+                        {/* Box 2: लिया गया कर्ज़ / निकाला पैसा */}
+                        <div className="p-2 rounded-xl bg-rose-50/90 border border-rose-200/70 flex flex-col justify-center">
+                          <span className="text-[10px] text-rose-700 font-bold block leading-tight">2. लिया कर्ज़ (Used)</span>
+                          <span className="text-xs font-black text-rose-600 mt-1">₹{out.toLocaleString("en-IN")}</span>
                         </div>
-                        <div>
-                          <span className="text-slate-400 block">ब्याज दर</span>
-                          <span className="font-bold text-slate-800">{acc.interestRate ? `${acc.interestRate}%` : "—"}</span>
+
+                        {/* Box 3: उपलब्ध शेष राशि / बची लिमिट */}
+                        <div className="p-2 rounded-xl bg-emerald-50/90 border border-emerald-200/70 flex flex-col justify-center">
+                          <span className="text-[10px] text-emerald-700 font-bold block leading-tight">3. शेष उपलब्ध</span>
+                          <span className="text-xs font-black text-emerald-700 mt-1">₹{avail.toLocaleString("en-IN")}</span>
                         </div>
                       </div>
 
-                      <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className={`h-1.5 rounded-full ${
-                            pct > 80 ? "bg-rose-500" : pct > 50 ? "bg-amber-500" : "bg-emerald-500"
-                          }`}
-                          style={{ width: `${Math.min(pct, 100)}%` }}
-                        />
+                      {/* Meter Progress */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 px-0.5">
+                          <span>उपयोग: {pct}%</span>
+                          <span>बची लिमिट: {100 - pct > 0 ? 100 - pct : 0}%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                          <div
+                            className={`h-2 rounded-full transition-all duration-300 ${
+                              pct > 80 ? "bg-rose-500" : pct > 50 ? "bg-amber-500" : "bg-emerald-500"
+                            }`}
+                            style={{ width: `${Math.min(pct, 100)}%` }}
+                          />
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1059,25 +1149,35 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
                     )}
                   </div>
 
-                  {/* Action Buttons */}
-                  <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-100">
+                  {/* Action Buttons: 4 Grid */}
+                  <div className="grid grid-cols-4 gap-1.5 pt-1 border-t border-slate-100">
                     <button
                       onClick={() => handleOpenTx(acc, "DEPOSIT")}
-                      className="py-1.5 px-2 rounded-xl bg-emerald-50 active:bg-emerald-100 text-emerald-700 text-xs font-black flex items-center justify-center gap-1 cursor-pointer border border-emerald-200"
+                      className="py-2 px-1 rounded-xl bg-emerald-50 active:bg-emerald-100 text-emerald-700 text-[11px] font-black flex items-center justify-center gap-1 cursor-pointer border border-emerald-200"
+                      title="पैसे जमा करें"
                     >
-                      <ArrowDownRight size={14} /> {isCC ? "जमा (खाली करें)" : "जमा करें"}
+                      <ArrowDownRight size={13} /> जमा
                     </button>
                     <button
                       onClick={() => handleOpenTx(acc, "WITHDRAWAL")}
-                      className="py-1.5 px-2 rounded-xl bg-rose-50 active:bg-rose-100 text-rose-700 text-xs font-black flex items-center justify-center gap-1 cursor-pointer border border-rose-200"
+                      className="py-2 px-1 rounded-xl bg-rose-50 active:bg-rose-100 text-rose-700 text-[11px] font-black flex items-center justify-center gap-1 cursor-pointer border border-rose-200"
+                      title="निकासी या खर्च दर्ज करें"
                     >
-                      <ArrowUpRight size={14} /> निकासी
+                      <ArrowUpRight size={13} /> निकासी
+                    </button>
+                    <button
+                      onClick={() => handleOpenQrModal(acc)}
+                      className="py-2 px-1 rounded-xl bg-indigo-50 active:bg-indigo-100 text-indigo-700 text-[11px] font-black flex items-center justify-center gap-1 cursor-pointer border border-indigo-200"
+                      title="UPI QR कोड दिखाएं व WhatsApp शेयर करें"
+                    >
+                      <QrCode size={13} /> QR शेयर
                     </button>
                     <button
                       onClick={() => setHistoryAcc(acc)}
-                      className="py-1.5 px-2 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer"
+                      className="py-2 px-1 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer"
+                      title="लेन-देन इतिहास देखें"
                     >
-                      <Clock size={14} /> इतिहास ({txCount})
+                      <Clock size={13} /> इतिहास ({txCount})
                     </button>
                   </div>
 
@@ -1207,65 +1307,146 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
                 </div>
               </div>
 
-              {/* Conditional Limits for CC vs Balances for Current */}
-              {formData.accountType === "CC_OVERDRAFT" ? (
-                <>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">स्वीकृत CC लिमिट (₹) *</label>
+              {/* CC Limit Toggle Question */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-black text-slate-800">क्या इस खाते पर CC / OD लिमिट है?</span>
+                    <p className="text-[10px] text-slate-500">बैंक से स्वीकृत ओवरड्राफ्ट या कैश क्रेडिट लोन लिमिट</p>
+                  </div>
+                  <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, hasCcLimit: false, accountType: formData.accountType === "CC_OVERDRAFT" ? "CURRENT" : formData.accountType })}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        !formData.hasCcLimit && formData.accountType !== "CC_OVERDRAFT"
+                          ? "bg-slate-700 text-white shadow-2xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      नहीं
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, hasCcLimit: true, accountType: formData.accountType === "SAVINGS" ? "CC_OVERDRAFT" : formData.accountType })}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        formData.hasCcLimit || formData.accountType === "CC_OVERDRAFT"
+                          ? "bg-blue-600 text-white shadow-2xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      हाँ (CC है)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Conditional Limits for CC vs Balances for Regular Account */}
+              {(formData.hasCcLimit || formData.accountType === "CC_OVERDRAFT") ? (
+                <div className="p-3 bg-blue-50/60 rounded-2xl border border-blue-200 space-y-3">
+                  <div className="flex items-center gap-1.5 text-blue-900 font-black text-xs">
+                    <CreditCard size={14} />
+                    <span>CC लिमिट 3-बॉक्स विवरण (₹)</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {/* Box 1: कुल स्वीकृत CC लिमिट */}
+                    <div className="bg-white p-2.5 rounded-xl border border-blue-200 shadow-2xs">
+                      <label className="block text-[11px] font-bold text-blue-900 mb-1">
+                        1. कुल स्वीकृत CC लिमिट (₹) *
+                      </label>
                       <input
                         type="number"
                         required
-                        placeholder="उदा. 10,00,000"
+                        placeholder="उदा. 1000000"
                         value={formData.sanctionedLimit}
                         onChange={e => setFormData({ ...formData, sanctionedLimit: e.target.value })}
-                        className="w-full text-sm font-black px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-indigo-700"
+                        className="w-full text-sm font-black px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-blue-800"
+                      />
+                    </div>
+
+                    {/* Box 2: लिया गया कर्ज़ / निकाला गया पैसा */}
+                    <div className="bg-white p-2.5 rounded-xl border border-rose-200 shadow-2xs">
+                      <label className="block text-[11px] font-bold text-rose-900 mb-1">
+                        2. लिया कर्ज़ / निकाला (₹) *
+                      </label>
+                      <input
+                        type="number"
+                        placeholder="उदा. 400000"
+                        value={formData.currentOutstanding}
+                        onChange={e => setFormData({ ...formData, currentOutstanding: e.target.value })}
+                        className="w-full text-sm font-black px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-rose-600"
+                      />
+                    </div>
+
+                    {/* Box 3: उपलब्ध शेष राशि (Auto-Calculated) */}
+                    <div className="bg-emerald-50/80 p-2.5 rounded-xl border border-emerald-300 shadow-2xs flex flex-col justify-between">
+                      <label className="block text-[11px] font-bold text-emerald-900 mb-1">
+                        3. उपलब्ध शेष राशि (₹)
+                      </label>
+                      <div className="text-sm font-black text-emerald-700 py-1.5 px-2 bg-white/90 rounded-lg border border-emerald-200">
+                        ₹{Math.max(0, (Number(formData.sanctionedLimit) || 0) - (Number(formData.currentOutstanding) || 0)).toLocaleString("en-IN")}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">वार्षिक ब्याज दर (% p.a.)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="उदा. 8.5"
+                        value={formData.interestRate}
+                        onChange={e => setFormData({ ...formData, interestRate: e.target.value })}
+                        className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-200 bg-white"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">वर्तमान बकाया / उपयोग (₹)</label>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">UPI ID (QR पेमेंट हेतु)</label>
+                      <input
+                        type="text"
+                        placeholder="उदा. business@sbi"
+                        value={formData.upiId}
+                        onChange={e => setFormData({ ...formData, upiId: e.target.value })}
+                        className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-200 bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">वर्तमान बैलेंस (₹)</label>
                       <input
                         type="number"
-                        placeholder="उदा. 4,00,000"
-                        value={formData.currentOutstanding}
-                        onChange={e => setFormData({ ...formData, currentOutstanding: e.target.value })}
-                        className="w-full text-sm font-black px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-rose-600"
+                        placeholder="₹ 0.00"
+                        value={formData.openingBalance}
+                        onChange={e => setFormData({ ...formData, openingBalance: e.target.value })}
+                        className="w-full text-sm font-black px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">ब्याज दर (% p.a.)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="वैकल्पिक"
+                        value={formData.interestRate}
+                        onChange={e => setFormData({ ...formData, interestRate: e.target.value })}
+                        className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50"
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">ब्याज दर (% p.a.)</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">UPI ID (QR पेमेंट हेतु)</label>
                     <input
-                      type="number"
-                      step="0.01"
-                      placeholder="उदा. 8.5"
-                      value={formData.interestRate}
-                      onChange={e => setFormData({ ...formData, interestRate: e.target.value })}
-                      className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50"
-                    />
-                  </div>
-                </>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">वर्तमान बैलेंस (₹)</label>
-                    <input
-                      type="number"
-                      placeholder="₹ 0.00"
-                      value={formData.openingBalance}
-                      onChange={e => setFormData({ ...formData, openingBalance: e.target.value })}
-                      className="w-full text-sm font-black px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">ब्याज दर (% p.a.)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      placeholder="वैकल्पिक"
-                      value={formData.interestRate}
-                      onChange={e => setFormData({ ...formData, interestRate: e.target.value })}
-                      className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50"
+                      type="text"
+                      placeholder="उदा. business@sbi या 9876543210@paytm"
+                      value={formData.upiId}
+                      onChange={e => setFormData({ ...formData, upiId: e.target.value })}
+                      className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-slate-50"
                     />
                   </div>
                 </div>
@@ -1683,6 +1864,119 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* UPI Payment QR Code & Share Modal */}
+      {isQrOpen && selectedAccForQr && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-sm p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                  <QrCode size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">UPI पेमेंट QR कोड</h3>
+                  <p className="text-[11px] text-slate-500 truncate max-w-[200px]">
+                    {selectedAccForQr.bankName || selectedAccForQr.accountName}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setIsQrOpen(false); setSelectedAccForQr(null); }}
+                className="p-1 rounded-full text-slate-400 hover:bg-slate-100 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* QR Display Card */}
+            <div className="bg-gradient-to-b from-indigo-50/70 via-white to-slate-50 p-4 rounded-2xl border border-indigo-100/80 flex flex-col items-center text-center shadow-2xs">
+              <span className="text-[11px] font-black text-indigo-900 mb-0.5">
+                {selectedCompany?.name || "व्यापार पेमेंट"}
+              </span>
+              <span className="text-[10px] text-slate-500 mb-3">
+                {selectedAccForQr.bankName} {selectedAccForQr.accountNumber ? `(••••${String(selectedAccForQr.accountNumber).slice(-4)})` : ""}
+              </span>
+
+              {/* QR Image */}
+              <div className="p-2.5 bg-white rounded-2xl shadow-md border border-slate-200 inline-block">
+                <img
+                  src={getAccountQrUrl(selectedAccForQr, qrAmount)}
+                  alt="UPI QR Code"
+                  className="w-48 h-48 rounded-xl object-contain mx-auto"
+                />
+              </div>
+
+              {/* UPI ID display & copy */}
+              <div className="mt-3 flex items-center justify-between gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs w-full">
+                <span className="text-xs font-mono font-bold text-slate-800 truncate">
+                  {getAccountUpiId(selectedAccForQr)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(getAccountUpiId(selectedAccForQr));
+                    setCopiedUpi(true);
+                    setTimeout(() => setCopiedUpi(false), 2000);
+                  }}
+                  className="text-indigo-600 hover:text-indigo-800 p-1 cursor-pointer shrink-0"
+                  title="UPI ID कॉपी करें"
+                >
+                  {copiedUpi ? <Check size={14} className="text-emerald-600 stroke-[3]" /> : <Copy size={14} />}
+                </button>
+              </div>
+              {copiedUpi && <span className="text-[10px] text-emerald-600 font-bold mt-1">✓ UPI ID कॉपी हो गई!</span>}
+            </div>
+
+            {/* Optional Specific Amount Input */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                मांग की राशि (₹) <span className="text-slate-400 font-normal">- वैकल्पिक</span>
+              </label>
+              <input
+                type="number"
+                placeholder="खाली छोड़ें या राशि दर्ज करें (उदा. 1500)"
+                value={qrAmount}
+                onChange={e => setQrAmount(e.target.value)}
+                className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                यदि आप राशि डालेंगे तो ग्राहक के स्कैनर में यही राशि पहले से भरी आएगी।
+              </p>
+            </div>
+
+            {/* Share & Download Actions */}
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => shareAccountWhatsApp(selectedAccForQr, qrAmount)}
+                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-black shadow-md flex items-center justify-center gap-2 cursor-pointer transition"
+              >
+                <span>💬 WhatsApp पर पेमेंट QR शेयर करें</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <a
+                  href={getAccountQrUrl(selectedAccForQr, qrAmount)}
+                  download={`UPI_QR_${selectedAccForQr.bankName || "Account"}.png`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Download size={14} /> डाउनलोड QR
+                </a>
+                <button
+                  type="button"
+                  onClick={() => { setIsQrOpen(false); setSelectedAccForQr(null); }}
+                  className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold cursor-pointer"
+                >
+                  बंद करें
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

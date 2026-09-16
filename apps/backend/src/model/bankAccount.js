@@ -40,6 +40,15 @@ const bankAccountSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    upiId: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    hasCcLimit: {
+      type: Boolean,
+      default: false,
+    },
     sanctionedLimit: {
       type: Number,
       default: 0,
