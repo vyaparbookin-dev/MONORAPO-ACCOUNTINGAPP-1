@@ -53,6 +53,9 @@ import PagarBookHub from "../../components/PagarBookHub";
 import MobileDayBookModal from "../../components/mobile/MobileDayBookModal";
 import MobileProfitLossModal from "../../components/mobile/MobileProfitLossModal";
 import MobileReportViewerModal from "../../components/mobile/MobileReportViewerModal";
+import MobileFamilyExpenseModal from "../../components/mobile/MobileFamilyExpenseModal";
+import MobileSavingsModal from "../../components/mobile/MobileSavingsModal";
+import MobileBankCCModal from "../../components/mobile/MobileBankCCModal";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 
@@ -269,6 +272,9 @@ function MobileVyaparAppContent() {
   // ==================== NATIVE MOBILE REPORTS MODALS ====================
   const [showDayBookModal, setShowDayBookModal] = useState(false);
   const [showProfitLossModal, setShowProfitLossModal] = useState(false);
+  const [showFamilyExpenseModal, setShowFamilyExpenseModal] = useState(false);
+  const [showSavingsModal, setShowSavingsModal] = useState(false);
+  const [showBankCCModal, setShowBankCCModal] = useState(false);
   const [activeMobileReport, setActiveMobileReport] = useState(null);
 
   // ==================== PAGARBOOK STAFF & SALARY STATE ====================
@@ -1703,8 +1709,9 @@ function MobileVyaparAppContent() {
     { id: "customer_builder", title: "🎯 Customer Report Builder", desc: "Custom Filtered Demographics", path: "/reports/customer", category: "CRM", color: "text-blue-600 bg-blue-50" },
     { id: "staff_payroll", title: "👔 PagarBook (स्टाफ हाजिरी व सैलरी)", desc: "Daily Attendance (P/HT/A), Advances, Overtime & Salary Slip", path: "pagarbook_modal", category: "Staff", color: "text-amber-600 bg-amber-50" },
     { id: "sales_return", title: "🔄 Sales Return Register", desc: "Credit Notes & Returns", path: "/billing/return", category: "Sales", color: "text-red-600 bg-red-50" },
-    { id: "graphical_analytics", title: "📈 Graphical BI Analytics", desc: "Visual Charts & Trends", path: "/reports/analytics", category: "BI", color: "text-teal-600 bg-teal-50" },
-    { id: "ghar_kharch", title: "🏡 Ghar Kharch (फैमिली घर खर्च लेजर)", desc: "Papa, Mummy, Family-wise Expense Ledger", path: "ghar_kharch_modal", category: "Personal", color: "text-amber-600 bg-amber-50" },
+    { id: "ghar_kharch", title: "🏡 फैमिली घर खर्च रिपोर्ट", desc: "पापा, मम्मी, खुद सदस्य-अनुसार पारिवारिक खर्च", path: "family_expense_modal", category: "Personal", color: "text-rose-600 bg-rose-50" },
+    { id: "savings_investments", title: "💰 बचत व निवेश (FD / RD / SIP)", desc: "फिक्स्ड डिपॉजिट, आरडी, एसआईपी व बीमा", path: "savings_modal", category: "Finance", color: "text-amber-600 bg-amber-50" },
+    { id: "bank_cc_limit", title: "🏦 बैंक व CC लिमिट खाता", desc: "करंट अकाउंट, CC ओवरड्राफ्ट लिमिट, जमा व ब्याज", path: "bank_cc_modal", category: "Banking", color: "text-blue-600 bg-blue-50" },
     { id: "ai_advisor", title: "🤖 AI मुनीम जी (Smart Insights)", desc: "AI Health Score & Predictions", path: "/ai-advisor", category: "AI", color: "text-purple-600 bg-purple-100" }
   ];
 
@@ -2598,9 +2605,12 @@ function MobileVyaparAppContent() {
                     if (r.path === 'pagarbook_modal') {
                       fetchPagarBookData();
                       setShowPagarBookModal(true);
-                    } else if (r.path === 'ghar_kharch_modal') {
-                      fetchGharKharchData();
-                      setShowGharKharchLedgerModal(true);
+                    } else if (r.path === 'family_expense_modal' || r.path === 'ghar_kharch_modal') {
+                      setShowFamilyExpenseModal(true);
+                    } else if (r.path === 'savings_modal') {
+                      setShowSavingsModal(true);
+                    } else if (r.path === 'bank_cc_modal') {
+                      setShowBankCCModal(true);
                     } else if (r.path === 'daybook_modal') {
                       setShowDayBookModal(true);
                     } else if (r.path === 'profitloss_modal') {
@@ -4546,6 +4556,27 @@ function MobileVyaparAppContent() {
         <MobileProfitLossModal
           isOpen={showProfitLossModal}
           onClose={() => setShowProfitLossModal(false)}
+        />
+      )}
+
+      {showFamilyExpenseModal && (
+        <MobileFamilyExpenseModal
+          isOpen={showFamilyExpenseModal}
+          onClose={() => setShowFamilyExpenseModal(false)}
+        />
+      )}
+
+      {showSavingsModal && (
+        <MobileSavingsModal
+          isOpen={showSavingsModal}
+          onClose={() => setShowSavingsModal(false)}
+        />
+      )}
+
+      {showBankCCModal && (
+        <MobileBankCCModal
+          isOpen={showBankCCModal}
+          onClose={() => setShowBankCCModal(false)}
         />
       )}
 

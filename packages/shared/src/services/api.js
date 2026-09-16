@@ -287,16 +287,51 @@ const getGuestMockData = (url, method = 'GET') => {
     return { success: true, data: { bills: [], expenses: [] }, bills: [], expenses: [] };
   }
 
-  // 11. Banking / Cash
-  if (u.includes('bank') || u.includes('cash')) {
-    const banks = [
-      { _id: "bnk1", bankName: "Main Business Cash Account", accountNumber: "CASH-MAIN", accountType: "CASH", balance: totalCashSales - totalAllExpenses },
-      { _id: "bnk2", bankName: "Bank Current Account", accountNumber: "XXXX1234", accountType: "CURRENT", balance: 0 }
-    ];
-    return { success: true, data: banks, banks: banks, accounts: banks };
+  // 11. Savings & Investments (FD, RD, SIP, LIC, PPF)
+  if (u.includes('savings') || u.includes('saving')) {
+    let localSavings = [];
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('vb_local_savings');
+        if (stored) localSavings = JSON.parse(stored) || [];
+      }
+    } catch (e) {}
+    const savingsList = Array.isArray(localSavings) ? localSavings : [];
+    const totalInvested = savingsList.reduce((sum, item) => sum + Number(item.currentValue || item.investedAmount || item.totalDeposited || 0), 0);
+    return {
+      success: true,
+      data: savingsList,
+      savings: savingsList,
+      list: savingsList,
+      total: savingsList.length,
+      totalInvested
+    };
   }
 
-  // 12. Tally Export
+  // 12. Bank Accounts & CC Limits
+  if (u.includes('bank-account') || u.includes('bank_account') || u.includes('bank') || u.includes('cash')) {
+    let localBankAccounts = [];
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('vb_local_bank_accounts');
+        if (stored) localBankAccounts = JSON.parse(stored) || [];
+      }
+    } catch (e) {}
+    const bankList = Array.isArray(localBankAccounts) && localBankAccounts.length > 0 ? localBankAccounts : [
+      { _id: "bnk1", bankName: "Main Business Cash Account", accountNumber: "CASH-MAIN", accountType: "CASH", balance: totalCashSales - totalAllExpenses, transactions: [] },
+      { _id: "bnk2", bankName: "Bank Current Account", accountNumber: "XXXX1234", accountType: "CURRENT", balance: 0, transactions: [] }
+    ];
+    return {
+      success: true,
+      data: bankList,
+      banks: bankList,
+      accounts: bankList,
+      list: bankList,
+      total: bankList.length
+    };
+  }
+
+  // 13. Tally Export
   if (u.includes('tally')) {
     return '<?xml version="1.0" encoding="utf-8"?><ENVELOPE><HEADER><TALLYREQUEST>Export Data</TALLYREQUEST></HEADER><BODY><IMPORTDATA><REQUESTDATA></REQUESTDATA></IMPORTDATA></BODY></ENVELOPE>';
   }
