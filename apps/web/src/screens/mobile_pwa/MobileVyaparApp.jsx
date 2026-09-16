@@ -58,6 +58,7 @@ import MobileSavingsModal from "../../components/mobile/MobileSavingsModal";
 import MobileBankCCModal from "../../components/mobile/MobileBankCCModal";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 import { deduplicateBills } from "../../utils/deduplicateBills";
+import { speakUpiPayment, playPaymentChime } from "../../utils/soundBox";
 
 
 class MobileErrorBoundary extends React.Component {
@@ -1147,6 +1148,10 @@ function MobileVyaparAppContent() {
       setBillCustomerPhone("");
       setShowQuickBillModal(false);
       setSelectedBillDetail(createdBill);
+
+      if (billPaymentMode === "UPI" || billPaymentMode === "ONLINE") {
+        speakUpiPayment(totalBillAmount, "व्यापार");
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -1342,6 +1347,11 @@ function MobileVyaparAppContent() {
       setPartyTxNotes('');
       setShowPartyTxForm(false);
       fetchPartyStatement(partyId);
+      
+      if (type === 'received') {
+        speakUpiPayment(amt, "व्यापार");
+      }
+
       alert(`✅ ₹${amt.toLocaleString('en-IN')} का लेन-देन (${type === 'paid' ? 'मैंने दिए' : 'मुझे मिले'}) दर्ज हुआ!`);
     } catch (err) {
       console.error("Party transaction error:", err);
@@ -1459,6 +1469,10 @@ function MobileVyaparAppContent() {
       setManualSalePhone("");
       setManualSaleCustomer("काउंटर नकद ग्राहक");
       setManualSalePaymentMode("CASH");
+
+      if (manualSalePaymentMode === 'UPI') {
+        speakUpiPayment(saleAmt, "व्यापार");
+      }
 
       alert(`🎉 ₹${saleAmt.toLocaleString('en-IN')} की ${manualSalePaymentMode === 'CASH' ? 'नकद' : manualSalePaymentMode === 'UPI' ? 'UPI' : 'उधारी'} बिक्री (${saleDateDisplay}) सफलतापूर्वक दर्ज हो गई!`);
       fetchLiveDashboardData();
