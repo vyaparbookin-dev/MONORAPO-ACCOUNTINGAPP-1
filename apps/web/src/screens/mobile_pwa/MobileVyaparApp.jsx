@@ -1314,13 +1314,35 @@ function MobileVyaparAppContent() {
       const rawBal = Math.abs(Number(newPartyBalance) || 0);
       const signedBal = (newPartyBalanceDir === "negative") ? -rawBal : rawBal;
 
+      const trimmedName = newPartyName.trim();
+      const trimmedAddr = newPartyAddress.trim() || "Local";
+
+      // ⚠️ Check duplicate party: same name and same address
+      const normName = trimmedName.toLowerCase();
+      const normAddr = trimmedAddr.toLowerCase();
+      const currentEditId = editingParty ? (editingParty._id || editingParty.id) : null;
+
+      const isDuplicate = parties.some(p => {
+        const pId = p._id || p.id;
+        if (currentEditId && String(pId) === String(currentEditId)) return false;
+        const existingName = (p.name || "").trim().toLowerCase();
+        const existingAddr = (p.address || "Local").trim().toLowerCase();
+        return existingName === normName && existingAddr === normAddr;
+      });
+
+      if (isDuplicate) {
+        alert(`⚠️ इस नाम ("${trimmedName}") और पते ("${trimmedAddr}") से पहले से एक पार्टी मौजूद है!\nकृपया अलग नाम या पता दर्ज करें ताकि खातों में भ्रम न हो।`);
+        setSavingParty(false);
+        return;
+      }
+
       const payload = {
-        name: newPartyName.trim(),
+        name: trimmedName,
         mobileNumber: newPartyPhone.trim() || `9${Math.floor(100000000 + Math.random() * 900000000)}`,
         openingBalance: signedBal,
         currentBalance: signedBal,
         partyType: newPartyType || "customer",
-        address: newPartyAddress.trim() || "Local"
+        address: trimmedAddr
       };
 
       if (editingParty) {
@@ -2494,35 +2516,78 @@ function MobileVyaparAppContent() {
                     return (
                       <div 
                         key={p.id || p._id}
-                        onClick={() => handleOpenPartyDetail(p)}
-                        className={`p-3.5 bg-white border rounded-2xl flex justify-between items-center shadow-sm cursor-pointer transition ${
-                          isPersonal ? "border-amber-200 hover:border-amber-400 hover:bg-amber-50/20" : "border-slate-100 hover:border-indigo-200"
+                        className={`p-3.5 bg-white border rounded-2xl shadow-xs transition space-y-2.5 ${
+                          isPersonal ? "border-amber-200 hover:border-amber-400 hover:bg-amber-50/20" : "border-slate-200 hover:border-indigo-300"
                         }`}
                       >
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-xs text-[#0F172A]">{p.name}</span>
-                            {isPersonal ? (
-                              <span className="text-[9px] bg-amber-100 text-amber-800 font-extrabold px-1.5 py-0.5 rounded-full border border-amber-300">
-                                👤 पर्सनल
-                              </span>
-                            ) : (p.type || p.partyType) === 'supplier' ? (
-                              <span className="text-[9px] bg-purple-100 text-purple-700 font-bold px-1.5 py-0.5 rounded-full">
-                                सप्लायर
-                              </span>
-                            ) : null}
+                        {/* Top Info Section: Click to Open Ledger */}
+                        <div 
+                          onClick={() => handleOpenPartyDetail(p)}
+                          className="flex justify-between items-start cursor-pointer gap-2"
+                        >
+                          <div className="space-y-1 min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-extrabold text-sm text-[#0F172A] truncate">{p.name}</span>
+                              {isPersonal ? (
+                                <span className="text-[9px] bg-amber-100 text-amber-800 font-extrabold px-1.5 py-0.5 rounded-full border border-amber-300 shrink-0">
+                                  👤 पर्सनल
+                                </span>
+                              ) : (p.type || p.partyType) === 'supplier' ? (
+                                <span className="text-[9px] bg-purple-100 text-purple-700 font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                                  🏢 सप्लायर
+                                </span>
+                              ) : (
+                                <span className="text-[9px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                                  🛒 ग्राहक
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-500 flex items-center gap-1">
+                              <Phone size={11} /> {p.phone || p.mobileNumber || "कोई फोन नहीं"}
+                            </div>
+                            {p.address && p.address !== "Local" && (
+                              <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                                📍 {p.address}
+                              </div>
+                            )}
                           </div>
-                          <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                            <Phone size={11} /> {p.phone || p.mobileNumber || "No Phone"}
+                          <div className="text-right shrink-0">
+                            <div className={`font-black text-sm ${bal > 0 ? "text-[#059669]" : bal < 0 ? "text-[#DC2626]" : "text-slate-600"}`}>
+                              {bal > 0 ? `+ ₹${bal.toLocaleString('en-IN')}` : bal < 0 ? `- ₹${Math.abs(bal).toLocaleString('en-IN')}` : "₹ 0"}
+                            </div>
+                            <span className={`text-[10px] font-bold block ${bal > 0 ? "text-emerald-600" : bal < 0 ? "text-rose-600" : "text-slate-400"}`}>
+                              {bal > 0 ? "🟢 लेने हैं (You'll Get)" : bal < 0 ? "🔴 देने हैं (You'll Give)" : "हिसाब चुकता"}
+                            </span>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className={`font-black text-xs ${bal >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>
-                            {bal >= 0 ? `+ ₹${bal.toLocaleString('en-IN')}` : `- ₹${Math.abs(bal).toLocaleString('en-IN')}`}
+
+                        {/* Quick Action Row on Card: Direct Edit & Delete */}
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPartyDetail(p)}
+                            className="text-[#4338CA] hover:text-indigo-800 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>लेजर देखें ➔</span>
+                          </button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleOpenEditParty(p); }}
+                              className="px-2.5 py-1.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 flex items-center gap-1 text-xs font-bold cursor-pointer border border-blue-200 active:scale-95 transition"
+                              title="पार्टी विवरण संपादित करें"
+                            >
+                              <Edit2 size={13} /> <span>एडिट</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleDeleteParty(p); }}
+                              className="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 flex items-center gap-1 text-xs font-bold cursor-pointer border border-rose-200 active:scale-95 transition"
+                              title="पार्टी हटाएं"
+                            >
+                              <Trash2 size={13} /> <span>हटाएं</span>
+                            </button>
                           </div>
-                          <span className="text-[10px] text-slate-400 font-medium block">
-                            {bal > 0 ? "लेने हैं (You'll Get)" : bal < 0 ? "देने हैं (You'll Give)" : "हिसाब चुकता"}
-                          </span>
                         </div>
                       </div>
                     );
@@ -4310,9 +4375,9 @@ function MobileVyaparAppContent() {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 space-y-4 shadow-2xl max-h-[92vh] flex flex-col">
             {/* Header with Edit & Delete */}
-            <div className="flex justify-between items-start border-b border-slate-100 pb-3">
-              <div>
-                <div className="flex items-center gap-2">
+            <div className="flex justify-between items-start border-b border-slate-100 pb-3 gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-extrabold text-base text-[#0F172A]">{selectedPartyDetail.name}</h3>
                   {(selectedPartyDetail.type || selectedPartyDetail.partyType) === 'personal' ? (
                     <span className="text-[10px] bg-amber-100 text-amber-800 font-extrabold px-2 py-0.5 rounded-full border border-amber-300">
@@ -4355,6 +4420,24 @@ function MobileVyaparAppContent() {
                   <X size={18} />
                 </button>
               </div>
+            </div>
+
+            {/* Prominent Quick Action Bar inside Modal */}
+            <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => handleOpenEditParty(selectedPartyDetail)}
+                className="flex-1 py-2 rounded-xl bg-white hover:bg-blue-50 text-blue-700 font-extrabold text-xs flex items-center justify-center gap-1.5 border border-blue-200 shadow-xs cursor-pointer active:scale-95 transition"
+              >
+                <Edit2 size={13} /> <span>✏️ पार्टी विवरण एडिट करें</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteParty(selectedPartyDetail)}
+                className="px-3 py-2 rounded-xl bg-white hover:bg-rose-50 text-rose-700 font-extrabold text-xs flex items-center justify-center gap-1.5 border border-rose-200 shadow-xs cursor-pointer active:scale-95 transition"
+              >
+                <Trash2 size={13} /> <span>🗑️ हटाएं</span>
+              </button>
             </div>
 
             {/* Balance Card */}

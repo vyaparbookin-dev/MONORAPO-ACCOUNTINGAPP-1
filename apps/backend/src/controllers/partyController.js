@@ -14,7 +14,26 @@ export const createParty = async (req, res) => {
       return res.status(400).json({ success: false, error: "Name, Mobile, and Address are required" });
     }
 
-    const existingParty = await Party.findOne({ mobileNumber, companyId: req.companyId });
+    const trimmedName = name.trim();
+    const trimmedAddress = address.trim();
+    const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // 1. Duplicate check: Same name and same address
+    const duplicateByNameAndAddr = await Party.findOne({
+      companyId: req.companyId,
+      isActive: true,
+      name: { $regex: new RegExp(`^${escapeRegex(trimmedName)}$`, "i") },
+      address: { $regex: new RegExp(`^${escapeRegex(trimmedAddress)}$`, "i") }
+    });
+    if (duplicateByNameAndAddr) {
+      return res.status(400).json({
+        success: false,
+        error: `पार्टी '${trimmedName}' (पता: '${trimmedAddress}') पहले से मौजूद है! एक ही नाम और पते से दोबारा खाता नहीं बनाया जा सकता।`
+      });
+    }
+
+    // 2. Duplicate check: Same mobile number
+    const existingParty = await Party.findOne({ mobileNumber, companyId: req.companyId, isActive: true });
     if (existingParty) {
       return res.status(400).json({ success: false, error: "Party with this mobile already exists" });
     }
@@ -202,6 +221,26 @@ export const updateParty = async (req, res) => {
   try {
     if (!req.companyId) {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    if (req.body.name && req.body.address) {
+      const trimmedName = req.body.name.trim();
+      const trimmedAddress = req.body.address.trim();
+      const duplicateParty = await Party.findOne({
+        _id: { $ne: req.params.id },
+        companyId: req.companyId,
+        isActive: true,
+        name: { $regex: new RegExp(`^${escapeRegex(trimmedName)}$`, "i") },
+        address: { $regex: new RegExp(`^${escapeRegex(trimmedAddress)}$`, "i") }
+      });
+      if (duplicateParty) {
+        return res.status(400).json({
+          success: false,
+          error: `पार्टी '${trimmedName}' (पता: '${trimmedAddress}') पहले से मौजूद है! एक ही नाम और पते से डुप्लीकेट नहीं बनाया जा सकता।`
+        });
+      }
     }
 
     const party = await Party.findOneAndUpdate(
