@@ -19,9 +19,27 @@ export const getDayBook = async (req, res) => {
 
     if (!companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
 
-    const coFilter = mongoose.Types.ObjectId.isValid(companyId) 
-      ? { $in: [companyId, new mongoose.Types.ObjectId(companyId)] }
-      : companyId;
+    if (!mongoose.Types.ObjectId.isValid(companyId)) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          bills: [],
+          purchases: [],
+          expenses: [],
+          operatingExpenses: [],
+          ownerDrawings: [],
+          ownerInvestments: [],
+          securityDeposits: [],
+          bankInterestPaid: [],
+          bankInterestReceived: [],
+          partyTransactions: [],
+          salaries: [],
+          pagination: { page, limit, totalBills: 0, totalPurchases: 0, totalExpenses: 0, totalPartyTransactions: 0 }
+        }
+      });
+    }
+
+    const coFilter = { $in: [companyId, new mongoose.Types.ObjectId(companyId)] };
 
     // Calculate Start and End range based on parameters
     let startOfDay;

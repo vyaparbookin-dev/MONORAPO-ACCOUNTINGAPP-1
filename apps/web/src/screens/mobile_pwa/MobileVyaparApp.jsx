@@ -270,12 +270,47 @@ function MobileVyaparAppContent() {
   const [showCustomerAddressInput, setShowCustomerAddressInput] = useState(false);
 
   // ==================== NATIVE MOBILE REPORTS MODALS ====================
-  const [showDayBookModal, setShowDayBookModal] = useState(false);
-  const [showProfitLossModal, setShowProfitLossModal] = useState(false);
-  const [showFamilyExpenseModal, setShowFamilyExpenseModal] = useState(false);
-  const [showSavingsModal, setShowSavingsModal] = useState(false);
-  const [showBankCCModal, setShowBankCCModal] = useState(false);
-  const [activeMobileReport, setActiveMobileReport] = useState(null);
+  const [showDayBookModal, setShowDayBookModal] = useState(() => sessionStorage.getItem("mobile_show_daybook") === "true");
+  const [showProfitLossModal, setShowProfitLossModal] = useState(() => sessionStorage.getItem("mobile_show_profitloss") === "true");
+  const [showFamilyExpenseModal, setShowFamilyExpenseModal] = useState(() => sessionStorage.getItem("mobile_show_family_expense") === "true");
+  const [showSavingsModal, setShowSavingsModal] = useState(() => sessionStorage.getItem("mobile_show_savings") === "true");
+  const [showBankCCModal, setShowBankCCModal] = useState(() => sessionStorage.getItem("mobile_show_bank_cc") === "true");
+  const [activeMobileReport, setActiveMobileReport] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem("mobile_active_report");
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    sessionStorage.setItem("mobile_show_daybook", showDayBookModal ? "true" : "false");
+  }, [showDayBookModal]);
+
+  useEffect(() => {
+    sessionStorage.setItem("mobile_show_profitloss", showProfitLossModal ? "true" : "false");
+  }, [showProfitLossModal]);
+
+  useEffect(() => {
+    sessionStorage.setItem("mobile_show_family_expense", showFamilyExpenseModal ? "true" : "false");
+  }, [showFamilyExpenseModal]);
+
+  useEffect(() => {
+    sessionStorage.setItem("mobile_show_savings", showSavingsModal ? "true" : "false");
+  }, [showSavingsModal]);
+
+  useEffect(() => {
+    sessionStorage.setItem("mobile_show_bank_cc", showBankCCModal ? "true" : "false");
+  }, [showBankCCModal]);
+
+  useEffect(() => {
+    if (activeMobileReport) {
+      sessionStorage.setItem("mobile_active_report", JSON.stringify(activeMobileReport));
+    } else {
+      sessionStorage.removeItem("mobile_active_report");
+    }
+  }, [activeMobileReport]);
 
   // ==================== PAGARBOOK STAFF & SALARY STATE ====================
   const [showPagarBookModal, setShowPagarBookModal] = useState(() => sessionStorage.getItem("mobile_show_pagarbook") === "true");

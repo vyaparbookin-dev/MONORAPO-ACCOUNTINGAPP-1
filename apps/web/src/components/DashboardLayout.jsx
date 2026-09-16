@@ -42,6 +42,7 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { SecurityTracker } from "@repo/shared";
 import CloudSyncToggel from "./CloudSyncToggel";
 import LanguageSwitchButton from "./LanguageSwitchButton";
+import { getBusinessMode } from "../utils/businessMode";
 
 // Resilient Page-Level Error Boundary to protect sidebar & topbar navigation
 class ContentErrorBoundary extends React.Component {
@@ -159,15 +160,10 @@ export default function DashboardLayout() {
   // Get the selected industry type and make it lowercase for easy checking
   // Dynamic Industry-Tailored Menu Generator (Strict Industry Business Logic)
   const getMenuForBusiness = (company) => {
-    const rawInd = typeof company?.industryType === 'string' 
-      ? company.industryType 
-      : (typeof company?.businessType === 'string' 
-          ? company.businessType 
-          : (company?.industryType?.name || company?.businessType?.name || company?.industryType?.value || company?.businessType?.value || String(company?.industryType || company?.businessType || '')));
-    const indType = String(rawInd || '').toLowerCase();
+    const business = getBusinessMode(company);
 
     // 2. RESTAURANT & CAFE
-    if (indType.includes('restaurant') || indType.includes('cafe') || indType.includes('food') || indType.includes('dining')) {
+    if (business.isRestaurant) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "🍽️ Restaurant Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -186,7 +182,7 @@ export default function DashboardLayout() {
     }
 
     // 3. GAMEZONE & VR PARK
-    if (indType.includes('gamezone') || indType.includes('gaming') || indType.includes('vr') || indType.includes('arcade')) {
+    if (business.isGamezone) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "🎮 Gamezone Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -202,7 +198,7 @@ export default function DashboardLayout() {
     }
 
     // 4. HARDWARE, PLYWOOD & PAINTS
-    if (indType.includes('hardware') || indType.includes('plywood') || indType.includes('paint') || indType.includes('sanitary') || indType.includes('electrical')) {
+    if (business.isHardware) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "🔧 Hardware Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -221,7 +217,7 @@ export default function DashboardLayout() {
     }
 
     // 5. MOBILE & ELECTRONICS
-    if (indType.includes('electronic') || indType.includes('mobile') || indType.includes('computer') || indType.includes('telecom')) {
+    if (business.isElectronics) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "📱 Electronics Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -239,7 +235,7 @@ export default function DashboardLayout() {
     }
 
     // 6. SUPERMARKET & KIRANA
-    if (indType.includes('supermarket') || indType.includes('kirana') || indType.includes('grocery') || indType.includes('provision')) {
+    if (business.isKirana) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "🛒 Supermarket Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -255,7 +251,7 @@ export default function DashboardLayout() {
     }
 
     // 7. HOTEL & BANQUET
-    if (indType.includes('banquet') || indType.includes('hotel') || indType.includes('resort') || indType.includes('event')) {
+    if (business.isBanquet) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "🏨 Banquet Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -272,7 +268,7 @@ export default function DashboardLayout() {
     }
 
     // 8. SALON, SPA & BEAUTY
-    if (indType.includes('salon') || indType.includes('spa') || indType.includes('beauty') || indType.includes('parlor')) {
+    if (business.isService) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "💇‍♀️ Salon Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -288,7 +284,7 @@ export default function DashboardLayout() {
     }
 
     // 9. GARMENTS & FOOTWEAR
-    if (indType.includes('garment') || indType.includes('apparel') || indType.includes('cloth') || indType.includes('fashion') || indType.includes('footwear')) {
+    if (business.isGarments) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "👗 Garments Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -303,12 +299,25 @@ export default function DashboardLayout() {
       ];
     }
 
+    // 10. PHARMA & HEALTHCARE
+    if (business.isPharma) {
+      return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "💊 Pharmacy Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: ShoppingCart, label: "⚡ Medical POS & Batch Billing", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "🧾 Prescription Invoices", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Package, label: "💊 Medicine Batch & Expiry", href: "/inventory/batch", color: "text-rose-500", roles: ['admin', 'manager'] },
+        { icon: Users, label: "👥 Doctor & Patient Khata", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: DollarSign, label: "💸 Chemist Expenses", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: BookOpen, label: "📖 Daily Cash Register", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] }
+      ];
+    }
+
     // DEFAULT / GENERAL TRADING
     return [
       { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
       { icon: Home, label: "Dashboard", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
       { icon: ShoppingCart, label: "⚡ Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
-      { icon: Building2, label: "🏰 बैंक्वेट हॉल व इवेंट्स", href: "/banquet", color: "text-amber-500", roles: ['admin', 'manager'] },
       { icon: FileText, label: "Invoices", href: "/billing", color: "text-green-600", roles: ['admin', 'manager', 'cashier'] },
       { icon: Briefcase, label: "B2B Bills", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
       { icon: Package, label: "Inventory", href: "/inventory", color: "text-purple-600", roles: ['admin', 'manager'] },

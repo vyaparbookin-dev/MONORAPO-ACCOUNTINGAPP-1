@@ -36,31 +36,34 @@ import { getBusinessMode } from "../../utils/businessMode";
 import { useCompany } from "../../contexts/CompanyContext";
 
 export default function FastPOSPage() {
+  const { selectedCompany } = useCompany() || {};
+  const business = getBusinessMode(selectedCompany);
+
   // --- 🏢 MULTI-COUNTER BILLING TABS ---
   const [activeCounterTab, setActiveCounterTab] = useState("counter_1");
-  const [counterTabs, setCounterTabs] = useState([
+  const [counterTabs, setCounterTabs] = useState(() => [
     {
       id: "counter_1",
       counterName: "Counter 1 (Main Cashier)",
-      orderType: "dine_in",
+      orderType: business.isRestaurant ? "dine_in" : "retail",
       tableNotes: "",
       cart: [],
-      customerName: "Rahul Verma",
-      customerMobile: "7828289433",
-      customerAddress: "Table 3 (AC Hall)",
-      selectedTable: "Table 3 (AC Hall - 6 Seater)",
+      customerName: "काउंटर नकद ग्राहक",
+      customerMobile: "",
+      customerAddress: "",
+      selectedTable: business.isRestaurant ? "Table 1 (Dine-in)" : "Counter Sale",
       appliedCoupon: null
     },
     {
       id: "counter_2",
-      counterName: "Counter 2 (Takeaway / Bar)",
-      orderType: "takeaway",
+      counterName: "Counter 2 (Express)",
+      orderType: business.isRestaurant ? "takeaway" : "retail",
       tableNotes: "",
       cart: [],
       customerName: "Walk-in Guest",
       customerMobile: "",
-      customerAddress: "Takeaway Counter",
-      selectedTable: "🛍️ Parcel / Takeaway",
+      customerAddress: "",
+      selectedTable: business.isRestaurant ? "🛍️ Parcel / Takeaway" : "Express Counter",
       appliedCoupon: null
     }
   ]);
@@ -500,17 +503,19 @@ export default function FastPOSPage() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          {/* Customer Reviews & Staff Leaderboard Button */}
-          <button
-            onClick={() => {
-              fetchRestaurantAnalytics();
-              setShowReviewsModal(true);
-            }}
-            className="px-2.5 py-1.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-slate-950 text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1"
-            title="कस्टमर रिव्यु व स्टाफ रेटिंग्स (Customer Reviews & Staff Ratings)"
-          >
-            <Sparkles size={13} /> ⭐ रिव्यु व स्टाफ ({bills.filter(b => b.review).length || 85})
-          </button>
+          {/* Customer Reviews & Staff Leaderboard Button (Restaurant only) */}
+          {business.isRestaurant && (
+            <button
+              onClick={() => {
+                fetchRestaurantAnalytics();
+                setShowReviewsModal(true);
+              }}
+              className="px-2.5 py-1.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-slate-950 text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1"
+              title="कस्टमर रिव्यु व स्टाफ रेटिंग्स (Customer Reviews & Staff Ratings)"
+            >
+              <Sparkles size={13} /> ⭐ रिव्यु व स्टाफ ({bills.filter(b => b.review).length || 85})
+            </button>
+          )}
 
           {/* Recent Bills Button */}
           <button
@@ -521,22 +526,26 @@ export default function FastPOSPage() {
             <Receipt size={13} /> 🧾 बने बिल ({bills.length})
           </button>
 
-          {/* Kitchen KDS Live Tracker Button */}
-          <button
-            onClick={() => setShowKitchenKdsModal(true)}
-            className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1"
-            title="लाइव किचन डिस्प्ले सिस्टम (KDS)"
-          >
-            <ChefHat size={13} /> 🍳 किचन ऑर्डर्स ({cookingCount})
-          </button>
+          {/* Kitchen KDS Live Tracker Button (Restaurant only) */}
+          {business.isRestaurant && (
+            <button
+              onClick={() => setShowKitchenKdsModal(true)}
+              className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1"
+              title="लाइव किचन डिस्प्ले सिस्टम (KDS)"
+            >
+              <ChefHat size={13} /> 🍳 किचन ऑर्डर्स ({cookingCount})
+            </button>
+          )}
 
-          {/* Table KOT Button */}
-          <button
-            onClick={() => setShowKotModal(true)}
-            className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1"
-          >
-            <Utensils size={13} /> 🍽️ Table KOT
-          </button>
+          {/* Table KOT Button (Restaurant only) */}
+          {business.isRestaurant && (
+            <button
+              onClick={() => setShowKotModal(true)}
+              className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1"
+            >
+              <Utensils size={13} /> 🍽️ Table KOT
+            </button>
+          )}
 
           {/* Tiles vs List Switcher */}
           <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200">
@@ -613,21 +622,23 @@ export default function FastPOSPage() {
           })}
         </div>
 
-        {/* Live Status Indicators */}
-        <div className="flex items-center gap-2 text-[11px] font-black">
-          <span className="px-2 py-0.5 rounded-lg bg-blue-900/80 text-blue-200 border border-blue-700">
-            🔵 कुकिंग: {cookingCount}
-          </span>
-          <span className="px-2 py-0.5 rounded-lg bg-amber-900/80 text-amber-200 border border-amber-700">
-            🟡 सर्वड: {servedCount}
-          </span>
-          <span className="px-2 py-0.5 rounded-lg bg-rose-900/80 text-rose-200 border border-rose-700">
-            🔴 बिल पेंडिंग: {billedCount}
-          </span>
-          <span className="px-2 py-0.5 rounded-lg bg-emerald-900/80 text-emerald-200 border border-emerald-700 hidden sm:inline">
-            🟢 खाली: {vacantCount}
-          </span>
-        </div>
+        {/* Live Status Indicators (Restaurant only) */}
+        {business.isRestaurant && (
+          <div className="flex items-center gap-2 text-[11px] font-black">
+            <span className="px-2 py-0.5 rounded-lg bg-blue-900/80 text-blue-200 border border-blue-700">
+              🔵 कुकिंग: {cookingCount}
+            </span>
+            <span className="px-2 py-0.5 rounded-lg bg-amber-900/80 text-amber-200 border border-amber-700">
+              🟡 सर्वड: {servedCount}
+            </span>
+            <span className="px-2 py-0.5 rounded-lg bg-rose-900/80 text-rose-200 border border-rose-700">
+              🔴 बिल पेंडिंग: {billedCount}
+            </span>
+            <span className="px-2 py-0.5 rounded-lg bg-emerald-900/80 text-emerald-200 border border-emerald-700 hidden sm:inline">
+              🟢 खाली: {vacantCount}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Main Content Layout */}
@@ -805,55 +816,88 @@ export default function FastPOSPage() {
                 <span>ग्राहक व आर्डर मोड</span>
               </span>
               <span className="text-[10px] bg-slate-700 text-amber-300 px-2 py-0.5 rounded-full font-bold">
-                🍽️ {selectedTable}
+                {business.isRestaurant ? `🍽️ ${selectedTable}` : `🛍️ ${selectedTable || "Counter Sale"}`}
               </span>
             </div>
 
-            {/* 3-Way Order Type Selector (Petpooja Benchmark) */}
-            <div className="grid grid-cols-3 gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-700">
-              <button
-                type="button"
-                onClick={() => {
-                  setOrderType("dine_in");
-                  if (selectedTable.includes("Parcel")) setSelectedTable("Table 1 (Dine-in)");
-                }}
-                className={`py-1 rounded-lg text-[10px] font-black transition flex items-center justify-center gap-1 ${
-                  orderType === "dine_in"
-                    ? "bg-amber-500 text-slate-950 shadow-sm"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                🍽️ Dine-in
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setOrderType("takeaway");
-                  setSelectedTable("🛍️ Parcel / Takeaway");
-                }}
-                className={`py-1 rounded-lg text-[10px] font-black transition flex items-center justify-center gap-1 ${
-                  orderType === "takeaway"
-                    ? "bg-emerald-500 text-slate-950 shadow-sm"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                🛍️ Takeaway
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setOrderType("delivery");
-                  setSelectedTable("🛵 Swiggy / Zomato Delivery");
-                }}
-                className={`py-1 rounded-lg text-[10px] font-black transition flex items-center justify-center gap-1 ${
-                  orderType === "delivery"
-                    ? "bg-rose-500 text-white shadow-sm"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                🛵 Delivery
-              </button>
-            </div>
+            {/* Order Type Selector */}
+            {business.isRestaurant ? (
+              <div className="grid grid-cols-3 gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOrderType("dine_in");
+                    if (selectedTable?.includes("Parcel")) setSelectedTable("Table 1 (Dine-in)");
+                  }}
+                  className={`py-1 rounded-lg text-[10px] font-black transition flex items-center justify-center gap-1 ${
+                    orderType === "dine_in"
+                      ? "bg-amber-500 text-slate-950 shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  🍽️ Dine-in
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOrderType("takeaway");
+                    setSelectedTable("🛍️ Parcel / Takeaway");
+                  }}
+                  className={`py-1 rounded-lg text-[10px] font-black transition flex items-center justify-center gap-1 ${
+                    orderType === "takeaway"
+                      ? "bg-emerald-500 text-slate-950 shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  🛍️ Takeaway
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOrderType("delivery");
+                    setSelectedTable("🛵 Swiggy / Zomato Delivery");
+                  }}
+                  className={`py-1 rounded-lg text-[10px] font-black transition flex items-center justify-center gap-1 ${
+                    orderType === "delivery"
+                      ? "bg-rose-500 text-white shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  🛵 Delivery
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOrderType("retail");
+                    setSelectedTable("Counter Sale");
+                  }}
+                  className={`py-1 rounded-lg text-[10px] font-black transition flex items-center justify-center gap-1 ${
+                    orderType === "retail" || !orderType
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  🏪 काउंटर बिक्री (Counter)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOrderType("delivery");
+                    setSelectedTable("🚚 Home Delivery");
+                  }}
+                  className={`py-1 rounded-lg text-[10px] font-black transition flex items-center justify-center gap-1 ${
+                    orderType === "delivery"
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  🚚 डिलीवरी (Delivery)
+                </button>
+              </div>
+            )}
 
             <div className="space-y-1 text-xs">
               <input
@@ -874,21 +918,23 @@ export default function FastPOSPage() {
                 />
                 <input
                   type="text"
-                  placeholder="पता / टेबल"
+                  placeholder={business.isRestaurant ? "पता / टेबल" : "पता / डिलीवरी स्थान"}
                   value={customerAddress}
                   onChange={(e) => setCustomerAddress(e.target.value)}
                   className="w-full px-2.5 py-1 bg-slate-700/90 border border-slate-600 rounded-xl text-xs text-white placeholder-slate-400 outline-none focus:border-amber-500 font-medium"
                 />
               </div>
 
-              {/* Special Table-wise Instruction Input */}
-              <input
-                type="text"
-                placeholder="📝 टेबल निर्देश (e.g. VIP guest, Baby High Chair, Anniversary)..."
-                value={tableNotes}
-                onChange={(e) => setTableNotes(e.target.value)}
-                className="w-full px-2.5 py-1 bg-slate-700/60 border border-slate-600/80 rounded-xl text-[11px] text-amber-200 placeholder-slate-400 outline-none focus:border-amber-400 font-medium"
-              />
+              {/* Special Table-wise Instruction Input (Restaurant Only) */}
+              {business.isRestaurant && (
+                <input
+                  type="text"
+                  placeholder="📝 टेबल निर्देश (e.g. VIP guest, Baby High Chair, Anniversary)..."
+                  value={tableNotes}
+                  onChange={(e) => setTableNotes(e.target.value)}
+                  className="w-full px-2.5 py-1 bg-slate-700/60 border border-slate-600/80 rounded-xl text-[11px] text-amber-200 placeholder-slate-400 outline-none focus:border-amber-400 font-medium"
+                />
+              )}
             </div>
           </div>
 
@@ -898,7 +944,9 @@ export default function FastPOSPage() {
               <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs py-6">
                 <ShoppingCart size={28} className="mb-1.5 opacity-40 text-amber-400" />
                 <p className="font-bold">कार्ट खाली है</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">व्यंजन पर क्लिक करें या Table KOT / KDS से लोड करें</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  {business.isRestaurant ? "व्यंजन पर क्लिक करें या Table KOT / KDS से लोड करें" : "प्रोडक्ट पर क्लिक करें या बारकोड स्कैन करें"}
+                </p>
               </div>
             ) : (
               cart.map((item, idx) => (

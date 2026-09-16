@@ -20,23 +20,29 @@ import {
 } from "lucide-react";
 import api from "../../services/api";
 import { useCompany } from "../../contexts/CompanyContext";
+import { getBusinessMode } from "../../utils/businessMode";
+
+const getLocalDayStr = (val) => {
+  if (!val) return "";
+  if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 
 export default function MobileDayBookModal({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   const { selectedCompany } = useCompany() || {};
-  const indType = String(
-    typeof selectedCompany?.industryType === "string"
-      ? selectedCompany.industryType
-      : typeof selectedCompany?.businessType === "string"
-      ? selectedCompany.businessType
-      : selectedCompany?.industryType?.name || selectedCompany?.businessType?.name || ""
-  ).toLowerCase();
-  const isRestaurant = indType.includes("restaurant") || indType.includes("cafe") || indType.includes("food") || indType.includes("dhaba") || indType.includes("hotel") || indType.includes("bakery");
+  const business = getBusinessMode(selectedCompany);
+  const isRestaurant = business.isRestaurant;
 
   const [period, setPeriod] = useState("today");
-  const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
+  const [startDate, setStartDate] = useState(() => getLocalDayStr(new Date()));
+  const [endDate, setEndDate] = useState(() => getLocalDayStr(new Date()));
   const [loading, setLoading] = useState(false);
   const [activeTxTab, setActiveTxTab] = useState("all"); // 'all' | 'bills' | 'expenses' | 'salaries' | 'parties'
   const [rawdata, setRawData] = useState(null);
@@ -60,26 +66,23 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
     setPeriod(newPeriod);
     const now = new Date();
     if (newPeriod === "today") {
-      const todayStr = now.toISOString().split("T")[0];
+      const todayStr = getLocalDayStr(now);
       setStartDate(todayStr);
       setEndDate(todayStr);
     } else if (newPeriod === "yesterday") {
       const yesterday = new Date(now);
       yesterday.setDate(now.getDate() - 1);
-      const yStr = yesterday.toISOString().split("T")[0];
+      const yStr = getLocalDayStr(yesterday);
       setStartDate(yStr);
       setEndDate(yStr);
     } else if (newPeriod === "week") {
-      const startOfWeek = new Date(now);
-      const day = now.getDay();
-      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-      startOfWeek.setDate(diff);
-      setStartDate(startOfWeek.toISOString().split("T")[0]);
-      setEndDate(now.toISOString().split("T")[0]);
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000);
+      setStartDate(getLocalDayStr(sevenDaysAgo));
+      setEndDate(getLocalDayStr(now));
     } else if (newPeriod === "month") {
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      setStartDate(startOfMonth.toISOString().split("T")[0]);
-      setEndDate(now.toISOString().split("T")[0]);
+      setStartDate(getLocalDayStr(startOfMonth));
+      setEndDate(getLocalDayStr(now));
     }
   };
 
