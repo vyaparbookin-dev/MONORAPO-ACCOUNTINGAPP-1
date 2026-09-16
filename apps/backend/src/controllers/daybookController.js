@@ -45,40 +45,57 @@ export const getDayBook = async (req, res) => {
     let startOfDay;
     let endOfDay;
 
+    // IST = UTC+5:30. Compute "today in IST" correctly regardless of server timezone.
     const now = new Date();
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // 5h 30m in ms
+    const nowIST = new Date(now.getTime() + IST_OFFSET_MS);
+    const todayISTDateStr = nowIST.toISOString().split("T")[0]; // "YYYY-MM-DD" in IST
+
+    const parseIST = (dateStr) => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        return new Date(`${dateStr}T00:00:00+05:30`);
+      }
+      return new Date(dateStr);
+    };
+    const ISTDayEnd = (dateStr) => new Date(parseIST(dateStr).getTime() + 24 * 60 * 60 * 1000 - 1);
 
     if (reqStartDate && reqEndDate) {
-      startOfDay = new Date(new Date(reqStartDate).setHours(0, 0, 0, 0));
-      endOfDay = new Date(new Date(reqEndDate).setHours(23, 59, 59, 999));
+      startOfDay = parseIST(reqStartDate);
+      endOfDay = ISTDayEnd(reqEndDate);
     } else if (period === 'yesterday') {
-      const yesterday = new Date(now);
-      yesterday.setDate(now.getDate() - 1);
-      startOfDay = new Date(yesterday.setHours(0, 0, 0, 0));
-      endOfDay = new Date(yesterday.setHours(23, 59, 59, 999));
+      const yIST = new Date(nowIST);
+      yIST.setUTCDate(yIST.getUTCDate() - 1);
+      const yStr = yIST.toISOString().split("T")[0];
+      startOfDay = parseIST(yStr);
+      endOfDay = ISTDayEnd(yStr);
     } else if (period === 'week') {
-      const startOfWeek = new Date(now);
-      const day = now.getDay();
-      const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday
-      startOfWeek.setDate(diff);
-      startOfDay = new Date(startOfWeek.setHours(0, 0, 0, 0));
-      endOfDay = new Date(now.setHours(23, 59, 59, 999));
+      const sevenDaysAgoIST = new Date(nowIST.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const weekStartStr = sevenDaysAgoIST.toISOString().split("T")[0];
+      startOfDay = parseIST(weekStartStr);
+      endOfDay = ISTDayEnd(todayISTDateStr);
     } else if (period === 'month') {
-      startOfDay = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-      endOfDay = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      const monthStartStr = `${todayISTDateStr.substring(0, 7)}-01`;
+      startOfDay = parseIST(monthStartStr);
+      endOfDay = ISTDayEnd(todayISTDateStr);
     } else if (period === 'quarter') {
-      const currentQuarter = Math.floor(now.getMonth() / 3);
-      startOfDay = new Date(now.getFullYear(), currentQuarter * 3, 1, 0, 0, 0, 0);
-      endOfDay = new Date(now.getFullYear(), (currentQuarter + 1) * 3, 0, 23, 59, 59, 999);
+      const istMonth = nowIST.getUTCMonth(); // 0-11
+      const istYear = nowIST.getUTCFullYear();
+      const quarterStartMonth = Math.floor(istMonth / 3) * 3;
+      const qStr = `${istYear}-${String(quarterStartMonth + 1).padStart(2, "0")}-01`;
+      startOfDay = parseIST(qStr);
+      endOfDay = ISTDayEnd(todayISTDateStr);
     } else if (period === 'year') {
-      startOfDay = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
-      endOfDay = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+      const istYear = nowIST.getUTCFullYear();
+      startOfDay = parseIST(`${istYear}-01-01`);
+      endOfDay = ISTDayEnd(`${istYear}-12-31`);
     } else if (period === 'all') {
       startOfDay = new Date(2020, 0, 1, 0, 0, 0, 0);
-      endOfDay = new Date(now.getFullYear() + 1, 11, 31, 23, 59, 59, 999);
+      endOfDay = ISTDayEnd(`${nowIST.getUTCFullYear() + 1}-12-31`);
     } else {
-      const targetDate = date ? new Date(date) : now;
-      startOfDay = new Date(new Date(targetDate).setHours(0, 0, 0, 0));
-      endOfDay = new Date(new Date(targetDate).setHours(23, 59, 59, 999));
+      // Default: today in IST, or a specific date param
+      const targetStr = date ? (date.length === 10 ? date : new Date(date).toISOString().split("T")[0]) : todayISTDateStr;
+      startOfDay = parseIST(targetStr);
+      endOfDay = ISTDayEnd(targetStr);
     }
 
     // Common time query logic

@@ -1395,7 +1395,8 @@ function MobileVyaparAppContent() {
         total: saleAmt,
         finalAmount: saleAmt,
         grandTotal: saleAmt,
-        date: manualSaleDate ? new Date(manualSaleDate) : new Date(),
+        // Use noon IST (12:00 IST = 06:30 UTC) so the date doesn't shift to previous day in UTC storage
+        date: manualSaleDate ? new Date(`${manualSaleDate}T12:00:00+05:30`) : new Date(),
         items: [{
           name: manualSaleNotes.trim() || `दैनिक बिक्री (${manualSalePaymentMode})`,
           quantity: 1,
