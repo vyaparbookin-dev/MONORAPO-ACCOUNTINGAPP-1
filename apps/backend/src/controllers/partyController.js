@@ -163,9 +163,21 @@ export const listParties = async (req, res) => {
 
     const { type } = req.query;
     const filter = { isActive: true, companyId: req.companyId };
-    if (type) filter.partyType = { $in: [type, "both"] };
 
-    const parties = await Party.find(filter).select("_id name mobileNumber address gstNumber partyType");
+    // FIXED: When filtering by type, don't exclude personal parties via this filter.
+    // Personal parties should always be fetchable. Type filter is applied only for
+    // "customer"/"supplier" - personal parties have their own dedicated filter on frontend.
+    if (type && type !== "all" && type !== "personal") {
+      filter.partyType = { $in: [type, "both"] };
+    } else if (type === "personal") {
+      filter.partyType = "personal";
+    }
+    // If type === "all" or no type, fetch everything (all party types including personal)
+
+    // FIXED: Include openingBalance, currentBalance so balance shows up properly in list
+    const parties = await Party.find(filter).select(
+      "_id name mobileNumber phone address gstNumber partyType openingBalance currentBalance creditLimit notes"
+    );
     res.json({ success: true, parties });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

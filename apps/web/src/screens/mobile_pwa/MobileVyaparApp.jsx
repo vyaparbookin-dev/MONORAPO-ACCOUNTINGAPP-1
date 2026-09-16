@@ -220,6 +220,7 @@ function MobileVyaparAppContent() {
   const [newPartyAddress, setNewPartyAddress] = useState("");
   const [newPartyBalance, setNewPartyBalance] = useState("0");
   const [newPartyType, setNewPartyType] = useState("customer");
+  const [newPartyBalanceDir, setNewPartyBalanceDir] = useState("positive"); // "positive"=लेने हैं, "negative"=देने हैं
   const [savingParty, setSavingParty] = useState(false);
   const [partyFilterTab, setPartyFilterTab] = useState("all"); // 'all', 'customer', 'supplier', 'personal'
   const [partyStatementLoading, setPartyStatementLoading] = useState(false);
@@ -1005,11 +1006,20 @@ function MobileVyaparAppContent() {
         const rawParties = partiesRes.value.data?.parties || partiesRes.value.data?.data || partiesRes.value.data || [];
         const normParties = (Array.isArray(rawParties) ? rawParties : []).map(p => ({
           id: p._id || p.id,
+          _id: p._id || p.id,
           name: p.name || p.partyName,
           phone: p.mobileNumber || p.phone || "",
-          balance: Number(p.balance || p.openingBalance || 0),
+          mobileNumber: p.mobileNumber || p.phone || "",
+          // FIXED: prioritize currentBalance (actual running balance), then openingBalance, then 0
+          balance: Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0),
+          currentBalance: Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0),
+          openingBalance: Number(p.openingBalance ?? 0),
           type: p.partyType || p.type || "customer",
-          address: p.address || ""
+          partyType: p.partyType || p.type || "customer",
+          address: p.address || "",
+          creditLimit: Number(p.creditLimit ?? 0),
+          gstNumber: p.gstNumber || "",
+          notes: p.notes || ""
         }));
         setParties(normParties);
       }
@@ -1299,36 +1309,53 @@ function MobileVyaparAppContent() {
     }
     setSavingParty(true);
     try {
+      // FIXED: Apply balance direction — positive = we receive (लेने हैं), negative = we owe (देने हैं)
+      const rawBal = Math.abs(Number(newPartyBalance) || 0);
+      const signedBal = (newPartyBalanceDir === "negative") ? -rawBal : rawBal;
+
       const payload = {
         name: newPartyName.trim(),
         mobileNumber: newPartyPhone.trim() || `9${Math.floor(100000000 + Math.random() * 900000000)}`,
-        openingBalance: Number(newPartyBalance) || 0,
-        currentBalance: Number(newPartyBalance) || 0,
+        openingBalance: signedBal,
+        currentBalance: signedBal,
         partyType: newPartyType || "customer",
         address: newPartyAddress.trim() || "Local"
       };
 
       const res = await api.post("/api/party", payload).catch(() => api.post("/api/parties", payload));
+      const savedId = res?.data?.party?._id || res?.data?._id || `party-${Date.now()}`;
       const createdParty = {
-        id: res?.data?.party?._id || res?.data?._id || `party-${Date.now()}`,
+        id: savedId,
+        _id: savedId,
         name: payload.name,
         phone: payload.mobileNumber,
-        balance: payload.currentBalance,
-        type: payload.partyType
+        mobileNumber: payload.mobileNumber,
+        balance: signedBal,
+        currentBalance: signedBal,
+        openingBalance: signedBal,
+        type: payload.partyType,
+        partyType: payload.partyType,
+        address: payload.address,
+        creditLimit: 0,
+        notes: ""
       };
 
       setParties(prev => [createdParty, ...prev]);
       setShowAddPartyModal(false);
+      // FIXED: reset all party form states including new ones
       setNewPartyName("");
       setNewPartyPhone("");
       setNewPartyBalance("0");
       setNewPartyAddress("");
+      setNewPartyType("customer");
+      setNewPartyBalanceDir("positive");
 
       alert(`✅ पार्टी '${createdParty.name}' सफलतापूर्वक जुड़ गई!`);
       fetchLiveDashboardData();
     } catch (err) {
       console.error("Save party error:", err);
-      alert("पार्टी सेव करने में त्रुटि आई।");
+      const errMsg = err?.response?.data?.error || err?.message || "Unknown error";
+      alert("पार्टी सेव करने में त्रुटि आई।\n" + errMsg);
     } finally {
       setSavingParty(false);
     }
@@ -4159,12 +4186,46 @@ function MobileVyaparAppContent() {
               className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
             />
             <input 
-              type="number" 
-              placeholder="शुरुआती बाकी / Opening Balance (₹)" 
-              value={newPartyBalance}
-              onChange={(e) => setNewPartyBalance(e.target.value)}
+              type="text" 
+              placeholder="पता / शहर (Address)" 
+              value={newPartyAddress}
+              onChange={(e) => setNewPartyAddress(e.target.value)}
               className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
             />
+
+            {/* Opening Balance with direction */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase block">
+                शुरुआती बाकी (Opening Balance)
+              </label>
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                {[
+                  { v: "positive", label: "🔴 वो मेरा देनदार है (मुझे लेने हैं)" },
+                  { v: "negative", label: "🟢 मैं देनदार हूँ (मुझे देने हैं)" }
+                ].map(opt => (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    onClick={() => setNewPartyBalanceDir(opt.v)}
+                    className={`flex-1 py-1 text-[10px] font-extrabold rounded-lg transition cursor-pointer leading-tight ${
+                      (newPartyBalanceDir || "positive") === opt.v
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <input 
+                type="number" 
+                placeholder="₹ 0 (खाली छोड़ें या राशि दर्ज करें)" 
+                value={newPartyBalance}
+                onChange={(e) => setNewPartyBalance(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
+              />
+            </div>
+
             <button
               onClick={handleSaveNewParty}
               disabled={savingParty}
