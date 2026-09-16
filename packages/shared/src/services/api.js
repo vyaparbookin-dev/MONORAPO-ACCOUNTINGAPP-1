@@ -26,11 +26,38 @@ const getGuestMockData = (url, method = 'GET') => {
   let localBills = [];
   try {
     if (typeof localStorage !== 'undefined') {
-      const stored = localStorage.getItem('vb_local_manual_bills');
+      const stored = localStorage.getItem('vb_local_manual_bills') || localStorage.getItem('bills') || localStorage.getItem('manual_bills');
       if (stored) localBills = JSON.parse(stored) || [];
     }
   } catch (e) {}
-  const fullBills = Array.isArray(localBills) ? localBills : [];
+  const rawBillsList = Array.isArray(localBills) ? localBills : [];
+  const fullBills = rawBillsList.map(b => {
+    const amt = Number(b.amount || b.finalAmount || b.total || b.totalAmount || b.grandTotal || 0);
+    const pm = String(b.paymentMode || b.paymentMethod || b.type || "CASH").toUpperCase();
+    const billNum = b.billNumber || b.invoiceNumber || b.id || b._id || `BILL-${Date.now()}`;
+    const cust = b.customerName || b.partyName || b.customer || "काउंटर नकद ग्राहक";
+    return {
+      ...b,
+      _id: b._id || b.id || billNum,
+      id: b.id || b._id || billNum,
+      billNumber: billNum,
+      invoiceNumber: billNum,
+      customerName: cust,
+      customer: cust,
+      amount: amt,
+      finalAmount: amt,
+      total: amt,
+      totalAmount: amt,
+      grandTotal: amt,
+      type: pm,
+      paymentMode: pm,
+      paymentMethod: pm === "CREDIT" || pm === "UDHAR" ? "credit" : "cash",
+      date: b.rawDate || b.date || new Date().toISOString(),
+      rawDate: b.rawDate || b.date || new Date().toISOString(),
+      createdAt: b.createdAt || b.rawDate || b.date || new Date().toISOString(),
+      items: Array.isArray(b.items) ? b.items : []
+    };
+  });
 
   // Real Local Expenses from localStorage
   let localExpenses = [];
@@ -61,7 +88,7 @@ const getGuestMockData = (url, method = 'GET') => {
   const totalAllExpenses = totalShopExpenses + totalGharKharch;
 
   const totalCashSales = fullBills
-    .filter(b => String(b.type || b.paymentMode || '').toUpperCase() !== 'UDHAR')
+    .filter(b => String(b.type || b.paymentMode || b.paymentMethod || '').toUpperCase() !== 'UDHAR' && String(b.type || b.paymentMode || b.paymentMethod || '').toUpperCase() !== 'CREDIT')
     .reduce((s, b) => s + Number(b.amount || b.finalAmount || b.total || 0), 0);
   const totalSalesAll = fullBills.reduce((s, b) => s + Number(b.amount || b.finalAmount || b.total || 0), 0);
 

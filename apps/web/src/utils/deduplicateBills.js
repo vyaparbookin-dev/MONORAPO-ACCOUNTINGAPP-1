@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Authoritative deduplication and merger of bills across local offline storage
  * and server response. Prevents optimistic manual sales from disappearing on refresh.
  */
@@ -50,9 +50,33 @@ export function deduplicateBills(bills = []) {
       continue;
     }
 
+    const amtVal = Number(bill.amount || bill.finalAmount || bill.total || bill.totalAmount || bill.grandTotal || 0);
+    const pmVal = String(bill.paymentMode || bill.paymentMethod || bill.type || "CASH").toUpperCase();
+    const billNum = bill.billNumber || bill.invoiceNumber || bill.invoiceNo || bill.id || bill._id || "BILL-001";
+    const custName = bill.customerName || bill.partyName || bill.customer || "काउंटर नकद ग्राहक";
+
+    const normalizedBill = {
+      ...bill,
+      _id: bill._id || bill.id || billNum,
+      id: bill.id || bill._id || billNum,
+      billNumber: billNum,
+      customerName: custName,
+      customer: custName,
+      amount: amtVal,
+      finalAmount: amtVal,
+      total: amtVal,
+      totalAmount: amtVal,
+      grandTotal: amtVal,
+      type: pmVal,
+      paymentMode: pmVal,
+      paymentMethod: pmVal === "CREDIT" || pmVal === "UDHAR" ? "credit" : "cash",
+      rawDate: bill.rawDate || bill.date || bill.createdAt || new Date().toISOString(),
+      date: bill.date || bill.rawDate || "Today"
+    };
+
     if (id) seenIds.add(id);
     seenFingerprints.add(fp);
-    result.push(bill);
+    result.push(normalizedBill);
   }
 
   // Sort descending by date

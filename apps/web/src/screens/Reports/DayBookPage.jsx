@@ -135,39 +135,64 @@ export default function DayBookPage() {
       // Merge local manual bills from localStorage
       let localBills = [];
       try {
-        const stored = localStorage.getItem("vb_local_manual_bills");
+        const stored = localStorage.getItem("vb_local_manual_bills") || localStorage.getItem("bills");
         if (stored) localBills = JSON.parse(stored) || [];
       } catch (e) {}
+
+      const getLocalDayStr = (val) => {
+        if (!val) return "";
+        if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return "";
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      };
+
+      const now = new Date();
+      const todayStr = getLocalDayStr(now);
+      const yestDate = new Date(now);
+      yestDate.setDate(now.getDate() - 1);
+      const yestStr = getLocalDayStr(yestDate);
+
+      const checkInRange = (rawDateVal) => {
+        const dStr = getLocalDayStr(rawDateVal) || todayStr;
+        if (period === "today") return dStr === todayStr;
+        if (period === "yesterday") return dStr === yestStr;
+        if (startDate && dStr < startDate) return false;
+        if (endDate && dStr > endDate) return false;
+        return true;
+      };
 
       const serverBills = Array.isArray(data?.bills) ? data.bills : [];
       const mergedBills = [...serverBills];
 
       localBills.forEach(lb => {
-        const lbDate = lb.rawDate ? new Date(lb.rawDate) : (lb.date ? new Date(lb.date) : new Date());
-        const dStr = !isNaN(lbDate.getTime()) ? lbDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
-        let inRange = false;
-        const todayStr = new Date().toISOString().split("T")[0];
-        const yestStr = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-        if (period === "today") inRange = dStr === todayStr;
-        else if (period === "yesterday") inRange = dStr === yestStr;
-        else inRange = (!startDate || dStr >= startDate) && (!endDate || dStr <= endDate);
-
-        if (inRange) {
+        const rawDate = lb.rawDate || lb.date || lb.createdAt;
+        if (checkInRange(rawDate)) {
           const exists = mergedBills.some(sb => 
             (sb.billNumber && (sb.billNumber === lb.id || sb.billNumber === lb.billNumber)) ||
             (sb._id && (sb._id === lb._id || sb._id === lb.id))
           );
           if (!exists) {
+            const amt = Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0);
+            const pm = lb.paymentMode || lb.paymentMethod || lb.type || "CASH";
             mergedBills.push({
+              ...lb,
               _id: lb._id || lb.id,
               billNumber: lb.id || lb.billNumber || "SALE-CASH",
               customerName: lb.customerName || "काउंटर नकद ग्राहक",
-              finalAmount: Number(lb.amount || lb.finalAmount || 0),
-              total: Number(lb.amount || lb.total || 0),
-              paymentMode: lb.type || "CASH",
-              paymentMethod: lb.type || "CASH",
-              date: lb.rawDate || new Date(),
-              createdAt: lb.rawDate || new Date(),
+              amount: amt,
+              finalAmount: amt,
+              total: amt,
+              totalAmount: amt,
+              paymentMode: pm,
+              paymentMethod: pm,
+              type: pm,
+              date: lb.rawDate || lb.date || new Date().toISOString(),
+              rawDate: lb.rawDate || lb.date || new Date().toISOString(),
+              createdAt: lb.rawDate || lb.date || new Date().toISOString(),
               items: lb.items || []
             });
           }
@@ -515,8 +540,11 @@ export default function DayBookPage() {
       tOut = 0;
 
     const cashSales = (data.bills || [])
-      .filter((b) => b.paymentMethod !== "credit")
-      .reduce((sum, b) => sum + (b.finalAmount || b.total || 0), 0);
+      .filter((b) => {
+        const pm = String(b.paymentMethod || b.paymentMode || b.type || "").toLowerCase();
+        return pm !== "credit" && pm !== "udhar";
+      })
+      .reduce((sum, b) => sum + (Number(b.amount || b.finalAmount || b.total || b.totalAmount || b.grandTotal) || 0), 0);
     const partyIn = (data.partyTransactions || []).reduce((sum, t) => sum + (t.credit || 0), 0);
     tIn = cashSales + partyIn;
 

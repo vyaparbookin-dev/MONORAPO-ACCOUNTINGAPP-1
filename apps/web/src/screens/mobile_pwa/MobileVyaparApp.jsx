@@ -878,36 +878,41 @@ function MobileVyaparAppContent() {
         api.get("/api/brand").catch(() => ({ data: [] }))
       ]);
 
+      let rawBills = [];
       if (billsRes.status === "fulfilled") {
-        const rawBills = billsRes.value.data?.bills || billsRes.value.data?.data || billsRes.value.data || [];
-        const normBills = (Array.isArray(rawBills) ? rawBills : []).map(b => ({
-          _id: b._id,
-          id: b.billNumber || b.invoiceNumber || (b._id ? `INV-${b._id.slice(-4)}` : "001"),
-          customerName: b.partyName || b.customerName || "Walk-in Customer",
-          phone: b.customerPhone || b.phone || "",
-          amount: Number(b.finalAmount || b.total || b.grandTotal || 0),
-          type: b.paymentMode || b.paymentType || "CASH",
-          paymentStatus: b.paymentStatus || (b.paymentMode === "UDHAR" ? "unpaid" : "paid"),
-          date: b.date ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today",
-          rawDate: b.date || b.createdAt || new Date(),
-          items: b.items || []
-        }));
-
-        // Load local manual bills and merge
-        let localManualBills = [];
-        try {
-          const stored = localStorage.getItem("vb_local_manual_bills");
-          if (stored) {
-            localManualBills = JSON.parse(stored) || [];
-          }
-        } catch (e) {}
-
-        const mergedBills = deduplicateBills([...normBills, ...localManualBills]);
-        setBills(mergedBills);
-        try {
-          localStorage.setItem("vb_local_manual_bills", JSON.stringify(mergedBills));
-        } catch (e) {}
+        rawBills = billsRes.value.data?.bills || billsRes.value.data?.data || billsRes.value.data || [];
       }
+      const normBills = (Array.isArray(rawBills) ? rawBills : []).map(b => ({
+        _id: b._id,
+        id: b.billNumber || b.invoiceNumber || (b._id ? `INV-${b._id.slice(-4)}` : "001"),
+        customerName: b.partyName || b.customerName || "Walk-in Customer",
+        phone: b.customerPhone || b.phone || "",
+        amount: Number(b.amount || b.finalAmount || b.total || b.grandTotal || 0),
+        finalAmount: Number(b.amount || b.finalAmount || b.total || b.grandTotal || 0),
+        total: Number(b.amount || b.finalAmount || b.total || b.grandTotal || 0),
+        type: b.paymentMode || b.paymentType || "CASH",
+        paymentMode: b.paymentMode || b.paymentType || "CASH",
+        paymentMethod: (b.paymentMode || b.paymentType || "CASH") === "UDHAR" ? "credit" : "cash",
+        paymentStatus: b.paymentStatus || (b.paymentMode === "UDHAR" ? "unpaid" : "paid"),
+        date: b.date ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today",
+        rawDate: b.rawDate || b.date || b.createdAt || new Date().toISOString(),
+        items: b.items || []
+      }));
+
+      // Load local manual bills and merge
+      let localManualBills = [];
+      try {
+        const stored = localStorage.getItem("vb_local_manual_bills") || localStorage.getItem("bills");
+        if (stored) {
+          localManualBills = JSON.parse(stored) || [];
+        }
+      } catch (e) {}
+
+      const mergedBills = deduplicateBills([...normBills, ...localManualBills]);
+      setBills(mergedBills);
+      try {
+        localStorage.setItem("vb_local_manual_bills", JSON.stringify(mergedBills));
+      } catch (e) {}
 
       if (partiesRes.status === "fulfilled") {
         const rawParties = partiesRes.value.data?.parties || partiesRes.value.data?.data || partiesRes.value.data || [];
@@ -1376,13 +1381,22 @@ function MobileVyaparAppContent() {
       const createdBill = {
         _id: savedBill._id || genBillNo,
         id: savedBill.billNumber || genBillNo,
+        billNumber: savedBill.billNumber || genBillNo,
+        invoiceNumber: savedBill.billNumber || genBillNo,
         customerName: partyTitle,
+        customer: partyTitle,
         phone: payload.customerPhone,
         amount: saleAmt,
+        finalAmount: saleAmt,
+        total: saleAmt,
+        totalAmount: saleAmt,
+        grandTotal: saleAmt,
         type: manualSalePaymentMode,
+        paymentMode: manualSalePaymentMode,
+        paymentMethod: manualSalePaymentMode === "UDHAR" || manualSalePaymentMode === "CREDIT" ? "credit" : "cash",
         paymentStatus: payload.paymentStatus,
         date: saleDateDisplay,
-        rawDate: saleDateObj,
+        rawDate: manualSaleDate || new Date().toISOString(),
         items: payload.items
       };
 
