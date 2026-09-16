@@ -35,13 +35,14 @@ const ACCOUNT_TYPES = [
   { id: "SAVINGS", label: "Savings Account (बचत खाता)", icon: "🏦", desc: "बैंक बचत खाता" }
 ];
 
-export default function MobileBankCCModal({ isOpen, onClose }) {
+export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange }) {
   if (!isOpen) return null;
 
   const { selectedCompany } = useCompany() || {};
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("ALL"); // ALL, CURRENT, PERSONAL_BUSINESS, CC_OVERDRAFT
+  const [toast, setToast] = useState(null); // { type: "success" | "error", text: string }
 
   // Add / Edit Account Modal
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -161,21 +162,50 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
   };
 
   const handleSaveAccount = async (e) => {
-    e.preventDefault();
-    if (!formData.bankName.trim() && !formData.accountName.trim()) {
-      alert("कृपया बैंक या खाते का नाम दर्ज करें!");
+    if (e) e.preventDefault();
+    const bName = (formData.bankName || "").trim();
+    const aName = (formData.accountName || "").trim();
+    if (!bName && !aName) {
+      const msg = "कृपया बैंक या खाते का नाम दर्ज करें!";
+      setToast({ type: "error", text: msg });
+      alert(msg);
       return;
+    }
+
+    // DUPLICATE ACCOUNT NUMBER CHECK
+    const trimmedAcc = (formData.accountNumber || "").trim();
+    if (trimmedAcc) {
+      const dup = accounts.find(a => {
+        const aId = a._id || a.id;
+        if (editingId && aId === editingId) return false;
+        return (a.accountNumber || "").trim() === trimmedAcc;
+      });
+      if (dup) {
+        const dupMsg = `⚠️ खाता नंबर "${trimmedAcc}" पहले से दर्ज है (${dup.bankName || dup.accountName})! डुप्लीकेट खाता जोड़ने की अनुमति नहीं है।`;
+        setToast({ type: "error", text: dupMsg });
+        alert(dupMsg);
+        return;
+      }
     }
 
     const isCcActive = Boolean(formData.hasCcLimit || formData.accountType === "CC_OVERDRAFT");
     const sLimit = Number(formData.sanctionedLimit || 0);
     const cOutstanding = Number(formData.currentOutstanding || 0);
     const oBalance = Number(formData.openingBalance || 0);
+
+    if (isCcActive && !sLimit) {
+      const msg = "कृपया कुल स्वीकृत CC लिमिट राशि (₹) दर्ज करें!";
+      setToast({ type: "error", text: msg });
+      alert(msg);
+      return;
+    }
+
     const availBalance = isCcActive ? Math.max(0, sLimit - cOutstanding) : oBalance;
 
     const payload = {
       ...formData,
-      accountName: formData.accountName || formData.bankName,
+      bankName: bName || aName,
+      accountName: aName || bName,
       hasCcLimit: isCcActive,
       sanctionedLimit: isCcActive ? sLimit : 0,
       currentOutstanding: isCcActive ? cOutstanding : 0,
@@ -197,8 +227,11 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
           console.warn("Backend update failed, saving locally:", e);
         }
 
+        const mergedUpdated = { ...payload, ...(updatedItem && typeof updatedItem === 'object' ? updatedItem : {}), _id: editingId, id: editingId };
+        setAccounts(prev => prev.map(x => ((x._id || x.id) === editingId ? mergedUpdated : x)));
+
         let local = JSON.parse(localStorage.getItem("vb_local_bank_accounts") || "[]");
-        local = local.map(x => ((x._id || x.id) === editingId ? { ...x, ...payload, ...(updatedItem && typeof updatedItem === 'object' ? updatedItem : {}) } : x));
+        local = local.map(x => ((x._id || x.id) === editingId ? mergedUpdated : x));
         localStorage.setItem("vb_local_bank_accounts", JSON.stringify(local));
       } else {
         let serverCreated = null;
@@ -221,8 +254,11 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
           transactions: []
         };
 
+        // Immediately update state and localStorage
+        setAccounts(prev => [newRecord, ...prev.filter(x => (x._id || x.id) !== newId)]);
+
         let local = JSON.parse(localStorage.getItem("vb_local_bank_accounts") || "[]");
-        local.unshift(newRecord);
+        local = [newRecord, ...local.filter(x => (x._id || x.id) !== newId)];
         localStorage.setItem("vb_local_bank_accounts", JSON.stringify(local));
 
         // Sync CURRENT account with company details
@@ -242,10 +278,21 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
       setIsFormOpen(false);
       setEditingId(null);
       resetForm();
-      await fetchAccounts();
-      alert("✅ बैंक खाता सफलतापूर्वक सहेज लिया गया!");
+
+      const successMsg = `✅ बैंक खाता "${payload.bankName || payload.accountName}" सफलतापूर्वक सहेज लिया गया!`;
+      setToast({ type: "success", text: successMsg });
+      if (typeof onAccountsChange === "function") {
+        onAccountsChange();
+      }
+      try {
+        await fetchAccounts();
+      } catch (fErr) {}
+      alert(successMsg);
+      setTimeout(() => setToast(null), 6000);
     } catch (err) {
-      alert("सहेजने में त्रुटि: " + (err.message || err));
+      const errMsg = "सहेजने में त्रुटि: " + (err?.response?.data?.error || err?.message || err);
+      setToast({ type: "error", text: errMsg });
+      alert(errMsg);
     } finally {
       setSaving(false);
     }
@@ -744,6 +791,23 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
           </button>
         </div>
       </div>
+
+      {/* Visual In-App Toast / Banner */}
+      {toast && (
+        <div className={`px-4 py-3 flex items-center justify-between text-xs font-black shrink-0 transition shadow-md animate-in slide-in-from-top ${
+          toast.type === "success"
+            ? "bg-emerald-600 text-white border-b border-emerald-700"
+            : "bg-rose-600 text-white border-b border-rose-700"
+        }`}>
+          <div className="flex items-center gap-2">
+            <span className="text-base">{toast.type === "success" ? "✅" : "⚠️"}</span>
+            <span className="leading-snug">{toast.text}</span>
+          </div>
+          <button onClick={() => setToast(null)} className="p-1 rounded-md bg-white/20 hover:bg-white/30 text-white cursor-pointer shrink-0 ml-2">
+            <X size={15} />
+          </button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="bg-white border-b border-slate-200 px-3 py-2 flex items-center gap-2 overflow-x-auto shrink-0 scrollbar-none">
@@ -1247,7 +1311,18 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
               </button>
             </div>
 
-            <form onSubmit={handleSaveAccount} className="space-y-3">
+            {toast && isFormOpen && (
+              <div className={`p-2.5 rounded-xl text-xs font-black flex items-center justify-between shadow-xs ${
+                toast.type === "success" ? "bg-emerald-50 text-emerald-800 border border-emerald-300" : "bg-rose-50 text-rose-800 border border-rose-300"
+              }`}>
+                <span>{toast.text}</span>
+                <button type="button" onClick={() => setToast(null)} className="p-0.5 text-slate-500 hover:text-slate-800">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveAccount} noValidate className="space-y-3">
               {/* Account Type */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">खाते का प्रकार *</label>

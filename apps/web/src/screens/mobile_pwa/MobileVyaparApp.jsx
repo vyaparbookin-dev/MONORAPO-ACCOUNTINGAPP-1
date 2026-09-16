@@ -4769,7 +4769,11 @@ function MobileVyaparAppContent() {
       {showBankCCModal && (
         <MobileBankCCModal
           isOpen={showBankCCModal}
-          onClose={() => setShowBankCCModal(false)}
+          onClose={() => {
+            setShowBankCCModal(false);
+            fetchBankAccounts();
+          }}
+          onAccountsChange={fetchBankAccounts}
         />
       )}
 

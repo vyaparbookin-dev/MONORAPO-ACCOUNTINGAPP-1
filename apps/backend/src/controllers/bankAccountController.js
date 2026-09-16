@@ -75,6 +75,24 @@ export const createBankAccount = async (req, res) => {
       delete data.id;
     }
 
+    // DUPLICATE CHECK: Prevent adding the same account number in the same company
+    if (data.accountNumber && String(data.accountNumber).trim()) {
+      const accNum = String(data.accountNumber).trim();
+      const dupQuery = {
+        accountNumber: accNum,
+        isDeleted: { $ne: true }
+      };
+      if (data.companyId) dupQuery.companyId = data.companyId;
+      const existing = await BankAccount.findOne(dupQuery);
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          error: `यह खाता नंबर (${accNum}) पहले से इस कंपनी में दर्ज है! (बैंक: ${existing.bankName || existing.accountName})`,
+          message: `यह खाता नंबर (${accNum}) पहले से इस कंपनी में दर्ज है!`
+        });
+      }
+    }
+
     console.log("[BankAccount Debug] Creating bank account:", data.accountName, data.bankName, "companyId:", data.companyId);
     const newAccount = await BankAccount.create(data);
     console.log("[BankAccount Debug] Created bank account ID:", newAccount._id);
@@ -97,6 +115,27 @@ export const updateBankAccount = async (req, res) => {
     const updateBody = { ...req.body };
     delete updateBody._id;
     delete updateBody.id;
+
+    // DUPLICATE CHECK on update
+    if (updateBody.accountNumber && String(updateBody.accountNumber).trim()) {
+      const accNum = String(updateBody.accountNumber).trim();
+      const dupQuery = {
+        accountNumber: accNum,
+        isDeleted: { $ne: true }
+      };
+      if (mongoose.Types.ObjectId.isValid(id)) {
+        dupQuery._id = { $ne: id };
+      }
+      if (req.companyId) dupQuery.companyId = req.companyId;
+      const existing = await BankAccount.findOne(dupQuery);
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          error: `यह खाता नंबर (${accNum}) किसी अन्य खाते (${existing.bankName || existing.accountName}) में पहले से दर्ज है!`,
+          message: `यह खाता नंबर (${accNum}) किसी अन्य खाते में पहले से दर्ज है!`
+        });
+      }
+    }
 
     const updated = await BankAccount.findOneAndUpdate(query, updateBody, { new: true });
     if (!updated) {
