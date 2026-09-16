@@ -221,6 +221,7 @@ function MobileVyaparAppContent() {
   const [newPartyBalance, setNewPartyBalance] = useState("0");
   const [newPartyType, setNewPartyType] = useState("customer");
   const [newPartyBalanceDir, setNewPartyBalanceDir] = useState("positive"); // "positive"=लेने हैं, "negative"=देने हैं
+  const [editingParty, setEditingParty] = useState(null); // Party currently being edited
   const [savingParty, setSavingParty] = useState(false);
   const [partyFilterTab, setPartyFilterTab] = useState("all"); // 'all', 'customer', 'supplier', 'personal'
   const [partyStatementLoading, setPartyStatementLoading] = useState(false);
@@ -1322,27 +1323,53 @@ function MobileVyaparAppContent() {
         address: newPartyAddress.trim() || "Local"
       };
 
-      const res = await api.post("/api/party", payload).catch(() => api.post("/api/parties", payload));
-      const savedId = res?.data?.party?._id || res?.data?._id || `party-${Date.now()}`;
-      const createdParty = {
-        id: savedId,
-        _id: savedId,
-        name: payload.name,
-        phone: payload.mobileNumber,
-        mobileNumber: payload.mobileNumber,
-        balance: signedBal,
-        currentBalance: signedBal,
-        openingBalance: signedBal,
-        type: payload.partyType,
-        partyType: payload.partyType,
-        address: payload.address,
-        creditLimit: 0,
-        notes: ""
-      };
+      if (editingParty) {
+        const pId = editingParty._id || editingParty.id;
+        await api.put(`/api/party/${pId}`, payload).catch(() => api.put(`/api/parties/${pId}`, payload));
+        const updatedParty = {
+          ...editingParty,
+          name: payload.name,
+          phone: payload.mobileNumber,
+          mobileNumber: payload.mobileNumber,
+          balance: signedBal,
+          currentBalance: signedBal,
+          openingBalance: signedBal,
+          type: payload.partyType,
+          partyType: payload.partyType,
+          address: payload.address,
+        };
 
-      setParties(prev => [createdParty, ...prev]);
+        setParties(prev => prev.map(p => ((p._id || p.id) === pId ? updatedParty : p)));
+        if (selectedPartyDetail && ((selectedPartyDetail._id || selectedPartyDetail.id) === pId)) {
+          setSelectedPartyDetail(updatedParty);
+        }
+        alert(`✅ पार्टी '${updatedParty.name}' सफलतापूर्वक अपडेट हो गई!`);
+      } else {
+        const res = await api.post("/api/party", payload).catch(() => api.post("/api/parties", payload));
+        const savedId = res?.data?.party?._id || res?.data?._id || `party-${Date.now()}`;
+        const createdParty = {
+          id: savedId,
+          _id: savedId,
+          name: payload.name,
+          phone: payload.mobileNumber,
+          mobileNumber: payload.mobileNumber,
+          balance: signedBal,
+          currentBalance: signedBal,
+          openingBalance: signedBal,
+          type: payload.partyType,
+          partyType: payload.partyType,
+          address: payload.address,
+          creditLimit: 0,
+          notes: ""
+        };
+
+        setParties(prev => [createdParty, ...prev]);
+        alert(`✅ पार्टी '${createdParty.name}' सफलतापूर्वक जुड़ गई!`);
+      }
+
       setShowAddPartyModal(false);
-      // FIXED: reset all party form states including new ones
+      setEditingParty(null);
+      // reset all party form states
       setNewPartyName("");
       setNewPartyPhone("");
       setNewPartyBalance("0");
@@ -1350,7 +1377,6 @@ function MobileVyaparAppContent() {
       setNewPartyType("customer");
       setNewPartyBalanceDir("positive");
 
-      alert(`✅ पार्टी '${createdParty.name}' सफलतापूर्वक जुड़ गई!`);
       fetchLiveDashboardData();
     } catch (err) {
       console.error("Save party error:", err);
@@ -1358,6 +1384,35 @@ function MobileVyaparAppContent() {
       alert("पार्टी सेव करने में त्रुटि आई।\n" + errMsg);
     } finally {
       setSavingParty(false);
+    }
+  };
+
+  const handleOpenEditParty = (party) => {
+    if (!party) return;
+    setEditingParty(party);
+    setNewPartyName(party.name || "");
+    setNewPartyPhone(party.phone || party.mobileNumber || "");
+    setNewPartyAddress(party.address || "");
+    setNewPartyType(party.type || party.partyType || "customer");
+    const curBal = Number(party.currentBalance ?? party.balance ?? 0);
+    setNewPartyBalance(String(Math.abs(curBal)));
+    setNewPartyBalanceDir(curBal < 0 ? "negative" : "positive");
+    setShowAddPartyModal(true);
+  };
+
+  const handleDeleteParty = async (party) => {
+    const id = party?._id || party?.id;
+    if (!id) return;
+    if (!window.confirm(`क्या आप पार्टी '${party.name}' को हटाना चाहते हैं?`)) return;
+    try {
+      await api.delete(`/api/party/${id}`).catch(() => api.delete(`/api/parties/${id}`));
+      setParties(prev => prev.filter(p => (p._id || p.id) !== id));
+      setSelectedPartyDetail(null);
+      alert(`🗑️ पार्टी '${party.name}' सफलतापूर्वक हटा दी गई!`);
+      fetchLiveDashboardData();
+    } catch (err) {
+      console.error("Delete party error:", err);
+      alert("पार्टी हटाने में त्रुटि आई।");
     }
   };
 
@@ -4127,13 +4182,15 @@ function MobileVyaparAppContent() {
         </div>
       )}
 
-      {/* 📱 9. ADD PARTY MODAL */}
+      {/* 📱 9. ADD / EDIT PARTY MODAL */}
       {showAddPartyModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3.5 shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-              <h3 className="font-extrabold text-sm text-[#0F172A]">+ Add Party / नया खाता जोड़ें</h3>
-              <button onClick={() => setShowAddPartyModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <h3 className="font-extrabold text-sm text-[#0F172A]">
+                {editingParty ? "✏️ Edit Party / पार्टी संपादित करें" : "+ Add Party / नया खाता जोड़ें"}
+              </h3>
+              <button onClick={() => { setShowAddPartyModal(false); setEditingParty(null); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X size={18} />
               </button>
             </div>
@@ -4150,7 +4207,16 @@ function MobileVyaparAppContent() {
                   <button
                     key={t.id}
                     type="button"
-                    onClick={() => setNewPartyType(t.id)}
+                    onClick={() => {
+                      setNewPartyType(t.id);
+                      if (!editingParty) {
+                        if (t.id === "supplier") {
+                          setNewPartyBalanceDir("negative"); // Default देने हैं (You'll Give) for supplier
+                        } else {
+                          setNewPartyBalanceDir("positive"); // Default लेने हैं (You'll Get) for customer
+                        }
+                      }
+                    }}
                     className={`py-1.5 text-xs font-extrabold rounded-lg transition cursor-pointer ${
                       newPartyType === t.id
                         ? t.id === "personal"
@@ -4200,16 +4266,18 @@ function MobileVyaparAppContent() {
               </label>
               <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
                 {[
-                  { v: "positive", label: "🔴 वो मेरा देनदार है (मुझे लेने हैं)" },
-                  { v: "negative", label: "🟢 मैं देनदार हूँ (मुझे देने हैं)" }
+                  { v: "positive", label: "🟢 वो मेरा देनदार है (मुझे लेने हैं)" },
+                  { v: "negative", label: "🔴 मैं देनदार हूँ (मुझे देने हैं)" }
                 ].map(opt => (
                   <button
                     key={opt.v}
                     type="button"
                     onClick={() => setNewPartyBalanceDir(opt.v)}
-                    className={`flex-1 py-1 text-[10px] font-extrabold rounded-lg transition cursor-pointer leading-tight ${
+                    className={`flex-1 py-1.5 text-[10px] font-extrabold rounded-lg transition cursor-pointer leading-tight ${
                       (newPartyBalanceDir || "positive") === opt.v
-                        ? "bg-white text-slate-900 shadow-sm"
+                        ? opt.v === "positive"
+                          ? "bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-xs"
+                          : "bg-rose-50 text-rose-800 border border-rose-300 shadow-xs"
                         : "text-slate-500 hover:text-slate-800"
                     }`}
                   >
@@ -4231,7 +4299,7 @@ function MobileVyaparAppContent() {
               disabled={savingParty}
               className="w-full py-2.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow cursor-pointer transition"
             >
-              {savingParty ? "Saving..." : "खाता सुरक्षित करें (Save Party)"}
+              {savingParty ? "Saving..." : editingParty ? "पार्टी अपडेट करें (Update Party)" : "खाता सुरक्षित करें (Save Party)"}
             </button>
           </div>
         </div>
@@ -4241,7 +4309,7 @@ function MobileVyaparAppContent() {
       {selectedPartyDetail && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 space-y-4 shadow-2xl max-h-[92vh] flex flex-col">
-            {/* Header */}
+            {/* Header with Edit & Delete */}
             <div className="flex justify-between items-start border-b border-slate-100 pb-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -4262,14 +4330,31 @@ function MobileVyaparAppContent() {
                 </div>
                 <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
                   <Phone size={12} /> {selectedPartyDetail.phone || selectedPartyDetail.mobileNumber || "कोई फोन नहीं"}
+                  {selectedPartyDetail.address && <span className="ml-1 text-[10px] text-slate-400">• {selectedPartyDetail.address}</span>}
                 </div>
               </div>
-              <button 
-                onClick={() => { setSelectedPartyDetail(null); setShowPartyTxForm(false); }} 
-                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => handleOpenEditParty(selectedPartyDetail)}
+                  className="px-2 py-1 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 flex items-center gap-1 text-[11px] font-bold cursor-pointer border border-blue-200 active:scale-95 transition"
+                  title="पार्टी संपादित करें"
+                >
+                  <Edit2 size={12} /> <span>एडिट</span>
+                </button>
+                <button
+                  onClick={() => handleDeleteParty(selectedPartyDetail)}
+                  className="px-2 py-1 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 flex items-center gap-1 text-[11px] font-bold cursor-pointer border border-rose-200 active:scale-95 transition"
+                  title="पार्टी हटाएं"
+                >
+                  <Trash2 size={12} /> <span>हटाएं</span>
+                </button>
+                <button 
+                  onClick={() => { setSelectedPartyDetail(null); setShowPartyTxForm(false); }} 
+                  className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer ml-0.5"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {/* Balance Card */}

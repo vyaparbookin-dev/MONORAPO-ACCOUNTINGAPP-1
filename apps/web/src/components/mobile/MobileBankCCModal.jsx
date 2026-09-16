@@ -545,11 +545,13 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
   const handleOpenEdit = (acc) => {
     setEditingId(acc._id || acc.id);
     setFormData({
-      accountName: acc.accountName || acc.bankName || "",
+      accountName: acc.accountName || "",
       bankName: acc.bankName || "",
       accountNumber: acc.accountNumber || "",
       ifscCode: acc.ifscCode || "",
-      accountType: acc.accountType || "CC_OVERDRAFT",
+      upiId: acc.upiId || "",
+      accountType: acc.accountType || "CURRENT",
+      hasCcLimit: Boolean(acc.hasCcLimit || acc.accountType === "CC_OVERDRAFT"),
       sanctionedLimit: String(acc.sanctionedLimit || ""),
       currentOutstanding: String(acc.currentOutstanding || ""),
       openingBalance: String(acc.openingBalance || acc.balance || ""),
@@ -559,16 +561,24 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
     setIsFormOpen(true);
   };
 
-  const handleDelete = (id) => {
-    if (!confirm("क्या आप इस बैंक खाते को हटाना चाहते हैं?")) return;
+  const handleDelete = async (id) => {
+    if (!window.confirm("क्या आप इस बैंक खाते को हटाना चाहते हैं?")) return;
     try {
-      api.delete(`/api/bank-accounts/${id}`).catch(() => {});
+      await api.delete(`/api/bank-accounts/${id}`).catch(() => {});
       let local = JSON.parse(localStorage.getItem("vb_local_bank_accounts") || "[]");
       local = local.filter(x => (x._id || x.id) !== id);
       localStorage.setItem("vb_local_bank_accounts", JSON.stringify(local));
       setAccounts(prev => prev.filter(x => (x._id || x.id) !== id));
+      if (typeof onAccountsChange === "function") {
+        onAccountsChange();
+      }
+      const delMsg = "🗑️ बैंक खाता सफलतापूर्वक हटा दिया गया!";
+      setToast({ type: "success", text: delMsg });
+      alert(delMsg);
+      setTimeout(() => setToast(null), 5000);
     } catch (e) {
       console.error(e);
+      alert("खाता हटाने में त्रुटि आई।");
     }
   };
 
@@ -1116,8 +1126,15 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
                             {isCC ? "CC / OD लिमिट" : isPersonalBiz ? "पर्सनल (बिज़नेस)" : (isCurrent ? "करंट खाता" : "सेविंग्स")}
                           </span>
                         </div>
+                        {acc.accountName && (
+                          <p className="text-[11px] font-bold text-slate-700 mt-0.5 flex items-center gap-1">
+                            <span className="text-slate-400 font-medium">खाताधारक:</span>
+                            <span className="text-slate-900">{acc.accountName}</span>
+                          </p>
+                        )}
                         <p className="text-[11px] text-slate-500 mt-0.5">
                           {acc.accountNumber ? `A/C: ••••${String(acc.accountNumber).slice(-4)}` : "अकाउंट नंबर दर्ज नहीं"}
+                          {acc.ifscCode ? ` • IFSC: ${acc.ifscCode}` : ""}
                           {acc.interestRate ? ` • ${acc.interestRate}% वार्षिक ब्याज` : ""}
                         </p>
                       </div>
@@ -1246,27 +1263,27 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
                   </div>
 
                   {/* History & Edit bar */}
-                  <div className="flex items-center justify-between pt-1 text-[11px] text-slate-400">
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs gap-1">
                     <button
                       onClick={() => handleOpenMonthlyInterest(acc)}
-                      className="text-indigo-600 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                      className="text-indigo-600 font-bold hover:underline flex items-center gap-1 cursor-pointer text-[11px] truncate"
                     >
                       <Percent size={12} /> ब्याज इतिहास ({((acc.monthlyInterests || []).length)})
                     </button>
-                    <div className="flex items-center gap-2 ml-auto">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         onClick={() => handleOpenEdit(acc)}
-                        className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
-                        title="संपादित करें"
+                        className="px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer border border-blue-200"
+                        title="खाता विवरण संपादित करें"
                       >
-                        <Edit2 size={14} />
+                        <Edit2 size={13} /> <span>संपादित करें</span>
                       </button>
                       <button
                         onClick={() => handleDelete(id)}
-                        className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                        title="हटाएं"
+                        className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer border border-rose-200"
+                        title="खाता हटाएं"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={13} /> <span>हटाएं</span>
                       </button>
                     </div>
                   </div>
@@ -1277,21 +1294,24 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
         </div>
       </div>
 
-      {/* Floating Add Button */}
-      <div className="fixed bottom-4 left-0 right-0 px-4 max-w-md mx-auto z-40">
-        <button
-          onClick={() => { resetForm(); setIsFormOpen(true); }}
-          className="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-700 to-indigo-700 text-white font-black text-sm shadow-lg active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer"
-        >
-          <Plus size={18} /> + नया बैंक या CC लिमिट खाता जोड़ें
-        </button>
-      </div>
+      {/* Floating Add Button - hidden when form drawer is open */}
+      {!isFormOpen && (
+        <div className="fixed bottom-4 left-0 right-0 px-4 max-w-md mx-auto z-40">
+          <button
+            onClick={() => { resetForm(); setIsFormOpen(true); }}
+            className="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-700 to-indigo-700 text-white font-black text-sm shadow-lg active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Plus size={18} /> + नया बैंक या CC लिमिट खाता जोड़ें
+          </button>
+        </div>
+      )}
 
-      {/* Add / Edit Bank Account Drawer */}
+      {/* Add / Edit Bank Account Drawer - Mobile First with Sticky Footer */}
       {isFormOpen && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
-          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Drawer Header (Fixed at top) */}
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 shrink-0 bg-white">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center">
                   <Building2 size={18} />
@@ -1312,7 +1332,7 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
             </div>
 
             {toast && isFormOpen && (
-              <div className={`p-2.5 rounded-xl text-xs font-black flex items-center justify-between shadow-xs ${
+              <div className={`mx-4 mt-3 p-2.5 rounded-xl text-xs font-black flex items-center justify-between shadow-xs shrink-0 ${
                 toast.type === "success" ? "bg-emerald-50 text-emerald-800 border border-emerald-300" : "bg-rose-50 text-rose-800 border border-rose-300"
               }`}>
                 <span>{toast.text}</span>
@@ -1322,7 +1342,8 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
               </div>
             )}
 
-            <form onSubmit={handleSaveAccount} noValidate className="space-y-3">
+            {/* Scrollable Form Body */}
+            <form id="bankAccountForm" onSubmit={handleSaveAccount} noValidate className="flex-1 overflow-y-auto p-4 space-y-3">
               {/* Account Type */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">खाते का प्रकार *</label>
@@ -1345,17 +1366,31 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
                 </div>
               </div>
 
-              {/* Bank Name */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">बैंक का नाम *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="उदा. State Bank of India, HDFC Bank, ICICI"
-                  value={formData.bankName}
-                  onChange={e => setFormData({ ...formData, bankName: e.target.value })}
-                  className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50"
-                />
+              {/* Bank Name & Account Holder Name (2 Inputs) */}
+              <div className="space-y-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">बैंक का नाम *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="उदा. State Bank of India, HDFC Bank, ICICI"
+                    value={formData.bankName}
+                    onChange={e => setFormData({ ...formData, bankName: e.target.value })}
+                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    खाताधारक / फर्म का नाम (Account Holder Name) *
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="उदा. आपकी फर्म का नाम या आपका नाम (उदा. Ankush Bani)"
+                    value={formData.accountName}
+                    onChange={e => setFormData({ ...formData, accountName: e.target.value })}
+                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900"
+                  />
+                </div>
               </div>
 
               {/* Account Number & IFSC */}
@@ -1432,7 +1467,6 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
                       </label>
                       <input
                         type="number"
-                        required
                         placeholder="उदा. 1000000"
                         value={formData.sanctionedLimit}
                         onChange={e => setFormData({ ...formData, sanctionedLimit: e.target.value })}
@@ -1443,7 +1477,7 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
                     {/* Box 2: लिया गया कर्ज़ / निकाला गया पैसा */}
                     <div className="bg-white p-2.5 rounded-xl border border-rose-200 shadow-2xs">
                       <label className="block text-[11px] font-bold text-rose-900 mb-1">
-                        2. लिया कर्ज़ / निकाला (₹) *
+                        2. लिया कर्ज़ / निकाला (₹)
                       </label>
                       <input
                         type="number"
@@ -1526,25 +1560,26 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
                   </div>
                 </div>
               )}
-
-              {/* Submit */}
-              <div className="flex items-center gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => { setIsFormOpen(false); setEditingId(null); }}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold cursor-pointer"
-                >
-                  रद्द करें
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 py-2.5 rounded-xl bg-blue-600 active:bg-blue-700 text-white text-xs font-black shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  {saving ? "सहेज रहे हैं..." : "💾 खाता सहेजें"}
-                </button>
-              </div>
             </form>
+
+            {/* STICKY FOOTER BUTTONS - ALWAYS 100% VISIBLE ON MOBILE PWA! */}
+            <div className="p-3.5 bg-white border-t border-slate-200 shadow-xl flex items-center gap-2.5 shrink-0 safe-bottom">
+              <button
+                type="button"
+                onClick={() => { setIsFormOpen(false); setEditingId(null); }}
+                className="flex-1 py-3 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold active:bg-slate-100 cursor-pointer text-center"
+              >
+                रद्द करें
+              </button>
+              <button
+                type="submit"
+                form="bankAccountForm"
+                disabled={saving}
+                className="flex-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white text-xs font-black shadow-lg flex items-center justify-center gap-1.5 cursor-pointer text-center"
+              >
+                {saving ? "सहेज रहे हैं..." : "💾 खाता सहेजें (Save Bank)"}
+              </button>
+            </div>
           </div>
         </div>
       )}
