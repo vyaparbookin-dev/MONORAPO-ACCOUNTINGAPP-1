@@ -31,6 +31,8 @@ import {
 import api from "../../services/api";
 import Loader from "../../components/Loader";
 import { useCompany } from "../../contexts/CompanyContext";
+import { deduplicateBills } from "../../utils/deduplicateBills";
+import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 
 const ProfitLossReportPage = () => {
   const navigate = useNavigate();
@@ -127,24 +129,90 @@ const ProfitLossReportPage = () => {
       if (startDate && endDate) {
         plUrl += `?startDate=${startDate}&endDate=${endDate}`;
       }
-      const [plRes, billsRes, invRes] = await Promise.all([
+      const [plRes, billsRes, invRes, expRes] = await Promise.all([
         api.get(plUrl).catch(() => null),
         api.get('/api/billing?limit=500').catch(() => null),
-        api.get('/api/inventory').catch(() => null)
+        api.get('/api/inventory').catch(() => null),
+        api.get('/api/expense').catch(() => null)
       ]);
 
-      const plData = plRes?.data?.data || plRes?.data || plRes;
-      if (plData && (plData.totalSales !== undefined || plData.breakdown)) {
-        setReport(plData);
-      }
-
-      // Populate dynamic menuMatrix from real bills
+      const plData = plRes?.data?.data || plRes?.data || plRes || {};
       const fetchedBills = billsRes?.data?.bills || billsRes?.bills || billsRes?.data || [];
       const fetchedProducts = invRes?.data?.products || invRes?.data || [];
+      const fetchedExpenses = expRes?.data?.expenses || expRes?.expenses || expRes?.data || [];
 
-      if (Array.isArray(fetchedBills) && fetchedBills.length > 0) {
+      // Local Data
+      let localBills = [];
+      let localExpenses = [];
+      try {
+        if (typeof localStorage !== "undefined") {
+          const storedB = localStorage.getItem("vb_local_manual_bills");
+          if (storedB) localBills = JSON.parse(storedB) || [];
+          const storedE = localStorage.getItem("vb_local_expenses") || localStorage.getItem("expenses");
+          if (storedE) localExpenses = JSON.parse(storedE) || [];
+        }
+      } catch (e) {}
+
+      const allBills = deduplicateBills([
+        ...(Array.isArray(fetchedBills) ? fetchedBills : []),
+        ...(Array.isArray(localBills) ? localBills : [])
+      ]);
+
+      const allExpenses = deduplicateExpenses([
+        ...(Array.isArray(fetchedExpenses) ? fetchedExpenses : []),
+        ...(Array.isArray(localExpenses) ? localExpenses : [])
+      ]);
+
+      const isPersonalExpense = (e) => {
+        if (!e) return false;
+        const t = String(e.expenseType || "").toLowerCase();
+        const c = String(e.category || "").toLowerCase();
+        const tit = String(e.title || "").toLowerCase();
+        const mem = String(e.familyMember || e.member || "").trim();
+        return (
+          t === "drawings" ||
+          t === "ghar_kharch" ||
+          t === "personal" ||
+          c.includes("घर खर्च") ||
+          c.includes("family") ||
+          c.includes("personal") ||
+          tit.includes("घर खर्च") ||
+          (mem !== "" && mem !== "Admin" && mem !== "Shop")
+        );
+      };
+
+      const operatingExpenses = allExpenses.filter(e => !isPersonalExpense(e));
+      const gharKharchExpenses = allExpenses.filter(e => isPersonalExpense(e));
+
+      const calcSales = allBills.reduce((sum, b) => sum + (Number(b.amount || b.finalAmount || b.total) || 0), 0);
+      const calcOperating = operatingExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+      const calcGharKharch = gharKharchExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+      const finalSales = calcSales > 0 ? calcSales : (Number(plData.totalSales) || 0);
+      const finalOperating = calcOperating > 0 ? calcOperating : (Number(plData.businessExpenses) || 0);
+      const finalGharKharch = calcGharKharch > 0 ? calcGharKharch : (Number(plData.gharKharch) || 0);
+
+      setReport({
+        ...plData,
+        totalSales: finalSales,
+        totalExpenses: finalOperating + finalGharKharch,
+        businessExpenses: finalOperating,
+        gharKharch: finalGharKharch,
+        netProfit: finalSales - finalOperating,
+        breakdown: {
+          foodCost: Number(plData?.breakdown?.foodCost || 0),
+          staffSalaries: Number(plData?.breakdown?.staffSalaries || 0),
+          gasAndPower: Number(plData?.breakdown?.gasAndPower || 0),
+          rentAndProperty: Number(plData?.breakdown?.rentAndProperty || 0),
+          gharKharch: finalGharKharch,
+          otherExpenses: finalOperating
+        }
+      });
+
+      // Populate dynamic menuMatrix from real bills
+      if (allBills.length > 0) {
         const itemStats = {};
-        fetchedBills.forEach(bill => {
+        allBills.forEach(bill => {
           (bill.items || []).forEach(item => {
             const name = item.name || 'Special Item';
             if (!itemStats[name]) itemStats[name] = { orders: 0, revenue: 0, qty: 0 };
@@ -161,51 +229,23 @@ const ProfitLossReportPage = () => {
           qty: data.qty,
           revenue: data.revenue,
           marginPercent: Math.min(75, Math.max(48, Math.round(52 + (data.qty % 18)))),
-          status: "Star ⭐"
+          status: "Top Item ⭐"
         }));
-
-        // Find low sellers or zero sellers from menu dishes
-        const menuDishes = Array.isArray(fetchedProducts) ? fetchedProducts.filter(p => p.category !== 'Kitchen Raw Materials') : [];
-        const lowSellers = [];
-        
-        menuDishes.forEach(prod => {
-          if (!itemStats[prod.name] && lowSellers.length < 4) {
-            lowSellers.push({
-              name: prod.name,
-              orders: 0,
-              revenue: 0,
-              rawRisk: `${prod.name} कच्चा माल / कम मांग रिस्क`,
-              lossRisk: "High ⚠️"
-            });
-          }
-        });
-
-        sortedItems.slice(-3).reverse().forEach(([name, data]) => {
-          if (lowSellers.length < 4 && !lowSellers.some(l => l.name === name)) {
-            lowSellers.push({
-              name,
-              orders: data.orders,
-              revenue: data.revenue,
-              rawRisk: "कच्चा माल होल्डिंग रिस्क",
-              lossRisk: data.orders <= 4 ? "Medium ⚠️" : "Low"
-            });
-          }
-        });
 
         setMenuMatrix({
           bestSellers: bestSellers,
-          lowSellersRisk: lowSellers
+          lowSellersRisk: []
         });
       }
 
       // Dynamic Predictive Budget
-      const curSales = Number(plData?.totalSales) || 0;
-      const curExpenses = Number(plData?.totalExpenses) || 0;
+      const curSales = finalSales;
+      const curExpenses = finalOperating;
       const days = Number(plData?.daysCount) || (period === 'daily' ? 1 : period === 'weekly' ? 7 : period === 'monthly' ? 30 : 7);
       const dailyBurn = Math.round(curExpenses / Math.max(1, days));
       const dailyAvgSales = Math.round(curSales / Math.max(1, days));
       const breakEven = Math.round(dailyBurn / 0.6);
-      const monthlyBudget = Math.round(curExpenses * (30 / Math.max(1, days))) || 10389;
+      const monthlyBudget = Math.round(curExpenses * (30 / Math.max(1, days)));
 
       setPredictiveBudget({
         monthlyBudgetTotal: monthlyBudget,
@@ -214,7 +254,7 @@ const ProfitLossReportPage = () => {
         breakEvenDailySalesNeeded: breakEven,
         lastMonthDailyAvgSales: Math.round(dailyAvgSales * 0.94),
         currentMonthDailyAvgSales: dailyAvgSales,
-        salesPaceVariancePercent: "+6.4",
+        salesPaceVariancePercent: "+5.0",
         projectedMonthEndSales: dailyAvgSales * 30,
         actualExpensesDisbursed: curExpenses,
         budgetVarianceGap: Math.max(0, monthlyBudget - curExpenses),
@@ -224,10 +264,8 @@ const ProfitLossReportPage = () => {
       // Dynamic Accrual Ledger
       const b = plData?.breakdown || {};
       setAccrualLedger([
-        { category: isRestaurant ? "Kitchen Grocery & Food Cost (राशन व सब्जी)" : "Stock Purchases & Goods Cost (माल खरीद)", monthlyBudget: Math.round((b.foodCost || 0) * (30 / days)), dailyProvision: Math.round((b.foodCost || 0) / days), actualPaid: b.foodCost || 0, status: "Settled 100%" },
-        { category: isRestaurant ? "Commercial LPG Gas Cylinders (किचन गैस)" : "Electricity, Fuel & Utilities (बिजली व ईंधन)", monthlyBudget: Math.round((b.gasAndPower || 0) * (30 / days)), dailyProvision: Math.round((b.gasAndPower || 0) / days), actualPaid: b.gasAndPower || 0, status: "Settled 100%" },
-        { category: "Staff Wages & Salaries (स्टाफ वेतन)", monthlyBudget: Math.round((b.staffSalaries || 0) * (30 / days)), dailyProvision: Math.round((b.staffSalaries || 0) / days), actualPaid: b.staffSalaries || 0, status: (b.staffSalaries || 0) > 0 ? "Settled 100%" : "Provisioned" },
-        { category: isRestaurant ? "Shop / Restaurant Rent (दुकान/रेस्टोरेंट किराया)" : "Shop / Commercial Rent (दुकान/गोदाम किराया)", monthlyBudget: Math.round((b.rentAndProperty || 0) * (30 / days)), dailyProvision: Math.round((b.rentAndProperty || 0) / days), actualPaid: b.rentAndProperty || 0, status: (b.rentAndProperty || 0) > 0 ? "Settled 100%" : "Provisioned" }
+        { category: "दुकान व व्यापार संचालन खर्च", monthlyBudget: Math.round(finalOperating * (30 / days)), dailyProvision: Math.round(finalOperating / days), actualPaid: finalOperating, status: "Settled 100%" },
+        { category: "मालिक का घर खर्च (Personal Drawings)", monthlyBudget: Math.round(finalGharKharch * (30 / days)), dailyProvision: Math.round(finalGharKharch / days), actualPaid: finalGharKharch, status: "Personal" }
       ]);
     } catch (err) {
       console.error("Error fetching profit/loss report:", err);
@@ -250,7 +288,7 @@ const ProfitLossReportPage = () => {
   const otherExpenses = Number(report?.breakdown?.otherExpenses ?? 0);
   const businessExpenses = report?.businessExpenses !== undefined ? Number(report.businessExpenses) : (foodCost + staffCost + gasAndPower + rentCost + otherExpenses);
   const totalExpenses = report?.totalExpenses !== undefined ? Number(report.totalExpenses) : (businessExpenses + gharKharch);
-  const netProfit = report?.netProfit !== undefined ? Number(report.netProfit) : (sales - totalExpenses);
+  const netProfit = report?.netProfit !== undefined ? Number(report.netProfit) : (sales - businessExpenses);
 
   // Percentage Calculations
   const foodCostPercent = sales > 0 ? ((foodCost / sales) * 100).toFixed(1) : 0;
@@ -262,26 +300,21 @@ const ProfitLossReportPage = () => {
 
   // WhatsApp Flash Report with MoM Comparison & Break-Even
   const shareWhatsAppSummary = () => {
-    let msg = `*📊 HOSPITALITY P&L & BUDGET FORECAST REPORT*\n`;
+    let msg = `*📊 BUSINESS P&L & FINANCIAL AUDIT REPORT*\n`;
     msg += `*Period:* ${startDate || "All Time"} to ${endDate || "Present"}\n`;
     msg += `----------------------------------\n`;
     msg += `*🟢 Total Sales:* ₹${sales.toLocaleString("en-IN")}\n`;
-    msg += `  • Daily Sales Pace: ₹${predictiveBudget.currentMonthDailyAvgSales.toLocaleString("en-IN")}/day (Last Mo: ₹${predictiveBudget.lastMonthDailyAvgSales.toLocaleString("en-IN")}/day, *${predictiveBudget.salesPaceVariancePercent}%*)\n`;
+    msg += `  • Daily Sales Pace: ₹${predictiveBudget.currentMonthDailyAvgSales.toLocaleString("en-IN")}/day\n`;
     msg += `  • Daily Break-Even Needed: ₹${predictiveBudget.breakEvenDailySalesNeeded.toLocaleString("en-IN")}/day\n`;
     msg += `----------------------------------\n`;
-    msg += `*🔴 COST RATIOS (% of Sales):*\n`;
-    msg += `  • 🥬 Food Raw Cost: ₹${foodCost.toLocaleString("en-IN")} (*${foodCostPercent}%* • Target < 30%)\n`;
-    msg += `  • 👨‍🍳 Staff Salaries: ₹${staffCost.toLocaleString("en-IN")} (*${staffPercent}%*)\n`;
-    msg += `  • 🏢 Shop/Hall Rent: ₹${rentCost.toLocaleString("en-IN")} (*${rentPercent}%*)\n`;
-    msg += `  • 🔥 Gas & Electricity: ₹${gasAndPower.toLocaleString("en-IN")} (*${gasPowerPercent}%*)\n`;
+    msg += `*🏢 Business Expenses:* ₹${businessExpenses.toLocaleString("en-IN")}\n`;
     if (gharKharch > 0) {
-      msg += `  • 🏡 Family Drawings (घर खर्च): ₹${gharKharch.toLocaleString("en-IN")} (*${gharKharchPercent}%*)\n`;
+      msg += `*🏡 Family Drawings (घर खर्च):* ₹${gharKharch.toLocaleString("en-IN")}\n`;
     }
     msg += `----------------------------------\n`;
-    msg += `*💰 NET SHUDDH PROFIT (EBITDA):* *₹${netProfit.toLocaleString("en-IN")} (${netProfitPercent}% Margin)*\n`;
-    msg += `*🎯 Budget Gap Status:* *${predictiveBudget.isUnderBudget ? `Saved ₹${predictiveBudget.budgetVarianceGap} Under Budget ✓` : "Over Budget"}*\n`;
+    msg += `*💰 NET SHUDDH PROFIT:* *₹${netProfit.toLocaleString("en-IN")} (${netProfitPercent}% Margin)*\n`;
     msg += `----------------------------------\n`;
-    msg += `_Generated from Monorepo Business Accounting App._`;
+    msg += `_Generated from Vyapar Business Accounting App._`;
 
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
   };

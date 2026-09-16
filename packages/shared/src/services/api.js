@@ -1,4 +1,4 @@
-// --- RICH DEMO MOCK DATA GENERATOR FOR GUEST & RESILIENT FALLBACK MODE ---
+// --- DYNAMIC DATA GENERATOR FOR GUEST & RESILIENT OFFLINE FALLBACK MODE ---
 const getGuestMockData = (url, method = 'GET') => {
   const u = (url || '').toLowerCase();
   
@@ -7,9 +7,9 @@ const getGuestMockData = (url, method = 'GET') => {
       return {
         success: true,
         data: {
-          answer: "आपकी दुकान की वर्तमान स्थिति काफी मजबूत है! पिछले 7 दिनों की कुल बिक्री ₹48,114 है और ग्रॉस मार्जिन ~56% है। मेनू में शाही पनीर, बटर नान, और दाल मखनी सबसे ज्यादा बिकने वाले ऑर्डर्स हैं।",
-          growthTip: "💡 रात 8 से 10 बजे के बीच 'Family Combo Dinner' प्रमोट करके 18-22% औसत टिकट साइज बढ़ाया जा सकता है।",
-          tokenMetrics: { promptTokens: 120, completionTokens: 85, totalTokens: 205 }
+          answer: "आपकी दुकान की वर्तमान स्थिति स्थिर है। नियमित बिक्री व खर्च दर्ज करते रहें ताकि सटीक AI वित्तीय विश्लेषण मिल सके।",
+          growthTip: "💡 अपनी नियमित पार्टियों को समय पर WhatsApp रिमाइंडर भेजकर उधारी वसूली को 25% तेज करें।",
+          tokenMetrics: { promptTokens: 60, completionTokens: 40, totalTokens: 100 }
         }
       };
     }
@@ -32,35 +32,60 @@ const getGuestMockData = (url, method = 'GET') => {
   } catch (e) {}
   const fullBills = Array.isArray(localBills) ? localBills : [];
 
+  // Real Local Expenses from localStorage
+  let localExpenses = [];
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const storedExp = localStorage.getItem('vb_local_expenses') || localStorage.getItem('expenses');
+      if (storedExp) localExpenses = JSON.parse(storedExp) || [];
+    }
+  } catch (e) {}
+  const fullExpenses = Array.isArray(localExpenses) ? localExpenses : [];
+
+  // Split Operating (Shop) vs Personal (Ghar Kharch / Drawings)
+  const isPersonalExp = (e) => {
+    if (!e) return false;
+    const t = String(e.expenseType || '').toLowerCase();
+    const c = String(e.category || '').toLowerCase();
+    const tit = String(e.title || '').toLowerCase();
+    const mem = String(e.familyMember || e.member || '').trim();
+    return t === 'drawings' || t === 'ghar_kharch' || t === 'personal' || 
+           c.includes('घर खर्च') || c.includes('family') || c.includes('personal') ||
+           tit.includes('घर खर्च') || (mem !== '' && mem !== 'Admin' && mem !== 'Shop');
+  };
+
+  const shopExpensesList = fullExpenses.filter(e => !isPersonalExp(e));
+  const gharKharchList = fullExpenses.filter(e => isPersonalExp(e));
+  const totalShopExpenses = shopExpensesList.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const totalGharKharch = gharKharchList.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const totalAllExpenses = totalShopExpenses + totalGharKharch;
+
+  const totalCashSales = fullBills
+    .filter(b => String(b.type || b.paymentMode || '').toUpperCase() !== 'UDHAR')
+    .reduce((s, b) => s + Number(b.amount || b.finalAmount || b.total || 0), 0);
+  const totalSalesAll = fullBills.reduce((s, b) => s + Number(b.amount || b.finalAmount || b.total || 0), 0);
+
   // 1. Daybook Reports
   if (u.includes('daybook')) {
-    let localExpenses = [];
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const storedExp = localStorage.getItem('vb_local_expenses');
-        if (storedExp) localExpenses = JSON.parse(storedExp) || [];
-      }
-    } catch (e) {}
-    
-    const todayBillsList = fullBills;
-    const totalCashSales = todayBillsList.reduce((s, b) => s + Number(b.amount || b.finalAmount || 0), 0);
-    const totalExpenses = localExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
-    
     const daybookData = {
-      bills: todayBillsList,
-      sales: todayBillsList,
+      bills: fullBills,
+      sales: fullBills,
       partyTransactions: [],
       purchases: [],
-      expenses: localExpenses,
+      expenses: shopExpensesList,
+      personalExpenses: gharKharchList,
       salaries: [],
       summary: {
         totalIn: totalCashSales,
-        totalOut: totalExpenses,
-        netBalance: totalCashSales - totalExpenses,
+        totalOut: totalShopExpenses + totalGharKharch,
+        netBalance: totalCashSales - (totalShopExpenses + totalGharKharch),
         cashSales: totalCashSales,
+        totalSales: totalSalesAll,
         partyIn: 0,
         cashPurchases: 0,
-        expenses: totalExpenses,
+        expenses: totalShopExpenses,
+        operatingExpenses: totalShopExpenses,
+        gharKharch: totalGharKharch,
         salaries: 0,
         partyOut: 0
       }
@@ -74,98 +99,34 @@ const getGuestMockData = (url, method = 'GET') => {
       return {
         success: true,
         data: {
-          totalTokens: 4120,
+          totalTokens: 1200,
           monthlyQuota: 50000,
-          tokensRemaining: 45880
+          tokensRemaining: 48800
         }
       };
     }
     return {
       success: true,
       data: {
-        answer: "आपकी दुकान की वर्तमान स्थिति काफी मजबूत है! पिछले 7 दिनों की कुल बिक्री ₹48,114 है और ग्रॉस मार्जिन ~56% है। मेनू में शाही पनीर, बटर नान और दाल मखनी सबसे ज्यादा बिकने वाले ऑर्डर्स हैं।",
-        growthTip: "💡 रात 8 से 10 बजे के बीच 'Family Combo Dinner' प्रमोट करके 18-22% औसत टिकट साइज बढ़ाया जा सकता है।",
-        tokenMetrics: { promptTokens: 120, completionTokens: 85, totalTokens: 205 }
+        answer: totalSalesAll > 0
+          ? `आपकी दुकान की कुल दर्ज बिक्री ₹${totalSalesAll.toLocaleString('en-IN')} है और दुकान खर्च ₹${totalShopExpenses.toLocaleString('en-IN')} हैं।`
+          : "आपकी दुकान का खाता तैयार है। बिक्री व खर्च दर्ज करना शुरू करें।",
+        growthTip: "💡 अपनी नियमित पार्टियों को WhatsApp पर डिजिटल हिसाब शेयर करें।",
+        tokenMetrics: { promptTokens: 60, completionTokens: 40, totalTokens: 100 }
       }
     };
   }
 
   // 3. Staff / Salary / PagarBook
   if (u.includes('staff') || u.includes('salary') || u.includes('pagarbook') || u.includes('attendance')) {
-    const staffList = [
-      {
-        _id: "st1",
-        name: "Rohan Kumar",
-        phone: "9871112233",
-        position: "Floor Captain / Lead Waiter",
-        role: "waiter",
-        wageType: "monthly",
-        monthlySalary: 16000,
-        dailyRate: 533,
-        presentDays: 24,
-        halfDays: 1,
-        absentDays: 1,
-        salaryEarned: 13050,
-        advanceTaken: 1500,
-        netPayable: 11550,
-        paidLeaves: 1,
-        dailyAttendanceMap: {
-          1: "present", 2: "present", 3: "present", 4: "present", 5: "present",
-          6: "present", 7: "present", 8: "present", 9: "present", 10: "present",
-          11: "present"
-        },
-        transactions: [
-          { _id: "st_tx1", type: "advance", amount: 1500, date: new Date().toISOString(), paymentMode: "cash", notes: "Emergency Advance" }
-        ]
-      },
-      {
-        _id: "st2",
-        name: "Sunil Sharma",
-        phone: "9872223344",
-        position: "Head Chef (Tandoor & Curry)",
-        role: "chef",
-        wageType: "monthly",
-        monthlySalary: 24000,
-        dailyRate: 800,
-        presentDays: 26,
-        halfDays: 0,
-        absentDays: 0,
-        salaryEarned: 20800,
-        advanceTaken: 500,
-        netPayable: 20300,
-        paidLeaves: 0,
-        dailyAttendanceMap: {
-          1: "present", 2: "present", 3: "present", 4: "present", 5: "present",
-          6: "present", 7: "present", 8: "present", 9: "present", 10: "present",
-          11: "present"
-        },
-        transactions: [
-          { _id: "st_tx2", type: "advance", amount: 500, date: new Date().toISOString(), paymentMode: "upi", notes: "Petrol Advance" }
-        ]
-      },
-      {
-        _id: "st3",
-        name: "Deepa Patel",
-        phone: "9873334455",
-        position: "Counter Cashier & POS Operator",
-        role: "cashier",
-        wageType: "monthly",
-        monthlySalary: 18000,
-        dailyRate: 600,
-        presentDays: 25,
-        halfDays: 1,
-        absentDays: 0,
-        salaryEarned: 15300,
-        advanceTaken: 1000,
-        netPayable: 14300,
-        paidLeaves: 1,
-        dailyAttendanceMap: {
-          1: "present", 2: "present", 3: "present", 4: "present", 5: "present",
-          6: "present", 7: "present", 8: "present", 9: "present", 10: "present",
-          11: "present"
-        }
+    let localStaff = [];
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('vb_local_staff') || localStorage.getItem('staff');
+        if (stored) localStaff = JSON.parse(stored) || [];
       }
-    ];
+    } catch (e) {}
+    const staffList = Array.isArray(localStaff) ? localStaff : [];
     return {
       success: true,
       staff: staffList,
@@ -173,39 +134,51 @@ const getGuestMockData = (url, method = 'GET') => {
       list: staffList,
       daysInMonth: 30,
       daysConsidered: new Date().getDate(),
-      totalCompanySalaryEarned: 49150,
-      totalCompanyAdvanceGiven: 3000,
-      totalCompanyNetPayable: 46150
+      totalCompanySalaryEarned: 0,
+      totalCompanyAdvanceGiven: 0,
+      totalCompanyNetPayable: 0
     };
   }
 
   // 4. Profit & Loss Report
   if (u.includes('profitloss')) {
+    const netProfit = totalSalesAll - totalShopExpenses;
     const plData = {
-      totalSales: 48114,
-      totalPurchase: 18500,
-      totalExpenses: 8991,
-      netProfit: 20623,
+      totalSales: totalSalesAll,
+      totalPurchase: 0,
+      totalExpenses: totalAllExpenses,
+      businessExpenses: totalShopExpenses,
+      gharKharch: totalGharKharch,
+      netProfit: netProfit,
       breakdown: {
-        foodCost: 18500,
-        staffSalaries: 46150,
-        gasAndPower: 4180,
-        rentAndProperty: 12000,
-        otherExpenses: 4811
+        foodCost: 0,
+        staffSalaries: 0,
+        gasAndPower: 0,
+        rentAndProperty: 0,
+        gharKharch: totalGharKharch,
+        otherExpenses: totalShopExpenses
       }
     };
     return { success: true, data: plData, ...plData };
   }
 
-  // 5. Inventory / Products (Restaurant Menu & Raw Materials)
+  // 5. Inventory / Products
   if (u.includes('inventory') || u.includes('product')) {
+    let localProducts = [];
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('vb_local_products') || localStorage.getItem('products');
+        if (stored) localProducts = JSON.parse(stored) || [];
+      }
+    } catch (e) {}
+    const products = Array.isArray(localProducts) ? localProducts : [];
     return { 
       success: true, 
-      data: fullProducts, 
-      products: fullProducts, 
-      items: fullProducts, 
-      total: fullProducts.length, 
-      summary: { totalProducts: fullProducts.length, lowStockItems: 2, totalStockValue: 185400, totalCategories: 8 } 
+      data: products, 
+      products: products, 
+      items: products, 
+      total: products.length, 
+      summary: { totalProducts: products.length, lowStockItems: 0, totalStockValue: 0, totalCategories: 0 } 
     };
   }
 
@@ -223,91 +196,90 @@ const getGuestMockData = (url, method = 'GET') => {
     return { success: true, data: mockCategories, categories: mockCategories, subcategories: [], brands: [], units: [{ name: 'pcs' }, { name: 'box' }, { name: 'kg' }, { name: 'ltr' }, { name: 'pkt' }, { name: 'mtr' }] };
   }
 
-  // 7. Billing / Invoices
+  // 7. Billing / Invoices / BillWise
   if (u.includes('billing') || u.includes('bill') || u.includes('invoice')) {
-    let localBills = [];
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const stored = localStorage.getItem("vb_local_manual_bills");
-        if (stored) localBills = JSON.parse(stored) || [];
-      }
-    } catch (e) {}
-
-    const dedupMap = new Map();
-    [...localBills, ...fullBills].forEach(b => {
-      if (!b) return;
-      const key = b._id || b.id || b.billNumber;
-      if (!dedupMap.has(key)) dedupMap.set(key, b);
-    });
-    const combinedBills = Array.from(dedupMap.values());
-    const totalRev = combinedBills.reduce((s, b) => s + (Number(b.amount || b.finalAmount || b.total) || 0), 0);
+    const normBills = fullBills.map(b => ({
+      _id: b._id || b.id,
+      id: b.id || b.billNumber || b._id,
+      billNumber: b.billNumber || b.invoiceNumber || b.id || `BILL-${b._id}`,
+      invoiceNumber: b.billNumber || b.invoiceNumber || b.id || `BILL-${b._id}`,
+      date: b.rawDate || b.date || new Date().toISOString(),
+      customerName: b.customerName || b.partyName || "Counter Cash Customer",
+      customer: b.customerName || b.partyName || "Counter Cash Customer",
+      totalAmount: Number(b.amount || b.finalAmount || b.total || 0),
+      amount: Number(b.amount || b.finalAmount || b.total || 0),
+      paymentMode: b.type || b.paymentMode || "CASH",
+      items: b.items || []
+    }));
 
     return { 
       success: true, 
-      data: combinedBills, 
-      bills: combinedBills, 
-      invoices: combinedBills,
-      total: combinedBills.length, 
-      totalSales: totalRev,
-      totalRevenue: totalRev
+      data: normBills, 
+      bills: normBills, 
+      invoices: normBills,
+      reports: normBills,
+      total: normBills.length, 
+      totalSales: totalSalesAll, 
+      totalRevenue: totalSalesAll 
     };
   }
 
-  // 8. Expenses (7-day Live Restaurant Expenses)
+  // 8. Expenses
   if (u.includes('expense')) {
-    let localExpenses = [];
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const stored = localStorage.getItem("vb_local_expenses");
-        if (stored) localExpenses = JSON.parse(stored);
-      }
-    } catch (e) {}
-
-    const defaultExpenses = [
-      { _id: "exp_1", id: "exp_1", title: "दूध व ताज़ी सब्जियां (Daily Milk & Veggies)", amount: 580, category: "राशन व सब्जी", member: "Sunil Chef", date: new Date().toISOString(), notes: "Fresh daily dairy and organic vegetables purchase", expenseType: "operating" },
-      { _id: "exp_2", id: "exp_2", title: "कमर्शियल रसोई गैस सिलेंडर (Commercial LPG)", amount: 1780, category: "किचन गैस", member: "Rohan", date: new Date(Date.now() - 86400000 * 2).toISOString(), notes: "19Kg Indane Commercial Cylinder refill", expenseType: "operating" },
-      { _id: "exp_3", id: "exp_3", title: "दुकान बिजली बिल (Commercial Power)", amount: 2400, category: "बिजली बिल", member: "Admin", date: new Date(Date.now() - 86400000 * 3).toISOString(), notes: "Commercial power & refrigeration", expenseType: "operating" },
-      { _id: "exp_4", id: "exp_4", title: "दूध व सब्जियां (Daily Milk & Veggies)", amount: 520, category: "राशन व सब्जी", member: "Sunil Chef", date: new Date(Date.now() - 86400000).toISOString(), notes: "Daily morning mandi purchase", expenseType: "operating" },
-      { _id: "exp_5", id: "exp_5", title: "रसोई मसाला व तेल रिफिल (Spices & Oil)", amount: 1650, category: "किराना", member: "Deepa", date: new Date(Date.now() - 86400000 * 4).toISOString(), notes: "Fortune oil and MDH spices", expenseType: "operating" },
-      { _id: "exp_6", id: "exp_6", title: "कमर्शियल रसोई गैस सिलेंडर (Commercial LPG)", amount: 1780, category: "किचन गैस", member: "Rohan", date: new Date(Date.now() - 86400000 * 5).toISOString(), notes: "Backup cylinder refill", expenseType: "operating" }
-    ];
-
-    const dedupMap = new Map();
-    [...localExpenses, ...defaultExpenses].forEach(item => {
-      if (!item) return;
-      const key = item._id || item.id || `${item.title}_${item.amount}_${item.date}`;
-      if (!dedupMap.has(key)) dedupMap.set(key, item);
-    });
-    const combined = Array.from(dedupMap.values());
-    const totalExp = combined.reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const operatingExp = totalExp;
-
     return { 
       success: true, 
-      data: combined, 
-      expenses: combined, 
-      recentExpenses: combined,
-      list: combined, 
-      total: combined.length, 
-      totalExpenses: totalExp,
-      totalDrawings: 0,
-      totalOperating: operatingExp
+      data: fullExpenses, 
+      expenses: fullExpenses, 
+      recentExpenses: fullExpenses,
+      list: fullExpenses, 
+      total: fullExpenses.length, 
+      totalExpenses: totalAllExpenses,
+      totalDrawings: totalGharKharch,
+      totalOperating: totalShopExpenses
     };
   }
 
-  // 9. Parties / Customers
+  // 9. Parties / Customers & PartyWise
   if (u.includes('party') || u.includes('customer')) {
-    const parties = [
-      { _id: "pt_walkin", name: "Dine-in Walk-in Guest", mobileNumber: "9876543210", phone: "9876543210", currentBalance: 0, balance: 0, address: "Dine-in Counter", type: "customer" },
-      { _id: "pt_rahul", name: "Rahul Verma (AC Hall Regular)", mobileNumber: "7828289433", phone: "7828289433", currentBalance: 0, balance: 0, address: "Shop 4, Civil Lines", type: "customer" },
-      { _id: "pt_amit", name: "Amit Sharma (Family Table)", mobileNumber: "9826112233", phone: "9826112233", currentBalance: 0, balance: 0, address: "Civil Lines", type: "customer" },
-      { _id: "pt_pooja", name: "Pooja Kesharwani", mobileNumber: "9425574230", phone: "9425574230", currentBalance: 0, balance: 0, address: "Sector 14", type: "customer" },
-      { _id: "pt_swiggy", name: "🛵 Swiggy Online Delivery", mobileNumber: "9988776655", phone: "9988776655", currentBalance: 0, balance: 0, address: "Online Portal", type: "customer" },
-      { _id: "pt_zomato", name: "🛵 Zomato Online Delivery", mobileNumber: "9988776644", phone: "9988776644", currentBalance: 0, balance: 0, address: "Online Portal", type: "customer" },
-      { _id: "pt_amul", name: "Amul Dairy Products Distributor", mobileNumber: "9826001122", phone: "9826001122", currentBalance: -2500, balance: -2500, address: "Dairy Plant Road", type: "supplier" },
-      { _id: "pt_metro", name: "Metro Cash & Carry Spice Vendor", mobileNumber: "9826003344", phone: "9826003344", currentBalance: -4800, balance: -4800, address: "Wholesale Market Yard", type: "supplier" }
-    ];
-    return { success: true, data: parties, parties: parties, customers: parties, total: parties.length };
+    let localParties = [];
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('vb_local_parties') || localStorage.getItem('parties');
+        if (stored) localParties = JSON.parse(stored) || [];
+      }
+    } catch (e) {}
+    const parties = Array.isArray(localParties) ? localParties : [];
+
+    const partyWiseReports = parties.map(p => {
+      const pNameNorm = String(p.name || p.partyName || '').trim().toLowerCase();
+      const pIdStr = String(p._id || p.id || '');
+      const partyBills = fullBills.filter(b => {
+        const bParty = String(b.customerName || b.partyName || '').trim().toLowerCase();
+        const bPartyId = String(b.partyId || b.customer || '');
+        return (bParty && bParty === pNameNorm) || (bPartyId && bPartyId === pIdStr);
+      });
+      const partySales = partyBills.reduce((s, b) => s + Number(b.amount || b.finalAmount || b.total || 0), 0);
+      const balance = Number(p.balance !== undefined ? p.balance : (p.currentBalance !== undefined ? p.currentBalance : 0));
+      return {
+        _id: p._id || p.id,
+        partyName: p.name || p.partyName || "Party",
+        phone: p.phone || p.mobileNumber || "",
+        partyType: p.partyType || p.type || "customer",
+        address: p.address || "",
+        totalPurchase: 0,
+        totalSales: partySales,
+        balance
+      };
+    });
+
+    return { 
+      success: true, 
+      data: partyWiseReports, 
+      parties: partyWiseReports, 
+      customers: partyWiseReports, 
+      reports: partyWiseReports,
+      total: partyWiseReports.length 
+    };
   }
 
   // 10. Approvals
@@ -318,8 +290,8 @@ const getGuestMockData = (url, method = 'GET') => {
   // 11. Banking / Cash
   if (u.includes('bank') || u.includes('cash')) {
     const banks = [
-      { _id: "bnk1", bankName: "HDFC Current A/c (Restaurant POS)", accountNumber: "XXXX5678", accountType: "CURRENT", balance: 185000 },
-      { _id: "bnk2", bankName: "SBI QR Code Settlement A/c", accountNumber: "XXXX9012", accountType: "SAVINGS", balance: 74500 }
+      { _id: "bnk1", bankName: "Main Business Cash Account", accountNumber: "CASH-MAIN", accountType: "CASH", balance: totalCashSales - totalAllExpenses },
+      { _id: "bnk2", bankName: "Bank Current Account", accountNumber: "XXXX1234", accountType: "CURRENT", balance: 0 }
     ];
     return { success: true, data: banks, banks: banks, accounts: banks };
   }
@@ -331,24 +303,27 @@ const getGuestMockData = (url, method = 'GET') => {
 
   // 13. Reports (GST, Aging, etc.)
   if (u.includes('report') || u.includes('gst')) {
+    const taxable = Math.round(totalSalesAll / 1.18);
+    const gstAmt = totalSalesAll - taxable;
     return { 
       success: true, 
       data: { 
-        totalSales: 48114, 
-        totalExpenses: 8991, 
-        netProfit: 20623, 
-        totalTaxable: Math.round(48114 / 1.05),
-        cgst: Math.round((48114 - (48114 / 1.05)) / 2),
-        sgst: Math.round((48114 - (48114 / 1.05)) / 2),
+        totalSales: totalSalesAll, 
+        totalExpenses: totalShopExpenses, 
+        netProfit: totalSalesAll - totalShopExpenses, 
+        totalTaxable: taxable,
+        cgst: Math.round(gstAmt / 2),
+        sgst: Math.round(gstAmt / 2),
         igst: 0,
-        totalGst: Math.round(48114 - (48114 / 1.05)),
-        transactions: [],
+        totalGst: gstAmt,
+        transactions: fullBills,
         b2b: [],
-        b2cs: []
+        b2cs: fullBills
       },
-      summary: { totalSales: 48114, totalExpenses: 8991, netProfit: 20623 },
-      daybook: [],
-      records: []
+      summary: { totalSales: totalSalesAll, totalExpenses: totalShopExpenses, netProfit: totalSalesAll - totalShopExpenses },
+      daybook: fullBills,
+      records: fullBills,
+      reports: fullBills
     };
   }
 

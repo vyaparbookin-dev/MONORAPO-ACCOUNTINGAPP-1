@@ -6,6 +6,7 @@ import Purchase from "../model/purchase.js";
 import Salary from "../model/salary.js";
 import User from "../model/user.js"; // User model ko import karein
 import Staff from "../model/staff.js";
+import Party from "../model/party.js";
 import mongoose from "mongoose";
 
 export const generateReport = async (req, res) => {
@@ -461,7 +462,14 @@ export const getProfitLoss = async (req, res) => {
       const cat = String(exp.category || "").toLowerCase();
       const desc = String(exp.description || "").toLowerCase();
       const combined = `${title} ${cat} ${desc}`;
-      const isDrawing = exp.expenseType === 'drawings' || (exp.familyMember && String(exp.familyMember).trim() !== '');
+      const isDrawing = exp.expenseType === 'drawings' || 
+                        exp.expenseType === 'ghar_kharch' || 
+                        exp.expenseType === 'personal' ||
+                        cat.includes('घर खर्च') || 
+                        cat.includes('family') || 
+                        cat.includes('personal') || 
+                        title.includes('घर खर्च') ||
+                        (exp.familyMember && String(exp.familyMember).trim() !== '');
 
       if (isDrawing) {
         gharKharch += amt;
@@ -481,7 +489,7 @@ export const getProfitLoss = async (req, res) => {
     const totalPurchase = foodCost;
     const businessExpenses = foodCost + staffSalaries + gasAndPower + rentAndProperty + otherExpenses;
     const totalExpenses = businessExpenses + gharKharch;
-    const netProfit = totalSales - totalExpenses;
+    const netProfit = totalSales - businessExpenses;
 
     const dailyAvgSales = Math.round(totalSales / daysCount);
     const dailyAvgExpenses = Math.round(totalExpenses / daysCount);
@@ -769,5 +777,68 @@ export const getRestaurantAnalytics = async (req, res) => {
   } catch (error) {
     console.error("Error in getRestaurantAnalytics:", error);
     res.status(500).json({ success: false, message: "Server Error", error: error.message });
+  }
+};
+
+export const getPartyWiseReport = async (req, res) => {
+  try {
+    const coFilter = req.companyId 
+      ? (mongoose.Types.ObjectId.isValid(req.companyId)
+        ? { $in: [req.companyId, new mongoose.Types.ObjectId(req.companyId)] }
+        : req.companyId)
+      : null;
+
+    const partyQuery = { isDeleted: { $ne: true } };
+    const billQuery = { isDeleted: { $ne: true } };
+    const purchaseQuery = { isDeleted: { $ne: true } };
+
+    if (coFilter) {
+      partyQuery.companyId = coFilter;
+      billQuery.companyId = coFilter;
+      purchaseQuery.companyId = coFilter;
+    }
+
+    const [parties, bills, purchases] = await Promise.all([
+      Party.find(partyQuery).lean(),
+      Bill.find(billQuery).lean(),
+      Purchase.find(purchaseQuery).lean()
+    ]);
+
+    const report = parties.map(p => {
+      const pIdStr = String(p._id);
+      const pNameNorm = String(p.name || p.partyName || "").trim().toLowerCase();
+
+      const partyBills = bills.filter(b => {
+        const bPartyId = String(b.partyId || b.customer || "");
+        const bPartyName = String(b.customerName || b.partyName || "").trim().toLowerCase();
+        return (bPartyId && bPartyId === pIdStr) || (bPartyName && bPartyName === pNameNorm);
+      });
+      const totalSales = partyBills.reduce((s, b) => s + (Number(b.finalAmount || b.total || 0) || 0), 0);
+
+      const partyPurchases = purchases.filter(pr => {
+        const prSuppId = String(pr.supplierId || pr.supplier || "");
+        const prSuppName = String(pr.supplierName || pr.supplier || "").trim().toLowerCase();
+        return (prSuppId && prSuppId === pIdStr) || (prSuppName && prSuppName === pNameNorm);
+      });
+      const totalPurchase = partyPurchases.reduce((s, pr) => s + (Number(pr.totalAmount || pr.total || 0) || 0), 0);
+
+      const balance = Number(p.balance !== undefined ? p.balance : (p.currentBalance !== undefined ? p.currentBalance : (p.openingBalance || 0)));
+
+      return {
+        _id: p._id,
+        partyName: p.name || p.partyName || "Unnamed Party",
+        phone: p.mobileNumber || p.phone || "",
+        partyType: p.partyType || p.type || "customer",
+        address: p.address || "",
+        totalPurchase,
+        totalSales,
+        balance
+      };
+    });
+
+    res.status(200).json({ success: true, data: report, reports: report });
+  } catch (error) {
+    console.error("Error in getPartyWiseReport:", error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };

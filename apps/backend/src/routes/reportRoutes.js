@@ -4,6 +4,7 @@ import {
   getBalanceSheet,
   getChartData,
   getProfitLoss,
+  getPartyWiseReport,
   getStaffPerformanceReport,
   getNonMovingItems, // Import the new controller
   getRestaurantAnalytics,
@@ -16,6 +17,9 @@ const router = express.Router();
 router.use(protect);
 
 router.route("/generate").post(generateReport);
+
+// Party-wise sales & balances report
+router.get("/partywise", getPartyWiseReport);
 
 // Restaurant Deep Analytics (Petpooja Benchmark: Dine-in vs Takeaway, Notes & Reviews)
 router.get("/restaurant-analytics", getRestaurantAnalytics);

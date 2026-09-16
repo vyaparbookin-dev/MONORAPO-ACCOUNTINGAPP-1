@@ -5,6 +5,7 @@ import {
   Receipt, Building2, Clock, CheckCircle2, ChevronRight, Share2 
 } from 'lucide-react';
 import api from '../../services/api';
+import { deduplicateBills } from '../../utils/deduplicateBills';
 
 export default function MobileReportViewerModal({ isOpen, onClose, reportType, reportTitle }) {
   const [loading, setLoading] = useState(false);
@@ -27,35 +28,188 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
   const fetchReportData = async () => {
     setLoading(true);
     try {
+      // 1. PARTY-WISE
       if (reportType === 'partywise') {
-        const res = await api.get('/api/reports/partywise');
-        const list = Array.isArray(res.data) ? res.data : (Array.isArray(res) ? res : []);
-        setData(list);
-      } else if (reportType === 'itemwise') {
-        const res = await api.post('/report/generate', { type: 'itemwise' });
-        const list = res?.reports || res?.data?.reports || res?.data || (Array.isArray(res) ? res : []);
-        setData(Array.isArray(list) ? list : []);
-      } else if (reportType === 'billwise') {
-        const res = await api.post('/report/generate', { type: 'billwise' });
-        const list = res?.reports || res?.data?.reports || res?.data || (Array.isArray(res) ? res : []);
-        setData(Array.isArray(list) ? list : []);
-      } else if (reportType === 'gst' || reportType === 'gstr1' || reportType === 'gstr3b') {
-        const res = await api.get(`/api/gst/report?month=${selectedMonth}&year=${selectedYear}`);
+        const [res, partiesRes] = await Promise.all([
+          api.get('/api/reports/partywise').catch(() => null),
+          api.get('/api/parties').catch(() => null)
+        ]);
+
+        const serverReports = Array.isArray(res?.data) ? res.data : (Array.isArray(res?.reports) ? res.reports : []);
+        const serverParties = Array.isArray(partiesRes?.data?.parties) ? partiesRes.data.parties : (Array.isArray(partiesRes?.data) ? partiesRes.data : []);
+
+        let localParties = [];
+        let localBills = [];
+        try {
+          if (typeof localStorage !== 'undefined') {
+            const storedP = localStorage.getItem('vb_local_parties') || localStorage.getItem('parties');
+            if (storedP) localParties = JSON.parse(storedP) || [];
+            const storedB = localStorage.getItem('vb_local_manual_bills');
+            if (storedB) localBills = JSON.parse(storedB) || [];
+          }
+        } catch (e) {}
+
+        const allParties = [...localParties, ...serverParties, ...serverReports];
+        const partyMap = new Map();
+
+        allParties.forEach(p => {
+          if (!p) return;
+          const name = p.name || p.partyName || '';
+          if (!name) return;
+          const k = name.trim().toLowerCase();
+          
+          if (!partyMap.has(k)) {
+            const pIdStr = String(p._id || p.id || '');
+            const matchingBills = localBills.filter(b => {
+              const bParty = String(b.customerName || b.partyName || '').trim().toLowerCase();
+              const bPartyId = String(b.partyId || b.customer || '');
+              return (bParty && bParty === k) || (bPartyId && bPartyId === pIdStr);
+            });
+            const calcSales = matchingBills.reduce((s, b) => s + (Number(b.amount || b.finalAmount || b.total) || 0), 0);
+            const totalSales = (p.totalSales && p.totalSales > 0) ? p.totalSales : calcSales;
+            const totalPurchase = p.totalPurchase || 0;
+            const balance = Number(p.balance !== undefined ? p.balance : (p.currentBalance !== undefined ? p.currentBalance : 0));
+
+            partyMap.set(k, {
+              _id: p._id || p.id || k,
+              partyName: p.name || p.partyName,
+              phone: p.mobileNumber || p.phone || '',
+              partyType: p.partyType || p.type || 'customer',
+              address: p.address || '',
+              totalPurchase,
+              totalSales,
+              balance
+            });
+          }
+        });
+
+        setData(Array.from(partyMap.values()));
+      } 
+      // 2. ITEM-WISE
+      else if (reportType === 'itemwise') {
+        const res = await api.post('/report/generate', { type: 'itemwise' }).catch(() => null);
+        const serverList = res?.reports || res?.data?.reports || res?.data || (Array.isArray(res) ? res : []);
+        
+        let localBills = [];
+        try {
+          if (typeof localStorage !== 'undefined') {
+            const stored = localStorage.getItem('vb_local_manual_bills');
+            if (stored) localBills = JSON.parse(stored) || [];
+          }
+        } catch (e) {}
+
+        const itemMap = new Map();
+        // Server items
+        (Array.isArray(serverList) ? serverList : []).forEach(it => {
+          const k = String(it.name || it.productId || '').trim().toLowerCase();
+          if (k) itemMap.set(k, { ...it });
+        });
+
+        // Add local bills items
+        localBills.forEach(b => {
+          (b.items || []).forEach(it => {
+            const name = it.name || it.productName || 'दैनिक उत्पाद';
+            const k = name.trim().toLowerCase();
+            const qty = Number(it.quantity || 1);
+            const price = Number(it.price || it.rate || 0);
+            const taxable = Number(it.total || price * qty);
+
+            if (itemMap.has(k)) {
+              const existing = itemMap.get(k);
+              existing.qtySold = (existing.qtySold || 0) + qty;
+              existing.taxableValue = (existing.taxableValue || 0) + taxable;
+            } else {
+              itemMap.set(k, {
+                productId: it.productId || `local_prod_${k}`,
+                name: name,
+                qtySold: qty,
+                taxableValue: taxable,
+                gstRate: it.gstRate || 0,
+                gstCollected: Math.round(taxable * ((it.gstRate || 0) / 100))
+              });
+            }
+          });
+        });
+
+        setData(Array.from(itemMap.values()));
+      } 
+      // 3. BILL-WISE
+      else if (reportType === 'billwise') {
+        const [res, billingRes] = await Promise.all([
+          api.post('/report/generate', { type: 'billwise' }).catch(() => null),
+          api.get('/api/billing?limit=500').catch(() => null)
+        ]);
+
+        const serverReports = res?.reports || res?.data?.reports || res?.data || (Array.isArray(res) ? res : []);
+        const serverBills = billingRes?.data?.bills || billingRes?.bills || billingRes?.data || [];
+
+        let localBills = [];
+        try {
+          if (typeof localStorage !== 'undefined') {
+            const stored = localStorage.getItem('vb_local_manual_bills');
+            if (stored) localBills = JSON.parse(stored) || [];
+          }
+        } catch (e) {}
+
+        const normalizedLocal = localBills.map(b => ({
+          _id: b._id || b.id,
+          invoiceNumber: b.id || b.billNumber || b._id || 'BILL',
+          billNumber: b.id || b.billNumber || b._id || 'BILL',
+          date: b.rawDate || b.date || new Date().toISOString(),
+          customerName: b.customerName || b.partyName || 'काउंटर नकद ग्राहक',
+          totalAmount: Number(b.amount || b.finalAmount || b.total || 0),
+          amount: Number(b.amount || b.finalAmount || b.total || 0),
+          paymentMode: b.type || b.paymentMode || 'CASH',
+          items: b.items || []
+        }));
+
+        const dedupMap = new Map();
+        [...normalizedLocal, ...(Array.isArray(serverBills) ? serverBills : []), ...(Array.isArray(serverReports) ? serverReports : [])].forEach(b => {
+          if (!b) return;
+          const k = String(b.invoiceNumber || b.billNumber || b._id || b.id);
+          if (!dedupMap.has(k)) {
+            dedupMap.set(k, {
+              _id: b._id || b.id || k,
+              invoiceNumber: b.invoiceNumber || b.billNumber || k,
+              billNumber: b.billNumber || b.invoiceNumber || k,
+              date: b.rawDate || b.date || b.createdAt || new Date().toISOString(),
+              customerName: b.customerName || b.customer || b.partyName || 'काउंटर नकद ग्राहक',
+              totalAmount: Number(b.totalAmount || b.finalAmount || b.amount || b.total || 0),
+              amount: Number(b.totalAmount || b.finalAmount || b.amount || b.total || 0),
+              paymentMode: b.paymentMode || b.type || 'CASH',
+              items: b.items || []
+            });
+          }
+        });
+
+        setData(Array.from(dedupMap.values()));
+      } 
+      // 4. GST
+      else if (reportType === 'gst' || reportType === 'gstr1' || reportType === 'gstr3b') {
+        const res = await api.get(`/api/gst/report?month=${selectedMonth}&year=${selectedYear}`).catch(() => null);
         setExtraData(res?.data?.data || res?.data || null);
-      } else if (reportType === 'stock_aging') {
+      } 
+      // 5. AGING
+      else if (reportType === 'stock_aging') {
         const res = await api.get('/api/aging').catch(() => null);
         const list = res?.data?.data || res?.data || (Array.isArray(res) ? res : []);
         setData(Array.isArray(list) ? list : []);
-      } else if (reportType === 'stock_alert') {
-        const res = await api.get('/api/inventory');
+      } 
+      // 6. LOW STOCK
+      else if (reportType === 'stock_alert') {
+        const res = await api.get('/api/inventory').catch(() => null);
         const items = res?.data?.products || res?.data || (Array.isArray(res) ? res : []);
         const lowStock = (Array.isArray(items) ? items : []).filter(i => (i.quantity || 0) <= (i.minStock || 5));
         setData(lowStock);
-      } else if (reportType === 'supplier_ledger') {
+      } 
+      // 7. SUPPLIER LEDGER
+      else if (reportType === 'supplier_ledger') {
         const res = await api.get('/api/inventory/purchase').catch(() => ({ data: [] }));
         const list = res?.data || (Array.isArray(res) ? res : []);
         setData(Array.isArray(list) ? list : []);
-      } else {
+      } 
+      // 8. FALLBACK
+      else {
         const res = await api.post('/report/generate', { type: reportType }).catch(() => null);
         const list = res?.reports || res?.data?.reports || res?.data || [];
         setData(Array.isArray(list) ? list : []);
@@ -73,7 +227,7 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
   const filteredData = Array.isArray(data) ? data.filter(item => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
-    const name = item.partyName || item.name || item.customerName || item.supplier || item.billNumber || '';
+    const name = item.partyName || item.name || item.customerName || item.supplier || item.billNumber || item.invoiceNumber || '';
     return String(name).toLowerCase().includes(q);
   }) : [];
 
@@ -140,7 +294,7 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
           </div>
         )}
 
-        {/* Search Bar (if list report) */}
+        {/* Search Bar */}
         {reportType !== 'gst' && reportType !== 'gstr1' && reportType !== 'gstr3b' && (
           <div className="p-3 bg-white border-b border-slate-100 shrink-0">
             <div className="relative">
@@ -190,14 +344,25 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
                   </div>
 
                   {filteredData.length === 0 ? (
-                    <div className="py-12 text-center text-slate-400 text-xs font-medium">कोई पार्टी डेटा नहीं मिला</div>
+                    <div className="py-12 text-center text-slate-400 text-xs font-medium space-y-1">
+                      <div>कोई पार्टी डेटा नहीं मिला</div>
+                      <p className="text-[11px] text-slate-400">पार्टी टैब से नई पार्टी जोड़ें या बिल बनाते समय ग्राहक दर्ज करें।</p>
+                    </div>
                   ) : (
                     filteredData.map((p, idx) => {
                       const balance = p.balance || 0;
                       return (
                         <div key={p._id || idx} className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs space-y-2">
                           <div className="flex justify-between items-start">
-                            <div className="font-bold text-xs text-slate-900">{p.partyName || 'अनाम पार्टी'}</div>
+                            <div>
+                              <div className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                                <span>{p.partyName || 'अनाम पार्टी'}</span>
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold uppercase">
+                                  {p.partyType === 'personal' ? '👤 पर्सनल' : p.partyType === 'supplier' ? '🏢 सप्लायर' : '🛒 ग्राहक'}
+                                </span>
+                              </div>
+                              {p.phone && <div className="text-[10px] text-slate-400 mt-0.5">📞 {p.phone}</div>}
+                            </div>
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                               balance > 0 ? 'bg-rose-50 text-rose-700 border border-rose-200' :
                               balance < 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
@@ -208,7 +373,7 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
                                'हिसाब चुकता'}
                             </span>
                           </div>
-                          <div className="flex justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-50">
+                          <div className="flex justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-50">
                             <div>खरीद: <span className="font-bold text-slate-700">₹{(p.totalPurchase || 0).toLocaleString('en-IN')}</span></div>
                             <div>बिक्री: <span className="font-bold text-emerald-700">₹{(p.totalSales || 0).toLocaleString('en-IN')}</span></div>
                           </div>
@@ -280,11 +445,15 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
                         <div className="flex justify-between items-center">
                           <div>
                             <span className="font-black text-xs text-indigo-900">#{bill.invoiceNumber || bill.billNumber || 'BILL'}</span>
-                            <div className="text-[10px] text-slate-400">{bill.date ? new Date(bill.date).toLocaleDateString('hi-IN') : 'आज'}</div>
+                            <div className="text-[10px] text-slate-400">
+                              {bill.date ? new Date(bill.date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'आज'}
+                            </div>
                           </div>
                           <div className="text-right">
                             <div className="font-black text-sm text-emerald-700">₹{(bill.totalAmount || bill.amount || 0).toLocaleString('en-IN')}</div>
-                            <span className="text-[9px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-bold uppercase">
+                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                              bill.paymentMode === 'UDHAR' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-700'
+                            }`}>
                               {bill.paymentMode || 'CASH'}
                             </span>
                           </div>
@@ -328,20 +497,6 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
                       </div>
                     </div>
                   </div>
-
-                  <div className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs space-y-2">
-                    <div className="font-black text-xs text-slate-800">टैक्स स्लैब अनुसार विवरण (Tax Slabs)</div>
-                    {extraData?.slabBreakdown && extraData.slabBreakdown.length > 0 ? (
-                      extraData.slabBreakdown.map((s, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-xs py-1.5 border-b border-slate-50 last:border-0">
-                          <span className="font-bold text-slate-700">{s.rate}% GST स्लैब</span>
-                          <span className="font-extrabold text-indigo-900">₹{(s.amount || 0).toLocaleString('en-IN')}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-[11px] text-slate-400 py-2 text-center">इस महीने का मानक GST डेटा उपलब्ध है</div>
-                    )}
-                  </div>
                 </div>
               )}
 
@@ -363,24 +518,6 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
                           <div className="text-right">
                             <div className="text-xs font-black text-rose-700">₹{(c.totalPending || 0).toLocaleString('en-IN')}</div>
                             <div className="text-[9px] text-slate-400 font-bold">कुल बकाया</div>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-4 gap-1 pt-2 border-t border-slate-50 text-center text-[9px]">
-                          <div className="bg-slate-50 p-1.5 rounded-lg">
-                            <div className="text-slate-400">0-30 दिन</div>
-                            <div className="font-bold text-slate-800">₹{c.days30 || 0}</div>
-                          </div>
-                          <div className="bg-amber-50 p-1.5 rounded-lg">
-                            <div className="text-amber-700">31-60 दिन</div>
-                            <div className="font-bold text-amber-900">₹{c.days60 || 0}</div>
-                          </div>
-                          <div className="bg-orange-50 p-1.5 rounded-lg">
-                            <div className="text-orange-700">61-90 दिन</div>
-                            <div className="font-bold text-orange-900">₹{c.days90 || 0}</div>
-                          </div>
-                          <div className="bg-rose-50 p-1.5 rounded-lg">
-                            <div className="text-rose-700 font-bold">90+ दिन ⚠️</div>
-                            <div className="font-black text-rose-800">₹{c.days90Plus || 0}</div>
                           </div>
                         </div>
                       </div>
@@ -408,10 +545,6 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
                             बचा: {item.quantity || 0} {item.unit || 'pcs'}
                           </span>
                         </div>
-                        <div className="flex justify-between items-center text-[11px] text-slate-500 pt-1 border-t border-slate-50">
-                          <div>मिनिमम सीमा: <span className="font-bold text-slate-700">{item.minStock || 5}</span></div>
-                          <div>खरीद मूल्य: <span className="font-bold text-indigo-700">₹{item.purchasePrice || item.price || 0}</span></div>
-                        </div>
                       </div>
                     ))
                   )}
@@ -433,7 +566,6 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
                     filteredData.map((row, idx) => (
                       <div key={idx} className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs text-xs space-y-1">
                         <div className="font-bold text-slate-900">{row.name || row.title || row.label || `रिकॉर्ड #${idx + 1}`}</div>
-                        <div className="text-slate-500 text-[11px]">{JSON.stringify(row).slice(0, 80)}...</div>
                       </div>
                     ))
                   )}
