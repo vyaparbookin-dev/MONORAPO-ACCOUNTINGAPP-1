@@ -276,6 +276,57 @@ function MobileVyaparAppContent() {
   const [showFamilyExpenseModal, setShowFamilyExpenseModal] = useState(() => sessionStorage.getItem("mobile_show_family_expense") === "true");
   const [showSavingsModal, setShowSavingsModal] = useState(() => sessionStorage.getItem("mobile_show_savings") === "true");
   const [showBankCCModal, setShowBankCCModal] = useState(() => sessionStorage.getItem("mobile_show_bank_cc") === "true");
+  const [bankAccounts, setBankAccounts] = useState([]);
+
+  const fetchBankAccounts = async () => {
+    try {
+      let sData = [];
+      try {
+        const res = await api.get("/api/bank-accounts");
+        sData = Array.isArray(res?.accounts) ? res.accounts : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+      } catch (e) {}
+
+      let lData = [];
+      try {
+        if (typeof localStorage !== "undefined") {
+          const stored = localStorage.getItem("vb_local_bank_accounts");
+          if (stored) lData = JSON.parse(stored) || [];
+        }
+      } catch (e) {}
+
+      if (sData.length === 0 && lData.length === 0 && selectedCompany?.bankName) {
+        lData.push({
+          _id: "co_bank_default",
+          id: "co_bank_default",
+          accountName: selectedCompany.accountName || selectedCompany.bankName,
+          bankName: selectedCompany.bankName,
+          accountNumber: selectedCompany.accountNumber || "",
+          accountType: "CURRENT",
+          openingBalance: 0,
+          currentBalance: 0
+        });
+      }
+
+      const map = new Map();
+      sData.forEach(item => {
+        const id = item._id || item.id || item.clientTempId;
+        if (id) map.set(String(id), item);
+      });
+      lData.forEach(item => {
+        const id = item._id || item.id || item.clientTempId;
+        if (id && !map.has(String(id))) map.set(String(id), item);
+      });
+
+      setBankAccounts(Array.from(map.values()));
+    } catch (e) {
+      console.warn("fetchBankAccounts error:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchBankAccounts();
+  }, [selectedCompany, showBankCCModal]);
+
   const [activeMobileReport, setActiveMobileReport] = useState(() => {
     try {
       const saved = sessionStorage.getItem("mobile_active_report");
@@ -998,6 +1049,12 @@ function MobileVyaparAppContent() {
   const toPay = Math.abs(parties.filter(p => Number(p.balance || 0) < 0).reduce((sum, p) => sum + Number(p.balance || 0), 0));
   const stockValue = items.reduce((sum, it) => sum + (it.stock * it.salePrice), 0);
   const recentSales = bills.reduce((sum, b) => sum + b.amount, 0);
+
+  const totalBankBalance = bankAccounts
+    .filter(a => a.accountType !== "CC_OVERDRAFT")
+    .reduce((s, a) => s + (Number(a.currentBalance ?? a.balance ?? a.openingBalance) || 0), 0);
+
+  const primaryBankAccount = bankAccounts.find(a => a.accountType === "CURRENT") || bankAccounts[0];
 
   // Filter bills created today
   const todayBills = bills.filter(b => {
@@ -2014,10 +2071,21 @@ function MobileVyaparAppContent() {
                 className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
               >
                 <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-[#64748B]">Total Balance</span>
+                  <span className="font-black text-sm text-[#0F172A]">
+                    ₹ {totalBankBalance > 0 ? totalBankBalance.toLocaleString('en-IN') : '0'}
+                  </span>
                   <ChevronRight size={16} className="text-[#94A3B8]" />
                 </div>
-                <div className="text-[11px] font-bold text-[#475569]">Cash + Bank Balance</div>
+                <div className="text-[11px] font-bold text-[#475569] flex items-center justify-between">
+                  <span className="truncate">
+                    {primaryBankAccount ? `🏛️ ${primaryBankAccount.bankName || primaryBankAccount.accountName}` : "Cash + Bank Balance"}
+                  </span>
+                  {bankAccounts.length > 0 && (
+                    <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded font-black shrink-0">
+                      {bankAccounts.length} बैंक
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div 

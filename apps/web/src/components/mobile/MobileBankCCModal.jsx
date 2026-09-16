@@ -94,7 +94,9 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
       let serverData = [];
       try {
         const res = await api.get("/api/bank-accounts");
-        serverData = res?.data?.accounts || res?.accounts || res?.data || [];
+        serverData = Array.isArray(res?.accounts)
+          ? res.accounts
+          : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
       } catch (err) {
         console.warn("Server bank accounts fetch fallback:", err);
       }
@@ -107,15 +109,33 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
         }
       } catch (e) {}
 
-      // Merge
+      // If both server and local are empty, but selectedCompany has bankName or accountNumber,
+      // create a default CURRENT account from company details
+      if (serverData.length === 0 && localData.length === 0 && selectedCompany?.bankName) {
+        localData.push({
+          _id: "co_bank_default",
+          id: "co_bank_default",
+          accountName: selectedCompany.accountName || selectedCompany.bankName,
+          bankName: selectedCompany.bankName,
+          accountNumber: selectedCompany.accountNumber || "",
+          ifscCode: selectedCompany.ifscCode || "",
+          accountType: "CURRENT",
+          openingBalance: 0,
+          currentBalance: 0,
+          interestRate: 0,
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      // Merge: Server accounts first, then local records not on server
       const map = new Map();
-      (Array.isArray(localData) ? localData : []).forEach(item => {
-        const id = item._id || item.id;
-        if (id) map.set(id, item);
-      });
       (Array.isArray(serverData) ? serverData : []).forEach(item => {
-        const id = item._id || item.id;
-        if (id && !map.has(id)) map.set(id, item);
+        const id = item._id || item.id || item.clientTempId;
+        if (id) map.set(String(id), item);
+      });
+      (Array.isArray(localData) ? localData : []).forEach(item => {
+        const id = item._id || item.id || item.clientTempId;
+        if (id && !map.has(String(id))) map.set(String(id), item);
       });
 
       const list = Array.from(map.values());
@@ -150,17 +170,31 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
     setSaving(true);
     try {
       if (editingId) {
+        let updatedItem = null;
         try {
-          await api.put(`/api/bank-accounts/${editingId}`, payload);
-        } catch (e) {}
+          const res = await api.put(`/api/bank-accounts/${editingId}`, payload);
+          updatedItem = res?.data || res?.account || res;
+        } catch (e) {
+          console.warn("Backend update failed, saving locally:", e);
+        }
 
         let local = JSON.parse(localStorage.getItem("vb_local_bank_accounts") || "[]");
-        local = local.map(x => ((x._id || x.id) === editingId ? { ...x, ...payload } : x));
+        local = local.map(x => ((x._id || x.id) === editingId ? { ...x, ...payload, ...(updatedItem && typeof updatedItem === 'object' ? updatedItem : {}) } : x));
         localStorage.setItem("vb_local_bank_accounts", JSON.stringify(local));
       } else {
-        const newId = "bnk_" + Date.now();
+        let serverCreated = null;
+        try {
+          // Do not send client string _id in POST body so Mongoose creates a valid ObjectId
+          const res = await api.post("/api/bank-accounts", payload);
+          serverCreated = res?.data || res?.account || res;
+        } catch (e) {
+          console.warn("Backend save failed, saving locally:", e);
+        }
+
+        const newId = (serverCreated && (serverCreated._id || serverCreated.id)) || ("bnk_" + Date.now());
         const newRecord = {
           ...payload,
+          ...(serverCreated && typeof serverCreated === 'object' ? serverCreated : {}),
           _id: newId,
           id: newId,
           createdAt: new Date().toISOString(),
@@ -168,19 +202,28 @@ export default function MobileBankCCModal({ isOpen, onClose }) {
           transactions: []
         };
 
-        try {
-          await api.post("/api/bank-accounts", newRecord);
-        } catch (e) {}
-
         let local = JSON.parse(localStorage.getItem("vb_local_bank_accounts") || "[]");
         local.unshift(newRecord);
         localStorage.setItem("vb_local_bank_accounts", JSON.stringify(local));
+
+        // Sync CURRENT account with company details
+        if (payload.accountType === "CURRENT" && selectedCompany?._id) {
+          try {
+            await api.put(`/api/company/${selectedCompany._id}`, {
+              bankName: payload.bankName,
+              accountName: payload.accountName,
+              accountNumber: payload.accountNumber,
+              ifscCode: payload.ifscCode
+            });
+          } catch (coErr) {}
+        }
       }
 
       setIsFormOpen(false);
       setEditingId(null);
       resetForm();
-      fetchAccounts();
+      await fetchAccounts();
+      alert("✅ बैंक खाता सफलतापूर्वक सहेज लिया गया!");
     } catch (err) {
       alert("सहेजने में त्रुटि: " + (err.message || err));
     } finally {

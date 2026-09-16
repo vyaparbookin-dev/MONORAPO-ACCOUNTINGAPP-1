@@ -11,6 +11,10 @@ const bankAccountSchema = new mongoose.Schema(
       ref: "User",
       required: false,
     },
+    clientTempId: {
+      type: String,
+      required: false,
+    },
     accountName: {
       type: String,
       required: true,

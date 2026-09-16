@@ -4,20 +4,31 @@ import mongoose from "mongoose";
 // Get all bank & CC accounts
 export const getBankAccounts = async (req, res) => {
   try {
-    const coFilter = req.companyId
-      ? mongoose.Types.ObjectId.isValid(req.companyId)
-        ? { $in: [req.companyId, new mongoose.Types.ObjectId(req.companyId)] }
-        : req.companyId
-      : null;
+    const coConditions = [];
+    if (req.companyId) {
+      if (mongoose.Types.ObjectId.isValid(req.companyId)) {
+        coConditions.push({ companyId: req.companyId });
+        coConditions.push({ companyId: new mongoose.Types.ObjectId(req.companyId) });
+      } else {
+        coConditions.push({ companyId: req.companyId });
+      }
+    }
+    if (req.user?._id) {
+      coConditions.push({ userId: req.user._id });
+    }
 
     const query = { isDeleted: { $ne: true } };
-    if (coFilter) query.companyId = coFilter;
+    if (coConditions.length > 0) {
+      query.$or = coConditions;
+    }
 
+    console.log("[BankAccount Debug] getBankAccounts query:", JSON.stringify(query));
     const accounts = await BankAccount.find(query).sort({ createdAt: -1 });
+    console.log("[BankAccount Debug] found accounts count:", accounts.length);
 
     const totalCurrentBalance = accounts
-      .filter((a) => a.accountType === "CURRENT" || a.accountType === "SAVINGS")
-      .reduce((s, a) => s + (Number(a.currentBalance) || 0), 0);
+      .filter((a) => a.accountType === "CURRENT" || a.accountType === "SAVINGS" || a.accountType === "PERSONAL_BUSINESS")
+      .reduce((s, a) => s + (Number(a.currentBalance || a.balance) || 0), 0);
 
     const totalCCSanctioned = accounts
       .filter((a) => a.accountType === "CC_OVERDRAFT")
@@ -27,7 +38,7 @@ export const getBankAccounts = async (req, res) => {
       .filter((a) => a.accountType === "CC_OVERDRAFT")
       .reduce((s, a) => s + (Number(a.currentOutstanding) || 0), 0);
 
-    const totalCCAvailable = totalCCSanctioned - totalCCOutstanding;
+    const totalCCAvailable = Math.max(0, totalCCSanctioned - totalCCOutstanding);
 
     res.status(200).json({
       success: true,
@@ -54,8 +65,21 @@ export const createBankAccount = async (req, res) => {
     if (req.companyId) data.companyId = req.companyId;
     if (req.user?._id) data.userId = req.user._id;
 
+    // CRITICAL FIX: If client sent a non-ObjectId string _id like 'bnk_...', strip it so MongoDB generates a valid ObjectId
+    if (data._id && !mongoose.Types.ObjectId.isValid(data._id)) {
+      data.clientTempId = String(data._id);
+      delete data._id;
+    }
+    if (data.id && !mongoose.Types.ObjectId.isValid(data.id)) {
+      if (!data.clientTempId) data.clientTempId = String(data.id);
+      delete data.id;
+    }
+
+    console.log("[BankAccount Debug] Creating bank account:", data.accountName, data.bankName, "companyId:", data.companyId);
     const newAccount = await BankAccount.create(data);
-    res.status(201).json({ success: true, data: newAccount, message: "बैंक / CC खाता दर्ज हो गया!" });
+    console.log("[BankAccount Debug] Created bank account ID:", newAccount._id);
+
+    res.status(201).json({ success: true, data: newAccount, account: newAccount, message: "बैंक / CC खाता दर्ज हो गया!" });
   } catch (error) {
     console.error("Error creating bank account:", error);
     res.status(500).json({ success: false, message: error.message });
@@ -66,11 +90,19 @@ export const createBankAccount = async (req, res) => {
 export const updateBankAccount = async (req, res) => {
   try {
     const { id } = req.params;
-    const updated = await BankAccount.findByIdAndUpdate(id, req.body, { new: true });
+    const query = mongoose.Types.ObjectId.isValid(id)
+      ? { _id: id }
+      : { $or: [{ _id: id }, { clientTempId: id }] };
+
+    const updateBody = { ...req.body };
+    delete updateBody._id;
+    delete updateBody.id;
+
+    const updated = await BankAccount.findOneAndUpdate(query, updateBody, { new: true });
     if (!updated) {
       return res.status(404).json({ success: false, message: "Account not found" });
     }
-    res.status(200).json({ success: true, data: updated, message: "खाता अपडेट हो गया!" });
+    res.status(200).json({ success: true, data: updated, account: updated, message: "खाता अपडेट हो गया!" });
   } catch (error) {
     console.error("Error updating bank account:", error);
     res.status(500).json({ success: false, message: error.message });
@@ -81,7 +113,11 @@ export const updateBankAccount = async (req, res) => {
 export const deleteBankAccount = async (req, res) => {
   try {
     const { id } = req.params;
-    await BankAccount.findByIdAndUpdate(id, { isDeleted: true });
+    const query = mongoose.Types.ObjectId.isValid(id)
+      ? { _id: id }
+      : { $or: [{ _id: id }, { clientTempId: id }] };
+
+    await BankAccount.findOneAndUpdate(query, { isDeleted: true });
     res.status(200).json({ success: true, message: "खाता हटा दिया गया!" });
   } catch (error) {
     console.error("Error deleting bank account:", error);
@@ -95,7 +131,11 @@ export const addAccountTransaction = async (req, res) => {
     const { id } = req.params;
     const { type, amount, note, referenceNo, date } = req.body;
 
-    const account = await BankAccount.findById(id);
+    const query = mongoose.Types.ObjectId.isValid(id)
+      ? { _id: id }
+      : { $or: [{ _id: id }, { clientTempId: id }] };
+
+    const account = await BankAccount.findOne(query);
     if (!account) {
       return res.status(404).json({ success: false, message: "Account not found" });
     }
@@ -111,17 +151,11 @@ export const addAccountTransaction = async (req, res) => {
 
     if (account.accountType === "CC_OVERDRAFT") {
       if (type === "deposit") {
-        // Deposited money into CC -> reduces borrowed outstanding
         account.currentOutstanding = Math.max(0, (Number(account.currentOutstanding) || 0) - txAmt);
-      } else if (type === "withdrawal") {
-        // Withdrew money from CC -> increases borrowed outstanding
-        account.currentOutstanding = (Number(account.currentOutstanding) || 0) + txAmt;
-      } else if (type === "interest_debit" || type === "charges") {
-        // Bank debited interest/charges -> increases borrowed outstanding
+      } else if (type === "withdrawal" || type === "interest_debit" || type === "charges") {
         account.currentOutstanding = (Number(account.currentOutstanding) || 0) + txAmt;
       }
     } else {
-      // Regular Current / Savings Account
       if (type === "deposit") {
         account.currentBalance = (Number(account.currentBalance) || 0) + txAmt;
       } else if (type === "withdrawal" || type === "interest_debit" || type === "charges") {
@@ -134,6 +168,7 @@ export const addAccountTransaction = async (req, res) => {
     res.status(200).json({
       success: true,
       data: account,
+      account: account,
       message: `लेनदेन (₹${txAmt.toLocaleString("en-IN")}) सफलतापूर्वक दर्ज हो गया!`,
     });
   } catch (error) {
@@ -148,7 +183,11 @@ export const addMonthlyInterest = async (req, res) => {
     const { id } = req.params;
     const { month, monthName, calculatedInterest, actualInterest, date, note, postToExpenses } = req.body;
 
-    const account = await BankAccount.findById(id);
+    const query = mongoose.Types.ObjectId.isValid(id)
+      ? { _id: id }
+      : { $or: [{ _id: id }, { clientTempId: id }] };
+
+    const account = await BankAccount.findOne(query);
     if (!account) {
       return res.status(404).json({ success: false, message: "खाता नहीं मिला (Account not found)" });
     }
@@ -179,7 +218,6 @@ export const addMonthlyInterest = async (req, res) => {
       account.monthlyInterests.push(newEntry);
     }
 
-    // Also record in transactions history
     account.transactions.push({
       date: recordDate,
       type: "interest_debit",
@@ -199,6 +237,7 @@ export const addMonthlyInterest = async (req, res) => {
     res.status(200).json({
       success: true,
       data: account,
+      account: account,
       message: `${monthName || monthKey} का बैंक ब्याज ₹${interestAmt.toLocaleString("en-IN")} सफलतापूर्वक दर्ज हो गया!`,
     });
   } catch (error) {
