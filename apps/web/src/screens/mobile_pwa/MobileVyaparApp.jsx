@@ -2121,7 +2121,8 @@ function MobileVyaparAppContent() {
             <div className="grid grid-cols-2 gap-2.5">
               <div 
                 onClick={() => {
-                  setPartyFilterTab("customer");
+                  setSearchQuery("");
+                  setPartyFilterTab("to_collect");
                   handleTabChange("parties");
                 }}
                 className="p-3.5 bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-[#34D399] transition"
@@ -2138,7 +2139,8 @@ function MobileVyaparAppContent() {
 
               <div 
                 onClick={() => {
-                  setPartyFilterTab("supplier");
+                  setSearchQuery("");
+                  setPartyFilterTab("to_pay");
                   handleTabChange("parties");
                 }}
                 className="p-3.5 bg-[#FFF1F2] border border-[#FECDD3] rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-[#FB7185] transition"
@@ -2454,19 +2456,41 @@ function MobileVyaparAppContent() {
           const filteredParties = parties.filter(p => {
             const matchesSearch = !searchQuery || String(p?.name || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) || String(p?.phone || p?.mobileNumber || '').includes(searchQuery);
             const pType = (p?.type || p?.partyType || 'customer').toLowerCase();
-            let matchesType = true;
-            if (partyFilterTab === "customer") matchesType = pType === "customer" || pType === "both";
-            else if (partyFilterTab === "supplier") matchesType = pType === "supplier" || pType === "both";
-            else if (partyFilterTab === "personal") matchesType = pType === "personal";
-            return matchesSearch && matchesType;
+            const bal = Number(p?.balance ?? p?.currentBalance ?? 0);
+
+            let matchesFilter = true;
+            if (partyFilterTab === "to_collect") {
+              matchesFilter = bal > 0;
+            } else if (partyFilterTab === "to_pay") {
+              matchesFilter = bal < 0;
+            } else if (partyFilterTab === "customer") {
+              matchesFilter = pType === "customer" || pType === "both";
+            } else if (partyFilterTab === "supplier") {
+              matchesFilter = pType === "supplier" || pType === "both";
+            } else if (partyFilterTab === "personal") {
+              matchesFilter = pType === "personal";
+            }
+            return matchesSearch && matchesFilter;
           });
 
           return (
             <div className="space-y-3 animate-in fade-in">
               <div className="flex justify-between items-center">
                 <div>
-                  <h2 className="font-extrabold text-base text-[#0F172A]">Parties ({filteredParties.length})</h2>
-                  <p className="text-[10px] text-slate-400 font-medium">व्यापारिक ग्राहक, सप्लायर व पर्सनल खाते</p>
+                  <h2 className="font-extrabold text-base text-[#0F172A]">
+                    {partyFilterTab === "to_pay"
+                      ? `🔴 देने हैं (${filteredParties.length})`
+                      : partyFilterTab === "to_collect"
+                        ? `🟢 लेने हैं (${filteredParties.length})`
+                        : `Parties (${filteredParties.length})`}
+                  </h2>
+                  <p className="text-[10px] text-slate-400 font-medium">
+                    {partyFilterTab === "to_pay"
+                      ? `कुल देय रकम: ₹ ${toPay.toLocaleString('en-IN')}`
+                      : partyFilterTab === "to_collect"
+                        ? `कुल प्राप्य रकम: ₹ ${toCollect.toLocaleString('en-IN')}`
+                        : "व्यापारिक ग्राहक, सप्लायर व पर्सनल खाते"}
+                  </p>
                 </div>
                 <button 
                   onClick={() => setShowAddPartyModal(true)}
@@ -2487,10 +2511,12 @@ function MobileVyaparAppContent() {
                 />
               </div>
 
-              {/* Filter Tabs: All / Customer / Supplier / Personal */}
+              {/* Filter Tabs: All / To Collect / To Pay / Customer / Supplier / Personal */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
                 {[
-                  { id: "all", label: "सभी (All)" },
+                  { id: "all", label: `सभी (${parties.length})` },
+                  { id: "to_collect", label: `🟢 लेने हैं (₹${toCollect.toLocaleString('en-IN')})` },
+                  { id: "to_pay", label: `🔴 देने हैं (₹${toPay.toLocaleString('en-IN')})` },
                   { id: "customer", label: "🛒 ग्राहक" },
                   { id: "supplier", label: "🏢 सप्लायर" },
                   { id: "personal", label: "👤 पर्सनल खाता" }
@@ -2500,9 +2526,13 @@ function MobileVyaparAppContent() {
                     onClick={() => setPartyFilterTab(tab.id)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
                       partyFilterTab === tab.id
-                        ? tab.id === "personal"
-                          ? "bg-amber-600 text-white shadow-sm"
-                          : "bg-[#4338CA] text-white shadow-sm"
+                        ? tab.id === "to_collect"
+                          ? "bg-emerald-600 text-white shadow-sm"
+                          : tab.id === "to_pay"
+                            ? "bg-rose-600 text-white shadow-sm"
+                            : tab.id === "personal"
+                              ? "bg-amber-600 text-white shadow-sm"
+                              : "bg-[#4338CA] text-white shadow-sm"
                         : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
                     }`}
                   >
@@ -2513,7 +2543,11 @@ function MobileVyaparAppContent() {
 
               {filteredParties.length === 0 ? (
                 <div className="p-8 text-center bg-white rounded-2xl border border-slate-100 text-slate-400 text-xs">
-                  कोई पार्टी नहीं मिली। "+ Add Party" दबाकर नई पार्टी या पर्सनल खाता जोड़ें।
+                  {partyFilterTab === "to_pay" 
+                    ? "कोई देनदारी बाकी नहीं है (To Pay / देने हैं खाता शून्य है)।" 
+                    : partyFilterTab === "to_collect" 
+                      ? "कोई वसूली बाकी नहीं है (To Collect / लेने हैं खाता शून्य है)।" 
+                      : "कोई पार्टी नहीं मिली। \"+ Add Party\" दबाकर नई पार्टी या पर्सनल खाता जोड़ें।"}
                 </div>
               ) : (
                 <div className="space-y-2">
