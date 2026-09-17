@@ -23,6 +23,7 @@ import {
   Phone,
   Trash2,
   Edit,
+  Edit2,
   Send,
   Printer,
   Receipt,
@@ -2119,7 +2120,10 @@ function MobileVyaparAppContent() {
             {/* 2x3 Metrics Grid */}
             <div className="grid grid-cols-2 gap-2.5">
               <div 
-                onClick={() => handleTabChange("parties")}
+                onClick={() => {
+                  setPartyFilterTab("customer");
+                  handleTabChange("parties");
+                }}
                 className="p-3.5 bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-[#34D399] transition"
               >
                 <div className="flex justify-between items-center">
@@ -2127,13 +2131,16 @@ function MobileVyaparAppContent() {
                   <ChevronRight size={16} className="text-[#059669]" />
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="text-xs font-bold text-[#065F46]">To Collect</span>
+                  <span className="text-xs font-bold text-[#065F46]">To Collect (लेने हैं)</span>
                   <ArrowDown size={13} className="text-[#059669]" />
                 </div>
               </div>
 
               <div 
-                onClick={() => handleTabChange("parties")}
+                onClick={() => {
+                  setPartyFilterTab("supplier");
+                  handleTabChange("parties");
+                }}
                 className="p-3.5 bg-[#FFF1F2] border border-[#FECDD3] rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-[#FB7185] transition"
               >
                 <div className="flex justify-between items-center">
@@ -2141,7 +2148,7 @@ function MobileVyaparAppContent() {
                   <ChevronRight size={16} className="text-[#E11D48]" />
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="text-xs font-bold text-[#9F1239]">To Pay</span>
+                  <span className="text-xs font-bold text-[#9F1239]">To Pay (देने हैं)</span>
                   <ArrowUp size={13} className="text-[#E11D48]" />
                 </div>
               </div>
