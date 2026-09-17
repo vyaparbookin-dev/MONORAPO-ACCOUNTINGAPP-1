@@ -180,8 +180,21 @@ function MobileVyaparAppContent() {
   const [itemSearchTerm, setItemSearchTerm] = useState("");
   const [showItemSuggestions, setShowItemSuggestions] = useState(false);
   const [showPartySuggestions, setShowPartySuggestions] = useState(false);
-  const [selectedPartyObject, setSelectedPartyObject] = useState(null);
   const [savingBill, setSavingBill] = useState(false);
+  const [mobileStampStatus, setMobileStampStatus] = useState(null);
+  const [billAppliedReward, setBillAppliedReward] = useState(null);
+
+  useEffect(() => {
+    const clean = String(billCustomerPhone || "").replace(/\D/g, "").slice(-10);
+    if (clean.length === 10) {
+      api.get(`/api/stamps/customer-status?phone=${clean}`)
+        .then((res) => setMobileStampStatus(res.data || null))
+        .catch(() => setMobileStampStatus(null));
+    } else {
+      setMobileStampStatus(null);
+      setBillAppliedReward(null);
+    }
+  }, [billCustomerPhone]);
 
   // ==================== MANUAL QUICK DAILY SALE STATE ====================
   const [showManualSaleModal, setShowManualSaleModal] = useState(false);
@@ -1200,6 +1213,16 @@ function MobileVyaparAppContent() {
       setParties(prev => [newP, ...prev]);
     }
 
+    if (billAppliedReward) {
+      billPayload.couponCode = billAppliedReward.code;
+      if (billAppliedReward.rewardType === "percentage") {
+        billPayload.discountAmount = Math.round((totalBillAmount * (billAppliedReward.discountPercentage || 0)) / 100);
+      } else if (billAppliedReward.rewardType === "flat_discount") {
+        billPayload.discountAmount = billAppliedReward.discountAmount || 0;
+      }
+      billPayload.finalAmount = Math.max(0, totalBillAmount - (billPayload.discountAmount || 0));
+    }
+
     try {
       const res = await api.post("/api/billing", billPayload).catch(() => null);
       const createdBill = {
@@ -1208,7 +1231,7 @@ function MobileVyaparAppContent() {
         customerName: finalCustomer,
         phone: billCustomerPhone.trim(),
         date: "Today",
-        amount: totalBillAmount,
+        amount: billPayload.finalAmount || totalBillAmount,
         type: billPaymentMode,
         paymentStatus: billPaymentMode === "UDHAR" ? "unpaid" : "paid",
         items: billCart
@@ -1217,11 +1240,22 @@ function MobileVyaparAppContent() {
       setBillCart([]);
       setBillCustomer("");
       setBillCustomerPhone("");
+      setBillAppliedReward(null);
+      setMobileStampStatus(null);
       setShowQuickBillModal(false);
       setSelectedBillDetail(createdBill);
 
+      const stampAward = res?.data?.stampResult;
+      if (stampAward?.awarded) {
+        let msg = `⭐ ग्राहक का स्टैंप जुड़ा: ${stampAward.visualStamps}`;
+        if (stampAward.rewardUnlocked) {
+          msg += `\n\n🎉 बधाई! लक्ष्य पूरा हुआ - रिवॉर्ड कोड: ${stampAward.rewardData?.code} (${stampAward.rewardDescription})`;
+        }
+        alert(msg);
+      }
+
       if (billPaymentMode === "UPI" || billPaymentMode === "ONLINE") {
-        speakUpiPayment(totalBillAmount, "व्यापार");
+        speakUpiPayment(billPayload.finalAmount || totalBillAmount, "व्यापार");
       }
     } catch (e) {
       console.error(e);
@@ -3231,6 +3265,47 @@ function MobileVyaparAppContent() {
                   onChange={(e) => setBillCustomerPhone(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
                 />
+
+                {/* ⭐ LIVE DIGITAL STAMP LOYALTY CARD IN MOBILE PWA */}
+                {mobileStampStatus?.cards && mobileStampStatus.cards.length > 0 && (
+                  <div className="p-2.5 bg-amber-50/90 rounded-xl border border-amber-300 space-y-1.5 animate-in fade-in">
+                    {mobileStampStatus.cards.map((card, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-xs gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-amber-800 font-black text-[11px]">⭐ स्टैंप:</span>
+                            <span className="font-mono text-amber-700 tracking-wider font-extrabold">{card.visualStamps}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                            {card.isRewardReady ? (
+                              <span className="text-emerald-700 font-black">🎉 {card.rewardDescription} रिवॉर्ड अनलॉक!</span>
+                            ) : (
+                              <span>₹{card.minBillAmount}+ पर अगला स्टैंप • {card.stampsRemaining} शेष</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {card.isRewardReady && card.unlockedReward && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const r = card.unlockedReward;
+                              setBillAppliedReward(r);
+                              alert(`🎉 रिवॉर्ड '${r.code}' लागू हुआ! (${card.rewardDescription})`);
+                            }}
+                            className={`px-2.5 py-1 font-black text-[10px] rounded-lg shadow-xs cursor-pointer transition ${
+                              billAppliedReward?.code === card.unlockedReward.code
+                                ? "bg-emerald-700 text-white ring-2 ring-emerald-400"
+                                : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                            }`}
+                          >
+                            {billAppliedReward?.code === card.unlockedReward.code ? "✓ लागू है" : "⚡ रिवॉर्ड लगाएं"}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

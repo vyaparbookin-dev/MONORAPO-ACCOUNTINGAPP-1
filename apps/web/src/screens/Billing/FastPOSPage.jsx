@@ -148,6 +148,25 @@ export default function FastPOSPage() {
   // --- ⏰ OWNER CONTROLLED HAPPY HOURS STATE ---
   const [couponCodeInput, setCouponCodeInput] = useState("");
   const [couponError, setCouponError] = useState("");
+  const [customerStampStatus, setCustomerStampStatus] = useState(null);
+  const [stampLoading, setStampLoading] = useState(false);
+
+  useEffect(() => {
+    const cleanPhone = String(customerMobile || "").replace(/\D/g, "").slice(-10);
+    if (cleanPhone.length === 10) {
+      setStampLoading(true);
+      const bModule = business?.isRestaurant ? "restaurant" : "all";
+      api.get(`/api/stamps/customer-status?phone=${cleanPhone}&businessModule=${bModule}`)
+        .then((res) => {
+          setCustomerStampStatus(res.data || null);
+        })
+        .catch(() => setCustomerStampStatus(null))
+        .finally(() => setStampLoading(false));
+    } else {
+      setCustomerStampStatus(null);
+    }
+  }, [customerMobile, business?.isRestaurant]);
+
   const [happyHourConfig, setHappyHourConfig] = useState(() => {
     const saved = localStorage.getItem("vb_happy_hours");
     return saved ? JSON.parse(saved) : {
@@ -401,16 +420,26 @@ export default function FastPOSPage() {
         date: new Date().toISOString()
       };
 
-      await api.post("/api/billing", newBill).catch(() => {});
+      const res = await api.post("/api/billing", newBill).catch(() => null);
       
       // Update local bills immediately
       setBills(prev => [newBill, ...prev]);
+
+      const stampAward = res?.data?.stampResult;
+      let stampNotice = "";
+      if (stampAward?.awarded) {
+        stampNotice = `\n\n⭐ ग्राहक का स्टैंप जुड़ा: ${stampAward.visualStamps}`;
+        if (stampAward.rewardUnlocked) {
+          stampNotice += `\n🎁 बधाई! रिवॉर्ड कोड अनलॉक हुआ: ${stampAward.rewardData?.code} (${stampAward.rewardDescription})`;
+        }
+      }
       
-      alert(`🎉 [${currentActiveTab.counterName}] बिल #${newBill.billNumber} सफलतापूर्वक तैयार हो गया!\n\nटेबल: ${newBill.selectedTable}\nग्राहक: ${newBill.customerName}\nकुल रकम: ₹${getGrandTotal()}`);
+      alert(`🎉 [${currentActiveTab.counterName}] बिल #${newBill.billNumber} सफलतापूर्वक तैयार हो गया!\n\nटेबल: ${newBill.selectedTable}\nग्राहक: ${newBill.customerName}\nकुल रकम: ₹${getGrandTotal()}${stampNotice}`);
       
       // Clear Cart
       setCart([]);
       setAppliedCoupon(null);
+      setCustomerStampStatus(null);
     } catch (err) {
       alert("Error creating bill: " + err.message);
     } finally {
@@ -934,6 +963,49 @@ export default function FastPOSPage() {
                   onChange={(e) => setTableNotes(e.target.value)}
                   className="w-full px-2.5 py-1 bg-slate-700/60 border border-slate-600/80 rounded-xl text-[11px] text-amber-200 placeholder-slate-400 outline-none focus:border-amber-400 font-medium"
                 />
+              )}
+
+              {/* ⭐ LIVE DIGITAL STAMP LOYALTY BAR */}
+              {customerStampStatus?.cards && customerStampStatus.cards.length > 0 && (
+                <div className="p-2 bg-slate-900/90 rounded-xl border border-amber-500/50 space-y-1.5 animate-in fade-in">
+                  {customerStampStatus.cards.map((card, idx) => (
+                    <div key={idx} className="flex justify-between items-center text-[11px] gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-amber-400 font-black">⭐ स्टैंप:</span>
+                          <span className="font-mono text-amber-200 tracking-wider font-extrabold">{card.visualStamps}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                          {card.isRewardReady ? (
+                            <span className="text-emerald-400 font-black animate-pulse">🎉 {card.rewardDescription} रिवॉर्ड अनलॉक है!</span>
+                          ) : (
+                            <span>₹{card.minBillAmount}+ बिल पर अगला स्टैंप • {card.stampsRemaining} शेष</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {card.isRewardReady && card.unlockedReward && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const r = card.unlockedReward;
+                            setAppliedCoupon({
+                              code: r.code,
+                              type: r.rewardType === "percentage" ? "PERCENT" : "FLAT",
+                              discount: r.discountAmount || 0,
+                              discountPercent: r.discountPercentage || 0,
+                              freeItemName: r.rewardItemName
+                            });
+                            alert(`🎉 रिवॉर्ड '${r.code}' लागू हो गया! (${card.rewardDescription})`);
+                          }}
+                          className="px-2.5 py-1 bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-600 hover:to-emerald-600 text-slate-950 font-black text-[10px] rounded-lg shadow-xs active:scale-95 transition cursor-pointer shrink-0"
+                        >
+                          ⚡ रिवॉर्ड लागू करें
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>

@@ -14,6 +14,7 @@ import { generateUpiQrCode } from "../utils/paymentUtils.js";
 import { Parser } from "json2csv";
 import { logActivity } from "../utils/logger.js";
 import { sendAutoWhatsappMessage } from "../services/whatsappService.js";
+import { processStampAwardOnBill } from "./stampController.js";
 
 export const createBill = async (req, res) => {
   try {
@@ -126,9 +127,22 @@ export const createBill = async (req, res) => {
       await company.save();
     }
 
+    // --- AUTOMATIC DIGITAL LOYALTY STAMPS EVALUATION ---
+    let stampResult = null;
+    try {
+      stampResult = await processStampAwardOnBill(req.companyId, bill);
+    } catch (stampErr) {
+      console.warn("Auto stamp award warning:", stampErr.message);
+    }
+
     sendAutoWhatsappMessage(req.companyId, bill).catch(err => console.error("Non-blocking WA Error:", err));
 
-    res.status(201).json({ success: true, bill, message: `Bill ${bill.billNumber} created successfully!` });
+    res.status(201).json({ 
+      success: true, 
+      bill, 
+      stampResult, 
+      message: `Bill ${bill.billNumber} created successfully!` 
+    });
   } catch (error) {
     if (error.code === 11000) {
       return res.status(400).json({ success: false, error: `Bill number '${req.body.billNumber}' already exists for this company.` });

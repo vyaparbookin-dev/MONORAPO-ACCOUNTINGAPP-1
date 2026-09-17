@@ -18,6 +18,7 @@ import licensingRoutes from "./src/routes/licensingRoutes.js";
 import branchRoutes from "./src/routes/branchRoutes.js";
 import companyRoutes from "./src/routes/companyRoutes.js";
 import couponRoutes from "./src/routes/couponRoutes.js";
+import stampRoutes from "./src/routes/stampRoutes.js";
 import expensesRoutes from "./src/routes/expensesRoutes.js";
 import inventoryRoutes from "./src/routes/inventoryRoutes.js";
 import laterpadRoutes from "./src/routes/laterpadRoutes.js";
@@ -175,6 +176,7 @@ app.use("/api/brand", brandRoutes);
 app.use("/api/cloud", cloudRoutes);
 app.use("/api/consolidated-statement", consolidatedStatementRoutes);
 app.use("/api/coupon", couponRoutes);
+app.use("/api/stamps", stampRoutes);
 app.use("/api/daybook", daybookRoutes);
 app.use("/api/ewaybill", eWayBillRoutes);
 app.use("/api/expenses", expensesRoutes); // Consolidated to a single, standard route
