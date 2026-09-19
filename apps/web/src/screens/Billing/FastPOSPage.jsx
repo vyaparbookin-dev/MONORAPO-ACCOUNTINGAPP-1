@@ -30,11 +30,15 @@ import {
   ShieldCheck,
   Eye,
   Receipt,
-  Mic
+  Mic,
+  PauseCircle,
+  PlayCircle,
+  CreditCard
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import RestaurantKotModal from "../../components/modals/RestaurantKotModal";
 import UdharOtpVerificationModal from "../../components/modals/UdharOtpVerificationModal";
+import CreditLimitHubModal from "../../components/modals/CreditLimitHubModal";
 import { getBusinessMode } from "../../utils/businessMode";
 import { useCompany } from "../../contexts/CompanyContext";
 
@@ -127,6 +131,24 @@ export default function FastPOSPage() {
   const [showKitchenKdsModal, setShowKitchenKdsModal] = useState(false);
   const [showRecentBillsModal, setShowRecentBillsModal] = useState(false);
   const [showReviewsModal, setShowReviewsModal] = useState(false);
+
+  // --- ⏸️ HELD / PARKED BILLS SYSTEM (मल्टीपल होल्ड बिल) ---
+  const [heldBills, setHeldBills] = useState(() => {
+    try {
+      const saved = localStorage.getItem("vb_fastpos_held_bills");
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [showHeldBillsModal, setShowHeldBillsModal] = useState(false);
+  const [showCreditLimitHubModal, setShowCreditLimitHubModal] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("vb_fastpos_held_bills", JSON.stringify(heldBills));
+    } catch (e) {}
+  }, [heldBills]);
 
   // 🛡️ Legal Udhar Protection States
   const [posPaymentMode, setPosPaymentMode] = useState("CASH"); // CASH, UPI, UDHAR
@@ -264,13 +286,15 @@ export default function FastPOSPage() {
 
   const searchInputRef = useRef(null);
   const customerNameInputRef = useRef(null);
+  const handleHoldRef = useRef(null);
+  const triggerCheckoutRef = useRef(null);
 
   useEffect(() => {
     fetchProducts();
     fetchBills();
   }, []);
 
-  // Keyboard Shortcuts
+  // Keyboard Shortcuts (F2: Search, F4: Customer, F7/Alt+H: Hold Bill, F9: Checkout)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === "F2") {
@@ -279,9 +303,12 @@ export default function FastPOSPage() {
       } else if (e.key === "F4") {
         e.preventDefault();
         customerNameInputRef.current?.focus();
+      } else if (e.key === "F7" || (e.altKey && (e.key === "h" || e.key === "H"))) {
+        e.preventDefault();
+        handleHoldRef.current?.();
       } else if (e.key === "F9") {
         e.preventDefault();
-        triggerCheckout();
+        triggerCheckoutRef.current?.();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -486,6 +513,150 @@ export default function FastPOSPage() {
     }
   };
 
+  // --- ⏸️ HELD / PARKED BILL ACTIONS (होल्ड बिल प्रणाली) ---
+  const handleHoldCurrentBill = () => {
+    if (!cart || cart.length === 0) {
+      alert("⚠️ वर्तमान कार्ट खाली है! होल्ड करने के लिए पहले प्रोडक्ट जोड़ें।");
+      return;
+    }
+    const holdId = "hold_" + Date.now();
+    const displayName = (customerName && customerName !== "काउंटर नकद ग्राहक" && customerName !== "Walk-in Guest")
+      ? customerName
+      : `${currentActiveTab.counterName || "बिल"} (${selectedTable || "Counter"})`;
+    
+    const tot = getGrandTotal();
+
+    const newHeldBill = {
+      holdId,
+      holdName: displayName,
+      holdTime: new Date().toISOString(),
+      customerName: customerName || "काउंटर नकद ग्राहक",
+      customerMobile: customerMobile || "",
+      customerAddress: customerAddress || "",
+      selectedTable: selectedTable || "Counter Sale",
+      orderType: orderType || "retail",
+      tableNotes: tableNotes || "",
+      appliedCoupon: appliedCoupon || null,
+      cart: [...cart],
+      totalAmount: tot,
+      itemCount: cart.reduce((s, i) => s + (Number(i.quantity) || 1), 0),
+      posPaymentMode,
+      counterSource: currentActiveTab?.counterName || "Counter 1"
+    };
+
+    setHeldBills(prev => [newHeldBill, ...prev]);
+
+    // Reset active cart for the next customer
+    setCart([]);
+    setCustomerName("काउंटर नकद ग्राहक");
+    setCustomerMobile("");
+    setCustomerAddress("");
+    setTableNotes("");
+    setAppliedCoupon(null);
+
+    alert(`⏸️ बिल "${displayName}" (₹${tot}, ${newHeldBill.itemCount} आइटम्स) सुरक्षित होल्ड कर दिया गया है!\n\nअब आप अगले ग्राहक का बिल तुरंत बना सकते हैं।`);
+  };
+
+  const handleRestoreHeldBill = (hb) => {
+    if (cart.length > 0) {
+      const confirmSwap = window.confirm(
+        `वर्तमान बिल में ${cart.length} आइटम्स मौजूद हैं!\n\nक्या आप वर्तमान बिल को स्वतः होल्ड करके "${hb.holdName}" को लोड करना चाहते हैं?`
+      );
+      if (!confirmSwap) return;
+
+      const currentTot = getGrandTotal();
+      const autoHeld = {
+        holdId: "hold_" + Date.now(),
+        holdName: (customerName && customerName !== "काउंटर नकद ग्राहक" && customerName !== "Walk-in Guest")
+          ? customerName
+          : `${currentActiveTab.counterName || "बिल"} (ऑटो-होल्ड)`,
+        holdTime: new Date().toISOString(),
+        customerName: customerName || "काउंटर नकद ग्राहक",
+        customerMobile: customerMobile || "",
+        customerAddress: customerAddress || "",
+        selectedTable: selectedTable || "Counter Sale",
+        orderType: orderType || "retail",
+        tableNotes: tableNotes || "",
+        appliedCoupon: appliedCoupon || null,
+        cart: [...cart],
+        totalAmount: currentTot,
+        itemCount: cart.reduce((s, i) => s + (Number(i.quantity) || 1), 0),
+        posPaymentMode,
+        counterSource: currentActiveTab?.counterName || "Counter 1"
+      };
+
+      setHeldBills(prev => [autoHeld, ...prev.filter(b => b.holdId !== hb.holdId)]);
+    } else {
+      setHeldBills(prev => prev.filter(b => b.holdId !== hb.holdId));
+    }
+
+    // Restore the held bill into current tab
+    setCart(hb.cart || []);
+    setCustomerName(hb.customerName || "काउंटर नकद ग्राहक");
+    setCustomerMobile(hb.customerMobile || "");
+    setCustomerAddress(hb.customerAddress || "");
+    setSelectedTable(hb.selectedTable || "Counter Sale");
+    if (hb.orderType) setOrderType(hb.orderType);
+    if (hb.tableNotes) setTableNotes(hb.tableNotes);
+    if (hb.appliedCoupon) setAppliedCoupon(hb.appliedCoupon);
+    if (hb.posPaymentMode) setPosPaymentMode(hb.posPaymentMode);
+
+    setShowHeldBillsModal(false);
+  };
+
+  const handleDiscardHeldBill = (holdId) => {
+    if (window.confirm("क्या आप इस होल्ड किए गए बिल को हमेशा के लिए हटाना चाहते हैं?")) {
+      setHeldBills(prev => prev.filter(b => b.holdId !== holdId));
+    }
+  };
+
+  // Multi-Bill Counter Tabs Management
+  const handleAddNewCounterTab = () => {
+    if (counterTabs.length >= 6) {
+      alert("अधिकतम 6 बिल टैब एक साथ खोले जा सकते हैं। कृपया किसी बिल को पूरा करें या होल्ड करें।");
+      return;
+    }
+    const nextNum = counterTabs.length + 1;
+    const newTabId = `counter_${Date.now()}`;
+    const newTab = {
+      id: newTabId,
+      counterName: `बिल #${nextNum}`,
+      orderType: business.isRestaurant ? "dine_in" : "retail",
+      tableNotes: "",
+      cart: [],
+      customerName: "काउंटर नकद ग्राहक",
+      customerMobile: "",
+      customerAddress: "",
+      selectedTable: business.isRestaurant ? `Table ${nextNum}` : `Counter ${nextNum}`,
+      appliedCoupon: null
+    };
+    setCounterTabs(prev => [...prev, newTab]);
+    setActiveCounterTab(newTabId);
+  };
+
+  const handleCloseCounterTab = (tabId, e) => {
+    e?.stopPropagation();
+    if (counterTabs.length <= 1) {
+      alert("कम से कम 1 बिल टैब खुला रहना चाहिए।");
+      return;
+    }
+    const tabToClose = counterTabs.find(t => t.id === tabId);
+    if (tabToClose?.cart?.length > 0) {
+      if (!window.confirm(`"${tabToClose.counterName}" में ${tabToClose.cart.length} आइटम्स हैं। क्या आप इस टैब को हटाना चाहते हैं?\n(अगर आप आइटम्स को सुरक्षित रखना चाहते हैं, तो पहले 'होल्ड करें' दबाएं)`)) {
+        return;
+      }
+    }
+    const remaining = counterTabs.filter(t => t.id !== tabId);
+    setCounterTabs(remaining);
+    if (activeCounterTab === tabId) {
+      setActiveCounterTab(remaining[0]?.id || "counter_1");
+    }
+  };
+
+  // Sync refs for keyboard shortcuts
+  handleHoldRef.current = handleHoldCurrentBill;
+  triggerCheckoutRef.current = triggerCheckout;
+
   const handleApplyKot = (kotData) => {
     setCart((prev) => [
       ...prev,
@@ -664,39 +835,92 @@ export default function FastPOSPage() {
           >
             <ShieldCheck size={13} /> 🚨 गल्ला
           </button>
+
+          {/* Credit Limit Hub Button */}
+          <button
+            type="button"
+            onClick={() => setShowCreditLimitHubModal(true)}
+            className="px-2.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1 cursor-pointer"
+            title="ग्राहक क्रेडिट लिमिट हब व बैलेंस"
+          >
+            <CreditCard size={13} /> 💳 क्रेडिट हब
+          </button>
         </div>
       </div>
 
-      {/* 📊 COMBINED COUNTERS & LIVE FLOOR STATUS BAR */}
+      {/* 📊 COMBINED COUNTERS & MULTI-BILL TABS */}
       <div className="bg-slate-900 px-3 py-2 rounded-2xl shadow-sm border border-slate-800 flex items-center justify-between gap-2 text-white shrink-0 flex-wrap">
-        <div className="flex items-center gap-2 overflow-x-auto">
+        <div className="flex items-center gap-2 overflow-x-auto py-0.5">
           <span className="text-xs font-black text-amber-400 flex items-center gap-1 pl-1 shrink-0">
-            <Store size={14} /> काउंटर:
+            <Store size={14} /> बिल टैब:
           </span>
           {counterTabs.map((tab) => {
             const isActive = tab.id === activeCounterTab;
             const tabTotal = tab.cart.reduce((s, i) => s + (i.total || 0), 0);
             return (
-              <button
+              <div
                 key={tab.id}
-                onClick={() => setActiveCounterTab(tab.id)}
-                className={`px-3 py-1 rounded-xl text-xs font-black transition flex items-center gap-1.5 shrink-0 ${
+                className={`flex items-center rounded-xl text-xs font-black transition shrink-0 ${
                   isActive
                     ? "bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md ring-2 ring-amber-300"
                     : "bg-slate-800 text-slate-300 hover:bg-slate-700"
                 }`}
               >
-                <span>🏷️ {tab.counterName}</span>
-                {tab.cart.length > 0 && (
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-black ${
-                    isActive ? "bg-slate-950 text-amber-300" : "bg-slate-700 text-white"
-                  }`}>
-                    {tab.cart.length} (₹{tabTotal})
-                  </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveCounterTab(tab.id)}
+                  className="px-3 py-1 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>🏷️ {tab.counterName}</span>
+                  {tab.cart.length > 0 && (
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-black ${
+                      isActive ? "bg-slate-950 text-amber-300" : "bg-slate-700 text-white"
+                    }`}>
+                      {tab.cart.length} (₹{tabTotal})
+                    </span>
+                  )}
+                </button>
+                {counterTabs.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={(e) => handleCloseCounterTab(tab.id, e)}
+                    className={`pr-2 pl-0.5 hover:text-red-600 transition text-[11px] font-bold ${
+                      isActive ? "text-slate-800" : "text-slate-400"
+                    }`}
+                    title="टैब बंद करें"
+                  >
+                    ×
+                  </button>
                 )}
-              </button>
+              </div>
             );
           })}
+
+          {counterTabs.length < 6 && (
+            <button
+              type="button"
+              onClick={handleAddNewCounterTab}
+              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 rounded-xl text-xs font-bold text-amber-300 hover:text-white transition flex items-center gap-1 shrink-0 cursor-pointer"
+              title="नया समानांतर बिल टैब खोलें (+ New Bill)"
+            >
+              <Plus size={13} /> नया बिल
+            </button>
+          )}
+
+          {/* Held Bills Quick Indicator / Button */}
+          <button
+            type="button"
+            onClick={() => setShowHeldBillsModal(true)}
+            className={`px-3 py-1 rounded-xl text-xs font-black transition flex items-center gap-1.5 shrink-0 ml-1 cursor-pointer ${
+              heldBills.length > 0
+                ? "bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-md ring-2 ring-amber-200 animate-pulse"
+                : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
+            }`}
+            title="होल्ड किए गए बिल देखें व पुनः शुरू करें"
+          >
+            <PauseCircle size={14} className={heldBills.length > 0 ? "text-slate-950" : "text-amber-400"} />
+            <span>होल्ड बिल ({heldBills.length})</span>
+          </button>
         </div>
 
         {/* Live Status Indicators (Restaurant only) */}
@@ -1259,23 +1483,41 @@ export default function FastPOSPage() {
               </div>
             )}
 
-            <button
-              onClick={triggerCheckout}
-              disabled={loading || cart.length === 0}
-              className={`w-full py-2.5 rounded-xl font-black text-xs shadow-lg transition flex items-center justify-center gap-2 ${
-                cart.length > 0
-                  ? (posPaymentMode === "UDHAR" 
-                      ? "bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white shadow-rose-600/30 cursor-pointer"
-                      : "bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 shadow-emerald-500/20 cursor-pointer")
-                  : "bg-slate-800 text-slate-500 cursor-not-allowed"
-              }`}
-            >
-              {posPaymentMode === "UDHAR" ? (
-                <span>🛡️ उधारी बिल बनाएं व WhatsApp OTP भेजें (F9)</span>
-              ) : (
-                <span>⚡ पक्का बिल बनाएं व प्रिंट करें (F9)</span>
-              )}
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleHoldCurrentBill}
+                disabled={cart.length === 0}
+                className={`px-3.5 py-2.5 rounded-xl font-black text-xs transition flex items-center justify-center gap-1.5 shrink-0 ${
+                  cart.length > 0
+                    ? "bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/20 cursor-pointer active:scale-95"
+                    : "bg-slate-800 text-slate-600 cursor-not-allowed"
+                }`}
+                title="वर्तमान बिल को होल्ड/पार्क करें ताकि अगले ग्राहक का बिल बन सके (Alt+H या F7)"
+              >
+                <PauseCircle size={15} />
+                <span>होल्ड (Alt+H)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={triggerCheckout}
+                disabled={loading || cart.length === 0}
+                className={`flex-1 py-2.5 rounded-xl font-black text-xs shadow-lg transition flex items-center justify-center gap-2 ${
+                  cart.length > 0
+                    ? (posPaymentMode === "UDHAR" 
+                        ? "bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white shadow-rose-600/30 cursor-pointer"
+                        : "bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 shadow-emerald-500/20 cursor-pointer")
+                    : "bg-slate-800 text-slate-500 cursor-not-allowed"
+                }`}
+              >
+                {posPaymentMode === "UDHAR" ? (
+                  <span>🛡️ उधारी बिल बनाएं व WhatsApp OTP भेजें (F9)</span>
+                ) : (
+                  <span>⚡ पक्का बिल बनाएं व प्रिंट करें (F9)</span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1768,6 +2010,129 @@ export default function FastPOSPage() {
         onVerified={(verifiedBill) => {
           setBills(prev => prev.map(b => (b._id === verifiedBill._id || b.billNumber === verifiedBill.billNumber) ? { ...b, ...verifiedBill } : b));
         }}
+      />
+
+      {/* ⏸️ MODAL: HELD / PARKED BILLS LIST (होल्ड किए गए बिल) */}
+      {showHeldBillsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl shadow-2xl w-full max-w-2xl p-6 text-white animate-in zoom-in-95 flex flex-col max-h-[85vh]">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl">
+                  <PauseCircle size={22} />
+                </div>
+                <div>
+                  <h3 className="font-black text-base flex items-center gap-2">
+                    <span>होल्ड किए गए बिल (Held / Parked Bills)</span>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 text-xs font-black">
+                      {heldBills.length}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    ग्राहकों के रोके गए बिल सुरक्षित हैं। किसी भी बिल को कभी भी लोड करके बिल पूरा करें।
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHeldBillsModal(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-4 space-y-3">
+              {heldBills.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 space-y-2">
+                  <PauseCircle size={44} className="mx-auto text-slate-600 opacity-60" />
+                  <p className="font-bold text-sm text-slate-300">फिलहाल कोई बिल होल्ड पर नहीं है</p>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    बिल बनाते समय यदि ग्राहक रुकने को कहे, तो नीचे <b>'होल्ड (Alt+H)'</b> दबाएं। बिल यहाँ सुरक्षित रहेगा और आप तुरंत अगले ग्राहक का बिल बना सकेंगे।
+                  </p>
+                </div>
+              ) : (
+                heldBills.map((hb) => (
+                  <div
+                    key={hb.holdId}
+                    className="p-3.5 bg-slate-800/90 rounded-2xl border border-slate-700 hover:border-amber-500/50 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md"
+                  >
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-black text-sm text-white">{hb.holdName}</span>
+                        {hb.customerMobile && (
+                          <span className="text-[11px] text-slate-300 font-mono bg-slate-700 px-2 py-0.5 rounded-lg">
+                            📞 {hb.customerMobile}
+                          </span>
+                        )}
+                        <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
+                          {hb.selectedTable || "Counter Sale"}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          🕒 {new Date(hb.holdTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+
+                      <div className="text-xs text-slate-300 flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-amber-400 font-mono text-sm">
+                          ₹{hb.totalAmount}
+                        </span>
+                        <span className="text-slate-500">•</span>
+                        <span className="text-slate-400 text-[11px]">
+                          {hb.itemCount} आइटम ({hb.cart.length} प्रकार)
+                        </span>
+                        <span className="text-slate-500">•</span>
+                        <span className="text-slate-400 text-[11px]">
+                          काउंटर: {hb.counterSource || "Counter 1"}
+                        </span>
+                      </div>
+
+                      <div className="text-[11px] text-slate-400 truncate max-w-md">
+                        🛒 {hb.cart.map(c => `${c.name} (${c.quantity})`).join(", ")}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                      <button
+                        type="button"
+                        onClick={() => handleRestoreHeldBill(hb)}
+                        className="px-3.5 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-black text-xs rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                      >
+                        <PlayCircle size={15} />
+                        <span>बिल लोड करें</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDiscardHeldBill(hb.holdId)}
+                        className="p-2 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white rounded-xl transition border border-rose-600/40 cursor-pointer"
+                        title="होल्ड बिल हटाएं"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex justify-between items-center text-xs text-slate-400 shrink-0">
+              <span>💡 टिप: आप एक साथ 3-5 या उससे अधिक बिल होल्ड पर रख सकते हैं।</span>
+              <button
+                type="button"
+                onClick={() => setShowHeldBillsModal(false)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition cursor-pointer"
+              >
+                बंद करें
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 💳 CREDIT LIMIT HUB MODAL */}
+      <CreditLimitHubModal
+        isOpen={showCreditLimitHubModal}
+        onClose={() => setShowCreditLimitHubModal(false)}
       />
     </div>
   );
