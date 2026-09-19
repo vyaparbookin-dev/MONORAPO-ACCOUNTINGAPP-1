@@ -4,6 +4,8 @@ import api from "../../services/api";
 import Loader from "../../components/Loader";
 import { useCompany } from "../../contexts/CompanyContext";
 import { useLanguage } from "../../contexts/LanguageContext";
+import { ShieldCheck, KeyRound } from "lucide-react";
+import UdharOtpVerificationModal from "../../components/modals/UdharOtpVerificationModal";
 
 export default function BillDetailPage({ bill: propBill, onBack }) {
   const { id } = useParams();
@@ -11,6 +13,7 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
   const [bill, setBill] = useState(propBill || null);
   const [loading, setLoading] = useState(!propBill);
   const [error, setError] = useState(null);
+  const [showUdharOtpModal, setShowUdharOtpModal] = useState(false);
 
   const { selectedCompany } = useCompany();
   const { invoicePrintLanguage, toggleInvoicePrintLanguage, tInvoice } = useLanguage();
@@ -118,6 +121,51 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
         </div>
       </div>
 
+      {/* 🛡️ Legal Udhar Protection Banner (IT Act 2000 Section 10A) */}
+      {bill.isUdharProtected && (
+        <div className={`mb-8 p-4 rounded-2xl border transition ${
+          bill.isOtpVerified || bill.handoverStatus === 'VERIFIED_HANDED_OVER'
+            ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+            : bill.handoverStatus === 'BYPASSED'
+            ? 'bg-amber-50 border-amber-300 text-amber-950'
+            : 'bg-rose-50 border-rose-300 text-rose-950'
+        }`}>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+              <div className="flex items-center gap-2 font-black text-sm">
+                <ShieldCheck size={18} className={
+                  bill.isOtpVerified || bill.handoverStatus === 'VERIFIED_HANDED_OVER' ? "text-emerald-600" : "text-rose-600"
+                } />
+                <span>
+                  {bill.isOtpVerified || bill.handoverStatus === 'VERIFIED_HANDED_OVER'
+                    ? "🛡️ कानूनी उधारी वचनपत्र सत्यापित (IT Act 2000 धारा 10A)"
+                    : bill.handoverStatus === 'BYPASSED'
+                    ? "⚠️ उधारी डिलीवरी: व्यापारी द्वारा मैनुअल बायपास"
+                    : "⏳ उधारी डिलीवरी OTP पेंडिंग (सत्यापन आवश्यक)"}
+                </span>
+              </div>
+              <p className="text-xs mt-1 text-slate-600">
+                {bill.isOtpVerified || bill.handoverStatus === 'VERIFIED_HANDED_OVER'
+                  ? `ग्राहक ने 4-अंकों के OTP से डिलीवरी पावती दी है। विलंब शुल्क ब्याज: ${bill.lateInterestPercent ?? 2}% प्रति माह। डिलीवरी कानूनी तौर पर सुरक्षित है।`
+                  : bill.handoverStatus === 'BYPASSED'
+                  ? `यह उधारी बिना OTP के व्यापारी द्वारा बायपास की गई थी।`
+                  : `ग्राहक को WhatsApp पर वचन-पत्र व 4-अंकों का OTP भेजा गया है। सामान हैंडओवर करने हेतु OTP सत्यापित करें।`}
+              </p>
+            </div>
+
+            {(!bill.isOtpVerified && bill.handoverStatus !== 'VERIFIED_HANDED_OVER' && bill.handoverStatus !== 'BYPASSED') && (
+              <button
+                type="button"
+                onClick={() => setShowUdharOtpModal(true)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5 shrink-0"
+              >
+                <KeyRound size={14} /> 🔑 डिलीवरी OTP दर्ज करें
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="overflow-x-auto mb-8">
         <table className="w-full text-left">
           <thead className="bg-gray-50 border-b">
@@ -203,6 +251,16 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
           Download PDF
         </button>
       </div>
+
+      {/* 🛡️ Legal Udhar OTP Verification Modal */}
+      <UdharOtpVerificationModal
+        isOpen={showUdharOtpModal}
+        onClose={() => setShowUdharOtpModal(false)}
+        billData={bill}
+        onVerified={(verifiedData) => {
+          setBill(prev => ({ ...prev, ...verifiedData, isOtpVerified: true, handoverStatus: verifiedData.handoverStatus || "VERIFIED_HANDED_OVER" }));
+        }}
+      />
     </div>
   );
 }

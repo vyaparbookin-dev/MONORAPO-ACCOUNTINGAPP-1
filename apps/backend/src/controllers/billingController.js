@@ -36,13 +36,61 @@ export const createBill = async (req, res) => {
     const pMode = String(paymentMode || paymentMethod || req.body.type || "CASH").toUpperCase();
     const finalBillAmount = Number(finalAmount || total || 0);
 
+    const isUdhar = pMode === "UDHAR" || pMode === "CREDIT" || req.body.paymentStatus === "unpaid" || Boolean(req.body.isUdharProtected);
+
+    // 🛡️ GENERATE LEGAL UDHAR PROMISSORY NOTE & DELIVERY OTP (IT Act 2000 Section 10A)
+    let otpCode = "";
+    let legalAgreementText = "";
+    let otpExpiresAt = null;
+    let handoverStatus = isUdhar ? "PENDING_OTP" : "CASH_PAID";
+    const lateInt = Number(req.body.lateInterestPercent ?? 2);
+    const finalDueDate = dueDate || (isUdhar ? new Date(Date.now() + 15 * 86400000) : undefined);
+
+    if (isUdhar) {
+      // 4-digit secure numeric OTP
+      otpCode = Math.floor(1000 + Math.random() * 9000).toString();
+      otpExpiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes validity
+      
+      const custNameDisplay = (customerName || req.body.partyName || "ग्राहक").trim();
+      const shopName = company.name || "हमारी फर्म";
+      const dueDateDisplay = finalDueDate 
+        ? new Date(finalDueDate).toLocaleDateString("hi-IN", { day: 'numeric', month: 'short', year: 'numeric' }) 
+        : "15 दिन";
+
+      legalAgreementText = 
+`📜 *कानूनी उधारी वचनपत्र (IT Act 2000 Section 10A)*
+
+नमस्ते *${custNameDisplay}*,
+फर्म: *${shopName}*
+बिल संख्या: *${billNumber}*
+कुल उधारी राशि: *₹${finalBillAmount.toLocaleString('en-IN')}*
+भुगतान की देय तारीख (Due Date): *${dueDateDisplay}*
+विलंब ब्याज दर (Late Interest): *${lateInt}% प्रति माह*
+
+*वचनपत्र (Undertaking):* 
+मैं प्रमाणित करता हूँ कि मैंने उपरोक्त बिल का समस्त सामान/सेवाएं सही स्थिति में प्राप्त कर ली हैं। मैं इस बकाया राशि का भुगतान नियत देय तारीख तक करने का वचन देता हूँ। नियत तारीख तक भुगतान न होने पर ${lateInt}% प्रति माह की दर से विलंब ब्याज देय होगा।
+
+🔐 *माल हैंडओवर/प्राप्ति का OTP:*
+👉 *[ ${otpCode} ]*
+
+_(कृपया यह OTP दुकानदार को तभी बताएं जब आप सामान प्राप्त कर लें। OTP बताना आपकी कानूनी स्वीकृति मानी जाएगी।)_`;
+    }
+
     const bill = new Bill({
       ...req.body,
       companyId: req.companyId,
       paymentMode: pMode,
       paymentMethod: pMode,
       finalAmount: finalBillAmount,
-      billImageUrl: req.body.billImageUrl
+      billImageUrl: req.body.billImageUrl,
+      dueDate: finalDueDate,
+      isUdharProtected: isUdhar,
+      otpCode,
+      otpExpiresAt,
+      isOtpVerified: false,
+      legalAgreementText,
+      lateInterestPercent: lateInt,
+      handoverStatus
     });
     await bill.save();
 
@@ -141,6 +189,15 @@ export const createBill = async (req, res) => {
       success: true, 
       bill, 
       stampResult, 
+      udharProtection: isUdhar ? {
+        isUdharProtected: true,
+        otpCode,
+        handoverStatus: "PENDING_OTP",
+        legalAgreementText,
+        customerMobile: customerMobile || req.body.customerPhone || req.body.phone,
+        dueDate: bill.dueDate,
+        lateInterestPercent: bill.lateInterestPercent
+      } : null,
       message: `Bill ${bill.billNumber} created successfully!` 
     });
   } catch (error) {
@@ -567,3 +624,140 @@ export const importBills = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+// =========================================================================
+// 🛡️ LEGAL UDHAR OTP & HANDOVER VERIFICATION CONTROLLERS
+// =========================================================================
+
+export const verifyUdharOtp = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { otpCode } = req.body;
+
+    if (!otpCode || !String(otpCode).trim()) {
+      return res.status(400).json({ success: false, message: "कृपया 4-अंकों का OTP दर्ज करें!" });
+    }
+
+    const bill = await Bill.findOne({ _id: id, companyId: req.companyId });
+    if (!bill) {
+      return res.status(404).json({ success: false, message: "बिल नहीं मिला!" });
+    }
+
+    if (!bill.otpCode) {
+      return res.status(400).json({ success: false, message: "इस बिल के लिए कोई OTP सक्रिय नहीं है।" });
+    }
+
+    if (bill.isOtpVerified) {
+      return res.json({ success: true, message: "यह बिल पहले ही OTP सत्यापित हो चुका है!", bill });
+    }
+
+    if (bill.otpExpiresAt && new Date() > new Date(bill.otpExpiresAt)) {
+      return res.status(400).json({ success: false, message: "OTP की समय सीमा समाप्त हो गई है! कृपया नया OTP भेजें।" });
+    }
+
+    if (bill.otpCode.trim() !== String(otpCode).trim()) {
+      return res.status(400).json({ success: false, message: "⚠️ गलत OTP! कृपया ग्राहक के WhatsApp पर आया सही 4-अंकों का OTP दर्ज करें।" });
+    }
+
+    bill.isOtpVerified = true;
+    bill.otpVerifiedAt = new Date();
+    bill.handoverStatus = "VERIFIED_HANDED_OVER";
+    bill.updatedAt = new Date();
+    await bill.save();
+
+    await logActivity(req, `Verified Udhar Delivery OTP for Bill #${bill.billNumber}`);
+
+    res.json({
+      success: true,
+      message: "✅ उधारी डिलीवरी और कानूनी वचनपत्र सफलतापूर्वक सत्यापित हुआ! सामान ग्राहक को हैंडओवर किया जा सकता है।",
+      bill
+    });
+  } catch (err) {
+    console.error("verifyUdharOtp error:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const resendUdharOtp = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const bill = await Bill.findOne({ _id: id, companyId: req.companyId });
+    if (!bill) {
+      return res.status(404).json({ success: false, message: "बिल नहीं मिला!" });
+    }
+
+    const company = await Company.findById(req.companyId);
+    const newOtp = Math.floor(1000 + Math.random() * 9000).toString();
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+    const custName = (bill.customerName || "ग्राहक").trim();
+    const shopName = company?.name || "हमारी फर्म";
+    const dueDateStr = bill.dueDate 
+      ? new Date(bill.dueDate).toLocaleDateString("hi-IN", { day: 'numeric', month: 'short', year: 'numeric' }) 
+      : "15 दिन";
+
+    const legalText = 
+`📜 *कानूनी उधारी वचनपत्र (IT Act 2000 Section 10A)*
+
+नमस्ते *${custName}*,
+फर्म: *${shopName}*
+बिल संख्या: *${bill.billNumber}*
+कुल उधारी राशि: *₹${(bill.finalAmount || 0).toLocaleString('en-IN')}*
+भुगतान की देय तारीख: *${dueDateStr}*
+विलंब ब्याज दर: *${bill.lateInterestPercent || 2}% प्रति माह*
+
+*वचनपत्र (Undertaking):* 
+मैं प्रमाणित करता हूँ कि मैंने उपरोक्त बिल का समस्त सामान/सेवाएं सही स्थिति में प्राप्त कर ली हैं। मैं इस बकाया राशि का भुगतान नियत देय तारीख तक करने का वचन देता हूँ। नियत तारीख तक भुगतान न होने पर ${bill.lateInterestPercent || 2}% प्रति माह की दर से विलंब ब्याज देय होगा।
+
+🔐 *माल हैंडओवर/प्राप्ति का नया OTP:*
+👉 *[ ${newOtp} ]*
+
+_(कृपया यह OTP दुकानदार को तभी बताएं जब आप सामान प्राप्त कर लें। OTP बताना आपकी कानूनी स्वीकृति मानी जाएगी।)_`;
+
+    bill.otpCode = newOtp;
+    bill.otpExpiresAt = expiresAt;
+    bill.legalAgreementText = legalText;
+    bill.updatedAt = new Date();
+    await bill.save();
+
+    res.json({
+      success: true,
+      message: "नया OTP सफलतापूर्वक जनरेट हुआ!",
+      otpCode: newOtp,
+      legalAgreementText: legalText,
+      customerMobile: bill.customerMobile
+    });
+  } catch (err) {
+    console.error("resendUdharOtp error:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const bypassUdharOtp = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason = "दुकानदार द्वारा बायपास" } = req.body;
+    const bill = await Bill.findOne({ _id: id, companyId: req.companyId });
+    if (!bill) {
+      return res.status(404).json({ success: false, message: "बिल नहीं मिला!" });
+    }
+
+    bill.handoverStatus = "BYPASSED";
+    bill.isOtpVerified = false;
+    bill.notes = (bill.notes ? bill.notes + " | " : "") + `[बायपास हैंडओवर: ${reason}]`;
+    bill.updatedAt = new Date();
+    await bill.save();
+
+    await logActivity(req, `Bypassed Udhar Delivery OTP for Bill #${bill.billNumber} - Reason: ${reason}`);
+
+    res.json({
+      success: true,
+      message: "⚠️ उधारी हैंडओवर बिना OTP के बायपास कर दिया गया।",
+      bill
+    });
+  } catch (err) {
+    console.error("bypassUdharOtp error:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+

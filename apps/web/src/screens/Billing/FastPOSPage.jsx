@@ -32,6 +32,7 @@ import {
   Receipt
 } from "lucide-react";
 import RestaurantKotModal from "../../components/modals/RestaurantKotModal";
+import UdharOtpVerificationModal from "../../components/modals/UdharOtpVerificationModal";
 import { getBusinessMode } from "../../utils/businessMode";
 import { useCompany } from "../../contexts/CompanyContext";
 
@@ -123,6 +124,17 @@ export default function FastPOSPage() {
   const [showKitchenKdsModal, setShowKitchenKdsModal] = useState(false);
   const [showRecentBillsModal, setShowRecentBillsModal] = useState(false);
   const [showReviewsModal, setShowReviewsModal] = useState(false);
+
+  // 🛡️ Legal Udhar Protection States
+  const [posPaymentMode, setPosPaymentMode] = useState("CASH"); // CASH, UPI, UDHAR
+  const [posDueDate, setPosDueDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 15);
+    return d.toISOString().split("T")[0];
+  });
+  const [posLateInterest, setPosLateInterest] = useState(2);
+  const [showUdharModal, setShowUdharModal] = useState(false);
+  const [udharModalBill, setUdharModalBill] = useState(null);
 
   // Restaurant Deep Analytics (Petpooja Benchmark: Order types, Notes & Staff Reviews)
   const [restaurantAnalytics, setRestaurantAnalytics] = useState(null);
@@ -413,17 +425,21 @@ export default function FastPOSPage() {
         finalAmount: getGrandTotal(),
         totalAmount: getGrandTotal(),
         total: getGrandTotal(),
-        paymentMethod: "UPI / Cash",
-        paymentMode: "Paid",
-        status: "paid",
+        paymentMethod: posPaymentMode === "UDHAR" ? "credit" : posPaymentMode === "UPI" ? "online" : "cash",
+        paymentMode: posPaymentMode === "UDHAR" ? "UDHAR" : "Paid",
+        status: posPaymentMode === "UDHAR" ? "issued" : "paid",
+        dueDate: posPaymentMode === "UDHAR" ? posDueDate : undefined,
+        lateInterestPercent: posPaymentMode === "UDHAR" ? (Number(posLateInterest) || 2) : 0,
         createdAt: new Date().toISOString(),
         date: new Date().toISOString()
       };
 
       const res = await api.post("/api/billing", newBill).catch(() => null);
       
+      const createdBillObj = res?.data?.bill ? { ...newBill, ...res.data.bill } : newBill;
+
       // Update local bills immediately
-      setBills(prev => [newBill, ...prev]);
+      setBills(prev => [createdBillObj, ...prev]);
 
       const stampAward = res?.data?.stampResult;
       let stampNotice = "";
@@ -434,12 +450,22 @@ export default function FastPOSPage() {
         }
       }
       
-      alert(`🎉 [${currentActiveTab.counterName}] बिल #${newBill.billNumber} सफलतापूर्वक तैयार हो गया!\n\nटेबल: ${newBill.selectedTable}\nग्राहक: ${newBill.customerName}\nकुल रकम: ₹${getGrandTotal()}${stampNotice}`);
-      
       // Clear Cart
       setCart([]);
       setAppliedCoupon(null);
       setCustomerStampStatus(null);
+
+      // If legal udhar protection is active, trigger OTP modal
+      if (res?.data?.udharProtection) {
+        setUdharModalBill({
+          ...createdBillObj,
+          ...res.data.udharProtection,
+          _id: res?.data?.bill?._id || createdBillObj._id
+        });
+        setShowUdharModal(true);
+      } else {
+        alert(`🎉 [${currentActiveTab.counterName}] बिल #${createdBillObj.billNumber} सफलतापूर्वक तैयार हो गया!\n\nटेबल: ${createdBillObj.selectedTable}\nग्राहक: ${createdBillObj.customerName}\nकुल रकम: ₹${getGrandTotal()}${stampNotice}`);
+      }
     } catch (err) {
       alert("Error creating bill: " + err.message);
     } finally {
@@ -1103,16 +1129,88 @@ export default function FastPOSPage() {
               <span className="text-lg text-amber-400 font-mono font-black">₹{getGrandTotal()}</span>
             </div>
 
+            {/* 💳 Payment Mode Selector */}
+            <div className="pt-1">
+              <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1 flex items-center justify-between">
+                <span>भुगतान माध्यम (Mode):</span>
+                {posPaymentMode === "UDHAR" && (
+                  <span className="text-rose-400 font-bold flex items-center gap-0.5">
+                    <ShieldCheck size={11} className="text-emerald-400" /> लीगल सुरक्षित उधारी
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { id: "CASH", label: "💵 नकद" },
+                  { id: "UPI", label: "📲 UPI / QR" },
+                  { id: "UDHAR", label: "📒 उधारी 🛡️" }
+                ].map(m => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setPosPaymentMode(m.id)}
+                    className={`py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      posPaymentMode === m.id
+                        ? (m.id === "UDHAR" ? "bg-gradient-to-r from-rose-600 to-red-600 text-white border-rose-500 shadow-md font-black" : "bg-amber-500 text-slate-950 border-amber-400 shadow-md font-black")
+                        : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 🛡️ Legal Udhar Terms Card (IT Act 2000 Section 10A) */}
+            {posPaymentMode === "UDHAR" && (
+              <div className="p-2 bg-rose-950/40 border border-rose-500/40 rounded-xl space-y-1.5 animate-in fade-in text-[11px]">
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div>
+                    <label className="text-[9px] font-bold text-rose-200 block mb-0.5">📅 तय तारीख (Due Date):</label>
+                    <input
+                      type="date"
+                      value={posDueDate}
+                      onChange={(e) => setPosDueDate(e.target.value)}
+                      className="w-full px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-[11px] text-white outline-none focus:border-rose-400 font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-rose-200 block mb-0.5">⚖️ ब्याज % / माह (Late Fee):</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="30"
+                      value={posLateInterest}
+                      onChange={(e) => setPosLateInterest(e.target.value)}
+                      className="w-full px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-[11px] text-white outline-none focus:border-rose-400 font-medium"
+                      placeholder="2"
+                    />
+                  </div>
+                </div>
+                <div className="p-1.5 bg-slate-900/80 rounded-lg border border-slate-700/60 text-[9px] text-slate-300 flex items-start gap-1">
+                  <span>📱</span>
+                  <span>बिल बनते ही ग्राहक के WhatsApp पर कानूनी वचनपत्र और डिलीवरी OTP जाएगा। OTP लेकर ही सामान हैंडओवर करें।</span>
+                </div>
+              </div>
+            )}
+
             <button
               onClick={triggerCheckout}
               disabled={loading || cart.length === 0}
               className={`w-full py-2.5 rounded-xl font-black text-xs shadow-lg transition flex items-center justify-center gap-2 ${
                 cart.length > 0
-                  ? "bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 shadow-emerald-500/20 cursor-pointer"
+                  ? (posPaymentMode === "UDHAR" 
+                      ? "bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white shadow-rose-600/30 cursor-pointer"
+                      : "bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 shadow-emerald-500/20 cursor-pointer")
                   : "bg-slate-800 text-slate-500 cursor-not-allowed"
               }`}
             >
-              <span>⚡ पक्का बिल बनाएं व प्रिंट करें (F9)</span>
+              {posPaymentMode === "UDHAR" ? (
+                <span>🛡️ उधारी बिल बनाएं व WhatsApp OTP भेजें (F9)</span>
+              ) : (
+                <span>⚡ पक्का बिल बनाएं व प्रिंट करें (F9)</span>
+              )}
             </button>
           </div>
         </div>
@@ -1596,6 +1694,16 @@ export default function FastPOSPage() {
         onClose={() => setShowKotModal(false)}
         onApplyKot={handleApplyKot}
         inventory={products}
+      />
+
+      {/* 🛡️ LEGAL UDHAR OTP & HANDOVER VERIFICATION MODAL */}
+      <UdharOtpVerificationModal
+        isOpen={showUdharModal}
+        onClose={() => setShowUdharModal(false)}
+        billData={udharModalBill}
+        onVerified={(verifiedBill) => {
+          setBills(prev => prev.map(b => (b._id === verifiedBill._id || b.billNumber === verifiedBill.billNumber) ? { ...b, ...verifiedBill } : b));
+        }}
       />
     </div>
   );

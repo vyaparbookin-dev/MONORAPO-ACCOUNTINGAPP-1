@@ -74,6 +74,22 @@ const billSchema = new mongoose.Schema({
   }],
   isDeleted: { type: Boolean, default: false },
   synced: { type: Boolean, default: false },
+
+  // 🛡️ LEGAL UDHAR PROTECTION & OTP HANDOVER (IT Act 2000 Section 10A)
+  isUdharProtected: { type: Boolean, default: false },
+  otpCode: { type: String, default: "" },
+  otpExpiresAt: { type: Date },
+  isOtpVerified: { type: Boolean, default: false },
+  otpVerifiedAt: { type: Date },
+  legalAgreementText: { type: String, default: "" },
+  lateInterestPercent: { type: Number, default: 2 }, // Monthly interest percentage (e.g. 2% per month)
+  handoverStatus: { 
+    type: String, 
+    enum: ["PENDING_OTP", "VERIFIED_HANDED_OVER", "BYPASSED", "CASH_PAID"], 
+    default: "CASH_PAID" 
+  },
+  whatsappDeliveryStatus: { type: String, default: "" },
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

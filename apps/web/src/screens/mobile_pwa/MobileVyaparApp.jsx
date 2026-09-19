@@ -57,6 +57,7 @@ import MobileReportViewerModal from "../../components/mobile/MobileReportViewerM
 import MobileFamilyExpenseModal from "../../components/mobile/MobileFamilyExpenseModal";
 import MobileSavingsModal from "../../components/mobile/MobileSavingsModal";
 import MobileBankCCModal from "../../components/mobile/MobileBankCCModal";
+import UdharOtpVerificationModal from "../../components/modals/UdharOtpVerificationModal";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 import { speakUpiPayment, playPaymentChime } from "../../utils/soundBox";
@@ -183,6 +184,16 @@ function MobileVyaparAppContent() {
   const [savingBill, setSavingBill] = useState(false);
   const [mobileStampStatus, setMobileStampStatus] = useState(null);
   const [billAppliedReward, setBillAppliedReward] = useState(null);
+  
+  // 🛡️ Legal Udhar Protection States
+  const [billDueDate, setBillDueDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 15);
+    return d.toISOString().split("T")[0];
+  });
+  const [billLateInterest, setBillLateInterest] = useState(2);
+  const [showUdharOtpModal, setShowUdharOtpModal] = useState(false);
+  const [activeUdharBillData, setActiveUdharBillData] = useState(null);
 
   useEffect(() => {
     const clean = String(billCustomerPhone || "").replace(/\D/g, "").slice(-10);
@@ -1188,6 +1199,9 @@ function MobileVyaparAppContent() {
       paymentMethod: billPaymentMode === "CASH" ? "cash" : billPaymentMode === "UPI" ? "online" : "credit",
       paymentStatus: billPaymentMode === "UDHAR" ? "unpaid" : "paid",
       status: billPaymentMode === "UDHAR" ? "issued" : "paid",
+      dueDate: billPaymentMode === "UDHAR" ? billDueDate : undefined,
+      lateInterestPercent: billPaymentMode === "UDHAR" ? (Number(billLateInterest) || 2) : 0,
+      isUdharProtected: billPaymentMode === "UDHAR",
       items: billCart.map(i => ({ 
         productId: i.id, 
         name: i.name, 
@@ -1234,7 +1248,8 @@ function MobileVyaparAppContent() {
         amount: billPayload.finalAmount || totalBillAmount,
         type: billPaymentMode,
         paymentStatus: billPaymentMode === "UDHAR" ? "unpaid" : "paid",
-        items: billCart
+        items: billCart,
+        ...(res?.data?.bill || {})
       };
       setBills([createdBill, ...bills]);
       setBillCart([]);
@@ -1244,6 +1259,16 @@ function MobileVyaparAppContent() {
       setMobileStampStatus(null);
       setShowQuickBillModal(false);
       setSelectedBillDetail(createdBill);
+
+      // 🛡️ Open Legal Udhar OTP Verification Modal if Udhar Protected
+      if (res?.data?.udharProtection) {
+        setActiveUdharBillData({
+          ...createdBill,
+          ...res.data.udharProtection,
+          _id: res?.data?.bill?._id || createdBill._id
+        });
+        setShowUdharOtpModal(true);
+      }
 
       const stampAward = res?.data?.stampResult;
       if (stampAward?.awarded) {
@@ -3315,12 +3340,70 @@ function MobileVyaparAppContent() {
                 <button
                   key={m}
                   onClick={() => setBillPaymentMode(m)}
-                  className={`py-2 rounded-xl text-xs font-bold border ${billPaymentMode === m ? "bg-[#4338CA] text-white border-[#4338CA]" : "bg-slate-50 border-slate-200 text-slate-700"}`}
+                  className={`py-2 rounded-xl text-xs font-bold border transition ${
+                    billPaymentMode === m 
+                      ? (m === "UDHAR" ? "bg-rose-600 text-white border-rose-600 shadow-sm" : "bg-[#4338CA] text-white border-[#4338CA] shadow-sm")
+                      : "bg-slate-50 border-slate-200 text-slate-700"
+                  }`}
                 >
-                  {m === "CASH" ? "💵 नकद (Cash)" : m === "UDHAR" ? "📒 उधारी (Credit)" : "📲 UPI / QR"}
+                  {m === "CASH" ? "💵 नकद (Cash)" : m === "UDHAR" ? "📒 उधारी 🛡️" : "📲 UPI / QR"}
                 </button>
               ))}
             </div>
+
+            {/* 🛡️ Legal Udhar Protection Card (IT Act 2000 Section 10A) */}
+            {billPaymentMode === "UDHAR" && (
+              <div className="p-3 bg-rose-50/80 border border-rose-200 rounded-2xl space-y-2 animate-in fade-in">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5 font-black text-rose-800">
+                    <ShieldCheck size={16} className="text-emerald-600" />
+                    <span>लीगल उधारी सुरक्षा (IT Act 2000 धारा 10A)</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">
+                    कोर्ट-मान्य डिजिटल प्रूफ
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-1">
+                      📅 भुगतान तय तारीख:
+                    </label>
+                    <input
+                      type="date"
+                      value={billDueDate}
+                      onChange={(e) => setBillDueDate(e.target.value)}
+                      className="w-full p-2 bg-white border border-rose-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-1">
+                      ⚖️ विलंब ब्याज % (माह):
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="30"
+                      value={billLateInterest}
+                      onChange={(e) => setBillLateInterest(e.target.value)}
+                      className="w-full p-2 bg-white border border-rose-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                      placeholder="2"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-2 bg-white rounded-xl border border-rose-100 text-[10px] text-slate-600 space-y-1">
+                  <div className="font-bold text-rose-900 flex items-center gap-1">
+                    <span>📱</span>
+                    <span>व्हाट्सएप पर वचनपत्र + डिलीवरी OTP:</span>
+                  </div>
+                  <p>
+                    बिल बनते ही ग्राहक के WhatsApp पर कानूनी वचनपत्र और 4-अंकों का OTP भेजा जाएगा। डिलीवरी देते समय OTP लेकर दर्ज करना अनिवार्य है जिससे ग्राहक बाद में उधारी से मुकर न सके।
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* 📍 CUSTOMER ADDRESS & DETAILS ON-THE-SPOT */}
             <div className="space-y-1.5">
@@ -5779,6 +5862,19 @@ function MobileVyaparAppContent() {
           </div>
         </div>
       )}
+
+      {/* 🛡️ LEGAL UDHAR OTP & HANDOVER VERIFICATION MODAL */}
+      <UdharOtpVerificationModal
+        isOpen={showUdharOtpModal}
+        onClose={() => setShowUdharOtpModal(false)}
+        billData={activeUdharBillData}
+        onVerified={(verifiedBill) => {
+          setBills(prev => prev.map(b => (b._id === verifiedBill._id || b.id === verifiedBill._id || b.billNumber === verifiedBill.billNumber) ? { ...b, ...verifiedBill, isOtpVerified: true, handoverStatus: verifiedBill.handoverStatus || "VERIFIED_HANDED_OVER" } : b));
+          if (selectedBillDetail && (selectedBillDetail._id === verifiedBill._id || selectedBillDetail.id === verifiedBill._id)) {
+            setSelectedBillDetail(prev => ({ ...prev, ...verifiedBill, isOtpVerified: true, handoverStatus: verifiedBill.handoverStatus || "VERIFIED_HANDED_OVER" }));
+          }
+        }}
+      />
 
     </div>
   );

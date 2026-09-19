@@ -1,5 +1,20 @@
 import express from "express";
-import { createBill, listBills, getBillById, updateBill, deleteBill, parseBillImage, createNonGstBill, addDispatchRecord, importBills, downloadBillPDF, exportBillsCSV } from "../controllers/billingController.js";
+import { 
+  createBill, 
+  listBills, 
+  getBillById, 
+  updateBill, 
+  deleteBill, 
+  parseBillImage, 
+  createNonGstBill, 
+  addDispatchRecord, 
+  importBills, 
+  downloadBillPDF, 
+  exportBillsCSV,
+  verifyUdharOtp,
+  resendUdharOtp,
+  bypassUdharOtp
+} from "../controllers/billingController.js";
 import { protect, requireCompany } from "../middleware/authmiddleware.js";
 import { validateRequest } from "../middleware/validateData.js";
 import { createBillSchema } from "../utils/validators.js";
@@ -11,6 +26,11 @@ router.use(protect);
 router.use(requireCompany);
 
 router.route("/").post(validateRequest(createBillSchema), createBill).get(listBills);
+
+// 🛡️ LEGAL UDHAR OTP & HANDOVER ROUTES
+router.post("/:id/verify-udhar-otp", verifyUdharOtp);
+router.post("/:id/resend-udhar-otp", resendUdharOtp);
+router.post("/:id/bypass-udhar-otp", bypassUdharOtp);
 
 // GET /api/billing/export/csv - Download all bills as CSV
 router.get("/export/csv", exportBillsCSV);
