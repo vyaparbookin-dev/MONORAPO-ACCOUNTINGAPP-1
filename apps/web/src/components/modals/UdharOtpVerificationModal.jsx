@@ -72,8 +72,12 @@ export default function UdharOtpVerificationModal({
 
 _(कृपया यह OTP दुकानदार को तभी बताएं जब आप सामान प्राप्त कर लें।)_`;
 
-  // 1. WhatsApp Direct Share Link
+  // 1. WhatsApp Direct Share Link (Works on Normal WhatsApp & Web)
   const handleOpenWhatsApp = () => {
+    if (billData.waLink) {
+      window.open(billData.waLink, "_blank");
+      return;
+    }
     const phoneParam = cleanMobile ? `91${cleanMobile}` : "";
     const waUrl = phoneParam
       ? `https://api.whatsapp.com/send?phone=${phoneParam}&text=${encodeURIComponent(waText)}`
@@ -208,6 +212,24 @@ _(कृपया यह OTP दुकानदार को तभी बता
               </div>
             </div>
           </div>
+
+          {/* 📋 CREDIT LINE 5-POINT DAILY BREAKDOWN */}
+          {billData.isCreditLineBill && billData.creditLineSnapshot && (
+            <div className="p-3 bg-indigo-50/90 border border-indigo-200 rounded-2xl text-xs space-y-1.5 text-slate-800 animate-in fade-in">
+              <span className="text-[10px] font-black uppercase text-indigo-900 block tracking-wider">
+                📋 दैनिक क्रेडिट लाइन हिसाब (Credit Line Breakdown)
+              </span>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+                <div>• आज का बिल: <strong>₹{Number(billData.creditLineSnapshot.billAmount || totalAmt).toLocaleString('en-IN')}</strong></div>
+                <div>• पिछला बकाया: <strong>₹{Number(billData.creditLineSnapshot.previousBalance || 0).toLocaleString('en-IN')}</strong></div>
+                <div>• कुल बकाया: <strong className="text-rose-600">₹{Number(billData.creditLineSnapshot.newTotalBalance || 0).toLocaleString('en-IN')}</strong></div>
+                <div>• स्वीकृत लिमिट: <strong>₹{Number(billData.creditLineSnapshot.sanctionedLimit || 0).toLocaleString('en-IN')}</strong></div>
+                <div className="col-span-2 text-emerald-800 font-bold">
+                  • बची हुई उपलब्ध लिमिट: ₹{Number(billData.creditLineSnapshot.remainingLimit || 0).toLocaleString('en-IN')}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* WHATSAPP ACTION BUTTONS */}
           <div className="space-y-2">

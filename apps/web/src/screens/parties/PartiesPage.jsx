@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
-import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X } from 'lucide-react';
+import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard } from 'lucide-react';
 import { syncQueue } from "@repo/shared";
+import CreditLimitHubModal from '../../components/modals/CreditLimitHubModal';
 
 export default function PartiesPage() {
   const [parties, setParties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showCreditLimitHub, setShowCreditLimitHub] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all'); // 'all', 'to_collect', 'to_pay', 'customer', 'supplier', 'personal'
 
@@ -278,9 +280,17 @@ export default function PartiesPage() {
             <h1 className="text-2xl font-black text-gray-800">खाता बही व पार्टियां (Parties & Ledger)</h1>
             <p className="text-gray-500 text-sm">ग्राहकों, सप्लायरों व पर्सनल खातों की किस्त, उधारी व लेन-देन का संपूर्ण हिसाब</p>
           </div>
-          <button onClick={() => setShowModal(true)} className="bg-[#4338CA] hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 cursor-pointer shadow-md transition">
-            <Plus size={18} /> + नया खाता जोड़ें (Add Party)
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setShowCreditLimitHub(true)} 
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2.5 rounded-xl font-bold flex items-center gap-1.5 cursor-pointer shadow-md transition text-xs sm:text-sm"
+            >
+              <CreditCard size={17} /> 💳 क्रेडिट लिमिट हब
+            </button>
+            <button onClick={() => setShowModal(true)} className="bg-[#4338CA] hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 cursor-pointer shadow-md transition text-xs sm:text-sm">
+              <Plus size={18} /> + नया खाता जोड़ें
+            </button>
+          </div>
         </div>
 
         {/* Search and Filters */}
@@ -664,6 +674,13 @@ export default function PartiesPage() {
             </div>
           </div>
         )}
+
+        {/* 💳 Dedicated Credit Limit & Mandate Hub Modal */}
+        <CreditLimitHubModal
+          isOpen={showCreditLimitHub}
+          onClose={() => setShowCreditLimitHub(false)}
+          onPartyUpdated={fetchParties}
+        />
       </div>
     </div>
   );

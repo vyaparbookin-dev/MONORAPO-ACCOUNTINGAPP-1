@@ -90,6 +90,17 @@ const billSchema = new mongoose.Schema({
   },
   whatsappDeliveryStatus: { type: String, default: "" },
 
+  // 💳 Credit Line Snapshot at Bill Creation
+  isCreditLineBill: { type: Boolean, default: false },
+  creditLineSnapshot: {
+    previousBalance: { type: Number, default: 0 },
+    billAmount: { type: Number, default: 0 },
+    newTotalBalance: { type: Number, default: 0 },
+    sanctionedLimit: { type: Number, default: 0 },
+    remainingLimit: { type: Number, default: 0 }
+  },
+  isOwnerBypassed: { type: Boolean, default: false },
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

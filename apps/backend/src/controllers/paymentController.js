@@ -103,6 +103,14 @@ export const addPaymentEntry = async (req, res) => {
     if (type === 'received') {
       credit = amount;
       party.currentBalance -= amount; // Customer paid us, their outstanding balance decreases
+
+      // 🔓 Auto-restore and unlock Credit Limit if customer pays (even before due date)
+      if (party.isCreditLimitActive || (party.creditLimit && party.creditLimit > 0)) {
+        if (party.currentBalance <= (party.creditLimit || 0)) {
+          party.creditLimitStatus = "ACTIVE";
+          party.creditLimitLockedReason = "";
+        }
+      }
     } else if (type === 'paid') {
       debit = amount;
       party.currentBalance += amount; // We gave udhar/paid supplier, balance increases
@@ -121,7 +129,17 @@ export const addPaymentEntry = async (req, res) => {
     await transaction.save();
     await party.save();
 
-    res.status(201).json({ success: true, transaction, message: "Payment entry recorded successfully" });
+    const availableLimit = party.creditLimit ? Math.max(0, party.creditLimit - party.currentBalance) : 0;
+
+    res.status(201).json({ 
+      success: true, 
+      transaction, 
+      party,
+      availableLimit,
+      message: type === 'received' 
+        ? `भुगतान दर्ज हुआ! शेष बकाया: ₹${party.currentBalance.toLocaleString('en-IN')}${party.creditLimit ? ` | बची क्रेडिट लिमिट: ₹${availableLimit.toLocaleString('en-IN')}` : ''}`
+        : "Payment entry recorded successfully" 
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

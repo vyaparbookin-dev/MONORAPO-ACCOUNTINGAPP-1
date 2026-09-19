@@ -39,10 +39,35 @@ export const createBill = async (req, res) => {
     const isUdhar = pMode === "UDHAR" || pMode === "CREDIT" || req.body.paymentStatus === "unpaid";
     const udharThreshold = Number(req.body.udharOtpThreshold ?? company.udharOtpThreshold ?? 500);
 
+    // --- LOOKUP MATCHED PARTY UPFRONT FOR CREDIT LINE / LIMIT CHECK ---
+    let matchedParty = null;
+    const pName = (customerName || req.body.partyName || "").trim();
+    const pMobile = (customerMobile || req.body.customerPhone || req.body.phone || "").trim();
+    if (partyId && mongoose.Types.ObjectId.isValid(partyId)) {
+      matchedParty = await Party.findOne({ _id: partyId, companyId: req.companyId });
+    }
+    if (!matchedParty && pMobile) {
+      matchedParty = await Party.findOne({ mobileNumber: pMobile, companyId: req.companyId });
+    }
+    if (!matchedParty && pName && pName !== "नकद ग्राहक" && pName !== "Walk-in Customer") {
+      matchedParty = await Party.findOne({ name: new RegExp(`^${pName}$`, "i"), companyId: req.companyId });
+    }
+
+    const isCreditLineActive = Boolean(matchedParty && matchedParty.isCreditLimitActive && matchedParty.creditLimit > 0);
+
+    // 🛑 GATEKEEPER: Check if Customer has an earlier bill pending approval
+    if (isUdhar && isCreditLineActive && matchedParty.hasPendingBillApproval && !req.body.bypassPendingLock) {
+      return res.status(400).json({
+        success: false,
+        isPendingApprovalBlocked: true,
+        partyId: matchedParty._id,
+        partyName: matchedParty.name,
+        pendingBillId: matchedParty.pendingApprovalBillId,
+        message: `⚠️ ग्राहक ${matchedParty.name} का पिछला बिल अभी OTP से स्वीकृत नहीं हुआ है! नया बिल जारी करने के लिए पिछला बिल स्वीकृत करें या 'काम न रुके' (बायपास) विकल्प चुनें।`
+      });
+    }
+
     // 🛡️ Determine if Udhar Legal OTP Protection should be applied:
-    // 1. If merchant explicitly specified `isUdharProtected`: respect their choice (true or false).
-    // 2. If not specified: automatically apply OTP protection if bill amount exceeds threshold (> ₹500 default).
-    //    Small bills (<= threshold) are auto-approved without OTP requirement.
     let shouldProtectWithOtp = false;
     if (isUdhar) {
       if (typeof req.body.isUdharProtected === "boolean") {
@@ -52,7 +77,23 @@ export const createBill = async (req, res) => {
       }
     }
 
-    // 🛡️ GENERATE LEGAL UDHAR PROMISSORY NOTE & DELIVERY OTP (IT Act 2000 Section 10A)
+    // Credit Line Snapshot Calculation
+    let creditLineSnapshot = null;
+    if (isCreditLineActive) {
+      const prevBal = Number(matchedParty.currentBalance || 0);
+      const newBal = prevBal + finalBillAmount;
+      const sancLimit = Number(matchedParty.creditLimit || 0);
+      const remLimit = Math.max(0, sancLimit - newBal);
+      creditLineSnapshot = {
+        previousBalance: prevBal,
+        billAmount: finalBillAmount,
+        newTotalBalance: newBal,
+        sanctionedLimit: sancLimit,
+        remainingLimit: remLimit
+      };
+    }
+
+    // 🛡️ GENERATE LEGAL PROMISSORY NOTE & DELIVERY OTP (IT Act 2000 Section 10A)
     let otpCode = "";
     let legalAgreementText = "";
     let otpExpiresAt = null;
@@ -67,13 +108,31 @@ export const createBill = async (req, res) => {
       otpCode = Math.floor(1000 + Math.random() * 9000).toString();
       otpExpiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes validity
       
-      const custNameDisplay = (customerName || req.body.partyName || "ग्राहक").trim();
+      const custNameDisplay = (pName || "ग्राहक").trim();
       const shopName = company.name || "हमारी फर्म";
       const dueDateDisplay = finalDueDate 
         ? new Date(finalDueDate).toLocaleDateString("hi-IN", { day: 'numeric', month: 'short', year: 'numeric' }) 
         : "15 दिन";
 
-      legalAgreementText = 
+      if (isCreditLineActive && creditLineSnapshot) {
+        legalAgreementText = 
+`📋 *दैनिक उधारी बिल व खाता स्वीकृति (Credit Line Statement)*
+नमस्ते *${custNameDisplay}*,
+फर्म: *${shopName}*
+बिल संख्या: *${billNumber}*
+
+• आज का बिल: *₹${finalBillAmount.toLocaleString('en-IN')}*
+• पिछला बकाया: *₹${creditLineSnapshot.previousBalance.toLocaleString('en-IN')}*
+• अब तक कुल बकाया: *₹${creditLineSnapshot.newTotalBalance.toLocaleString('en-IN')}*
+• स्वीकृत क्रेडिट लिमिट: *₹${creditLineSnapshot.sanctionedLimit.toLocaleString('en-IN')}*
+• बची हुई उपलब्ध लिमिट: *₹${creditLineSnapshot.remainingLimit.toLocaleString('en-IN')}*
+
+🔐 *बिल स्वीकृति एवं डिलीवरी OTP:*
+👉 *[ ${otpCode} ]*
+
+_(नोट: कृपया यह OTP दुकानदार को बताकर बिल स्वीकृत करें। स्वीकृति के बाद ही आपकी शेष ₹${creditLineSnapshot.remainingLimit.toLocaleString('en-IN')} की लिमिट सक्रिय रहेगी।)_`;
+      } else {
+        legalAgreementText = 
 `📜 *कानूनी उधारी वचनपत्र (IT Act 2000 Section 10A)*
 
 नमस्ते *${custNameDisplay}*,
@@ -90,6 +149,7 @@ export const createBill = async (req, res) => {
 👉 *[ ${otpCode} ]*
 
 _(कृपया यह OTP दुकानदार को तभी बताएं जब आप सामान प्राप्त कर लें। OTP बताना आपकी कानूनी स्वीकृति मानी जाएगी।)_`;
+      }
     }
 
     const bill = new Bill({
@@ -106,33 +166,25 @@ _(कृपया यह OTP दुकानदार को तभी बता
       isOtpVerified: !shouldProtectWithOtp,
       legalAgreementText,
       lateInterestPercent: lateInt,
-      handoverStatus
+      handoverStatus,
+      isCreditLineBill: isCreditLineActive,
+      creditLineSnapshot: creditLineSnapshot || undefined,
+      isOwnerBypassed: Boolean(req.body.bypassPendingLock)
     });
     await bill.save();
 
-    // --- AUTO-UPDATE PARTY UDHAR (CREDIT) BALANCE ---
+    // --- AUTO-UPDATE PARTY UDHAR (CREDIT) BALANCE & PENDING GATEKEEPER ---
     try {
-      const pName = (customerName || req.body.partyName || "").trim();
-      const pMobile = (customerMobile || req.body.customerPhone || req.body.phone || "").trim();
-      const isUdhar = pMode === "UDHAR" || pMode === "CREDIT" || req.body.paymentStatus === "unpaid";
-
       if (isUdhar && pName && pName !== "नकद ग्राहक" && pName !== "Walk-in Customer") {
-        let matchedParty = null;
-        if (partyId && mongoose.Types.ObjectId.isValid(partyId)) {
-          matchedParty = await Party.findOne({ _id: partyId, companyId: req.companyId });
-        }
-        if (!matchedParty && pMobile) {
-          matchedParty = await Party.findOne({ mobileNumber: pMobile, companyId: req.companyId });
-        }
-        if (!matchedParty) {
-          matchedParty = await Party.findOne({ name: new RegExp(`^${pName}$`, "i"), companyId: req.companyId });
-        }
-
         if (matchedParty) {
-          await Party.findByIdAndUpdate(matchedParty._id, {
-            $inc: { currentBalance: finalBillAmount },
-            $set: { updatedAt: new Date() }
-          });
+          matchedParty.currentBalance = (Number(matchedParty.currentBalance) || 0) + finalBillAmount;
+          matchedParty.updatedAt = new Date();
+          if (isCreditLineActive && shouldProtectWithOtp) {
+            matchedParty.hasPendingBillApproval = true;
+            matchedParty.pendingApprovalBillId = bill._id;
+            matchedParty.creditLimitLockedReason = `बिल #${bill.billNumber} स्वीकृति पेंडिंग`;
+          }
+          await matchedParty.save();
         } else {
           // Auto-create new customer with the Udhar balance
           const dummyPhone = pMobile || `9${Math.floor(100000000 + Math.random() * 900000000)}`;
@@ -230,22 +282,30 @@ _(कृपया यह OTP दुकानदार को तभी बता
 
     sendAutoWhatsappMessage(req.companyId, bill).catch(err => console.error("Non-blocking WA Error:", err));
 
-    res.status(201).json({ 
-      success: true, 
-      bill, 
-      stampResult, 
-      udharProtection: shouldProtectWithOtp ? {
-        isUdharProtected: true,
-        otpCode,
-        handoverStatus: "PENDING_OTP",
-        legalAgreementText,
-        customerMobile: customerMobile || req.body.customerPhone || req.body.phone,
-        dueDate: bill.dueDate,
-        lateInterestPercent: bill.lateInterestPercent,
-        threshold: udharThreshold
-      } : null,
-      message: `Bill ${bill.billNumber} created successfully!` 
-    });
+      const custPhoneClean = String(customerMobile || req.body.customerPhone || req.body.phone || "").replace(/\D/g, "");
+      const waLink = custPhoneClean 
+        ? `https://wa.me/${custPhoneClean.slice(-10)}?text=${encodeURIComponent(legalAgreementText)}`
+        : "";
+
+      res.status(201).json({ 
+        success: true, 
+        bill, 
+        stampResult, 
+        udharProtection: shouldProtectWithOtp ? {
+          isUdharProtected: true,
+          otpCode,
+          handoverStatus: "PENDING_OTP",
+          legalAgreementText,
+          customerMobile: customerMobile || req.body.customerPhone || req.body.phone,
+          dueDate: bill.dueDate,
+          lateInterestPercent: bill.lateInterestPercent,
+          threshold: udharThreshold,
+          waLink,
+          isCreditLineBill: bill.isCreditLineBill,
+          creditLineSnapshot: bill.creditLineSnapshot
+        } : null,
+        message: `Bill ${bill.billNumber} created successfully!` 
+      });
   } catch (error) {
     if (error.code === 11000) {
       return res.status(400).json({ success: false, error: `Bill number '${req.body.billNumber}' already exists for this company.` });
@@ -711,11 +771,17 @@ export const verifyUdharOtp = async (req, res) => {
     bill.updatedAt = new Date();
     await bill.save();
 
+    // 🔓 AUTO-UNLOCK PARTY CREDIT LINE ON VERIFICATION
+    await Party.updateMany(
+      { companyId: req.companyId, pendingApprovalBillId: bill._id },
+      { $set: { hasPendingBillApproval: false, pendingApprovalBillId: null, creditLimitLockedReason: "" } }
+    );
+
     await logActivity(req, `Verified Udhar Delivery OTP for Bill #${bill.billNumber}`);
 
     res.json({
       success: true,
-      message: "✅ उधारी डिलीवरी और कानूनी वचनपत्र सफलतापूर्वक सत्यापित हुआ! सामान ग्राहक को हैंडओवर किया जा सकता है।",
+      message: "✅ उधारी डिलीवरी और कानूनी वचनपत्र सफलतापूर्वक सत्यापित हुआ! सामान ग्राहक को हैंडओवर किया जा सकता है और क्रेडिट लाइन अनलॉक हो गई।",
       bill
     });
   } catch (err) {
@@ -733,8 +799,11 @@ export const resendUdharOtp = async (req, res) => {
     }
 
     const company = await Company.findById(req.companyId);
-    const newOtp = Math.floor(1000 + Math.random() * 9000).toString();
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    
+    // Smart OTP Reuse: If existing OTP is still within 30-min window, reuse it so customer doesn't get conflicting codes
+    const isStillValid = bill.otpExpiresAt && new Date() < new Date(bill.otpExpiresAt) && bill.otpCode;
+    const effectiveOtp = isStillValid ? bill.otpCode : Math.floor(1000 + Math.random() * 9000).toString();
+    const expiresAt = isStillValid ? bill.otpExpiresAt : new Date(Date.now() + 30 * 60 * 1000);
 
     const custName = (bill.customerName || "ग्राहक").trim();
     const shopName = company?.name || "हमारी फर्म";
@@ -742,7 +811,27 @@ export const resendUdharOtp = async (req, res) => {
       ? new Date(bill.dueDate).toLocaleDateString("hi-IN", { day: 'numeric', month: 'short', year: 'numeric' }) 
       : "15 दिन";
 
-    const legalText = 
+    let legalText = "";
+    if (bill.isCreditLineBill && bill.creditLineSnapshot) {
+      const snap = bill.creditLineSnapshot;
+      legalText = 
+`📋 *दैनिक उधारी बिल व खाता स्वीकृति (Credit Line Statement)*
+नमस्ते *${custName}*,
+फर्म: *${shopName}*
+बिल संख्या: *${bill.billNumber}*
+
+• आज का बिल: *₹${(snap.billAmount || bill.finalAmount || 0).toLocaleString('en-IN')}*
+• पिछला बकाया: *₹${(snap.previousBalance || 0).toLocaleString('en-IN')}*
+• अब तक कुल बकाया: *₹${(snap.newTotalBalance || 0).toLocaleString('en-IN')}*
+• स्वीकृत क्रेडिट लिमिट: *₹${(snap.sanctionedLimit || 0).toLocaleString('en-IN')}*
+• बची हुई उपलब्ध लिमिट: *₹${(snap.remainingLimit || 0).toLocaleString('en-IN')}*
+
+🔐 *बिल स्वीकृति एवं डिलीवरी OTP:*
+👉 *[ ${effectiveOtp} ]*
+
+_(कृपया यह OTP दुकानदार को बताकर बिल स्वीकृत करें। स्वीकृति के बाद ही आपकी शेष ₹${(snap.remainingLimit || 0).toLocaleString('en-IN')} की लिमिट सक्रिय रहेगी।)_`;
+    } else {
+      legalText = 
 `📜 *कानूनी उधारी वचनपत्र (IT Act 2000 Section 10A)*
 
 नमस्ते *${custName}*,
@@ -755,23 +844,31 @@ export const resendUdharOtp = async (req, res) => {
 *वचनपत्र (Undertaking):* 
 मैं प्रमाणित करता हूँ कि मैंने उपरोक्त बिल का समस्त सामान/सेवाएं सही स्थिति में प्राप्त कर ली हैं। मैं इस बकाया राशि का भुगतान नियत देय तारीख तक करने का वचन देता हूँ। नियत तारीख तक भुगतान न होने पर ${bill.lateInterestPercent || 2}% प्रति माह की दर से विलंब ब्याज देय होगा।
 
-🔐 *माल हैंडओवर/प्राप्ति का नया OTP:*
-👉 *[ ${newOtp} ]*
+🔐 *माल हैंडओवर/प्राप्ति का OTP:*
+👉 *[ ${effectiveOtp} ]*
 
 _(कृपया यह OTP दुकानदार को तभी बताएं जब आप सामान प्राप्त कर लें। OTP बताना आपकी कानूनी स्वीकृति मानी जाएगी।)_`;
+    }
 
-    bill.otpCode = newOtp;
+    bill.otpCode = effectiveOtp;
     bill.otpExpiresAt = expiresAt;
     bill.legalAgreementText = legalText;
     bill.updatedAt = new Date();
     await bill.save();
 
+    const cleanPhone = String(bill.customerMobile || "").replace(/\D/g, "");
+    const waLink = cleanPhone 
+      ? `https://wa.me/${cleanPhone.slice(-10)}?text=${encodeURIComponent(legalText)}`
+      : "";
+
     res.json({
       success: true,
-      message: "नया OTP सफलतापूर्वक जनरेट हुआ!",
-      otpCode: newOtp,
+      message: isStillValid ? "समान मान्य OTP पुनः तैयार है!" : "नया OTP सफलतापूर्वक जनरेट हुआ!",
+      otpCode: effectiveOtp,
       legalAgreementText: legalText,
-      customerMobile: bill.customerMobile
+      customerMobile: bill.customerMobile,
+      waLink,
+      otpReused: Boolean(isStillValid)
     });
   } catch (err) {
     console.error("resendUdharOtp error:", err);
@@ -782,13 +879,23 @@ _(कृपया यह OTP दुकानदार को तभी बता
 export const bypassUdharOtp = async (req, res) => {
   try {
     const { id } = req.params;
-    const { reason = "दुकानदार द्वारा बायपास" } = req.body;
+    const { reason = "दुकानदार द्वारा बायपास (काम न रुके)" } = req.body;
+
     const bill = await Bill.findOne({ _id: id, companyId: req.companyId });
     if (!bill) {
       return res.status(404).json({ success: false, message: "बिल नहीं मिला!" });
     }
 
     bill.handoverStatus = "BYPASSED";
+    bill.isOwnerBypassed = true;
+    bill.updatedAt = new Date();
+    await bill.save();
+
+    // Auto-unlock credit limit on Party so work is not stopped ("काम न रुके")
+    await Party.updateMany(
+      { companyId: req.companyId, pendingApprovalBillId: bill._id },
+      { $set: { hasPendingBillApproval: false, pendingApprovalBillId: null, creditLimitLockedReason: reason } }
+    );
     bill.isOtpVerified = false;
     bill.notes = (bill.notes ? bill.notes + " | " : "") + `[बायपास हैंडओवर: ${reason}]`;
     bill.updatedAt = new Date();

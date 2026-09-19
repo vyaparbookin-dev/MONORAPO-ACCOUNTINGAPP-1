@@ -70,6 +70,7 @@ import savingsRoutes from "./src/routes/savingsRoutes.js";
 import bankAccountRoutes from "./src/routes/bankAccountRoutes.js";
 
 import aiGatewayRoutes from "./src/routes/aiGatewayRoutes.js"; // AI Gateway को इम्पोर्ट करें
+import creditLimitRoutes from "./src/routes/creditLimitRoutes.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -222,6 +223,7 @@ app.use("/api/bank-accounts", bankAccountRoutes);
 app.use("/api/ai-gateway", aiGatewayRoutes); // AI Gateway को रजिस्टर करें
 app.use("/api/reports", reportRoutes);
 app.use("/api/schemes", schemeRoutes);
+app.use("/api/credit-limit", creditLimitRoutes);
 app.use("/api/logs", securityRoutes);
 const stubRouter = express.Router();
 stubRouter.all('*', (req, res) => res.json({ success: true, message: "Feature coming soon / API under construction" }));

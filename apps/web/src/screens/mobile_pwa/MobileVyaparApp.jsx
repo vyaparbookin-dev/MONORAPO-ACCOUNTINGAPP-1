@@ -59,6 +59,7 @@ import MobileFamilyExpenseModal from "../../components/mobile/MobileFamilyExpens
 import MobileSavingsModal from "../../components/mobile/MobileSavingsModal";
 import MobileBankCCModal from "../../components/mobile/MobileBankCCModal";
 import UdharOtpVerificationModal from "../../components/modals/UdharOtpVerificationModal";
+import CreditLimitHubModal from "../../components/modals/CreditLimitHubModal";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 import { speakUpiPayment, playPaymentChime } from "../../utils/soundBox";
@@ -197,6 +198,8 @@ function MobileVyaparAppContent() {
   const [activeUdharBillData, setActiveUdharBillData] = useState(null);
   const [udharOtpThreshold, setUdharOtpThreshold] = useState(500);
   const [isUdharProtectionChecked, setIsUdharProtectionChecked] = useState(false);
+  const [showCreditLimitHub, setShowCreditLimitHub] = useState(false);
+  const [bypassCreditLock, setBypassCreditLock] = useState(false);
 
   useEffect(() => {
     const curTotal = billCart.reduce((sum, item) => sum + ((Number(item.salePrice) || 0) * (Number(item.qty) || 1)), 0);
@@ -1054,6 +1057,9 @@ function MobileVyaparAppContent() {
           partyType: p.partyType || p.type || "customer",
           address: p.address || "",
           creditLimit: Number(p.creditLimit ?? 0),
+          isCreditLimitActive: Boolean(p.isCreditLimitActive),
+          creditLimitStatus: p.creditLimitStatus || (p.isCreditLimitActive ? "ACTIVE" : "INACTIVE"),
+          hasPendingBillApproval: Boolean(p.hasPendingBillApproval),
           gstNumber: p.gstNumber || "",
           notes: p.notes || ""
         }));
@@ -1211,6 +1217,8 @@ function MobileVyaparAppContent() {
       lateInterestPercent: billPaymentMode === "UDHAR" ? (Number(billLateInterest) || 2) : 0,
       isUdharProtected: billPaymentMode === "UDHAR" ? isUdharProtectionChecked : false,
       udharOtpThreshold: udharOtpThreshold,
+      partyId: selectedPartyObject?._id || selectedPartyObject?.id || undefined,
+      bypassPendingLock: Boolean(bypassCreditLock),
       items: billCart.map(i => ({ 
         productId: i.id, 
         name: i.name, 
@@ -1247,7 +1255,21 @@ function MobileVyaparAppContent() {
     }
 
     try {
-      const res = await api.post("/api/billing", billPayload).catch(() => null);
+      let res;
+      try {
+        res = await api.post("/api/billing", billPayload);
+      } catch (postErr) {
+        if (postErr.response?.data?.isPendingApprovalBlocked) {
+          if (window.confirm(`${postErr.response.data.message}\n\nक्या आप अभी 'काम न रुके' (बायपास) करके यह बिल तुरंत जारी करना चाहते हैं?`)) {
+            billPayload.bypassPendingLock = true;
+            res = await api.post("/api/billing", billPayload);
+          } else {
+            return;
+          }
+        } else {
+          throw postErr;
+        }
+      }
       const createdBill = {
         _id: res?.data?.bill?._id || Date.now().toString(),
         id: res?.data?.bill?.billNumber || `INV-${Date.now().toString().slice(-4)}`,
@@ -3175,6 +3197,15 @@ function MobileVyaparAppContent() {
             <Mic size={13} className="animate-pulse text-amber-300" />
             <span>🎙️ बोलें</span>
           </button>
+
+          <button 
+            onClick={() => setShowCreditLimitHub(true)}
+            className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-700 text-white font-extrabold text-xs rounded-full shadow-md transition cursor-pointer flex items-center gap-1 active:scale-95"
+            title="क्रेडिट लिमिट व दैनिक अप्रूवल हब"
+          >
+            <CreditCard size={13} className="text-emerald-200" />
+            <span>💳 क्रेडिट हब</span>
+          </button>
         </div>
       </div>
 
@@ -3364,6 +3395,47 @@ function MobileVyaparAppContent() {
                   </div>
                 )}
               </div>
+
+              {/* 💳 Live Customer Credit Limit Widget in Mobile Quick Bill */}
+              {selectedPartyObject && (selectedPartyObject.creditLimit > 0 || selectedPartyObject.isCreditLimitActive) && (
+                <div className={`p-2.5 rounded-2xl border text-xs space-y-1.5 animate-in fade-in ${
+                  selectedPartyObject.hasPendingBillApproval
+                    ? "bg-rose-50 border-rose-300 text-rose-950"
+                    : "bg-indigo-50/90 border-indigo-200 text-indigo-950"
+                }`}>
+                  <div className="flex items-center justify-between font-black">
+                    <span className="flex items-center gap-1">
+                      <CreditCard size={14} className="text-indigo-600" />
+                      <span>क्रेडिट लाइन: कुल ₹{Number(selectedPartyObject.creditLimit || 0).toLocaleString('en-IN')}</span>
+                    </span>
+                    <span className="text-emerald-700">
+                      उपलब्ध: ₹{Math.max(0, (selectedPartyObject.creditLimit || 0) - (selectedPartyObject.balance || 0)).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+
+                  {selectedPartyObject.hasPendingBillApproval ? (
+                    <div className="p-2 bg-white/90 rounded-xl border border-rose-200 text-[11px] text-rose-900 flex items-center justify-between gap-2">
+                      <div>
+                        <span className="font-black block">⚠️ पिछला बिल WhatsApp OTP से पेंडिंग है</span>
+                        <span className="text-[10px] text-slate-500">नया उधारी बिल जारी करने के लिए बायपास करें या पिछला OTP लें</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBypassCreditLock(!bypassCreditLock)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer transition ${
+                          bypassCreditLock ? "bg-amber-600 text-white shadow-xs" : "bg-slate-200 text-slate-800"
+                        }`}
+                      >
+                        {bypassCreditLock ? "बायपास सक्रिय ✓" : "काम न रुके (बायपास)"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-slate-500 flex items-center gap-1">
+                      <span>✓ स्वीकृत क्रेडिट लाइन उपलब्ध है। बिल बनते ही 5-बिंदु WhatsApp विवरण जाएगा।</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Payment Mode Selector */}
@@ -5948,6 +6020,13 @@ function MobileVyaparAppContent() {
             setSelectedBillDetail(prev => ({ ...prev, ...verifiedBill, isOtpVerified: true, handoverStatus: verifiedBill.handoverStatus || "VERIFIED_HANDED_OVER" }));
           }
         }}
+      />
+
+      {/* 💳 DEDICATED CREDIT LIMIT & MANDATE HUB MODAL */}
+      <CreditLimitHubModal
+        isOpen={showCreditLimitHub}
+        onClose={() => setShowCreditLimitHub(false)}
+        onPartyUpdated={() => fetchAllData()}
       />
 
     </div>
