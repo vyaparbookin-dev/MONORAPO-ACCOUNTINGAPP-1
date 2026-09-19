@@ -437,13 +437,20 @@ api.interceptors.request.use(async (config) => {
   }
   
   const token = (await getStorage("authToken")) || (await getStorage("token"));
-  const companyId = (await getStorage("companyId")) || (await getStorage("selectedCompany"));
+  const rawCompanyId = (await getStorage("companyId")) || (await getStorage("selectedCompany"));
+  let companyId = rawCompanyId;
+  if (companyId && typeof companyId === 'string' && (companyId.startsWith('{') || companyId.startsWith('['))) {
+    try {
+      const parsed = JSON.parse(companyId);
+      companyId = parsed._id || parsed.id || companyId;
+    } catch (e) {}
+  }
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
-  if (companyId) {
+  if (companyId && typeof companyId === 'string' && !companyId.startsWith('{')) {
     config.headers["x-company-id"] = companyId;
   }
 

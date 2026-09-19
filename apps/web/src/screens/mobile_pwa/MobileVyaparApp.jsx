@@ -146,11 +146,29 @@ function MobileVyaparAppContent() {
     return sessionStorage.getItem("mobile_active_tab") || "dashboard";
   });
   const [showCompanySelectModal, setShowCompanySelectModal] = useState(false);
-  const [parties, setParties] = useState([]);
-  const [items, setItems] = useState([]);
+  const [parties, setParties] = useState(() => {
+    try {
+      const stored = localStorage.getItem("vb_local_parties") || localStorage.getItem("parties") || localStorage.getItem("local_parties");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
+  const [items, setItems] = useState(() => {
+    try {
+      const stored = localStorage.getItem("vb_local_products") || localStorage.getItem("products") || localStorage.getItem("inventory") || localStorage.getItem("items");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
   const [bills, setBills] = useState(() => {
     try {
-      const stored = localStorage.getItem("vb_local_manual_bills");
+      const stored = localStorage.getItem("vb_local_manual_bills") || localStorage.getItem("bills") || localStorage.getItem("manual_bills") || localStorage.getItem("vb_bills") || localStorage.getItem("local_bills");
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) return deduplicateBills(parsed);
@@ -229,6 +247,7 @@ function MobileVyaparAppContent() {
   const [savingManualSale, setSavingManualSale] = useState(false);
   const [transactionTab, setTransactionTab] = useState("all"); // "all", "sales", "expenses"
   const [dailySaleFilter, setDailySaleFilter] = useState("today"); // "today", "yesterday", "week", "all"
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
 
   // AI Photo Bill OCR & Multi-Bill Batch State
   const [showOcrModal, setShowOcrModal] = useState(false);
@@ -517,14 +536,14 @@ function MobileVyaparAppContent() {
       setLoadingGharKharch(true);
       let localList = [];
       try {
-        const stored = localStorage.getItem("vb_local_expenses");
+        const stored = localStorage.getItem("vb_local_expenses") || localStorage.getItem("expenses") || localStorage.getItem("local_expenses");
         if (stored) {
-      try {
-        localList = JSON.parse(stored);
-      } catch (e) {
-        localList = [];
-      }
-    }
+          try {
+            localList = JSON.parse(stored);
+          } catch (e) {
+            localList = [];
+          }
+        }
       } catch (e) {}
 
       const [res1, res2] = await Promise.allSettled([
@@ -553,6 +572,7 @@ function MobileVyaparAppContent() {
       setGharKharchList(combined);
       try {
         localStorage.setItem("vb_local_expenses", JSON.stringify(combined));
+        localStorage.setItem("expenses", JSON.stringify(combined));
       } catch (e) {}
     } catch (e) {
       console.error("Failed to fetch Ghar Kharch:", e);
@@ -1029,66 +1049,113 @@ function MobileVyaparAppContent() {
       // Load local manual bills and merge
       let localManualBills = [];
       try {
-        const stored = localStorage.getItem("vb_local_manual_bills") || localStorage.getItem("bills");
+        const stored = localStorage.getItem("vb_local_manual_bills") || localStorage.getItem("bills") || localStorage.getItem("manual_bills") || localStorage.getItem("vb_bills") || localStorage.getItem("local_bills");
         if (stored) {
           localManualBills = JSON.parse(stored) || [];
         }
       } catch (e) {}
 
-      const mergedBills = deduplicateBills([...normBills, ...localManualBills]);
+      const mergedBills = deduplicateBills([...normBills, ...(Array.isArray(localManualBills) ? localManualBills : [])]);
       setBills(mergedBills);
       try {
         localStorage.setItem("vb_local_manual_bills", JSON.stringify(mergedBills));
+        localStorage.setItem("bills", JSON.stringify(mergedBills));
       } catch (e) {}
 
+      let rawParties = [];
       if (partiesRes.status === "fulfilled") {
-        const rawParties = partiesRes.value.data?.parties || partiesRes.value.data?.data || partiesRes.value.data || [];
-        const normParties = (Array.isArray(rawParties) ? rawParties : []).map(p => ({
-          id: p._id || p.id,
-          _id: p._id || p.id,
-          name: p.name || p.partyName,
-          phone: p.mobileNumber || p.phone || "",
-          mobileNumber: p.mobileNumber || p.phone || "",
-          // FIXED: prioritize currentBalance (actual running balance), then openingBalance, then 0
-          balance: Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0),
-          currentBalance: Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0),
-          openingBalance: Number(p.openingBalance ?? 0),
-          type: p.partyType || p.type || "customer",
-          partyType: p.partyType || p.type || "customer",
-          address: p.address || "",
-          creditLimit: Number(p.creditLimit ?? 0),
-          isCreditLimitActive: Boolean(p.isCreditLimitActive),
-          creditLimitStatus: p.creditLimitStatus || (p.isCreditLimitActive ? "ACTIVE" : "INACTIVE"),
-          hasPendingBillApproval: Boolean(p.hasPendingBillApproval),
-          gstNumber: p.gstNumber || "",
-          notes: p.notes || ""
-        }));
-        setParties(normParties);
+        rawParties = partiesRes.value.data?.parties || partiesRes.value.data?.data || partiesRes.value.data || [];
       }
+      const normParties = (Array.isArray(rawParties) ? rawParties : []).map(p => ({
+        id: p._id || p.id,
+        _id: p._id || p.id,
+        name: p.name || p.partyName,
+        phone: p.mobileNumber || p.phone || "",
+        mobileNumber: p.mobileNumber || p.phone || "",
+        // FIXED: prioritize currentBalance (actual running balance), then openingBalance, then 0
+        balance: Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0),
+        currentBalance: Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0),
+        openingBalance: Number(p.openingBalance ?? 0),
+        type: p.partyType || p.type || "customer",
+        partyType: p.partyType || p.type || "customer",
+        address: p.address || "",
+        creditLimit: Number(p.creditLimit ?? 0),
+        isCreditLimitActive: Boolean(p.isCreditLimitActive),
+        creditLimitStatus: p.creditLimitStatus || (p.isCreditLimitActive ? "ACTIVE" : "INACTIVE"),
+        hasPendingBillApproval: Boolean(p.hasPendingBillApproval),
+        gstNumber: p.gstNumber || "",
+        notes: p.notes || ""
+      }));
 
+      // Load local parties and merge safely so no party ever gets hidden
+      let localParties = [];
+      try {
+        const storedP = localStorage.getItem("vb_local_parties") || localStorage.getItem("parties") || localStorage.getItem("local_parties");
+        if (storedP) localParties = JSON.parse(storedP) || [];
+      } catch (e) {}
+
+      const partyMap = new Map();
+      (Array.isArray(localParties) ? localParties : []).forEach(p => {
+        const key = p._id || p.id || `${(p.name || '').trim().toLowerCase()}_${(p.phone || p.mobileNumber || '').trim()}`;
+        if (key) partyMap.set(key, p);
+      });
+      normParties.forEach(p => {
+        const key = p._id || p.id || `${(p.name || '').trim().toLowerCase()}_${(p.phone || p.mobileNumber || '').trim()}`;
+        if (key) partyMap.set(key, { ...(partyMap.get(key) || {}), ...p });
+      });
+      const mergedParties = Array.from(partyMap.values());
+      setParties(mergedParties);
+      try {
+        localStorage.setItem("vb_local_parties", JSON.stringify(mergedParties));
+        localStorage.setItem("parties", JSON.stringify(mergedParties));
+      } catch (e) {}
+
+      let rawInv = [];
       if (invRes.status === "fulfilled") {
-        const rawInv = invRes.value.data?.products || invRes.value.data?.inventory || invRes.value.data?.items || invRes.value.data || (Array.isArray(invRes.value) ? invRes.value : []);
-        const normInv = (Array.isArray(rawInv) ? rawInv : []).map(it => ({
-          ...it,
-          id: it._id || it.id,
-          _id: it._id || it.id,
-          name: it.name || it.productName || "Unnamed Item",
-          category: (it.category || "General").trim(),
-          subCategory: (it.subCategory || "").trim(),
-          brand: (it.brand || "General").trim(),
-          salePrice: Number(it.sellingPrice ?? it.salePrice ?? it.price ?? 0),
-          sellingPrice: Number(it.sellingPrice ?? it.salePrice ?? it.price ?? 0),
-          costPrice: Number(it.costPrice ?? 0),
-          mrp: Number(it.mrp ?? it.sellingPrice ?? 0),
-          stock: Number(it.currentStock ?? it.stock ?? 0),
-          currentStock: Number(it.currentStock ?? it.stock ?? 0),
-          unit: it.unit || "Pcs",
-          barcode: it.barcode || "",
-          sku: it.sku || "",
-          hsnCode: it.hsnCode || ""
-        }));
-        setItems(normInv);
+        rawInv = invRes.value.data?.products || invRes.value.data?.inventory || invRes.value.data?.items || invRes.value.data || (Array.isArray(invRes.value) ? invRes.value : []);
       }
+      const normInv = (Array.isArray(rawInv) ? rawInv : []).map(it => ({
+        ...it,
+        id: it._id || it.id,
+        _id: it._id || it.id,
+        name: it.name || it.productName || "Unnamed Item",
+        category: (it.category || "General").trim(),
+        subCategory: (it.subCategory || "").trim(),
+        brand: (it.brand || "General").trim(),
+        salePrice: Number(it.sellingPrice ?? it.salePrice ?? it.price ?? 0),
+        sellingPrice: Number(it.sellingPrice ?? it.salePrice ?? it.price ?? 0),
+        costPrice: Number(it.costPrice ?? 0),
+        mrp: Number(it.mrp ?? it.sellingPrice ?? 0),
+        stock: Number(it.currentStock ?? it.stock ?? 0),
+        currentStock: Number(it.currentStock ?? it.stock ?? 0),
+        unit: it.unit || "Pcs",
+        barcode: it.barcode || "",
+        sku: it.sku || "",
+        hsnCode: it.hsnCode || ""
+      }));
+
+      // Load local products and merge safely so no items disappear
+      let localProducts = [];
+      try {
+        const storedI = localStorage.getItem("vb_local_products") || localStorage.getItem("products") || localStorage.getItem("inventory") || localStorage.getItem("items");
+        if (storedI) localProducts = JSON.parse(storedI) || [];
+      } catch (e) {}
+
+      const itemMap = new Map();
+      (Array.isArray(localProducts) ? localProducts : []).forEach(it => {
+        const key = it._id || it.id || (it.name || '').trim().toLowerCase();
+        if (key) itemMap.set(key, it);
+      });
+      normInv.forEach(it => {
+        const key = it._id || it.id || (it.name || '').trim().toLowerCase();
+        if (key) itemMap.set(key, { ...(itemMap.get(key) || {}), ...it });
+      });
+      const mergedItems = Array.from(itemMap.values());
+      setItems(mergedItems);
+      try {
+        localStorage.setItem("vb_local_products", JSON.stringify(mergedItems));
+        localStorage.setItem("products", JSON.stringify(mergedItems));
+      } catch (e) {}
     } catch (e) {
       console.error("Dashboard fetch error:", e);
     } finally {
@@ -1241,7 +1308,14 @@ function MobileVyaparAppContent() {
         balance: billPaymentMode === "UDHAR" ? totalBillAmount : 0,
         type: "customer"
       };
-      setParties(prev => [newP, ...prev]);
+      setParties(prev => {
+        const updated = [newP, ...prev];
+        try {
+          localStorage.setItem("vb_local_parties", JSON.stringify(updated));
+          localStorage.setItem("parties", JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
     }
 
     if (billAppliedReward) {
@@ -1282,7 +1356,14 @@ function MobileVyaparAppContent() {
         items: billCart,
         ...(res?.data?.bill || {})
       };
-      setBills([createdBill, ...bills]);
+      setBills(prev => {
+        const updated = deduplicateBills([createdBill, ...prev]);
+        try {
+          localStorage.setItem("vb_local_manual_bills", JSON.stringify(updated));
+          localStorage.setItem("bills", JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
       setBillCart([]);
       setBillCustomer("");
       setBillCustomerPhone("");
@@ -1368,7 +1449,14 @@ function MobileVyaparAppContent() {
         salePrice: saleP
       };
 
-      setItems(prev => [createdItem, ...prev]);
+      setItems(prev => {
+        const updated = [createdItem, ...prev];
+        try {
+          localStorage.setItem("vb_local_products", JSON.stringify(updated));
+          localStorage.setItem("products", JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
       
       // If billing modal is open, automatically add the newly created item to the cart!
       if (showQuickBillModal) {
@@ -1454,7 +1542,14 @@ function MobileVyaparAppContent() {
           address: payload.address,
         };
 
-        setParties(prev => prev.map(p => ((p._id || p.id) === pId ? updatedParty : p)));
+        setParties(prev => {
+          const updated = prev.map(p => ((p._id || p.id) === pId ? updatedParty : p));
+          try {
+            localStorage.setItem("vb_local_parties", JSON.stringify(updated));
+            localStorage.setItem("parties", JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
         if (selectedPartyDetail && ((selectedPartyDetail._id || selectedPartyDetail.id) === pId)) {
           setSelectedPartyDetail(updatedParty);
         }
@@ -1478,7 +1573,14 @@ function MobileVyaparAppContent() {
           notes: ""
         };
 
-        setParties(prev => [createdParty, ...prev]);
+        setParties(prev => {
+          const updated = [createdParty, ...prev];
+          try {
+            localStorage.setItem("vb_local_parties", JSON.stringify(updated));
+            localStorage.setItem("parties", JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
         alert(`✅ पार्टी '${createdParty.name}' सफलतापूर्वक जुड़ गई!`);
       }
 
@@ -2174,9 +2276,21 @@ function MobileVyaparAppContent() {
                   <div className="text-3xl font-black tracking-tight text-white drop-shadow-sm">
                     ₹ {activePeriodSales.toLocaleString('en-IN')}
                   </div>
-                  <p className="text-[11px] text-indigo-200 font-semibold mt-0.5">
-                    {activePeriodBills.length > 0 ? `कुल ${activePeriodBills.length} बिक्री बिल दर्ज हैं` : 'बिक्री दर्ज करने हेतु + बटन दबाएं'}
-                  </p>
+                  <div className="text-[11px] text-indigo-200 font-semibold mt-0.5">
+                    {activePeriodBills.length > 0 ? (
+                      `कुल ${activePeriodBills.length} बिक्री बिल दर्ज हैं`
+                    ) : bills.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setDailySaleFilter("all")}
+                        className="text-amber-300 hover:text-white underline font-bold inline-flex items-center gap-1 cursor-pointer transition"
+                      >
+                        💡 आज कोई नया बिल नहीं • कुल {bills.length} पुराने बिल देखें →
+                      </button>
+                    ) : (
+                      'बिक्री दर्ज करने हेतु + बटन दबाएं'
+                    )}
+                  </div>
                 </div>
                 <button
                   onClick={() => setShowManualSaleModal(true)}
@@ -2496,7 +2610,7 @@ function MobileVyaparAppContent() {
 
                 return (
                   <div className="space-y-2">
-                    {displayList.slice(0, 8).map((tx) => (
+                    {(showAllTransactions ? displayList : displayList.slice(0, 8)).map((tx) => (
                       <div 
                         key={tx._id}
                         onClick={() => {
@@ -2543,6 +2657,15 @@ function MobileVyaparAppContent() {
                         </div>
                       </div>
                     ))}
+                    {displayList.length > 8 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllTransactions(prev => !prev)}
+                        className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 text-indigo-700 text-xs font-black rounded-xl border border-indigo-100 transition cursor-pointer text-center"
+                      >
+                        {showAllTransactions ? "कम लेनदेन दिखाएं (Show Less)" : `सभी ${displayList.length} लेनदेन देखें (View All)`}
+                      </button>
+                    )}
                   </div>
                 );
               })()}
@@ -2641,12 +2764,23 @@ function MobileVyaparAppContent() {
               </div>
 
               {filteredParties.length === 0 ? (
-                <div className="p-8 text-center bg-white rounded-2xl border border-slate-100 text-slate-400 text-xs">
-                  {partyFilterTab === "to_pay" 
-                    ? "कोई देनदारी बाकी नहीं है (To Pay / देने हैं खाता शून्य है)।" 
-                    : partyFilterTab === "to_collect" 
-                      ? "कोई वसूली बाकी नहीं है (To Collect / लेने हैं खाता शून्य है)।" 
-                      : "कोई पार्टी नहीं मिली। \"+ Add Party\" दबाकर नई पार्टी या पर्सनल खाता जोड़ें।"}
+                <div className="p-8 text-center bg-white rounded-2xl border border-slate-100 text-slate-400 text-xs space-y-2.5">
+                  <p>
+                    {partyFilterTab === "to_pay" 
+                      ? "कोई देनदारी बाकी नहीं है (To Pay / देने हैं खाता शून्य है)।" 
+                      : partyFilterTab === "to_collect" 
+                        ? "कोई वसूली बाकी नहीं है (To Collect / लेने हैं खाता शून्य है)।" 
+                        : "कोई पार्टी नहीं मिली। \"+ Add Party\" दबाकर नई पार्टी या पर्सनल खाता जोड़ें।"}
+                  </p>
+                  {parties.length > 0 && partyFilterTab !== "all" && (
+                    <button
+                      type="button"
+                      onClick={() => setPartyFilterTab("all")}
+                      className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-[#4338CA] font-bold rounded-xl border border-indigo-200 text-xs cursor-pointer inline-flex items-center gap-1 transition"
+                    >
+                      💡 कुल {parties.length} पार्टियां मौजूद हैं • सभी पार्टियां देखें →
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -2902,15 +3036,35 @@ function MobileVyaparAppContent() {
               {/* Items List */}
               <div className="space-y-2">
                 {filteredItems.length === 0 ? (
-                  <div className="p-8 bg-white border border-slate-100 rounded-2xl text-center space-y-2 shadow-sm">
+                  <div className="p-8 bg-white border border-slate-100 rounded-2xl text-center space-y-2.5 shadow-sm">
                     <p className="text-xs font-bold text-slate-600">कोई आइटम नहीं मिला (No items found)</p>
-                    <p className="text-[10px] text-slate-400">फिल्टर बदलें या नया आइटम जोड़ें</p>
-                    <button
-                      onClick={() => setShowAddItemModal(true)}
-                      className="px-3.5 py-1.5 bg-[#059669] text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer inline-flex items-center gap-1"
-                    >
-                      <Plus size={14} /> + Add Item
-                    </button>
+                    <p className="text-[10px] text-slate-400">
+                      {items.length > 0 ? `सर्च या फिल्टर के कारण कोई आइटम मैच नहीं हुआ। कुल ${items.length} आइटम उपलब्ध हैं।` : "फिल्टर बदलें या नया आइटम जोड़ें"}
+                    </p>
+                    {items.length > 0 && (selectedCategoryFilter !== "ALL" || selectedBrandFilter !== "ALL" || selectedStockFilter !== "ALL" || searchQuery) && (
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCategoryFilter("ALL");
+                            setSelectedBrandFilter("ALL");
+                            setSelectedStockFilter("ALL");
+                            setSearchQuery("");
+                          }}
+                          className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-[#4338CA] font-bold rounded-xl border border-indigo-200 text-xs cursor-pointer inline-flex items-center gap-1 transition mr-2"
+                        >
+                          🔄 सारे फ़िल्टर हटाएं ({items.length} आइटम देखें)
+                        </button>
+                      </div>
+                    )}
+                    <div>
+                      <button
+                        onClick={() => setShowAddItemModal(true)}
+                        className="px-3.5 py-1.5 bg-[#059669] text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <Plus size={14} /> + Add Item
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   filteredItems.map((it) => {
