@@ -44,6 +44,9 @@ const companySchema = new mongoose.Schema({
   maxFreeAiScans: { type: Number, default: 25 }, // Free limit of 25 AI scans
   subscriptionExpiresAt: { type: Date }, // Date when premium subscription expires
 
+  // Udhar / Credit Settings
+  udharOtpThreshold: { type: Number, default: 500 }, // Under this amount, Udhar OTP is not mandatory / auto-approved
+
   // New Settings object for extensibility
   settings: {
     whatsapp: {

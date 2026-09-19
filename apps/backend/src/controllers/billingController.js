@@ -36,17 +36,33 @@ export const createBill = async (req, res) => {
     const pMode = String(paymentMode || paymentMethod || req.body.type || "CASH").toUpperCase();
     const finalBillAmount = Number(finalAmount || total || 0);
 
-    const isUdhar = pMode === "UDHAR" || pMode === "CREDIT" || req.body.paymentStatus === "unpaid" || Boolean(req.body.isUdharProtected);
+    const isUdhar = pMode === "UDHAR" || pMode === "CREDIT" || req.body.paymentStatus === "unpaid";
+    const udharThreshold = Number(req.body.udharOtpThreshold ?? company.udharOtpThreshold ?? 500);
+
+    // 🛡️ Determine if Udhar Legal OTP Protection should be applied:
+    // 1. If merchant explicitly specified `isUdharProtected`: respect their choice (true or false).
+    // 2. If not specified: automatically apply OTP protection if bill amount exceeds threshold (> ₹500 default).
+    //    Small bills (<= threshold) are auto-approved without OTP requirement.
+    let shouldProtectWithOtp = false;
+    if (isUdhar) {
+      if (typeof req.body.isUdharProtected === "boolean") {
+        shouldProtectWithOtp = req.body.isUdharProtected;
+      } else {
+        shouldProtectWithOtp = finalBillAmount > udharThreshold;
+      }
+    }
 
     // 🛡️ GENERATE LEGAL UDHAR PROMISSORY NOTE & DELIVERY OTP (IT Act 2000 Section 10A)
     let otpCode = "";
     let legalAgreementText = "";
     let otpExpiresAt = null;
-    let handoverStatus = isUdhar ? "PENDING_OTP" : "CASH_PAID";
+    let handoverStatus = isUdhar 
+      ? (shouldProtectWithOtp ? "PENDING_OTP" : "NOT_REQUIRED") 
+      : "CASH_PAID";
     const lateInt = Number(req.body.lateInterestPercent ?? 2);
     const finalDueDate = dueDate || (isUdhar ? new Date(Date.now() + 15 * 86400000) : undefined);
 
-    if (isUdhar) {
+    if (shouldProtectWithOtp) {
       // 4-digit secure numeric OTP
       otpCode = Math.floor(1000 + Math.random() * 9000).toString();
       otpExpiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes validity
@@ -84,10 +100,10 @@ _(कृपया यह OTP दुकानदार को तभी बता
       finalAmount: finalBillAmount,
       billImageUrl: req.body.billImageUrl,
       dueDate: finalDueDate,
-      isUdharProtected: isUdhar,
+      isUdharProtected: shouldProtectWithOtp,
       otpCode,
       otpExpiresAt,
-      isOtpVerified: false,
+      isOtpVerified: !shouldProtectWithOtp,
       legalAgreementText,
       lateInterestPercent: lateInt,
       handoverStatus
@@ -218,14 +234,15 @@ _(कृपया यह OTP दुकानदार को तभी बता
       success: true, 
       bill, 
       stampResult, 
-      udharProtection: isUdhar ? {
+      udharProtection: shouldProtectWithOtp ? {
         isUdharProtected: true,
         otpCode,
         handoverStatus: "PENDING_OTP",
         legalAgreementText,
         customerMobile: customerMobile || req.body.customerPhone || req.body.phone,
         dueDate: bill.dueDate,
-        lateInterestPercent: bill.lateInterestPercent
+        lateInterestPercent: bill.lateInterestPercent,
+        threshold: udharThreshold
       } : null,
       message: `Bill ${bill.billNumber} created successfully!` 
     });

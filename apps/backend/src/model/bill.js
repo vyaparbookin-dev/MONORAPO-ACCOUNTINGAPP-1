@@ -85,7 +85,7 @@ const billSchema = new mongoose.Schema({
   lateInterestPercent: { type: Number, default: 2 }, // Monthly interest percentage (e.g. 2% per month)
   handoverStatus: { 
     type: String, 
-    enum: ["PENDING_OTP", "VERIFIED_HANDED_OVER", "BYPASSED", "CASH_PAID"], 
+    enum: ["PENDING_OTP", "VERIFIED_HANDED_OVER", "BYPASSED", "CASH_PAID", "NOT_REQUIRED"], 
     default: "CASH_PAID" 
   },
   whatsappDeliveryStatus: { type: String, default: "" },

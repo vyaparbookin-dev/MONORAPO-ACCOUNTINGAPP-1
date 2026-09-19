@@ -68,6 +68,8 @@ export default function VoiceAssistantPage() {
   // Udhar OTP modal state
   const [showUdharModal, setShowUdharModal] = useState(false);
   const [activeUdharBill, setActiveUdharBill] = useState(null);
+  const [udharThreshold, setUdharThreshold] = useState(500);
+  const [isUdharProtected, setIsUdharProtected] = useState(false);
 
   // Submit / Loading State
   const [submitting, setSubmitting] = useState(false);
@@ -257,6 +259,11 @@ export default function VoiceAssistantPage() {
   const grandTotal = parsedItems.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
   const totalStockToAdd = parsedItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
+  // Auto-sync Udhar protection toggle based on small-bill threshold
+  useEffect(() => {
+    setIsUdharProtected(grandTotal > udharThreshold);
+  }, [grandTotal, udharThreshold]);
+
   // Submit Voice Bill
   const handleCreateVoiceBill = async () => {
     if (parsedItems.length === 0) {
@@ -285,7 +292,8 @@ export default function VoiceAssistantPage() {
         status: paymentMode === "UDHAR" ? "issued" : "paid",
         dueDate: paymentMode === "UDHAR" ? dueDate : undefined,
         lateInterestPercent: paymentMode === "UDHAR" ? (Number(lateInterestPercent) || 2) : 0,
-        isUdharProtected: paymentMode === "UDHAR",
+        isUdharProtected: paymentMode === "UDHAR" ? isUdharProtected : false,
+        udharOtpThreshold: udharThreshold,
         autoCreateNewProducts: true, // Auto register in inventory!
         items: parsedItems.map((item) => ({
           productId: item.productId || undefined,
@@ -758,40 +766,86 @@ export default function VoiceAssistantPage() {
                   </div>
                 </div>
 
-                {/* Legal Udhar Card */}
+                {/* Legal Udhar Card - Smart Threshold & Toggle */}
                 {paymentMode === "UDHAR" && (
-                  <div className="p-3 bg-rose-950/40 border border-rose-500/40 rounded-2xl space-y-2 animate-in fade-in">
-                    <div className="flex items-center gap-1.5 text-rose-300 font-bold text-xs">
-                      <ShieldCheck size={16} className="text-emerald-400" />
-                      <span>लीगल उधारी सुरक्षा (IT Act 2000 Section 10A)</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-[10px] text-slate-300 block mb-0.5">📅 तय तारीख (Due Date):</label>
-                        <input
-                          type="date"
-                          value={dueDate}
-                          onChange={(e) => setDueDate(e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-rose-400 font-medium"
-                        />
+                  <div className="p-3 bg-rose-950/40 border border-rose-500/40 rounded-2xl space-y-2.5 animate-in fade-in">
+                    {/* Threshold Badge */}
+                    <div className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-between gap-2 ${
+                      grandTotal <= udharThreshold 
+                        ? "bg-amber-950/60 text-amber-300 border border-amber-600/40" 
+                        : "bg-emerald-950/60 text-emerald-300 border border-emerald-600/40"
+                    }`}>
+                      <div className="flex items-center gap-1.5">
+                        <span>{grandTotal <= udharThreshold ? "⚡" : "🛡️"}</span>
+                        <span>
+                          {grandTotal <= udharThreshold 
+                            ? `छोटा बिल (₹${grandTotal} ≤ ₹${udharThreshold}) - ऑटो-अप्रूव्ड` 
+                            : `बड़ा बिल (₹${grandTotal} > ₹${udharThreshold}) - OTP सुरक्षा अनुशंसित`}
+                        </span>
                       </div>
-                      <div>
-                        <label className="text-[10px] text-slate-300 block mb-0.5">⚖️ विलंब ब्याज % (प्रति माह):</label>
-                        <input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          max="30"
-                          value={lateInterestPercent}
-                          onChange={(e) => setLateInterestPercent(e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-rose-400 font-medium"
-                          placeholder="2"
-                        />
-                      </div>
+                      <span className="text-[10px] bg-black/40 px-2 py-0.5 rounded-md text-white font-mono font-normal">
+                        सीमा: ₹{udharThreshold}
+                      </span>
                     </div>
-                    <p className="text-[10px] text-slate-400">
-                      📱 बिल बनते ही ग्राहक के WhatsApp पर कानूनी वचनपत्र और डिलीवरी OTP जाएगा। OTP लेकर ही डिलीवरी सत्यापित करें।
-                    </p>
+
+                    {/* Toggle Row */}
+                    <div className="flex items-center justify-between gap-3 p-2 bg-slate-900/90 rounded-xl border border-slate-700/70">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-rose-200">
+                          <ShieldCheck size={15} className={isUdharProtected ? "text-emerald-400" : "text-slate-500"} />
+                          <span>लीगल WhatsApp OTP सुरक्षा {isUdharProtected ? "(सक्रिय)" : "(बंद)"}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 block mt-0.5">
+                          {isUdharProtected ? "सामान देने से पहले WhatsApp OTP सत्यापन आवश्यक होगा" : "विश्वस्त ग्राहक: बिना OTP के त्वरित उधारी दर्ज करें"}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsUdharProtected(!isUdharProtected)}
+                        className={`w-11 h-6 rounded-full transition-colors p-0.5 flex items-center cursor-pointer shrink-0 ${
+                          isUdharProtected ? "bg-emerald-500 justify-end" : "bg-slate-600 justify-start"
+                        }`}
+                      >
+                        <span className="w-5 h-5 rounded-full bg-white shadow block" />
+                      </button>
+                    </div>
+
+                    {isUdharProtected ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] text-slate-300 block mb-0.5">📅 तय तारीख (Due Date):</label>
+                            <input
+                              type="date"
+                              value={dueDate}
+                              onChange={(e) => setDueDate(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-rose-400 font-medium"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-300 block mb-0.5">⚖️ विलंब ब्याज % (प्रति माह):</label>
+                            <input
+                              type="number"
+                              step="0.5"
+                              min="0"
+                              max="30"
+                              value={lateInterestPercent}
+                              onChange={(e) => setLateInterestPercent(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-rose-400 font-medium"
+                              placeholder="2"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-slate-400">
+                          📱 बिल बनते ही ग्राहक के WhatsApp पर कानूनी वचनपत्र और डिलीवरी OTP जाएगा। OTP लेकर ही डिलीवरी सत्यापित करें।
+                        </p>
+                      </>
+                    ) : (
+                      <div className="p-2 bg-slate-900/60 rounded-xl border border-slate-700/50 text-[10px] text-emerald-400 flex items-center gap-1.5 font-medium">
+                        <span>✓</span>
+                        <span>त्वरित क्रेडिट मोड सक्रिय - बिना OTP बिल तुरंत सुरक्षित रूप से जारी होगा।</span>
+                      </div>
+                    )}
                   </div>
                 )}
 

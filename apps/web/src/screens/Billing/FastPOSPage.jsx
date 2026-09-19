@@ -138,6 +138,8 @@ export default function FastPOSPage() {
   const [posLateInterest, setPosLateInterest] = useState(2);
   const [showUdharModal, setShowUdharModal] = useState(false);
   const [udharModalBill, setUdharModalBill] = useState(null);
+  const [posUdharThreshold, setPosUdharThreshold] = useState(500);
+  const [posUdharProtected, setPosUdharProtected] = useState(false);
 
   // Restaurant Deep Analytics (Petpooja Benchmark: Order types, Notes & Staff Reviews)
   const [restaurantAnalytics, setRestaurantAnalytics] = useState(null);
@@ -402,6 +404,12 @@ export default function FastPOSPage() {
   };
   const getGrandTotal = () => Math.max(0, getSubTotal() - getCouponDiscount());
 
+  // Auto-sync Udhar protection toggle based on small-bill threshold
+  useEffect(() => {
+    const total = getGrandTotal();
+    setPosUdharProtected(total > posUdharThreshold);
+  }, [cart, appliedCoupon, posUdharThreshold]);
+
   // 1-Click Generate Bill from Cart
   const triggerCheckout = async () => {
     if (cart.length === 0) return alert("कृपया बिल बनाने के लिए कार्ट में आइटम जोड़ें!");
@@ -433,6 +441,8 @@ export default function FastPOSPage() {
         status: posPaymentMode === "UDHAR" ? "issued" : "paid",
         dueDate: posPaymentMode === "UDHAR" ? posDueDate : undefined,
         lateInterestPercent: posPaymentMode === "UDHAR" ? (Number(posLateInterest) || 2) : 0,
+        isUdharProtected: posPaymentMode === "UDHAR" ? posUdharProtected : false,
+        udharOtpThreshold: posUdharThreshold,
         createdAt: new Date().toISOString(),
         date: new Date().toISOString()
       };
@@ -1173,37 +1183,79 @@ export default function FastPOSPage() {
               </div>
             </div>
 
-            {/* 🛡️ Legal Udhar Terms Card (IT Act 2000 Section 10A) */}
+            {/* 🛡️ Legal Udhar Terms Card (IT Act 2000 Section 10A) - Smart Threshold & Toggle */}
             {posPaymentMode === "UDHAR" && (
-              <div className="p-2 bg-rose-950/40 border border-rose-500/40 rounded-xl space-y-1.5 animate-in fade-in text-[11px]">
-                <div className="grid grid-cols-2 gap-1.5">
-                  <div>
-                    <label className="text-[9px] font-bold text-rose-200 block mb-0.5">📅 तय तारीख (Due Date):</label>
-                    <input
-                      type="date"
-                      value={posDueDate}
-                      onChange={(e) => setPosDueDate(e.target.value)}
-                      className="w-full px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-[11px] text-white outline-none focus:border-rose-400 font-medium"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold text-rose-200 block mb-0.5">⚖️ ब्याज % / माह (Late Fee):</label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0"
-                      max="30"
-                      value={posLateInterest}
-                      onChange={(e) => setPosLateInterest(e.target.value)}
-                      className="w-full px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-[11px] text-white outline-none focus:border-rose-400 font-medium"
-                      placeholder="2"
-                    />
-                  </div>
+              <div className="p-2.5 bg-rose-950/40 border border-rose-500/40 rounded-xl space-y-2 animate-in fade-in text-[11px]">
+                {/* Threshold Badge */}
+                <div className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center justify-between gap-1.5 ${
+                  getGrandTotal() <= posUdharThreshold 
+                    ? "bg-amber-950/60 text-amber-300 border border-amber-600/40" 
+                    : "bg-emerald-950/60 text-emerald-300 border border-emerald-600/40"
+                }`}>
+                  <span>{getGrandTotal() <= posUdharThreshold ? "⚡ छोटा बिल - ऑटो अप्रूव्ड" : "🛡️ बड़ा बिल - OTP सुरक्षा अनुशंसित"}</span>
+                  <span className="text-[9px] bg-black/40 px-1 py-0.5 rounded text-white font-mono font-normal">
+                    सीमा: ₹{posUdharThreshold}
+                  </span>
                 </div>
-                <div className="p-1.5 bg-slate-900/80 rounded-lg border border-slate-700/60 text-[9px] text-slate-300 flex items-start gap-1">
-                  <span>📱</span>
-                  <span>बिल बनते ही ग्राहक के WhatsApp पर कानूनी वचनपत्र और डिलीवरी OTP जाएगा। OTP लेकर ही सामान हैंडओवर करें।</span>
+
+                {/* Toggle Row */}
+                <div className="flex items-center justify-between gap-2 p-1.5 bg-slate-900/90 rounded-lg border border-slate-700/70">
+                  <div className="flex-1">
+                    <span className="text-[10px] font-bold text-rose-200 block">
+                      {posUdharProtected ? "🛡️ WhatsApp OTP सुरक्षा (सक्रिय)" : "⚡ बिना OTP सीधी उधारी (विश्वस्त ग्राहक)"}
+                    </span>
+                    <span className="text-[9px] text-slate-400 block">
+                      {posUdharProtected ? "डिलीवरी पर OTP सत्यापन आवश्यक" : "तुरंत बिना OTP बिल तैयार होगा"}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPosUdharProtected(!posUdharProtected)}
+                    className={`w-10 h-5 rounded-full transition-colors p-0.5 flex items-center cursor-pointer shrink-0 ${
+                      posUdharProtected ? "bg-emerald-500 justify-end" : "bg-slate-600 justify-start"
+                    }`}
+                  >
+                    <span className="w-4 h-4 rounded-full bg-white shadow block" />
+                  </button>
                 </div>
+
+                {posUdharProtected ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div>
+                        <label className="text-[9px] font-bold text-rose-200 block mb-0.5">📅 तय तारीख (Due Date):</label>
+                        <input
+                          type="date"
+                          value={posDueDate}
+                          onChange={(e) => setPosDueDate(e.target.value)}
+                          className="w-full px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-[11px] text-white outline-none focus:border-rose-400 font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold text-rose-200 block mb-0.5">⚖️ ब्याज % / माह (Late Fee):</label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          max="30"
+                          value={posLateInterest}
+                          onChange={(e) => setPosLateInterest(e.target.value)}
+                          className="w-full px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-[11px] text-white outline-none focus:border-rose-400 font-medium"
+                          placeholder="2"
+                        />
+                      </div>
+                    </div>
+                    <div className="p-1.5 bg-slate-900/80 rounded-lg border border-slate-700/60 text-[9px] text-slate-300 flex items-start gap-1">
+                      <span>📱</span>
+                      <span>बिल बनते ही ग्राहक के WhatsApp पर कानूनी वचनपत्र और डिलीवरी OTP जाएगा। OTP लेकर ही सामान हैंडओवर करें।</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-1.5 bg-slate-900/60 rounded-lg border border-slate-700/50 text-[9px] text-emerald-400 flex items-center gap-1 font-medium">
+                    <span>✓</span>
+                    <span>त्वरित क्रेडिट मोड सक्रिय - किसी OTP की आवश्यकता नहीं होगी।</span>
+                  </div>
+                )}
               </div>
             )}
 
