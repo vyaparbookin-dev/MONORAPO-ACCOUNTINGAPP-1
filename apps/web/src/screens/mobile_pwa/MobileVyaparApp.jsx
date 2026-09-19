@@ -248,6 +248,76 @@ function MobileVyaparAppContent() {
   const [transactionTab, setTransactionTab] = useState("all"); // "all", "sales", "expenses"
   const [dailySaleFilter, setDailySaleFilter] = useState("today"); // "today", "yesterday", "week", "all"
   const [showAllTransactions, setShowAllTransactions] = useState(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [syncQueueCount, setSyncQueueCount] = useState(() => {
+    try {
+      const q = localStorage.getItem("vb_offline_sync_queue");
+      return q ? JSON.parse(q).length : 0;
+    } catch (e) {
+      return 0;
+    }
+  });
+
+  const enqueueOfflineSync = (action) => {
+    try {
+      const stored = localStorage.getItem("vb_offline_sync_queue");
+      const list = stored ? JSON.parse(stored) : [];
+      list.push({ ...action, timestamp: Date.now() });
+      localStorage.setItem("vb_offline_sync_queue", JSON.stringify(list));
+      setSyncQueueCount(list.length);
+    } catch (e) {
+      console.error("enqueueOfflineSync error:", e);
+    }
+  };
+
+  const processOfflineSyncQueue = async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    try {
+      const stored = localStorage.getItem("vb_offline_sync_queue");
+      if (!stored) return;
+      const queue = JSON.parse(stored);
+      if (!Array.isArray(queue) || queue.length === 0) return;
+
+      const remaining = [];
+      for (const action of queue) {
+        try {
+          if (action.type === 'CREATE_BILL') {
+            await api.post("/api/billing", action.payload);
+          } else if (action.type === 'CREATE_PARTY') {
+            await api.post("/api/party", action.payload).catch(() => api.post("/api/parties", action.payload));
+          } else if (action.type === 'CREATE_ITEM') {
+            await api.post("/api/inventory", action.payload).catch(() => api.post("/inventory", action.payload));
+          } else if (action.type === 'CREATE_EXPENSE') {
+            await api.post("/api/expenses", action.payload);
+          }
+        } catch (syncErr) {
+          console.warn("Sync queue item defer:", syncErr);
+          remaining.push(action);
+        }
+      }
+      localStorage.setItem("vb_offline_sync_queue", JSON.stringify(remaining));
+      setSyncQueueCount(remaining.length);
+    } catch (e) {
+      console.error("processOfflineSyncQueue error:", e);
+    }
+  };
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      processOfflineSyncQueue();
+      fetchLiveDashboardData();
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   // AI Photo Bill OCR & Multi-Bill Batch State
   const [showOcrModal, setShowOcrModal] = useState(false);
@@ -1329,71 +1399,104 @@ function MobileVyaparAppContent() {
     }
 
     try {
-      let res;
+      // 1. OFFLINE-FIRST: Construct createdBill and persist LOCALLY FIRST
+      const localBillId = `bill_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const createdBill = {
+      _id: localBillId,
+      id: genBillNo,
+      billNumber: genBillNo,
+      invoiceNumber: genBillNo,
+      customerName: finalCustomer,
+      customer: finalCustomer,
+      phone: billCustomerPhone.trim(),
+      date: "Today",
+      rawDate: new Date().toISOString(),
+      amount: billPayload.finalAmount || totalBillAmount,
+      finalAmount: billPayload.finalAmount || totalBillAmount,
+      total: billPayload.finalAmount || totalBillAmount,
+      type: billPaymentMode,
+      paymentMode: billPaymentMode,
+      paymentMethod: billPaymentMode === "UDHAR" ? "credit" : "cash",
+      paymentStatus: billPaymentMode === "UDHAR" ? "unpaid" : "paid",
+      items: billCart,
+      isOfflineCreated: true,
+      createdAt: new Date().toISOString()
+    };
+
+    setBills(prev => {
+      const updated = deduplicateBills([createdBill, ...prev]);
       try {
-        res = await api.post("/api/billing", billPayload);
-      } catch (postErr) {
-        if (postErr.response?.data?.isPendingApprovalBlocked) {
-          if (window.confirm(`${postErr.response.data.message}\n\nक्या आप अभी 'काम न रुके' (बायपास) करके यह बिल तुरंत जारी करना चाहते हैं?`)) {
-            billPayload.bypassPendingLock = true;
-            res = await api.post("/api/billing", billPayload);
-          } else {
-            return;
-          }
-        } else {
-          throw postErr;
-        }
-      }
-      const createdBill = {
-        _id: res?.data?.bill?._id || Date.now().toString(),
-        id: res?.data?.bill?.billNumber || `INV-${Date.now().toString().slice(-4)}`,
-        customerName: finalCustomer,
-        phone: billCustomerPhone.trim(),
-        date: "Today",
-        amount: billPayload.finalAmount || totalBillAmount,
-        type: billPaymentMode,
-        paymentStatus: billPaymentMode === "UDHAR" ? "unpaid" : "paid",
-        items: billCart,
-        ...(res?.data?.bill || {})
-      };
-      setBills(prev => {
-        const updated = deduplicateBills([createdBill, ...prev]);
+        localStorage.setItem("vb_local_manual_bills", JSON.stringify(updated));
+        localStorage.setItem("bills", JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    setBillCart([]);
+    setBillCustomer("");
+    setBillCustomerPhone("");
+    setBillAppliedReward(null);
+    setMobileStampStatus(null);
+    setShowQuickBillModal(false);
+    setSelectedBillDetail(createdBill);
+
+    if (billPaymentMode === "UPI" || billPaymentMode === "ONLINE") {
+      speakUpiPayment(billPayload.finalAmount || totalBillAmount, "व्यापार");
+    }
+
+    // 2. BACKGROUND SERVER SYNC
+    (async () => {
+      try {
+        let res;
         try {
-          localStorage.setItem("vb_local_manual_bills", JSON.stringify(updated));
-          localStorage.setItem("bills", JSON.stringify(updated));
-        } catch (e) {}
-        return updated;
-      });
-      setBillCart([]);
-      setBillCustomer("");
-      setBillCustomerPhone("");
-      setBillAppliedReward(null);
-      setMobileStampStatus(null);
-      setShowQuickBillModal(false);
-      setSelectedBillDetail(createdBill);
-
-      // 🛡️ Open Legal Udhar OTP Verification Modal if Udhar Protected
-      if (res?.data?.udharProtection) {
-        setActiveUdharBillData({
-          ...createdBill,
-          ...res.data.udharProtection,
-          _id: res?.data?.bill?._id || createdBill._id
-        });
-        setShowUdharOtpModal(true);
-      }
-
-      const stampAward = res?.data?.stampResult;
-      if (stampAward?.awarded) {
-        let msg = `⭐ ग्राहक का स्टैंप जुड़ा: ${stampAward.visualStamps}`;
-        if (stampAward.rewardUnlocked) {
-          msg += `\n\n🎉 बधाई! लक्ष्य पूरा हुआ - रिवॉर्ड कोड: ${stampAward.rewardData?.code} (${stampAward.rewardDescription})`;
+          res = await api.post("/api/billing", billPayload);
+        } catch (postErr) {
+          if (postErr.response?.data?.isPendingApprovalBlocked) {
+            if (window.confirm(`${postErr.response.data.message}\n\nक्या आप अभी 'काम न रुके' (बायपास) करके यह बिल तुरंत जारी करना चाहते हैं?`)) {
+              billPayload.bypassPendingLock = true;
+              res = await api.post("/api/billing", billPayload);
+            } else {
+              return;
+            }
+          } else {
+            throw postErr;
+          }
         }
-        alert(msg);
-      }
 
-      if (billPaymentMode === "UPI" || billPaymentMode === "ONLINE") {
-        speakUpiPayment(billPayload.finalAmount || totalBillAmount, "व्यापार");
+        if (res?.data?.bill) {
+          const serverBill = res.data.bill;
+          setBills(prev => {
+            const updated = prev.map(b => (b._id === localBillId || b.id === genBillNo) ? { ...b, ...serverBill, isOfflineCreated: false } : b);
+            try {
+              localStorage.setItem("vb_local_manual_bills", JSON.stringify(updated));
+              localStorage.setItem("bills", JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
+          });
+
+          if (res?.data?.udharProtection) {
+            setActiveUdharBillData({
+              ...createdBill,
+              ...res.data.udharProtection,
+              _id: serverBill._id || createdBill._id
+            });
+            setShowUdharOtpModal(true);
+          }
+
+          const stampAward = res?.data?.stampResult;
+          if (stampAward?.awarded) {
+            let msg = `⭐ ग्राहक का स्टैंप जुड़ा: ${stampAward.visualStamps}`;
+            if (stampAward.rewardUnlocked) {
+              msg += `\n\n🎉 बधाई! लक्ष्य पूरा हुआ - रिवॉर्ड कोड: ${stampAward.rewardData?.code} (${stampAward.rewardDescription})`;
+            }
+            alert(msg);
+          }
+        }
+      } catch (err) {
+        console.warn("Background billing sync deferred to offline queue:", err);
+        enqueueOfflineSync({ type: 'CREATE_BILL', payload: billPayload, localId: localBillId });
       }
+    })();
     } catch (e) {
       console.error(e);
     } finally {
@@ -1779,19 +1882,17 @@ function MobileVyaparAppContent() {
         notes: manualSaleNotes.trim()
       };
 
-      const res = await api.post("/api/billing", payload);
-      const savedBill = res?.data?.bill || res?.data?.data || res?.data || {};
-      
       const saleDateObj = manualSaleDate ? new Date(manualSaleDate) : new Date();
       const saleDateDisplay = manualSaleDate 
         ? new Date(manualSaleDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
         : "Today";
 
+      const localBillId = `bill_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const createdBill = {
-        _id: savedBill._id || genBillNo,
-        id: savedBill.billNumber || genBillNo,
-        billNumber: savedBill.billNumber || genBillNo,
-        invoiceNumber: savedBill.billNumber || genBillNo,
+        _id: localBillId,
+        id: genBillNo,
+        billNumber: genBillNo,
+        invoiceNumber: genBillNo,
         customerName: partyTitle,
         customer: partyTitle,
         phone: payload.customerPhone,
@@ -1806,12 +1907,14 @@ function MobileVyaparAppContent() {
         paymentStatus: payload.paymentStatus,
         date: saleDateDisplay,
         rawDate: manualSaleDate || new Date().toISOString(),
-        items: payload.items
+        items: payload.items,
+        isOfflineCreated: true,
+        createdAt: new Date().toISOString()
       };
 
-      // Instantly persist in localStorage so it NEVER disappears or gets wiped out
+      // 1. Instantly persist in localStorage so it NEVER disappears (Offline-First)
       try {
-        const stored = localStorage.getItem("vb_local_manual_bills");
+        const stored = localStorage.getItem("vb_local_manual_bills") || localStorage.getItem("bills");
         let list = [];
         try {
           list = stored ? JSON.parse(stored) : [];
@@ -1820,6 +1923,7 @@ function MobileVyaparAppContent() {
         }
         const updatedList = deduplicateBills([createdBill, ...list]);
         localStorage.setItem("vb_local_manual_bills", JSON.stringify(updatedList));
+        localStorage.setItem("bills", JSON.stringify(updatedList));
         setBills(updatedList);
       } catch (storageErr) {
         console.warn("Local bill storage err:", storageErr);
@@ -1838,7 +1942,27 @@ function MobileVyaparAppContent() {
       }
 
       alert(`🎉 ₹${saleAmt.toLocaleString('en-IN')} की ${manualSalePaymentMode === 'CASH' ? 'नकद' : manualSalePaymentMode === 'UPI' ? 'UPI' : 'उधारी'} बिक्री (${saleDateDisplay}) सफलतापूर्वक दर्ज हो गई!`);
-      fetchLiveDashboardData();
+
+      // 2. Background server sync
+      (async () => {
+        try {
+          const res = await api.post("/api/billing", payload);
+          const savedBill = res?.data?.bill || res?.data?.data || res?.data;
+          if (savedBill && savedBill._id) {
+            setBills(prev => {
+              const updated = prev.map(b => (b._id === localBillId || b.id === genBillNo) ? { ...b, ...savedBill, isOfflineCreated: false } : b);
+              try {
+                localStorage.setItem("vb_local_manual_bills", JSON.stringify(updated));
+                localStorage.setItem("bills", JSON.stringify(updated));
+              } catch (e) {}
+              return updated;
+            });
+          }
+        } catch (postErr) {
+          console.warn("Background manual sale sync deferred to offline queue:", postErr);
+          enqueueOfflineSync({ type: 'CREATE_BILL', payload, localId: localBillId });
+        }
+      })();
     } catch (err) {
       console.error("Manual sale error:", err);
       const errMsg = err?.response?.data?.message || err?.response?.data?.error || "बिक्री दर्ज करने में त्रुटि आई।";
@@ -2213,23 +2337,54 @@ function MobileVyaparAppContent() {
           </button>
         </div>
       </header>
+
+      {/* ⚡ OFFLINE / SYNC STATUS BANNER */}
+      {!isOnline && (
+        <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-3.5 py-1.5 flex justify-between items-center text-xs font-bold shadow-md sticky top-[53px] z-20 animate-in fade-in">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-200 animate-ping" />
+            <span className="text-[11px] font-extrabold">⚡ ऑफ़लाइन मोड (इंटरनेट बंद है • सारा डेटा फ़ोन में सुरक्षित रहेगा)</span>
+          </div>
+          {syncQueueCount > 0 && (
+            <span className="bg-amber-950/70 px-2 py-0.5 rounded text-[10px] font-bold">
+              {syncQueueCount} पेंडिंग
+            </span>
+          )}
+        </div>
+      )}
+
+      {isOnline && syncQueueCount > 0 && (
+        <div className="bg-indigo-600 text-white px-3.5 py-1.5 flex justify-between items-center text-xs font-bold shadow-md sticky top-[53px] z-20 animate-in fade-in">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[11px] font-bold">🔄 {syncQueueCount} ऑफ़लाइन लेनदेन बैकएंड से सिंक हो रहे हैं...</span>
+          </div>
+          <button 
+            onClick={processOfflineSyncQueue}
+            className="px-2.5 py-0.5 bg-white text-indigo-950 font-extrabold text-[10px] rounded-md hover:bg-indigo-50 cursor-pointer shadow-xs"
+          >
+            अभी सिंक करें
+          </button>
+        </div>
+      )}
+
       {/* ⚠️ GUEST / DEMO MODE ALERT BANNER */}
       {isGuestMode && (
-        <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-3 py-1.5 flex justify-between items-center text-xs font-bold shadow-sm sticky top-[53px] z-20">
+        <div className="bg-gradient-to-r from-slate-800 via-slate-900 to-indigo-950 text-white px-3 py-1.5 flex justify-between items-center text-xs font-bold shadow-sm sticky top-[53px] z-20">
           <div className="flex items-center gap-1.5">
-            <span>⚠️</span>
-            <span className="text-[11px]">गेस्ट / डेमो मोड सक्रिय है (Guest Mode)</span>
+            <span>👤</span>
+            <span className="text-[11px]">अतिथि / लोकल मोड • मुख्य खाता सिंक करने हेतु</span>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => navigate("/login")}
-              className="px-2 py-0.5 bg-white text-amber-900 font-extrabold text-[10px] rounded-md shadow-xs hover:bg-amber-50 cursor-pointer"
+              className="px-2 py-0.5 bg-indigo-500 hover:bg-indigo-600 text-white font-extrabold text-[10px] rounded-md shadow-xs cursor-pointer"
             >
               🔑 लॉगिन करें
             </button>
             <button
               onClick={handleExitGuestMode}
-              className="px-2 py-0.5 bg-amber-900/60 hover:bg-amber-900 text-white font-bold text-[10px] rounded-md cursor-pointer"
+              className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-slate-300 font-bold text-[10px] rounded-md cursor-pointer"
             >
               एग्जिट
             </button>
@@ -6093,29 +6248,50 @@ function MobileVyaparAppContent() {
 
             <div className="space-y-3 max-h-72 overflow-y-auto">
               <div>
-                <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1 px-1">
-                  🏢 आपकी वास्तविक कंपनियाँ
+                <div className="text-[10px] font-black uppercase text-indigo-900 tracking-wider mb-1 px-1">
+                  🏢 आपकी मुख्य व्यापारिक दुकानें (डेटा सहित)
                 </div>
-                <div className="space-y-1.5">
-                  {(companies && companies.length > 0 ? companies.filter(c => !c.isDemo) : [{ _id: selectedCompany?._id, name: companyDisplayName, isDemo: false }]).map(c => {
-                    const cId = c._id || c.id;
-                    const isSelected = (selectedCompany?._id === cId || selectedCompany?.id === cId) && !selectedCompany?.isDemo;
+                <div className="space-y-2">
+                  {[
+                    {
+                      _id: "6a8314470d93e58ad0920950",
+                      name: "🔧 Ganesh Hardware, Plywood & Paints",
+                      stats: "1,631+ उत्पाद • 2 पार्टियां • 69 घरेलू खर्च",
+                      badge: "हार्डवेयर स्टोर",
+                      color: "emerald"
+                    },
+                    {
+                      _id: "6a8314470d93e58ad0920952",
+                      name: "🍽️ Royal Spice Restaurant & Cafe",
+                      stats: "505 बिक्री बिल • 11 पार्टियां • 36 उत्पाद",
+                      badge: "फास्ट बिलिंग / रेस्टोरेंट",
+                      color: "indigo"
+                    }
+                  ].map(c => {
+                    const isSelected = selectedCompany?._id === c._id || selectedCompany?.id === c._id;
                     return (
                       <div
-                        key={cId || Math.random()}
+                        key={c._id}
                         onClick={() => {
                           if (exitDemoModule) exitDemoModule();
                           if (selectCompany) selectCompany(c);
                           setShowCompanySelectModal(false);
                           setTimeout(() => window.location.reload(), 100);
                         }}
-                        className={`p-3 rounded-2xl border flex justify-between items-center cursor-pointer transition ${isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-900 font-extrabold' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 font-bold'}`}
+                        className={`p-3 rounded-2xl border flex justify-between items-center cursor-pointer transition ${isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-950 font-extrabold shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-bold'}`}
                       >
-                        <div className="flex items-center gap-2">
-                          <span>🏪</span>
-                          <span className="text-xs">{c.name || c.companyName || "My Company"}</span>
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-black">{c.name}</span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded">
+                              {c.badge}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-semibold">
+                            {c.stats}
+                          </div>
                         </div>
-                        {isSelected && <CheckCircle size={16} className="text-indigo-600" />}
+                        {isSelected && <CheckCircle size={18} className="text-indigo-600 shrink-0" />}
                       </div>
                     );
                   })}
@@ -6124,10 +6300,10 @@ function MobileVyaparAppContent() {
 
               <div className="pt-2 border-t border-slate-100">
                 <div className="text-[10px] font-black uppercase text-amber-600 tracking-wider mb-1 px-1">
-                  🧪 डेमो व सैंडबॉक्स मॉड्यूल्स (सुरक्षित परीक्षण)
+                  🧪 अन्य इंडस्ट्री डेमो व सैंडबॉक्स मॉड्यूल्स
                 </div>
                 <div className="space-y-1.5">
-                  {(allDemoCompanies || []).map(demoCo => {
+                  {(allDemoCompanies || []).filter(d => d._id !== "6a8314470d93e58ad0920950" && d._id !== "6a8314470d93e58ad0920952").map(demoCo => {
                     const isSelected = selectedCompany?._id === demoCo._id;
                     return (
                       <div

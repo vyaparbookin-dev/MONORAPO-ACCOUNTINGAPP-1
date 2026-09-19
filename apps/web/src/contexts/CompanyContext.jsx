@@ -8,24 +8,14 @@ export const useCompany = () => useContext(CompanyContext);
 export const CompanyProvider = ({ children }) => {
   const allDemoCompanies = [
     {
-      _id: "demo_company_trading",
-      name: "🏢 श्री गणेश ट्रेडर्स व जनरल स्टोर",
-      businessType: "retail",
-      industryType: "retail",
-      address: "मेन मार्केट, व्यापार भवन",
-      phone: "9876543210",
-      gstin: "07AAAAA0000A1Z5",
-      isDemo: true
-    },
-    {
       _id: "6a8314470d93e58ad0920950",
-      name: "🔧 Bharat Hardware, Plywood & Paints",
+      name: "🔧 Ganesh Hardware, Plywood & Paints",
       businessType: "hardware",
       industryType: "hardware",
       address: "Timber & Hardware Market, Plot 44",
-      phone: "9876543215",
-      gstin: "07AAAAA0000A1Z5",
-      isDemo: true
+      phone: "7828289433",
+      gstin: "22AAAAA0000A1Z5",
+      isDemo: false
     },
     {
       _id: "6a8314470d93e58ad0920952",
@@ -33,6 +23,16 @@ export const CompanyProvider = ({ children }) => {
       businessType: "restaurant",
       industryType: "restaurant",
       address: "12 Food Street, Connaught Place, New Delhi",
+      phone: "9876543210",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: false
+    },
+    {
+      _id: "demo_company_trading",
+      name: "🏢 श्री गणेश ट्रेडर्स व जनरल स्टोर",
+      businessType: "retail",
+      industryType: "retail",
+      address: "मेन मार्केट, व्यापार भवन",
       phone: "9876543210",
       gstin: "07AAAAA0000A1Z5",
       isDemo: true
@@ -115,16 +115,7 @@ export const CompanyProvider = ({ children }) => {
 
   useEffect(() => {
     const checkAndFetch = () => {
-      const token = localStorage.getItem("authToken") || localStorage.getItem("token");
-      const isGuestMode = localStorage.getItem("isGuestMode") === "true";
-      const isDemoActive = localStorage.getItem("isDemoActive") === "true";
-      if ((token && token !== "null" && token !== "undefined") || isGuestMode || isDemoActive) {
-        fetchCompanies();
-      } else {
-        setSelectedCompany(null);
-        setCompanies([]);
-        setLoading(false);
-      }
+      fetchCompanies();
     };
 
     checkAndFetch();
