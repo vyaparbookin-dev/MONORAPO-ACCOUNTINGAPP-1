@@ -45,7 +45,8 @@ import {
   Clock,
   BookOpen,
   PieChart,
-  Grid
+  Grid,
+  Mic
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useCompany } from "../../contexts/CompanyContext";
@@ -3157,6 +3158,15 @@ function MobileVyaparAppContent() {
           >
             + Bill / Invoice
           </button>
+
+          <button 
+            onClick={() => navigate("/voice-assistant")}
+            className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold text-xs rounded-full shadow-md transition cursor-pointer flex items-center gap-1 active:scale-95"
+            title="बोलकर बिल या इन्वेंटरी बनाएं"
+          >
+            <Mic size={13} className="animate-pulse text-amber-300" />
+            <span>🎙️ बोलें</span>
+          </button>
         </div>
       </div>
 
@@ -3217,9 +3227,23 @@ function MobileVyaparAppContent() {
                   <p className="text-[10px] text-slate-400">नाम ऑप्शनल है • 1600+ सामान खोजें</p>
                 </div>
               </div>
-              <button onClick={() => setShowQuickBillModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X size={18} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowQuickBillModal(false);
+                    navigate("/voice-assistant");
+                  }}
+                  className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 font-extrabold text-[11px] rounded-lg border border-purple-200 transition cursor-pointer flex items-center gap-1"
+                  title="बोलकर बिल बनाएं"
+                >
+                  <Mic size={12} className="text-purple-600 animate-pulse" />
+                  <span>🎙️ बोलकर बनाएं</span>
+                </button>
+                <button onClick={() => setShowQuickBillModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {/* Customer Name, Search Dropdown & Phone */}

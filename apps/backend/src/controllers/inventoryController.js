@@ -869,3 +869,83 @@ export const syncMastersFromProducts = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// 🎙️ RAPID VOICE INVENTORY ENTRY (Batch add / stock increment by voice)
+export const voiceBatchAdd = async (req, res) => {
+  try {
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing." });
+    }
+    const { items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: "items array is required" });
+    }
+
+    const compIdObj = new mongoose.Types.ObjectId(req.companyId);
+    const addedProducts = [];
+    const updatedProducts = [];
+
+    for (const it of items) {
+      const name = (it.name || "").trim();
+      if (!name) continue;
+
+      const category = (it.category || "General").trim();
+      const unit = (it.unit || "Pcs").trim();
+      const quantity = Number(it.quantity || it.stock || it.currentStock || 0);
+      const sellingPrice = Number(it.sellingPrice || it.rate || it.price || 0);
+      const costPrice = Number(it.costPrice || it.purchasePrice || 0);
+
+      // Auto-upsert masters
+      const upsertOpt = { upsert: true, setDefaultsOnInsert: true };
+      if (category) await Category.updateOne({ companyId: compIdObj, name: category }, { $setOnInsert: { companyId: compIdObj, name: category, isActive: true } }, upsertOpt);
+      if (unit) await Unit.updateOne({ companyId: compIdObj, name: unit }, { $setOnInsert: { companyId: compIdObj, name: unit, shortCode: String(unit).substring(0, 3).toUpperCase() } }, upsertOpt);
+
+      // Check if product exists (case-insensitive)
+      let product = await Product.findOne({
+        companyId: req.companyId,
+        name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, "i")
+      });
+
+      if (product) {
+        // Increment stock and optionally update prices
+        const updateFields = {
+          $inc: { currentStock: quantity }
+        };
+        if (sellingPrice > 0) updateFields.$set = { ...updateFields.$set, sellingPrice };
+        if (costPrice > 0) updateFields.$set = { ...updateFields.$set, costPrice };
+
+        const updated = await Product.findByIdAndUpdate(product._id, updateFields, { new: true });
+        updatedProducts.push(updated);
+      } else {
+        // Create fresh product
+        const autoSku = `SKU-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
+        const autoBarcode = `890${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+        const created = await Product.create({
+          companyId: req.companyId,
+          name,
+          category,
+          unit,
+          currentStock: quantity,
+          sellingPrice,
+          costPrice: costPrice || Math.round(sellingPrice * 0.75),
+          mrp: sellingPrice,
+          sku: autoSku,
+          barcode: autoBarcode,
+          brand: it.brand || "General"
+        });
+        addedProducts.push(created);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `इन्वेंटरी में ${addedProducts.length} नए सामान जुड़े, और ${updatedProducts.length} का स्टॉक अपडेट हुआ।`,
+      addedCount: addedProducts.length,
+      updatedCount: updatedProducts.length,
+      addedProducts,
+      updatedProducts
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

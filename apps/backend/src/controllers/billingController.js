@@ -135,23 +135,52 @@ _(कृपया यह OTP दुकानदार को तभी बता
       console.error("Party Udhar Balance Sync Error:", partySyncErr.message);
     }
     
-    // Auto Raw Material Deduction & Standard Stock Update
+    // Auto Raw Material Deduction & Standard Stock Update / Auto-Create Missing Products
     if (items && items.length > 0) {
       for (const item of items) {
-        if (item.productId) {
-          const product = await Product.findById(item.productId);
-          if (product) {
-            if (product.recipe && product.recipe.length > 0) {
-              for (const reqMat of product.recipe) {
-                if (reqMat.rawMaterialId) {
-                  await Product.findByIdAndUpdate(reqMat.rawMaterialId, {
-                    $inc: { currentStock: -(reqMat.quantity * item.quantity) }
-                  });
-                }
-              }
-            } else {
-              await Product.findByIdAndUpdate(item.productId, { $inc: { currentStock: -item.quantity } });
+        let product = null;
+        if (item.productId && mongoose.Types.ObjectId.isValid(item.productId)) {
+          product = await Product.findById(item.productId);
+        } else if (item.autoCreateInInventory || req.body.autoCreateNewProducts) {
+          const itemName = (item.name || "").trim();
+          if (itemName) {
+            product = await Product.findOne({
+              companyId: req.companyId,
+              name: new RegExp(`^${itemName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, "i")
+            });
+            if (!product) {
+              const sellPrice = Number(item.rate || item.price || 0);
+              product = await Product.create({
+                companyId: req.companyId,
+                name: itemName,
+                category: item.category || "General",
+                unit: item.unit || "Pcs",
+                sellingPrice: sellPrice,
+                costPrice: Number(item.costPrice) || Math.round(sellPrice * 0.75),
+                mrp: sellPrice,
+                currentStock: 100, // Initial default stock for voice-created item
+                sku: `SKU-${Date.now().toString().slice(-6)}`,
+                barcode: `890${Math.floor(1000000000 + Math.random() * 9000000000)}`,
+                brand: "General"
+              }).catch(err => console.warn("Voice auto-create product error:", err.message));
             }
+            if (product) {
+              item.productId = product._id;
+            }
+          }
+        }
+
+        if (product) {
+          if (product.recipe && product.recipe.length > 0) {
+            for (const reqMat of product.recipe) {
+              if (reqMat.rawMaterialId) {
+                await Product.findByIdAndUpdate(reqMat.rawMaterialId, {
+                  $inc: { currentStock: -(reqMat.quantity * item.quantity) }
+                });
+              }
+            }
+          } else {
+            await Product.findByIdAndUpdate(product._id, { $inc: { currentStock: -item.quantity } });
           }
         }
       }

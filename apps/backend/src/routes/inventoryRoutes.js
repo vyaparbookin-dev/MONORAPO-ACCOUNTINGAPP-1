@@ -1,5 +1,5 @@
 import express from "express";
-import { addProduct, listProducts, getProductById, updateProduct, deleteProduct, adjustStock, getStockAdjustments, updateStock, getProductByBarcode, getInventorySummary, addPurchaseEntry, bulkImportProducts, exportProductsCSV, bulkDeleteProducts, getImportBatches } from "../controllers/inventoryController.js";
+import { addProduct, listProducts, getProductById, updateProduct, deleteProduct, adjustStock, getStockAdjustments, updateStock, getProductByBarcode, getInventorySummary, addPurchaseEntry, bulkImportProducts, exportProductsCSV, bulkDeleteProducts, getImportBatches, voiceBatchAdd } from "../controllers/inventoryController.js";
 import { protect, requireCompany } from "../middleware/authmiddleware.js";
 
 const router = express.Router();
@@ -9,6 +9,7 @@ router.use(protect);
 router.use(requireCompany);
 
 // Custom inventory actions
+router.post("/voice-batch-add", voiceBatchAdd);
 router.post("/import", bulkImportProducts);
 router.post("/purchase", addPurchaseEntry);
 router.post("/bulk-delete", bulkDeleteProducts);

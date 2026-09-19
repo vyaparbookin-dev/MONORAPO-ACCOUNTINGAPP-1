@@ -29,14 +29,17 @@ import {
   Printer,
   ShieldCheck,
   Eye,
-  Receipt
+  Receipt,
+  Mic
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import RestaurantKotModal from "../../components/modals/RestaurantKotModal";
 import UdharOtpVerificationModal from "../../components/modals/UdharOtpVerificationModal";
 import { getBusinessMode } from "../../utils/businessMode";
 import { useCompany } from "../../contexts/CompanyContext";
 
 export default function FastPOSPage() {
+  const navigate = useNavigate();
   const { selectedCompany } = useCompany() || {};
   const business = getBusinessMode(selectedCompany);
 
@@ -558,6 +561,15 @@ export default function FastPOSPage() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-1.5 flex-wrap">
+          {/* 🎙️ Voice Billing Assistant Button */}
+          <button
+            onClick={() => navigate("/voice-assistant")}
+            className="px-2.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center gap-1 cursor-pointer active:scale-95"
+            title="बोलकर 1-क्लिक में बिल बनाएं"
+          >
+            <Mic size={13} className="animate-pulse text-amber-300" />
+            <span>🎙️ बोलकर बिल (Voice)</span>
+          </button>
           {/* Customer Reviews & Staff Leaderboard Button (Restaurant only) */}
           {business.isRestaurant && (
             <button

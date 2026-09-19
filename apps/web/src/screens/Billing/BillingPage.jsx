@@ -21,7 +21,8 @@ import {
   PauseCircle,
   Gamepad2,
   ChefHat,
-  Sparkles
+  Sparkles,
+  Mic
 } from "lucide-react";
 import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
@@ -925,6 +926,14 @@ export default function BillingPage() {
             Restore Held ({heldBills.length})
           </button>
         )}
+        <button
+          onClick={() => navigate("/voice-assistant")}
+          className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-4 py-2 rounded-lg hover:from-purple-700 hover:to-indigo-700 transition shadow-sm font-bold cursor-pointer active:scale-95"
+          title="बोलकर बिल बनाएं या इन्वेंटरी जोड़ें"
+        >
+          <Mic size={18} className="animate-pulse text-amber-300" />
+          Voice Billing
+        </button>
         <button
           onClick={() => navigate("/billing/parse")}
           className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition"

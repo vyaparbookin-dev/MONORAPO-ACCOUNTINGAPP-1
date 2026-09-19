@@ -84,6 +84,7 @@ const SalesReturnPage = safeLazy(() => import("./screens/Billing/SalesReturnPage
 const CreateReturnScreen = safeLazy(() => import("./screens/returns/CreateReturnScreen"));
 const B2bDocumentListPage = safeLazy(() => import("./screens/Billing/B2bDocumentListPage"));
 const CreateB2bDocumentPage = safeLazy(() => import("./screens/Billing/CreateB2bDocumentPage"));
+const VoiceAssistantPage = safeLazy(() => import("./screens/voice/VoiceAssistantPage"));
 
 // Banquet & Events Module
 const BanquetHubPage = safeLazy(() => import("./screens/Banquet/BanquetHubPage"));
@@ -330,6 +331,8 @@ const App = () => {
                     <Route path="/billing/b2b" element={<B2bDocumentListPage />} />
                     <Route path="/billing/b2b/create" element={<CreateB2bDocumentPage />} />
                     <Route path="/billing/:id" element={<BillDetailPage />} />
+                    <Route path="/voice-assistant" element={<VoiceAssistantPage />} />
+                    <Route path="/voice-billing" element={<VoiceAssistantPage />} />
 
                     {/* Banquet & Events */}
                     <Route path="/banquet" element={<BanquetHubPage />} />
