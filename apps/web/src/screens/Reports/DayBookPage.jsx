@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
+import { readLocalJson } from "@repo/shared";
 import {
   Calendar,
   ArrowDownCircle,
@@ -135,8 +136,8 @@ export default function DayBookPage() {
       // Merge local manual bills from localStorage
       let localBills = [];
       try {
-        const stored = localStorage.getItem("vb_local_manual_bills") || localStorage.getItem("bills");
-        if (stored) localBills = JSON.parse(stored) || [];
+        const stored = readLocalJson(["vb_local_manual_bills", "bills"], []);
+        if (Array.isArray(stored)) localBills = stored;
       } catch (e) {}
 
       const getLocalDayStr = (val) => {

@@ -14,6 +14,7 @@ import {
   Wallet
 } from "lucide-react";
 import api from "../../services/api";
+import { readLocalJson } from "@repo/shared";
 import { useCompany } from "../../contexts/CompanyContext";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
@@ -118,10 +119,10 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
       let localExpenses = [];
       try {
         if (typeof localStorage !== "undefined") {
-          const storedB = localStorage.getItem("vb_local_manual_bills");
-          if (storedB) localBills = JSON.parse(storedB) || [];
-          const storedE = localStorage.getItem("vb_local_expenses") || localStorage.getItem("expenses");
-          if (storedE) localExpenses = JSON.parse(storedE) || [];
+          const storedB = readLocalJson(["vb_local_manual_bills", "bills"], []);
+          if (Array.isArray(storedB)) localBills = storedB;
+          const storedE = readLocalJson(["vb_local_expenses", "expenses"], []);
+          if (Array.isArray(storedE)) localExpenses = storedE;
         }
       } catch (e) {}
 

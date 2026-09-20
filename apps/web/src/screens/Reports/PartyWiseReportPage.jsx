@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
+import { readLocalJson } from "@repo/shared";
 import Loader from "../../components/Loader";
 import { Printer, ArrowLeft, RefreshCw, Search } from "lucide-react";
 
@@ -25,10 +26,10 @@ const PartyWiseReportPage = () => {
       let localBills = [];
       try {
         if (typeof localStorage !== "undefined") {
-          const storedP = localStorage.getItem("vb_local_parties") || localStorage.getItem("parties");
-          if (storedP) localParties = JSON.parse(storedP) || [];
-          const storedB = localStorage.getItem("vb_local_manual_bills");
-          if (storedB) localBills = JSON.parse(storedB) || [];
+          const storedP = readLocalJson(["vb_local_parties", "parties"], []);
+          if (Array.isArray(storedP)) localParties = storedP;
+          const storedB = readLocalJson(["vb_local_manual_bills", "bills"], []);
+          if (Array.isArray(storedB)) localBills = storedB;
         }
       } catch (e) {}
 

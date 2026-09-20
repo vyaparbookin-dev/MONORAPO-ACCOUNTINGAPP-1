@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ArrowUpRight, ArrowDownLeft, TrendingUp, AlertCircle, Clock, RefreshCw, Calendar, DollarSign, Package, Receipt } from "lucide-react";
 import api from "../../services/api";
+import { readCompanyScopedBills } from "../../utils/companyScopedStorage";
 
 export default function DashboardScreen() {
   const [stats, setStats] = useState({
@@ -37,19 +38,12 @@ export default function DashboardScreen() {
         api.get("/api/approvals").catch(() => ({ data: { data: {} } }))
       ]);
 
-      let localBills = [];
-      try {
-        const billKeys = ["vb_local_manual_bills", "bills", "manual_bills", "vb_bills", "local_bills", "sales", "local_sales", "pos_bills", "vb_sales"];
-        billKeys.forEach(k => {
-          const stored = localStorage.getItem(k);
-          if (stored) {
-            try {
-              const parsed = JSON.parse(stored);
-              if (Array.isArray(parsed) && parsed.length > 0) localBills.push(...parsed);
-            } catch (e) {}
-          }
-        });
-      } catch (e) {}
+      const companyId = localStorage.getItem("companyId") || localStorage.getItem("selectedCompany") || "";
+      const localBills = readCompanyScopedBills(
+        ["vb_local_manual_bills", "bills", "manual_bills", "vb_bills", "local_bills", "sales", "local_sales", "pos_bills", "vb_sales"],
+        companyId,
+        []
+      );
 
       const resData = billsRes?.data || billsRes || {};
       const serverBillsList = Array.isArray(resData.bills) ? resData.bills : (Array.isArray(resData.data?.bills) ? resData.data.bills : (Array.isArray(resData.data) ? resData.data : (Array.isArray(resData) ? resData : [])));

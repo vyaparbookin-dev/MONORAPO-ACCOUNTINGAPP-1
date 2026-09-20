@@ -19,6 +19,7 @@ import {
   Tag
 } from "lucide-react";
 import api from "../../services/api";
+import { readLocalJson } from "@repo/shared";
 import { useCompany } from "../../contexts/CompanyContext";
 import { getBusinessMode } from "../../utils/businessMode";
 
@@ -105,15 +106,15 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
       // Merge local manual bills from localStorage (ensures offline / recent manual sales ALWAYS show)
       let localBills = [];
       try {
-        const stored = localStorage.getItem("vb_local_manual_bills") || localStorage.getItem("bills");
-        if (stored) localBills = JSON.parse(stored) || [];
+        const stored = readLocalJson(["vb_local_manual_bills", "bills"], []);
+        if (Array.isArray(stored)) localBills = stored;
       } catch (e) {}
 
       // Also merge local expenses from localStorage
       let localExpenses = [];
       try {
-        const storedExp = localStorage.getItem("vb_local_expenses") || localStorage.getItem("expenses");
-        if (storedExp) localExpenses = JSON.parse(storedExp) || [];
+        const storedExp = readLocalJson(["vb_local_expenses", "expenses"], []);
+        if (Array.isArray(storedExp)) localExpenses = storedExp;
       } catch (e) {}
 
       const getLocalDayStr = (val) => {

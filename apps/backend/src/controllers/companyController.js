@@ -4,7 +4,12 @@ import { supabase } from "../config/supabase.js";
 export const addCompany = async (req, res) => {
   try {
     const userId = req.user?._id || req.user?.id;
-    const companyData = { ...req.body, user: userId };
+    const { modulesEnabled, activeModules, linkedModules, ...restBody } = req.body || {};
+    const companyData = {
+      ...restBody,
+      modulesEnabled: Array.isArray(modulesEnabled) ? modulesEnabled : Array.isArray(activeModules) ? activeModules : Array.isArray(linkedModules) ? linkedModules : [],
+      user: userId
+    };
     const company = new Company(companyData);
     await company.save();
 
@@ -84,12 +89,12 @@ export const getCompany = async (req, res) => {
 export const updateCompany = async (req, res) => {
   try {
     const userId = req.user?._id || req.user?.id;
-    const { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, enableGst } = req.body;
+    const { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, modulesEnabled, activeModules, linkedModules, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, enableGst } = req.body;
     
     let finalEnableGst = enableGst;
     if (gstType === 'unregistered') finalEnableGst = false;
 
-    const updateData = { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications };
+    const updateData = { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, modulesEnabled: Array.isArray(modulesEnabled) ? modulesEnabled : Array.isArray(activeModules) ? activeModules : Array.isArray(linkedModules) ? linkedModules : undefined, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications };
     if (finalEnableGst !== undefined) updateData.enableGst = finalEnableGst;
 
     const company = await Company.findOneAndUpdate(

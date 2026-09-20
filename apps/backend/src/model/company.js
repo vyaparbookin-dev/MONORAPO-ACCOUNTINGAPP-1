@@ -11,6 +11,7 @@ const companySchema = new mongoose.Schema({
   upiId: String, // Merchant UPI ID for QR Code Payments
   businessType: [{ type: String }],
   industryType: String,
+  modulesEnabled: [{ type: String }],
   ownershipType: { type: String, enum: ['Proprietorship', 'Partnership', 'Private Limited', 'LLC / LLP', 'HUF', 'Other'], default: 'Proprietorship' },
   website: String,
   businessDescription: String,

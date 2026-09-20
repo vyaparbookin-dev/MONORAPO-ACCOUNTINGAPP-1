@@ -24,6 +24,7 @@ const CompanyPage = () => {
         ? [company.businessType] 
         : ["retail"],
     industryType: company?.industryType || "",
+    modulesEnabled: Array.isArray(company?.modulesEnabled) ? company.modulesEnabled : [],
     businessDescription: company?.businessDescription || "",
     bankName: company?.bankName || "",
     accountName: company?.accountName || "",
@@ -56,6 +57,17 @@ const CompanyPage = () => {
       } else {
         return { ...prev, businessType: [...currentTypes, type] };
       }
+    });
+  };
+
+  const handleModuleToggle = (moduleId) => {
+    setFormData((prev) => {
+      const current = Array.isArray(prev.modulesEnabled) ? prev.modulesEnabled : [];
+      const updated = current.includes(moduleId)
+        ? current.filter((item) => item !== moduleId)
+        : [...current, moduleId];
+
+      return { ...prev, modulesEnabled: updated };
     });
   };
 

@@ -22,6 +22,7 @@ export default function AddCompanyPage({ onAdded }) {
     businessType: ["retail"],
     ownershipType: "Proprietorship",
     industryType: "multi-industry",
+    modulesEnabled: [],
     businessDescription: "",
     bankName: "",
     accountName: "",
@@ -47,6 +48,17 @@ export default function AddCompanyPage({ onAdded }) {
     });
   };
 
+  const handleModuleToggle = (moduleId) => {
+    setForm((prev) => {
+      const current = Array.isArray(prev.modulesEnabled) ? prev.modulesEnabled : [];
+      const updated = current.includes(moduleId)
+        ? current.filter((item) => item !== moduleId)
+        : [...current, moduleId];
+
+      return { ...prev, modulesEnabled: updated };
+    });
+  };
+
   const handleSubmit = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (!form.name.trim()) return alert("कृपया दुकान या कंपनी का नाम दर्ज करें!");
@@ -63,6 +75,7 @@ export default function AddCompanyPage({ onAdded }) {
         name: form.name.trim(),
         gstType: (form.gstType || "regular").toLowerCase(),
         user: userObj?._id || userObj?.id || undefined,
+        modulesEnabled: Array.isArray(form.modulesEnabled) ? form.modulesEnabled : [],
         enableGst: Boolean(form.gstNumber?.trim())
       };
 
@@ -203,6 +216,38 @@ export default function AddCompanyPage({ onAdded }) {
                   );
                 })}
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-black text-slate-900 uppercase tracking-wide mb-2">
+                Linked Business Modules
+              </label>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {[
+                  { id: 'restaurant', label: 'Restaurant' },
+                  { id: 'hardware', label: 'Hardware' },
+                  { id: 'gamezone', label: 'Gamezone' },
+                  { id: 'supermarket', label: 'Supermarket' },
+                  { id: 'electronics', label: 'Electronics' },
+                  { id: 'garments', label: 'Garments' },
+                  { id: 'banquet', label: 'Banquet' },
+                  { id: 'pharma', label: 'Pharma' },
+                  { id: 'service', label: 'Service' }
+                ].map((module) => {
+                  const selected = form.modulesEnabled.includes(module.id);
+                  return (
+                    <button
+                      key={module.id}
+                      type="button"
+                      onClick={() => handleModuleToggle(module.id)}
+                      className={`p-2.5 rounded-xl text-xs font-bold border transition ${selected ? 'bg-indigo-50 border-indigo-600 text-indigo-700' : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-400'}`}
+                    >
+                      {module.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-slate-500 mt-2">Only linked modules will show in this business dashboard. Unlinked modules remain hidden.</p>
             </div>
 
             <div>

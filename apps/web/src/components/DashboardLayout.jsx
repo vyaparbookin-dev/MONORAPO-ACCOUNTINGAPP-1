@@ -42,7 +42,7 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { SecurityTracker } from "@repo/shared";
 import CloudSyncToggel from "./CloudSyncToggel";
 import LanguageSwitchButton from "./LanguageSwitchButton";
-import { getBusinessMode } from "../utils/businessMode";
+import { getBusinessMode, getCompanyModuleList, BUSINESS_MODULE_OPTIONS } from "../utils/businessMode";
 
 // Resilient Page-Level Error Boundary to protect sidebar & topbar navigation
 class ContentErrorBoundary extends React.Component {
@@ -160,7 +160,44 @@ export default function DashboardLayout() {
   // Get the selected industry type and make it lowercase for easy checking
   // Dynamic Industry-Tailored Menu Generator (Strict Industry Business Logic)
   const getMenuForBusiness = (company) => {
+    const linkedModules = getCompanyModuleList(company);
     const business = getBusinessMode(company);
+
+    if (linkedModules.length > 0) {
+      const explicitSet = new Set(linkedModules.map((m) => String(m).toLowerCase()));
+
+      if (explicitSet.has('hardware')) return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "🔧 Hardware Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "🧾 Retail & Counter Bills", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Briefcase, label: "🏢 B2B GST Invoices", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
+        { icon: PenTool, label: "📐 Dimensions & Cut-Loss Batch", href: "/inventory/batch", color: "text-orange-600", roles: ['admin', 'manager'] },
+        { icon: Package, label: "📦 Hardware & Timber Stock", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
+        { icon: Users, label: "👥 Contractor & Supplier Khata", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "📝 Estimates & Quotations", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: Package, label: "🚚 E-Way Bill & Transport", href: "/reports/eway-bill", color: "text-indigo-500", roles: ['admin'] },
+        { icon: Landmark, label: "🏦 Bank & Cash Balances", href: "/banking", color: "text-cyan-500", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "💸 Shop Kharch & Transport", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: FileText, label: "📑 GST Tax Reports", href: "/reports/gst", color: "text-blue-500", roles: ['admin'] },
+        { icon: BookOpen, label: "📖 Day Book Ledger", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] }
+      ];
+
+      if (explicitSet.has('restaurant')) return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "🍽️ Restaurant Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: ShoppingCart, label: "⚡ Table KOT & Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Building2, label: "🏰 बैंक्वेट हॉल व इवेंट्स", href: "/banquet", color: "text-amber-500", roles: ['admin', 'manager'] },
+        { icon: FileText, label: "🧾 Bills & Invoices", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Package, label: "🥘 Recipe BOM & Stock", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
+        { icon: Users, label: "👥 Regular Diners", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: DollarSign, label: "💸 Kitchen & Daily Expenses", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: UserCheck, label: "👨‍🍳 Chef & Staff Attendance", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
+        { icon: Gift, label: "⏰ Happy Hours & Offers", href: "/coupons", color: "text-pink-500", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "📊 Sales & Profit/Loss", href: "/reports/profitloss", color: "text-emerald-400", roles: ['admin'] },
+        { icon: BookOpen, label: "📖 Daily Cash Register (Daybook)", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] },
+        { icon: Bot, label: "🤖 AI मुनीम जी Advisor", href: "/ai-advisor", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] }
+      ];
+    }
 
     // 2. RESTAURANT & CAFE
     if (business.isRestaurant) {

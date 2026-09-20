@@ -1960,16 +1960,10 @@ function MobileVyaparAppContent() {
 
       // 1. Instantly persist in localStorage so it NEVER disappears (Offline-First)
       try {
-        const stored = localStorage.getItem("vb_local_manual_bills") || localStorage.getItem("bills");
-        let list = [];
-        try {
-          list = stored ? JSON.parse(stored) : [];
-        } catch (e) {
-          list = [];
-        }
+        const stored = readLocalJson(["vb_local_manual_bills", "bills"], []);
+        const list = Array.isArray(stored) ? stored : [];
         const updatedList = deduplicateBills([createdBill, ...list]);
-        localStorage.setItem("vb_local_manual_bills", JSON.stringify(updatedList));
-        localStorage.setItem("bills", JSON.stringify(updatedList));
+        writeLocalJson(["vb_local_manual_bills", "bills"], updatedList);
         setBills(updatedList);
       } catch (storageErr) {
         console.warn("Local bill storage err:", storageErr);
@@ -1998,8 +1992,7 @@ function MobileVyaparAppContent() {
             setBills(prev => {
               const updated = prev.map(b => (b._id === localBillId || b.id === genBillNo) ? { ...b, ...savedBill, isOfflineCreated: false } : b);
               try {
-                localStorage.setItem("vb_local_manual_bills", JSON.stringify(updated));
-                localStorage.setItem("bills", JSON.stringify(updated));
+                writeLocalJson(["vb_local_manual_bills", "bills"], updated);
               } catch (e) {}
               return updated;
             });

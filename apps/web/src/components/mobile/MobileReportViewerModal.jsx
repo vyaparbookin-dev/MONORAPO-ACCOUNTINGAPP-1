@@ -5,6 +5,7 @@ import {
   Receipt, Building2, Clock, CheckCircle2, ChevronRight, Share2 
 } from 'lucide-react';
 import api from '../../services/api';
+import { readLocalJson } from '@repo/shared';
 import { deduplicateBills } from '../../utils/deduplicateBills';
 
 export default function MobileReportViewerModal({ isOpen, onClose, reportType, reportTitle }) {
@@ -42,10 +43,10 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
         let localBills = [];
         try {
           if (typeof localStorage !== 'undefined') {
-            const storedP = localStorage.getItem('vb_local_parties') || localStorage.getItem('parties');
-            if (storedP) localParties = JSON.parse(storedP) || [];
-            const storedB = localStorage.getItem('vb_local_manual_bills');
-            if (storedB) localBills = JSON.parse(storedB) || [];
+            const storedP = readLocalJson(['vb_local_parties', 'parties'], []);
+            if (Array.isArray(storedP)) localParties = storedP;
+            const storedB = readLocalJson(['vb_local_manual_bills', 'bills'], []);
+            if (Array.isArray(storedB)) localBills = storedB;
           }
         } catch (e) {}
 

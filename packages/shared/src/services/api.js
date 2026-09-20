@@ -1,9 +1,32 @@
 // --- PLATFORM-SAFE LOCAL STORAGE HELPERS ---
+const getCurrentCompanyId = () => {
+  if (typeof localStorage === 'undefined') return '';
+  try {
+    return String(localStorage.getItem('companyId') || localStorage.getItem('selectedCompany') || '').trim();
+  } catch (e) {
+    return '';
+  }
+};
+
+const getStorageKeysForCompany = (key) => {
+  const companyId = getCurrentCompanyId();
+  const scoped = companyId ? `${key}_${companyId}` : key;
+  return [scoped, key];
+};
+
 export const readLocalJson = (keys, fallback = []) => {
   if (typeof localStorage === 'undefined') return fallback;
   const candidates = Array.isArray(keys) ? keys : [keys];
+  const orderedKeys = [];
 
   for (const key of candidates) {
+    const variants = getStorageKeysForCompany(key);
+    for (const variant of variants) {
+      if (!orderedKeys.includes(variant)) orderedKeys.push(variant);
+    }
+  }
+
+  for (const key of orderedKeys) {
     try {
       const raw = localStorage.getItem(key);
       if (raw === null || raw === undefined || raw === 'null') continue;
@@ -21,8 +44,16 @@ export const writeLocalJson = (keys, value) => {
   if (typeof localStorage === 'undefined') return;
   const candidates = Array.isArray(keys) ? keys : [keys];
   const payload = typeof value === 'string' ? value : JSON.stringify(value);
+  const orderedKeys = [];
 
   for (const key of candidates) {
+    const variants = getStorageKeysForCompany(key);
+    for (const variant of variants) {
+      if (!orderedKeys.includes(variant)) orderedKeys.push(variant);
+    }
+  }
+
+  for (const key of orderedKeys) {
     try {
       localStorage.setItem(key, payload);
     } catch (e) {
@@ -59,7 +90,9 @@ const getGuestMockData = (url, method = 'GET') => {
   let localBills = [];
   try {
     if (typeof localStorage !== 'undefined') {
-      const stored = localStorage.getItem('vb_local_manual_bills') || localStorage.getItem('bills') || localStorage.getItem('manual_bills');
+      const companyKey = localStorage.getItem('companyId') || localStorage.getItem('selectedCompany');
+      const scopedKey = companyKey ? `vb_local_manual_bills_${companyKey}` : 'vb_local_manual_bills';
+      const stored = localStorage.getItem(scopedKey) || localStorage.getItem('vb_local_manual_bills') || localStorage.getItem('bills') || localStorage.getItem('manual_bills');
       if (stored) localBills = JSON.parse(stored) || [];
     }
   } catch (e) {}
@@ -96,7 +129,9 @@ const getGuestMockData = (url, method = 'GET') => {
   let localExpenses = [];
   try {
     if (typeof localStorage !== 'undefined') {
-      const storedExp = localStorage.getItem('vb_local_expenses') || localStorage.getItem('expenses');
+      const companyKey = localStorage.getItem('companyId') || localStorage.getItem('selectedCompany');
+      const scopedKey = companyKey ? `vb_local_expenses_${companyKey}` : 'vb_local_expenses';
+      const storedExp = localStorage.getItem(scopedKey) || localStorage.getItem('vb_local_expenses') || localStorage.getItem('expenses');
       if (storedExp) localExpenses = JSON.parse(storedExp) || [];
     }
   } catch (e) {}
