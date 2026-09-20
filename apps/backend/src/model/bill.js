@@ -57,12 +57,13 @@ const billSchema = new mongoose.Schema({
   freightCharges: { type: Number, default: 0 }, // Hardware: Transport/Delivery charges
   laborCharges: { type: Number, default: 0 }, // Builder: Mazdoori / Installation charges
   finalAmount: { type: Number, default: 0 },
-  paymentMethod: { type: String, enum: ["cash", "cheque", "card", "online", "credit"], default: "cash" },
+  paymentMethod: { type: String, default: "cash" },
+  paymentMode: { type: String, default: "CASH" },
+  paymentStatus: { type: String, default: "paid" },
   notes: String,
   status: { 
     type: String, 
-    enum: ["draft", "issued", "paid", "cancelled"],
-    default: "draft" 
+    default: "paid" 
   },
   editHistory: [{
     editedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

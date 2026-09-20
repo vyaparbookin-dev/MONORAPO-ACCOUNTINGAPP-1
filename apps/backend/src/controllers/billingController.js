@@ -152,11 +152,17 @@ _(कृपया यह OTP दुकानदार को तभी बता
       }
     }
 
+    const normalizedMethod = (pMode.toLowerCase() === "upi" || pMode.toLowerCase() === "online") ? "online" 
+                           : (pMode.toLowerCase() === "udhar" || pMode.toLowerCase() === "credit") ? "credit" 
+                           : "cash";
+
     const bill = new Bill({
       ...req.body,
       companyId: req.companyId,
       paymentMode: pMode,
-      paymentMethod: pMode,
+      paymentMethod: normalizedMethod,
+      paymentStatus: isUdhar ? "unpaid" : "paid",
+      status: req.body.status || (isUdhar ? "issued" : "paid"),
       finalAmount: finalBillAmount,
       billImageUrl: req.body.billImageUrl,
       dueDate: finalDueDate,
