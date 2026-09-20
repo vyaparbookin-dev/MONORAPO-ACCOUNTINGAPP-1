@@ -2583,14 +2583,17 @@ function MobileVyaparAppContent() {
               </div>
 
               <div 
-                onClick={() => handleTabChange("reports")}
+                onClick={() => {
+                  setDailySaleFilter("week");
+                  setShowManualSaleModal(true);
+                }}
                 className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
               >
                 <div className="flex justify-between items-center">
                   <span className="font-black text-sm text-[#0F172A]">₹ {recentSales.toLocaleString('en-IN')}</span>
                   <ChevronRight size={16} className="text-[#94A3B8]" />
                 </div>
-                <div className="text-xs font-bold text-[#64748B]">This week's sale</div>
+                <div className="text-xs font-bold text-[#64748B]">This week's sale (बिक्री देखें)</div>
               </div>
 
               <div 
@@ -5310,40 +5313,84 @@ function MobileVyaparAppContent() {
 
               {/* Statement Title & List */}
               <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                <span className="font-extrabold text-xs text-[#0F172A]">हिसाब-किताब का इतिहास (Statement)</span>
+                <span className="font-extrabold text-xs text-[#0F172A]">📖 खाता पासबुक व लेन-देन (Running Ledger)</span>
                 {partyStatementLoading && <span className="text-[10px] text-slate-400 animate-pulse">लोड हो रहा है...</span>}
               </div>
 
-              {/* Transaction List */}
+              {/* Detailed Passbook Ledger List with Running Balance */}
               <div className="space-y-2">
                 {partyTransactions.length === 0 ? (
                   <div className="py-6 text-center text-slate-400 text-xs bg-slate-50/60 rounded-2xl border border-dashed border-slate-200">
                     अभी तक कोई लेन-देन दर्ज नहीं है। ऊपर दिए गए "मैंने दिए" या "मुझे मिले" बटन से प्रविष्टि दर्ज करें।
                   </div>
-                ) : (
-                  partyTransactions.map((tx, idx) => {
-                    const isDebit = Number(tx.debit || 0) > 0;
-                    const amt = isDebit ? tx.debit : tx.credit;
-                    return (
-                      <div key={tx._id || idx} className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl flex justify-between items-center text-xs">
-                        <div>
-                          <div className="font-bold text-[#0F172A]">{tx.details || (isDebit ? "मैंने दिए" : "मुझे मिले")}</div>
-                          <div className="text-[10px] text-slate-400">
-                            {tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'आज'}
+                ) : (() => {
+                  // Compute chronological running balance
+                  const sortedAsc = [...partyTransactions].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+                  
+                  let initialBal = Number(selectedPartyDetail.openingBalance || 0);
+                  let running = initialBal;
+
+                  const txWithRunning = sortedAsc.map((tx) => {
+                    const debit = Number(tx.debit || 0);
+                    const credit = Number(tx.credit || 0);
+                    running = running + debit - credit;
+                    return { ...tx, runningAfter: running };
+                  });
+
+                  // Display latest transactions first
+                  const txWithRunningDesc = [...txWithRunning].reverse();
+
+                  return (
+                    <div className="space-y-2">
+                      {txWithRunningDesc.map((tx, idx) => {
+                        const isDebit = Number(tx.debit || 0) > 0;
+                        const amt = isDebit ? tx.debit : tx.credit;
+                        const mode = tx.paymentMethod || tx.paymentMode || 'CASH';
+                        return (
+                          <div key={tx._id || idx} className="p-3 bg-[#F8FAFC] border border-slate-200/80 rounded-2xl space-y-1.5 shadow-xs">
+                            <div className="flex justify-between items-start">
+                              <div className="space-y-0.5">
+                                <div className="font-extrabold text-xs text-[#0F172A] flex items-center gap-1.5">
+                                  <span className={`w-2 h-2 rounded-full shrink-0 ${isDebit ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                                  <span className="truncate">{tx.details || (isDebit ? "मैंने दिए / उधारी बिक्री" : "मुझे मिले / राशि जमा")}</span>
+                                </div>
+                                <div className="text-[10px] text-slate-500 flex items-center gap-2">
+                                  <span>📅 {tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'आज'}</span>
+                                  <span className="px-1.5 py-0.2 bg-slate-200/60 rounded text-[9px] font-bold text-slate-700">
+                                    {mode === 'UPI' ? '📱 UPI' : mode === 'BANK' ? '🏛️ Bank' : '💵 Cash'}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <div className={`font-black text-sm ${isDebit ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                  {isDebit ? `- ₹${Number(amt).toLocaleString('en-IN')}` : `+ ₹${Number(amt).toLocaleString('en-IN')}`}
+                                </div>
+                                <span className="text-[9px] font-extrabold text-slate-400">
+                                  {isDebit ? "🔴 दिए (Gave)" : "🟢 मिले (Got)"}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {/* Running Balance After Entry */}
+                            <div className="pt-1.5 border-t border-slate-200/60 flex justify-between items-center text-[11px]">
+                              <span className="text-slate-500 font-bold text-[10px]">इसके बाद बकाया balance:</span>
+                              <span className={`font-black ${tx.runningAfter > 0 ? 'text-emerald-700' : tx.runningAfter < 0 ? 'text-rose-700' : 'text-slate-600'}`}>
+                                ₹ {Math.abs(tx.runningAfter).toLocaleString('en-IN')} {tx.runningAfter > 0 ? '(आपको लेने हैं)' : tx.runningAfter < 0 ? '(आपको देने हैं)' : '(चुक्ता)'}
+                              </span>
+                            </div>
                           </div>
+                        );
+                      })}
+
+                      {initialBal !== 0 && (
+                        <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl flex justify-between items-center text-xs text-amber-900 font-bold">
+                          <span>📦 प्रारंभिक शेष (Opening Balance)</span>
+                          <span>₹ {Math.abs(initialBal).toLocaleString('en-IN')} {initialBal > 0 ? '(लेने थे)' : '(देने थे)'}</span>
                         </div>
-                        <div className="text-right">
-                          <div className={`font-black ${isDebit ? 'text-rose-600' : 'text-emerald-600'}`}>
-                            {isDebit ? `- ₹${Number(amt).toLocaleString('en-IN')}` : `+ ₹${Number(amt).toLocaleString('en-IN')}`}
-                          </div>
-                          <span className="text-[9px] text-slate-400 font-semibold">
-                            {isDebit ? "दिए (Gave)" : "मिले (Got)"}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
