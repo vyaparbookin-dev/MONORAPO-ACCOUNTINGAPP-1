@@ -146,7 +146,9 @@ export const CompanyProvider = ({ children }) => {
       const serverCompanies = Array.isArray(rawList) ? rawList : (Array.isArray(rawList?.companies) ? rawList.companies : []);
 
       if (serverCompanies.length > 0) {
-        setCompanies(serverCompanies);
+        const realCompanies = serverCompanies.filter(c => !c.isDemo && !(c._id || c.id || '').toString().startsWith('demo_'));
+        const candidateCompanies = realCompanies.length > 0 ? realCompanies : serverCompanies;
+        setCompanies(candidateCompanies);
 
         // Check user object in localStorage for default companyId
         let defaultCompanyId = localStorage.getItem("companyId") || localStorage.getItem("selectedCompany");
@@ -158,11 +160,12 @@ export const CompanyProvider = ({ children }) => {
           }
         } catch (e) {}
 
-        const matchedCo = serverCompanies.find(c => 
-          c._id === defaultCompanyId || 
-          c._id?.toString() === defaultCompanyId?.toString() ||
-          c.id === defaultCompanyId
-        ) || serverCompanies[0];
+        const storedCoId = String(defaultCompanyId || '').trim();
+        const matchedCo = candidateCompanies.find(c => 
+          (c._id || c.id)?.toString() === storedCoId ||
+          (c._id || c.id)?.toString() === String(defaultCompanyId || '') ||
+          c.name === storedCoId
+        ) || candidateCompanies.find(c => !(c._id || c.id || '').toString().startsWith('demo_')) || candidateCompanies[0];
 
         setSelectedCompany(matchedCo);
         localStorage.setItem("companyId", matchedCo._id || matchedCo.id);
