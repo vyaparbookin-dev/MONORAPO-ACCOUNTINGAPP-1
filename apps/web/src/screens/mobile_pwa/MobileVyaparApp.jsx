@@ -328,6 +328,14 @@ function MobileVyaparAppContent() {
   const [partyFilterTab, setPartyFilterTab] = useState("all"); // 'all', 'customer', 'supplier', 'personal'
   const [partyStatementLoading, setPartyStatementLoading] = useState(false);
   const [partyTransactions, setPartyTransactions] = useState([]);
+  const [allPartyTransactions, setAllPartyTransactions] = useState(() => {
+    try {
+      const stored = localStorage.getItem("vb_local_party_txs");
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      return [];
+    }
+  });
   const [showPartyTxForm, setShowPartyTxForm] = useState(false);
   const [partyTxType, setPartyTxType] = useState('paid'); // 'paid' (मैंने दिए) or 'received' (मुझे मिले)
   const [partyTxAmount, setPartyTxAmount] = useState('');
@@ -1087,18 +1095,30 @@ function MobileVyaparAppContent() {
   const fetchLiveDashboardData = async () => {
     setLoading(true);
     try {
-      const [billsRes, partiesRes, invRes, catRes, brandRes] = await Promise.allSettled([
+      const [billsRes, partiesRes, invRes, catRes, brandRes, daybookRes] = await Promise.allSettled([
         api.get("/api/billing?limit=500"),
         api.get("/api/party").catch(() => api.get("/api/parties")),
         api.get("/api/inventory").catch(() => api.get("/inventory")),
         api.get("/api/category").catch(() => ({ data: [] })),
-        api.get("/api/brand").catch(() => ({ data: [] }))
+        api.get("/api/brand").catch(() => ({ data: [] })),
+        api.get("/api/daybook?period=all&limit=500").catch(() => null)
       ]);
 
       let rawBills = [];
       if (billsRes.status === "fulfilled" && billsRes.value) {
         const v = billsRes.value;
         rawBills = v.bills || v.data?.bills || (Array.isArray(v.data) && v.data.length > 0 ? v.data : (Array.isArray(v) ? v : []));
+      }
+
+      if (daybookRes.status === "fulfilled" && daybookRes.value) {
+        const dv = daybookRes.value;
+        const txs = dv?.data?.partyTransactions || dv?.partyTransactions || [];
+        if (Array.isArray(txs) && txs.length > 0) {
+          setAllPartyTransactions(txs);
+          try {
+            localStorage.setItem("vb_local_party_txs", JSON.stringify(txs));
+          } catch (e) {}
+        }
       }
       const normBills = (Array.isArray(rawBills) ? rawBills : []).map(b => ({
         _id: b._id || b.id || `BILL-${Date.now()}`,
@@ -2724,19 +2744,19 @@ function MobileVyaparAppContent() {
                       onClick={() => setTransactionTab("all")}
                       className={`px-2 py-0.5 rounded-md transition ${transactionTab === "all" ? "bg-white text-indigo-900 shadow-xs" : "text-slate-500"}`}
                     >
-                      सभी ({bills.length + (gharKharchList || []).length})
+                      सभी ({bills.length + (gharKharchList || []).length + (allPartyTransactions || []).length})
                     </button>
                     <button
                       onClick={() => setTransactionTab("sales")}
                       className={`px-2 py-0.5 rounded-md transition ${transactionTab === "sales" ? "bg-emerald-600 text-white shadow-xs" : "text-slate-500"}`}
                     >
-                      बिक्री ({bills.length})
+                      बिक्री ({bills.length + (allPartyTransactions || []).filter(tx => Number(tx.debit || 0) > 0).length})
                     </button>
                     <button
                       onClick={() => setTransactionTab("expenses")}
                       className={`px-2 py-0.5 rounded-md transition ${transactionTab === "expenses" ? "bg-amber-600 text-white shadow-xs" : "text-slate-500"}`}
                     >
-                      खर्च ({(gharKharchList || []).length})
+                      खर्च ({(gharKharchList || []).length + (allPartyTransactions || []).filter(tx => Number(tx.credit || 0) > 0).length})
                     </button>
                   </div>
                 </div>
@@ -2750,17 +2770,36 @@ function MobileVyaparAppContent() {
               </div>
 
               {(() => {
+                const salesTxsCount = bills.length + (allPartyTransactions || []).filter(tx => Number(tx.debit || 0) > 0).length;
+                const expensesTxsCount = (gharKharchList || []).length + (allPartyTransactions || []).filter(tx => Number(tx.credit || 0) > 0).length;
+
                 const combinedStream = [
                   ...bills.map(b => ({
                     _id: b._id || b.id,
                     typeCategory: 'sale',
                     title: b.customerName || 'नकद काउंटर बिक्री',
                     subtitle: `Invoice #${b.id} • ${b.date} • ${b.paymentStatus === 'unpaid' ? 'Due (उधार)' : 'Paid'}`,
-                    amount: b.amount,
+                    amount: Number(b.amount || b.finalAmount || b.total || 0),
                     isPositive: true,
                     dateObj: new Date(b.rawDate || b.date || Date.now()),
                     original: b
                   })),
+                  ...(allPartyTransactions || []).map(tx => {
+                    const isDebit = Number(tx.debit || 0) > 0;
+                    const pName = tx.partyId?.name || tx.partyName || 'पार्टी खाता';
+                    const amt = Number(tx.debit || tx.credit || tx.amount || 0);
+                    return {
+                      _id: tx._id || `ptx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                      typeCategory: isDebit ? 'sale' : 'expense',
+                      title: `${pName} • ${tx.details || (isDebit ? 'रकम मिली / बिक्री' : 'भुगतान दिया')}`,
+                      subtitle: `🤝 पार्टी लेनदेन • ${tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today'}`,
+                      amount: amt,
+                      isPositive: isDebit,
+                      dateObj: new Date(tx.date || tx.createdAt || Date.now()),
+                      original: tx,
+                      isPartyTx: true
+                    };
+                  }),
                   ...(gharKharchList || []).map(e => ({
                     _id: e._id || e.id,
                     typeCategory: 'expense',
