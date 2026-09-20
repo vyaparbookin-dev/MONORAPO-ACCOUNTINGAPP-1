@@ -34,8 +34,14 @@
     <script type="module" src="/src/index.jsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          registrations.forEach((registration) => {
+            registration.unregister().catch(() => {});
+          });
+        }).catch(() => {});
+
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
+          navigator.serviceWorker.register('/sw.js', { scope: '/' })
             .then(reg => {
               reg.update();
               console.log('✅ PWA Active:', reg.scope);
