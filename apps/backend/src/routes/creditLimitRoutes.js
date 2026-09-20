@@ -1,5 +1,5 @@
 import express from "express";
-import { authenticateUser } from "../middleware/authMiddleware.js";
+import { protect as authenticateUser } from "../middleware/authmiddleware.js";
 import {
   sanctionCreditLimit,
   verifyCreditLimitSanction,

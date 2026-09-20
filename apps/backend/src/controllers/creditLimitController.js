@@ -1,7 +1,7 @@
 import Party from "../model/party.js";
 import Bill from "../model/bill.js";
 import Company from "../model/company.js";
-import { logActivity } from "../utils/activityLogger.js";
+import { logActivity } from "../utils/logger.js";
 
 // Helper to format Indian currency
 const fmtRs = (num) => Number(num || 0).toLocaleString("en-IN");
