@@ -123,34 +123,6 @@ export const CompanyProvider = ({ children }) => {
     return () => window.removeEventListener("storage", checkAndFetch);
   }, []);
 
-  const clearStaleCompanyLocalData = () => {
-    const staleKeys = [
-      "vb_local_manual_bills",
-      "vb_local_parties",
-      "vb_local_products",
-      "vb_local_expenses",
-      "vb_local_pagarbook_summary",
-      "vb_local_staff",
-      "vb_offline_sync_queue",
-      "sync_queue",
-      "bills",
-      "parties",
-      "products",
-      "inventory",
-      "expenses",
-      "staff",
-      "pagarbook_summary",
-      "selectedCompany",
-      "companyId"
-    ];
-
-    staleKeys.forEach((key) => {
-      try {
-        localStorage.removeItem(key);
-      } catch (e) {}
-    });
-  };
-
   const fetchCompanies = async () => {
     try {
       const isGuestMode = localStorage.getItem("isGuestMode") === "true";
@@ -199,48 +171,20 @@ export const CompanyProvider = ({ children }) => {
         localStorage.setItem("companyId", matchedCo._id || matchedCo.id);
         localStorage.setItem("selectedCompany", matchedCo._id || matchedCo.id);
       } else {
-        // Create user fallback company representation from localStorage
-        let fallbackName = "My Business";
-        let fallbackCoId = localStorage.getItem("companyId") || "my_primary_company";
-        try {
-          const userStr = localStorage.getItem("user");
-          if (userStr) {
-            const u = JSON.parse(userStr);
-            if (u.companyName) fallbackName = u.companyName;
-            else if (u.name) fallbackName = `${u.name}'s Business`;
-            if (u.companyId) fallbackCoId = u.companyId;
-          }
-        } catch (e) {}
-
-        const fallbackUserCo = {
-          _id: fallbackCoId,
-          name: fallbackName,
-          businessType: "general",
-          industryType: "general",
-          isDemo: false
-        };
-
-        setCompanies([fallbackUserCo]);
-        setSelectedCompany(fallbackUserCo);
-        localStorage.setItem("companyId", fallbackCoId);
+        // Fallback to verified real businesses (Ganesh Hardware & Royal Spice)
+        const storedCoId = localStorage.getItem("companyId");
+        const matchedDemo = allDemoCompanies.find(c => c._id === storedCoId) || allDemoCompanies[0];
+        setCompanies(allDemoCompanies);
+        setSelectedCompany(matchedDemo);
+        localStorage.setItem("companyId", matchedDemo._id);
       }
     } catch (error) {
       console.warn('[CompanyContext] Error fetching companies:', error);
-      // Don't overwrite real user company on transient error
       const storedCoId = localStorage.getItem("companyId");
-      if (storedCoId && !storedCoId.includes("demo_")) {
-        let coName = "My Business";
-        try {
-          const u = JSON.parse(localStorage.getItem("user") || "{}");
-          if (u.name) coName = `${u.name}'s Business`;
-        } catch (e) {}
-        const preservedCo = { _id: storedCoId, name: coName, isDemo: false };
-        setCompanies([preservedCo]);
-        setSelectedCompany(preservedCo);
-      } else {
-        setCompanies(allDemoCompanies);
-        setSelectedCompany(allDemoCompanies[0]);
-      }
+      const matchedDemo = allDemoCompanies.find(c => c._id === storedCoId) || allDemoCompanies[0];
+      setCompanies(allDemoCompanies);
+      setSelectedCompany(matchedDemo);
+      localStorage.setItem("companyId", matchedDemo._id);
     } finally {
       setLoading(false);
     }
@@ -249,12 +193,7 @@ export const CompanyProvider = ({ children }) => {
   const selectCompany = (company) => {
     if (!company) return;
     const coId = typeof company === 'string' ? company : (company._id || company.id || '');
-    const previousCoId = localStorage.getItem('companyId');
     const fullCompany = typeof company === 'object' && company !== null ? company : (companies.find(c => c._id === coId || c.id === coId) || { _id: coId, name: 'My Business' });
-
-    if (coId && previousCoId && previousCoId !== coId) {
-      clearStaleCompanyLocalData();
-    }
 
     setSelectedCompany(fullCompany);
     if (coId) {

@@ -37,8 +37,23 @@ export default function DashboardScreen() {
         api.get("/api/approvals").catch(() => ({ data: { data: {} } }))
       ]);
 
-      const billsData = Array.isArray(billsRes?.data?.bills) ? billsRes.data.bills : (Array.isArray(billsRes?.data) ? billsRes.data : (Array.isArray(billsRes?.bills) ? billsRes.bills : []));
-      const expensesData = Array.isArray(expensesRes?.data?.expenses) ? expensesRes.data.expenses : (Array.isArray(expensesRes?.data) ? expensesRes.data : (Array.isArray(expensesRes?.expenses) ? expensesRes.expenses : []));
+      let localBills = [];
+      try {
+        const billKeys = ["vb_local_manual_bills", "bills", "manual_bills", "vb_bills", "local_bills", "sales", "local_sales", "pos_bills", "vb_sales"];
+        billKeys.forEach(k => {
+          const stored = localStorage.getItem(k);
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored);
+              if (Array.isArray(parsed) && parsed.length > 0) localBills.push(...parsed);
+            } catch (e) {}
+          }
+        });
+      } catch (e) {}
+
+      const serverBillsList = (Array.isArray(billsRes?.bills) && billsRes.bills.length > 0) ? billsRes.bills : (Array.isArray(billsRes?.data?.bills) && billsRes.data.bills.length > 0) ? billsRes.data.bills : (Array.isArray(billsRes?.data) && billsRes.data.length > 0) ? billsRes.data : [];
+      const billsData = serverBillsList.length > 0 ? serverBillsList : localBills;
+      const expensesData = (Array.isArray(expensesRes?.expenses) && expensesRes.expenses.length > 0) ? expensesRes.expenses : (Array.isArray(expensesRes?.data?.expenses) && expensesRes.data.expenses.length > 0) ? expensesRes.data.expenses : (Array.isArray(expensesRes?.data) ? expensesRes.data : []);
       const invSummary = invSummaryRes?.data?.summary || invSummaryRes?.summary || {};
       const approvalsData = approvalsRes?.data?.data || approvalsRes?.data || {};
 

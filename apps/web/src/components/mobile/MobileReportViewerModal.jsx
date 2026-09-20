@@ -141,13 +141,21 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
         ]);
 
         const serverReports = res?.reports || res?.data?.reports || res?.data || (Array.isArray(res) ? res : []);
-        const serverBills = billingRes?.data?.bills || billingRes?.bills || billingRes?.data || [];
+        const serverBills = (Array.isArray(billingRes?.bills) && billingRes.bills.length > 0) ? billingRes.bills : (Array.isArray(billingRes?.data?.bills) && billingRes.data.bills.length > 0) ? billingRes.data.bills : (Array.isArray(billingRes?.data) ? billingRes.data : []);
 
         let localBills = [];
         try {
           if (typeof localStorage !== 'undefined') {
-            const stored = localStorage.getItem('vb_local_manual_bills');
-            if (stored) localBills = JSON.parse(stored) || [];
+            const billKeys = ["vb_local_manual_bills", "bills", "manual_bills", "vb_bills", "local_bills", "sales", "local_sales", "pos_bills", "vb_sales"];
+            billKeys.forEach(k => {
+              const stored = localStorage.getItem(k);
+              if (stored) {
+                try {
+                  const parsed = JSON.parse(stored);
+                  if (Array.isArray(parsed) && parsed.length > 0) localBills.push(...parsed);
+                } catch (e) {}
+              }
+            });
           }
         } catch (e) {}
 
