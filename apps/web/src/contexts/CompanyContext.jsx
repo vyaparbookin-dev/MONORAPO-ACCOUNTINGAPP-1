@@ -18,16 +18,6 @@ export const CompanyProvider = ({ children }) => {
       isDemo: false
     },
     {
-      _id: "6a8314470d93e58ad0920952",
-      name: "🍽️ Royal Spice Restaurant & Cafe",
-      businessType: "restaurant",
-      industryType: "restaurant",
-      address: "12 Food Street, Connaught Place, New Delhi",
-      phone: "9876543210",
-      gstin: "07AAAAA0000A1Z5",
-      isDemo: false
-    },
-    {
       _id: "demo_company_trading",
       name: "🏢 श्री गणेश ट्रेडर्स व जनरल स्टोर",
       businessType: "retail",

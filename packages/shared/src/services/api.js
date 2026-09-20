@@ -589,19 +589,16 @@ api.interceptors.response.use(
       return Promise.reject(err.response?.data || err);
     }
 
-    // RESILIENT OFFLINE / GUEST / BACKEND 500 / NETWORK ERROR INTERCEPTION
-    // If backend 500s, 404s, times out, or has network failure, NEVER crash the UI, serve instant mock payload!
-    const isRecoverableError = !err.response || 
-                               status === 500 || 
-                               status === 502 || 
-                               status === 503 || 
-                               status === 504 || 
-                               status === 404 || 
-                               err.code === 'ERR_NETWORK' || 
-                               err.code === 'ECONNABORTED' || 
-                               isGuestOrDemo;
+    // Only use mock data for guest/demo scenarios or true network outages.
+    // Real backend 500s should surface so the app can alert or recover intentionally.
+    const isNetworkFailure = !err.response || err.code === 'ERR_NETWORK' || err.code === 'ECONNABORTED';
+    const guestOrDemoFallback = isGuestOrDemo && (status === 500 || status === 502 || status === 503 || status === 504 || status === 404 || isNetworkFailure);
+    const isRecoverableError = isNetworkFailure || guestOrDemoFallback;
 
     if (isRecoverableError) {
+      if (!isGuestOrDemo && !isNetworkFailure) {
+        return Promise.reject(err.response?.data || err);
+      }
       console.info("[API Resilience] Serving instant mock payload for URL:", url);
       const mockPayload = getGuestMockData(url, err.config?.method?.toUpperCase());
       return Promise.resolve(mockPayload);

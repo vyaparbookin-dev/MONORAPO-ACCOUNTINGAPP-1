@@ -1,4 +1,5 @@
 import { api } from "@repo/shared";
+export { readLocalJson } from "@repo/shared";
 
 export const auth = {
   login: (data) => api.post("/api/auth/login", data),

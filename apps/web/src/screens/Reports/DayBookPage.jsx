@@ -231,7 +231,7 @@ export default function DayBookPage() {
       "Desserts & Sweets": { name: "मीठा व आइसक्रीम (Desserts)", revenue: 0, qty: 0, estMargin: 68, icon: "🍨", badge: "✨ स्वीट डिलाइट" }
     } : {};
 
-    let totalRev = 0;
+    let totalFoodRev = 0;
 
     (bills || []).forEach(b => {
       (b.items || []).forEach(it => {
@@ -256,7 +256,7 @@ export default function DayBookPage() {
         const qty = Number(it.quantity) || 1;
         catStats[cat].revenue += amt;
         catStats[cat].qty += qty;
-        totalRev += amt;
+        totalFoodRev += amt;
       });
     });
 
