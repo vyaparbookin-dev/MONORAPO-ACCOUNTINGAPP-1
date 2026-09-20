@@ -474,7 +474,18 @@ function MobileVyaparAppContent() {
   const [showPagarBookModal, setShowPagarBookModal] = useState(() => sessionStorage.getItem("mobile_show_pagarbook") === "true");
   const [pagarBookMonth, setPagarBookMonth] = useState(new Date().getMonth() + 1);
   const [pagarBookYear, setPagarBookYear] = useState(new Date().getFullYear());
-  const [pagarBookData, setPagarBookData] = useState({ staff: [], totalCompanySalaryEarned: 0, totalCompanyAdvanceGiven: 0, totalCompanyNetPayable: 0 });
+  const defaultPagarBookData = {
+    staff: [],
+    totalCompanySalaryEarned: 0,
+    totalCompanyAdvanceGiven: 0,
+    totalCompanyNetPayable: 0,
+    daysInMonth: 30,
+    daysConsidered: new Date().getDate()
+  };
+  const [pagarBookData, setPagarBookData] = useState(() => {
+    const cached = readLocalJson(["vb_local_pagarbook_summary", "pagarbook_summary"], null);
+    return cached && typeof cached === "object" ? { ...defaultPagarBookData, ...cached } : defaultPagarBookData;
+  });
   const [loadingPagarBook, setLoadingPagarBook] = useState(false);
   
   // Selected Staff for Full Detail & Salary Slip Modal
@@ -630,14 +641,26 @@ function MobileVyaparAppContent() {
 
   // ==================== PAGARBOOK HANDLERS ====================
   const fetchPagarBookData = async (m = pagarBookMonth, y = pagarBookYear) => {
+    const cached = readLocalJson(["vb_local_pagarbook_summary", "pagarbook_summary"], null);
+    if (cached && typeof cached === "object") {
+      setPagarBookData({ ...defaultPagarBookData, ...cached });
+    }
+
     try {
       setLoadingPagarBook(true);
       const res = await api.get(`/staff/pagarbook-summary?month=${m}&year=${y}`);
-      if (res.data && res.data.success) {
-        setPagarBookData(res.data);
+      if (res?.data && res.data.success) {
+        const nextData = { ...defaultPagarBookData, ...res.data };
+        setPagarBookData(nextData);
+        writeLocalJson(["vb_local_pagarbook_summary", "pagarbook_summary"], nextData);
+      } else if (cached && typeof cached === "object") {
+        setPagarBookData({ ...defaultPagarBookData, ...cached });
       }
     } catch (e) {
       console.error("Failed to fetch PagarBook data:", e);
+      if (cached && typeof cached === "object") {
+        setPagarBookData({ ...defaultPagarBookData, ...cached });
+      }
     } finally {
       setLoadingPagarBook(false);
     }

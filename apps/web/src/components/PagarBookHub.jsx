@@ -6,6 +6,7 @@ import {
   CreditCard, Landmark
 } from "lucide-react";
 import api from "../services/api";
+import { readLocalJson, writeLocalJson } from "@repo/shared";
 import { useCompany } from "../contexts/CompanyContext";
 
 export default function PagarBookHub({ onClose, initialStaffId = null }) {
@@ -16,13 +17,18 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     return parseInt(sessionStorage.getItem("pagarbook_year")) || new Date().getFullYear();
   });
 
-  const [summaryData, setSummaryData] = useState({
+  const defaultSummaryData = {
     staff: [],
     totalCompanySalaryEarned: 0,
     totalCompanyAdvanceGiven: 0,
     totalCompanyNetPayable: 0,
     daysInMonth: 30,
     daysConsidered: new Date().getDate()
+  };
+
+  const [summaryData, setSummaryData] = useState(() => {
+    const cached = readLocalJson(["vb_local_pagarbook_summary", "pagarbook_summary"], null);
+    return cached && typeof cached === "object" ? { ...defaultSummaryData, ...cached } : defaultSummaryData;
   });
   const [loading, setLoading] = useState(false);
   const { selectedCompany } = useCompany() || {};
@@ -80,14 +86,26 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
   }, [currentMonth, currentYear]);
 
   const fetchData = async (m = currentMonth, y = currentYear) => {
+    const cached = readLocalJson(["vb_local_pagarbook_summary", "pagarbook_summary"], null);
+    if (cached && typeof cached === "object") {
+      setSummaryData({ ...defaultSummaryData, ...cached });
+    }
+
     try {
       setLoading(true);
       const res = await api.get(`/staff/pagarbook-summary?month=${m}&year=${y}`);
-      if (res.data && res.data.success) {
-        setSummaryData(res.data);
+      if (res?.data && res.data.success) {
+        const nextData = { ...defaultSummaryData, ...res.data };
+        setSummaryData(nextData);
+        writeLocalJson(["vb_local_pagarbook_summary", "pagarbook_summary"], nextData);
+      } else if (cached && typeof cached === "object") {
+        setSummaryData({ ...defaultSummaryData, ...cached });
       }
     } catch (err) {
       console.error("Failed to load staff summary:", err);
+      if (cached && typeof cached === "object") {
+        setSummaryData({ ...defaultSummaryData, ...cached });
+      }
     } finally {
       setLoading(false);
     }
