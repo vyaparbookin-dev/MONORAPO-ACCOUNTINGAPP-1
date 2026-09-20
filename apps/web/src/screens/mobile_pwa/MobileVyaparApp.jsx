@@ -1096,45 +1096,54 @@ function MobileVyaparAppContent() {
       ]);
 
       let rawBills = [];
-      if (billsRes.status === "fulfilled") {
-        rawBills = billsRes.value.data?.bills || billsRes.value.data?.data || billsRes.value.data || [];
+      if (billsRes.status === "fulfilled" && billsRes.value) {
+        const v = billsRes.value;
+        rawBills = v.bills || v.data?.bills || (Array.isArray(v.data) && v.data.length > 0 ? v.data : (Array.isArray(v) ? v : []));
       }
       const normBills = (Array.isArray(rawBills) ? rawBills : []).map(b => ({
-        _id: b._id,
+        _id: b._id || b.id || `BILL-${Date.now()}`,
         id: b.billNumber || b.invoiceNumber || (b._id ? `INV-${b._id.slice(-4)}` : "001"),
-        customerName: b.partyName || b.customerName || "Walk-in Customer",
-        phone: b.customerPhone || b.phone || "",
+        customerName: b.partyName || b.customerName || b.customer || "Walk-in Customer",
+        phone: b.customerPhone || b.phone || b.mobileNumber || "",
         amount: Number(b.amount || b.finalAmount || b.total || b.grandTotal || 0),
         finalAmount: Number(b.amount || b.finalAmount || b.total || b.grandTotal || 0),
         total: Number(b.amount || b.finalAmount || b.total || b.grandTotal || 0),
-        type: b.paymentMode || b.paymentType || "CASH",
-        paymentMode: b.paymentMode || b.paymentType || "CASH",
-        paymentMethod: (b.paymentMode || b.paymentType || "CASH") === "UDHAR" ? "credit" : "cash",
-        paymentStatus: b.paymentStatus || (b.paymentMode === "UDHAR" ? "unpaid" : "paid"),
+        type: (b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase(),
+        paymentMode: (b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase(),
+        paymentMethod: ((b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase() === "UDHAR" || (b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase() === "CREDIT") ? "credit" : "cash",
+        paymentStatus: b.paymentStatus || (b.paymentMode === "UDHAR" || b.type === "UDHAR" ? "unpaid" : "paid"),
         date: b.date ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today",
         rawDate: b.rawDate || b.date || b.createdAt || new Date().toISOString(),
         items: b.items || []
       }));
 
-      // Load local manual bills and merge
+      // Gather all local sales and bills from all possible keys
       let localManualBills = [];
       try {
-        const stored = localStorage.getItem("vb_local_manual_bills") || localStorage.getItem("bills") || localStorage.getItem("manual_bills") || localStorage.getItem("vb_bills") || localStorage.getItem("local_bills");
-        if (stored) {
-          localManualBills = JSON.parse(stored) || [];
-        }
+        const billKeys = ["vb_local_manual_bills", "bills", "manual_bills", "vb_bills", "local_bills", "sales", "local_sales", "pos_bills", "vb_sales"];
+        billKeys.forEach(k => {
+          const stored = localStorage.getItem(k);
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored);
+              if (Array.isArray(parsed) && parsed.length > 0) localManualBills.push(...parsed);
+            } catch (e) {}
+          }
+        });
       } catch (e) {}
 
-      const mergedBills = deduplicateBills([...normBills, ...(Array.isArray(localManualBills) ? localManualBills : [])]);
+      const mergedBills = deduplicateBills([...normBills, ...localManualBills]);
       setBills(mergedBills);
       try {
         localStorage.setItem("vb_local_manual_bills", JSON.stringify(mergedBills));
         localStorage.setItem("bills", JSON.stringify(mergedBills));
+        localStorage.setItem("sales", JSON.stringify(mergedBills));
       } catch (e) {}
 
       let rawParties = [];
-      if (partiesRes.status === "fulfilled") {
-        rawParties = partiesRes.value.data?.parties || partiesRes.value.data?.data || partiesRes.value.data || [];
+      if (partiesRes.status === "fulfilled" && partiesRes.value) {
+        const v = partiesRes.value;
+        rawParties = v.parties || v.data?.parties || (Array.isArray(v.data) && v.data.length > 0 ? v.data : (Array.isArray(v) ? v : []));
       }
       const normParties = (Array.isArray(rawParties) ? rawParties : []).map(p => ({
         id: p._id || p.id,
@@ -1160,8 +1169,16 @@ function MobileVyaparAppContent() {
       // Load local parties and merge safely so no party ever gets hidden
       let localParties = [];
       try {
-        const storedP = localStorage.getItem("vb_local_parties") || localStorage.getItem("parties") || localStorage.getItem("local_parties");
-        if (storedP) localParties = JSON.parse(storedP) || [];
+        const pKeys = ["vb_local_parties", "parties", "local_parties"];
+        pKeys.forEach(k => {
+          const storedP = localStorage.getItem(k);
+          if (storedP) {
+            try {
+              const parsed = JSON.parse(storedP);
+              if (Array.isArray(parsed) && parsed.length > 0) localParties.push(...parsed);
+            } catch (e) {}
+          }
+        });
       } catch (e) {}
 
       const partyMap = new Map();
@@ -1181,8 +1198,9 @@ function MobileVyaparAppContent() {
       } catch (e) {}
 
       let rawInv = [];
-      if (invRes.status === "fulfilled") {
-        rawInv = invRes.value.data?.products || invRes.value.data?.inventory || invRes.value.data?.items || invRes.value.data || (Array.isArray(invRes.value) ? invRes.value : []);
+      if (invRes.status === "fulfilled" && invRes.value) {
+        const v = invRes.value;
+        rawInv = v.products || v.inventory || v.items || v.data?.products || v.data?.inventory || v.data?.items || (Array.isArray(v.data) && v.data.length > 0 ? v.data : (Array.isArray(v) ? v : []));
       }
       const normInv = (Array.isArray(rawInv) ? rawInv : []).map(it => ({
         ...it,
@@ -1207,8 +1225,16 @@ function MobileVyaparAppContent() {
       // Load local products and merge safely so no items disappear
       let localProducts = [];
       try {
-        const storedI = localStorage.getItem("vb_local_products") || localStorage.getItem("products") || localStorage.getItem("inventory") || localStorage.getItem("items");
-        if (storedI) localProducts = JSON.parse(storedI) || [];
+        const iKeys = ["vb_local_products", "products", "inventory", "items"];
+        iKeys.forEach(k => {
+          const storedI = localStorage.getItem(k);
+          if (storedI) {
+            try {
+              const parsed = JSON.parse(storedI);
+              if (Array.isArray(parsed) && parsed.length > 0) localProducts.push(...parsed);
+            } catch (e) {}
+          }
+        });
       } catch (e) {}
 
       const itemMap = new Map();

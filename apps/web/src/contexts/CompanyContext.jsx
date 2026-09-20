@@ -123,6 +123,34 @@ export const CompanyProvider = ({ children }) => {
     return () => window.removeEventListener("storage", checkAndFetch);
   }, []);
 
+  const clearStaleCompanyLocalData = () => {
+    const staleKeys = [
+      "vb_local_manual_bills",
+      "vb_local_parties",
+      "vb_local_products",
+      "vb_local_expenses",
+      "vb_local_pagarbook_summary",
+      "vb_local_staff",
+      "vb_offline_sync_queue",
+      "sync_queue",
+      "bills",
+      "parties",
+      "products",
+      "inventory",
+      "expenses",
+      "staff",
+      "pagarbook_summary",
+      "selectedCompany",
+      "companyId"
+    ];
+
+    staleKeys.forEach((key) => {
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {}
+    });
+  };
+
   const fetchCompanies = async () => {
     try {
       const isGuestMode = localStorage.getItem("isGuestMode") === "true";
@@ -221,7 +249,13 @@ export const CompanyProvider = ({ children }) => {
   const selectCompany = (company) => {
     if (!company) return;
     const coId = typeof company === 'string' ? company : (company._id || company.id || '');
+    const previousCoId = localStorage.getItem('companyId');
     const fullCompany = typeof company === 'object' && company !== null ? company : (companies.find(c => c._id === coId || c.id === coId) || { _id: coId, name: 'My Business' });
+
+    if (coId && previousCoId && previousCoId !== coId) {
+      clearStaleCompanyLocalData();
+    }
+
     setSelectedCompany(fullCompany);
     if (coId) {
       localStorage.setItem("companyId", coId);
