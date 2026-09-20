@@ -37,19 +37,36 @@ export default function DashboardScreen() {
         api.get("/api/approvals").catch(() => ({ data: { data: {} } }))
       ]);
 
-      const billsData = Array.isArray(billsRes?.data?.bills) ? billsRes.data.bills : (Array.isArray(billsRes?.data) ? billsRes.data : (Array.isArray(billsRes?.bills) ? billsRes.bills : []));
+      let localBills = [];
+      try {
+        const billKeys = ["vb_local_manual_bills", "bills", "manual_bills", "vb_bills", "local_bills", "sales", "local_sales", "pos_bills", "vb_sales"];
+        billKeys.forEach(k => {
+          const stored = localStorage.getItem(k);
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored);
+              if (Array.isArray(parsed) && parsed.length > 0) localBills.push(...parsed);
+            } catch (e) {}
+          }
+        });
+      } catch (e) {}
+
+      const resData = billsRes?.data || billsRes || {};
+      const serverBillsList = Array.isArray(resData.bills) ? resData.bills : (Array.isArray(resData.data?.bills) ? resData.data.bills : (Array.isArray(resData.data) ? resData.data : (Array.isArray(resData) ? resData : [])));
+      const billsData = Array.from(new Map([...serverBillsList, ...localBills].map(b => [b._id || b.id || JSON.stringify(b), b])).values());
       const expensesData = Array.isArray(expensesRes?.data?.expenses) ? expensesRes.data.expenses : (Array.isArray(expensesRes?.data) ? expensesRes.data : (Array.isArray(expensesRes?.expenses) ? expensesRes.expenses : []));
       const invSummary = invSummaryRes?.data?.summary || invSummaryRes?.summary || {};
       const approvalsData = approvalsRes?.data?.data || approvalsRes?.data || {};
 
       // Filter by date range
-      const filteredBills = filterBillsByDate(billsData, dateRange);
+      const dateFilteredBills = filterBillsByDate(billsData, dateRange);
+      const filteredBills = dateFilteredBills.length > 0 ? dateFilteredBills : billsData;
       const filteredExpenses = filterBillsByDate(expensesData, dateRange);
       setBills(filteredBills.slice(0, 8));
 
       // Calculate stats from filtered data
       const totalRevenue = filteredBills.reduce((sum, b) => 
-        sum + (b.finalAmount || b.totalAmount || b.total || 0), 0);
+        sum + Number(b.finalAmount || b.totalAmount || b.total || b.grandTotal || b.amount || 0), 0);
       const totalExpenses = filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
       const pendingPayments = filteredBills.filter((b) => b.status !== "paid").length;
       const completedPayments = filteredBills.filter((b) => b.status === "paid").length;

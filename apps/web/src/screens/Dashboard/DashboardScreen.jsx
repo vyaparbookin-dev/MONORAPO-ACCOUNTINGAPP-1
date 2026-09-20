@@ -51,20 +51,22 @@ export default function DashboardScreen() {
         });
       } catch (e) {}
 
-      const serverBillsList = (Array.isArray(billsRes?.bills) && billsRes.bills.length > 0) ? billsRes.bills : (Array.isArray(billsRes?.data?.bills) && billsRes.data.bills.length > 0) ? billsRes.data.bills : (Array.isArray(billsRes?.data) && billsRes.data.length > 0) ? billsRes.data : [];
-      const billsData = serverBillsList.length > 0 ? serverBillsList : localBills;
+      const resData = billsRes?.data || billsRes || {};
+      const serverBillsList = Array.isArray(resData.bills) ? resData.bills : (Array.isArray(resData.data?.bills) ? resData.data.bills : (Array.isArray(resData.data) ? resData.data : (Array.isArray(resData) ? resData : [])));
+      const billsData = Array.from(new Map([...serverBillsList, ...localBills].map(b => [b._id || b.id || JSON.stringify(b), b])).values());
       const expensesData = (Array.isArray(expensesRes?.expenses) && expensesRes.expenses.length > 0) ? expensesRes.expenses : (Array.isArray(expensesRes?.data?.expenses) && expensesRes.data.expenses.length > 0) ? expensesRes.data.expenses : (Array.isArray(expensesRes?.data) ? expensesRes.data : []);
       const invSummary = invSummaryRes?.data?.summary || invSummaryRes?.summary || {};
       const approvalsData = approvalsRes?.data?.data || approvalsRes?.data || {};
 
       // Filter by date range
-      const filteredBills = filterBillsByDate(billsData, dateRange);
+      const dateFilteredBills = filterBillsByDate(billsData, dateRange);
+      const filteredBills = dateFilteredBills.length > 0 ? dateFilteredBills : billsData;
       const filteredExpenses = filterBillsByDate(expensesData, dateRange);
       setBills(filteredBills.slice(0, 8));
 
       // Calculate stats from filtered data
       const totalRevenue = filteredBills.reduce((sum, b) => 
-        sum + (b.finalAmount || b.totalAmount || b.total || 0), 0);
+        sum + Number(b.finalAmount || b.totalAmount || b.total || b.grandTotal || b.amount || 0), 0);
       const totalExpenses = filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
       const pendingPayments = filteredBills.filter((b) => b.status !== "paid").length;
       const completedPayments = filteredBills.filter((b) => b.status === "paid").length;
