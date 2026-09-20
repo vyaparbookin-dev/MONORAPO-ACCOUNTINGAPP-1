@@ -51,6 +51,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { useCompany } from "../../contexts/CompanyContext";
 import api from "../../services/api";
+import { readLocalJson, writeLocalJson } from "@repo/shared";
 import PagarBookHub from "../../components/PagarBookHub";
 import MobileDayBookModal from "../../components/mobile/MobileDayBookModal";
 import MobileProfitLossModal from "../../components/mobile/MobileProfitLossModal";
@@ -147,34 +148,16 @@ function MobileVyaparAppContent() {
   });
   const [showCompanySelectModal, setShowCompanySelectModal] = useState(false);
   const [parties, setParties] = useState(() => {
-    try {
-      const stored = localStorage.getItem("vb_local_parties") || localStorage.getItem("parties") || localStorage.getItem("local_parties");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {}
-    return [];
+    const cached = readLocalJson(["vb_local_parties", "parties", "local_parties"], []);
+    return Array.isArray(cached) && cached.length > 0 ? cached : [];
   });
   const [items, setItems] = useState(() => {
-    try {
-      const stored = localStorage.getItem("vb_local_products") || localStorage.getItem("products") || localStorage.getItem("inventory") || localStorage.getItem("items");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {}
-    return [];
+    const cached = readLocalJson(["vb_local_products", "products", "inventory", "items"], []);
+    return Array.isArray(cached) && cached.length > 0 ? cached : [];
   });
   const [bills, setBills] = useState(() => {
-    try {
-      const stored = localStorage.getItem("vb_local_manual_bills") || localStorage.getItem("bills") || localStorage.getItem("manual_bills") || localStorage.getItem("vb_bills") || localStorage.getItem("local_bills");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return deduplicateBills(parsed);
-      }
-    } catch (e) {}
-    return [];
+    const cached = readLocalJson(["vb_local_manual_bills", "bills", "manual_bills", "vb_bills", "local_bills"], []);
+    return Array.isArray(cached) && cached.length > 0 ? deduplicateBills(cached) : [];
   });
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -250,21 +233,16 @@ function MobileVyaparAppContent() {
   const [showAllTransactions, setShowAllTransactions] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [syncQueueCount, setSyncQueueCount] = useState(() => {
-    try {
-      const q = localStorage.getItem("vb_offline_sync_queue");
-      return q ? JSON.parse(q).length : 0;
-    } catch (e) {
-      return 0;
-    }
+    const queue = readLocalJson(["vb_offline_sync_queue", "sync_queue"], []);
+    return Array.isArray(queue) ? queue.length : 0;
   });
 
   const enqueueOfflineSync = (action) => {
     try {
-      const stored = localStorage.getItem("vb_offline_sync_queue");
-      const list = stored ? JSON.parse(stored) : [];
-      list.push({ ...action, timestamp: Date.now() });
-      localStorage.setItem("vb_offline_sync_queue", JSON.stringify(list));
-      setSyncQueueCount(list.length);
+      const list = readLocalJson(["vb_offline_sync_queue", "sync_queue"], []);
+      const updatedList = Array.isArray(list) ? [...list, { ...action, timestamp: Date.now() }] : [{ ...action, timestamp: Date.now() }];
+      writeLocalJson(["vb_offline_sync_queue", "sync_queue"], updatedList);
+      setSyncQueueCount(updatedList.length);
     } catch (e) {
       console.error("enqueueOfflineSync error:", e);
     }
@@ -273,10 +251,9 @@ function MobileVyaparAppContent() {
   const processOfflineSyncQueue = async () => {
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     try {
-      const stored = localStorage.getItem("vb_offline_sync_queue");
-      if (!stored) return;
-      const queue = JSON.parse(stored);
-      if (!Array.isArray(queue) || queue.length === 0) return;
+      const stored = readLocalJson(["vb_offline_sync_queue", "sync_queue"], []);
+      const queue = Array.isArray(stored) ? stored : [];
+      if (queue.length === 0) return;
 
       const remaining = [];
       for (const action of queue) {
@@ -295,7 +272,7 @@ function MobileVyaparAppContent() {
           remaining.push(action);
         }
       }
-      localStorage.setItem("vb_offline_sync_queue", JSON.stringify(remaining));
+      writeLocalJson(["vb_offline_sync_queue", "sync_queue"], remaining);
       setSyncQueueCount(remaining.length);
     } catch (e) {
       console.error("processOfflineSyncQueue error:", e);

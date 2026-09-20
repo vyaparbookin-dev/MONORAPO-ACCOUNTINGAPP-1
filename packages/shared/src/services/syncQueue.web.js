@@ -5,7 +5,7 @@
  * Once the connection is restored, it processes the queue.
  * This version uses localStorage for persistence in web/desktop environments.
  */
-import api from './api';
+import api, { readLocalJson, writeLocalJson } from './api';
 
 let isProcessing = false;
 
@@ -17,12 +17,8 @@ const getQueue = async () => {
       return await window.electron.db.getSyncQueue();
     }
 
-    if (typeof localStorage !== 'undefined') {
-      const queueJson = localStorage.getItem('sync_queue');
-      return queueJson ? JSON.parse(queueJson) : [];
-    }
-
-    return [];
+    const queue = readLocalJson(['sync_queue', 'vb_offline_sync_queue'], []);
+    return Array.isArray(queue) ? queue : [];
   } catch (e) {
     console.error("Failed to get sync queue", e);
     return [];
@@ -35,9 +31,7 @@ const saveQueue = async (queue) => {
       return await window.electron.db.saveSyncQueue(queue);
     }
 
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('sync_queue', JSON.stringify(queue));
-    }
+    writeLocalJson(['sync_queue', 'vb_offline_sync_queue'], Array.isArray(queue) ? queue : []);
   } catch (e) {
     console.error("Failed to save sync queue", e);
   }
