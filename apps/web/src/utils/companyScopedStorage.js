@@ -12,6 +12,36 @@ export const getCompanyScopedStorageKey = (baseKey, companyId) => {
   return `${baseKey}_${cleanCompanyId}`;
 };
 
+const mergeScopedData = (items, companyId) => {
+  const unique = [];
+  const seen = new Set();
+  const companyIdValue = normalizeCompanyId(companyId);
+
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item || typeof item !== "object") continue;
+    const companyMatch = normalizeCompanyId(
+      item.companyId || item.company_id || item.company || item.businessId || item.companyID
+    );
+
+    if (companyIdValue && companyMatch && companyMatch !== companyIdValue) {
+      continue;
+    }
+
+    const key = item._id || item.id || item.billNumber || item.invoiceNumber || JSON.stringify({
+      company: companyMatch,
+      amount: item.amount || item.finalAmount || item.total || 0,
+      date: item.rawDate || item.date || item.createdAt || "",
+      name: item.customerName || item.partyName || item.customer || ""
+    });
+
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(item);
+  }
+
+  return unique;
+};
+
 export const readCompanyScopedJson = (baseKeys, companyId, fallback = []) => {
   if (typeof localStorage === "undefined") return fallback;
   const keys = Array.isArray(baseKeys) ? baseKeys : [baseKeys];
@@ -24,6 +54,8 @@ export const readCompanyScopedJson = (baseKeys, companyId, fallback = []) => {
   }
 
   const seen = new Set();
+  const collected = [];
+
   for (const key of candidates) {
     if (seen.has(key)) continue;
     seen.add(key);
@@ -32,10 +64,19 @@ export const readCompanyScopedJson = (baseKeys, companyId, fallback = []) => {
       const rawValue = localStorage.getItem(key);
       if (rawValue === null || rawValue === undefined || rawValue === "null") continue;
       const parsed = JSON.parse(rawValue);
-      if (parsed !== null) return parsed;
+      if (parsed === null) continue;
+      if (Array.isArray(parsed)) {
+        collected.push(...parsed);
+        continue;
+      }
+      return parsed;
     } catch (error) {
       continue;
     }
+  }
+
+  if (collected.length > 0) {
+    return mergeScopedData(collected, companyIdValue);
   }
 
   return fallback;
@@ -86,7 +127,8 @@ export const filterCompanyScopedBills = (bills, companyId) => {
 
 export const readCompanyScopedBills = (billKeys, companyId, fallback = []) => {
   const rawValue = readCompanyScopedJson(billKeys, companyId, fallback);
-  const data = Array.isArray(rawValue) ? rawValue : [];
+  const merged = Array.isArray(rawValue) ? rawValue : [];
+  const data = mergeScopedData(merged, companyId);
   return filterCompanyScopedBills(data, companyId);
 };
 
