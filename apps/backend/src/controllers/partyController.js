@@ -1,5 +1,6 @@
 import Party from "../model/party.js";
 import Bill from "../model/bill.js";
+import Purchase from "../model/purchase.js";
 import PartyTransaction from "../model/PartyTransaction.js";
 import mongoose from "mongoose";
 
@@ -167,8 +168,186 @@ export const getPartyStatement = async (req, res) => {
     const party = await Party.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!party) return res.status(404).json({ success: false, error: "Party not found" });
 
-    const transactions = await PartyTransaction.find({ partyId: req.params.id, companyId: req.companyId }).sort({ date: -1 });
-    res.json({ success: true, party, transactions });
+    const escapeRegex = (s) => (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const nameRegex = new RegExp(`^${escapeRegex(party.name)}$`, "i");
+
+    // 1. Direct Party Transactions (Cash/Bank Payments & Receipts)
+    const txRecords = await PartyTransaction.find({
+      partyId: party._id,
+      companyId: req.companyId,
+      isDeleted: { $ne: true }
+    }).lean();
+
+    // 2. Sales Bills for this party
+    const billFilter = {
+      companyId: req.companyId,
+      isDeleted: { $ne: true },
+      $or: [
+        { partyId: party._id },
+        { customerName: nameRegex }
+      ]
+    };
+    if (party.mobileNumber && party.mobileNumber.length >= 10) {
+      billFilter.$or.push({ customerMobile: party.mobileNumber });
+    }
+    const billRecords = await Bill.find(billFilter).lean();
+
+    // 3. Purchase Bills for this party (if supplier)
+    const purchaseFilter = {
+      companyId: req.companyId,
+      isDeleted: { $ne: true },
+      $or: [
+        { partyId: party._id },
+        { supplierName: nameRegex },
+        { supplier: nameRegex }
+      ]
+    };
+    const purchaseRecords = await Purchase.find(purchaseFilter).lean();
+
+    // Track existing bill IDs that might already be in txRecords to prevent double-counting
+    const existingRefBillIds = new Set(
+      txRecords.map(t => String(t.referenceBillId || t.billNumber || "")).filter(Boolean)
+    );
+
+    const ledgerEntries = [];
+
+    // Process manual / direct payments
+    for (const tx of txRecords) {
+      ledgerEntries.push({
+        _id: tx._id,
+        date: tx.date || tx.createdAt,
+        type: tx.type || (tx.credit > 0 ? "receipt" : "payment"),
+        refNo: tx.billNumber || "PAY",
+        details: tx.details || (tx.credit > 0 ? "मुझे मिले (जमा)" : "मैंने दिए (भुगतान)"),
+        debit: Number(tx.debit || 0),
+        credit: Number(tx.credit || 0),
+        billImageUrl: tx.billImageUrl || "",
+        source: "PartyTransaction"
+      });
+    }
+
+    // Process sales bills
+    for (const b of billRecords) {
+      const bNum = String(b.billNumber || "");
+      const bId = String(b._id || "");
+      if (existingRefBillIds.has(bNum) || existingRefBillIds.has(bId)) continue;
+
+      const finalAmt = Number(b.finalAmount ?? b.total ?? 0);
+      const isPaid = String(b.paymentStatus || b.status || "").toLowerCase() === "paid";
+      const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
+
+      const itemsSummary = (b.items && b.items.length > 0)
+        ? `: ${b.items.map(i => `${i.name}${i.quantity ? ` (${i.quantity} ${i.unit || 'pcs'})` : ''}`).slice(0, 3).join(', ')}${b.items.length > 3 ? '...' : ''}`
+        : '';
+
+      // 1. Bill Entry (Debit to customer)
+      ledgerEntries.push({
+        _id: b._id,
+        date: b.date || b.createdAt,
+        type: "sale",
+        refNo: bNum || "BILL",
+        billNumber: bNum,
+        billAmount: finalAmt,
+        paidAmount: paidAmt,
+        items: b.items || [],
+        details: `बिक्री बिल #${bNum} (${(b.items || []).length} सामान)${itemsSummary}`,
+        debit: finalAmt,
+        credit: 0,
+        billImageUrl: b.billImageUrl || "",
+        paymentMethod: b.paymentMode || b.paymentMethod || "CASH",
+        source: "Bill"
+      });
+
+      // 2. If any amount was paid/jama at bill time or if bill was paid, record Payment (Credit)
+      if (paidAmt > 0) {
+        ledgerEntries.push({
+          _id: `pay_${b._id}`,
+          date: b.date || b.createdAt,
+          type: "payment",
+          refNo: bNum ? `REC-${bNum}` : "REC",
+          billNumber: bNum,
+          details: `बिल #${bNum} पर नकद/UPI जमा (Payment Received)`,
+          debit: 0,
+          credit: paidAmt,
+          billImageUrl: b.billImageUrl || "",
+          paymentMethod: b.paymentMode || b.paymentMethod || "CASH",
+          source: "BillPayment"
+        });
+      }
+    }
+
+    // Process purchase bills
+    for (const p of purchaseRecords) {
+      const pNum = String(p.billNumber || p.invoiceNo || p.purchaseNumber || "PUR");
+      const pId = String(p._id || "");
+      if (existingRefBillIds.has(pNum) || existingRefBillIds.has(pId)) continue;
+
+      const totalAmt = Number(p.totalAmount ?? p.total ?? 0);
+      ledgerEntries.push({
+        _id: p._id,
+        date: p.date || p.createdAt,
+        type: "purchase",
+        refNo: pNum,
+        details: `खरीद इनवॉइस #${pNum}`,
+        debit: 0,
+        credit: totalAmt,
+        billImageUrl: p.billImageUrl || p.receiptUrl || "",
+        source: "Purchase"
+      });
+    }
+
+    // Sort chronologically ascending (oldest first) to compute running balance accurately
+    ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    let runningBal = Number(party.openingBalance || 0);
+    const openingBal = runningBal;
+
+    const formattedTransactions = ledgerEntries.map(entry => {
+      // For customer: debit increases receivable, credit decreases
+      // For supplier: credit increases payable
+      const isSupplier = (party.partyType === "supplier");
+      if (isSupplier) {
+        runningBal += (entry.debit - entry.credit);
+      } else {
+        runningBal += (entry.debit - entry.credit);
+      }
+      return {
+        ...entry,
+        runningBalance: runningBal
+      };
+    });
+
+    // Reverse to descending (latest on top) for convenient display
+    formattedTransactions.reverse();
+
+    const totalDebit = ledgerEntries.reduce((s, e) => s + (Number(e.debit) || 0), 0);
+    const totalCredit = ledgerEntries.reduce((s, e) => s + (Number(e.credit) || 0), 0);
+
+    res.json({
+      success: true,
+      party,
+      openingBalance: openingBal,
+      currentBalance: party.currentBalance ?? runningBal,
+      totalDebit,
+      totalCredit,
+      transactions: formattedTransactions
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const attachPartyTransactionImage = async (req, res) => {
+  try {
+    const { txId, imageUrl } = req.body;
+    if (!txId || !imageUrl) {
+      return res.status(400).json({ success: false, error: "Transaction ID and Image URL are required" });
+    }
+    let updated = await PartyTransaction.findByIdAndUpdate(txId, { billImageUrl: imageUrl }, { new: true });
+    if (!updated) {
+      updated = await Bill.findByIdAndUpdate(txId, { billImageUrl: imageUrl }, { new: true });
+    }
+    res.json({ success: true, message: "बिल फोटो सफलतापूर्वक सेव हो गया!", data: updated });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

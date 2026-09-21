@@ -23,6 +23,7 @@ import {
   Phone,
   Trash2,
   Edit,
+  Edit2,
   Send,
   Printer,
   Receipt,
@@ -44,12 +45,25 @@ import {
   Clock,
   BookOpen,
   PieChart,
-  Grid
+  Grid,
+  Mic
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useCompany } from "../../contexts/CompanyContext";
 import api from "../../services/api";
+import { readLocalJson, writeLocalJson } from "@repo/shared";
 import PagarBookHub from "../../components/PagarBookHub";
+import MobileDayBookModal from "../../components/mobile/MobileDayBookModal";
+import MobileProfitLossModal from "../../components/mobile/MobileProfitLossModal";
+import MobileReportViewerModal from "../../components/mobile/MobileReportViewerModal";
+import MobileFamilyExpenseModal from "../../components/mobile/MobileFamilyExpenseModal";
+import MobileSavingsModal from "../../components/mobile/MobileSavingsModal";
+import MobileBankCCModal from "../../components/mobile/MobileBankCCModal";
+import UdharOtpVerificationModal from "../../components/modals/UdharOtpVerificationModal";
+import CreditLimitHubModal from "../../components/modals/CreditLimitHubModal";
+import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
+import { deduplicateBills } from "../../utils/deduplicateBills";
+import { speakUpiPayment, playPaymentChime } from "../../utils/soundBox";
 
 
 class MobileErrorBoundary extends React.Component {
@@ -102,7 +116,7 @@ class MobileErrorBoundary extends React.Component {
 
 function MobileVyaparAppContent() {
   const navigate = useNavigate();
-  const { selectedCompany, companies, selectCompany } = useCompany();
+  const { selectedCompany, companies, selectCompany, enterDemoModule, exitDemoModule, allDemoCompanies } = useCompany() || {};
 
   const [user, setUser] = useState(() => {
     try {
@@ -116,17 +130,13 @@ function MobileVyaparAppContent() {
   const isGuestMode = localStorage.getItem("isGuestMode") === "true";
 
   const handleExitGuestMode = () => {
-    localStorage.removeItem("isGuestMode");
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("token");
+    localStorage.clear();
     sessionStorage.clear();
     window.location.href = "/login";
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("token");
-    localStorage.removeItem("isGuestMode");
+    localStorage.clear();
     sessionStorage.clear();
     window.location.href = "/login";
   };
@@ -137,9 +147,18 @@ function MobileVyaparAppContent() {
     return sessionStorage.getItem("mobile_active_tab") || "dashboard";
   });
   const [showCompanySelectModal, setShowCompanySelectModal] = useState(false);
-  const [parties, setParties] = useState([]);
-  const [items, setItems] = useState([]);
-  const [bills, setBills] = useState([]);
+  const [parties, setParties] = useState(() => {
+    const cached = readLocalJson(["vb_local_parties", "parties", "local_parties"], []);
+    return Array.isArray(cached) && cached.length > 0 ? cached : [];
+  });
+  const [items, setItems] = useState(() => {
+    const cached = readLocalJson(["vb_local_products", "products", "inventory", "items"], []);
+    return Array.isArray(cached) && cached.length > 0 ? cached : [];
+  });
+  const [bills, setBills] = useState(() => {
+    const cached = readLocalJson(["vb_local_manual_bills", "bills", "manual_bills", "vb_bills", "local_bills"], []);
+    return Array.isArray(cached) && cached.length > 0 ? deduplicateBills(cached) : [];
+  });
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [reportSearchQuery, setReportSearchQuery] = useState("");
@@ -165,8 +184,41 @@ function MobileVyaparAppContent() {
   const [itemSearchTerm, setItemSearchTerm] = useState("");
   const [showItemSuggestions, setShowItemSuggestions] = useState(false);
   const [showPartySuggestions, setShowPartySuggestions] = useState(false);
-  const [selectedPartyObject, setSelectedPartyObject] = useState(null);
   const [savingBill, setSavingBill] = useState(false);
+  const [selectedPartyObject, setSelectedPartyObject] = useState(null);
+  const [mobileStampStatus, setMobileStampStatus] = useState(null);
+  const [billAppliedReward, setBillAppliedReward] = useState(null);
+  
+  // 🛡️ Legal Udhar Protection States (IT Act 2000 Section 10A)
+  const [billDueDate, setBillDueDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 15);
+    return d.toISOString().split("T")[0];
+  });
+  const [billLateInterest, setBillLateInterest] = useState(2);
+  const [showUdharOtpModal, setShowUdharOtpModal] = useState(false);
+  const [activeUdharBillData, setActiveUdharBillData] = useState(null);
+  const [udharOtpThreshold, setUdharOtpThreshold] = useState(500);
+  const [isUdharProtectionChecked, setIsUdharProtectionChecked] = useState(false);
+  const [showCreditLimitHub, setShowCreditLimitHub] = useState(false);
+  const [bypassCreditLock, setBypassCreditLock] = useState(false);
+
+  useEffect(() => {
+    const curTotal = billCart.reduce((sum, item) => sum + ((Number(item.salePrice) || 0) * (Number(item.qty) || 1)), 0);
+    setIsUdharProtectionChecked(curTotal > udharOtpThreshold);
+  }, [billCart, udharOtpThreshold, showQuickBillModal]);
+
+  useEffect(() => {
+    const clean = String(billCustomerPhone || "").replace(/\D/g, "").slice(-10);
+    if (clean.length === 10) {
+      api.get(`/api/stamps/customer-status?phone=${clean}`)
+        .then((res) => setMobileStampStatus(res.data || null))
+        .catch(() => setMobileStampStatus(null));
+    } else {
+      setMobileStampStatus(null);
+      setBillAppliedReward(null);
+    }
+  }, [billCustomerPhone]);
 
   // ==================== MANUAL QUICK DAILY SALE STATE ====================
   const [showManualSaleModal, setShowManualSaleModal] = useState(false);
@@ -178,6 +230,72 @@ function MobileVyaparAppContent() {
   const [manualSaleNotes, setManualSaleNotes] = useState("");
   const [savingManualSale, setSavingManualSale] = useState(false);
   const [transactionTab, setTransactionTab] = useState("all"); // "all", "sales", "expenses"
+  const [dailySaleFilter, setDailySaleFilter] = useState("today"); // "today", "yesterday", "week", "all"
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [syncQueueCount, setSyncQueueCount] = useState(() => {
+    const queue = readLocalJson(["vb_offline_sync_queue", "sync_queue"], []);
+    return Array.isArray(queue) ? queue.length : 0;
+  });
+
+  const enqueueOfflineSync = (action) => {
+    try {
+      const list = readLocalJson(["vb_offline_sync_queue", "sync_queue"], []);
+      const updatedList = Array.isArray(list) ? [...list, { ...action, timestamp: Date.now() }] : [{ ...action, timestamp: Date.now() }];
+      writeLocalJson(["vb_offline_sync_queue", "sync_queue"], updatedList);
+      setSyncQueueCount(updatedList.length);
+    } catch (e) {
+      console.error("enqueueOfflineSync error:", e);
+    }
+  };
+
+  const processOfflineSyncQueue = async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    try {
+      const stored = readLocalJson(["vb_offline_sync_queue", "sync_queue"], []);
+      const queue = Array.isArray(stored) ? stored : [];
+      if (queue.length === 0) return;
+
+      const remaining = [];
+      for (const action of queue) {
+        try {
+          if (action.type === 'CREATE_BILL') {
+            await api.post("/api/billing", action.payload);
+          } else if (action.type === 'CREATE_PARTY') {
+            await api.post("/api/party", action.payload).catch(() => api.post("/api/parties", action.payload));
+          } else if (action.type === 'CREATE_ITEM') {
+            await api.post("/api/inventory", action.payload).catch(() => api.post("/inventory", action.payload));
+          } else if (action.type === 'CREATE_EXPENSE') {
+            await api.post("/api/expenses", action.payload);
+          }
+        } catch (syncErr) {
+          console.warn("Sync queue item defer:", syncErr);
+          remaining.push(action);
+        }
+      }
+      writeLocalJson(["vb_offline_sync_queue", "sync_queue"], remaining);
+      setSyncQueueCount(remaining.length);
+    } catch (e) {
+      console.error("processOfflineSyncQueue error:", e);
+    }
+  };
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      processOfflineSyncQueue();
+      fetchLiveDashboardData();
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   // AI Photo Bill OCR & Multi-Bill Batch State
   const [showOcrModal, setShowOcrModal] = useState(false);
@@ -205,7 +323,28 @@ function MobileVyaparAppContent() {
   const [newPartyAddress, setNewPartyAddress] = useState("");
   const [newPartyBalance, setNewPartyBalance] = useState("0");
   const [newPartyType, setNewPartyType] = useState("customer");
+  const [newPartyBalanceDir, setNewPartyBalanceDir] = useState("positive"); // "positive"=लेने हैं, "negative"=देने हैं
+  const [editingParty, setEditingParty] = useState(null); // Party currently being edited
   const [savingParty, setSavingParty] = useState(false);
+  const [partyFilterTab, setPartyFilterTab] = useState("all"); // 'all', 'customer', 'supplier', 'personal'
+  const [partyStatementLoading, setPartyStatementLoading] = useState(false);
+  const [partyTransactions, setPartyTransactions] = useState([]);
+  const [allPartyTransactions, setAllPartyTransactions] = useState(() => {
+    try {
+      const stored = localStorage.getItem("vb_local_party_txs");
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [showPartyTxForm, setShowPartyTxForm] = useState(false);
+  const [partyTxType, setPartyTxType] = useState('paid'); // 'paid' (मैंने दिए) or 'received' (मुझे मिले)
+  const [partyTxAmount, setPartyTxAmount] = useState('');
+  const [partyTxNotes, setPartyTxNotes] = useState('');
+  const [partyTxDate, setPartyTxDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [partyTxPaymentMode, setPartyTxPaymentMode] = useState('CASH');
+  const [savingPartyTx, setSavingPartyTx] = useState(false);
+  const [previewBillImage, setPreviewBillImage] = useState(null);
   // Sync tab & modal states to sessionStorage
   const handleTabChange = (tab) => {
     setActiveTab(tab);
@@ -247,11 +386,116 @@ function MobileVyaparAppContent() {
   const [billCustomerAddress, setBillCustomerAddress] = useState("");
   const [showCustomerAddressInput, setShowCustomerAddressInput] = useState(false);
 
+  // ==================== NATIVE MOBILE REPORTS MODALS ====================
+  const [showDayBookModal, setShowDayBookModal] = useState(() => sessionStorage.getItem("mobile_show_daybook") === "true");
+  const [showProfitLossModal, setShowProfitLossModal] = useState(() => sessionStorage.getItem("mobile_show_profitloss") === "true");
+  const [showFamilyExpenseModal, setShowFamilyExpenseModal] = useState(() => sessionStorage.getItem("mobile_show_family_expense") === "true");
+  const [showSavingsModal, setShowSavingsModal] = useState(() => sessionStorage.getItem("mobile_show_savings") === "true");
+  const [showBankCCModal, setShowBankCCModal] = useState(() => sessionStorage.getItem("mobile_show_bank_cc") === "true");
+  const [bankAccounts, setBankAccounts] = useState([]);
+
+  const fetchBankAccounts = async () => {
+    try {
+      let sData = [];
+      try {
+        const res = await api.get("/api/bank-accounts");
+        sData = Array.isArray(res?.accounts) ? res.accounts : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+      } catch (e) {}
+
+      let lData = [];
+      try {
+        if (typeof localStorage !== "undefined") {
+          const stored = localStorage.getItem("vb_local_bank_accounts");
+          if (stored) lData = JSON.parse(stored) || [];
+        }
+      } catch (e) {}
+
+      if (sData.length === 0 && lData.length === 0 && selectedCompany?.bankName) {
+        lData.push({
+          _id: "co_bank_default",
+          id: "co_bank_default",
+          accountName: selectedCompany.accountName || selectedCompany.bankName,
+          bankName: selectedCompany.bankName,
+          accountNumber: selectedCompany.accountNumber || "",
+          accountType: "CURRENT",
+          openingBalance: 0,
+          currentBalance: 0
+        });
+      }
+
+      const map = new Map();
+      sData.forEach(item => {
+        const id = item._id || item.id || item.clientTempId;
+        if (id) map.set(String(id), item);
+      });
+      lData.forEach(item => {
+        const id = item._id || item.id || item.clientTempId;
+        if (id && !map.has(String(id))) map.set(String(id), item);
+      });
+
+      setBankAccounts(Array.from(map.values()));
+    } catch (e) {
+      console.warn("fetchBankAccounts error:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchBankAccounts();
+  }, [selectedCompany, showBankCCModal]);
+
+  const [activeMobileReport, setActiveMobileReport] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem("mobile_active_report");
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    sessionStorage.setItem("mobile_show_daybook", showDayBookModal ? "true" : "false");
+  }, [showDayBookModal]);
+
+  useEffect(() => {
+    sessionStorage.setItem("mobile_show_profitloss", showProfitLossModal ? "true" : "false");
+  }, [showProfitLossModal]);
+
+  useEffect(() => {
+    sessionStorage.setItem("mobile_show_family_expense", showFamilyExpenseModal ? "true" : "false");
+  }, [showFamilyExpenseModal]);
+
+  useEffect(() => {
+    sessionStorage.setItem("mobile_show_savings", showSavingsModal ? "true" : "false");
+  }, [showSavingsModal]);
+
+  useEffect(() => {
+    sessionStorage.setItem("mobile_show_bank_cc", showBankCCModal ? "true" : "false");
+  }, [showBankCCModal]);
+
+  useEffect(() => {
+    if (activeMobileReport) {
+      sessionStorage.setItem("mobile_active_report", JSON.stringify(activeMobileReport));
+    } else {
+      sessionStorage.removeItem("mobile_active_report");
+    }
+  }, [activeMobileReport]);
+
   // ==================== PAGARBOOK STAFF & SALARY STATE ====================
   const [showPagarBookModal, setShowPagarBookModal] = useState(() => sessionStorage.getItem("mobile_show_pagarbook") === "true");
   const [pagarBookMonth, setPagarBookMonth] = useState(new Date().getMonth() + 1);
   const [pagarBookYear, setPagarBookYear] = useState(new Date().getFullYear());
-  const [pagarBookData, setPagarBookData] = useState({ staff: [], totalCompanySalaryEarned: 0, totalCompanyAdvanceGiven: 0, totalCompanyNetPayable: 0 });
+  const defaultPagarBookData = {
+    staff: [],
+    totalCompanySalaryEarned: 0,
+    totalCompanyAdvanceGiven: 0,
+    totalCompanyNetPayable: 0,
+    daysInMonth: 30,
+    daysConsidered: new Date().getDate()
+  };
+  const [pagarBookData, setPagarBookData] = useState(() => {
+    const cached = readLocalJson(["vb_local_pagarbook_summary", "pagarbook_summary"], null);
+    return cached && typeof cached === "object" ? { ...defaultPagarBookData, ...cached } : defaultPagarBookData;
+  });
   const [loadingPagarBook, setLoadingPagarBook] = useState(false);
   
   // Selected Staff for Full Detail & Salary Slip Modal
@@ -316,7 +560,7 @@ function MobileVyaparAppContent() {
       const stored = localStorage.getItem("vb_local_expenses");
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return deduplicateExpenses(parsed);
       }
     } catch (e) {}
     return [];
@@ -360,13 +604,19 @@ function MobileVyaparAppContent() {
       setLoadingGharKharch(true);
       let localList = [];
       try {
-        const stored = localStorage.getItem("vb_local_expenses");
-        if (stored) localList = JSON.parse(stored);
+        const stored = localStorage.getItem("vb_local_expenses") || localStorage.getItem("expenses") || localStorage.getItem("local_expenses");
+        if (stored) {
+          try {
+            localList = JSON.parse(stored);
+          } catch (e) {
+            localList = [];
+          }
+        }
       } catch (e) {}
 
       const [res1, res2] = await Promise.allSettled([
-        api.get("/expenses?limit=500"),
-        api.get("/expenses/ghar-kharch-summary")
+        api.get("/api/expenses?limit=500"),
+        api.get("/api/expenses/ghar-kharch-summary")
       ]);
 
       let serverList = [];
@@ -385,18 +635,12 @@ function MobileVyaparAppContent() {
         }
       }
       
-      const combinedMap = new Map();
-      [...localList, ...(Array.isArray(serverList) ? serverList : [])].forEach(item => {
-        if (!item) return;
-        const key = item._id || item.id || `${item.title}_${item.amount}_${item.date}`;
-        if (!combinedMap.has(key)) {
-          combinedMap.set(key, item);
-        }
-      });
-      const combined = Array.from(combinedMap.values());
+      // Authoritative deduplication: server records always supersede temp local entries
+      const combined = deduplicateExpenses([...(Array.isArray(serverList) ? serverList : []), ...localList]);
       setGharKharchList(combined);
       try {
         localStorage.setItem("vb_local_expenses", JSON.stringify(combined));
+        localStorage.setItem("expenses", JSON.stringify(combined));
       } catch (e) {}
     } catch (e) {
       console.error("Failed to fetch Ghar Kharch:", e);
@@ -407,14 +651,26 @@ function MobileVyaparAppContent() {
 
   // ==================== PAGARBOOK HANDLERS ====================
   const fetchPagarBookData = async (m = pagarBookMonth, y = pagarBookYear) => {
+    const cached = readLocalJson(["vb_local_pagarbook_summary", "pagarbook_summary"], null);
+    if (cached && typeof cached === "object") {
+      setPagarBookData({ ...defaultPagarBookData, ...cached });
+    }
+
     try {
       setLoadingPagarBook(true);
       const res = await api.get(`/staff/pagarbook-summary?month=${m}&year=${y}`);
-      if (res.data && res.data.success) {
-        setPagarBookData(res.data);
+      if (res?.data && res.data.success) {
+        const nextData = { ...defaultPagarBookData, ...res.data };
+        setPagarBookData(nextData);
+        writeLocalJson(["vb_local_pagarbook_summary", "pagarbook_summary"], nextData);
+      } else if (cached && typeof cached === "object") {
+        setPagarBookData({ ...defaultPagarBookData, ...cached });
       }
     } catch (e) {
       console.error("Failed to fetch PagarBook data:", e);
+      if (cached && typeof cached === "object") {
+        setPagarBookData({ ...defaultPagarBookData, ...cached });
+      }
     } finally {
       setLoadingPagarBook(false);
     }
@@ -433,7 +689,7 @@ function MobileVyaparAppContent() {
         return { ...prev, staff: updatedStaff };
       });
 
-      await api.post("/staff/quick-attendance", {
+      await api.post("/api/staff/quick-attendance", {
         staffId,
         status,
         date: new Date()
@@ -468,7 +724,7 @@ function MobileVyaparAppContent() {
         commissionPercent: Number(newStaffCommission) || 0
       };
 
-      await api.post("/staff", payload);
+      await api.post("/api/staff", payload);
       alert(`✅ स्टाफ '${newStaffName}' (${newStaffWageType === 'daily' ? 'दैनिक ₹' + newStaffSalary + '/दिन' : 'मासिक ₹' + newStaffSalary + '/माह'}) सफलतापूर्वक जुड़ गया!`);
       
       setNewStaffName("");
@@ -529,7 +785,7 @@ function MobileVyaparAppContent() {
           alert("कृपया सही एडवांस राशि (₹) दर्ज करें!");
           return;
         }
-        await api.post("/staff/advance", {
+        await api.post("/api/staff/advance", {
           staffId: actionStaffTarget._id,
           amount: Number(actionAmount),
           notes: actionNotes.trim() || "Advance Payment",
@@ -537,7 +793,7 @@ function MobileVyaparAppContent() {
         });
         alert(`💵 ₹${actionAmount} एडवांस दर्ज हो गया!`);
       } else if (actionType === "overtime") {
-        await api.post("/staff/overtime", {
+        await api.post("/api/staff/overtime", {
           staffId: actionStaffTarget._id,
           hours: Number(actionHours) || 0,
           amount: Number(actionAmount) || 0,
@@ -550,7 +806,7 @@ function MobileVyaparAppContent() {
           alert("कृपया सही कमीशन राशि (₹) दर्ज करें!");
           return;
         }
-        await api.post("/staff/commission", {
+        await api.post("/api/staff/commission", {
           staffId: actionStaffTarget._id,
           amount: Number(actionAmount),
           notes: actionNotes.trim() || "Sales Commission",
@@ -684,34 +940,52 @@ function MobileVyaparAppContent() {
         date: finalDateTime
       };
 
+      const tempId = editingGharKharchItem ? (editingGharKharchItem._id || editingGharKharchItem.id) : `exp_${Date.now()}`;
       const newExpenseRecord = {
-        _id: editingGharKharchItem ? (editingGharKharchItem._id || editingGharKharchItem.id) : `exp_${Date.now()}`,
-        id: editingGharKharchItem ? (editingGharKharchItem._id || editingGharKharchItem.id) : `exp_${Date.now()}`,
+        _id: tempId,
+        id: tempId,
         ...payload
       };
 
       // Instantly persist in localStorage so it NEVER disappears or shows old data
       try {
         const stored = localStorage.getItem("vb_local_expenses");
-        let list = stored ? JSON.parse(stored) : [];
+        let list = [];
+        try {
+          list = stored ? JSON.parse(stored) : [];
+        } catch (e) {
+          list = [];
+        }
         if (editingGharKharchItem) {
           const editId = editingGharKharchItem._id || editingGharKharchItem.id;
           list = list.map(item => ((item._id || item.id) === editId ? newExpenseRecord : item));
         } else {
           list = [newExpenseRecord, ...list];
         }
-        localStorage.setItem("vb_local_expenses", JSON.stringify(list));
-        setGharKharchList(prev => [newExpenseRecord, ...prev.filter(p => (p._id || p.id) !== newExpenseRecord._id && (p._id || p.id) !== newExpenseRecord.id)]);
+        const cleanList = deduplicateExpenses(list);
+        localStorage.setItem("vb_local_expenses", JSON.stringify(cleanList));
+        setGharKharchList(cleanList);
       } catch (err) {
         console.warn("Local expense store err:", err);
       }
 
       if (editingGharKharchItem) {
         const expId = editingGharKharchItem._id || editingGharKharchItem.id;
-        await api.put(`/expenses/${expId}`, payload).catch(() => {});
+        await api.put(`/api/expenses/${expId}`, payload).catch(() => {});
         alert(`✅ ${finalMember} का खर्च (₹${gharKharchAmount}) सफलता से अपडेट हो गया!`);
       } else {
-        await api.post("/expenses", payload).catch(() => {});
+        const createRes = await api.post("/api/expenses", payload).catch(() => null);
+        const serverExpense = createRes?.expense || createRes?.data?.expense;
+        if (serverExpense && (serverExpense._id || serverExpense.id)) {
+          try {
+            const stored = localStorage.getItem("vb_local_expenses");
+            let list = stored ? JSON.parse(stored) : [];
+            list = list.map(item => ((item._id === tempId || item.id === tempId) ? serverExpense : item));
+            const cleanList = deduplicateExpenses(list);
+            localStorage.setItem("vb_local_expenses", JSON.stringify(cleanList));
+            setGharKharchList(cleanList);
+          } catch (e) {}
+        }
         const successMsg = gharKharchType === 'drawings'
           ? `🏡 ${finalMember} के लिए ${finalCategory} (₹${gharKharchAmount}) सफलतापूर्वक दर्ज हो गया!`
           : `🏢 दुकान खर्च ₹${gharKharchAmount} दर्ज हो गया!`;
@@ -746,7 +1020,7 @@ function MobileVyaparAppContent() {
     const allItems = gharKharchList;
     const filtered = memberFilter === "all"
       ? allItems
-      : allItems.filter(it => (it.familyMember || 'Unassigned').toLowerCase() === memberFilter.toLowerCase());
+      : allItems.filter(it => String(it.familyMember || 'Unassigned').toLowerCase() === String(memberFilter || 'all').toLowerCase());
     
     const total = filtered.reduce((s, it) => s + (Number(it.amount) || 0), 0);
     const titleHeader = memberFilter === "all"
@@ -775,18 +1049,41 @@ function MobileVyaparAppContent() {
     if (!id) return;
     if (!window.confirm("क्या आप इस खर्च को हमेशा के लिए हटाना चाहते हैं?")) return;
     try {
+      const targetItem = (Array.isArray(gharKharchList) ? gharKharchList : []).find(k => (k._id || k.id) === id || k.id === id || k._id === id);
+      const targetTitle = targetItem ? String(targetItem.title || "").trim().toLowerCase() : "";
+      const targetAmt = targetItem ? Number(targetItem.amount || 0).toFixed(2) : "";
+
       // 1. Immediately wipe from localStorage
       try {
         const stored = localStorage.getItem("vb_local_expenses");
         if (stored) {
           const list = JSON.parse(stored);
-          const updated = list.filter(k => (k._id || k.id) !== id && k.id !== id && k._id !== id);
-          localStorage.setItem("vb_local_expenses", JSON.stringify(updated));
+          const updated = list.filter(k => {
+            const matchId = (k._id || k.id) === id || k.id === id || k._id === id;
+            if (matchId) return false;
+            if (targetItem && (String(k._id || "").startsWith("exp_") || String(k.id || "").startsWith("exp_"))) {
+              const kTitle = String(k.title || "").trim().toLowerCase();
+              const kAmt = Number(k.amount || 0).toFixed(2);
+              if (kTitle === targetTitle && kAmt === targetAmt) return false;
+            }
+            return true;
+          });
+          const cleanList = deduplicateExpenses(updated);
+          localStorage.setItem("vb_local_expenses", JSON.stringify(cleanList));
         }
       } catch (e) {}
 
       // 2. Wipe from React state immediately
-      setGharKharchList(prev => prev.filter(k => (k._id || k.id) !== id && k.id !== id && k._id !== id));
+      setGharKharchList(prev => deduplicateExpenses(prev.filter(k => {
+        const matchId = (k._id || k.id) === id || k.id === id || k._id === id;
+        if (matchId) return false;
+        if (targetItem && (String(k._id || "").startsWith("exp_") || String(k.id || "").startsWith("exp_"))) {
+          const kTitle = String(k.title || "").trim().toLowerCase();
+          const kAmt = Number(k.amount || 0).toFixed(2);
+          if (kTitle === targetTitle && kAmt === targetAmt) return false;
+        }
+        return true;
+      })));
 
       // 3. Delete from backend database
       await api.delete(`/expenses/${id}`).catch(err => console.warn("Backend delete error:", err));
@@ -800,69 +1097,191 @@ function MobileVyaparAppContent() {
   const fetchLiveDashboardData = async () => {
     setLoading(true);
     try {
-      const [billsRes, partiesRes, invRes, catRes, brandRes] = await Promise.allSettled([
-        api.get("/billing"),
-        api.get("/parties"),
+      const [billsRes, partiesRes, invRes, catRes, brandRes, daybookRes] = await Promise.allSettled([
+        api.get("/api/billing?limit=500"),
+        api.get("/api/party").catch(() => api.get("/api/parties")),
         api.get("/api/inventory").catch(() => api.get("/inventory")),
         api.get("/api/category").catch(() => ({ data: [] })),
-        api.get("/api/brand").catch(() => ({ data: [] }))
+        api.get("/api/brand").catch(() => ({ data: [] })),
+        api.get("/api/daybook?period=all&limit=500").catch(() => null)
       ]);
 
-      if (billsRes.status === "fulfilled") {
-        const rawBills = billsRes.value.data?.bills || billsRes.value.data?.data || billsRes.value.data || [];
-        const normBills = (Array.isArray(rawBills) ? rawBills : []).map(b => ({
-          _id: b._id,
-          id: b.billNumber || b.invoiceNumber || (b._id ? `INV-${b._id.slice(-4)}` : "001"),
-          customerName: b.partyName || b.customerName || "Walk-in Customer",
-          phone: b.customerPhone || b.phone || "",
-          amount: Number(b.finalAmount || b.total || b.grandTotal || 0),
-          type: b.paymentMode || b.paymentType || "CASH",
-          paymentStatus: b.paymentStatus || (b.paymentMode === "UDHAR" ? "unpaid" : "paid"),
-          date: b.date ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today",
-          rawDate: b.date || b.createdAt || new Date(),
-          items: b.items || []
-        }));
-        setBills(normBills);
+      let rawBills = [];
+      if (billsRes.status === "fulfilled" && billsRes.value) {
+        const v = billsRes.value;
+        rawBills = v.bills || v.data?.bills || (Array.isArray(v.data) && v.data.length > 0 ? v.data : (Array.isArray(v) ? v : []));
       }
 
-      if (partiesRes.status === "fulfilled") {
-        const rawParties = partiesRes.value.data?.parties || partiesRes.value.data?.data || partiesRes.value.data || [];
-        const normParties = (Array.isArray(rawParties) ? rawParties : []).map(p => ({
-          id: p._id || p.id,
-          name: p.name || p.partyName,
-          phone: p.mobileNumber || p.phone || "",
-          balance: Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0),
-          currentBalance: Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0),
-          openingBalance: Number(p.openingBalance ?? 0),
-          type: p.partyType || p.type || "customer",
-          address: p.address || ""
-        }));
-        setParties(normParties);
+      if (daybookRes.status === "fulfilled" && daybookRes.value) {
+        const dv = daybookRes.value;
+        const txs = dv?.data?.partyTransactions || dv?.partyTransactions || [];
+        if (Array.isArray(txs) && txs.length > 0) {
+          setAllPartyTransactions(txs);
+          try {
+            localStorage.setItem("vb_local_party_txs", JSON.stringify(txs));
+          } catch (e) {}
+        }
       }
+      const normBills = (Array.isArray(rawBills) ? rawBills : []).map(b => ({
+        _id: b._id || b.id || `BILL-${Date.now()}`,
+        id: b.billNumber || b.invoiceNumber || (b._id ? `INV-${b._id.slice(-4)}` : "001"),
+        customerName: b.partyName || b.customerName || b.customer || "Walk-in Customer",
+        phone: b.customerPhone || b.phone || b.mobileNumber || "",
+        amount: Number(b.amount || b.finalAmount || b.total || b.grandTotal || 0),
+        finalAmount: Number(b.amount || b.finalAmount || b.total || b.grandTotal || 0),
+        total: Number(b.amount || b.finalAmount || b.total || b.grandTotal || 0),
+        type: (b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase(),
+        paymentMode: (b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase(),
+        paymentMethod: ((b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase() === "UDHAR" || (b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase() === "CREDIT") ? "credit" : "cash",
+        paymentStatus: b.paymentStatus || (b.paymentMode === "UDHAR" || b.type === "UDHAR" ? "unpaid" : "paid"),
+        date: b.date ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today",
+        rawDate: b.rawDate || b.date || b.createdAt || new Date().toISOString(),
+        items: b.items || []
+      }));
 
-      if (invRes.status === "fulfilled") {
-        const rawInv = invRes.value.data?.products || invRes.value.data?.inventory || invRes.value.data?.items || invRes.value.data || (Array.isArray(invRes.value) ? invRes.value : []);
-        const normInv = (Array.isArray(rawInv) ? rawInv : []).map(it => ({
-          ...it,
-          id: it._id || it.id,
-          _id: it._id || it.id,
-          name: it.name || it.productName || "Unnamed Item",
-          category: (it.category || "General").trim(),
-          subCategory: (it.subCategory || "").trim(),
-          brand: (it.brand || "General").trim(),
-          salePrice: Number(it.sellingPrice ?? it.salePrice ?? it.price ?? 0),
-          sellingPrice: Number(it.sellingPrice ?? it.salePrice ?? it.price ?? 0),
-          costPrice: Number(it.costPrice ?? 0),
-          mrp: Number(it.mrp ?? it.sellingPrice ?? 0),
-          stock: Number(it.currentStock ?? it.stock ?? 0),
-          currentStock: Number(it.currentStock ?? it.stock ?? 0),
-          unit: it.unit || "Pcs",
-          barcode: it.barcode || "",
-          sku: it.sku || "",
-          hsnCode: it.hsnCode || ""
-        }));
-        setItems(normInv);
+      // Gather all local sales and bills from all possible keys
+      let localManualBills = [];
+      try {
+        const billKeys = ["vb_local_manual_bills", "bills", "manual_bills", "vb_bills", "local_bills", "sales", "local_sales", "pos_bills", "vb_sales"];
+        billKeys.forEach(k => {
+          const stored = localStorage.getItem(k);
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored);
+              if (Array.isArray(parsed) && parsed.length > 0) localManualBills.push(...parsed);
+            } catch (e) {}
+          }
+        });
+      } catch (e) {}
+
+      const mergedBills = deduplicateBills([...normBills, ...localManualBills]);
+      setBills(mergedBills);
+      try {
+        localStorage.setItem("vb_local_manual_bills", JSON.stringify(mergedBills));
+        localStorage.setItem("bills", JSON.stringify(mergedBills));
+        localStorage.setItem("sales", JSON.stringify(mergedBills));
+      } catch (e) {}
+
+      let rawParties = [];
+      if (partiesRes.status === "fulfilled" && partiesRes.value) {
+        const v = partiesRes.value;
+        rawParties = v.parties || v.data?.parties || (Array.isArray(v.data) && v.data.length > 0 ? v.data : (Array.isArray(v) ? v : []));
       }
+      const normParties = (Array.isArray(rawParties) ? rawParties : []).map(p => ({
+        id: p._id || p.id,
+        _id: p._id || p.id,
+        name: p.name || p.partyName,
+        phone: p.mobileNumber || p.phone || "",
+        mobileNumber: p.mobileNumber || p.phone || "",
+        // FIXED: prioritize currentBalance (actual running balance), then openingBalance, then 0
+        balance: Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0),
+        currentBalance: Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0),
+        openingBalance: Number(p.openingBalance ?? 0),
+        type: p.partyType || p.type || "customer",
+        partyType: p.partyType || p.type || "customer",
+        address: p.address || "",
+        creditLimit: Number(p.creditLimit ?? 0),
+        isCreditLimitActive: Boolean(p.isCreditLimitActive),
+        creditLimitStatus: p.creditLimitStatus || (p.isCreditLimitActive ? "ACTIVE" : "INACTIVE"),
+        hasPendingBillApproval: Boolean(p.hasPendingBillApproval),
+        gstNumber: p.gstNumber || "",
+        notes: p.notes || ""
+      }));
+
+      // Load local parties and merge safely so no party ever gets hidden
+      let localParties = [];
+      try {
+        const pKeys = ["vb_local_parties", "parties", "local_parties"];
+        pKeys.forEach(k => {
+          const storedP = localStorage.getItem(k);
+          if (storedP) {
+            try {
+              const parsed = JSON.parse(storedP);
+              if (Array.isArray(parsed) && parsed.length > 0) localParties.push(...parsed);
+            } catch (e) {}
+          }
+        });
+      } catch (e) {}
+
+      const partyMap = new Map();
+      const getPartyUniqueKey = (p) => {
+        const phone = String(p.phone || p.mobileNumber || '').replace(/\D/g, '').slice(-10);
+        if (phone && phone.length === 10) return `phone_${phone}`;
+        const name = String(p.name || p.partyName || '').trim().toLowerCase();
+        if (name) return `name_${name}`;
+        return String(p._id || p.id || Math.random());
+      };
+
+      (Array.isArray(localParties) ? localParties : []).forEach(p => {
+        const key = getPartyUniqueKey(p);
+        if (key) partyMap.set(key, p);
+      });
+      normParties.forEach(p => {
+        const key = getPartyUniqueKey(p);
+        if (key) partyMap.set(key, { ...(partyMap.get(key) || {}), ...p });
+      });
+      const mergedParties = Array.from(partyMap.values());
+      setParties(mergedParties);
+      try {
+        localStorage.setItem("vb_local_parties", JSON.stringify(mergedParties));
+        localStorage.setItem("parties", JSON.stringify(mergedParties));
+      } catch (e) {}
+
+      let rawInv = [];
+      if (invRes.status === "fulfilled" && invRes.value) {
+        const v = invRes.value;
+        rawInv = v.products || v.inventory || v.items || v.data?.products || v.data?.inventory || v.data?.items || (Array.isArray(v.data) && v.data.length > 0 ? v.data : (Array.isArray(v) ? v : []));
+      }
+      const normInv = (Array.isArray(rawInv) ? rawInv : []).map(it => ({
+        ...it,
+        id: it._id || it.id,
+        _id: it._id || it.id,
+        name: it.name || it.productName || "Unnamed Item",
+        category: (it.category || "General").trim(),
+        subCategory: (it.subCategory || "").trim(),
+        brand: (it.brand || "General").trim(),
+        salePrice: Number(it.sellingPrice ?? it.salePrice ?? it.price ?? 0),
+        sellingPrice: Number(it.sellingPrice ?? it.salePrice ?? it.price ?? 0),
+        costPrice: Number(it.costPrice ?? 0),
+        mrp: Number(it.mrp ?? it.sellingPrice ?? 0),
+        stock: Number(it.currentStock ?? it.stock ?? 0),
+        currentStock: Number(it.currentStock ?? it.stock ?? 0),
+        unit: it.unit || "Pcs",
+        barcode: it.barcode || "",
+        sku: it.sku || "",
+        hsnCode: it.hsnCode || ""
+      }));
+
+      // Load local products and merge safely so no items disappear
+      let localProducts = [];
+      try {
+        const iKeys = ["vb_local_products", "products", "inventory", "items"];
+        iKeys.forEach(k => {
+          const storedI = localStorage.getItem(k);
+          if (storedI) {
+            try {
+              const parsed = JSON.parse(storedI);
+              if (Array.isArray(parsed) && parsed.length > 0) localProducts.push(...parsed);
+            } catch (e) {}
+          }
+        });
+      } catch (e) {}
+
+      const itemMap = new Map();
+      (Array.isArray(localProducts) ? localProducts : []).forEach(it => {
+        const key = it._id || it.id || (it.name || '').trim().toLowerCase();
+        if (key) itemMap.set(key, it);
+      });
+      normInv.forEach(it => {
+        const key = it._id || it.id || (it.name || '').trim().toLowerCase();
+        if (key) itemMap.set(key, { ...(itemMap.get(key) || {}), ...it });
+      });
+      const mergedItems = Array.from(itemMap.values());
+      setItems(mergedItems);
+      try {
+        localStorage.setItem("vb_local_products", JSON.stringify(mergedItems));
+        localStorage.setItem("products", JSON.stringify(mergedItems));
+      } catch (e) {}
     } catch (e) {
       console.error("Dashboard fetch error:", e);
     } finally {
@@ -875,6 +1294,12 @@ function MobileVyaparAppContent() {
   const toPay = Math.abs(parties.filter(p => Number(p.balance || 0) < 0).reduce((sum, p) => sum + Number(p.balance || 0), 0));
   const stockValue = items.reduce((sum, it) => sum + (it.stock * it.salePrice), 0);
   const recentSales = bills.reduce((sum, b) => sum + b.amount, 0);
+
+  const totalBankBalance = bankAccounts
+    .filter(a => a.accountType !== "CC_OVERDRAFT")
+    .reduce((s, a) => s + (Number(a.currentBalance ?? a.balance ?? a.openingBalance) || 0), 0);
+
+  const primaryBankAccount = bankAccounts.find(a => a.accountType === "CURRENT") || bankAccounts[0];
 
   // Robust payment mode extractors
   const isCashPayment = (b) => {
@@ -913,6 +1338,32 @@ function MobileVyaparAppContent() {
   const todayCash = todayBills.filter(isCashPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
   const todayUpi = todayBills.filter(isUpiPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
   const todayCredit = todayBills.filter(isCreditPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
+
+  // Dynamic filter for Daily Sales Card (आज, कल, इस हफ़्ते, सभी)
+  const activePeriodBills = bills.filter(b => {
+    const raw = b.rawDate || b.date || b.createdAt;
+    if (!raw) return true;
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return true;
+    const today = new Date();
+    if (dailySaleFilter === "today") {
+      return isSameLocalDate(d, today);
+    }
+    if (dailySaleFilter === "yesterday") {
+      const yest = new Date(Date.now() - 86400000);
+      return isSameLocalDate(d, yest);
+    }
+    if (dailySaleFilter === "week") {
+      const weekAgo = new Date(Date.now() - 7 * 86400000);
+      return d >= weekAgo;
+    }
+    return true; // "all"
+  });
+
+  const activePeriodSales = activePeriodBills.reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const activePeriodCash = activePeriodBills.filter(isCashPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const activePeriodUpi = activePeriodBills.filter(isUpiPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const activePeriodCredit = activePeriodBills.filter(isCreditPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
 
   const handleShareWhatsAppBill = (bill) => {
     if (!bill) return;
@@ -970,21 +1421,38 @@ function MobileVyaparAppContent() {
     const finalPhone = billCustomerPhone.trim();
     const finalAddress = billCustomerAddress.trim() || "Local";
 
+    const genBillNo = `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
     const billPayload = {
+      billNumber: genBillNo,
       partyName: finalCustomer,
       customerName: finalCustomer,
       customerPhone: finalPhone,
-      customerMobile: finalPhone,
+      customerMobile: finalPhone || undefined,
       customerAddress: finalAddress,
       paymentMode: billPaymentMode,
+      paymentMethod: billPaymentMode === "CASH" ? "cash" : billPaymentMode === "UPI" ? "online" : "credit",
       paymentStatus: billPaymentMode === "UDHAR" ? "unpaid" : "paid",
-      items: billCart.map(i => ({ productId: i.id, name: i.name, quantity: i.qty, price: i.salePrice, total: i.salePrice * i.qty })),
+      status: billPaymentMode === "UDHAR" ? "issued" : "paid",
+      dueDate: billPaymentMode === "UDHAR" ? billDueDate : undefined,
+      lateInterestPercent: billPaymentMode === "UDHAR" ? (Number(billLateInterest) || 2) : 0,
+      isUdharProtected: billPaymentMode === "UDHAR" ? isUdharProtectionChecked : false,
+      udharOtpThreshold: udharOtpThreshold,
+      partyId: selectedPartyObject?._id || selectedPartyObject?.id || undefined,
+      bypassPendingLock: Boolean(bypassCreditLock),
+      items: billCart.map(i => ({ 
+        productId: i.id, 
+        name: i.name, 
+        quantity: Number(i.qty) || 1, 
+        price: Number(i.salePrice) || 0, 
+        total: (Number(i.salePrice) || 0) * (Number(i.qty) || 1) 
+      })),
+      total: totalBillAmount,
       finalAmount: totalBillAmount,
       date: new Date()
     };
 
     // Auto-create party locally if it doesn't exist
-    if (finalCustomer && finalCustomer !== "नकद ग्राहक (Walk-in)" && !parties.some(p => p.name.toLowerCase() === finalCustomer.toLowerCase())) {
+    if (finalCustomer && finalCustomer !== "नकद ग्राहक (Walk-in)" && !parties.some(p => String(p?.name || '').toLowerCase() === String(finalCustomer || '').toLowerCase())) {
       const newP = {
         id: `party-${Date.now()}`,
         name: finalCustomer,
@@ -993,28 +1461,125 @@ function MobileVyaparAppContent() {
         balance: billPaymentMode === "UDHAR" ? totalBillAmount : 0,
         type: "customer"
       };
-      setParties(prev => [newP, ...prev]);
+      setParties(prev => {
+        const updated = [newP, ...prev];
+        try {
+          localStorage.setItem("vb_local_parties", JSON.stringify(updated));
+          localStorage.setItem("parties", JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
+    }
+
+    if (billAppliedReward) {
+      billPayload.couponCode = billAppliedReward.code;
+      if (billAppliedReward.rewardType === "percentage") {
+        billPayload.discountAmount = Math.round((totalBillAmount * (billAppliedReward.discountPercentage || 0)) / 100);
+      } else if (billAppliedReward.rewardType === "flat_discount") {
+        billPayload.discountAmount = billAppliedReward.discountAmount || 0;
+      }
+      billPayload.finalAmount = Math.max(0, totalBillAmount - (billPayload.discountAmount || 0));
     }
 
     try {
-      const res = await api.post("/billing", billPayload).catch(() => null);
-      const createdBill = {
-        _id: res?.data?.bill?._id || Date.now().toString(),
-        id: res?.data?.bill?.billNumber || `INV-${Date.now().toString().slice(-4)}`,
-        customerName: finalCustomer,
-        phone: billCustomerPhone.trim(),
-        date: "Today",
-        amount: totalBillAmount,
-        type: billPaymentMode,
-        paymentStatus: billPaymentMode === "UDHAR" ? "unpaid" : "paid",
-        items: billCart
-      };
-      setBills([createdBill, ...bills]);
-      setBillCart([]);
-      setBillCustomer("");
-      setBillCustomerPhone("");
-      setShowQuickBillModal(false);
-      setSelectedBillDetail(createdBill);
+      // 1. OFFLINE-FIRST: Construct createdBill and persist LOCALLY FIRST
+      const localBillId = `bill_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const createdBill = {
+      _id: localBillId,
+      id: genBillNo,
+      billNumber: genBillNo,
+      invoiceNumber: genBillNo,
+      customerName: finalCustomer,
+      customer: finalCustomer,
+      phone: billCustomerPhone.trim(),
+      date: "Today",
+      rawDate: new Date().toISOString(),
+      amount: billPayload.finalAmount || totalBillAmount,
+      finalAmount: billPayload.finalAmount || totalBillAmount,
+      total: billPayload.finalAmount || totalBillAmount,
+      type: billPaymentMode,
+      paymentMode: billPaymentMode,
+      paymentMethod: billPaymentMode === "UDHAR" ? "credit" : "cash",
+      paymentStatus: billPaymentMode === "UDHAR" ? "unpaid" : "paid",
+      items: billCart,
+      isOfflineCreated: true,
+      createdAt: new Date().toISOString()
+    };
+
+    setBills(prev => {
+      const updated = deduplicateBills([createdBill, ...prev]);
+      try {
+        localStorage.setItem("vb_local_manual_bills", JSON.stringify(updated));
+        localStorage.setItem("bills", JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    setBillCart([]);
+    setBillCustomer("");
+    setBillCustomerPhone("");
+    setBillAppliedReward(null);
+    setMobileStampStatus(null);
+    setShowQuickBillModal(false);
+    setSelectedBillDetail(createdBill);
+
+    if (billPaymentMode === "UPI" || billPaymentMode === "ONLINE") {
+      speakUpiPayment(billPayload.finalAmount || totalBillAmount, "व्यापार");
+    }
+
+    // 2. BACKGROUND SERVER SYNC
+    (async () => {
+      try {
+        let res;
+        try {
+          res = await api.post("/api/billing", billPayload);
+        } catch (postErr) {
+          if (postErr.response?.data?.isPendingApprovalBlocked) {
+            if (window.confirm(`${postErr.response.data.message}\n\nक्या आप अभी 'काम न रुके' (बायपास) करके यह बिल तुरंत जारी करना चाहते हैं?`)) {
+              billPayload.bypassPendingLock = true;
+              res = await api.post("/api/billing", billPayload);
+            } else {
+              return;
+            }
+          } else {
+            throw postErr;
+          }
+        }
+
+        if (res?.data?.bill) {
+          const serverBill = res.data.bill;
+          setBills(prev => {
+            const updated = prev.map(b => (b._id === localBillId || b.id === genBillNo) ? { ...b, ...serverBill, isOfflineCreated: false } : b);
+            try {
+              localStorage.setItem("vb_local_manual_bills", JSON.stringify(updated));
+              localStorage.setItem("bills", JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
+          });
+
+          if (res?.data?.udharProtection) {
+            setActiveUdharBillData({
+              ...createdBill,
+              ...res.data.udharProtection,
+              _id: serverBill._id || createdBill._id
+            });
+            setShowUdharOtpModal(true);
+          }
+
+          const stampAward = res?.data?.stampResult;
+          if (stampAward?.awarded) {
+            let msg = `⭐ ग्राहक का स्टैंप जुड़ा: ${stampAward.visualStamps}`;
+            if (stampAward.rewardUnlocked) {
+              msg += `\n\n🎉 बधाई! लक्ष्य पूरा हुआ - रिवॉर्ड कोड: ${stampAward.rewardData?.code} (${stampAward.rewardDescription})`;
+            }
+            alert(msg);
+          }
+        }
+      } catch (err) {
+        console.warn("Background billing sync deferred to offline queue:", err);
+        enqueueOfflineSync({ type: 'CREATE_BILL', payload: billPayload, localId: localBillId });
+      }
+    })();
     } catch (e) {
       console.error(e);
     } finally {
@@ -1070,7 +1635,14 @@ function MobileVyaparAppContent() {
         salePrice: saleP
       };
 
-      setItems(prev => [createdItem, ...prev]);
+      setItems(prev => {
+        const updated = [createdItem, ...prev];
+        try {
+          localStorage.setItem("vb_local_products", JSON.stringify(updated));
+          localStorage.setItem("products", JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
       
       // If billing modal is open, automatically add the newly created item to the cart!
       if (showQuickBillModal) {
@@ -1105,39 +1677,349 @@ function MobileVyaparAppContent() {
     }
     setSavingParty(true);
     try {
+      // FIXED: Apply balance direction — positive = we receive (लेने हैं), negative = we owe (देने हैं)
+      const rawBal = Math.abs(Number(newPartyBalance) || 0);
+      const signedBal = (newPartyBalanceDir === "negative") ? -rawBal : rawBal;
+
+      const trimmedName = newPartyName.trim();
+      const trimmedAddr = newPartyAddress.trim() || "Local";
+
+      // ⚠️ Check duplicate party: same name and same address
+      const normName = trimmedName.toLowerCase();
+      const normAddr = trimmedAddr.toLowerCase();
+      const currentEditId = editingParty ? (editingParty._id || editingParty.id) : null;
+
+      const isDuplicate = parties.some(p => {
+        const pId = p._id || p.id;
+        if (currentEditId && String(pId) === String(currentEditId)) return false;
+        const existingName = (p.name || "").trim().toLowerCase();
+        const existingAddr = (p.address || "Local").trim().toLowerCase();
+        return existingName === normName && existingAddr === normAddr;
+      });
+
+      if (isDuplicate) {
+        alert(`⚠️ इस नाम ("${trimmedName}") और पते ("${trimmedAddr}") से पहले से एक पार्टी मौजूद है!\nकृपया अलग नाम या पता दर्ज करें ताकि खातों में भ्रम न हो।`);
+        setSavingParty(false);
+        return;
+      }
+
       const payload = {
-        name: newPartyName.trim(),
+        name: trimmedName,
         mobileNumber: newPartyPhone.trim() || `9${Math.floor(100000000 + Math.random() * 900000000)}`,
-        openingBalance: Number(newPartyBalance) || 0,
-        currentBalance: Number(newPartyBalance) || 0,
+        openingBalance: signedBal,
+        currentBalance: signedBal,
         partyType: newPartyType || "customer",
-        address: newPartyAddress.trim() || "Local"
+        address: trimmedAddr
       };
 
-      const res = await api.post("/parties", payload);
-      const createdParty = {
-        id: res?.data?.party?._id || res?.data?._id || `party-${Date.now()}`,
-        name: payload.name,
-        phone: payload.mobileNumber,
-        balance: payload.currentBalance,
-        type: payload.partyType
-      };
+      if (editingParty) {
+        const pId = editingParty._id || editingParty.id;
+        await api.put(`/api/party/${pId}`, payload).catch(() => api.put(`/api/parties/${pId}`, payload));
+        const updatedParty = {
+          ...editingParty,
+          name: payload.name,
+          phone: payload.mobileNumber,
+          mobileNumber: payload.mobileNumber,
+          balance: signedBal,
+          currentBalance: signedBal,
+          openingBalance: signedBal,
+          type: payload.partyType,
+          partyType: payload.partyType,
+          address: payload.address,
+        };
 
-      setParties(prev => [createdParty, ...prev]);
+        setParties(prev => {
+          const updated = prev.map(p => ((p._id || p.id) === pId ? updatedParty : p));
+          try {
+            localStorage.setItem("vb_local_parties", JSON.stringify(updated));
+            localStorage.setItem("parties", JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+        if (selectedPartyDetail && ((selectedPartyDetail._id || selectedPartyDetail.id) === pId)) {
+          setSelectedPartyDetail(updatedParty);
+        }
+        alert(`✅ पार्टी '${updatedParty.name}' सफलतापूर्वक अपडेट हो गई!`);
+      } else {
+        const res = await api.post("/api/party", payload).catch(() => api.post("/api/parties", payload));
+        const savedId = res?.data?.party?._id || res?.data?._id || `party-${Date.now()}`;
+        const createdParty = {
+          id: savedId,
+          _id: savedId,
+          name: payload.name,
+          phone: payload.mobileNumber,
+          mobileNumber: payload.mobileNumber,
+          balance: signedBal,
+          currentBalance: signedBal,
+          openingBalance: signedBal,
+          type: payload.partyType,
+          partyType: payload.partyType,
+          address: payload.address,
+          creditLimit: 0,
+          notes: ""
+        };
+
+        setParties(prev => {
+          const updated = [createdParty, ...prev];
+          try {
+            localStorage.setItem("vb_local_parties", JSON.stringify(updated));
+            localStorage.setItem("parties", JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+        alert(`✅ पार्टी '${createdParty.name}' सफलतापूर्वक जुड़ गई!`);
+      }
+
       setShowAddPartyModal(false);
+      setEditingParty(null);
+      // reset all party form states
       setNewPartyName("");
       setNewPartyPhone("");
       setNewPartyBalance("0");
       setNewPartyAddress("");
+      setNewPartyType("customer");
+      setNewPartyBalanceDir("positive");
 
-      alert(`✅ पार्टी '${createdParty.name}' सफलतापूर्वक जुड़ गई!`);
       fetchLiveDashboardData();
     } catch (err) {
       console.error("Save party error:", err);
-      alert("पार्टी सेव करने में त्रुटि आई।");
+      const errMsg = err?.response?.data?.error || err?.message || "Unknown error";
+      alert("पार्टी सेव करने में त्रुटि आई।\n" + errMsg);
     } finally {
       setSavingParty(false);
     }
+  };
+
+  const handleOpenEditParty = (party) => {
+    if (!party) return;
+    setEditingParty(party);
+    setNewPartyName(party.name || "");
+    setNewPartyPhone(party.phone || party.mobileNumber || "");
+    setNewPartyAddress(party.address || "");
+    setNewPartyType(party.type || party.partyType || "customer");
+    const curBal = Number(party.currentBalance ?? party.balance ?? 0);
+    setNewPartyBalance(String(Math.abs(curBal)));
+    setNewPartyBalanceDir(curBal < 0 ? "negative" : "positive");
+    setShowAddPartyModal(true);
+  };
+
+  const handleDeleteParty = async (party) => {
+    const id = party?._id || party?.id;
+    if (!id) return;
+    if (!window.confirm(`क्या आप पार्टी '${party.name}' को हटाना चाहते हैं?`)) return;
+    try {
+      await api.delete(`/api/party/${id}`).catch(() => api.delete(`/api/parties/${id}`));
+      setParties(prev => prev.filter(p => (p._id || p.id) !== id));
+      setSelectedPartyDetail(null);
+      alert(`🗑️ पार्टी '${party.name}' सफलतापूर्वक हटा दी गई!`);
+      fetchLiveDashboardData();
+    } catch (err) {
+      console.error("Delete party error:", err);
+      alert("पार्टी हटाने में त्रुटि आई।");
+    }
+  };
+
+  const fetchPartyStatement = async (partyId) => {
+    if (!partyId) return;
+    setPartyStatementLoading(true);
+    try {
+      const res = await api.get(`/api/party/${partyId}/statement`).catch(() => api.get(`/api/parties/${partyId}/statement`));
+      const txs = res?.transactions || res?.data?.transactions || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+      if (Array.isArray(txs) && txs.length > 0) {
+        setPartyTransactions(txs);
+      } else {
+        // Fallback: build statement from bills & allPartyTransactions
+        const pObj = (parties || []).find(p => (p._id === partyId || p.id === partyId)) || selectedPartyDetail;
+        const pNameNorm = String(pObj?.name || '').trim().toLowerCase();
+        const pPhoneNorm = String(pObj?.phone || pObj?.mobileNumber || '').trim();
+
+        const localBills = (bills || []).filter(b => {
+          const bPartyId = String(b.partyId || '');
+          const bCust = String(b.customerName || b.partyName || '').trim().toLowerCase();
+          const bPhone = String(b.customerMobile || b.customerPhone || '').trim();
+          return (bPartyId && bPartyId === String(partyId)) || (bCust && bCust === pNameNorm) || (bPhone && pPhoneNorm && bPhone === pPhoneNorm);
+        });
+
+        const fallbackEntries = [];
+        for (const b of localBills) {
+          const bNum = String(b.billNumber || 'BILL');
+          const finalAmt = Number(b.finalAmount ?? b.total ?? 0);
+          const isPaid = String(b.paymentStatus || b.status || '').toLowerCase() === 'paid';
+          const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
+
+          const itemsSummary = (b.items && b.items.length > 0)
+            ? `: ${b.items.map(i => `${i.name}${i.quantity ? ` (${i.quantity} ${i.unit || 'pcs'})` : ''}`).slice(0, 3).join(', ')}${b.items.length > 3 ? '...' : ''}`
+            : '';
+
+          fallbackEntries.push({
+            _id: b._id || b.id,
+            date: b.date || b.createdAt,
+            type: 'sale',
+            refNo: bNum,
+            billNumber: bNum,
+            billAmount: finalAmt,
+            paidAmount: paidAmt,
+            details: `बिक्री बिल #${bNum} (${(b.items || []).length} सामान)${itemsSummary}`,
+            items: b.items || [],
+            debit: finalAmt,
+            credit: 0,
+            billImageUrl: b.billImageUrl || '',
+            paymentMethod: b.paymentMode || b.paymentMethod || 'CASH'
+          });
+
+          if (paidAmt > 0) {
+            fallbackEntries.push({
+              _id: `pay_${b._id || b.id}`,
+              date: b.date || b.createdAt,
+              type: 'payment',
+              refNo: `REC-${bNum}`,
+              billNumber: bNum,
+              details: `बिल #${bNum} पर नकद/UPI जमा (Payment Received)`,
+              debit: 0,
+              credit: paidAmt,
+              billImageUrl: b.billImageUrl || '',
+              paymentMethod: b.paymentMode || b.paymentMethod || 'CASH'
+            });
+          }
+        }
+
+        // Also add any local party transactions
+        const localTxs = (allPartyTransactions || []).filter(t => (String(t.partyId) === String(partyId)));
+        for (const t of localTxs) {
+          fallbackEntries.push({
+            _id: t._id || t.id,
+            date: t.date || t.createdAt,
+            type: t.type || (t.credit > 0 ? 'payment' : 'payment_out'),
+            refNo: t.billNumber || 'PAY',
+            billNumber: t.billNumber || '',
+            details: t.details || t.notes || (t.credit > 0 ? 'मुझे मिले (जमा)' : 'मैंने दिए'),
+            debit: Number(t.debit || 0),
+            credit: Number(t.credit || 0),
+            billImageUrl: t.billImageUrl || '',
+            paymentMethod: t.paymentMethod || t.paymentMode || 'CASH'
+          });
+        }
+
+        fallbackEntries.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+        setPartyTransactions(fallbackEntries);
+      }
+    } catch (e) {
+      console.error("fetchPartyStatement error:", e);
+      setPartyTransactions([]);
+    } finally {
+      setPartyStatementLoading(false);
+    }
+  };
+
+  const handleAttachPartyImage = async (txId, file) => {
+    if (!file) return;
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('transactionId', txId);
+      formData.append('partyId', selectedPartyDetail._id || selectedPartyDetail.id);
+      await api.post('/api/party/attach-image', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      alert("✅ बिल की फोटो सफलतापूर्वक जुड़ गई!");
+      if (selectedPartyDetail) {
+        fetchPartyStatement(selectedPartyDetail._id || selectedPartyDetail.id);
+      }
+    } catch (err) {
+      alert("फोटो अपलोड करने में त्रुटि: " + err.message);
+    }
+  };
+
+  const handleOpenPartyDetail = (party) => {
+    setSelectedPartyDetail(party);
+    setShowPartyTxForm(false);
+    setPartyTxAmount('');
+    setPartyTxNotes('');
+    setPartyTxDate(new Date().toISOString().split('T')[0]);
+    setPartyTxPaymentMode('CASH');
+    const pId = party.id || party._id;
+    if (pId) {
+      fetchPartyStatement(pId);
+    }
+  };
+
+  const handleSavePartyTx = async () => {
+    if (!selectedPartyDetail) return;
+    const amt = Number(partyTxAmount);
+    if (!partyTxAmount || isNaN(amt) || amt <= 0) {
+      alert("कृपया सही राशि (₹) दर्ज करें!");
+      return;
+    }
+    setSavingPartyTx(true);
+    try {
+      const partyId = selectedPartyDetail.id || selectedPartyDetail._id;
+      const type = partyTxType === 'paid' ? 'paid' : 'received';
+      const notes = partyTxNotes.trim() || (type === 'paid' ? 'मैंने दिए' : 'मुझे मिले');
+      const txDate = partyTxDate ? new Date(partyTxDate) : new Date();
+
+      await api.post("/api/payment/entry", {
+        partyId,
+        amount: amt,
+        type,
+        date: txDate.toISOString(),
+        paymentMethod: partyTxPaymentMode || 'CASH',
+        notes
+      });
+
+      // 'paid' increases outstanding (+amt, You'll Get), 'received' decreases outstanding (-amt)
+      const diff = type === 'paid' ? amt : -amt;
+      const updatedBalance = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0) + diff;
+
+      setSelectedPartyDetail(prev => ({
+        ...prev,
+        balance: updatedBalance,
+        currentBalance: updatedBalance
+      }));
+
+      setParties(prev => prev.map(p => {
+        const id = p.id || p._id;
+        if (id === partyId) {
+          return { ...p, balance: updatedBalance, currentBalance: updatedBalance };
+        }
+        return p;
+      }));
+
+      setPartyTxAmount('');
+      setPartyTxNotes('');
+      setPartyTxDate(new Date().toISOString().split('T')[0]);
+      setShowPartyTxForm(false);
+      fetchPartyStatement(partyId);
+      
+      if (type === 'received') {
+        speakUpiPayment(amt, "व्यापार");
+      }
+
+      const formattedDate = txDate.toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      alert(`✅ ₹${amt.toLocaleString('en-IN')} का भुगतान (${type === 'paid' ? 'मैंने दिए / किस्त' : 'मुझे मिले / किस्त'}) दिनांक ${formattedDate} को दर्ज हुआ!`);
+    } catch (err) {
+      console.error("Party transaction error:", err);
+      alert("लेन-देन दर्ज करने में त्रुटि आई।");
+    } finally {
+      setSavingPartyTx(false);
+    }
+  };
+
+  const handleSharePartyStatementWhatsApp = (party) => {
+    if (!party) return;
+    const bal = Number(party.balance ?? party.currentBalance ?? 0);
+    const balText = bal > 0 
+      ? `कुल बकाया (लेने हैं): ₹${bal.toLocaleString('en-IN')}` 
+      : bal < 0 
+        ? `कुल बकाया (देने हैं): ₹${Math.abs(bal).toLocaleString('en-IN')}` 
+        : `हिसाब चुकता (₹0)`;
+    
+    const pTypeTag = (party.type || party.partyType) === 'personal' ? 'पर्सनल खाता' : 'व्यापारिक खाता';
+    const msg = `नमस्ते ${party.name} जी,\n\nयह आपका हिसाब-किताब विवरण (${pTypeTag}) है:\n${balText}\n\nधन्यवाद!`;
+    const cleanPhone = String(party.phone || party.mobileNumber || '').replace(/[^0-9]/g, '');
+    const url = cleanPhone 
+      ? `https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
   };
 
   // ==================== FAST MANUAL DAILY SALE HANDLER ====================
@@ -1151,15 +2033,23 @@ function MobileVyaparAppContent() {
     try {
       const saleAmt = Number(manualSaleAmount);
       const partyTitle = manualSaleCustomer.trim() || (manualSalePaymentMode === 'CASH' ? "काउंटर नकद बिक्री" : manualSalePaymentMode === 'UPI' ? "UPI ऑनलाइन बिक्री" : "उधारी ग्राहक");
+      const genBillNo = `SALE-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
+      
       const payload = {
+        billNumber: genBillNo,
         partyName: partyTitle,
+        customerName: partyTitle,
         customerPhone: manualSalePhone.trim(),
+        customerMobile: manualSalePhone.trim() || undefined,
         paymentMode: manualSalePaymentMode,
+        paymentMethod: manualSalePaymentMode === "CASH" ? "cash" : manualSalePaymentMode === "UPI" ? "online" : "credit",
         paymentStatus: manualSalePaymentMode === "UDHAR" ? "unpaid" : "paid",
+        status: manualSalePaymentMode === "UDHAR" ? "issued" : "paid",
+        total: saleAmt,
         finalAmount: saleAmt,
         grandTotal: saleAmt,
-        total: saleAmt,
-        date: manualSaleDate ? new Date(manualSaleDate) : new Date(),
+        // Use noon IST (12:00 IST = 06:30 UTC) so the date doesn't shift to previous day in UTC storage
+        date: manualSaleDate ? new Date(`${manualSaleDate}T12:00:00+05:30`) : new Date(),
         items: [{
           name: manualSaleNotes.trim() || `दैनिक बिक्री (${manualSalePaymentMode})`,
           quantity: 1,
@@ -1169,22 +2059,48 @@ function MobileVyaparAppContent() {
         notes: manualSaleNotes.trim()
       };
 
-      const res = await api.post("/billing", payload).catch(() => null);
-      
+      const saleDateObj = manualSaleDate ? new Date(manualSaleDate) : new Date();
+      const saleDateDisplay = manualSaleDate 
+        ? new Date(manualSaleDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+        : "Today";
+
+      const localBillId = `bill_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const createdBill = {
-        _id: res?.data?.bill?._id || Date.now().toString(),
-        id: res?.data?.bill?.billNumber || `SALE-${Date.now().toString().slice(-4)}`,
-        customerName: payload.partyName,
+        _id: localBillId,
+        id: genBillNo,
+        billNumber: genBillNo,
+        invoiceNumber: genBillNo,
+        customerName: partyTitle,
+        customer: partyTitle,
         phone: payload.customerPhone,
         amount: saleAmt,
+        finalAmount: saleAmt,
+        total: saleAmt,
+        totalAmount: saleAmt,
+        grandTotal: saleAmt,
         type: manualSalePaymentMode,
+        paymentMode: manualSalePaymentMode,
+        paymentMethod: manualSalePaymentMode === "UDHAR" || manualSalePaymentMode === "CREDIT" ? "credit" : "cash",
         paymentStatus: payload.paymentStatus,
-        date: "Today",
-        rawDate: new Date(),
-        items: payload.items
+        date: saleDateDisplay,
+        rawDate: manualSaleDate || new Date().toISOString(),
+        items: payload.items,
+        isOfflineCreated: true,
+        createdAt: new Date().toISOString()
       };
 
-      setBills(prev => [createdBill, ...prev]);
+      // 1. Instantly persist in localStorage so it NEVER disappears (Offline-First)
+      try {
+        const stored = readLocalJson(["vb_local_manual_bills", "bills"], []);
+        const list = Array.isArray(stored) ? stored : [];
+        const updatedList = deduplicateBills([createdBill, ...list]);
+        writeLocalJson(["vb_local_manual_bills", "bills"], updatedList);
+        setBills(updatedList);
+      } catch (storageErr) {
+        console.warn("Local bill storage err:", storageErr);
+        setBills(prev => [createdBill, ...prev]);
+      }
+
       setShowManualSaleModal(false);
       setManualSaleAmount("");
       setManualSaleNotes("");
@@ -1192,11 +2108,35 @@ function MobileVyaparAppContent() {
       setManualSaleCustomer("काउंटर नकद ग्राहक");
       setManualSalePaymentMode("CASH");
 
-      alert(`🎉 ₹${saleAmt.toLocaleString('en-IN')} की ${manualSalePaymentMode === 'CASH' ? 'नकद' : manualSalePaymentMode === 'UPI' ? 'UPI' : 'उधारी'} बिक्री सफलतापूर्वक दर्ज हो गई!`);
-      fetchLiveDashboardData();
+      if (manualSalePaymentMode === 'UPI') {
+        speakUpiPayment(saleAmt, "व्यापार");
+      }
+
+      alert(`🎉 ₹${saleAmt.toLocaleString('en-IN')} की ${manualSalePaymentMode === 'CASH' ? 'नकद' : manualSalePaymentMode === 'UPI' ? 'UPI' : 'उधारी'} बिक्री (${saleDateDisplay}) सफलतापूर्वक दर्ज हो गई!`);
+
+      // 2. Background server sync
+      (async () => {
+        try {
+          const res = await api.post("/api/billing", payload);
+          const savedBill = res?.data?.bill || res?.data?.data || res?.data;
+          if (savedBill && savedBill._id) {
+            setBills(prev => {
+              const updated = prev.map(b => (b._id === localBillId || b.id === genBillNo) ? { ...b, ...savedBill, isOfflineCreated: false } : b);
+              try {
+                writeLocalJson(["vb_local_manual_bills", "bills"], updated);
+              } catch (e) {}
+              return updated;
+            });
+          }
+        } catch (postErr) {
+          console.warn("Background manual sale sync deferred to offline queue:", postErr);
+          enqueueOfflineSync({ type: 'CREATE_BILL', payload, localId: localBillId });
+        }
+      })();
     } catch (err) {
       console.error("Manual sale error:", err);
-      alert("बिक्री दर्ज करने में त्रुटि आई।");
+      const errMsg = err?.response?.data?.message || err?.response?.data?.error || "बिक्री दर्ज करने में त्रुटि आई।";
+      alert(`त्रुटि: ${errMsg}`);
     } finally {
       setSavingManualSale(false);
     }
@@ -1226,7 +2166,7 @@ function MobileVyaparAppContent() {
       setOcrStatusText(`🤖 AI Vision ${files.length} बिलों को पढ़ रहा है...`);
 
       // Call Backend Multi-Image AI Endpoint
-      const res = await api.post("/billing/parse-image", {
+      const res = await api.post("/api/billing/parse-image", {
         images: base64List,
         openaiApiKey: openaiApiKey.trim() || undefined,
         geminiApiKey: geminiApiKey.trim() || undefined
@@ -1414,25 +2354,34 @@ function MobileVyaparAppContent() {
 
     try {
       const createdList = [];
-      for (const b of scannedBillsBatch) {
+      for (const [idx, b] of scannedBillsBatch.entries()) {
         if (b.items.length === 0) continue;
+        const genScanBillNo = `SCAN-${Date.now().toString().slice(-6)}-${idx + 1}`;
+        const partyTitle = b.partyName.trim() || "कच्ची पर्ची ग्राहक";
         const payload = {
-          partyName: b.partyName.trim() || "कच्ची पर्ची ग्राहक",
+          billNumber: genScanBillNo,
+          partyName: partyTitle,
+          customerName: partyTitle,
           customerPhone: b.partyPhone.trim(),
+          customerMobile: b.partyPhone.trim() || undefined,
           paymentMode: b.paymentMode,
+          paymentMethod: b.paymentMode === "CASH" ? "cash" : b.paymentMode === "UPI" ? "online" : "credit",
+          paymentStatus: b.paymentMode === "UDHAR" ? "unpaid" : "paid",
+          status: b.paymentMode === "UDHAR" ? "issued" : "paid",
           items: b.items.map(i => ({
             productId: i.matchedCatalogItem?.id || i.id,
             name: i.name,
-            quantity: i.qty,
-            price: i.price,
-            total: i.total
+            quantity: Number(i.qty) || 1,
+            price: Number(i.price) || 0,
+            total: Number(i.total) || ((Number(i.price) || 0) * (Number(i.qty) || 1))
           })),
-          finalAmount: b.totalAmount,
+          total: Number(b.totalAmount) || 0,
+          finalAmount: Number(b.totalAmount) || 0,
           billImageUrl: b.imagePreview,
           date: new Date()
         };
 
-        const res = await api.post("/billing", payload).catch(() => null);
+        const res = await api.post("/api/billing", payload).catch(() => null);
         const createdBill = {
           _id: res?.data?.bill?._id || Date.now().toString(),
           id: res?.data?.bill?.billNumber || `INV-${Date.now().toString().slice(-4)}`,
@@ -1463,8 +2412,8 @@ function MobileVyaparAppContent() {
 
   // 20+ Comprehensive Reports Catalog
   const allReportsList = [
-    { id: "daybook", title: "📖 DayBook (रोकड़ बही)", desc: "Daily Cash In/Out & Ledger", path: "/reports/daybook", category: "Core", color: "text-emerald-600 bg-emerald-50" },
-    { id: "profitloss", title: "📊 Profit & Loss Report", desc: "Gross & Net Business Profit", path: "/reports/profitloss", category: "Core", color: "text-indigo-600 bg-indigo-50" },
+    { id: "daybook", title: "📖 DayBook (रोकड़ बही)", desc: "Daily Cash In/Out & Ledger", path: "daybook_modal", category: "Core", color: "text-emerald-600 bg-emerald-50" },
+    { id: "profitloss", title: "📊 Profit & Loss Report", desc: "Gross & Net Business Profit", path: "profitloss_modal", category: "Core", color: "text-indigo-600 bg-indigo-50" },
     { id: "gst", title: "📑 GST Summary & Tax", desc: "Output & Input Tax Breakdown", path: "/reports/gst", category: "GST", color: "text-purple-600 bg-purple-50" },
     { id: "gstr1", title: "📋 GSTR-1 Monthly Return", desc: "B2B & B2C Sales Invoices", path: "/reports/gst", category: "GST", color: "text-amber-600 bg-amber-50" },
     { id: "gstr3b", title: "📄 GSTR-3B Summary", desc: "Tax Payment & ITC Filing", path: "/reports/gstr3b", category: "GST", color: "text-rose-600 bg-rose-50" },
@@ -1475,24 +2424,44 @@ function MobileVyaparAppContent() {
     { id: "stock_aging", title: "⏳ Aging Report (Udhar Analysis)", desc: "Overdue Credit Days", path: "/reports/aging", category: "Udhar", color: "text-orange-600 bg-orange-50" },
     { id: "stock_alert", title: "⚠️ Low Stock & Reorder Alert", desc: "Items Below Minimum Limit", path: "/inventory", category: "Stock", color: "text-red-600 bg-red-50" },
     { id: "category_analytics", title: "🏷️ Category Analytics", desc: "Department & Group Sales", path: "/inventory/analytics", category: "Stock", color: "text-cyan-600 bg-cyan-50" },
-    { id: "bank_rec", title: "🏦 Bank Auto-Tally Reco", desc: "Bank Statement Verification", path: "/reports/bank-reconciliation", category: "Banking", color: "text-indigo-600 bg-indigo-50" },
+    { id: "bank_rec", title: "🏦 Bank Auto-Tally Reco", desc: "Bank Statement Verification & Accounts", path: "bank_cc_modal", category: "Banking", color: "text-indigo-600 bg-indigo-50" },
     { id: "eway_bill", title: "🚚 E-Way Bill Register", desc: "Govt Transport E-Way Invoices", path: "/reports/eway-bill", category: "Tax", color: "text-emerald-600 bg-emerald-50" },
     { id: "fixed_assets", title: "🏢 Fixed Assets & Capital", desc: "Shop Furniture, Machines & Equip", path: "/reports/fixed-assets", category: "Finance", color: "text-purple-600 bg-purple-50" },
     { id: "customer_builder", title: "🎯 Customer Report Builder", desc: "Custom Filtered Demographics", path: "/reports/customer", category: "CRM", color: "text-blue-600 bg-blue-50" },
     { id: "staff_payroll", title: "👔 PagarBook (स्टाफ हाजिरी व सैलरी)", desc: "Daily Attendance (P/HT/A), Advances, Overtime & Salary Slip", path: "pagarbook_modal", category: "Staff", color: "text-amber-600 bg-amber-50" },
     { id: "sales_return", title: "🔄 Sales Return Register", desc: "Credit Notes & Returns", path: "/billing/return", category: "Sales", color: "text-red-600 bg-red-50" },
-    { id: "graphical_analytics", title: "📈 Graphical BI Analytics", desc: "Visual Charts & Trends", path: "/reports/analytics", category: "BI", color: "text-teal-600 bg-teal-50" },
-    { id: "ghar_kharch", title: "🏡 Ghar Kharch (फैमिली घर खर्च लेजर)", desc: "Papa, Mummy, Family-wise Expense Ledger", path: "ghar_kharch_modal", category: "Personal", color: "text-amber-600 bg-amber-50" },
+    { id: "ghar_kharch", title: "🏡 फैमिली घर खर्च रिपोर्ट", desc: "पापा, मम्मी, खुद सदस्य-अनुसार पारिवारिक खर्च", path: "family_expense_modal", category: "Personal", color: "text-rose-600 bg-rose-50" },
+    { id: "savings_investments", title: "💰 बचत व निवेश (FD / RD / SIP)", desc: "फिक्स्ड डिपॉजिट, आरडी, एसआईपी व बीमा", path: "savings_modal", category: "Finance", color: "text-amber-600 bg-amber-50" },
+    { id: "bank_cc_limit", title: "🏦 बैंक व CC लिमिट खाता", desc: "करंट अकाउंट, CC ओवरड्राफ्ट लिमिट, जमा व ब्याज", path: "bank_cc_modal", category: "Banking", color: "text-blue-600 bg-blue-50" },
     { id: "ai_advisor", title: "🤖 AI मुनीम जी (Smart Insights)", desc: "AI Health Score & Predictions", path: "/ai-advisor", category: "AI", color: "text-purple-600 bg-purple-100" }
   ];
 
   // Filter 1600+ items live by search
   const filteredProducts = items.filter(it => 
-    (it.name || '').toLowerCase().includes(itemSearchTerm.toLowerCase())
+    String(it?.name || '').toLowerCase().includes(String(itemSearchTerm || '').toLowerCase())
   ).slice(0, 8); // Top 8 matches for speed
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans pb-28 select-none">
+      {/* 🧪 SANDBOX DEMO STICKY BANNER */}
+      {(selectedCompany?.isDemo || (typeof localStorage !== 'undefined' && localStorage.getItem("isDemoActive") === "true")) && (
+        <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-slate-900 px-3 py-2 font-bold text-xs flex items-center justify-between gap-2 shadow-md sticky top-0 z-50">
+          <div className="flex items-center gap-1.5 truncate">
+            <span className="bg-slate-900 text-amber-300 text-[9px] px-1.5 py-0.5 rounded font-black uppercase shrink-0">डेमो मोड</span>
+            <span className="truncate text-[11px] font-extrabold">{companyDisplayName} (सैंडबॉक्स)</span>
+          </div>
+          <button
+            onClick={() => {
+              if (exitDemoModule) exitDemoModule();
+              setTimeout(() => window.location.reload(), 100);
+            }}
+            className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-black rounded-lg transition shrink-0 cursor-pointer shadow"
+          >
+            ⬅️ असली बिज़नेस
+          </button>
+        </div>
+      )}
+
       {/* 📱 1. TOP WHITE HEADER */}
       <header className="sticky top-0 z-30 bg-white border-b border-slate-100 px-4 py-3 flex justify-between items-center shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
         <div className="flex items-center gap-1.5 cursor-pointer" onClick={() => setShowCompanySelectModal(true)}>
@@ -1538,23 +2507,54 @@ function MobileVyaparAppContent() {
           </button>
         </div>
       </header>
+
+      {/* ⚡ OFFLINE / SYNC STATUS BANNER */}
+      {!isOnline && (
+        <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-3.5 py-1.5 flex justify-between items-center text-xs font-bold shadow-md sticky top-[53px] z-20 animate-in fade-in">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-200 animate-ping" />
+            <span className="text-[11px] font-extrabold">⚡ ऑफ़लाइन मोड (इंटरनेट बंद है • सारा डेटा फ़ोन में सुरक्षित रहेगा)</span>
+          </div>
+          {syncQueueCount > 0 && (
+            <span className="bg-amber-950/70 px-2 py-0.5 rounded text-[10px] font-bold">
+              {syncQueueCount} पेंडिंग
+            </span>
+          )}
+        </div>
+      )}
+
+      {isOnline && syncQueueCount > 0 && (
+        <div className="bg-indigo-600 text-white px-3.5 py-1.5 flex justify-between items-center text-xs font-bold shadow-md sticky top-[53px] z-20 animate-in fade-in">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[11px] font-bold">🔄 {syncQueueCount} ऑफ़लाइन लेनदेन बैकएंड से सिंक हो रहे हैं...</span>
+          </div>
+          <button 
+            onClick={processOfflineSyncQueue}
+            className="px-2.5 py-0.5 bg-white text-indigo-950 font-extrabold text-[10px] rounded-md hover:bg-indigo-50 cursor-pointer shadow-xs"
+          >
+            अभी सिंक करें
+          </button>
+        </div>
+      )}
+
       {/* ⚠️ GUEST / DEMO MODE ALERT BANNER */}
       {isGuestMode && (
-        <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-3 py-1.5 flex justify-between items-center text-xs font-bold shadow-sm sticky top-[53px] z-20">
+        <div className="bg-gradient-to-r from-slate-800 via-slate-900 to-indigo-950 text-white px-3 py-1.5 flex justify-between items-center text-xs font-bold shadow-sm sticky top-[53px] z-20">
           <div className="flex items-center gap-1.5">
-            <span>⚠️</span>
-            <span className="text-[11px]">गेस्ट / डेमो मोड सक्रिय है (Guest Mode)</span>
+            <span>👤</span>
+            <span className="text-[11px]">अतिथि / लोकल मोड • मुख्य खाता सिंक करने हेतु</span>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => navigate("/login")}
-              className="px-2 py-0.5 bg-white text-amber-900 font-extrabold text-[10px] rounded-md shadow-xs hover:bg-amber-50 cursor-pointer"
+              className="px-2 py-0.5 bg-indigo-500 hover:bg-indigo-600 text-white font-extrabold text-[10px] rounded-md shadow-xs cursor-pointer"
             >
               🔑 लॉगिन करें
             </button>
             <button
               onClick={handleExitGuestMode}
-              className="px-2 py-0.5 bg-amber-900/60 hover:bg-amber-900 text-white font-bold text-[10px] rounded-md cursor-pointer"
+              className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-slate-300 font-bold text-[10px] rounded-md cursor-pointer"
             >
               एग्जिट
             </button>
@@ -1568,28 +2568,54 @@ function MobileVyaparAppContent() {
         {/* ==================== TAB 1: DASHBOARD ==================== */}
         {activeTab === "dashboard" && (
           <div className="space-y-3.5 animate-in fade-in">
-            {/* 💰 DEDICATED PROMINENT DAILY SALES CARD (आज की कुल बिक्री) */}
+            {/* 💰 DEDICATED PROMINENT DAILY SALES CARD (दैनिक / अवधि बिक्री) */}
             <div className="p-4 bg-gradient-to-br from-[#1E1B4B] via-[#312E81] to-[#4338CA] text-white rounded-3xl shadow-xl space-y-3 border border-indigo-500/40">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
                   <span className="text-xs font-black text-indigo-200 uppercase tracking-wider">
-                    आज की कुल बिक्री (Today's Total Sale)
+                    {dailySaleFilter === "today" ? "आज की कुल बिक्री (Today's Sale)" : dailySaleFilter === "yesterday" ? "कल की बिक्री (Yesterday's Sale)" : dailySaleFilter === "week" ? "इस हफ़्ते की बिक्री (7 Days Sale)" : "कुल बिक्री (All Time Sales)"}
                   </span>
                 </div>
-                <span className="text-[11px] font-bold text-indigo-200 bg-white/10 px-2.5 py-0.5 rounded-full backdrop-blur-xs">
-                  📅 {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                </span>
+                <div className="flex items-center gap-1 bg-white/10 p-0.5 rounded-lg border border-indigo-400/30 text-[10px] font-bold">
+                  {[
+                    { id: "today", label: "आज" },
+                    { id: "yesterday", label: "कल" },
+                    { id: "week", label: "हफ़्ता" },
+                    { id: "all", label: "सभी" }
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setDailySaleFilter(f.id)}
+                      className={`px-2 py-0.5 rounded-md transition cursor-pointer ${dailySaleFilter === f.id ? "bg-white text-indigo-950 font-black shadow-xs" : "text-indigo-200 hover:text-white"}`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="flex justify-between items-baseline pt-1">
                 <div>
                   <div className="text-3xl font-black tracking-tight text-white drop-shadow-sm">
-                    ₹ {todaySales.toLocaleString('en-IN')}
+                    ₹ {activePeriodSales.toLocaleString('en-IN')}
                   </div>
-                  <p className="text-[11px] text-indigo-200 font-semibold mt-0.5">
-                    {todayBills.length > 0 ? `कुल ${todayBills.length} बिक्री बिल दर्ज हैं` : 'आज की बिक्री दर्ज करने हेतु बटन दबाएं'}
-                  </p>
+                  <div className="text-[11px] text-indigo-200 font-semibold mt-0.5">
+                    {activePeriodBills.length > 0 ? (
+                      `कुल ${activePeriodBills.length} बिक्री बिल दर्ज हैं`
+                    ) : bills.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setDailySaleFilter("all")}
+                        className="text-amber-300 hover:text-white underline font-bold inline-flex items-center gap-1 cursor-pointer transition"
+                      >
+                        💡 आज कोई नया बिल नहीं • कुल {bills.length} पुराने बिल देखें →
+                      </button>
+                    ) : (
+                      'बिक्री दर्ज करने हेतु + बटन दबाएं'
+                    )}
+                  </div>
                 </div>
                 <button
                   onClick={() => setShowManualSaleModal(true)}
@@ -1603,15 +2629,15 @@ function MobileVyaparAppContent() {
               <div className="grid grid-cols-3 gap-2 pt-2 border-t border-indigo-400/30 text-center">
                 <div className="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
                   <span className="text-[10px] text-emerald-300 font-bold block">💵 नकद (Cash)</span>
-                  <span className="font-extrabold text-xs text-white">₹{todayCash.toLocaleString('en-IN')}</span>
+                  <span className="font-extrabold text-xs text-white">₹{activePeriodCash.toLocaleString('en-IN')}</span>
                 </div>
                 <div className="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
                   <span className="text-[10px] text-sky-300 font-bold block">📲 UPI / QR</span>
-                  <span className="font-extrabold text-xs text-white">₹{todayUpi.toLocaleString('en-IN')}</span>
+                  <span className="font-extrabold text-xs text-white">₹{activePeriodUpi.toLocaleString('en-IN')}</span>
                 </div>
                 <div className="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
                   <span className="text-[10px] text-rose-300 font-bold block">📒 उधारी (Udhar)</span>
-                  <span className="font-extrabold text-xs text-white">₹{todayCredit.toLocaleString('en-IN')}</span>
+                  <span className="font-extrabold text-xs text-white">₹{activePeriodCredit.toLocaleString('en-IN')}</span>
                 </div>
               </div>
             </div>
@@ -1632,7 +2658,11 @@ function MobileVyaparAppContent() {
             {/* 2x3 Metrics Grid */}
             <div className="grid grid-cols-2 gap-2.5">
               <div 
-                onClick={() => handleTabChange("parties")}
+                onClick={() => {
+                  setSearchQuery("");
+                  setPartyFilterTab("to_collect");
+                  handleTabChange("parties");
+                }}
                 className="p-3.5 bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-[#34D399] transition"
               >
                 <div className="flex justify-between items-center">
@@ -1640,13 +2670,17 @@ function MobileVyaparAppContent() {
                   <ChevronRight size={16} className="text-[#059669]" />
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="text-xs font-bold text-[#065F46]">To Collect</span>
+                  <span className="text-xs font-bold text-[#065F46]">To Collect (लेने हैं)</span>
                   <ArrowDown size={13} className="text-[#059669]" />
                 </div>
               </div>
 
               <div 
-                onClick={() => handleTabChange("parties")}
+                onClick={() => {
+                  setSearchQuery("");
+                  setPartyFilterTab("to_pay");
+                  handleTabChange("parties");
+                }}
                 className="p-3.5 bg-[#FFF1F2] border border-[#FECDD3] rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-[#FB7185] transition"
               >
                 <div className="flex justify-between items-center">
@@ -1654,7 +2688,7 @@ function MobileVyaparAppContent() {
                   <ChevronRight size={16} className="text-[#E11D48]" />
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="text-xs font-bold text-[#9F1239]">To Pay</span>
+                  <span className="text-xs font-bold text-[#9F1239]">To Pay (देने हैं)</span>
                   <ArrowUp size={13} className="text-[#E11D48]" />
                 </div>
               </div>
@@ -1673,25 +2707,39 @@ function MobileVyaparAppContent() {
               </div>
 
               <div 
-                onClick={() => handleTabChange("reports")}
+                onClick={() => {
+                  setDailySaleFilter("week");
+                  setShowManualSaleModal(true);
+                }}
                 className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
               >
                 <div className="flex justify-between items-center">
                   <span className="font-black text-sm text-[#0F172A]">₹ {recentSales.toLocaleString('en-IN')}</span>
                   <ChevronRight size={16} className="text-[#94A3B8]" />
                 </div>
-                <div className="text-xs font-bold text-[#64748B]">This week's sale</div>
+                <div className="text-xs font-bold text-[#64748B]">This week's sale (बिक्री देखें)</div>
               </div>
 
               <div 
-                onClick={() => navigate("/reports/daybook")}
+                onClick={() => setShowBankCCModal(true)}
                 className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
               >
                 <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-[#64748B]">Total Balance</span>
+                  <span className="font-black text-sm text-[#0F172A]">
+                    ₹ {totalBankBalance > 0 ? totalBankBalance.toLocaleString('en-IN') : '0'}
+                  </span>
                   <ChevronRight size={16} className="text-[#94A3B8]" />
                 </div>
-                <div className="text-[11px] font-bold text-[#475569]">Cash + Bank Balance</div>
+                <div className="text-[11px] font-bold text-[#475569] flex items-center justify-between">
+                  <span className="truncate">
+                    {primaryBankAccount ? `🏛️ ${primaryBankAccount.bankName || primaryBankAccount.accountName}` : "Cash + Bank Balance"}
+                  </span>
+                  {bankAccounts.length > 0 && (
+                    <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded font-black shrink-0">
+                      {bankAccounts.length} बैंक
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div 
@@ -1823,19 +2871,19 @@ function MobileVyaparAppContent() {
                       onClick={() => setTransactionTab("all")}
                       className={`px-2 py-0.5 rounded-md transition ${transactionTab === "all" ? "bg-white text-indigo-900 shadow-xs" : "text-slate-500"}`}
                     >
-                      सभी ({bills.length + (gharKharchList || []).length})
+                      सभी ({bills.length + (gharKharchList || []).length + (allPartyTransactions || []).length})
                     </button>
                     <button
                       onClick={() => setTransactionTab("sales")}
                       className={`px-2 py-0.5 rounded-md transition ${transactionTab === "sales" ? "bg-emerald-600 text-white shadow-xs" : "text-slate-500"}`}
                     >
-                      बिक्री ({bills.length})
+                      बिक्री ({bills.length + (allPartyTransactions || []).filter(tx => Number(tx.debit || 0) > 0).length})
                     </button>
                     <button
                       onClick={() => setTransactionTab("expenses")}
                       className={`px-2 py-0.5 rounded-md transition ${transactionTab === "expenses" ? "bg-amber-600 text-white shadow-xs" : "text-slate-500"}`}
                     >
-                      खर्च ({(gharKharchList || []).length})
+                      खर्च ({(gharKharchList || []).length + (allPartyTransactions || []).filter(tx => Number(tx.credit || 0) > 0).length})
                     </button>
                   </div>
                 </div>
@@ -1849,17 +2897,36 @@ function MobileVyaparAppContent() {
               </div>
 
               {(() => {
+                const salesTxsCount = bills.length + (allPartyTransactions || []).filter(tx => Number(tx.debit || 0) > 0).length;
+                const expensesTxsCount = (gharKharchList || []).length + (allPartyTransactions || []).filter(tx => Number(tx.credit || 0) > 0).length;
+
                 const combinedStream = [
                   ...bills.map(b => ({
                     _id: b._id || b.id,
                     typeCategory: 'sale',
                     title: b.customerName || 'नकद काउंटर बिक्री',
                     subtitle: `Invoice #${b.id} • ${b.date} • ${b.paymentStatus === 'unpaid' ? 'Due (उधार)' : 'Paid'}`,
-                    amount: b.amount,
+                    amount: Number(b.amount || b.finalAmount || b.total || 0),
                     isPositive: true,
                     dateObj: new Date(b.rawDate || b.date || Date.now()),
                     original: b
                   })),
+                  ...(allPartyTransactions || []).map(tx => {
+                    const isDebit = Number(tx.debit || 0) > 0;
+                    const pName = tx.partyId?.name || tx.partyName || 'पार्टी खाता';
+                    const amt = Number(tx.debit || tx.credit || tx.amount || 0);
+                    return {
+                      _id: tx._id || `ptx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                      typeCategory: isDebit ? 'sale' : 'expense',
+                      title: `${pName} • ${tx.details || (isDebit ? 'रकम मिली / बिक्री' : 'भुगतान दिया')}`,
+                      subtitle: `🤝 पार्टी लेनदेन • ${tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today'}`,
+                      amount: amt,
+                      isPositive: isDebit,
+                      dateObj: new Date(tx.date || tx.createdAt || Date.now()),
+                      original: tx,
+                      isPartyTx: true
+                    };
+                  }),
                   ...(gharKharchList || []).map(e => ({
                     _id: e._id || e.id,
                     typeCategory: 'expense',
@@ -1890,7 +2957,7 @@ function MobileVyaparAppContent() {
 
                 return (
                   <div className="space-y-2">
-                    {displayList.slice(0, 8).map((tx) => (
+                    {(showAllTransactions ? displayList : displayList.slice(0, 8)).map((tx) => (
                       <div 
                         key={tx._id}
                         onClick={() => {
@@ -1937,6 +3004,15 @@ function MobileVyaparAppContent() {
                         </div>
                       </div>
                     ))}
+                    {displayList.length > 8 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllTransactions(prev => !prev)}
+                        className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 text-indigo-700 text-xs font-black rounded-xl border border-indigo-100 transition cursor-pointer text-center"
+                      >
+                        {showAllTransactions ? "कम लेनदेन दिखाएं (Show Less)" : `सभी ${displayList.length} लेनदेन देखें (View All)`}
+                      </button>
+                    )}
                   </div>
                 );
               })()}
@@ -1945,57 +3021,172 @@ function MobileVyaparAppContent() {
         )}
 
         {/* ==================== TAB 2: PARTIES ==================== */}
-        {activeTab === "parties" && (
-          <div className="space-y-3 animate-in fade-in">
-            <div className="flex justify-between items-center">
-              <h2 className="font-extrabold text-base text-[#0F172A]">Parties ({parties.length})</h2>
-              <button 
-                onClick={() => setShowAddPartyModal(true)}
-                className="px-3.5 py-1.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer"
-              >
-                + Add Party
-              </button>
-            </div>
+        {activeTab === "parties" && (() => {
+          const filteredParties = parties.filter(p => {
+            const matchesSearch = !searchQuery || String(p?.name || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) || String(p?.phone || p?.mobileNumber || '').includes(searchQuery);
+            const pType = (p?.type || p?.partyType || 'customer').toLowerCase();
+            const bal = Number(p?.balance ?? p?.currentBalance ?? 0);
 
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-              <input 
-                type="text" 
-                placeholder="Search party by name or mobile..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
-              />
-            </div>
+            let matchesFilter = true;
+            if (partyFilterTab === "to_collect") {
+              matchesFilter = bal > 0;
+            } else if (partyFilterTab === "to_pay") {
+              matchesFilter = bal < 0;
+            } else if (partyFilterTab === "customer") {
+              matchesFilter = pType === "customer" || pType === "both";
+            } else if (partyFilterTab === "supplier") {
+              matchesFilter = pType === "supplier" || pType === "both";
+            } else if (partyFilterTab === "personal") {
+              matchesFilter = pType === "personal";
+            }
+            return matchesSearch && matchesFilter;
+          });
 
-            <div className="space-y-2">
-              {parties
-                .filter(p => (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (p.phone && p.phone.includes(searchQuery)))
-                .map((p) => (
-                <div 
-                  key={p.id}
-                  onClick={() => setSelectedPartyDetail(p)}
-                  className="p-3.5 bg-white border border-slate-100 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer hover:border-indigo-100 transition"
-                >
-                  <div>
-                    <div className="font-bold text-xs text-[#0F172A]">{p.name}</div>
-                    <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                      <Phone size={11} /> {p.phone || "No Phone"}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className={`font-black text-xs ${Number(p.balance || 0) >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>
-                      {Number(p.balance || 0) >= 0 ? `+ ₹${Number(p.balance || 0).toLocaleString('en-IN')}` : `- ₹${Math.abs(Number(p.balance || 0)).toLocaleString('en-IN')}`}
-                    </div>
-                    <span className="text-[10px] text-slate-400 font-medium block">
-                      {Number(p.balance || 0) >= 0 ? "You'll Get" : "You'll Give"}
-                    </span>
-                  </div>
+          return (
+            <div className="space-y-3 animate-in fade-in">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="font-extrabold text-base text-[#0F172A]">
+                    {partyFilterTab === "to_pay"
+                      ? `🔴 देने हैं (${filteredParties.length})`
+                      : partyFilterTab === "to_collect"
+                        ? `🟢 लेने हैं (${filteredParties.length})`
+                        : `Parties (${filteredParties.length})`}
+                  </h2>
+                  <p className="text-[10px] text-slate-400 font-medium">
+                    {partyFilterTab === "to_pay"
+                      ? `कुल देय रकम: ₹ ${toPay.toLocaleString('en-IN')}`
+                      : partyFilterTab === "to_collect"
+                        ? `कुल प्राप्य रकम: ₹ ${toCollect.toLocaleString('en-IN')}`
+                        : "व्यापारिक ग्राहक, सप्लायर व पर्सनल खाते"}
+                  </p>
                 </div>
-              ))}
+                <button 
+                  onClick={() => setShowAddPartyModal(true)}
+                  className="px-3.5 py-1.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer"
+                >
+                  + Add Party
+                </button>
+              </div>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                <input 
+                  type="text" 
+                  placeholder="पार्टी का नाम या मोबाइल नंबर खोजें..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
+                />
+              </div>
+
+              {/* Filter Tabs: All / To Collect / To Pay / Customer / Supplier / Personal */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                {[
+                  { id: "all", label: `सभी (${parties.length})` },
+                  { id: "to_collect", label: `🟢 लेने हैं (₹${toCollect.toLocaleString('en-IN')})` },
+                  { id: "to_pay", label: `🔴 देने हैं (₹${toPay.toLocaleString('en-IN')})` },
+                  { id: "customer", label: "🛒 ग्राहक" },
+                  { id: "supplier", label: "🏢 सप्लायर" },
+                  { id: "personal", label: "👤 पर्सनल खाता" }
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setPartyFilterTab(tab.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                      partyFilterTab === tab.id
+                        ? tab.id === "to_collect"
+                          ? "bg-emerald-600 text-white shadow-sm"
+                          : tab.id === "to_pay"
+                            ? "bg-rose-600 text-white shadow-sm"
+                            : tab.id === "personal"
+                              ? "bg-amber-600 text-white shadow-sm"
+                              : "bg-[#4338CA] text-white shadow-sm"
+                        : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {filteredParties.length === 0 ? (
+                <div className="p-8 text-center bg-white rounded-2xl border border-slate-100 text-slate-400 text-xs space-y-2.5">
+                  <p>
+                    {partyFilterTab === "to_pay" 
+                      ? "कोई देनदारी बाकी नहीं है (To Pay / देने हैं खाता शून्य है)।" 
+                      : partyFilterTab === "to_collect" 
+                        ? "कोई वसूली बाकी नहीं है (To Collect / लेने हैं खाता शून्य है)।" 
+                        : "कोई पार्टी नहीं मिली। \"+ Add Party\" दबाकर नई पार्टी या पर्सनल खाता जोड़ें।"}
+                  </p>
+                  {parties.length > 0 && partyFilterTab !== "all" && (
+                    <button
+                      type="button"
+                      onClick={() => setPartyFilterTab("all")}
+                      className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-[#4338CA] font-bold rounded-xl border border-indigo-200 text-xs cursor-pointer inline-flex items-center gap-1 transition"
+                    >
+                      💡 कुल {parties.length} पार्टियां मौजूद हैं • सभी पार्टियां देखें →
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredParties.map((p) => {
+                    const isPersonal = (p.type || p.partyType) === 'personal';
+                    const bal = Number(p.balance ?? p.currentBalance ?? 0);
+                    return (
+                      <div 
+                        key={p.id || p._id}
+                        onClick={() => handleOpenPartyDetail(p)}
+                        className={`p-3.5 bg-white border rounded-2xl shadow-xs transition cursor-pointer active:scale-[0.99] flex justify-between items-center gap-2 ${
+                          isPersonal ? "border-amber-200 hover:border-amber-400 hover:bg-amber-50/20" : "border-slate-200 hover:border-indigo-300"
+                        }`}
+                      >
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-extrabold text-sm text-[#0F172A] truncate">{p.name}</span>
+                            {isPersonal ? (
+                              <span className="text-[9px] bg-amber-100 text-amber-800 font-extrabold px-1.5 py-0.5 rounded-full border border-amber-300 shrink-0">
+                                👤 पर्सनल
+                              </span>
+                            ) : (p.type || p.partyType) === 'supplier' ? (
+                              <span className="text-[9px] bg-purple-100 text-purple-700 font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                                🏢 सप्लायर
+                              </span>
+                            ) : (
+                              <span className="text-[9px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                                🛒 ग्राहक
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 flex items-center gap-1">
+                            <Phone size={11} /> {p.phone || p.mobileNumber || "कोई फोन नहीं"}
+                          </div>
+                          {p.address && p.address !== "Local" && (
+                            <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                              📍 {p.address}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0 flex items-center gap-2">
+                          <div>
+                            <div className={`font-black text-sm ${bal > 0 ? "text-[#059669]" : bal < 0 ? "text-[#DC2626]" : "text-slate-600"}`}>
+                              {bal > 0 ? `+ ₹${bal.toLocaleString('en-IN')}` : bal < 0 ? `- ₹${Math.abs(bal).toLocaleString('en-IN')}` : "₹ 0"}
+                            </div>
+                            <span className={`text-[10px] font-bold block ${bal > 0 ? "text-emerald-600" : bal < 0 ? "text-rose-600" : "text-slate-400"}`}>
+                              {bal > 0 ? "🟢 लेने हैं" : bal < 0 ? "🔴 देने हैं" : "हिसाब चुकता"}
+                            </span>
+                          </div>
+                          <ChevronRight size={16} className="text-slate-300 shrink-0" />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ==================== TAB 3: ITEMS ==================== */}
         {activeTab === "items" && (() => {
@@ -2011,8 +3202,8 @@ function MobileVyaparAppContent() {
 
           // Filter items based on search, category, brand, and stock status
           const filteredItems = items.filter(it => {
-            const itemCat = (it.category || 'General').trim().toLowerCase();
-            const itemBrand = (it.brand || 'General').trim().toLowerCase();
+            const itemCat = String(typeof it?.category === 'string' ? it.category : (it?.category?.name || 'General')).trim().toLowerCase();
+            const itemBrand = String(typeof it?.brand === 'string' ? it.brand : (it?.brand?.name || 'General')).trim().toLowerCase();
             const q = searchQuery.trim().toLowerCase();
 
             const matchesSearch = !q || 
@@ -2192,15 +3383,35 @@ function MobileVyaparAppContent() {
               {/* Items List */}
               <div className="space-y-2">
                 {filteredItems.length === 0 ? (
-                  <div className="p-8 bg-white border border-slate-100 rounded-2xl text-center space-y-2 shadow-sm">
+                  <div className="p-8 bg-white border border-slate-100 rounded-2xl text-center space-y-2.5 shadow-sm">
                     <p className="text-xs font-bold text-slate-600">कोई आइटम नहीं मिला (No items found)</p>
-                    <p className="text-[10px] text-slate-400">फिल्टर बदलें या नया आइटम जोड़ें</p>
-                    <button
-                      onClick={() => setShowAddItemModal(true)}
-                      className="px-3.5 py-1.5 bg-[#059669] text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer inline-flex items-center gap-1"
-                    >
-                      <Plus size={14} /> + Add Item
-                    </button>
+                    <p className="text-[10px] text-slate-400">
+                      {items.length > 0 ? `सर्च या फिल्टर के कारण कोई आइटम मैच नहीं हुआ। कुल ${items.length} आइटम उपलब्ध हैं।` : "फिल्टर बदलें या नया आइटम जोड़ें"}
+                    </p>
+                    {items.length > 0 && (selectedCategoryFilter !== "ALL" || selectedBrandFilter !== "ALL" || selectedStockFilter !== "ALL" || searchQuery) && (
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCategoryFilter("ALL");
+                            setSelectedBrandFilter("ALL");
+                            setSelectedStockFilter("ALL");
+                            setSearchQuery("");
+                          }}
+                          className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-[#4338CA] font-bold rounded-xl border border-indigo-200 text-xs cursor-pointer inline-flex items-center gap-1 transition mr-2"
+                        >
+                          🔄 सारे फ़िल्टर हटाएं ({items.length} आइटम देखें)
+                        </button>
+                      </div>
+                    )}
+                    <div>
+                      <button
+                        onClick={() => setShowAddItemModal(true)}
+                        className="px-3.5 py-1.5 bg-[#059669] text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <Plus size={14} /> + Add Item
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   filteredItems.map((it) => {
@@ -2275,7 +3486,7 @@ function MobileVyaparAppContent() {
             {/* 2-Column Grid of 20+ Reports */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {allReportsList
-                .filter(r => r.title.toLowerCase().includes(reportSearchQuery.toLowerCase()) || r.desc.toLowerCase().includes(reportSearchQuery.toLowerCase()))
+                .filter(r => String(r?.title || '').toLowerCase().includes(String(reportSearchQuery || '').toLowerCase()) || String(r?.desc || '').toLowerCase().includes(String(reportSearchQuery || '').toLowerCase()))
                 .map((r) => (
                 <div 
                   key={r.id}
@@ -2283,11 +3494,19 @@ function MobileVyaparAppContent() {
                     if (r.path === 'pagarbook_modal') {
                       fetchPagarBookData();
                       setShowPagarBookModal(true);
-                    } else if (r.path === 'ghar_kharch_modal') {
-                      fetchGharKharchData();
-                      setShowGharKharchLedgerModal(true);
+                    } else if (r.path === 'family_expense_modal' || r.path === 'ghar_kharch_modal') {
+                      setShowFamilyExpenseModal(true);
+                    } else if (r.path === 'savings_modal') {
+                      setShowSavingsModal(true);
+                    } else if (r.path === 'bank_cc_modal') {
+                      setShowBankCCModal(true);
+                    } else if (r.path === 'daybook_modal') {
+                      setShowDayBookModal(true);
+                    } else if (r.path === 'profitloss_modal') {
+                      setShowProfitLossModal(true);
                     } else {
-                      navigate(r.path);
+                      // Open native mobile report viewer modal
+                      setActiveMobileReport({ type: r.id, title: r.title });
                     }
                   }}
                   className="p-3 bg-white border border-slate-100 hover:border-indigo-200 rounded-2xl flex justify-between items-center shadow-sm cursor-pointer transition"
@@ -2470,6 +3689,24 @@ function MobileVyaparAppContent() {
           >
             + Bill / Invoice
           </button>
+
+          <button 
+            onClick={() => navigate("/voice-assistant")}
+            className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold text-xs rounded-full shadow-md transition cursor-pointer flex items-center gap-1 active:scale-95"
+            title="बोलकर बिल या इन्वेंटरी बनाएं"
+          >
+            <Mic size={13} className="animate-pulse text-amber-300" />
+            <span>🎙️ बोलें</span>
+          </button>
+
+          <button 
+            onClick={() => setShowCreditLimitHub(true)}
+            className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-700 text-white font-extrabold text-xs rounded-full shadow-md transition cursor-pointer flex items-center gap-1 active:scale-95"
+            title="क्रेडिट लिमिट व दैनिक अप्रूवल हब"
+          >
+            <CreditCard size={13} className="text-emerald-200" />
+            <span>💳 क्रेडिट हब</span>
+          </button>
         </div>
       </div>
 
@@ -2530,9 +3767,23 @@ function MobileVyaparAppContent() {
                   <p className="text-[10px] text-slate-400">नाम ऑप्शनल है • 1600+ सामान खोजें</p>
                 </div>
               </div>
-              <button onClick={() => setShowQuickBillModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X size={18} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowQuickBillModal(false);
+                    navigate("/voice-assistant");
+                  }}
+                  className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 font-extrabold text-[11px] rounded-lg border border-purple-200 transition cursor-pointer flex items-center gap-1"
+                  title="बोलकर बिल बनाएं"
+                >
+                  <Mic size={12} className="text-purple-600 animate-pulse" />
+                  <span>🎙️ बोलकर बनाएं</span>
+                </button>
+                <button onClick={() => setShowQuickBillModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {/* Customer Name, Search Dropdown & Phone */}
@@ -2562,7 +3813,7 @@ function MobileVyaparAppContent() {
                   {showPartySuggestions && (
                     <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-44 overflow-y-auto divide-y divide-slate-100">
                       {parties
-                        .filter(p => (p.name || '').toLowerCase().includes(billCustomer.toLowerCase()) || (p.phone || '').includes(billCustomer))
+                        .filter(p => String(p?.name || '').toLowerCase().includes(String(billCustomer || '').toLowerCase()) || String(p?.phone || p?.mobileNumber || '').includes(String(billCustomer || '')))
                         .slice(0, 6)
                         .map(p => (
                           <div
@@ -2603,7 +3854,89 @@ function MobileVyaparAppContent() {
                   onChange={(e) => setBillCustomerPhone(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
                 />
+
+                {/* ⭐ LIVE DIGITAL STAMP LOYALTY CARD IN MOBILE PWA */}
+                {mobileStampStatus?.cards && mobileStampStatus.cards.length > 0 && (
+                  <div className="p-2.5 bg-amber-50/90 rounded-xl border border-amber-300 space-y-1.5 animate-in fade-in">
+                    {mobileStampStatus.cards.map((card, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-xs gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-amber-800 font-black text-[11px]">⭐ स्टैंप:</span>
+                            <span className="font-mono text-amber-700 tracking-wider font-extrabold">{card.visualStamps}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                            {card.isRewardReady ? (
+                              <span className="text-emerald-700 font-black">🎉 {card.rewardDescription} रिवॉर्ड अनलॉक!</span>
+                            ) : (
+                              <span>₹{card.minBillAmount}+ पर अगला स्टैंप • {card.stampsRemaining} शेष</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {card.isRewardReady && card.unlockedReward && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const r = card.unlockedReward;
+                              setBillAppliedReward(r);
+                              alert(`🎉 रिवॉर्ड '${r.code}' लागू हुआ! (${card.rewardDescription})`);
+                            }}
+                            className={`px-2.5 py-1 font-black text-[10px] rounded-lg shadow-xs cursor-pointer transition ${
+                              billAppliedReward?.code === card.unlockedReward.code
+                                ? "bg-emerald-700 text-white ring-2 ring-emerald-400"
+                                : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                            }`}
+                          >
+                            {billAppliedReward?.code === card.unlockedReward.code ? "✓ लागू है" : "⚡ रिवॉर्ड लगाएं"}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* 💳 Live Customer Credit Limit Widget in Mobile Quick Bill */}
+              {selectedPartyObject && (selectedPartyObject.creditLimit > 0 || selectedPartyObject.isCreditLimitActive) && (
+                <div className={`p-2.5 rounded-2xl border text-xs space-y-1.5 animate-in fade-in ${
+                  selectedPartyObject.hasPendingBillApproval
+                    ? "bg-rose-50 border-rose-300 text-rose-950"
+                    : "bg-indigo-50/90 border-indigo-200 text-indigo-950"
+                }`}>
+                  <div className="flex items-center justify-between font-black">
+                    <span className="flex items-center gap-1">
+                      <CreditCard size={14} className="text-indigo-600" />
+                      <span>क्रेडिट लाइन: कुल ₹{Number(selectedPartyObject.creditLimit || 0).toLocaleString('en-IN')}</span>
+                    </span>
+                    <span className="text-emerald-700">
+                      उपलब्ध: ₹{Math.max(0, (selectedPartyObject.creditLimit || 0) - (selectedPartyObject.balance || 0)).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+
+                  {selectedPartyObject.hasPendingBillApproval ? (
+                    <div className="p-2 bg-white/90 rounded-xl border border-rose-200 text-[11px] text-rose-900 flex items-center justify-between gap-2">
+                      <div>
+                        <span className="font-black block">⚠️ पिछला बिल WhatsApp OTP से पेंडिंग है</span>
+                        <span className="text-[10px] text-slate-500">नया उधारी बिल जारी करने के लिए बायपास करें या पिछला OTP लें</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBypassCreditLock(!bypassCreditLock)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer transition ${
+                          bypassCreditLock ? "bg-amber-600 text-white shadow-xs" : "bg-slate-200 text-slate-800"
+                        }`}
+                      >
+                        {bypassCreditLock ? "बायपास सक्रिय ✓" : "काम न रुके (बायपास)"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-slate-500 flex items-center gap-1">
+                      <span>✓ स्वीकृत क्रेडिट लाइन उपलब्ध है। बिल बनते ही 5-बिंदु WhatsApp विवरण जाएगा।</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Payment Mode Selector */}
@@ -2612,12 +3945,112 @@ function MobileVyaparAppContent() {
                 <button
                   key={m}
                   onClick={() => setBillPaymentMode(m)}
-                  className={`py-2 rounded-xl text-xs font-bold border ${billPaymentMode === m ? "bg-[#4338CA] text-white border-[#4338CA]" : "bg-slate-50 border-slate-200 text-slate-700"}`}
+                  className={`py-2 rounded-xl text-xs font-bold border transition ${
+                    billPaymentMode === m 
+                      ? (m === "UDHAR" ? "bg-rose-600 text-white border-rose-600 shadow-sm" : "bg-[#4338CA] text-white border-[#4338CA] shadow-sm")
+                      : "bg-slate-50 border-slate-200 text-slate-700"
+                  }`}
                 >
-                  {m === "CASH" ? "💵 नकद (Cash)" : m === "UDHAR" ? "📒 उधारी (Credit)" : "📲 UPI / QR"}
+                  {m === "CASH" ? "💵 नकद (Cash)" : m === "UDHAR" ? "📒 उधारी 🛡️" : "📲 UPI / QR"}
                 </button>
               ))}
             </div>
+
+            {/* 🛡️ Legal Udhar Protection Card (IT Act 2000 Section 10A) - Optional & Smart Threshold */}
+            {billPaymentMode === "UDHAR" && (
+              <div className="p-3 bg-rose-50/80 border border-rose-200 rounded-2xl space-y-2.5 animate-in fade-in">
+                {/* Threshold Status Banner */}
+                <div className={`p-2 rounded-xl text-[11px] font-bold flex items-center justify-between gap-2 ${
+                  totalBillAmount <= udharOtpThreshold 
+                    ? "bg-amber-100/80 text-amber-900 border border-amber-300/80" 
+                    : "bg-emerald-100/80 text-emerald-900 border border-emerald-300/80"
+                }`}>
+                  <div className="flex items-center gap-1.5">
+                    <span>{totalBillAmount <= udharOtpThreshold ? "⚡" : "🛡️"}</span>
+                    <span>
+                      {totalBillAmount <= udharOtpThreshold 
+                        ? `छोटा बिल (₹${totalBillAmount} ≤ ₹${udharOtpThreshold}) - ऑटो-अप्रूव्ड` 
+                        : `बड़ा बिल (₹${totalBillAmount} > ₹${udharOtpThreshold}) - OTP सुरक्षा अनुशंसित`}
+                    </span>
+                  </div>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/70 font-black">
+                    सीमा ₹{udharOtpThreshold}
+                  </span>
+                </div>
+
+                {/* Optional Toggle Switch */}
+                <div className="p-2.5 bg-white rounded-xl border border-rose-200/80 flex items-center justify-between gap-3 shadow-xs">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-1.5 text-xs font-black text-rose-950">
+                      <ShieldCheck size={15} className={isUdharProtectionChecked ? "text-emerald-600" : "text-slate-400"} />
+                      <span>लीगल WhatsApp OTP सुरक्षा {isUdharProtectionChecked ? "(सक्रिय)" : "(बंद)"}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      {isUdharProtectionChecked
+                        ? "ग्राहक के WhatsApp पर वचनपत्र + 4-अंकों का OTP भेजा जाएगा।"
+                        : "विश्वस्त/नियमित ग्राहक: बिना OTP तुरंत सामान दें और उधारी दर्ज करें।"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsUdharProtectionChecked(!isUdharProtectionChecked)}
+                    className={`w-12 h-6.5 rounded-full transition-colors p-1 flex items-center cursor-pointer shrink-0 ${
+                      isUdharProtectionChecked ? "bg-emerald-600 justify-end" : "bg-slate-300 justify-start"
+                    }`}
+                  >
+                    <span className="w-4.5 h-4.5 rounded-full bg-white shadow-sm block" />
+                  </button>
+                </div>
+
+                {isUdharProtectionChecked ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-700 block mb-1">
+                          📅 भुगतान तय तारीख:
+                        </label>
+                        <input
+                          type="date"
+                          value={billDueDate}
+                          onChange={(e) => setBillDueDate(e.target.value)}
+                          className="w-full p-2 bg-white border border-rose-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-700 block mb-1">
+                          ⚖️ विलंब ब्याज % (माह):
+                        </label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          max="30"
+                          value={billLateInterest}
+                          onChange={(e) => setBillLateInterest(e.target.value)}
+                          className="w-full p-2 bg-white border border-rose-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                          placeholder="2"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="p-2 bg-white rounded-xl border border-rose-100 text-[10px] text-slate-600 space-y-1">
+                      <div className="font-bold text-rose-900 flex items-center gap-1">
+                        <span>📱</span>
+                        <span>व्हाट्सएप पर वचनपत्र + डिलीवरी OTP:</span>
+                      </div>
+                      <p>
+                        बिल बनते ही ग्राहक के WhatsApp पर कानूनी वचनपत्र और 4-अंकों का OTP भेजा जाएगा। डिलीवरी देते समय OTP लेकर दर्ज करना अनिवार्य होगा।
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-2 bg-slate-100/90 rounded-xl border border-slate-200 text-[10px] text-slate-700 flex items-center gap-1.5 font-medium">
+                    <span className="text-emerald-600 font-bold">✓</span>
+                    <span>त्वरित उधारी मोड: बिल बिना किसी OTP रुकावट के तुरंत सुरक्षित रूप से सेव हो जाएगा।</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 📍 CUSTOMER ADDRESS & DETAILS ON-THE-SPOT */}
             <div className="space-y-1.5">
@@ -3445,7 +4878,7 @@ function MobileVyaparAppContent() {
 
               const filteredItems = gharKharchMemberFilter === "all"
                 ? allItems
-                : allItems.filter(it => (it.familyMember || 'Unassigned').toLowerCase() === gharKharchMemberFilter.toLowerCase());
+                : allItems.filter(it => String(it.familyMember || 'Unassigned').toLowerCase() === String(gharKharchMemberFilter || 'all').toLowerCase());
               
               const filteredTotal = filteredItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
 
@@ -3502,7 +4935,7 @@ function MobileVyaparAppContent() {
                         <button
                           key={m}
                           onClick={() => setGharKharchMemberFilter(m)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap flex items-center gap-1 ${gharKharchMemberFilter.toLowerCase() === m.toLowerCase() ? 'bg-amber-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap flex items-center gap-1 ${String(gharKharchMemberFilter || '').toLowerCase() === String(m || '').toLowerCase() ? 'bg-amber-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                         >
                           <span>👤 {m}</span>
                           <span className="text-[10px] opacity-80">₹{membersMap[m]}</span>
@@ -3638,44 +5071,558 @@ function MobileVyaparAppContent() {
         </div>
       )}
 
-      {/* 📱 9. ADD PARTY MODAL */}
+      {/* 📱 9. ADD / EDIT PARTY MODAL */}
       {showAddPartyModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3 shadow-2xl">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3.5 shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-              <h3 className="font-extrabold text-sm text-[#0F172A]">+ Add Party</h3>
-              <button onClick={() => setShowAddPartyModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <h3 className="font-extrabold text-sm text-[#0F172A]">
+                {editingParty ? "✏️ Edit Party / पार्टी संपादित करें" : "+ Add Party / नया खाता जोड़ें"}
+              </h3>
+              <button onClick={() => { setShowAddPartyModal(false); setEditingParty(null); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X size={18} />
               </button>
             </div>
+
+            {/* Party Type Selector Tabs */}
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">खाता प्रकार (Party Type)</label>
+              <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl">
+                {[
+                  { id: "customer", label: "🛒 ग्राहक" },
+                  { id: "supplier", label: "🏢 सप्लायर" },
+                  { id: "personal", label: "👤 पर्सनल" }
+                ].map(t => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      setNewPartyType(t.id);
+                      if (!editingParty) {
+                        if (t.id === "supplier") {
+                          setNewPartyBalanceDir("negative"); // Default देने हैं (You'll Give) for supplier
+                        } else {
+                          setNewPartyBalanceDir("positive"); // Default लेने हैं (You'll Get) for customer
+                        }
+                      }
+                    }}
+                    className={`py-1.5 text-xs font-extrabold rounded-lg transition cursor-pointer ${
+                      newPartyType === t.id
+                        ? t.id === "personal"
+                          ? "bg-amber-600 text-white shadow-sm"
+                          : "bg-[#4338CA] text-white shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {newPartyType === "personal" && (
+              <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 leading-relaxed">
+                💡 <strong>गैर-व्यावसायिक खाता:</strong> यह बिज़नेस की बिक्री या देनदारों में नहीं जुड़ेगा। इसका हिसाब अलग पर्सनल लेजर में सुरक्षित रहेगा।
+              </div>
+            )}
+
             <input 
               type="text" 
-              placeholder="Party Name *" 
+              placeholder="पार्टी / व्यक्ति का नाम *" 
               value={newPartyName}
               onChange={(e) => setNewPartyName(e.target.value)}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none font-bold"
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none font-bold focus:border-[#4338CA]"
             />
             <input 
               type="tel" 
-              placeholder="Mobile Number" 
+              placeholder="मोबाइल नंबर (WhatsApp के लिए)" 
               value={newPartyPhone}
               onChange={(e) => setNewPartyPhone(e.target.value)}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
             />
             <input 
-              type="number" 
-              placeholder="Opening Balance (₹)" 
-              value={newPartyBalance}
-              onChange={(e) => setNewPartyBalance(e.target.value)}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
+              type="text" 
+              placeholder="पता / शहर (Address)" 
+              value={newPartyAddress}
+              onChange={(e) => setNewPartyAddress(e.target.value)}
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
             />
+
+            {/* Opening Balance with direction */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase block">
+                शुरुआती बाकी (Opening Balance)
+              </label>
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                {[
+                  { v: "positive", label: "🟢 वो मेरा देनदार है (मुझे लेने हैं)" },
+                  { v: "negative", label: "🔴 मैं देनदार हूँ (मुझे देने हैं)" }
+                ].map(opt => (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    onClick={() => setNewPartyBalanceDir(opt.v)}
+                    className={`flex-1 py-1.5 text-[10px] font-extrabold rounded-lg transition cursor-pointer leading-tight ${
+                      (newPartyBalanceDir || "positive") === opt.v
+                        ? opt.v === "positive"
+                          ? "bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-xs"
+                          : "bg-rose-50 text-rose-800 border border-rose-300 shadow-xs"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <input 
+                type="number" 
+                placeholder="₹ 0 (खाली छोड़ें या राशि दर्ज करें)" 
+                value={newPartyBalance}
+                onChange={(e) => setNewPartyBalance(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
+              />
+            </div>
+
             <button
               onClick={handleSaveNewParty}
               disabled={savingParty}
-              className="w-full py-2.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow cursor-pointer"
+              className="w-full py-2.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow cursor-pointer transition"
             >
-              {savingParty ? "Saving..." : "Save Party"}
+              {savingParty ? "Saving..." : editingParty ? "पार्टी अपडेट करें (Update Party)" : "खाता सुरक्षित करें (Save Party)"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 📱 9.1 NATIVE PARTY DETAIL & RUNNING LEDGER MODAL */}
+      {selectedPartyDetail && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full shadow-2xl max-h-[94vh] flex flex-col overflow-hidden animate-in fade-in">
+            {/* Header with Party Info, Edit & Delete */}
+            <div className="shrink-0 px-4 py-3 border-b border-slate-100 flex justify-between items-center bg-slate-50/70 gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <h3 className="font-extrabold text-base text-[#0F172A] truncate">{selectedPartyDetail.name}</h3>
+                  {(selectedPartyDetail.type || selectedPartyDetail.partyType) === 'personal' ? (
+                    <span className="text-[10px] bg-amber-100 text-amber-800 font-extrabold px-2 py-0.5 rounded-full border border-amber-300">
+                      👤 पर्सनल
+                    </span>
+                  ) : (selectedPartyDetail.type || selectedPartyDetail.partyType) === 'supplier' ? (
+                    <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded-full">
+                      🏢 सप्लायर
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">
+                      🛒 ग्राहक
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                  <Phone size={11} /> <span>{selectedPartyDetail.phone || selectedPartyDetail.mobileNumber || "कोई फोन नहीं"}</span>
+                  {selectedPartyDetail.address && <span className="ml-1 text-[10px] text-slate-400 truncate">• {selectedPartyDetail.address}</span>}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditParty(selectedPartyDetail)}
+                  className="px-2.5 py-1.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 flex items-center gap-1 text-[11px] font-extrabold cursor-pointer border border-blue-200 active:scale-95 transition"
+                  title="पार्टी संपादित करें"
+                >
+                  <Edit2 size={12} /> <span>एडिट</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteParty(selectedPartyDetail)}
+                  className="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 flex items-center gap-1 text-[11px] font-extrabold cursor-pointer border border-rose-200 active:scale-95 transition"
+                  title="पार्टी हटाएं"
+                >
+                  <Trash2 size={12} /> <span>हटाएं</span>
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => { setSelectedPartyDetail(null); setShowPartyTxForm(false); }} 
+                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 cursor-pointer ml-0.5"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable Body: Contains Balance, Quick Actions, Transaction Form & Ledger History */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3.5 pb-10 overscroll-contain">
+              {/* Balance Card */}
+              {(() => {
+                const bal = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0);
+                return (
+                  <div className={`p-3.5 rounded-2xl border text-center transition ${
+                    bal > 0 
+                      ? "bg-emerald-50/70 border-emerald-200" 
+                      : bal < 0 
+                        ? "bg-rose-50/70 border-rose-200" 
+                        : "bg-slate-50 border-slate-200"
+                  }`}>
+                    <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      {bal > 0 ? "कुल बकाया राशि (आपको लेने हैं)" : bal < 0 ? "कुल बकाया राशि (आपको देने हैं)" : "हिसाब-किताब स्थिति"}
+                    </div>
+                    <div className={`text-2xl font-black mt-0.5 ${bal > 0 ? "text-emerald-700" : bal < 0 ? "text-rose-700" : "text-slate-700"}`}>
+                      ₹ {Math.abs(bal).toLocaleString('en-IN')}
+                    </div>
+                    <div className="text-[11px] font-semibold text-slate-500 mt-0.5">
+                      {bal > 0 ? "🟢 You'll Get" : bal < 0 ? "🔴 You'll Give" : "✅ हिसाब चुकता है"}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Action Buttons: मैंने दिए, मुझे मिले */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPartyTxType('paid');
+                    setShowPartyTxForm(true);
+                  }}
+                  className={`py-2.5 px-3 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition ${
+                    showPartyTxForm && partyTxType === 'paid' 
+                      ? 'bg-rose-700 ring-2 ring-rose-400 ring-offset-1 text-white' 
+                      : 'bg-rose-600 hover:bg-rose-700 text-white'
+                  }`}
+                >
+                  🔴 मैंने दिए (You Gave)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPartyTxType('received');
+                    setShowPartyTxForm(true);
+                  }}
+                  className={`py-2.5 px-3 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition ${
+                    showPartyTxForm && partyTxType === 'received' 
+                      ? 'bg-emerald-700 ring-2 ring-emerald-400 ring-offset-1 text-white' 
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  }`}
+                >
+                  🟢 मुझे मिले (You Got)
+                </button>
+              </div>
+
+              {/* WhatsApp & Call */}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSharePartyStatementWhatsApp(selectedPartyDetail)}
+                  className="flex-1 py-2 bg-[#25D366] hover:bg-green-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition"
+                >
+                  💬 WhatsApp पर हिसाब भेजें
+                </button>
+                {(selectedPartyDetail.phone || selectedPartyDetail.mobileNumber) && (
+                  <a
+                    href={`tel:${selectedPartyDetail.phone || selectedPartyDetail.mobileNumber}`}
+                    className="py-2 px-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition"
+                  >
+                    <Phone size={13} /> कॉल
+                  </a>
+                )}
+              </div>
+
+              {/* Inline Transaction Entry Form */}
+              {showPartyTxForm && (
+                <div className={`p-4 rounded-2xl border-2 shadow-sm space-y-3 animate-in fade-in ${
+                  partyTxType === 'paid' ? 'bg-rose-50/40 border-rose-200' : 'bg-emerald-50/40 border-emerald-200'
+                }`}>
+                  <div className="flex justify-between items-center pb-1 border-b border-slate-200/70">
+                    <span className={`font-black text-xs flex items-center gap-1.5 ${partyTxType === 'paid' ? 'text-rose-700' : 'text-emerald-700'}`}>
+                      <span className="w-2 h-2 rounded-full inline-block animate-pulse" style={{ backgroundColor: partyTxType === 'paid' ? '#e11d48' : '#059669' }} />
+                      {partyTxType === 'paid' ? '🔴 मैंने दिए / किस्त भुगतान (You Gave)' : '🟢 मुझे मिले / किस्त वसूली (You Got)'}
+                    </span>
+                    <button 
+                      type="button"
+                      onClick={() => setShowPartyTxForm(false)} 
+                      className="text-slate-400 hover:text-slate-700 text-xs font-bold px-2 py-0.5 rounded-lg bg-white border border-slate-200 cursor-pointer"
+                    >
+                      ✕ रद्द करें
+                    </button>
+                  </div>
+
+                  {/* Amount Input */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                      राशि (Amount ₹) *
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">₹</span>
+                      <input 
+                        type="number"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        value={partyTxAmount}
+                        onChange={(e) => setPartyTxAmount(e.target.value)}
+                        className="w-full pl-7 pr-3 py-2.5 bg-white border-2 border-slate-200 rounded-xl text-base font-black text-[#0F172A] outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-xs"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  {/* Date Input */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                      <Calendar size={12} className="text-indigo-600" />
+                      <span>तारीख (Payment Date) *</span>
+                    </label>
+                    <input 
+                      type="date"
+                      value={partyTxDate}
+                      onChange={(e) => setPartyTxDate(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-indigo-500 shadow-xs"
+                    />
+                  </div>
+
+                  {/* Payment Mode */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                      भुगतान माध्यम (Payment Mode)
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5 bg-slate-200/70 p-1 rounded-xl">
+                      {[
+                        { id: 'CASH', label: '💵 नकद (Cash)' },
+                        { id: 'UPI', label: '📱 UPI' },
+                        { id: 'BANK', label: '🏛️ बैंक' }
+                      ].map(m => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setPartyTxPaymentMode(m.id)}
+                          className={`py-1.5 text-xs font-black rounded-lg transition cursor-pointer ${
+                            partyTxPaymentMode === m.id ? 'bg-white text-[#0F172A] shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Notes / Description */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                      विवरण / नोट (Description)
+                    </label>
+                    <input 
+                      type="text"
+                      placeholder="उदा. किस्त 1, चेक नंबर, ऑनलाइन ट्रांसफर आदि"
+                      value={partyTxNotes}
+                      onChange={(e) => setPartyTxNotes(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-indigo-500 shadow-xs"
+                    />
+                  </div>
+
+                  {/* Save Button */}
+                  <button
+                    type="button"
+                    onClick={handleSavePartyTx}
+                    disabled={savingPartyTx}
+                    className={`w-full py-3 px-4 font-black text-sm rounded-xl text-white shadow-md cursor-pointer active:scale-95 transition flex items-center justify-center gap-2 ${
+                      partyTxType === 'paid' ? 'bg-rose-600 hover:bg-rose-700 active:bg-rose-800' : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800'
+                    }`}
+                  >
+                    {savingPartyTx ? (
+                      <span>⏳ सुरक्षित हो रहा है...</span>
+                    ) : (
+                      <span>💾 सुरक्षित करें ({partyTxType === 'paid' ? 'मैंने दिए' : 'मुझे मिले'})</span>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* Statement Title & List */}
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <span className="font-extrabold text-xs text-[#0F172A]">📖 खाता पासबुक व लेन-देन (Running Ledger)</span>
+                {partyStatementLoading && <span className="text-[10px] text-slate-400 animate-pulse">लोड हो रहा है...</span>}
+              </div>
+
+              {/* Detailed Passbook Ledger List with Running Balance */}
+              <div className="space-y-2">
+                {partyTransactions.length === 0 ? (
+                  <div className="py-6 text-center text-slate-400 text-xs bg-slate-50/60 rounded-2xl border border-dashed border-slate-200">
+                    अभी तक कोई लेन-देन दर्ज नहीं है। ऊपर दिए गए "मैंने दिए" या "मुझे मिले" बटन से प्रविष्टि दर्ज करें।
+                  </div>
+                ) : (() => {
+                  // Compute chronological running balance
+                  const sortedAsc = [...partyTransactions].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+                  
+                  let initialBal = Number(selectedPartyDetail.openingBalance || 0);
+                  let running = initialBal;
+
+                  const txWithRunning = sortedAsc.map((tx) => {
+                    const debit = Number(tx.debit || 0);
+                    const credit = Number(tx.credit || 0);
+                    running = running + debit - credit;
+                    return { ...tx, runningAfter: running };
+                  });
+
+                  // Display latest transactions first
+                  const txWithRunningDesc = [...txWithRunning].reverse();
+
+                  return (
+                    <div className="space-y-2">
+                      {txWithRunningDesc.map((tx, idx) => {
+                        const isDebit = Number(tx.debit || 0) > 0;
+                        const amt = isDebit ? tx.debit : tx.credit;
+                        const mode = tx.paymentMethod || tx.paymentMode || 'CASH';
+                        return (
+                          <div key={tx._id || idx} className="p-3 bg-[#F8FAFC] border border-slate-200/80 rounded-2xl space-y-2 shadow-xs">
+                            <div className="flex justify-between items-start">
+                              <div className="space-y-1 flex-1 pr-2">
+                                <div className="font-extrabold text-xs text-[#0F172A] flex items-center gap-1.5 flex-wrap">
+                                  <span className={`w-2 h-2 rounded-full shrink-0 ${isDebit ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${isDebit ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                    {tx.type === 'sale' ? `🛒 बिल #${tx.billNumber || tx.refNo}` : tx.type === 'payment' ? `🟢 जमा #${tx.refNo}` : tx.refNo ? `#${tx.refNo}` : 'लेन-देन'}
+                                  </span>
+                                  <span className="text-slate-800 font-bold">{tx.details || (isDebit ? "उधारी बिक्री" : "राशि जमा")}</span>
+                                </div>
+
+                                {/* Bill Items & Breakdown (if available) */}
+                                {tx.items && tx.items.length > 0 && (
+                                  <div className="text-[10px] text-slate-600 bg-white p-2 rounded-xl border border-slate-200/70 mt-1 space-y-1">
+                                    <span className="font-bold text-slate-800 block">📦 सामान विवरण ({tx.items.length}):</span>
+                                    <div className="flex flex-wrap gap-1">
+                                      {tx.items.map((it, iIdx) => (
+                                        <span key={iIdx} className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[9px] font-medium border border-slate-200">
+                                          {it.name} <strong className="text-indigo-700">x{it.quantity || 1}</strong> {it.rate ? `(₹${it.rate})` : ''}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Bill Amount vs Jama Amount */}
+                                {(tx.billAmount || tx.paidAmount > 0) && (
+                                  <div className="text-[10px] text-slate-600 flex items-center gap-2 pt-0.5 flex-wrap">
+                                    {tx.billAmount && <span>कुल बिल राशि: <strong className="text-slate-800">₹{Number(tx.billAmount).toLocaleString('en-IN')}</strong></span>}
+                                    {tx.paidAmount > 0 && (
+                                      <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                        जमा हुआ: ₹{Number(tx.paidAmount).toLocaleString('en-IN')}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                                <div className="text-[10px] text-slate-500 flex items-center gap-2 pt-0.5">
+                                  <span>📅 {tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'आज'}</span>
+                                  <span className="px-1.5 py-0.2 bg-slate-200/60 rounded text-[9px] font-bold text-slate-700">
+                                    {mode === 'UPI' ? '📱 UPI' : mode === 'BANK' ? '🏛️ Bank' : '💵 Cash'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <div className={`font-black text-sm ${isDebit ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                  {isDebit ? `- ₹${Number(amt).toLocaleString('en-IN')}` : `+ ₹${Number(amt).toLocaleString('en-IN')}`}
+                                </div>
+                                <span className="text-[9px] font-extrabold text-slate-400">
+                                  {isDebit ? "🔴 बिल / दिए" : "🟢 जमा / मिले"}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {/* Attached Bill Photo Preview & Running Balance */}
+                            <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between gap-2">
+                              {tx.billImageUrl ? (
+                                <div className="flex items-center gap-2">
+                                  <img
+                                    src={tx.billImageUrl}
+                                    alt="Bill"
+                                    onClick={() => setPreviewBillImage(tx.billImageUrl)}
+                                    className="w-8 h-8 rounded-lg object-cover border border-indigo-300 cursor-pointer shadow-xs active:scale-95"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewBillImage(tx.billImageUrl)}
+                                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer underline"
+                                  >
+                                    📷 बिल फोटो देखें
+                                  </button>
+                                </div>
+                              ) : (
+                                <label className="text-[10px] font-bold text-slate-500 hover:text-indigo-600 flex items-center gap-1 cursor-pointer bg-slate-100 hover:bg-indigo-50 px-2 py-1 rounded-lg border border-dashed border-slate-300 transition">
+                                  <span>📷 + बिल फोटो जोड़ें</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => handleAttachPartyImage(tx._id, e.target.files[0])}
+                                  />
+                                </label>
+                              )}
+
+                              <div className="text-right">
+                                <span className="text-slate-500 font-bold text-[9px] block">इसके बाद बकाया:</span>
+                                <span className={`font-black text-xs ${tx.runningAfter > 0 ? 'text-emerald-700' : tx.runningAfter < 0 ? 'text-rose-700' : 'text-slate-600'}`}>
+                                  ₹ {Math.abs(tx.runningAfter).toLocaleString('en-IN')} {tx.runningAfter > 0 ? '(लेने हैं)' : tx.runningAfter < 0 ? '(देने हैं)' : '(चुक्ता)'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {initialBal !== 0 && (
+                        <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl flex justify-between items-center text-xs text-amber-900 font-bold">
+                          <span>📦 प्रारंभिक शेष (Opening Balance)</span>
+                          <span>₹ {Math.abs(initialBal).toLocaleString('en-IN')} {initialBal > 0 ? '(लेने थे)' : '(देने थे)'}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📱 BILL PHOTO ZOOM MODAL */}
+      {previewBillImage && (
+        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl p-4 max-w-md w-full shadow-2xl relative">
+            <div className="flex justify-between items-center pb-2 border-b mb-3">
+              <h3 className="font-black text-sm text-slate-800 flex items-center gap-1.5">
+                <span>📷</span> बिल / रसीद फोटो (Bill Image)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setPreviewBillImage(null)}
+                className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="max-h-[70vh] overflow-auto flex items-center justify-center bg-slate-50 rounded-2xl p-2 border border-slate-200">
+              <img
+                src={previewBillImage}
+                alt="Full Bill"
+                className="max-h-[65vh] w-auto object-contain rounded-xl shadow-md"
+              />
+            </div>
+            <div className="mt-3 flex justify-between items-center">
+              <button
+                type="button"
+                onClick={() => setPreviewBillImage(null)}
+                className="px-4 py-2 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50 cursor-pointer"
+              >
+                बंद करें
+              </button>
+              <a
+                href={previewBillImage}
+                download="bill_photo.jpg"
+                target="_blank"
+                rel="noreferrer"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1"
+              >
+                <Download size={14} /> डाउनलोड करें
+              </a>
+            </div>
           </div>
         </div>
       )}
@@ -3934,7 +5881,7 @@ function MobileVyaparAppContent() {
 
             <div className="grid grid-cols-2 gap-2">
               {["ALL", "General", "Paints", "Hardware", "Pipes & Fittings", "Electricals", "Sanitary", "Plywood & Beat", "Tools", ...new Set(items.map(it => it.category).filter(Boolean))].map(cat => {
-                const count = cat === "ALL" ? items.length : items.filter(it => (it.category || '').toLowerCase() === cat.toLowerCase()).length;
+                const count = cat === "ALL" ? items.length : items.filter(it => String(it?.category || '').toLowerCase() === String(cat || '').toLowerCase()).length;
                 return (
                   <button
                     key={cat}
@@ -3979,7 +5926,7 @@ function MobileVyaparAppContent() {
 
             <div className="grid grid-cols-2 gap-2">
               {["ALL", "General", "Asian Paints", "Berger", "Kamdhenu", "Astral", "Supreme", "Pidilite", "Havells", "Finolex", ...new Set(items.map(it => it.brand).filter(Boolean))].map(br => {
-                const count = br === "ALL" ? items.length : items.filter(it => (it.brand || '').toLowerCase() === br.toLowerCase()).length;
+                const count = br === "ALL" ? items.length : items.filter(it => String(it?.brand || '').toLowerCase() === String(br || '').toLowerCase()).length;
                 return (
                   <button
                     key={br}
@@ -3999,6 +5946,57 @@ function MobileVyaparAppContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 📱 6.7 NATIVE MOBILE DAYBOOK & PROFIT LOSS REPORTS MODALS */}
+      {/* ======================================================== */}
+      {showDayBookModal && (
+        <MobileDayBookModal
+          isOpen={showDayBookModal}
+          onClose={() => setShowDayBookModal(false)}
+        />
+      )}
+
+      {showProfitLossModal && (
+        <MobileProfitLossModal
+          isOpen={showProfitLossModal}
+          onClose={() => setShowProfitLossModal(false)}
+        />
+      )}
+
+      {showFamilyExpenseModal && (
+        <MobileFamilyExpenseModal
+          isOpen={showFamilyExpenseModal}
+          onClose={() => setShowFamilyExpenseModal(false)}
+        />
+      )}
+
+      {showSavingsModal && (
+        <MobileSavingsModal
+          isOpen={showSavingsModal}
+          onClose={() => setShowSavingsModal(false)}
+        />
+      )}
+
+      {showBankCCModal && (
+        <MobileBankCCModal
+          isOpen={showBankCCModal}
+          onClose={() => {
+            setShowBankCCModal(false);
+            fetchBankAccounts();
+          }}
+          onAccountsChange={fetchBankAccounts}
+        />
+      )}
+
+      {activeMobileReport && (
+        <MobileReportViewerModal
+          isOpen={!!activeMobileReport}
+          onClose={() => setActiveMobileReport(null)}
+          reportType={activeMobileReport.type}
+          reportTitle={activeMobileReport.title}
+        />
       )}
 
       {/* ======================================================== */}
@@ -4590,28 +6588,82 @@ function MobileVyaparAppContent() {
               </button>
             </div>
 
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {(companies && companies.length > 0 ? companies : [{ _id: selectedCompany?._id, name: companyDisplayName }]).map(c => {
-                const cId = c._id || c.id;
-                const isSelected = selectedCompany?._id === cId || selectedCompany?.id === cId;
-                return (
-                  <div
-                    key={cId || Math.random()}
-                    onClick={() => {
-                      if (selectCompany) selectCompany(c);
-                      setShowCompanySelectModal(false);
-                      setTimeout(() => window.location.reload(), 100);
-                    }}
-                    className={`p-3 rounded-2xl border flex justify-between items-center cursor-pointer transition ${isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-900 font-extrabold' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 font-bold'}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span>🏪</span>
-                      <span className="text-xs">{c.name || c.companyName || "My Company"}</span>
-                    </div>
-                    {isSelected && <CheckCircle size={16} className="text-indigo-600" />}
-                  </div>
-                );
-              })}
+            <div className="space-y-3 max-h-72 overflow-y-auto">
+              <div>
+                <div className="text-[10px] font-black uppercase text-indigo-900 tracking-wider mb-1 px-1">
+                  🏢 आपकी मुख्य व्यापारिक दुकानें (डेटा सहित)
+                </div>
+                <div className="space-y-2">
+                  {[
+                    {
+                      _id: "6a8314470d93e58ad0920950",
+                      name: "🔧 Ganesh Hardware, Plywood & Paints",
+                      stats: "1,631+ उत्पाद • 2 पार्टियां • 69 घरेलू खर्च",
+                      badge: "हार्डवेयर स्टोर",
+                      color: "emerald"
+                    },
+                    {
+                      _id: "6a8314470d93e58ad0920952",
+                      name: "🍽️ Royal Spice Restaurant & Cafe",
+                      stats: "505 बिक्री बिल • 11 पार्टियां • 36 उत्पाद",
+                      badge: "फास्ट बिलिंग / रेस्टोरेंट",
+                      color: "indigo"
+                    }
+                  ].map(c => {
+                    const isSelected = selectedCompany?._id === c._id || selectedCompany?.id === c._id;
+                    return (
+                      <div
+                        key={c._id}
+                        onClick={() => {
+                          if (exitDemoModule) exitDemoModule();
+                          if (selectCompany) selectCompany(c);
+                          setShowCompanySelectModal(false);
+                          setTimeout(() => window.location.reload(), 100);
+                        }}
+                        className={`p-3 rounded-2xl border flex justify-between items-center cursor-pointer transition ${isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-950 font-extrabold shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-bold'}`}
+                      >
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-black">{c.name}</span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded">
+                              {c.badge}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-semibold">
+                            {c.stats}
+                          </div>
+                        </div>
+                        {isSelected && <CheckCircle size={18} className="text-indigo-600 shrink-0" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100">
+                <div className="text-[10px] font-black uppercase text-amber-600 tracking-wider mb-1 px-1">
+                  🧪 अन्य इंडस्ट्री डेमो व सैंडबॉक्स मॉड्यूल्स
+                </div>
+                <div className="space-y-1.5">
+                  {(allDemoCompanies || []).filter(d => d._id !== "6a8314470d93e58ad0920950" && d._id !== "6a8314470d93e58ad0920952").map(demoCo => {
+                    const isSelected = selectedCompany?._id === demoCo._id;
+                    return (
+                      <div
+                        key={demoCo._id}
+                        onClick={() => {
+                          if (enterDemoModule) enterDemoModule(demoCo.industryType);
+                          setShowCompanySelectModal(false);
+                          setTimeout(() => window.location.reload(), 100);
+                        }}
+                        className={`p-2.5 rounded-xl border flex justify-between items-center cursor-pointer transition ${isSelected ? 'bg-amber-100 border-amber-300 text-amber-900 font-extrabold' : 'bg-amber-50/50 border-amber-200/60 text-slate-700 hover:bg-amber-100/50 font-medium'}`}
+                      >
+                        <span className="text-xs">{demoCo.name}</span>
+                        {isSelected && <CheckCircle size={15} className="text-amber-700" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             <div className="pt-2 border-t border-slate-100">
@@ -4628,6 +6680,26 @@ function MobileVyaparAppContent() {
           </div>
         </div>
       )}
+
+      {/* 🛡️ LEGAL UDHAR OTP & HANDOVER VERIFICATION MODAL */}
+      <UdharOtpVerificationModal
+        isOpen={showUdharOtpModal}
+        onClose={() => setShowUdharOtpModal(false)}
+        billData={activeUdharBillData}
+        onVerified={(verifiedBill) => {
+          setBills(prev => prev.map(b => (b._id === verifiedBill._id || b.id === verifiedBill._id || b.billNumber === verifiedBill.billNumber) ? { ...b, ...verifiedBill, isOtpVerified: true, handoverStatus: verifiedBill.handoverStatus || "VERIFIED_HANDED_OVER" } : b));
+          if (selectedBillDetail && (selectedBillDetail._id === verifiedBill._id || selectedBillDetail.id === verifiedBill._id)) {
+            setSelectedBillDetail(prev => ({ ...prev, ...verifiedBill, isOtpVerified: true, handoverStatus: verifiedBill.handoverStatus || "VERIFIED_HANDED_OVER" }));
+          }
+        }}
+      />
+
+      {/* 💳 DEDICATED CREDIT LIMIT & MANDATE HUB MODAL */}
+      <CreditLimitHubModal
+        isOpen={showCreditLimitHub}
+        onClose={() => setShowCreditLimitHub(false)}
+        onPartyUpdated={() => fetchAllData()}
+      />
 
     </div>
   );

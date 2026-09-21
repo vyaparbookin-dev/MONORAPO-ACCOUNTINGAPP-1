@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Save, Receipt, DollarSign, Calendar, Tag, ShieldCheck, Home, Landmark, Briefcase, Percent, HelpCircle } from "lucide-react";
 import api from "../../services/api";
@@ -7,6 +7,10 @@ export default function AddExpensesPage({ onAdded }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [expenseType, setExpenseType] = useState("operating"); // operating, drawings, personal_investment, security_deposit, bank_interest_paid, bank_interest_received
+
+  // Bank Accounts for Auto-Deduct
+  const [bankAccounts, setBankAccounts] = useState([]);
+  const [selectedBankId, setSelectedBankId] = useState("");
 
   const [form, setForm] = useState({
     title: "",
@@ -24,6 +28,24 @@ export default function AddExpensesPage({ onAdded }) {
     interestCycle: "yearly",
     refundDate: ""
   });
+
+  // Load Bank Accounts for Auto-Debit
+  useEffect(() => {
+    const fetchBanks = async () => {
+      try {
+        const res = await api.get("/api/bank-accounts");
+        const list = Array.isArray(res?.accounts) ? res.accounts : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+        setBankAccounts(list);
+        const defUpi = list.find(b => b.isDefaultUPI) || list.find(b => b.upiId) || list[0];
+        if (defUpi) {
+          setSelectedBankId(defUpi._id || defUpi.id);
+        }
+      } catch (err) {
+        console.warn("Could not load bank accounts:", err);
+      }
+    };
+    fetchBanks();
+  }, []);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -63,6 +85,7 @@ export default function AddExpensesPage({ onAdded }) {
         date: form.date,
         description: form.description,
         paymentMethod: form.paymentMethod,
+        bankAccountId: (form.paymentMethod === 'upi' || form.paymentMethod === 'bank') ? (selectedBankId || undefined) : undefined,
         expenseType: expenseType,
         depositDetails: expenseType === "security_deposit" ? {
           dealershipCompany: form.dealershipCompany || form.title,
@@ -76,12 +99,12 @@ export default function AddExpensesPage({ onAdded }) {
       };
 
       await api.post("/api/expenses", payload);
-      alert("✅ एंट्री सफलतापूर्वक सेव हो गई!");
+      alert("✅ एंट्री व बैंक पासबुक अपडेट सफलतापूर्वक सेव हो गई!");
       onAdded && onAdded();
       navigate("/expenses");
     } catch (err) {
       console.error("Expense save error:", err);
-      alert("एंट्री सेव करने में समस्या आई। कृपया पुनः प्रयास करें।");
+      alert("एंट्री सेव करने में समस्या आई: " + (err.response?.data?.message || err.message));
     } finally {
       setLoading(false);
     }
@@ -341,6 +364,48 @@ export default function AddExpensesPage({ onAdded }) {
                 <option value="bank">🏦 Bank Transfer / Cheque</option>
               </select>
             </div>
+
+            {/* Bank / UPI Account Selector with Auto-Debit indication */}
+            {(form.paymentMethod === 'upi' || form.paymentMethod === 'bank') && (
+              <div className="col-span-full bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
+                    <Landmark size={15} className="text-indigo-600" />
+                    {form.paymentMethod === 'upi' ? '📱 किस बैंक / UPI खाते से कटेगा? (Account to Deduct From)' : '🏦 बैंक खाता चुनें (Account to Deduct From)'}
+                  </label>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded-full border border-indigo-200">
+                    ⚡ ऑटो-कटौती सक्रिय (Auto-Debit)
+                  </span>
+                </div>
+
+                {bankAccounts.length === 0 ? (
+                  <p className="text-xs text-amber-800 font-medium">
+                    ⚠️ अभी कोई बैंक खाता दर्ज नहीं है। खर्च सुरक्षित हो जाएगा। बैंक रिकॉन्सिलिएशन पेज से खाता जोड़ें ताकि ऑटो-कटौती हो सके।
+                  </p>
+                ) : (
+                  <div className="space-y-1">
+                    <select
+                      value={selectedBankId}
+                      onChange={(e) => setSelectedBankId(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-white border border-indigo-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    >
+                      {bankAccounts.map((acc) => {
+                        const bal = Number(acc.currentBalance ?? acc.balance ?? 0);
+                        return (
+                          <option key={acc._id || acc.id} value={acc._id || acc.id}>
+                            {acc.isDefaultUPI ? '⚡ [मुख्य UPI] ' : ''}
+                            {acc.bankName} - {acc.accountName} ({acc.accountType || 'CURRENT'}) - बैलेंस: ₹{bal.toLocaleString('en-IN')}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <p className="text-[11px] text-indigo-700 font-medium flex items-center gap-1 pt-1">
+                      💡 इस खर्चे की रकम आपके चुने हुए बैंक खाते से अपने आप कट जाएगी (डबल एंट्री की जरूरत नहीं)।
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div>

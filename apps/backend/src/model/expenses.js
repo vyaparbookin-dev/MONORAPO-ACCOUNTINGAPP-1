@@ -19,6 +19,7 @@ const expenseSchema = new mongoose.Schema({
   },
   
   paymentMethod: { type: String, enum: ['cash', 'upi', 'bank', 'cheque'], default: 'cash' },
+  bankAccountId: { type: mongoose.Schema.Types.ObjectId, ref: "BankAccount" },
 
   // Dealership & Security Deposit Details
   depositDetails: {

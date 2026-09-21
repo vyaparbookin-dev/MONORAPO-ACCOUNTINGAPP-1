@@ -1,4 +1,5 @@
 import Expense from "../model/expenses.js";
+import BankAccount from "../model/bankAccount.js";
 import { logActivity } from "../utils/logger.js";
 
 export const addExpense = async (req, res) => {
@@ -7,7 +8,47 @@ export const addExpense = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
     const expanceData = { ...req.body, companyId: req.companyId };
+
+    // Auto-deduct from Bank / UPI Account if paymentMethod is 'upi' or 'bank'
+    const pMethod = String(req.body.paymentMethod || 'cash').toLowerCase();
+    const amountNum = Number(req.body.amount) || 0;
+
+    let targetBank = null;
+    if (req.body.bankAccountId) {
+      targetBank = await BankAccount.findOne({ _id: req.body.bankAccountId, companyId: req.companyId, isDeleted: { $ne: true } });
+    } else if (pMethod === 'upi') {
+      // Find default UPI account or any account with UPI ID
+      targetBank = await BankAccount.findOne({ companyId: req.companyId, isDefaultUPI: true, isDeleted: { $ne: true } })
+        || await BankAccount.findOne({ companyId: req.companyId, upiId: { $exists: true, $ne: "" }, isDeleted: { $ne: true } });
+    } else if (pMethod === 'bank') {
+      targetBank = await BankAccount.findOne({ companyId: req.companyId, accountType: 'CURRENT', isDeleted: { $ne: true } })
+        || await BankAccount.findOne({ companyId: req.companyId, isDeleted: { $ne: true } });
+    }
+
+    if (targetBank) {
+      expanceData.bankAccountId = targetBank._id;
+    }
+
     const expense = await Expense.create(expanceData);
+
+    // If target bank found and amount > 0, post withdrawal transaction
+    if (targetBank && amountNum > 0) {
+      targetBank.transactions.push({
+        date: expense.date ? new Date(expense.date) : new Date(),
+        type: 'withdrawal',
+        amount: amountNum,
+        note: `खर्च: ${expense.title || 'खर्च'} (${expense.category || ''})`,
+        referenceNo: req.body.referenceNo || `EXP-${expense._id}`
+      });
+
+      if (targetBank.accountType === "CC_OVERDRAFT") {
+        targetBank.currentOutstanding = (Number(targetBank.currentOutstanding) || 0) + amountNum;
+      } else {
+        targetBank.currentBalance = (Number(targetBank.currentBalance) || 0) - amountNum;
+      }
+
+      await targetBank.save();
+    }
     
     // Audit Trail
     const label = expense.expenseType === 'drawings' ? `Ghar Kharch (${expense.familyMember || 'Family'})` : 'Business Expense';
@@ -168,16 +209,41 @@ export const deleteExpense = async (req, res) => {
 
     const oldExpense = await Expense.findOne(query);
     const expense = await Expense.findOneAndUpdate(
-      query,
-      { isDeleted: true },
-      { new: true }
-    );
-    
-    if (oldExpense) {
-      await logActivity(req, `Deleted Expense (ID: ${id}) | Title: ${oldExpense?.title || 'Unknown'}, Amount: ₹${oldExpense?.amount || 0}`);
-    }
-    
-    res.json({ success: true, message: "Expense deleted successfully!" });
+       query,
+       { isDeleted: true },
+       { new: true }
+     );
+     
+     if (oldExpense) {
+       await logActivity(req, `Deleted Expense (ID: ${id}) | Title: ${oldExpense?.title || 'Unknown'}, Amount: ₹${oldExpense?.amount || 0}`);
+
+       // Revert Bank deduction if this expense was deducted from a bank account
+       if (oldExpense.bankAccountId && Number(oldExpense.amount) > 0) {
+         try {
+           const bank = await BankAccount.findOne({ _id: oldExpense.bankAccountId, companyId: req.companyId });
+           if (bank) {
+             const revAmt = Number(oldExpense.amount);
+             if (bank.accountType === "CC_OVERDRAFT") {
+               bank.currentOutstanding = Math.max(0, (Number(bank.currentOutstanding) || 0) - revAmt);
+             } else {
+               bank.currentBalance = (Number(bank.currentBalance) || 0) + revAmt;
+             }
+             bank.transactions.push({
+               date: new Date(),
+               type: "deposit",
+               amount: revAmt,
+               note: `खर्च हटाया गया (रिफंड): ${oldExpense.title || 'खर्च'}`,
+               referenceNo: `REV-EXP-${oldExpense._id}`
+             });
+             await bank.save();
+           }
+         } catch (revertErr) {
+           console.warn("Error reverting bank balance on expense deletion:", revertErr.message);
+         }
+       }
+     }
+     
+     res.json({ success: true, message: "Expense deleted successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

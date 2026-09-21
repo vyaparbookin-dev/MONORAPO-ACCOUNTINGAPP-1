@@ -399,15 +399,15 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
   const totalPendingAmount = summaryData.totalCompanyNetPayable || 0;
 
   return (
-    <div className="w-full flex justify-center bg-[#F4F6F9] min-h-screen text-[#1E293B]">
-      <div className="w-full max-w-lg bg-[#F8FAFC] min-h-screen flex flex-col relative shadow-xl pb-10">
+    <div className="w-full flex justify-center bg-[#F4F6F9] min-h-screen text-[#1E293B] p-0 sm:p-4 md:p-6">
+      <div className="w-full max-w-6xl bg-[#F8FAFC] sm:bg-white sm:rounded-3xl min-h-screen flex flex-col relative shadow-xl sm:border border-slate-200 pb-10 overflow-hidden">
 
         {/* ========================================================================= */}
-        {/* SCREEN 1: HOME - STAFF LIST (Screenshot 4)                                */}
+        {/* SCREEN 1: HOME - STAFF LIST                                               */}
         {/* ========================================================================= */}
         {activeScreen === "home" && (
           <div className="flex flex-col flex-1">
-            <div className="bg-white px-4 py-3.5 flex items-center justify-between border-b border-slate-100 sticky top-0 z-10 shadow-xs">
+            <div className="bg-white px-4 sm:px-6 py-4 flex items-center justify-between border-b border-slate-100 sticky top-0 z-10 shadow-xs">
               <div className="flex items-center gap-3">
                 <button 
                   onClick={() => onClose ? onClose() : window.history.back()} 
@@ -415,43 +415,69 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
-                <h1 className="text-base font-bold text-slate-900 truncate max-w-[220px]">
-                  {companyName}
-                </h1>
+                <div>
+                  <h1 className="text-base sm:text-lg font-black text-slate-900 truncate max-w-[280px]">
+                    {companyName}
+                  </h1>
+                  <span className="text-[11px] text-slate-400 font-medium">स्टाफ व वेतन प्रबंधन (Staff & Salary Hub)</span>
+                </div>
               </div>
-              <button className="flex items-center gap-1 text-blue-600 font-semibold text-sm hover:underline cursor-pointer">
-                <span>Help</span>
-                <HelpCircle className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleOpenAddStaff}
+                  className="hidden sm:flex px-4 py-2 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white rounded-xl font-bold text-xs shadow-md items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ नया स्टाफ जोड़ें</span>
+                </button>
+                <button className="flex items-center gap-1 text-blue-600 font-semibold text-xs sm:text-sm hover:underline cursor-pointer">
+                  <span>Help</span>
+                  <HelpCircle className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            <div className="p-4 space-y-4 flex-1">
-              <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-xs">
-                <span className="text-xs font-medium text-slate-500 block mb-1">Total Pending</span>
-                <div className="text-3xl font-extrabold text-[#DC2626] mb-4">
-                  ₹ {totalPendingAmount.toLocaleString('en-IN')}
+            <div className="p-4 sm:p-6 space-y-5 flex-1">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-xs sm:col-span-2 flex flex-col justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">कुल बकाया वेतन (Total Pending Salary)</span>
+                    <div className="text-3xl font-black text-[#DC2626]">
+                      ₹ {totalPendingAmount.toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                  <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-blue-600 font-semibold text-xs cursor-pointer hover:opacity-80">
+                    <span>थोक भुगतान (Bulk Payout Options)</span>
+                    <ChevronDown className="w-4 h-4" />
+                  </div>
                 </div>
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-blue-600 font-semibold text-sm cursor-pointer hover:opacity-80">
-                  <span>Bulk Payment</span>
-                  <ChevronDown className="w-4 h-4" />
+
+                <div className="flex flex-col justify-between gap-3 bg-indigo-50/60 p-5 rounded-2xl border border-indigo-100">
+                  <div>
+                    <span className="text-xs font-bold text-indigo-900 block mb-0.5">सक्रिय स्टाफ (Active Staff)</span>
+                    <p className="text-2xl font-black text-indigo-950">{(summaryData.staff || []).length} सदस्य</p>
+                    <span className="text-[11px] text-indigo-700">Daily: {dailyStaffList.length} • Monthly: {monthlyStaffList.length}</span>
+                  </div>
+                  <button
+                    onClick={handleOpenAddStaff}
+                    className="w-full py-3 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white rounded-xl font-bold text-xs shadow-md flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>+ नया स्टाफ जोड़ें (Add Staff)</span>
+                  </button>
                 </div>
               </div>
 
-              <button
-                onClick={handleOpenAddStaff}
-                className="w-full py-3.5 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 transition active:scale-[0.99] cursor-pointer"
-              >
-                <Plus className="w-5 h-5" />
-                <span>Add Staff</span>
-              </button>
-
-              <div className="space-y-4 pt-2">
+              <div className="space-y-6 pt-2">
                 {dailyStaffList.length > 0 && (
                   <div>
-                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-1">
-                      Daily ({dailyStaffList.length})
+                    <h3 className="text-xs font-black text-slate-600 uppercase tracking-wider mb-3 px-1 flex items-center gap-1.5">
+                      <span>⚡ दैनिक वेतन भोगी स्टाफ (Daily Wage Staff)</span>
+                      <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full font-bold">
+                        {dailyStaffList.length}
+                      </span>
                     </h3>
-                    <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {dailyStaffList.map((staff) => {
                         const todayDay = new Date().getDate();
                         const todayStatus = staff.dailyAttendanceMap?.[todayDay] || "Absent";
@@ -493,10 +519,13 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
 
                 {monthlyStaffList.length > 0 && (
                   <div>
-                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-1">
-                      Monthly ({monthlyStaffList.length})
+                    <h3 className="text-xs font-black text-slate-600 uppercase tracking-wider mb-3 px-1 flex items-center gap-1.5">
+                      <span>💼 मासिक वेतन भोगी स्टाफ (Monthly Salary Staff)</span>
+                      <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full font-bold">
+                        {monthlyStaffList.length}
+                      </span>
                     </h3>
-                    <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {monthlyStaffList.map((staff) => {
                         const todayDay = new Date().getDate();
                         const todayStatus = staff.dailyAttendanceMap?.[todayDay] || "Absent";

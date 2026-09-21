@@ -58,11 +58,11 @@ export default function ProductAnalyticsModal({ productId, onClose }) {
               <>
                 <div className="bg-green-50 p-4 rounded-lg">
                   <p className="text-sm text-green-500 font-medium">Profit Margin</p>
-                  <p className="text-2xl font-bold text-green-600">{profitability.margin.toFixed(2)}%</p>
+                  <p className="text-2xl font-bold text-green-600">{Number(profitability?.margin || 0).toFixed(2)}%</p>
                 </div>
                 <div className="bg-purple-50 p-4 rounded-lg">
                   <p className="text-sm text-purple-500 font-medium">Total Profit</p>
-                  <p className="text-2xl font-bold text-purple-600">₹{profitability.totalProfit.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-purple-600">₹{Number(profitability?.totalProfit || 0).toFixed(2)}</p>
                 </div>
               </>
             )}

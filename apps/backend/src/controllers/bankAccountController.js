@@ -94,6 +94,9 @@ export const createBankAccount = async (req, res) => {
     }
 
     console.log("[BankAccount Debug] Creating bank account:", data.accountName, data.bankName, "companyId:", data.companyId);
+    if (data.isDefaultUPI && data.companyId) {
+      await BankAccount.updateMany({ companyId: data.companyId, isDeleted: { $ne: true } }, { isDefaultUPI: false });
+    }
     const newAccount = await BankAccount.create(data);
     console.log("[BankAccount Debug] Created bank account ID:", newAccount._id);
 
@@ -135,6 +138,13 @@ export const updateBankAccount = async (req, res) => {
           message: `यह खाता नंबर (${accNum}) किसी अन्य खाते में पहले से दर्ज है!`
         });
       }
+    }
+
+    if (updateBody.isDefaultUPI && req.companyId) {
+      await BankAccount.updateMany(
+        { companyId: req.companyId, _id: { $ne: id } },
+        { isDefaultUPI: false }
+      );
     }
 
     const updated = await BankAccount.findOneAndUpdate(query, updateBody, { new: true });

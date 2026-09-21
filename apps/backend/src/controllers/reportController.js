@@ -441,11 +441,12 @@ export const getProfitLoss = async (req, res) => {
       salaryQuery.$or = [{ date: dateFilter }, { paymentDate: dateFilter }, { createdAt: dateFilter }];
     }
 
-    const [bills, expenses, purchases, salaries] = await Promise.all([
+    const [bills, expenses, purchases, salaries, activeStaffList] = await Promise.all([
       Bill.find(billQuery),
       Expance.find(expenseQuery),
       Purchase.find(purchaseQuery),
-      Salary.find(salaryQuery)
+      Salary.find(salaryQuery),
+      Staff.find({ companyId: coFilter, isActive: true })
     ]);
 
     const totalSales = bills.reduce((sum, b) => {
@@ -456,9 +457,13 @@ export const getProfitLoss = async (req, res) => {
     // Direct Purchases (Raw Materials / Groceries)
     const directPurchases = purchases.reduce((sum, p) => sum + (Number(p.totalAmount || p.amountPaid || p.total) || 0), 0);
 
+    // Monthly Fixed Staff Salary liability from Staff Profile (Auto-Overhead)
+    const fixedMonthlyStaffSalaries = activeStaffList.reduce((sum, s) => sum + (Number(s.salary || s.wageAmount || 0)), 0);
+    const fixedStaffPeriodLiability = Math.round((fixedMonthlyStaffSalaries * daysCount) / 30);
+
     // Categorize Expenses dynamically
     let foodCost = directPurchases;
-    let staffSalaries = salaries.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+    let actualPaidSalaries = salaries.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
     let gasAndPower = 0;
     let rentAndProperty = 0;
     let otherExpenses = 0;
@@ -486,13 +491,16 @@ export const getProfitLoss = async (req, res) => {
       } else if (/गैस|सिलेंडर|lpg|gas|bijli|बिजली|power|electric/.test(combined)) {
         gasAndPower += amt;
       } else if (/salary|वेतन|staff|मजदूरी|wage|chef|waiter|cashier/.test(combined)) {
-        staffSalaries += amt;
+        actualPaidSalaries += amt;
       } else if (/rent|किराया|shop|दुकान|hall/.test(combined)) {
         rentAndProperty += amt;
       } else {
         otherExpenses += amt;
       }
     }
+
+    // Effective staff salaries: Use actual disbursed or accrued fixed staff liability
+    const staffSalaries = Math.max(actualPaidSalaries, fixedStaffPeriodLiability);
 
     const totalPurchase = foodCost;
     const businessExpenses = foodCost + staffSalaries + gasAndPower + rentAndProperty + otherExpenses;
@@ -501,7 +509,9 @@ export const getProfitLoss = async (req, res) => {
 
     const dailyAvgSales = Math.round(totalSales / daysCount);
     const dailyAvgExpenses = Math.round(totalExpenses / daysCount);
-    const breakEvenDailySalesNeeded = Math.round(dailyAvgExpenses / 0.6);
+    // Daily fixed overhead burn rate (Rent + Staff + Power)
+    const dailyBurnRate = Math.round((staffSalaries + gasAndPower + rentAndProperty + otherExpenses) / daysCount);
+    const breakEvenDailySalesNeeded = Math.round(dailyBurnRate / 0.6);
 
     res.json({
       success: true,
@@ -515,10 +525,15 @@ export const getProfitLoss = async (req, res) => {
         daysCount,
         dailyAvgSales,
         dailyAvgExpenses,
+        dailyBurnRate,
+        fixedMonthlyStaffSalaries,
+        activeStaffCount: activeStaffList.length,
         breakEvenDailySalesNeeded,
         breakdown: {
           foodCost,
           staffSalaries,
+          fixedMonthlyStaffSalaries,
+          actualPaidSalaries,
           gasAndPower,
           rentAndProperty,
           gharKharch,

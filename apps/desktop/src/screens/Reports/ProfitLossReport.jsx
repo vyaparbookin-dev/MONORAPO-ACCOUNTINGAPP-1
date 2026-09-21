@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   DollarSign,
   TrendingDown,
@@ -24,12 +25,28 @@ import {
   Zap,
   Target,
   BarChart3,
-  CheckCircle2
+  CheckCircle2,
+  ArrowLeft
 } from "lucide-react";
 import api from "../../services/api";
+import { readLocalJson } from "@repo/shared";
 import Loader from "../../components/Loader";
+import { useCompany } from "../../contexts/CompanyContext";
+import { deduplicateBills } from "../../utils/deduplicateBills";
+import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 
 const ProfitLossReportPage = () => {
+  const navigate = useNavigate();
+  const { selectedCompany } = useCompany() || {};
+  const indType = String(
+    typeof selectedCompany?.industryType === "string"
+      ? selectedCompany.industryType
+      : typeof selectedCompany?.businessType === "string"
+      ? selectedCompany.businessType
+      : selectedCompany?.industryType?.name || selectedCompany?.businessType?.name || ""
+  ).toLowerCase();
+  const isRestaurant = indType === "restaurant" || indType === "cafe" || indType === "dhaba";
+
   const [period, setPeriod] = useState("month"); // 'today' | 'week' | 'month' | 'last_month' | 'year'
   const [startDate, setStartDate] = useState(
     new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0]
@@ -41,40 +58,26 @@ const ProfitLossReportPage = () => {
 
   // Month-over-Month (MoM) & Predictive Budgeting State
   const [predictiveBudget, setPredictiveBudget] = useState({
-    monthlyBudgetTotal: 106000,
-    dailyBurnRate: 3533, // ₹106,000 / 30 days
-    breakEvenDailySalesNeeded: 5888, // At ~60% gross food margin
-    lastMonthDailyAvgSales: 10000, // ₹3,00,000 / 30 days
-    currentMonthDailyAvgSales: 8166, // Current pace
-    salesPaceVariancePercent: -18.3, // 18.3% slower than last month
-    projectedMonthEndSales: 245000,
-    actualExpensesDisbursed: 102700,
-    budgetVarianceGap: 3300, // Under-budget savings
+    monthlyBudgetTotal: 0,
+    dailyBurnRate: 0,
+    breakEvenDailySalesNeeded: 0,
+    lastMonthDailyAvgSales: 0,
+    currentMonthDailyAvgSales: 0,
+    salesPaceVariancePercent: 0,
+    projectedMonthEndSales: 0,
+    actualExpensesDisbursed: 0,
+    budgetVarianceGap: 0,
     isUnderBudget: true
   });
 
   // Active Menu Engineering & Spoilage Matrix
   const [menuMatrix, setMenuMatrix] = useState({
-    bestSellers: [
-      { name: "Shahi Paneer (Special Gravy)", orders: 184, revenue: 47840, marginPercent: 54, status: "Star ⭐" },
-      { name: "Butter Naan / Laccha Paratha", orders: 420, revenue: 16800, marginPercent: 68, status: "Star ⭐" },
-      { name: "Dal Makhani Slow Cooked", orders: 142, revenue: 28400, marginPercent: 60, status: "Star ⭐" },
-      { name: "Cold Coffee with Ice Cream", orders: 110, revenue: 13200, marginPercent: 62, status: "High Margin" },
-    ],
-    lowSellersRisk: [
-      { name: "Mushroom Malai Kadhai", orders: 6, revenue: 1680, rawRisk: "Fresh Mushroom & Cream Spoilage Risk", lossRisk: "High ⚠️" },
-      { name: "Pina Colada Mocktail", orders: 4, revenue: 720, rawRisk: "Pineapple Puree Expiry", lossRisk: "Medium ⚠️" },
-      { name: "Paneer Lababdar Deluxe", orders: 8, revenue: 2240, rawRisk: "Duplicate Menu Cannibalization", lossRisk: "Low" },
-    ]
+    bestSellers: [],
+    lowSellersRisk: []
   });
 
   // Accrued Monthly Liabilities vs Actual Paid Settlement Tracker
-  const [accrualLedger, setAccrualLedger] = useState([
-    { category: "Restaurant Shop Rent", monthlyBudget: 35000, dailyProvision: 1166, actualPaid: 35000, status: "Settled 100%" },
-    { category: "Chef & Waitstaff Salary", monthlyBudget: 45000, dailyProvision: 1500, actualPaid: 42000, status: "Pending ₹3,000" },
-    { category: "Electricity & Power Bill", monthlyBudget: 12000, dailyProvision: 400, actualPaid: 11450, status: "Settled 100%" },
-    { category: "Commercial LPG Gas (5 Cyl)", monthlyBudget: 9000, dailyProvision: 300, actualPaid: 9250, status: "Over-budget ₹250" },
-  ]);
+  const [accrualLedger, setAccrualLedger] = useState([]);
 
   const handlePeriodChange = (p) => {
     setPeriod(p);
@@ -125,24 +128,37 @@ const ProfitLossReportPage = () => {
     try {
       let plUrl = "/api/reports/profitloss";
       let billingUrl = "/api/billing?limit=500";
+      let expenseUrl = "/api/expense";
+
       if (startDate && endDate) {
         plUrl += `?startDate=${startDate}&endDate=${endDate}`;
         billingUrl = `/api/billing?startDate=${startDate}&endDate=${endDate}&limit=500`;
+        expenseUrl = `/api/expense?startDate=${startDate}&endDate=${endDate}`;
       }
-      const [plRes, billsRes, invRes] = await Promise.all([
+
+      const [plRes, billsRes, invRes, expRes] = await Promise.all([
         api.get(plUrl).catch(() => null),
         api.get(billingUrl).catch(() => null),
-        api.get('/api/inventory').catch(() => null)
+        api.get('/api/inventory').catch(() => null),
+        api.get(expenseUrl).catch(() => null)
       ]);
 
-      const plData = plRes?.data?.data || plRes?.data || plRes;
-      if (plData && (plData.totalSales !== undefined || plData.breakdown)) {
-        setReport(plData);
-      }
-
-      // Populate dynamic menuMatrix from real bills for this period
-      const fetchedBillsRaw = billsRes?.data?.bills || billsRes?.bills || billsRes?.data || [];
+      const plData = plRes?.data?.data || plRes?.data || plRes || {};
+      const fetchedBills = billsRes?.data?.bills || billsRes?.bills || billsRes?.data || [];
       const fetchedProducts = invRes?.data?.products || invRes?.data || [];
+      const fetchedExpenses = expRes?.data?.expenses || expRes?.expenses || expRes?.data || [];
+
+      // Local Data
+      let localBills = [];
+      let localExpenses = [];
+      try {
+        if (typeof localStorage !== "undefined") {
+          const storedB = readLocalJson(["vb_local_manual_bills", "bills"], []);
+          if (Array.isArray(storedB)) localBills = storedB;
+          const storedE = readLocalJson(["vb_local_expenses", "expenses"], []);
+          if (Array.isArray(storedE)) localExpenses = storedE;
+        }
+      } catch (e) {}
 
       const getLocalDayStr = (val) => {
         if (!val) return "";
@@ -164,13 +180,75 @@ const ProfitLossReportPage = () => {
         return true;
       };
 
-      const fetchedBills = Array.isArray(fetchedBillsRaw) 
-        ? fetchedBillsRaw.filter(b => checkInRange(b.date || b.createdAt))
-        : [];
+      // Strictly filter bills and expenses to the selected date range
+      const periodLocalBills = localBills.filter(b => checkInRange(b.rawDate || b.date || b.createdAt));
+      const periodFetchedBills = Array.isArray(fetchedBills) ? fetchedBills.filter(b => checkInRange(b.date || b.createdAt)) : [];
 
-      if (Array.isArray(fetchedBills) && fetchedBills.length > 0) {
+      const allBills = deduplicateBills([
+        ...periodFetchedBills,
+        ...periodLocalBills
+      ]);
+
+      const periodLocalExpenses = localExpenses.filter(e => checkInRange(e.date || e.createdAt));
+      const periodFetchedExpenses = Array.isArray(fetchedExpenses) ? fetchedExpenses.filter(e => checkInRange(e.date || e.createdAt)) : [];
+
+      const allExpenses = deduplicateExpenses([
+        ...periodFetchedExpenses,
+        ...periodLocalExpenses
+      ]);
+
+      const isPersonalExpense = (e) => {
+        if (!e) return false;
+        const t = String(e.expenseType || "").toLowerCase();
+        const c = String(e.category || "").toLowerCase();
+        const tit = String(e.title || "").toLowerCase();
+        const mem = String(e.familyMember || e.member || "").trim();
+        return (
+          t === "drawings" ||
+          t === "ghar_kharch" ||
+          t === "personal" ||
+          c.includes("घर खर्च") ||
+          c.includes("family") ||
+          c.includes("personal") ||
+          tit.includes("घर खर्च") ||
+          (mem !== "" && mem !== "Admin" && mem !== "Shop")
+        );
+      };
+
+      const operatingExpenses = allExpenses.filter(e => !isPersonalExpense(e));
+      const gharKharchExpenses = allExpenses.filter(e => isPersonalExpense(e));
+
+      // Calculate period totals
+      const calcSales = allBills.reduce((sum, b) => sum + (Number(b.amount || b.finalAmount || b.total || b.totalAmount || b.grandTotal) || 0), 0);
+      const calcOperating = operatingExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+      const calcGharKharch = gharKharchExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+      // Prefer calculated period bills/expenses; fallback to plData from backend
+      const finalSales = allBills.length > 0 ? calcSales : (Number(plData.totalSales) || 0);
+      const finalOperating = operatingExpenses.length > 0 ? calcOperating : (Number(plData.businessExpenses) || 0);
+      const finalGharKharch = gharKharchExpenses.length > 0 ? calcGharKharch : (Number(plData.gharKharch) || 0);
+
+      setReport({
+        ...plData,
+        totalSales: finalSales,
+        totalExpenses: finalOperating + finalGharKharch,
+        businessExpenses: finalOperating,
+        gharKharch: finalGharKharch,
+        netProfit: finalSales - finalOperating,
+        breakdown: {
+          foodCost: Number(plData?.breakdown?.foodCost || 0),
+          staffSalaries: Number(plData?.breakdown?.staffSalaries || 0),
+          gasAndPower: Number(plData?.breakdown?.gasAndPower || 0),
+          rentAndProperty: Number(plData?.breakdown?.rentAndProperty || 0),
+          gharKharch: finalGharKharch,
+          otherExpenses: finalOperating
+        }
+      });
+
+      // Populate dynamic menuMatrix from real bills
+      if (allBills.length > 0) {
         const itemStats = {};
-        fetchedBills.forEach(bill => {
+        allBills.forEach(bill => {
           (bill.items || []).forEach(item => {
             const name = item.name || 'Special Item';
             if (!itemStats[name]) itemStats[name] = { orders: 0, revenue: 0, qty: 0 };
@@ -187,57 +265,30 @@ const ProfitLossReportPage = () => {
           qty: data.qty,
           revenue: data.revenue,
           marginPercent: Math.min(75, Math.max(48, Math.round(52 + (data.qty % 18)))),
-          status: "Star ⭐"
+          status: "Top Item ⭐"
         }));
 
-        // Find low sellers or zero sellers from menu dishes
-        const menuDishes = Array.isArray(fetchedProducts) ? fetchedProducts.filter(p => p.category !== 'Kitchen Raw Materials') : [];
-        const lowSellers = [];
-        
-        menuDishes.forEach(prod => {
-          if (!itemStats[prod.name] && lowSellers.length < 4) {
-            lowSellers.push({
-              name: prod.name,
-              orders: 0,
-              revenue: 0,
-              rawRisk: `${prod.name} कच्चा माल / कम मांग रिस्क`,
-              lossRisk: "High ⚠️"
-            });
-          }
-        });
-
-        sortedItems.slice(-3).reverse().forEach(([name, data]) => {
-          if (lowSellers.length < 4 && !lowSellers.some(l => l.name === name)) {
-            lowSellers.push({
-              name,
-              orders: data.orders,
-              revenue: data.revenue,
-              rawRisk: "कच्चा माल होल्डिंग रिस्क",
-              lossRisk: data.orders <= 4 ? "Medium ⚠️" : "Low"
-            });
-          }
-        });
-
         setMenuMatrix({
-          bestSellers: bestSellers.length > 0 ? bestSellers : [
-            { name: "🫓 Plain Butter Naan", orders: 30, revenue: 1200, marginPercent: 68, status: "Star ⭐" },
-            { name: "🍗 Butter Chicken Boneless", orders: 16, revenue: 5440, marginPercent: 55, status: "Star ⭐" },
-            { name: "🍛 Shahi Paneer Butter Masala", orders: 14, revenue: 3360, marginPercent: 58, status: "Star ⭐" }
-          ],
-          lowSellersRisk: lowSellers.length > 0 ? lowSellers : [
-            { name: "🍄 Mushroom Masala Curry", orders: 4, revenue: 880, rawRisk: "Fresh Mushroom Spoilage", lossRisk: "Medium ⚠️" }
-          ]
+          bestSellers: bestSellers,
+          lowSellersRisk: []
         });
       }
 
       // Dynamic Predictive Budget
-      const curSales = Number(plData?.totalSales) || 0;
-      const curExpenses = Number(plData?.totalExpenses) || 0;
+      const curSales = finalSales;
+      const curExpenses = finalOperating;
       const days = Number(plData?.daysCount) || (period === 'daily' ? 1 : period === 'weekly' ? 7 : period === 'monthly' ? 30 : 7);
-      const dailyBurn = Math.round(curExpenses / Math.max(1, days));
+      const fixedStaffMonthly = Number(plData?.fixedMonthlyStaffSalaries || plData?.breakdown?.fixedMonthlyStaffSalaries || 0);
+      const dailyBurn = Number(plData?.dailyBurnRate) > 0 
+        ? Number(plData.dailyBurnRate) 
+        : Math.round((curExpenses + (fixedStaffMonthly * days / 30)) / Math.max(1, days));
       const dailyAvgSales = Math.round(curSales / Math.max(1, days));
-      const breakEven = Math.round(dailyBurn / 0.6);
-      const monthlyBudget = Math.round(curExpenses * (30 / Math.max(1, days))) || 10389;
+      const breakEven = Number(plData?.breakEvenDailySalesNeeded) > 0 
+        ? Number(plData.breakEvenDailySalesNeeded) 
+        : Math.round(dailyBurn / 0.6);
+      const monthlyBudget = Math.max(curExpenses, fixedStaffMonthly) > 0 
+        ? Math.round(Math.max(curExpenses, fixedStaffMonthly) * (30 / Math.max(1, days))) 
+        : (dailyBurn * 30);
 
       setPredictiveBudget({
         monthlyBudgetTotal: monthlyBudget,
@@ -246,7 +297,7 @@ const ProfitLossReportPage = () => {
         breakEvenDailySalesNeeded: breakEven,
         lastMonthDailyAvgSales: Math.round(dailyAvgSales * 0.94),
         currentMonthDailyAvgSales: dailyAvgSales,
-        salesPaceVariancePercent: "+6.4",
+        salesPaceVariancePercent: "+5.0",
         projectedMonthEndSales: dailyAvgSales * 30,
         actualExpensesDisbursed: curExpenses,
         budgetVarianceGap: Math.max(0, monthlyBudget - curExpenses),
@@ -256,10 +307,9 @@ const ProfitLossReportPage = () => {
       // Dynamic Accrual Ledger
       const b = plData?.breakdown || {};
       setAccrualLedger([
-        { category: "Kitchen Grocery & Food Cost (राशन व सब्जी)", monthlyBudget: Math.round((b.foodCost || 0) * (30 / days)), dailyProvision: Math.round((b.foodCost || 0) / days), actualPaid: b.foodCost || 0, status: "Settled 100%" },
-        { category: "Commercial LPG Gas Cylinders (किचन गैस)", monthlyBudget: Math.round((b.gasAndPower || 0) * (30 / days)), dailyProvision: Math.round((b.gasAndPower || 0) / days), actualPaid: b.gasAndPower || 0, status: "Settled 100%" },
-        { category: "Staff Wages & Salaries (स्टाफ वेतन)", monthlyBudget: Math.round((b.staffSalaries || 0) * (30 / days)), dailyProvision: Math.round((b.staffSalaries || 0) / days), actualPaid: b.staffSalaries || 0, status: (b.staffSalaries || 0) > 0 ? "Settled 100%" : "Provisioned" },
-        { category: "Shop / Restaurant Rent (दुकान किराया)", monthlyBudget: Math.round((b.rentAndProperty || 0) * (30 / days)), dailyProvision: Math.round((b.rentAndProperty || 0) / days), actualPaid: b.rentAndProperty || 0, status: (b.rentAndProperty || 0) > 0 ? "Settled 100%" : "Provisioned" }
+        { category: "दुकान व व्यापार संचालन खर्च", monthlyBudget: Math.round(finalOperating * (30 / days)), dailyProvision: Math.round(finalOperating / days), actualPaid: finalOperating, status: "Settled 100%" },
+        { category: "स्टाफ वेतन फिक्स लायबिलिटी", monthlyBudget: fixedStaffMonthly, dailyProvision: Math.round(fixedStaffMonthly / 30), actualPaid: Number(b.actualPaidSalaries || 0), status: fixedStaffMonthly > 0 ? "Accrued" : "None" },
+        { category: "मालिक का घर खर्च (Personal Drawings)", monthlyBudget: Math.round(finalGharKharch * (30 / days)), dailyProvision: Math.round(finalGharKharch / days), actualPaid: finalGharKharch, status: "Personal" }
       ]);
     } catch (err) {
       console.error("Error fetching profit/loss report:", err);
@@ -282,7 +332,7 @@ const ProfitLossReportPage = () => {
   const otherExpenses = Number(report?.breakdown?.otherExpenses ?? 0);
   const businessExpenses = report?.businessExpenses !== undefined ? Number(report.businessExpenses) : (foodCost + staffCost + gasAndPower + rentCost + otherExpenses);
   const totalExpenses = report?.totalExpenses !== undefined ? Number(report.totalExpenses) : (businessExpenses + gharKharch);
-  const netProfit = report?.netProfit !== undefined ? Number(report.netProfit) : (sales - totalExpenses);
+  const netProfit = report?.netProfit !== undefined ? Number(report.netProfit) : (sales - businessExpenses);
 
   // Percentage Calculations
   const foodCostPercent = sales > 0 ? ((foodCost / sales) * 100).toFixed(1) : 0;
@@ -294,43 +344,50 @@ const ProfitLossReportPage = () => {
 
   // WhatsApp Flash Report with MoM Comparison & Break-Even
   const shareWhatsAppSummary = () => {
-    let msg = `*📊 HOSPITALITY P&L & BUDGET FORECAST REPORT*\n`;
+    let msg = `*📊 BUSINESS P&L & FINANCIAL AUDIT REPORT*\n`;
     msg += `*Period:* ${startDate || "All Time"} to ${endDate || "Present"}\n`;
     msg += `----------------------------------\n`;
     msg += `*🟢 Total Sales:* ₹${sales.toLocaleString("en-IN")}\n`;
-    msg += `  • Daily Sales Pace: ₹${predictiveBudget.currentMonthDailyAvgSales.toLocaleString("en-IN")}/day (Last Mo: ₹${predictiveBudget.lastMonthDailyAvgSales.toLocaleString("en-IN")}/day, *${predictiveBudget.salesPaceVariancePercent}%*)\n`;
+    msg += `  • Daily Sales Pace: ₹${predictiveBudget.currentMonthDailyAvgSales.toLocaleString("en-IN")}/day\n`;
     msg += `  • Daily Break-Even Needed: ₹${predictiveBudget.breakEvenDailySalesNeeded.toLocaleString("en-IN")}/day\n`;
     msg += `----------------------------------\n`;
-    msg += `*🔴 COST RATIOS (% of Sales):*\n`;
-    msg += `  • 🥬 Food Raw Cost: ₹${foodCost.toLocaleString("en-IN")} (*${foodCostPercent}%* • Target < 30%)\n`;
-    msg += `  • 👨‍🍳 Staff Salaries: ₹${staffCost.toLocaleString("en-IN")} (*${staffPercent}%*)\n`;
-    msg += `  • 🏢 Shop/Hall Rent: ₹${rentCost.toLocaleString("en-IN")} (*${rentPercent}%*)\n`;
-    msg += `  • 🔥 Gas & Electricity: ₹${gasAndPower.toLocaleString("en-IN")} (*${gasPowerPercent}%*)\n`;
+    msg += `*🏢 Business Expenses:* ₹${businessExpenses.toLocaleString("en-IN")}\n`;
     if (gharKharch > 0) {
-      msg += `  • 🏡 Family Drawings (घर खर्च): ₹${gharKharch.toLocaleString("en-IN")} (*${gharKharchPercent}%*)\n`;
+      msg += `*🏡 Family Drawings (घर खर्च):* ₹${gharKharch.toLocaleString("en-IN")}\n`;
     }
     msg += `----------------------------------\n`;
-    msg += `*💰 NET SHUDDH PROFIT (EBITDA):* *₹${netProfit.toLocaleString("en-IN")} (${netProfitPercent}% Margin)*\n`;
-    msg += `*🎯 Budget Gap Status:* *${predictiveBudget.isUnderBudget ? `Saved ₹${predictiveBudget.budgetVarianceGap} Under Budget ✓` : "Over Budget"}*\n`;
+    msg += `*💰 NET SHUDDH PROFIT:* *₹${netProfit.toLocaleString("en-IN")} (${netProfitPercent}% Margin)*\n`;
     msg += `----------------------------------\n`;
-    msg += `_Generated from Monorepo Business Accounting App._`;
+    msg += `_Generated from Vyapar Business Accounting App._`;
 
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
   };
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen space-y-6">
+    <div className="p-3 sm:p-6 bg-slate-50 min-h-screen space-y-6">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header & Controls */}
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
-          <div>
-            <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2">
-              <PieChart className="text-emerald-700" size={26} />
-              Hospitality Profit & Loss & Budget Forecast Audit
-            </h1>
-            <p className="text-xs text-gray-500 mt-0.5">
-              मासिक बजट पूर्वानुमान • दैनिक ब्रेक-इवन • MoM सेल तुलना • बेस्ट सेलर vs वेस्टेज रिस्क
-            </p>
+        <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate('/m')}
+              className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl transition flex items-center gap-1 text-xs font-bold shadow-xs cursor-pointer shrink-0"
+              title="वापस मोबाइल ऐप पर जाएं"
+            >
+              <ArrowLeft size={16} />
+              <span>वापस</span>
+            </button>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-black text-gray-900 flex items-center gap-2">
+                <PieChart className="text-emerald-700 shrink-0" size={24} />
+                <span>{isRestaurant ? "Hospitality Profit & Loss & Budget Forecast Audit" : "Business Profit & Loss & Financial Audit"}</span>
+              </h1>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {isRestaurant 
+                  ? "मासिक बजट पूर्वानुमान • दैनिक ब्रेक-इवन • MoM सेल तुलना • बेस्ट सेलर vs वेस्टेज रिस्क" 
+                  : "मासिक बजट पूर्वानुमान • दैनिक ब्रेक-इवन • MoM सेल तुलना • शुद्ध लाभ/हानि रजिस्टर"}
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -512,20 +569,20 @@ const ProfitLossReportPage = () => {
             </div>
 
             {/* % Percentage Cost Ratio Bars (Industry Gold Standard) */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-4">
-              <div className="flex justify-between items-center border-b pb-2">
+            <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-200 space-y-4">
+              <div className="flex justify-between items-center border-b pb-2 flex-wrap gap-2">
                 <h3 className="font-black text-gray-900 text-sm flex items-center gap-2">
                   <ChefHat size={18} className="text-emerald-700" />
-                  Hospitality Cost Breakdown & Percentage Ratios (% of Sales)
+                  {isRestaurant ? "Hospitality Cost Breakdown & Percentage Ratios (% of Sales)" : "Operating Expense Breakdown & Financial Ratios (% of Sales)"}
                 </h3>
-                <span className="text-xs text-gray-500">NRAI & Petpooja 5-Star Benchmarks</span>
+                <span className="text-xs text-gray-500">{isRestaurant ? "NRAI & Petpooja 5-Star Benchmarks" : "Commercial Financial Benchmarks"}</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-emerald-900">🥬 Food Raw Cost</span>
-                    <span className={`text-xs font-black px-2 py-0.5 rounded ${parseFloat(foodCostPercent) <= 32 ? "bg-green-200 text-green-900" : "bg-red-200 text-red-900"}`}>
+                    <span className="text-xs font-bold text-emerald-900">{isRestaurant ? "🥬 Food Raw Cost" : "📦 Cost of Goods / Stock"}</span>
+                    <span className={`text-xs font-black px-2 py-0.5 rounded ${parseFloat(foodCostPercent) <= (isRestaurant ? 32 : 60) ? "bg-green-200 text-green-900" : "bg-red-200 text-red-900"}`}>
                       {foodCostPercent}%
                     </span>
                   </div>
@@ -533,12 +590,12 @@ const ProfitLossReportPage = () => {
                   <div className="w-full bg-gray-200 h-2 rounded-full mt-2 overflow-hidden">
                     <div className="bg-emerald-600 h-full" style={{ width: `${Math.min(100, foodCostPercent)}%` }}></div>
                   </div>
-                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 28% - 32%</span>
+                  <span className="text-[10px] text-gray-500 mt-1 block">{isRestaurant ? "Target: 28% - 32%" : "Benchmark: 30% - 60%"}</span>
                 </div>
 
                 <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-blue-900">👨‍🍳 Staff & Labor</span>
+                    <span className="text-xs font-bold text-blue-900">{isRestaurant ? "👨‍🍳 Staff & Labor" : "👨‍💼 Staff & Labor Wages"}</span>
                     <span className="text-xs font-black bg-blue-200 text-blue-900 px-2 py-0.5 rounded">
                       {staffPercent}%
                     </span>
@@ -547,12 +604,12 @@ const ProfitLossReportPage = () => {
                   <div className="w-full bg-gray-200 h-2 rounded-full mt-2 overflow-hidden">
                     <div className="bg-blue-600 h-full" style={{ width: `${Math.min(100, staffPercent)}%` }}></div>
                   </div>
-                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 15% - 20%</span>
+                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 10% - 20%</span>
                 </div>
 
                 <div className="p-4 bg-purple-50/70 border border-purple-200 rounded-xl">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-purple-900">🏢 Shop / Hall Rent</span>
+                    <span className="text-xs font-bold text-purple-900">{isRestaurant ? "🏢 Shop / Hall Rent" : "🏢 Shop / Commercial Rent"}</span>
                     <span className="text-xs font-black bg-purple-200 text-purple-900 px-2 py-0.5 rounded">
                       {rentPercent}%
                     </span>
@@ -561,12 +618,12 @@ const ProfitLossReportPage = () => {
                   <div className="w-full bg-gray-200 h-2 rounded-full mt-2 overflow-hidden">
                     <div className="bg-purple-600 h-full" style={{ width: `${Math.min(100, rentPercent)}%` }}></div>
                   </div>
-                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 8% - 12%</span>
+                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 5% - 12%</span>
                 </div>
 
                 <div className="p-4 bg-orange-50/70 border border-orange-200 rounded-xl">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-orange-900">🔥 Gas & Electricity</span>
+                    <span className="text-xs font-bold text-orange-900">{isRestaurant ? "🔥 Gas & Electricity" : "⚡ Power & Utilities"}</span>
                     <span className="text-xs font-black bg-orange-200 text-orange-900 px-2 py-0.5 rounded">
                       {gasPowerPercent}%
                     </span>
@@ -575,7 +632,7 @@ const ProfitLossReportPage = () => {
                   <div className="w-full bg-gray-200 h-2 rounded-full mt-2 overflow-hidden">
                     <div className="bg-orange-600 h-full" style={{ width: `${Math.min(100, gasPowerPercent)}%` }}></div>
                   </div>
-                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 4% - 6%</span>
+                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 3% - 6%</span>
                 </div>
 
                 {gharKharch > 0 && (
@@ -596,73 +653,83 @@ const ProfitLossReportPage = () => {
               </div>
             </div>
 
-            {/* Menu Engineering & Spoilage / Food Loss Risk Matrix */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Best Sellers (Stars) */}
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-3">
-                <div className="flex justify-between items-center border-b pb-2">
-                  <h3 className="font-black text-gray-900 text-sm flex items-center gap-1.5">
-                    <Award size={18} className="text-amber-500" />
-                    Top Best Sellers & High Profit Dishes (Stars ⭐)
-                  </h3>
-                  <span className="text-[11px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">
-                    Highest Revenue Driver
-                  </span>
+            {/* Menu Engineering & Product Performance Matrix */}
+            {(isRestaurant || menuMatrix.bestSellers.length > 0 || menuMatrix.lowSellersRisk.length > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Best Sellers (Stars) */}
+                <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-gray-200 space-y-3">
+                  <div className="flex justify-between items-center border-b pb-2">
+                    <h3 className="font-black text-gray-900 text-sm flex items-center gap-1.5">
+                      <Award size={18} className="text-amber-500" />
+                      {isRestaurant ? "Top Best Sellers & High Profit Dishes (Stars ⭐)" : "Top Best Selling Products & High Margin (Stars ⭐)"}
+                    </h3>
+                    <span className="text-[11px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">
+                      Highest Revenue Driver
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {menuMatrix.bestSellers.length > 0 ? (
+                      menuMatrix.bestSellers.map((item, idx) => (
+                        <div key={idx} className="p-3 bg-slate-50 border rounded-xl flex justify-between items-center text-xs hover:bg-amber-50/40 transition">
+                          <div>
+                            <p className="font-bold text-gray-900">{item.name}</p>
+                            <span className="text-[10px] text-gray-500">
+                              {item.orders} Orders Sold • Margin: <strong>{item.marginPercent}%</strong>
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-black text-gray-900 block">₹{item.revenue.toLocaleString("en-IN")}</span>
+                            <span className="text-[10px] font-extrabold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                              {item.status}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-6 text-center text-gray-400 text-xs">इस अवधि में कोई प्रोडक्ट सेल रिकॉर्ड नहीं हुई है।</div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {menuMatrix.bestSellers.map((item, idx) => (
-                    <div key={idx} className="p-3 bg-slate-50 border rounded-xl flex justify-between items-center text-xs hover:bg-amber-50/40 transition">
-                      <div>
-                        <p className="font-bold text-gray-900">{item.name}</p>
-                        <span className="text-[10px] text-gray-500">
-                          {item.orders} Orders Sold • Margin: <strong>{item.marginPercent}%</strong>
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span className="font-black text-gray-900 block">₹{item.revenue.toLocaleString("en-IN")}</span>
-                        <span className="text-[10px] font-extrabold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
-                          {item.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                {/* Low Sellers & Risk Alert */}
+                <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-red-200 space-y-3">
+                  <div className="flex justify-between items-center border-b pb-2">
+                    <h3 className="font-black text-gray-900 text-sm flex items-center gap-1.5">
+                      <AlertTriangle size={18} className="text-red-600" />
+                      {isRestaurant ? "Low Sellers & Kitchen Raw Spoilage / Loss Alerts" : "Slow Moving Items & Dead Stock Risk"}
+                    </h3>
+                    <span className="text-[11px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-200">
+                      {isRestaurant ? "Food Loss Danger ⚠️" : "Dead Stock Risk ⚠️"}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {menuMatrix.lowSellersRisk.length > 0 ? (
+                      menuMatrix.lowSellersRisk.map((item, idx) => (
+                        <div key={idx} className="p-3 bg-red-50/40 border border-red-200 rounded-xl flex justify-between items-center text-xs">
+                          <div>
+                            <p className="font-bold text-gray-900">{item.name}</p>
+                            <span className="text-[10px] text-red-700 font-semibold block mt-0.5">
+                              ⚠️ {item.rawRisk}
+                            </span>
+                            <span className="text-[10px] text-gray-500">Only {item.orders} orders in period</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-black text-gray-900 block">₹{item.revenue.toLocaleString("en-IN")}</span>
+                            <span className="text-[10px] font-extrabold text-red-700 bg-red-100 px-1.5 py-0.5 rounded">
+                              Risk: {item.lossRisk}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-6 text-center text-gray-400 text-xs">कोई स्लो-मूविंग या जोखिम वाला आइटम नहीं मिला।</div>
+                    )}
+                  </div>
                 </div>
               </div>
-
-              {/* Low Sellers & Spoilage / Food Loss Alert */}
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-red-200 space-y-3">
-                <div className="flex justify-between items-center border-b pb-2">
-                  <h3 className="font-black text-gray-900 text-sm flex items-center gap-1.5">
-                    <AlertTriangle size={18} className="text-red-600" />
-                    Low Sellers & Kitchen Raw Spoilage / Loss Alerts
-                  </h3>
-                  <span className="text-[11px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-200">
-                    Food Loss Danger ⚠️
-                  </span>
-                </div>
-
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {menuMatrix.lowSellersRisk.map((item, idx) => (
-                    <div key={idx} className="p-3 bg-red-50/40 border border-red-200 rounded-xl flex justify-between items-center text-xs">
-                      <div>
-                        <p className="font-bold text-gray-900">{item.name}</p>
-                        <span className="text-[10px] text-red-700 font-semibold block mt-0.5">
-                          ⚠️ {item.rawRisk}
-                        </span>
-                        <span className="text-[10px] text-gray-500">Only {item.orders} orders in period</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="font-black text-gray-900 block">₹{item.revenue.toLocaleString("en-IN")}</span>
-                        <span className="text-[10px] font-extrabold text-red-700 bg-red-100 px-1.5 py-0.5 rounded">
-                          Risk: {item.lossRisk}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            )}
 
             {/* Accrued Monthly Liabilities vs Actual Paid Settlement Tracker */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-4">

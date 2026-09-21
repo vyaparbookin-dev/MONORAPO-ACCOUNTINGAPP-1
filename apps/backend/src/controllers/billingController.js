@@ -11,6 +11,7 @@ import Product from "../model/product.js";
 import Party from "../model/party.js";
 import Staff from "../model/staff.js";
 import Company from "../model/company.js";
+import BankAccount from "../model/bankAccount.js";
 import { generateUpiQrCode } from "../utils/paymentUtils.js";
 import { Parser } from "json2csv";
 import { logActivity } from "../utils/logger.js";
@@ -208,6 +209,35 @@ _(कृपया यह OTP दुकानदार को तभी बता
       }
     } catch (partySyncErr) {
       console.error("Party Udhar Balance Sync Error:", partySyncErr.message);
+    }
+
+    // Auto-credit default UPI Bank Account if paid via UPI / Online
+    if (normalizedMethod === "online" || pMode === "UPI") {
+      try {
+        const upiBank = await BankAccount.findOne({
+          companyId: req.companyId,
+          isDefaultUPI: true,
+          isDeleted: { $ne: true }
+        }) || await BankAccount.findOne({
+          companyId: req.companyId,
+          upiId: { $exists: true, $ne: "" },
+          isDeleted: { $ne: true }
+        });
+
+        if (upiBank && finalBillAmount > 0) {
+          upiBank.transactions.push({
+            date: bill.date ? new Date(bill.date) : new Date(),
+            type: 'deposit',
+            amount: finalBillAmount,
+            note: `UPI सेल बिल #${bill.billNumber} (${bill.customerName || 'नकद ग्राहक'})`,
+            referenceNo: `BILL-${bill.billNumber}`
+          });
+          upiBank.currentBalance = (Number(upiBank.currentBalance) || 0) + finalBillAmount;
+          await upiBank.save();
+        }
+      } catch (upiBankErr) {
+        console.warn("UPI Bank Auto-Credit Warning:", upiBankErr.message);
+      }
     }
     
     // Auto Raw Material Deduction & Standard Stock Update / Auto-Create Missing Products

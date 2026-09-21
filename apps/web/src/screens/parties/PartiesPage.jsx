@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
-import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard } from 'lucide-react';
+import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2 } from 'lucide-react';
 import { syncQueue } from "@repo/shared";
 import CreditLimitHubModal from '../../components/modals/CreditLimitHubModal';
 
@@ -11,6 +11,13 @@ export default function PartiesPage() {
   const [showCreditLimitHub, setShowCreditLimitHub] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all'); // 'all', 'to_collect', 'to_pay', 'customer', 'supplier', 'personal'
+
+  // Statement & Image Modal State
+  const [statementParty, setStatementParty] = useState(null);
+  const [statementData, setStatementData] = useState(null);
+  const [statementLoading, setStatementLoading] = useState(false);
+  const [showStatementModal, setShowStatementModal] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null); // URL for full-res bill photo preview modal
 
   const [formData, setFormData] = useState({
     name: '',
@@ -253,6 +260,63 @@ export default function PartiesPage() {
     }
   };
 
+  // Open Full Itemized Ledger Statement
+  const handleOpenStatement = async (party) => {
+    setStatementParty(party);
+    setShowStatementModal(true);
+    setStatementLoading(true);
+    setStatementData(null);
+    try {
+      const pId = party._id || party.id;
+      const res = await api.get(`/api/party/${pId}/statement`);
+      if (res?.data) {
+        setStatementData(res.data);
+      }
+    } catch (err) {
+      console.error("Statement fetch error", err);
+      alert("लेजर लोड करने में समस्या आई: " + (err.response?.data?.error || err.message));
+    } finally {
+      setStatementLoading(false);
+    }
+  };
+
+  // Attach Bill Photo / Receipt Image to Transaction
+  const handleAttachImage = async (txId, file) => {
+    if (!file) return;
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64Url = e.target.result;
+        await api.post('/api/party/attach-image', { txId, imageUrl: base64Url });
+        alert("✅ बिल/रसीद फोटो सफलतापूर्वक सेव हो गया!");
+        if (statementParty) {
+          handleOpenStatement(statementParty);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (e) {
+      alert("फोटो सेव विफल: " + e.message);
+    }
+  };
+
+  // WhatsApp Share Ledger
+  const handleShareWhatsApp = () => {
+    if (!statementParty) return;
+    const p = statementParty;
+    const curBal = Number(p.currentBalance ?? statementData?.currentBalance ?? 0);
+    const text = `*खाता विवरण (Statement of Account)*\n` +
+      `पार्टी: *${p.name}*\n` +
+      `मोबाइल: ${p.mobileNumber || p.phone || '-'}\n` +
+      `शुरूआती बैलेंस: ₹${(statementData?.openingBalance || 0).toLocaleString('en-IN')}\n` +
+      `कुल बिल (Sales): ₹${(statementData?.totalDebit || 0).toLocaleString('en-IN')}\n` +
+      `कुल जमा (Paid): ₹${(statementData?.totalCredit || 0).toLocaleString('en-IN')}\n` +
+      `*शुद्ध बाकी हिसाब:* *₹${Math.abs(curBal).toLocaleString('en-IN')} ${curBal > 0 ? '(लेने हैं)' : curBal < 0 ? '(देने हैं)' : '(चुक्ता)'}*\n\n` +
+      `कृपया हिसाब मिलान कर लें। धन्यवाद!\n- Powered by VyaparBook`;
+    const cleanPhone = (p.mobileNumber || p.phone || '').replace(/[^0-9]/g, '');
+    const url = cleanPhone ? `https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
+
   // Filtered Parties calculation
   const filteredParties = parties.filter(p => {
     const matchesSearch = String(p?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || String(p?.mobileNumber || p?.phone || '').includes(searchTerm);
@@ -409,18 +473,25 @@ export default function PartiesPage() {
                         <td className="px-4 py-3.5 text-center">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
+                              onClick={() => handleOpenStatement(p)}
+                              className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold cursor-pointer transition flex items-center gap-1 shadow-xs"
+                              title="पार्टी का संपूर्ण लेजर स्टेटमेंट देखें"
+                            >
+                              <FileText size={12} /> लेजर
+                            </button>
+                            <button
                               onClick={() => handleOpenPayment(p, 'paid')}
-                              className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold cursor-pointer transition"
+                              className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold cursor-pointer transition"
                               title="मैंने दिए (किस्त भुगतान)"
                             >
-                              🔴 दिए (Paid)
+                              🔴 दिए
                             </button>
                             <button
                               onClick={() => handleOpenPayment(p, 'received')}
-                              className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold cursor-pointer transition"
+                              className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold cursor-pointer transition"
                               title="मुझे मिले (किस्त वसूली)"
                             >
-                              🟢 मिले (Got)
+                              🟢 मिले
                             </button>
                           </div>
                         </td>
@@ -681,6 +752,245 @@ export default function PartiesPage() {
           onClose={() => setShowCreditLimitHub(false)}
           onPartyUpdated={fetchParties}
         />
+
+        {/* 📄 FULL ITEMIZED PARTY LEDGER STATEMENT MODAL */}
+        {showStatementModal && statementParty && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-center items-center z-50 p-3 sm:p-5 animate-in fade-in">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
+              {/* Modal Header */}
+              <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex justify-between items-start flex-wrap gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 bg-indigo-500/30 rounded-lg text-indigo-300">
+                      <FileText size={18} />
+                    </span>
+                    <h2 className="text-lg sm:text-xl font-black">{statementParty.name}</h2>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-white/20 text-white capitalize">
+                      {statementParty.partyType || 'customer'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-indigo-200 mt-1 flex items-center gap-2">
+                    <span>📞 {statementParty.mobileNumber || statementParty.phone || 'कोई नंबर नहीं'}</span>
+                    {statementParty.address && <span>• 📍 {statementParty.address}</span>}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleShareWhatsApp}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow cursor-pointer transition"
+                    title="व्हाट्सएप पर स्टेटमेंट भेजें"
+                  >
+                    <Share2 size={14} /> <span>WhatsApp</span>
+                  </button>
+                  <button
+                    onClick={() => window.print()}
+                    className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 border border-white/20 cursor-pointer transition"
+                    title="प्रिंट या PDF डाउनलोड करें"
+                  >
+                    <Printer size={14} /> <span>प्रिंट / PDF</span>
+                  </button>
+                  <button
+                    onClick={() => setShowStatementModal(false)}
+                    className="p-1.5 text-white/70 hover:text-white rounded-xl hover:bg-white/10 cursor-pointer transition"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Summary Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-4 bg-slate-50 border-b border-slate-200 text-xs">
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-500 font-bold block">शुरूआती बैलेंस (Opening)</span>
+                  <p className="text-sm font-black text-slate-800 mt-0.5">
+                    ₹{(statementData?.openingBalance || statementParty.openingBalance || 0).toLocaleString('en-IN')}
+                  </p>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-indigo-600 font-bold block">कुल बिल (Total Debit)</span>
+                  <p className="text-sm font-black text-indigo-700 mt-0.5">
+                    ₹{(statementData?.totalDebit || 0).toLocaleString('en-IN')}
+                  </p>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-emerald-600 font-bold block">कुल जमा (Total Credit)</span>
+                  <p className="text-sm font-black text-emerald-700 mt-0.5">
+                    ₹{(statementData?.totalCredit || 0).toLocaleString('en-IN')}
+                  </p>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-rose-600 font-bold block">मौजूदा बाकी (Net Due)</span>
+                  <p className={`text-sm font-black mt-0.5 ${
+                    Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0) > 0 ? 'text-rose-600' : 'text-emerald-700'
+                  }`}>
+                    ₹{Math.abs(Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0)).toLocaleString('en-IN')}
+                    <span className="text-[10px] font-normal ml-1">
+                      {Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0) > 0 ? '(लेने हैं)' : '(देने हैं)'}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Transactions List */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {statementLoading ? (
+                  <div className="py-16 text-center text-slate-400 font-bold text-sm">
+                    लेजर स्टेटमेंट लोड हो रहा है...
+                  </div>
+                ) : !statementData || (statementData.transactions || []).length === 0 ? (
+                  <div className="py-16 text-center text-slate-400 font-medium text-xs">
+                    इस पार्टी का कोई लेन-देन या बिल दर्ज नहीं है।
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-100 text-slate-600 font-bold uppercase text-[10px] border-b">
+                        <tr>
+                          <th className="px-3 py-2.5">दिनांक (Date)</th>
+                          <th className="px-3 py-2.5">प्रकार (Type)</th>
+                          <th className="px-3 py-2.5">रेफरेंस / बिल #</th>
+                          <th className="px-3 py-2.5">विवरण (Details)</th>
+                          <th className="px-3 py-2.5 text-right">बिल (Debit ₹)</th>
+                          <th className="px-3 py-2.5 text-right">जमा (Credit ₹)</th>
+                          <th className="px-3 py-2.5 text-right">बाकी (Balance ₹)</th>
+                          <th className="px-3 py-2.5 text-center">बिल फोटो</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {(statementData.transactions || []).map((tx, idx) => {
+                          const isSale = tx.type === 'sale';
+                          const isPurchase = tx.type === 'purchase';
+                          const isReceipt = tx.type === 'receipt' || tx.credit > 0;
+                          const formattedDate = tx.date ? new Date(tx.date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
+
+                          return (
+                            <tr key={tx._id || idx} className="hover:bg-slate-50/80 transition">
+                              <td className="px-3 py-2.5 whitespace-nowrap font-medium text-slate-700">
+                                {formattedDate}
+                              </td>
+                              <td className="px-3 py-2.5 whitespace-nowrap">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  isSale ? 'bg-indigo-100 text-indigo-700' :
+                                  isPurchase ? 'bg-amber-100 text-amber-800' :
+                                  isReceipt ? 'bg-emerald-100 text-emerald-800' :
+                                  'bg-rose-100 text-rose-800'
+                                }`}>
+                                  {isSale ? '🛒 बिक्री बिल' : isPurchase ? '🏢 खरीद बिल' : isReceipt ? '🟢 मुझे मिले' : '🔴 मैंने दिए'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2.5 font-bold text-slate-800 whitespace-nowrap">
+                                {tx.refNo || '-'}
+                              </td>
+                              <td className="px-3 py-2.5 text-slate-600 max-w-xs truncate">
+                                {tx.details || '-'}
+                              </td>
+                              <td className="px-3 py-2.5 text-right font-black text-rose-600 whitespace-nowrap">
+                                {tx.debit > 0 ? `₹${tx.debit.toLocaleString('en-IN')}` : '-'}
+                              </td>
+                              <td className="px-3 py-2.5 text-right font-black text-emerald-700 whitespace-nowrap">
+                                {tx.credit > 0 ? `₹${tx.credit.toLocaleString('en-IN')}` : '-'}
+                              </td>
+                              <td className="px-3 py-2.5 text-right font-black text-slate-900 whitespace-nowrap">
+                                ₹{Math.abs(Number(tx.runningBalance || 0)).toLocaleString('en-IN')}
+                                <span className="text-[9px] font-medium ml-1 text-slate-400">
+                                  {Number(tx.runningBalance || 0) >= 0 ? 'Dr' : 'Cr'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                                {tx.billImageUrl ? (
+                                  <div className="flex items-center justify-center gap-1">
+                                    <img
+                                      src={tx.billImageUrl}
+                                      alt="Bill"
+                                      onClick={() => setPreviewImage(tx.billImageUrl)}
+                                      className="w-8 h-8 rounded-lg object-cover border border-indigo-200 cursor-pointer hover:scale-110 shadow-xs transition"
+                                      title="बिल फोटो बड़ी देखें"
+                                    />
+                                    <button
+                                      onClick={() => setPreviewImage(tx.billImageUrl)}
+                                      className="p-1 text-indigo-600 hover:bg-indigo-50 rounded"
+                                      title="बड़ा देखें"
+                                    >
+                                      <Eye size={13} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <label className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 px-2 py-1 rounded-lg border border-dashed border-slate-300 cursor-pointer transition">
+                                    <UploadCloud size={11} />
+                                    <span>फोटो जोड़ें</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={(e) => handleAttachImage(tx._id, e.target.files[0])}
+                                    />
+                                  </label>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs">
+                <span className="text-slate-500">
+                  कुल प्रविष्टियाँ: <strong>{(statementData?.transactions || []).length}</strong>
+                </span>
+                <button
+                  onClick={() => setShowStatementModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold cursor-pointer transition"
+                >
+                  बंद करें (Close)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 🖼️ HIGH-RES BILL IMAGE PREVIEW MODAL */}
+        {previewImage && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-50 p-4 animate-in fade-in">
+            <div className="bg-slate-900 rounded-3xl max-w-2xl w-full p-4 flex flex-col gap-3 shadow-2xl border border-slate-700">
+              <div className="flex justify-between items-center text-white pb-2 border-b border-slate-800">
+                <span className="text-sm font-bold flex items-center gap-2">
+                  <ImageIcon size={18} className="text-indigo-400" /> मूल बिल / रसीद की फोटो (Bill Document)
+                </span>
+                <button
+                  onClick={() => setPreviewImage(null)}
+                  className="p-1 rounded-lg bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="max-h-[75vh] overflow-auto flex justify-center items-center bg-black/50 rounded-2xl p-2">
+                <img src={previewImage} alt="Original Bill" className="max-h-[70vh] w-auto rounded-xl object-contain shadow-lg" />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <a
+                  href={previewImage}
+                  download="bill_invoice_photo.jpg"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl cursor-pointer transition"
+                >
+                  डाउनलोड फोटो
+                </a>
+                <button
+                  onClick={() => setPreviewImage(null)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl cursor-pointer transition"
+                >
+                  बंद करें
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

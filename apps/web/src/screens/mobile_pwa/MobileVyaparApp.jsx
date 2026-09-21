@@ -344,6 +344,7 @@ function MobileVyaparAppContent() {
   const [partyTxDate, setPartyTxDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [partyTxPaymentMode, setPartyTxPaymentMode] = useState('CASH');
   const [savingPartyTx, setSavingPartyTx] = useState(false);
+  const [previewBillImage, setPreviewBillImage] = useState(null);
   // Sync tab & modal states to sessionStorage
   const handleTabChange = (tab) => {
     setActiveTab(tab);
@@ -1823,15 +1824,109 @@ function MobileVyaparAppContent() {
     setPartyStatementLoading(true);
     try {
       const res = await api.get(`/api/party/${partyId}/statement`).catch(() => api.get(`/api/parties/${partyId}/statement`));
-      if (res?.data?.transactions) {
-        setPartyTransactions(res.data.transactions);
+      const txs = res?.transactions || res?.data?.transactions || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+      if (Array.isArray(txs) && txs.length > 0) {
+        setPartyTransactions(txs);
       } else {
-        setPartyTransactions([]);
+        // Fallback: build statement from bills & allPartyTransactions
+        const pObj = (parties || []).find(p => (p._id === partyId || p.id === partyId)) || selectedPartyDetail;
+        const pNameNorm = String(pObj?.name || '').trim().toLowerCase();
+        const pPhoneNorm = String(pObj?.phone || pObj?.mobileNumber || '').trim();
+
+        const localBills = (bills || []).filter(b => {
+          const bPartyId = String(b.partyId || '');
+          const bCust = String(b.customerName || b.partyName || '').trim().toLowerCase();
+          const bPhone = String(b.customerMobile || b.customerPhone || '').trim();
+          return (bPartyId && bPartyId === String(partyId)) || (bCust && bCust === pNameNorm) || (bPhone && pPhoneNorm && bPhone === pPhoneNorm);
+        });
+
+        const fallbackEntries = [];
+        for (const b of localBills) {
+          const bNum = String(b.billNumber || 'BILL');
+          const finalAmt = Number(b.finalAmount ?? b.total ?? 0);
+          const isPaid = String(b.paymentStatus || b.status || '').toLowerCase() === 'paid';
+          const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
+
+          const itemsSummary = (b.items && b.items.length > 0)
+            ? `: ${b.items.map(i => `${i.name}${i.quantity ? ` (${i.quantity} ${i.unit || 'pcs'})` : ''}`).slice(0, 3).join(', ')}${b.items.length > 3 ? '...' : ''}`
+            : '';
+
+          fallbackEntries.push({
+            _id: b._id || b.id,
+            date: b.date || b.createdAt,
+            type: 'sale',
+            refNo: bNum,
+            billNumber: bNum,
+            billAmount: finalAmt,
+            paidAmount: paidAmt,
+            details: `बिक्री बिल #${bNum} (${(b.items || []).length} सामान)${itemsSummary}`,
+            items: b.items || [],
+            debit: finalAmt,
+            credit: 0,
+            billImageUrl: b.billImageUrl || '',
+            paymentMethod: b.paymentMode || b.paymentMethod || 'CASH'
+          });
+
+          if (paidAmt > 0) {
+            fallbackEntries.push({
+              _id: `pay_${b._id || b.id}`,
+              date: b.date || b.createdAt,
+              type: 'payment',
+              refNo: `REC-${bNum}`,
+              billNumber: bNum,
+              details: `बिल #${bNum} पर नकद/UPI जमा (Payment Received)`,
+              debit: 0,
+              credit: paidAmt,
+              billImageUrl: b.billImageUrl || '',
+              paymentMethod: b.paymentMode || b.paymentMethod || 'CASH'
+            });
+          }
+        }
+
+        // Also add any local party transactions
+        const localTxs = (allPartyTransactions || []).filter(t => (String(t.partyId) === String(partyId)));
+        for (const t of localTxs) {
+          fallbackEntries.push({
+            _id: t._id || t.id,
+            date: t.date || t.createdAt,
+            type: t.type || (t.credit > 0 ? 'payment' : 'payment_out'),
+            refNo: t.billNumber || 'PAY',
+            billNumber: t.billNumber || '',
+            details: t.details || t.notes || (t.credit > 0 ? 'मुझे मिले (जमा)' : 'मैंने दिए'),
+            debit: Number(t.debit || 0),
+            credit: Number(t.credit || 0),
+            billImageUrl: t.billImageUrl || '',
+            paymentMethod: t.paymentMethod || t.paymentMode || 'CASH'
+          });
+        }
+
+        fallbackEntries.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+        setPartyTransactions(fallbackEntries);
       }
     } catch (e) {
+      console.error("fetchPartyStatement error:", e);
       setPartyTransactions([]);
     } finally {
       setPartyStatementLoading(false);
+    }
+  };
+
+  const handleAttachPartyImage = async (txId, file) => {
+    if (!file) return;
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('transactionId', txId);
+      formData.append('partyId', selectedPartyDetail._id || selectedPartyDetail.id);
+      await api.post('/api/party/attach-image', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      alert("✅ बिल की फोटो सफलतापूर्वक जुड़ गई!");
+      if (selectedPartyDetail) {
+        fetchPartyStatement(selectedPartyDetail._id || selectedPartyDetail.id);
+      }
+    } catch (err) {
+      alert("फोटो अपलोड करने में त्रुटि: " + err.message);
     }
   };
 
@@ -5376,36 +5471,97 @@ function MobileVyaparAppContent() {
                         const amt = isDebit ? tx.debit : tx.credit;
                         const mode = tx.paymentMethod || tx.paymentMode || 'CASH';
                         return (
-                          <div key={tx._id || idx} className="p-3 bg-[#F8FAFC] border border-slate-200/80 rounded-2xl space-y-1.5 shadow-xs">
+                          <div key={tx._id || idx} className="p-3 bg-[#F8FAFC] border border-slate-200/80 rounded-2xl space-y-2 shadow-xs">
                             <div className="flex justify-between items-start">
-                              <div className="space-y-0.5">
-                                <div className="font-extrabold text-xs text-[#0F172A] flex items-center gap-1.5">
+                              <div className="space-y-1 flex-1 pr-2">
+                                <div className="font-extrabold text-xs text-[#0F172A] flex items-center gap-1.5 flex-wrap">
                                   <span className={`w-2 h-2 rounded-full shrink-0 ${isDebit ? 'bg-rose-500' : 'bg-emerald-500'}`} />
-                                  <span className="truncate">{tx.details || (isDebit ? "मैंने दिए / उधारी बिक्री" : "मुझे मिले / राशि जमा")}</span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${isDebit ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                    {tx.type === 'sale' ? `🛒 बिल #${tx.billNumber || tx.refNo}` : tx.type === 'payment' ? `🟢 जमा #${tx.refNo}` : tx.refNo ? `#${tx.refNo}` : 'लेन-देन'}
+                                  </span>
+                                  <span className="text-slate-800 font-bold">{tx.details || (isDebit ? "उधारी बिक्री" : "राशि जमा")}</span>
                                 </div>
-                                <div className="text-[10px] text-slate-500 flex items-center gap-2">
+
+                                {/* Bill Items & Breakdown (if available) */}
+                                {tx.items && tx.items.length > 0 && (
+                                  <div className="text-[10px] text-slate-600 bg-white p-2 rounded-xl border border-slate-200/70 mt-1 space-y-1">
+                                    <span className="font-bold text-slate-800 block">📦 सामान विवरण ({tx.items.length}):</span>
+                                    <div className="flex flex-wrap gap-1">
+                                      {tx.items.map((it, iIdx) => (
+                                        <span key={iIdx} className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[9px] font-medium border border-slate-200">
+                                          {it.name} <strong className="text-indigo-700">x{it.quantity || 1}</strong> {it.rate ? `(₹${it.rate})` : ''}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Bill Amount vs Jama Amount */}
+                                {(tx.billAmount || tx.paidAmount > 0) && (
+                                  <div className="text-[10px] text-slate-600 flex items-center gap-2 pt-0.5 flex-wrap">
+                                    {tx.billAmount && <span>कुल बिल राशि: <strong className="text-slate-800">₹{Number(tx.billAmount).toLocaleString('en-IN')}</strong></span>}
+                                    {tx.paidAmount > 0 && (
+                                      <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                        जमा हुआ: ₹{Number(tx.paidAmount).toLocaleString('en-IN')}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                                <div className="text-[10px] text-slate-500 flex items-center gap-2 pt-0.5">
                                   <span>📅 {tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'आज'}</span>
                                   <span className="px-1.5 py-0.2 bg-slate-200/60 rounded text-[9px] font-bold text-slate-700">
                                     {mode === 'UPI' ? '📱 UPI' : mode === 'BANK' ? '🏛️ Bank' : '💵 Cash'}
                                   </span>
                                 </div>
                               </div>
+
                               <div className="text-right shrink-0">
                                 <div className={`font-black text-sm ${isDebit ? 'text-rose-600' : 'text-emerald-600'}`}>
                                   {isDebit ? `- ₹${Number(amt).toLocaleString('en-IN')}` : `+ ₹${Number(amt).toLocaleString('en-IN')}`}
                                 </div>
                                 <span className="text-[9px] font-extrabold text-slate-400">
-                                  {isDebit ? "🔴 दिए (Gave)" : "🟢 मिले (Got)"}
+                                  {isDebit ? "🔴 बिल / दिए" : "🟢 जमा / मिले"}
                                 </span>
                               </div>
                             </div>
                             
-                            {/* Running Balance After Entry */}
-                            <div className="pt-1.5 border-t border-slate-200/60 flex justify-between items-center text-[11px]">
-                              <span className="text-slate-500 font-bold text-[10px]">इसके बाद बकाया balance:</span>
-                              <span className={`font-black ${tx.runningAfter > 0 ? 'text-emerald-700' : tx.runningAfter < 0 ? 'text-rose-700' : 'text-slate-600'}`}>
-                                ₹ {Math.abs(tx.runningAfter).toLocaleString('en-IN')} {tx.runningAfter > 0 ? '(आपको लेने हैं)' : tx.runningAfter < 0 ? '(आपको देने हैं)' : '(चुक्ता)'}
-                              </span>
+                            {/* Attached Bill Photo Preview & Running Balance */}
+                            <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between gap-2">
+                              {tx.billImageUrl ? (
+                                <div className="flex items-center gap-2">
+                                  <img
+                                    src={tx.billImageUrl}
+                                    alt="Bill"
+                                    onClick={() => setPreviewBillImage(tx.billImageUrl)}
+                                    className="w-8 h-8 rounded-lg object-cover border border-indigo-300 cursor-pointer shadow-xs active:scale-95"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewBillImage(tx.billImageUrl)}
+                                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer underline"
+                                  >
+                                    📷 बिल फोटो देखें
+                                  </button>
+                                </div>
+                              ) : (
+                                <label className="text-[10px] font-bold text-slate-500 hover:text-indigo-600 flex items-center gap-1 cursor-pointer bg-slate-100 hover:bg-indigo-50 px-2 py-1 rounded-lg border border-dashed border-slate-300 transition">
+                                  <span>📷 + बिल फोटो जोड़ें</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => handleAttachPartyImage(tx._id, e.target.files[0])}
+                                  />
+                                </label>
+                              )}
+
+                              <div className="text-right">
+                                <span className="text-slate-500 font-bold text-[9px] block">इसके बाद बकाया:</span>
+                                <span className={`font-black text-xs ${tx.runningAfter > 0 ? 'text-emerald-700' : tx.runningAfter < 0 ? 'text-rose-700' : 'text-slate-600'}`}>
+                                  ₹ {Math.abs(tx.runningAfter).toLocaleString('en-IN')} {tx.runningAfter > 0 ? '(लेने हैं)' : tx.runningAfter < 0 ? '(देने हैं)' : '(चुक्ता)'}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         );
@@ -5421,6 +5577,51 @@ function MobileVyaparAppContent() {
                   );
                 })()}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📱 BILL PHOTO ZOOM MODAL */}
+      {previewBillImage && (
+        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl p-4 max-w-md w-full shadow-2xl relative">
+            <div className="flex justify-between items-center pb-2 border-b mb-3">
+              <h3 className="font-black text-sm text-slate-800 flex items-center gap-1.5">
+                <span>📷</span> बिल / रसीद फोटो (Bill Image)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setPreviewBillImage(null)}
+                className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="max-h-[70vh] overflow-auto flex items-center justify-center bg-slate-50 rounded-2xl p-2 border border-slate-200">
+              <img
+                src={previewBillImage}
+                alt="Full Bill"
+                className="max-h-[65vh] w-auto object-contain rounded-xl shadow-md"
+              />
+            </div>
+            <div className="mt-3 flex justify-between items-center">
+              <button
+                type="button"
+                onClick={() => setPreviewBillImage(null)}
+                className="px-4 py-2 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50 cursor-pointer"
+              >
+                बंद करें
+              </button>
+              <a
+                href={previewBillImage}
+                download="bill_photo.jpg"
+                target="_blank"
+                rel="noreferrer"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1"
+              >
+                <Download size={14} /> डाउनलोड करें
+              </a>
             </div>
           </div>
         </div>

@@ -278,10 +278,17 @@ const ProfitLossReportPage = () => {
       const curSales = finalSales;
       const curExpenses = finalOperating;
       const days = Number(plData?.daysCount) || (period === 'daily' ? 1 : period === 'weekly' ? 7 : period === 'monthly' ? 30 : 7);
-      const dailyBurn = Math.round(curExpenses / Math.max(1, days));
+      const fixedStaffMonthly = Number(plData?.fixedMonthlyStaffSalaries || plData?.breakdown?.fixedMonthlyStaffSalaries || 0);
+      const dailyBurn = Number(plData?.dailyBurnRate) > 0 
+        ? Number(plData.dailyBurnRate) 
+        : Math.round((curExpenses + (fixedStaffMonthly * days / 30)) / Math.max(1, days));
       const dailyAvgSales = Math.round(curSales / Math.max(1, days));
-      const breakEven = Math.round(dailyBurn / 0.6);
-      const monthlyBudget = Math.round(curExpenses * (30 / Math.max(1, days)));
+      const breakEven = Number(plData?.breakEvenDailySalesNeeded) > 0 
+        ? Number(plData.breakEvenDailySalesNeeded) 
+        : Math.round(dailyBurn / 0.6);
+      const monthlyBudget = Math.max(curExpenses, fixedStaffMonthly) > 0 
+        ? Math.round(Math.max(curExpenses, fixedStaffMonthly) * (30 / Math.max(1, days))) 
+        : (dailyBurn * 30);
 
       setPredictiveBudget({
         monthlyBudgetTotal: monthlyBudget,
@@ -301,6 +308,7 @@ const ProfitLossReportPage = () => {
       const b = plData?.breakdown || {};
       setAccrualLedger([
         { category: "दुकान व व्यापार संचालन खर्च", monthlyBudget: Math.round(finalOperating * (30 / days)), dailyProvision: Math.round(finalOperating / days), actualPaid: finalOperating, status: "Settled 100%" },
+        { category: "स्टाफ वेतन फिक्स लायबिलिटी", monthlyBudget: fixedStaffMonthly, dailyProvision: Math.round(fixedStaffMonthly / 30), actualPaid: Number(b.actualPaidSalaries || 0), status: fixedStaffMonthly > 0 ? "Accrued" : "None" },
         { category: "मालिक का घर खर्च (Personal Drawings)", monthlyBudget: Math.round(finalGharKharch * (30 / days)), dailyProvision: Math.round(finalGharKharch / days), actualPaid: finalGharKharch, status: "Personal" }
       ]);
     } catch (err) {
