@@ -1,12 +1,2 @@
-import mongoose from "mongoose";
-
-const schemeSchema = new mongoose.Schema({
-  companyId: { type: mongoose.Schema.Types.Mixed, required: false },
-  name: { type: String, required: true },
-  discount: Number,
-  startDate: Date,
-  endDate: Date,
-  synced: { type: Boolean, default: false },
-});
-
-export default mongoose.model("Scheme", schemeSchema);
+export * from "../modules/loyalty/models/scheme.js";
+export { default } from "../modules/loyalty/models/scheme.js";

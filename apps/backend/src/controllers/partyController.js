@@ -267,6 +267,13 @@ export const deleteParty = async (req, res) => {
       { new: true }
     );
     if (!party) return res.status(404).json({ success: false, error: "Party not found" });
+
+    // Cascade soft-delete party transactions so they do not show up as ghost duplicates
+    await PartyTransaction.updateMany(
+      { partyId: req.params.id, companyId: req.companyId },
+      { $set: { isDeleted: true } }
+    );
+
     res.json({ success: true, message: "Party deleted (deactivated) successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

@@ -412,13 +412,21 @@ export const getProfitLoss = async (req, res) => {
       ? { $in: [req.companyId, new mongoose.Types.ObjectId(req.companyId)] }
       : req.companyId;
 
+    const parseIST = (dateStr) => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        return new Date(`${dateStr}T00:00:00+05:30`);
+      }
+      return new Date(dateStr);
+    };
+    const ISTDayEnd = (dateStr) => new Date(parseIST(dateStr).getTime() + 24 * 60 * 60 * 1000 - 1);
+
     let dateFilter = {};
     let daysCount = 30; // default period days
     if (startDate && endDate) {
-      const s = new Date(new Date(startDate).setHours(0, 0, 0, 0));
-      const e = new Date(new Date(endDate).setHours(23, 59, 59, 999));
+      const s = parseIST(startDate);
+      const e = ISTDayEnd(endDate);
       dateFilter = { $gte: s, $lte: e };
-      daysCount = Math.max(1, Math.round((e - s) / (1000 * 60 * 60 * 24)));
+      daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)));
     }
 
     const billQuery = { companyId: coFilter, isDeleted: { $ne: true } };

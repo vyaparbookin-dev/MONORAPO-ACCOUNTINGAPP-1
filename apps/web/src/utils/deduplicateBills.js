@@ -6,60 +6,34 @@ export function deduplicateBills(bills = []) {
   if (!Array.isArray(bills)) return [];
 
   const seenIds = new Set();
-  const seenFingerprints = new Set();
+  const seenBillNumbers = new Set();
   const result = [];
 
-  // Server bills (ObjectId 24-char hex or Supabase UUID) come first before local temp bills
-  const sorted = [...bills].sort((a, b) => {
-    const aId = String(a?._id || a?.id || "");
-    const bId = String(b?._id || b?.id || "");
-    const aIsTemp = aId.startsWith("SALE-") || aId.startsWith("mock_") || aId.startsWith("temp_") || aId.length < 12;
-    const bIsTemp = bId.startsWith("SALE-") || bId.startsWith("mock_") || bId.startsWith("temp_") || bId.length < 12;
-    if (aIsTemp && !bIsTemp) return 1;
-    if (!aIsTemp && bIsTemp) return -1;
-    return 0;
-  });
-
-  for (const bill of sorted) {
+  for (const bill of bills) {
     if (!bill) continue;
-    const id = String(bill._id || bill.id || "");
-    const isTemp = id.startsWith("SALE-") || id.startsWith("mock_") || id.startsWith("temp_") || id.length < 12;
+    const id = String(bill._id || bill.id || "").trim();
+    const billNum = String(bill.billNumber || bill.invoiceNumber || bill.invoiceNo || "").trim();
 
-    let dateStr = "";
-    if (bill.rawDate || bill.date) {
-      try {
-        const d = new Date(bill.rawDate || bill.date);
-        if (!isNaN(d.getTime())) {
-          dateStr = d.toISOString().slice(0, 10);
-        }
-      } catch (e) {}
-    }
-
-    const amtNorm = Number(bill.amount || bill.finalAmount || bill.total || 0).toFixed(2);
-    const partyNorm = String(bill.customerName || bill.partyName || "").trim().toLowerCase();
-    const typeNorm = String(bill.type || bill.paymentMode || "CASH").toUpperCase();
-
-    // Fingerprint represents business identity: party + amount + date + paymentMode
-    const fp = `${partyNorm}|${amtNorm}|${dateStr}|${typeNorm}`;
-
+    // If exact ID already seen, skip duplicate
     if (id && seenIds.has(id)) {
       continue;
     }
 
-    if (isTemp && seenFingerprints.has(fp)) {
+    // If non-empty billNumber already seen, skip duplicate
+    if (billNum && seenBillNumbers.has(billNum)) {
       continue;
     }
 
-    const amtVal = Number(bill.amount || bill.finalAmount || bill.total || bill.totalAmount || bill.grandTotal || 0);
+    const amtVal = Number(bill.amount ?? bill.finalAmount ?? bill.total ?? bill.totalAmount ?? bill.grandTotal ?? 0);
     const pmVal = String(bill.paymentMode || bill.paymentMethod || bill.type || "CASH").toUpperCase();
-    const billNum = bill.billNumber || bill.invoiceNumber || bill.invoiceNo || bill.id || bill._id || "BILL-001";
+    const fallbackNum = billNum || id || `BILL-${Date.now()}`;
     const custName = bill.customerName || bill.partyName || bill.customer || "काउंटर नकद ग्राहक";
 
     const normalizedBill = {
       ...bill,
-      _id: bill._id || bill.id || billNum,
-      id: bill.id || bill._id || billNum,
-      billNumber: billNum,
+      _id: bill._id || bill.id || fallbackNum,
+      id: bill.id || bill._id || fallbackNum,
+      billNumber: fallbackNum,
       customerName: custName,
       customer: custName,
       amount: amtVal,
@@ -75,7 +49,7 @@ export function deduplicateBills(bills = []) {
     };
 
     if (id) seenIds.add(id);
-    seenFingerprints.add(fp);
+    if (billNum) seenBillNumbers.add(billNum);
     result.push(normalizedBill);
   }
 

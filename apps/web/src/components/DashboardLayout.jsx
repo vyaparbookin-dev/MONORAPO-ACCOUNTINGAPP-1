@@ -248,6 +248,7 @@ export default function DashboardLayout() {
         { icon: Package, label: "🚚 E-Way Bill & Transport", href: "/reports/eway-bill", color: "text-indigo-500", roles: ['admin'] },
         { icon: Landmark, label: "🏦 Bank & Cash Balances", href: "/banking", color: "text-cyan-500", roles: ['admin', 'manager'] },
         { icon: DollarSign, label: "💸 Shop Kharch & Transport", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: UserCheck, label: "👥 Staff Attendance & Pagar", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
         { icon: FileText, label: "📑 GST Tax Reports", href: "/reports/gst", color: "text-blue-500", roles: ['admin'] },
         { icon: BookOpen, label: "📖 Day Book Ledger", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] }
       ];

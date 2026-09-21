@@ -831,7 +831,9 @@ function MobileVyaparAppContent() {
           id: p._id || p.id,
           name: p.name || p.partyName,
           phone: p.mobileNumber || p.phone || "",
-          balance: Number(p.balance || p.openingBalance || 0),
+          balance: Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0),
+          currentBalance: Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0),
+          openingBalance: Number(p.openingBalance ?? 0),
           type: p.partyType || p.type || "customer",
           address: p.address || ""
         }));
@@ -874,18 +876,43 @@ function MobileVyaparAppContent() {
   const stockValue = items.reduce((sum, it) => sum + (it.stock * it.salePrice), 0);
   const recentSales = bills.reduce((sum, b) => sum + b.amount, 0);
 
+  // Robust payment mode extractors
+  const isCashPayment = (b) => {
+    const m = String(b.paymentMode || b.paymentMethod || b.type || "").toUpperCase();
+    return m === "CASH" || m === "" || m === "NAKAD";
+  };
+  const isUpiPayment = (b) => {
+    const m = String(b.paymentMode || b.paymentMethod || b.type || "").toUpperCase();
+    return m === "UPI" || m === "ONLINE" || m === "QR";
+  };
+  const isCreditPayment = (b) => {
+    const m = String(b.paymentMode || b.paymentMethod || b.type || "").toUpperCase();
+    return m === "UDHAR" || m === "CREDIT" || b.paymentStatus === "unpaid";
+  };
+
+  const isSameLocalDate = (d1, d2) => {
+    if (!d1 || !d2) return false;
+    return (
+      d1.getFullYear() === d2.getFullYear() &&
+      d1.getMonth() === d2.getMonth() &&
+      d1.getDate() === d2.getDate()
+    );
+  };
+
   // Filter bills created today
   const todayBills = bills.filter(b => {
-    if (!b.rawDate) return true;
-    const d = new Date(b.rawDate);
+    const raw = b.rawDate || b.date || b.createdAt;
+    if (!raw) return true;
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return true;
     const today = new Date();
-    return d.toDateString() === today.toDateString();
+    return isSameLocalDate(d, today);
   });
 
   const todaySales = todayBills.reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const todayCash = todayBills.filter(b => b.type === "CASH").reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const todayUpi = todayBills.filter(b => b.type === "UPI" || b.type === "ONLINE").reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const todayCredit = todayBills.filter(b => b.type === "UDHAR" || b.type === "CREDIT").reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const todayCash = todayBills.filter(isCashPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const todayUpi = todayBills.filter(isUpiPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const todayCredit = todayBills.filter(isCreditPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
 
   const handleShareWhatsAppBill = (bill) => {
     if (!bill) return;

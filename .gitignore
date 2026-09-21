@@ -65,6 +65,9 @@ apps/backend/src/model-zip.zip
 migration-cloade-zip-extract/
 mongo-to-supabase-migration-script/
 apps/backend/supabase/
+apps/backend/SRC_DISABLED_2026_09_21/
+.vscode/
+apps/backend/.vscode/
 scratch/
 
 # Scan outputs, audit logs and temporary reference files

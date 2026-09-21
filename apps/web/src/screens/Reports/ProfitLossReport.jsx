@@ -127,14 +127,20 @@ const ProfitLossReportPage = () => {
     setError(null);
     try {
       let plUrl = "/api/reports/profitloss";
+      let billingUrl = "/api/billing?limit=500";
+      let expenseUrl = "/api/expense";
+
       if (startDate && endDate) {
         plUrl += `?startDate=${startDate}&endDate=${endDate}`;
+        billingUrl = `/api/billing?startDate=${startDate}&endDate=${endDate}&limit=500`;
+        expenseUrl = `/api/expense?startDate=${startDate}&endDate=${endDate}`;
       }
+
       const [plRes, billsRes, invRes, expRes] = await Promise.all([
         api.get(plUrl).catch(() => null),
-        api.get('/api/billing?limit=500').catch(() => null),
+        api.get(billingUrl).catch(() => null),
         api.get('/api/inventory').catch(() => null),
-        api.get('/api/expense').catch(() => null)
+        api.get(expenseUrl).catch(() => null)
       ]);
 
       const plData = plRes?.data?.data || plRes?.data || plRes || {};
@@ -154,14 +160,41 @@ const ProfitLossReportPage = () => {
         }
       } catch (e) {}
 
+      const getLocalDayStr = (val) => {
+        if (!val) return "";
+        if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return "";
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      };
+
+      const checkInRange = (rawDateVal) => {
+        if (!startDate && !endDate) return true;
+        const dStr = getLocalDayStr(rawDateVal);
+        if (!dStr) return true;
+        if (startDate && dStr < startDate) return false;
+        if (endDate && dStr > endDate) return false;
+        return true;
+      };
+
+      // Strictly filter bills and expenses to the selected date range
+      const periodLocalBills = localBills.filter(b => checkInRange(b.rawDate || b.date || b.createdAt));
+      const periodFetchedBills = Array.isArray(fetchedBills) ? fetchedBills.filter(b => checkInRange(b.date || b.createdAt)) : [];
+
       const allBills = deduplicateBills([
-        ...(Array.isArray(fetchedBills) ? fetchedBills : []),
-        ...(Array.isArray(localBills) ? localBills : [])
+        ...periodFetchedBills,
+        ...periodLocalBills
       ]);
 
+      const periodLocalExpenses = localExpenses.filter(e => checkInRange(e.date || e.createdAt));
+      const periodFetchedExpenses = Array.isArray(fetchedExpenses) ? fetchedExpenses.filter(e => checkInRange(e.date || e.createdAt)) : [];
+
       const allExpenses = deduplicateExpenses([
-        ...(Array.isArray(fetchedExpenses) ? fetchedExpenses : []),
-        ...(Array.isArray(localExpenses) ? localExpenses : [])
+        ...periodFetchedExpenses,
+        ...periodLocalExpenses
       ]);
 
       const isPersonalExpense = (e) => {
@@ -185,13 +218,15 @@ const ProfitLossReportPage = () => {
       const operatingExpenses = allExpenses.filter(e => !isPersonalExpense(e));
       const gharKharchExpenses = allExpenses.filter(e => isPersonalExpense(e));
 
-      const calcSales = allBills.reduce((sum, b) => sum + (Number(b.amount || b.finalAmount || b.total) || 0), 0);
+      // Calculate period totals
+      const calcSales = allBills.reduce((sum, b) => sum + (Number(b.amount || b.finalAmount || b.total || b.totalAmount || b.grandTotal) || 0), 0);
       const calcOperating = operatingExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
       const calcGharKharch = gharKharchExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
-      const finalSales = calcSales > 0 ? calcSales : (Number(plData.totalSales) || 0);
-      const finalOperating = calcOperating > 0 ? calcOperating : (Number(plData.businessExpenses) || 0);
-      const finalGharKharch = calcGharKharch > 0 ? calcGharKharch : (Number(plData.gharKharch) || 0);
+      // Prefer calculated period bills/expenses; fallback to plData from backend
+      const finalSales = allBills.length > 0 ? calcSales : (Number(plData.totalSales) || 0);
+      const finalOperating = operatingExpenses.length > 0 ? calcOperating : (Number(plData.businessExpenses) || 0);
+      const finalGharKharch = gharKharchExpenses.length > 0 ? calcGharKharch : (Number(plData.gharKharch) || 0);
 
       setReport({
         ...plData,

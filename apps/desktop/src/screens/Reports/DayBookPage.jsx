@@ -46,7 +46,9 @@ export default function DayBookPage() {
     totalIn: 0,
     totalOut: 0,
     netBalance: 0,
+    totalBillSales: 0,
     cashSales: 0,
+    creditSales: 0,
     partyIn: 0,
     cashPurchases: 0,
     expenses: 0,
@@ -460,9 +462,17 @@ export default function DayBookPage() {
     let tIn = 0,
       tOut = 0;
 
+    const totalBillSales = (data.bills || [])
+      .reduce((sum, b) => sum + (Number(b.amount || b.finalAmount || b.total || b.totalAmount || b.grandTotal) || 0), 0);
+
     const cashSales = (data.bills || [])
-      .filter((b) => b.paymentMethod !== "credit")
-      .reduce((sum, b) => sum + (b.finalAmount || b.total || 0), 0);
+      .filter((b) => {
+        const pm = String(b.paymentMethod || b.paymentMode || b.type || "").toLowerCase();
+        return pm !== "credit" && pm !== "udhar";
+      })
+      .reduce((sum, b) => sum + (Number(b.amount || b.finalAmount || b.total || b.totalAmount || b.grandTotal) || 0), 0);
+
+    const creditSales = Math.max(0, totalBillSales - cashSales);
     const partyIn = (data.partyTransactions || []).reduce((sum, t) => sum + (t.credit || 0), 0);
     tIn = cashSales + partyIn;
 
@@ -476,7 +486,9 @@ export default function DayBookPage() {
       totalIn: tIn,
       totalOut: tOut,
       netBalance: tIn - tOut,
+      totalBillSales,
       cashSales,
+      creditSales,
       partyIn,
       cashPurchases,
       expenses,
@@ -705,6 +717,19 @@ export default function DayBookPage() {
                 </span>
               </h2>
               <div className="space-y-3 text-xs">
+                <div className="flex justify-between items-center p-2.5 bg-blue-50/70 rounded-xl border border-blue-200">
+                  <div>
+                    <span className="font-black text-blue-900 block">
+                      🧾 कुल बिल बिक्री (Gross Invoiced Sales)
+                    </span>
+                    <span className="text-[11px] text-blue-700 font-medium">
+                      नकद: ₹{summary.cashSales.toLocaleString("en-IN")} {summary.creditSales > 0 ? `+ उधार: ₹${summary.creditSales.toLocaleString("en-IN")}` : ""} • Profit & Loss से 100% मैच
+                    </span>
+                  </div>
+                  <span className="font-black text-blue-800 text-sm">
+                    ₹{summary.totalBillSales.toLocaleString("en-IN")}
+                  </span>
+                </div>
                 <div className="flex justify-between items-center p-2.5 bg-emerald-50/50 rounded-xl border border-emerald-100">
                   <span className="font-bold text-gray-800">
                     🍽️ Restaurant / Counter Cash & Online Sales

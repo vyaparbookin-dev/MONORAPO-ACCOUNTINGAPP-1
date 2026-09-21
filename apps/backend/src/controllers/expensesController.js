@@ -67,6 +67,14 @@ export const listExpenses = async (req, res) => {
       filter.category = req.query.category;
     }
 
+    if (req.query.startDate && req.query.endDate) {
+      const parseIST = (dateStr) => (/^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? new Date(`${dateStr}T00:00:00+05:30`) : new Date(dateStr));
+      const ISTDayEnd = (dateStr) => new Date(parseIST(dateStr).getTime() + 24 * 60 * 60 * 1000 - 1);
+      const s = parseIST(req.query.startDate);
+      const e = ISTDayEnd(req.query.endDate);
+      filter.$or = [{ date: { $gte: s, $lte: e } }, { createdAt: { $gte: s, $lte: e } }];
+    }
+
     const [expenses, totalExpenses] = await Promise.all([
       Expense.find(filter).sort({ date: -1, createdAt: -1 }).skip(skip).limit(limit),
       Expense.countDocuments(filter)

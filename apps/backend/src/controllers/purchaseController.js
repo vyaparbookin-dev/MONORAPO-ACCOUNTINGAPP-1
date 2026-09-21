@@ -36,10 +36,10 @@ export const createPurchase = async (req, res) => {
     // 3. UPDATE SUPPLIER LEDGER (Accounts Payable)
     const pendingAmount = finalAmount - amountPaid;
     if (pendingAmount > 0) {
-      // Supplier ka current balance badhayenge (Udhar badh gaya)
+      // Supplier ka current balance ghatayenge (Liabilities/देने हैं badh gaya, represented as negative balance)
       await Party.findByIdAndUpdate(
         partyId,
-        { $inc: { currentBalance: pendingAmount } } 
+        { $inc: { currentBalance: -pendingAmount } } 
       );
 
       // Transaction ki entry karenge (Credit means hume supplier ko paise dene hain)

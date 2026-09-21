@@ -185,6 +185,7 @@ function MobileVyaparAppContent() {
   const [showItemSuggestions, setShowItemSuggestions] = useState(false);
   const [showPartySuggestions, setShowPartySuggestions] = useState(false);
   const [savingBill, setSavingBill] = useState(false);
+  const [selectedPartyObject, setSelectedPartyObject] = useState(null);
   const [mobileStampStatus, setMobileStampStatus] = useState(null);
   const [billAppliedReward, setBillAppliedReward] = useState(null);
   
@@ -1202,12 +1203,20 @@ function MobileVyaparAppContent() {
       } catch (e) {}
 
       const partyMap = new Map();
+      const getPartyUniqueKey = (p) => {
+        const phone = String(p.phone || p.mobileNumber || '').replace(/\D/g, '').slice(-10);
+        if (phone && phone.length === 10) return `phone_${phone}`;
+        const name = String(p.name || p.partyName || '').trim().toLowerCase();
+        if (name) return `name_${name}`;
+        return String(p._id || p.id || Math.random());
+      };
+
       (Array.isArray(localParties) ? localParties : []).forEach(p => {
-        const key = p._id || p.id || `${(p.name || '').trim().toLowerCase()}_${(p.phone || p.mobileNumber || '').trim()}`;
+        const key = getPartyUniqueKey(p);
         if (key) partyMap.set(key, p);
       });
       normParties.forEach(p => {
-        const key = p._id || p.id || `${(p.name || '').trim().toLowerCase()}_${(p.phone || p.mobileNumber || '').trim()}`;
+        const key = getPartyUniqueKey(p);
         if (key) partyMap.set(key, { ...(partyMap.get(key) || {}), ...p });
       });
       const mergedParties = Array.from(partyMap.values());
@@ -1291,30 +1300,57 @@ function MobileVyaparAppContent() {
 
   const primaryBankAccount = bankAccounts.find(a => a.accountType === "CURRENT") || bankAccounts[0];
 
+  // Robust payment mode extractors
+  const isCashPayment = (b) => {
+    const m = String(b.paymentMode || b.paymentMethod || b.type || "").toUpperCase();
+    return m === "CASH" || m === "" || m === "NAKAD";
+  };
+  const isUpiPayment = (b) => {
+    const m = String(b.paymentMode || b.paymentMethod || b.type || "").toUpperCase();
+    return m === "UPI" || m === "ONLINE" || m === "QR";
+  };
+  const isCreditPayment = (b) => {
+    const m = String(b.paymentMode || b.paymentMethod || b.type || "").toUpperCase();
+    return m === "UDHAR" || m === "CREDIT" || b.paymentStatus === "unpaid";
+  };
+
+  const isSameLocalDate = (d1, d2) => {
+    if (!d1 || !d2) return false;
+    return (
+      d1.getFullYear() === d2.getFullYear() &&
+      d1.getMonth() === d2.getMonth() &&
+      d1.getDate() === d2.getDate()
+    );
+  };
+
   // Filter bills created today
   const todayBills = bills.filter(b => {
-    if (!b.rawDate) return true;
-    const d = new Date(b.rawDate);
+    const raw = b.rawDate || b.date || b.createdAt;
+    if (!raw) return true;
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return true;
     const today = new Date();
-    return d.toDateString() === today.toDateString();
+    return isSameLocalDate(d, today);
   });
 
   const todaySales = todayBills.reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const todayCash = todayBills.filter(b => b.type === "CASH").reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const todayUpi = todayBills.filter(b => b.type === "UPI" || b.type === "ONLINE").reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const todayCredit = todayBills.filter(b => b.type === "UDHAR" || b.type === "CREDIT").reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const todayCash = todayBills.filter(isCashPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const todayUpi = todayBills.filter(isUpiPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const todayCredit = todayBills.filter(isCreditPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
 
   // Dynamic filter for Daily Sales Card (आज, कल, इस हफ़्ते, सभी)
   const activePeriodBills = bills.filter(b => {
-    if (!b.rawDate) return true;
-    const d = new Date(b.rawDate);
+    const raw = b.rawDate || b.date || b.createdAt;
+    if (!raw) return true;
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return true;
     const today = new Date();
     if (dailySaleFilter === "today") {
-      return d.toDateString() === today.toDateString();
+      return isSameLocalDate(d, today);
     }
     if (dailySaleFilter === "yesterday") {
       const yest = new Date(Date.now() - 86400000);
-      return d.toDateString() === yest.toDateString();
+      return isSameLocalDate(d, yest);
     }
     if (dailySaleFilter === "week") {
       const weekAgo = new Date(Date.now() - 7 * 86400000);
@@ -1324,9 +1360,9 @@ function MobileVyaparAppContent() {
   });
 
   const activePeriodSales = activePeriodBills.reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const activePeriodCash = activePeriodBills.filter(b => b.type === "CASH").reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const activePeriodUpi = activePeriodBills.filter(b => b.type === "UPI" || b.type === "ONLINE").reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const activePeriodCredit = activePeriodBills.filter(b => b.type === "UDHAR" || b.type === "CREDIT").reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const activePeriodCash = activePeriodBills.filter(isCashPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const activePeriodUpi = activePeriodBills.filter(isUpiPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const activePeriodCredit = activePeriodBills.filter(isCreditPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
 
   const handleShareWhatsAppBill = (bill) => {
     if (!bill) return;

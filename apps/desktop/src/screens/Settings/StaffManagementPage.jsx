@@ -1,6 +1,2 @@
-import React from "react";
-import PagarBookHub from "../../components/PagarBookHub";
-
-export default function StaffManagementPage() {
-  return <PagarBookHub />;
-}
+export * from "../../modules/hr-payroll/StaffManagementPage.jsx";
+export { default } from "../../modules/hr-payroll/StaffManagementPage.jsx";

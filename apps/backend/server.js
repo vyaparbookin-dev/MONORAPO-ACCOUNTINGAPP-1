@@ -59,15 +59,23 @@ import brandRoutes from "./src/routes/brandRoutes.js";
 import subCategoryRoutes from "./src/routes/subCategoryRoutes.js";
 import { startCronJobs } from "./src/utils/cronJobs.js";
 import tallyRoutes from "./src/routes/tallyRoutes.js";
-import leadRoutes from "./src/routes/leadRoutes.js";
+import leadRoutes from "./src/modules/crm/routes/leadRoutes.js";
 import capitalRoutes from "./src/routes/capitalRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
 import aiAdvisorRoutes from "./src/routes/aiAdvisorRoutes.js";
 import { getProductAnalytics } from "./src/controllers/productAnalyticsController.js";
 import quotationRoutes from "./src/routes/quotationRoutes.js";
-import banquetRoutes from "./src/routes/banquetRoutes.js";
+import banquetRoutes from "./src/modules/banquet/routes/banquetRoutes.js";
 import savingsRoutes from "./src/routes/savingsRoutes.js";
 import bankAccountRoutes from "./src/routes/bankAccountRoutes.js";
+import hardwareElectricalRoutes from "./src/modules/hardware-electrical/routes/hardwareElectricalRoutes.js";
+import supermarketRoutes from "./src/modules/supermarket/routes/supermarketRoutes.js";
+import mobileRoutes from "./src/modules/mobile/routes/mobileRoutes.js";
+import salonRoutes from "./src/modules/salon/routes/salonRoutes.js";
+import medicalRoutes from "./src/modules/medical/routes/medicalRoutes.js";
+import restaurantModuleRoutes from "./src/modules/restaurant/routes/restaurantRoutes.js";
+import gameZoneRoutes from "./src/modules/gamezone/routes/gameZoneRoutes.js";
+import clothRoutes from "./src/modules/cloth/routes/clothRoutes.js";
 
 import aiGatewayRoutes from "./src/routes/aiGatewayRoutes.js"; // AI Gateway को इम्पोर्ट करें
 import creditLimitRoutes from "./src/routes/creditLimitRoutes.js";
@@ -126,10 +134,11 @@ if (process.env.FRONTEND_URL) {
   allowedOrigins.push(process.env.FRONTEND_URL);
 }
 
+/** @type {import("cors").CorsOptions} */
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin, whitelisted origins, and ANY Vercel auto-generated URL.
-    if (!origin || allowedOrigins.indexOf(origin) !== -1 || (origin && origin.endsWith('.vercel.app'))) {
+    const isAllowed = !origin || allowedOrigins.includes(origin) || (typeof origin === 'string' && origin.endsWith('.vercel.app'));
+    if (isAllowed) {
       callback(null, true);
     } else {
       console.error(`CORS Blocked Origin: ${origin}`);
@@ -157,7 +166,7 @@ app.use("/api", apiLimiter);
 app.get("/", (req, res) => res.send("Vyapar Backend Running ✅"));
 
 // Render dynamically assigns a PORT, use 5001 as fallback for local dev
-const PORT = process.env.PORT || 5001;
+const PORT = Number(process.env.PORT) || 5001;
 
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
@@ -218,6 +227,17 @@ app.use("/api/user", userRoutes);
 app.use("/api/warehouse", warehouseRoutes);
 app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/banquet", banquetRoutes);
+app.use("/api/equipment", hardwareElectricalRoutes);
+app.use("/api/supermarket", supermarketRoutes);
+app.use("/api/mobile", mobileRoutes);
+app.use("/api/salon", salonRoutes);
+app.use("/api/medical", medicalRoutes);
+app.use("/api/restaurant", restaurantModuleRoutes);
+app.use("/api/gamezone", gameZoneRoutes);
+app.use("/api/cloth", clothRoutes);
+app.use("/api/crm", leadRoutes);
+app.use("/api/leads", leadRoutes);
+app.use("/api/lead", leadRoutes);
 app.use("/api/savings", savingsRoutes);
 app.use("/api/bank-accounts", bankAccountRoutes);
 app.use("/api/ai-gateway", aiGatewayRoutes); // AI Gateway को रजिस्टर करें

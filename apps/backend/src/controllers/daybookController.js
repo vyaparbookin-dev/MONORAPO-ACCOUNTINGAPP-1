@@ -125,12 +125,15 @@ export const getDayBook = async (req, res) => {
       Expance.find(expanceQuery).skip(skip).limit(limit),
       Expance.countDocuments(expanceQuery),
       
-      PartyTransaction.find(partyTxQuery).populate("partyId", "name partyType").skip(skip).limit(limit),
+      PartyTransaction.find(partyTxQuery).populate("partyId", "name partyType isActive").skip(skip).limit(limit),
       PartyTransaction.countDocuments(partyTxQuery),
       
       Salary.find(salaryQuery).populate("staffId", "name").skip(skip).limit(limit),
       Salary.countDocuments(salaryQuery)
     ]);
+
+    // Only include party transactions for active parties
+    const activePartyTransactions = partyTransactions.filter(pt => !pt.partyId || pt.partyId.isActive !== false);
 
     // --- New/Returning Customer Logic ---
     const billsWithCustomerStatus = [...bills]; // Create a mutable copy
@@ -186,7 +189,7 @@ export const getDayBook = async (req, res) => {
         securityDeposits,
         bankInterestPaid,
         bankInterestReceived,
-        partyTransactions,
+        partyTransactions: activePartyTransactions,
         salaries,
         pagination: {
            page, limit,

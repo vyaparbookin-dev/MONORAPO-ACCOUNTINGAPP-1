@@ -124,12 +124,14 @@ const ProfitLossReportPage = () => {
     setError(null);
     try {
       let plUrl = "/api/reports/profitloss";
+      let billingUrl = "/api/billing?limit=500";
       if (startDate && endDate) {
         plUrl += `?startDate=${startDate}&endDate=${endDate}`;
+        billingUrl = `/api/billing?startDate=${startDate}&endDate=${endDate}&limit=500`;
       }
       const [plRes, billsRes, invRes] = await Promise.all([
         api.get(plUrl).catch(() => null),
-        api.get('/api/billing?limit=500').catch(() => null),
+        api.get(billingUrl).catch(() => null),
         api.get('/api/inventory').catch(() => null)
       ]);
 
@@ -138,9 +140,33 @@ const ProfitLossReportPage = () => {
         setReport(plData);
       }
 
-      // Populate dynamic menuMatrix from real bills
-      const fetchedBills = billsRes?.data?.bills || billsRes?.bills || billsRes?.data || [];
+      // Populate dynamic menuMatrix from real bills for this period
+      const fetchedBillsRaw = billsRes?.data?.bills || billsRes?.bills || billsRes?.data || [];
       const fetchedProducts = invRes?.data?.products || invRes?.data || [];
+
+      const getLocalDayStr = (val) => {
+        if (!val) return "";
+        if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return "";
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      };
+
+      const checkInRange = (rawDateVal) => {
+        if (!startDate && !endDate) return true;
+        const dStr = getLocalDayStr(rawDateVal);
+        if (!dStr) return true;
+        if (startDate && dStr < startDate) return false;
+        if (endDate && dStr > endDate) return false;
+        return true;
+      };
+
+      const fetchedBills = Array.isArray(fetchedBillsRaw) 
+        ? fetchedBillsRaw.filter(b => checkInRange(b.date || b.createdAt))
+        : [];
 
       if (Array.isArray(fetchedBills) && fetchedBills.length > 0) {
         const itemStats = {};

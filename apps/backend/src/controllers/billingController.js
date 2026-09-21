@@ -1,6 +1,7 @@
 import axios from "axios";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import Bill from "../model/bill.js";
+import mongoose from "mongoose";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -379,7 +380,11 @@ export const listBills = async (req, res) => {
     }
 
     if (startDate && endDate) {
-      query.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
+      const parseIST = (dateStr) => (/^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? new Date(`${dateStr}T00:00:00+05:30`) : new Date(dateStr));
+      const ISTDayEnd = (dateStr) => new Date(parseIST(dateStr).getTime() + 24 * 60 * 60 * 1000 - 1);
+      const s = parseIST(startDate);
+      const e = ISTDayEnd(endDate);
+      query.$or = [{ date: { $gte: s, $lte: e } }, { createdAt: { $gte: s, $lte: e } }];
     }
 
     if (partyId) query.partyId = partyId;
