@@ -1,6 +1,8 @@
 import Staff from "../models/staff.js";
 import StaffTransaction from "../models/StaffTransaction.js";
 import Attendance from "../models/attendance.js";
+import User from "../../../model/user.js";
+import bcryptjs from "bcryptjs";
 
 export const createStaff = async (req, res) => {
   try {
@@ -10,7 +12,7 @@ export const createStaff = async (req, res) => {
 
     const { 
       name, salary, wageAmount, dailyRate, monthlySalary, 
-      wageType, mobileNumber, mobile, position, 
+      wageType, mobileNumber, mobile, position, role, password,
       overtimeRatePerHour, salesTarget, commissionPercent, paidLeavesAllowed 
     } = req.body;
 
@@ -38,6 +40,8 @@ export const createStaff = async (req, res) => {
       finalMonthlySalary = finalWageAmount;
     }
 
+    const assignedRole = (role || 'salesman').toLowerCase();
+
     const staff = new Staff({
       ...req.body,
       name: name.trim(),
@@ -46,7 +50,8 @@ export const createStaff = async (req, res) => {
       wageAmount: finalWageAmount,
       wageType: isDaily ? 'daily' : 'monthly',
       paidLeavesAllowed: Number(paidLeavesAllowed || 0),
-      position: position || 'Worker / Staff',
+      position: position || (assignedRole === 'godown' ? 'गोदाम / इन्वेंटरी स्टाफ' : assignedRole === 'accountant' ? 'अकाउंटेंट / मुनीम' : assignedRole === 'manager' ? 'मैनेजर' : 'सेल्समैन'),
+      role: assignedRole,
       overtimeRatePerHour: Number(overtimeRatePerHour || 0),
       salesTarget: Number(salesTarget || 0),
       commissionPercent: Number(commissionPercent || 0),
@@ -54,6 +59,42 @@ export const createStaff = async (req, res) => {
     });
 
     await staff.save();
+
+    // Auto-create / sync User login credentials for Staff with assigned role
+    if (phone) {
+      try {
+        let userDoc = await User.findOne({ phone });
+        if (!userDoc) {
+          userDoc = await User.findOne({ email: `${phone}@vyaparbook.local` });
+        }
+        const rawPass = password || phone.slice(-4) || "1234";
+        const salt = await bcryptjs.genSalt(10);
+        const hashedPassword = await bcryptjs.hash(rawPass, salt);
+
+        if (!userDoc) {
+          await User.create({
+            name: name.trim(),
+            phone,
+            email: `${phone}@vyaparbook.local`,
+            password: hashedPassword,
+            role: assignedRole,
+            companyId: req.companyId,
+            isActive: true,
+            isVerified: true
+          });
+        } else {
+          userDoc.role = assignedRole;
+          userDoc.companyId = req.companyId;
+          if (password) {
+            userDoc.password = hashedPassword;
+          }
+          await userDoc.save();
+        }
+      } catch (userErr) {
+        console.warn("Staff user account sync warning:", userErr);
+      }
+    }
+
     res.status(201).json({ success: true, staff, message: `Staff ${name} added successfully!` });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -513,6 +554,42 @@ export const updateStaff = async (req, res) => {
       { new: true }
     );
     if (!staff) return res.status(404).json({ success: false, error: "Staff not found" });
+
+    // Sync credentials & role with User login record for mobile access
+    if (req.body.role || req.body.password || req.body.mobileNumber || req.body.name) {
+      try {
+        const phone = (staff.mobileNumber || req.body.mobileNumber || '').trim();
+        if (phone) {
+          const userDoc = await User.findOne({ phone, companyId: req.companyId });
+          if (userDoc) {
+            if (req.body.name) userDoc.name = req.body.name.trim();
+            if (req.body.role) userDoc.role = req.body.role.toLowerCase();
+            if (req.body.password) {
+              const salt = await bcryptjs.genSalt(10);
+              userDoc.password = await bcryptjs.hash(req.body.password, salt);
+            }
+            await userDoc.save();
+          } else {
+            const rawPass = req.body.password || phone.slice(-4) || "1234";
+            const salt = await bcryptjs.genSalt(10);
+            const hashedPassword = await bcryptjs.hash(rawPass, salt);
+            await User.create({
+              name: staff.name,
+              phone,
+              email: `${phone}@vyaparbook.local`,
+              password: hashedPassword,
+              role: (req.body.role || staff.role || 'salesman').toLowerCase(),
+              companyId: req.companyId,
+              isActive: true,
+              isVerified: true
+            });
+          }
+        }
+      } catch (userErr) {
+        console.warn("Staff user account update sync warning:", userErr);
+      }
+    }
+
     res.json({ success: true, staff, message: "Staff updated successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

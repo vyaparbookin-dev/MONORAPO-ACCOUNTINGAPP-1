@@ -46,7 +46,8 @@ import {
   BookOpen,
   PieChart,
   Grid,
-  Mic
+  Mic,
+  LogOut
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useCompany } from "../../contexts/CompanyContext";
@@ -127,6 +128,8 @@ function MobileVyaparAppContent() {
     }
   });
 
+  const userRole = (user?.role || 'admin').toLowerCase();
+
   const isGuestMode = localStorage.getItem("isGuestMode") === "true";
 
   const handleExitGuestMode = () => {
@@ -144,6 +147,8 @@ function MobileVyaparAppContent() {
   const companyDisplayName = selectedCompany?.name || selectedCompany?.companyName || selectedCompany?.businessName || "VyaparBook";
 
   const [activeTab, setActiveTab] = useState(() => {
+    const role = (user?.role || '').toLowerCase();
+    if (role === 'godown') return 'items';
     return sessionStorage.getItem("mobile_active_tab") || "dashboard";
   });
   const [showCompanySelectModal, setShowCompanySelectModal] = useState(false);
@@ -513,6 +518,8 @@ function MobileVyaparAppContent() {
   const [newStaffOtRate, setNewStaffOtRate] = useState("");
   const [newStaffSalesTarget, setNewStaffSalesTarget] = useState("");
   const [newStaffCommission, setNewStaffCommission] = useState("");
+  const [newStaffRole, setNewStaffRole] = useState("salesman");
+  const [newStaffPassword, setNewStaffPassword] = useState("");
   const [savingStaff, setSavingStaff] = useState(false);
 
   // Quick Action Modals (Advance, Overtime, Commission)
@@ -718,7 +725,9 @@ function MobileVyaparAppContent() {
         wageType: newStaffWageType,
         paidLeavesAllowed: Number(newStaffPaidLeaves) || 0,
         mobileNumber: newStaffMobile.trim(),
-        position: newStaffPosition.trim() || "Worker",
+        position: newStaffPosition.trim() || (newStaffRole === 'godown' ? 'गोदाम / इन्वेंटरी स्टाफ' : newStaffRole === 'accountant' ? 'अकाउंटेंट / मुनीम' : newStaffRole === 'manager' ? 'मैनेजर' : 'सेल्समैन'),
+        role: newStaffRole,
+        ...(newStaffPassword.trim() ? { password: newStaffPassword.trim() } : {}),
         overtimeRatePerHour: Number(newStaffOtRate) || 0,
         salesTarget: Number(newStaffSalesTarget) || 0,
         commissionPercent: Number(newStaffCommission) || 0
@@ -736,6 +745,8 @@ function MobileVyaparAppContent() {
       setNewStaffOtRate("");
       setNewStaffSalesTarget("");
       setNewStaffCommission("");
+      setNewStaffRole("salesman");
+      setNewStaffPassword("");
       setShowAddStaffModal(false);
       fetchPagarBookData(pagarBookMonth, pagarBookYear);
     } catch (err) {
@@ -3814,47 +3825,63 @@ function MobileVyaparAppContent() {
         </div>
       </div>
 
-      {/* 📱 4. BOTTOM TAB NAVIGATOR (5 Tabs) */}
+      {/* 📱 4. BOTTOM TAB NAVIGATOR (Role-Aware) */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200/90 px-2 py-2 shadow-2xl flex justify-around items-center">
-        <button 
-          onClick={() => handleTabChange("dashboard")}
-          className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "dashboard" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
-        >
-          <Home size={20} />
-          <span className="text-[11px]">Dashboard</span>
-        </button>
+        {userRole !== 'godown' && (
+          <button 
+            onClick={() => handleTabChange("dashboard")}
+            className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "dashboard" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
+          >
+            <Home size={20} />
+            <span className="text-[11px]">Dashboard</span>
+          </button>
+        )}
 
-        <button 
-          onClick={() => handleTabChange("parties")}
-          className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "parties" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
-        >
-          <Users size={20} />
-          <span className="text-[11px]">Parties</span>
-        </button>
+        {userRole !== 'godown' && (
+          <button 
+            onClick={() => handleTabChange("parties")}
+            className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "parties" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
+          >
+            <Users size={20} />
+            <span className="text-[11px]">Parties</span>
+          </button>
+        )}
 
-        <button 
-          onClick={() => handleTabChange("reports")}
-          className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "reports" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
-        >
-          <BarChart2 size={20} />
-          <span className="text-[11px]">Reports</span>
-        </button>
+        {(userRole === 'admin' || userRole === 'manager' || userRole === 'accountant') && (
+          <button 
+            onClick={() => handleTabChange("reports")}
+            className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "reports" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
+          >
+            <BarChart2 size={20} />
+            <span className="text-[11px]">Reports</span>
+          </button>
+        )}
 
         <button 
           onClick={() => handleTabChange("items")}
           className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "items" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
         >
           <Package size={20} />
-          <span className="text-[11px]">Items</span>
+          <span className="text-[11px]">{userRole === 'godown' ? '📦 इन्वेंटरी (स्टॉक)' : 'Items'}</span>
         </button>
 
-        <button 
-          onClick={() => handleTabChange("more")}
-          className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "more" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
-        >
-          <Menu size={20} />
-          <span className="text-[11px]">More</span>
-        </button>
+        {userRole !== 'godown' ? (
+          <button 
+            onClick={() => handleTabChange("more")}
+            className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "more" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
+          >
+            <Menu size={20} />
+            <span className="text-[11px]">More</span>
+          </button>
+        ) : (
+          <button 
+            onClick={handleLogout}
+            className="flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer text-rose-500 font-medium"
+          >
+            <LogOut size={20} />
+            <span className="text-[11px]">लॉगआउट</span>
+          </button>
+        )}
       </nav>
 
       {/* 📱 5. ULTRA-FAST VYAPAR/MYBILLBOOK STYLE BILLING MODAL */}
@@ -6103,6 +6130,7 @@ function MobileVyaparAppContent() {
         <MobileFamilyExpenseModal
           isOpen={showFamilyExpenseModal}
           onClose={() => setShowFamilyExpenseModal(false)}
+          onOpenSavings={() => setShowSavingsModal(true)}
         />
       )}
 
@@ -6346,7 +6374,54 @@ function MobileVyaparAppContent() {
               </div>
 
               <div>
-                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">पद / भूमिका (Role / Designation)</label>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                  स्टाफ अधिकार व रोल (Role & Permissions) *
+                </label>
+                <select
+                  value={newStaffRole}
+                  onChange={(e) => {
+                    setNewStaffRole(e.target.value);
+                    if (e.target.value === 'godown') setNewStaffPosition('गोदाम / इन्वेंटरी स्टाफ');
+                    else if (e.target.value === 'accountant') setNewStaffPosition('अकाउंटेंट / मुनीम जी');
+                    else if (e.target.value === 'manager') setNewStaffPosition('मैनेजर');
+                    else if (e.target.value === 'salesman') setNewStaffPosition('सेल्समैन / बिलर');
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-[#059669]"
+                >
+                  <option value="salesman">🛒 सेल्समैन / काउंटर बिलर (POS बिलिंग + कलेक्शन)</option>
+                  <option value="godown">📦 गोदाम / इन्वेंटरी स्टाफ (सिर्फ आइटम व स्टॉक जोड़ना)</option>
+                  <option value="accountant">📑 अकाउंटेंट / मुनीम जी (DayBook, लेजर, बिल, GST, खर्च)</option>
+                  <option value="manager">👔 मैनेजर (बिलिंग + स्टॉक + सभी अकाउंट्स)</option>
+                  <option value="admin">👑 मालिक / एडमिन (फुल कंट्रोल व सेटिंग्स)</option>
+                </select>
+                <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                  {newStaffRole === 'godown' && "🔒 यह स्टाफ मोबाइल में केवल आइटम व स्टॉक संभाल सकेगा। वित्तीय व सेल्स डेटा पूरी तरह छिपा रहेगा।"}
+                  {newStaffRole === 'salesman' && "🔒 यह स्टाफ काउंटर पर बिलिंग व कलेक्शन करेगा। खरीद रेट व प्रॉफिट नहीं दिखेगा।"}
+                  {newStaffRole === 'accountant' && "🔒 यह स्टाफ डे-बुक, लेजर, बिल, टैक्स व खर्च देखेगा। रेट नहीं बदल सकेगा।"}
+                  {newStaffRole === 'manager' && "🔒 मैनेजर को बिलिंग, स्टॉक और अकाउंट्स का पूरा अधिकार मिलेगा।"}
+                  {newStaffRole === 'admin' && "👑 एडमिन को सभी सेटिंग्स और डेटा का पूर्ण अधिकार रहेगा।"}
+                </p>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                  मोबाइल ऐप लॉगिन पिन / पासवर्ड (Login PIN)
+                </label>
+                <input
+                  type="password"
+                  maxLength={8}
+                  placeholder="उदा. 1234 (खाली छोड़ने पर मोबाइल के अंतिम 4 अंक)"
+                  value={newStaffPassword}
+                  onChange={(e) => setNewStaffPassword(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-[#059669]"
+                />
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  📱 स्टाफ अपने मोबाइल में नंबर और इस पिन से सीधे लॉगिन कर सकेगा।
+                </p>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">पद / भूमिका (Designation / Note)</label>
                 <input
                   type="text"
                   placeholder="उदा. हेल्पर, पेंटर, सेल्समैन, कारीगर..."

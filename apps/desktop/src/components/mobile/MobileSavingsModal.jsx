@@ -44,6 +44,20 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
   // Add / Edit Modal
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+
+  const calculateMaturity = (startStr, years) => {
+    try {
+      if (!startStr) return "";
+      const d = new Date(startStr);
+      if (isNaN(d.getTime())) return "";
+      const y = Number(years) || 1;
+      d.setFullYear(d.getFullYear() + y);
+      return d.toISOString().split("T")[0];
+    } catch {
+      return "";
+    }
+  };
+
   const [formData, setFormData] = useState({
     title: "",
     savingsType: "RD",
@@ -56,6 +70,10 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
     initialDeposit: "",
     interestRate: "",
     startDate: new Date().toISOString().split("T")[0],
+    tenureYears: "1",
+    isOldOngoingAccount: false,
+    alreadyDepositedAmount: "",
+    alreadyPaidCount: "",
     maturityDate: "",
     dueDayOfMonth: "5",
     expectedMaturityAmount: "",
@@ -127,15 +145,25 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
       return;
     }
 
+    const isOld = Boolean(formData.isOldOngoingAccount);
+    const pastAmt = Number(formData.alreadyDepositedAmount || 0);
+    const instAmt = Number(formData.installmentAmount || 0);
+    const initDeposit = Number(formData.initialDeposit || 0);
+
+    const computedTotal = isOld && pastAmt > 0 ? pastAmt : (initDeposit > 0 ? initDeposit : (formData.savingsType === "FD" ? initDeposit : instAmt));
+
     const payload = {
       ...formData,
-      installmentAmount: Number(formData.installmentAmount || 0),
-      initialDeposit: Number(formData.initialDeposit || 0),
-      totalDeposited: Number(formData.initialDeposit || formData.installmentAmount || 0),
-      currentValue: Number(formData.initialDeposit || formData.installmentAmount || 0),
+      tenureYears: Number(formData.tenureYears || 1),
+      installmentAmount: instAmt,
+      initialDeposit: initDeposit,
+      alreadyDepositedAmount: pastAmt,
+      totalDeposited: computedTotal,
+      currentValue: computedTotal,
       interestRate: Number(formData.interestRate || 0),
       dueDayOfMonth: Number(formData.dueDayOfMonth || 5),
       expectedMaturityAmount: Number(formData.expectedMaturityAmount || 0),
+      maturityDate: formData.maturityDate || calculateMaturity(formData.startDate, formData.tenureYears),
       updatedAt: new Date().toISOString()
     };
 
@@ -159,8 +187,13 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
           id: newId,
           createdAt: new Date().toISOString(),
           status: "ACTIVE",
-          installments: payload.initialDeposit > 0 ? [{
-            amount: Number(payload.initialDeposit),
+          installments: isOld && pastAmt > 0 ? [{
+            amount: pastAmt,
+            date: payload.startDate || new Date().toISOString().split("T")[0],
+            sourceOfFund: payload.fundSource,
+            notes: `पूर्व संचित बचत (${formData.alreadyPaidCount ? `${formData.alreadyPaidCount} किस्तें` : 'पुराना चालू खाता'})`
+          }] : initDeposit > 0 ? [{
+            amount: initDeposit,
             date: payload.startDate || new Date().toISOString().split("T")[0],
             sourceOfFund: payload.fundSource,
             notes: "Initial Deposit / खाता शुरुआत राशि"
@@ -189,6 +222,8 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
 
   const handleOpenEdit = (item) => {
     setEditingId(item._id || item.id);
+    const sDate = item.startDate ? String(item.startDate).split("T")[0] : new Date().toISOString().split("T")[0];
+    const tYrs = String(item.tenureYears || "1");
     setFormData({
       title: item.title || "",
       savingsType: item.savingsType || "RD",
@@ -198,15 +233,44 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
       fundSource: item.fundSource || "business_salary",
       frequency: item.frequency || "monthly",
       installmentAmount: String(item.installmentAmount || ""),
-      initialDeposit: String(item.initialDeposit || item.totalDeposited || ""),
+      initialDeposit: String(item.initialDeposit || ""),
       interestRate: String(item.interestRate || ""),
-      startDate: item.startDate ? String(item.startDate).split("T")[0] : "",
-      maturityDate: item.maturityDate ? String(item.maturityDate).split("T")[0] : "",
+      startDate: sDate,
+      tenureYears: tYrs,
+      isOldOngoingAccount: Boolean(item.isOldOngoingAccount || (Number(item.alreadyDepositedAmount || 0) > 0)),
+      alreadyDepositedAmount: String(item.alreadyDepositedAmount || item.totalDeposited || ""),
+      alreadyPaidCount: String(item.alreadyPaidCount || ""),
+      maturityDate: item.maturityDate ? String(item.maturityDate).split("T")[0] : calculateMaturity(sDate, tYrs),
       dueDayOfMonth: String(item.dueDayOfMonth || "5"),
       expectedMaturityAmount: String(item.expectedMaturityAmount || ""),
       notes: item.notes || ""
     });
     setIsFormOpen(true);
+  };
+
+  const resetForm = () => {
+    const today = new Date().toISOString().split("T")[0];
+    setFormData({
+      title: "",
+      savingsType: "RD",
+      institutionName: "",
+      accountNumber: "",
+      classification: "personal",
+      fundSource: "business_salary",
+      frequency: "monthly",
+      installmentAmount: "",
+      initialDeposit: "",
+      interestRate: "",
+      startDate: today,
+      tenureYears: "1",
+      isOldOngoingAccount: false,
+      alreadyDepositedAmount: "",
+      alreadyPaidCount: "",
+      maturityDate: calculateMaturity(today, 1),
+      dueDayOfMonth: "5",
+      expectedMaturityAmount: "",
+      notes: ""
+    });
   };
 
   const handleDelete = (id) => {
@@ -220,26 +284,6 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
     } catch (e) {
       console.error(e);
     }
-  };
-
-  const resetForm = () => {
-    setFormData({
-      title: "",
-      savingsType: "RD",
-      institutionName: "",
-      accountNumber: "",
-      classification: "personal",
-      fundSource: "business_salary",
-      frequency: "monthly",
-      installmentAmount: "",
-      initialDeposit: "",
-      interestRate: "",
-      startDate: new Date().toISOString().split("T")[0],
-      maturityDate: "",
-      dueDayOfMonth: "5",
-      expectedMaturityAmount: "",
-      notes: ""
-    });
   };
 
   const handleOpenPay = (item) => {
@@ -590,41 +634,43 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
         </div>
       </div>
 
-      {/* Floating Add Button */}
-      <div className="fixed bottom-4 left-0 right-0 px-4 max-w-md mx-auto z-40">
-        <button
-          onClick={() => { resetForm(); setIsFormOpen(true); }}
-          className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-600 to-orange-600 text-white font-black text-sm shadow-lg active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer"
-        >
-          <Plus size={18} /> + नया बचत / निवेश खाता जोड़ें
-        </button>
-      </div>
+      {/* Floating Add Button - HIDE when modal is active */}
+      {!isFormOpen && !isPayOpen && !viewHistoryItem && (
+        <div className="fixed bottom-4 left-0 right-0 px-4 max-w-md mx-auto z-40">
+          <button
+            onClick={() => { resetForm(); setIsFormOpen(true); }}
+            className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-600 to-orange-600 text-white font-black text-sm shadow-lg active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Plus size={18} /> + नया बचत / निवेश खाता जोड़ें
+          </button>
+        </div>
+      )}
 
       {/* Add / Edit Form Modal */}
       {isFormOpen && (
-        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
-          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
-                  <PiggyBank size={18} />
+        <div className="fixed inset-0 z-60 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-amber-50/50 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shadow-xs">
+                  <PiggyBank size={20} />
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-slate-900">
                     {editingId ? "बचत खाता संपादित करें" : "नया बचत व निवेश खाता"}
                   </h3>
-                  <p className="text-[11px] text-slate-500">FD / RD / SIP / PPF / LIC विवरण</p>
+                  <p className="text-[10px] text-slate-500 font-medium">FD / RD / SIP / PPF / LIC / Gold विवरण</p>
                 </div>
               </div>
               <button
                 onClick={() => { setIsFormOpen(false); setEditingId(null); }}
-                className="p-1 rounded-full text-slate-400 hover:bg-slate-100 cursor-pointer"
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 cursor-pointer"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveForm} className="space-y-3">
+            <form onSubmit={handleSaveForm} className="flex-1 overflow-y-auto p-4 space-y-3.5">
               {/* Type Grid */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">बचत का प्रकार *</label>
@@ -656,8 +702,136 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                   placeholder="उदा. SBI 5 Year FD, HDFC RD, Nippon SIP"
                   value={formData.title}
                   onChange={e => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50"
+                  className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-amber-500 outline-none"
                 />
+              </div>
+
+              {/* Start Date & Tenure (अवधि व शुरुआत तारीख) */}
+              <div className="bg-amber-50/60 p-3 rounded-2xl border border-amber-200/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-amber-950 flex items-center gap-1">
+                    <Calendar size={13} className="text-amber-700" />
+                    <span>खाता शुरुआत तारीख (Start Date) *</span>
+                  </label>
+                  <span className="text-[10px] text-amber-700 font-bold">शुरू होने का दिन</span>
+                </div>
+                <input
+                  type="date"
+                  required
+                  value={formData.startDate}
+                  onChange={e => {
+                    const newDate = e.target.value;
+                    setFormData(prev => ({
+                      ...prev,
+                      startDate: newDate,
+                      maturityDate: calculateMaturity(newDate, prev.tenureYears)
+                    }));
+                  }}
+                  className="w-full text-xs font-bold p-2.5 rounded-xl border border-amber-300/70 bg-white text-slate-800 outline-none"
+                />
+
+                {/* Tenure in Years */}
+                <div className="pt-1">
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-bold text-amber-950">अवधि / कितने साल के लिए है (Tenure):</label>
+                    <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
+                      {formData.tenureYears} साल (Years)
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-5 gap-1.5 text-xs font-bold">
+                    {["1", "2", "3", "5", "10"].map(yr => (
+                      <button
+                        key={yr}
+                        type="button"
+                        onClick={() => {
+                          setFormData(prev => ({
+                            ...prev,
+                            tenureYears: yr,
+                            maturityDate: calculateMaturity(prev.startDate, yr)
+                          }));
+                        }}
+                        className={`py-1.5 rounded-lg border text-center transition cursor-pointer ${
+                          formData.tenureYears === yr
+                            ? "bg-amber-700 text-white border-amber-700 font-black shadow-xs"
+                            : "bg-white border-amber-200 text-amber-900"
+                        }`}
+                      >
+                        {yr} वर्ष
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Calculated Maturity Date */}
+                {formData.maturityDate && (
+                  <div className="text-[11px] text-amber-900 font-bold flex items-center justify-between pt-1 border-t border-amber-200/50">
+                    <span>🗓️ परिपक्वता तिथि (Maturity Date):</span>
+                    <span className="font-black text-amber-950 underline">
+                      {new Date(formData.maturityDate).toLocaleDateString("hi-IN", { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* 🟢 TOGGLE: OLD / EXISTING ONGOING ACCOUNT (पुराना चालू खाता) */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-black text-slate-800 block">
+                      📁 क्या यह खाता पहले से चल रहा है? (पुराना डेटा)
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      पहले से जमा राशि व पिछली किस्तों को जोड़ने हेतु
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, isOldOngoingAccount: !prev.isOldOngoingAccount }))}
+                    className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
+                      formData.isOldOngoingAccount ? "bg-emerald-600" : "bg-slate-300"
+                    }`}
+                  >
+                    <span
+                      className={`w-5 h-5 rounded-full bg-white block shadow-xs transition-transform transform ${
+                        formData.isOldOngoingAccount ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {formData.isOldOngoingAccount && (
+                  <div className="pt-2 border-t border-slate-200 space-y-2 animate-in fade-in">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          अब तक कुल कितना जमा हुआ? (₹) *
+                        </label>
+                        <input
+                          type="number"
+                          placeholder="उदा. 45000"
+                          value={formData.alreadyDepositedAmount}
+                          onChange={e => setFormData({ ...formData, alreadyDepositedAmount: e.target.value })}
+                          className="w-full text-xs font-black p-2 rounded-xl border border-emerald-300 bg-white text-emerald-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          कितनी किस्तें जमा हो चुकी हैं?
+                        </label>
+                        <input
+                          type="number"
+                          placeholder="उदा. 9 किस्तें"
+                          value={formData.alreadyPaidCount}
+                          onChange={e => setFormData({ ...formData, alreadyPaidCount: e.target.value })}
+                          className="w-full text-xs p-2 rounded-xl border border-slate-200 bg-white"
+                        />
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-emerald-700 font-bold block">
+                      ✅ यह पिछली जमा राशि सीधे आपके कुल निवेश पोर्टफोलियो में जुड़ जाएगी।
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -703,7 +877,7 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                     onChange={e => setFormData({ ...formData, fundSource: e.target.value })}
                     className="w-full text-xs font-bold px-2 py-2 rounded-xl border border-slate-200 bg-slate-50"
                   >
-                    <option value="business_salary">🏪 दुकान से सैलरी / ड्राइंग्स</option>
+                    <option value="business_salary">🏪 दुकान गल्ले से (Cash Drawer)</option>
                     <option value="business_capital">🏢 बिजनेस कैपिटल</option>
                     <option value="personal_funds">👛 पर्सनल फंड्स</option>
                   </select>
@@ -767,21 +941,21 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                 </div>
               </div>
 
-              {/* Submit Buttons */}
-              <div className="flex items-center gap-2 pt-2">
+              {/* STICKY BOTTOM ACTION FOOTER */}
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md pt-3 pb-3 border-t border-slate-200 mt-4 flex items-center gap-2 -mx-4 px-4 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] z-30">
                 <button
                   type="button"
                   onClick={() => { setIsFormOpen(false); setEditingId(null); }}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold cursor-pointer"
+                  className="flex-1 py-3 rounded-xl border-2 border-slate-200 text-slate-700 text-xs font-black cursor-pointer hover:bg-slate-50 transition"
                 >
-                  रद्द करें
+                  ✕ रद्द करें
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex-1 py-2.5 rounded-xl bg-amber-600 active:bg-amber-700 text-white text-xs font-black shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="flex-2 py-3 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 active:scale-95 text-white text-xs font-black shadow-lg flex items-center justify-center gap-1.5 cursor-pointer transition disabled:opacity-50"
                 >
-                  {saving ? "सहेज रहे हैं..." : "💾 खाता सहेजें"}
+                  {saving ? "⏳ सहेज रहे हैं..." : "💾 खाता सहेजें (Save Account)"}
                 </button>
               </div>
             </form>

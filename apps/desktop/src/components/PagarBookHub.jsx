@@ -69,6 +69,8 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
   const [staffPaidLeaves, setStaffPaidLeaves] = useState("0");
   const [staffOtRate, setStaffOtRate] = useState("");
   const [staffCommission, setStaffCommission] = useState("");
+  const [staffRole, setStaffRole] = useState("salesman");
+  const [staffPassword, setStaffPassword] = useState("");
   const [savingStaff, setSavingStaff] = useState(false);
 
   // Persist screen and staffId to sessionStorage
@@ -202,6 +204,8 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     setStaffPaidLeaves("0");
     setStaffOtRate("");
     setStaffCommission("");
+    setStaffRole("salesman");
+    setStaffPassword("");
     setShowStaffModal(true);
   };
 
@@ -212,6 +216,8 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     setStaffName(staff.name || "");
     setStaffMobile(staff.mobileNumber || "");
     setStaffPosition(staff.position || "Staff");
+    setStaffRole(staff.role || "salesman");
+    setStaffPassword("");
     if (staff.wageType === "monthly") {
       setMonthlySalaryInput(staff.monthlySalary ? String(staff.monthlySalary) : String(staff.salary || staff.wageAmount || ""));
       setDailyRateInput(staff.dailyRate ? String(staff.dailyRate) : "");
@@ -263,7 +269,9 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
         monthlySalary: monthlyVal,
         paidLeavesAllowed: Number(staffPaidLeaves) || 0,
         mobileNumber: staffMobile.trim(),
-        position: staffPosition.trim() || "Staff",
+        position: staffPosition.trim() || (staffRole === 'godown' ? 'गोदाम / इन्वेंटरी स्टाफ' : staffRole === 'accountant' ? 'अकाउंटेंट / मुनीम' : staffRole === 'manager' ? 'मैनेजर' : 'सेल्समैन'),
+        role: staffRole,
+        ...(staffPassword.trim() ? { password: staffPassword.trim() } : {}),
         overtimeRatePerHour: Number(staffOtRate) || 0,
         commissionPercent: Number(staffCommission) || 0
       };
@@ -1232,7 +1240,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                 </div>
 
                 <div>
-                  <label className="block mb-1">Mobile Number (WhatsApp)</label>
+                  <label className="block mb-1">Mobile Number (WhatsApp) *</label>
                   <input 
                     type="text"
                     placeholder="10-digit mobile number"
@@ -1240,6 +1248,55 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                     onChange={(e) => setStaffMobile(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
                   />
+                </div>
+
+                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2.5">
+                  <div>
+                    <label className="block mb-1 font-bold text-slate-800">
+                      स्टाफ अधिकार व रोल (Role & Permissions) *
+                    </label>
+                    <select
+                      value={staffRole}
+                      onChange={(e) => {
+                        setStaffRole(e.target.value);
+                        if (e.target.value === 'godown') setStaffPosition('गोदाम / इन्वेंटरी स्टाफ');
+                        else if (e.target.value === 'accountant') setStaffPosition('अकाउंटेंट / मुनीम जी');
+                        else if (e.target.value === 'manager') setStaffPosition('मैनेजर');
+                        else if (e.target.value === 'salesman') setStaffPosition('सेल्समैन / बिलर');
+                      }}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="salesman">🛒 सेल्समैन / काउंटर बिलर (POS बिलिंग + कलेक्शन)</option>
+                      <option value="godown">📦 गोदाम / इन्वेंटरी स्टाफ (सिर्फ आइटम व स्टॉक जोड़ना)</option>
+                      <option value="accountant">📑 अकाउंटेंट / मुनीम जी (DayBook, लेजर, बिल, GST, खर्च)</option>
+                      <option value="manager">👔 मैनेजर (बिलिंग + स्टॉक + सभी अकाउंट्स)</option>
+                      <option value="admin">👑 मालिक / एडमिन (फुल कंट्रोल व सेटिंग्स)</option>
+                    </select>
+                    <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                      {staffRole === 'godown' && "🔒 यह स्टाफ मोबाइल में केवल आइटम व स्टॉक संभाल सकेगा। वित्तीय व सेल्स डेटा पूरी तरह छिपा रहेगा।"}
+                      {staffRole === 'salesman' && "🔒 यह स्टाफ काउंटर पर बिलिंग व कलेक्शन करेगा। खरीद रेट व प्रॉफिट नहीं दिखेगा।"}
+                      {staffRole === 'accountant' && "🔒 यह स्टाफ डे-बुक, लेजर, बिल, टैक्स व खर्च देखेगा। रेट नहीं बदल सकेगा।"}
+                      {staffRole === 'manager' && "🔒 मैनेजर को बिलिंग, स्टॉक और अकाउंट्स का पूरा अधिकार मिलेगा।"}
+                      {staffRole === 'admin' && "👑 एडमिन को सभी सेटिंग्स और डेटा का पूर्ण अधिकार रहेगा।"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block mb-1 font-bold text-slate-800">
+                      मोबाइल ऐप लॉगिन पिन / पासवर्ड (Login PIN)
+                    </label>
+                    <input 
+                      type="password"
+                      maxLength={8}
+                      placeholder={isEditingStaff ? "नया पिन डालें (बदलने के लिए) या खाली छोड़ें" : "उदा. 1234 (खाली छोड़ने पर मोबाइल के अंतिम 4 अंक)"}
+                      value={staffPassword}
+                      onChange={(e) => setStaffPassword(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-0.5 font-normal">
+                      📱 स्टाफ अपने मोबाइल में नंबर और इस पिन से सीधे लॉगिन कर सकेगा।
+                    </p>
+                  </div>
                 </div>
 
                 <div className="bg-blue-50/60 p-3.5 rounded-2xl border border-blue-200 space-y-3">

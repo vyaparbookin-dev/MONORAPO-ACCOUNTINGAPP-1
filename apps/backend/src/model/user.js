@@ -7,7 +7,7 @@ const userSchema = new mongoose.Schema({
   phone: { type: String },
   role: {
     type: String,
-    enum: ['admin', 'manager', 'cashier', 'salesman', 'godown'],
+    enum: ['admin', 'manager', 'cashier', 'salesman', 'godown', 'accountant'],
     default: 'admin' // By default naya user admin banega
   },
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company' },

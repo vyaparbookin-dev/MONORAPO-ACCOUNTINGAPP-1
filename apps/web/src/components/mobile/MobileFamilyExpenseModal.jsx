@@ -39,10 +39,11 @@ const FAMILY_CATEGORIES = [
   "बिजली, गैस व पानी बिल (Utilities)",
   "यात्रा व पेट्रोल (Travel/Fuel)",
   "मनोरंजन व बाहर खाना (Dining)",
+  "💰 मासिक बचत व निवेश (FD / RD / SIP / Gold)",
   "अन्य घरेलू खर्च (Misc)"
 ];
 
-export default function MobileFamilyExpenseModal({ isOpen, onClose }) {
+export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSavings }) {
   if (!isOpen) return null;
 
   const { selectedCompany } = useCompany() || {};
@@ -369,6 +370,37 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose }) {
           <p className="text-[11px] text-rose-100 mt-2 flex items-center gap-1 font-medium">
             <span>ℹ️</span> यह खर्च दुकान के संचालन खर्च (Shop Expenses) से अलग है।
           </p>
+        </div>
+
+        {/* 💰 Quick Shortcut to Savings & Investments */}
+        <div 
+          onClick={() => {
+            if (onOpenSavings) {
+              onClose();
+              onOpenSavings();
+            } else if (typeof window !== "undefined" && window.__openMobileSavingsModal) {
+              onClose();
+              window.__openMobileSavingsModal();
+            }
+          }}
+          className="p-3.5 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 border border-amber-300 rounded-2xl flex items-center justify-between gap-3 shadow-xs hover:border-amber-400 transition cursor-pointer"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center text-xl shrink-0 shadow-xs">
+              💰
+            </div>
+            <div className="min-w-0">
+              <span className="text-xs font-black text-amber-950 block truncate">
+                बचत व निवेश खाते (FD / RD / SIP / Gold)
+              </span>
+              <span className="text-[10px] text-amber-800 font-bold block truncate">
+                दुकान गल्ले से बचत किस्त जमा करें • बिजनेस खर्चों से अलग
+              </span>
+            </div>
+          </div>
+          <span className="px-2.5 py-1.5 bg-gradient-to-r from-amber-600 to-orange-600 text-white font-black text-[11px] rounded-xl shadow-xs shrink-0 active:scale-95 transition">
+            किस्त भरें →
+          </span>
         </div>
 
         {/* Family Member Filter Chips */}
