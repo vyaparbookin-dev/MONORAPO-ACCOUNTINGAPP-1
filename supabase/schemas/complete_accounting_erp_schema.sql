@@ -679,3 +679,55 @@ ALTER TABLE public.bills ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.staff ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.salaries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.capitals ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================================
+-- SAVINGS & INVESTMENT VAULT (RD, FD, SIP, PPF, LIC, GOLD, MUTUAL FUNDS)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.savings (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+    user_id UUID,
+    title TEXT NOT NULL,
+    type TEXT DEFAULT 'FD', -- 'FD', 'RD', 'SIP', 'PPF', 'LIC', 'GOLD', 'OTHER'
+    bank_or_platform TEXT DEFAULT '',
+    account_number TEXT DEFAULT '',
+    principal_amount NUMERIC(14, 2) DEFAULT 0,
+    monthly_installment NUMERIC(14, 2) DEFAULT 0,
+    interest_rate NUMERIC(5, 2) DEFAULT 0,
+    start_date DATE DEFAULT CURRENT_DATE,
+    maturity_date DATE,
+    tenure_years NUMERIC(4, 1) DEFAULT 1.0,
+    monthly_due_day INT DEFAULT 5,
+    source_of_funds TEXT DEFAULT 'business_salary', -- 'business_salary', 'business_capital', 'personal_funds'
+    savings_category TEXT DEFAULT 'personal', -- 'personal', 'business'
+    maturity_amount NUMERIC(14, 2) DEFAULT 0,
+    status TEXT DEFAULT 'active', -- 'active', 'matured', 'closed'
+    installments_history JSONB DEFAULT '[]'::jsonb,
+    notes TEXT DEFAULT '',
+    is_deleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_savings_company_id ON public.savings(company_id);
+CREATE INDEX IF NOT EXISTS idx_savings_type ON public.savings(type);
+CREATE INDEX IF NOT EXISTS idx_savings_status ON public.savings(status);
+
+ALTER TABLE public.savings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow company access on savings"
+    ON public.savings FOR ALL
+    USING (company_id = auth.uid() OR true);
+
+-- Additional Parity Columns
+ALTER TABLE public.staff ADD COLUMN IF NOT EXISTS role_type TEXT DEFAULT 'staff';
+ALTER TABLE public.staff ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{"can_manage_inventory": true, "can_manage_billing": true, "can_view_reports": false, "can_manage_parties": true, "can_manage_expenses": false}'::jsonb;
+ALTER TABLE public.staff ADD COLUMN IF NOT EXISTS app_access_enabled BOOLEAN DEFAULT TRUE;
+ALTER TABLE public.staff ADD COLUMN IF NOT EXISTS pin_code TEXT;
+
+ALTER TABLE public.bills ADD COLUMN IF NOT EXISTS is_lump_sum BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.bills ADD COLUMN IF NOT EXISTS bill_image_url TEXT;
+
+ALTER TABLE public.parties ADD COLUMN IF NOT EXISTS opening_balance_type TEXT DEFAULT 'RECEIVE';
+ALTER TABLE public.parties ADD COLUMN IF NOT EXISTS site_names TEXT[] DEFAULT '{}'::TEXT[];
+
