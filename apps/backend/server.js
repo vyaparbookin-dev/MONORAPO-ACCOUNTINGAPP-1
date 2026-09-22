@@ -164,6 +164,15 @@ const apiLimiter = rateLimit({
 app.use("/api", apiLimiter);
 
 app.get("/", (req, res) => res.send("Vyapar Backend Running ✅"));
+app.get(["/api", "/api/", "/api/health", "/health"], (req, res) => {
+  res.json({
+    success: true,
+    message: "VyaparBook API Service Live & Healthy 🚀",
+    status: "active",
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Render dynamically assigns a PORT, use 5001 as fallback for local dev
 const PORT = Number(process.env.PORT) || 5001;
