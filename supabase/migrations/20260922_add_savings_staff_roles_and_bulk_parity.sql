@@ -83,3 +83,15 @@ ALTER TABLE public.parties ADD COLUMN IF NOT EXISTS credit_limit_status TEXT DEF
 -- ============================================================================
 ALTER TABLE public.expenses ADD COLUMN IF NOT EXISTS savings_id UUID REFERENCES public.savings(id) ON DELETE SET NULL;
 ALTER TABLE public.expenses ADD COLUMN IF NOT EXISTS is_savings_transfer BOOLEAN DEFAULT FALSE;
+
+-- ============================================================================
+-- 6. COMPANIES: SOCIAL MEDIA, GOOGLE REVIEW & REVIEW REWARD COUPONS
+-- ============================================================================
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS google_review_url TEXT;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS instagram_url TEXT;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS facebook_url TEXT;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS youtube_url TEXT;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS whatsapp_business_number TEXT;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS review_reward_coupon_code TEXT DEFAULT 'STAR5';
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS review_reward_coupon_discount NUMERIC(10, 2) DEFAULT 10;
+

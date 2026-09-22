@@ -3745,6 +3745,20 @@ function MobileVyaparAppContent() {
               </div>
 
               <div 
+                onClick={() => navigate("/company")} 
+                className="p-3.5 bg-white border border-slate-100 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm hover:bg-slate-50 transition"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="text-base">🌐</span>
+                  <div>
+                    <span className="text-[#0F172A] block font-extrabold">सोशल मीडिया व Google Business हब</span>
+                    <span className="text-[10px] text-slate-400 font-medium">Google Reviews, Instagram, Facebook, YouTube व 5⭐ कूपन</span>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-[#4338CA]" />
+              </div>
+
+              <div 
                 onClick={() => navigate("/settings/backup")} 
                 className="p-3.5 bg-white border border-slate-100 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm"
               >

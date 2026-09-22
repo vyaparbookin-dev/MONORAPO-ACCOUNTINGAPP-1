@@ -25,6 +25,15 @@ const companySchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   synced: { type: Boolean, default: false },
 
+  // 🌐 Social Media & Google Business Hub
+  googleReviewUrl: { type: String, default: "" }, // Google My Business / Google Maps review link
+  instagramUrl: { type: String, default: "" },
+  facebookUrl: { type: String, default: "" },
+  youtubeUrl: { type: String, default: "" },
+  whatsappBusinessNumber: { type: String, default: "" },
+  reviewRewardCouponCode: { type: String, default: "STAR5" }, // Coupon gifted for 4 & 5-star review
+  reviewRewardCouponDiscount: { type: Number, default: 10 }, // 10% or Rs 100
+
   // Invoice Customization
   invoiceThemeColor: { type: String, default: '#007bff' }, // Default blue color
   invoiceTemplateType: { type: String, enum: ['classic', 'modern', 'minimal'], default: 'classic' },

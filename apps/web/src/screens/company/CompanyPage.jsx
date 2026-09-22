@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Edit, Save, X, Building2, Mail, Phone, MapPin, FileText, Plus, Trash2, Briefcase, CreditCard, UserCheck, Share2, QrCode } from "lucide-react";
+import { Edit, Save, X, Building2, Mail, Phone, MapPin, FileText, Plus, Trash2, Briefcase, CreditCard, UserCheck, Share2, QrCode, Star, Gift, Percent, Video, MessageCircle, ExternalLink, Smartphone } from "lucide-react";
 import api from "../../services/api";
 import { useCompany } from "../../contexts/CompanyContext";
 
@@ -33,7 +33,14 @@ const CompanyPage = () => {
     upiId: company?.upiId || "",
     customQrCode: company?.customQrCode || "",
     caName: company?.caName || "",
-    caPhone: company?.caPhone || ""
+    caPhone: company?.caPhone || "",
+    googleReviewUrl: company?.googleReviewUrl || "",
+    instagramUrl: company?.instagramUrl || "",
+    facebookUrl: company?.facebookUrl || "",
+    youtubeUrl: company?.youtubeUrl || "",
+    whatsappBusinessNumber: company?.whatsappBusinessNumber || "",
+    reviewRewardCouponCode: company?.reviewRewardCouponCode || "STAR5",
+    reviewRewardCouponDiscount: company?.reviewRewardCouponDiscount || 10
   });
 
   const [formData, setFormData] = useState(getInitialFormState());
@@ -346,6 +353,122 @@ const CompanyPage = () => {
                 </div>
               </div>
 
+              {/* 🌐 Social Media & Google Business Hub */}
+              <div className="bg-gradient-to-r from-indigo-50/70 via-purple-50/50 to-pink-50/70 p-5 rounded-2xl border border-indigo-200/80 space-y-4">
+                <div className="flex items-center justify-between border-b border-indigo-200/70 pb-2.5">
+                  <h3 className="text-base font-black text-indigo-950 flex items-center gap-2">
+                    <Share2 className="text-indigo-600" size={20} /> 🌐 सोशल मीडिया, Google Business व कूपन रिवॉर्ड हब
+                  </h3>
+                  <span className="text-[11px] bg-indigo-100 text-indigo-800 font-extrabold px-3 py-1 rounded-full border border-indigo-200">
+                    Social & Review Funnel
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 font-medium">
+                  यहाँ अपने सोशल प्रोफाइल्स व Google Reviews लिंक डालें। 4 या 5-स्टार रिव्यू देने वाले ग्राहकों को ऑटोमैटिक कूपन कोड मिलेगा और आपके Instagram, Facebook व YouTube पर फॉलोअर्स बढ़ेंगे।
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                      <Star size={14} className="text-amber-500 fill-amber-500" /> Google My Business / Review लिंक (Google Maps)
+                    </label>
+                    <input
+                      type="url"
+                      name="googleReviewUrl"
+                      value={formData.googleReviewUrl}
+                      onChange={handleChange}
+                      placeholder="उदा. https://g.page/r/... या https://maps.google.com/..."
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                      <Smartphone size={14} className="text-pink-600" /> Instagram Profile लिंक
+                    </label>
+                    <input
+                      type="url"
+                      name="instagramUrl"
+                      value={formData.instagramUrl}
+                      onChange={handleChange}
+                      placeholder="उदा. https://instagram.com/your_shop"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                      <Share2 size={14} className="text-blue-600" /> Facebook Page लिंक
+                    </label>
+                    <input
+                      type="url"
+                      name="facebookUrl"
+                      value={formData.facebookUrl}
+                      onChange={handleChange}
+                      placeholder="उदा. https://facebook.com/your_page"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                      <Video size={14} className="text-red-600" /> YouTube Channel लिंक
+                    </label>
+                    <input
+                      type="url"
+                      name="youtubeUrl"
+                      value={formData.youtubeUrl}
+                      onChange={handleChange}
+                      placeholder="उदा. https://youtube.com/@your_channel"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                      <MessageCircle size={14} className="text-emerald-600" /> WhatsApp Business नंबर / लिंक
+                    </label>
+                    <input
+                      type="text"
+                      name="whatsappBusinessNumber"
+                      value={formData.whatsappBusinessNumber}
+                      onChange={handleChange}
+                      placeholder="उदा. 919876543210 या https://wa.me/919876543210"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-medium"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                        <Gift size={14} className="text-amber-600" /> 4/5⭐ कूपन कोड
+                      </label>
+                      <input
+                        type="text"
+                        name="reviewRewardCouponCode"
+                        value={formData.reviewRewardCouponCode}
+                        onChange={handleChange}
+                        placeholder="STAR5"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-black uppercase focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-indigo-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                        <Percent size={14} className="text-indigo-600" /> छूट प्रतिशत (%)
+                      </label>
+                      <input
+                        type="number"
+                        name="reviewRewardCouponDiscount"
+                        value={formData.reviewRewardCouponDiscount}
+                        onChange={handleChange}
+                        placeholder="10"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-black focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-emerald-700"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex gap-3 pt-4 border-t border-gray-200">
                 <button type="button" onClick={handleSave} className="flex items-center gap-2 bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition font-medium shadow-sm">
                   <Save size={20} /> Save Details
@@ -463,6 +586,100 @@ const CompanyPage = () => {
                       <p className="font-medium text-gray-800">{selectedCompany.caName || "Not provided"}</p>
                       {selectedCompany.caPhone && <p className="text-xs text-gray-500">{selectedCompany.caPhone}</p>}
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 🌐 Social Media & Google Reviews Display Hub */}
+              <div className="mt-6 p-6 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl shadow-lg border border-indigo-900/50 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-800/60 pb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-indigo-600/30 border border-indigo-500/40 rounded-2xl">
+                      <Share2 className="text-indigo-400" size={22} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black tracking-tight text-white flex items-center gap-2">
+                        🌐 सोशल मीडिया, Google Reviews व कूपन रिवॉर्ड
+                      </h3>
+                      <p className="text-xs text-indigo-200/70">
+                        ग्राहकों से 5-स्टार Google रिव्यू प्राप्त करें और Instagram / Facebook पर फॉलोअर्स बढ़ाएं
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] bg-emerald-500/20 text-emerald-300 font-black px-3 py-1 rounded-full border border-emerald-500/30 flex items-center gap-1">
+                      <Gift size={13} /> {selectedCompany.reviewRewardCouponCode || 'STAR5'} ({selectedCompany.reviewRewardCouponDiscount || 10}% OFF)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-1">
+                  {/* Google Reviews */}
+                  <div className="p-3.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl space-y-1.5 transition">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-amber-300 flex items-center gap-1">
+                        <Star size={14} className="fill-amber-300" /> Google Review
+                      </span>
+                      {selectedCompany.googleReviewUrl && (
+                        <a href={selectedCompany.googleReviewUrl} target="_blank" rel="noreferrer" className="text-indigo-300 hover:text-white text-[11px] flex items-center gap-0.5 font-bold">
+                          खोलें <ExternalLink size={11} />
+                        </a>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-300 truncate font-mono">
+                      {selectedCompany.googleReviewUrl || "लिंक सेट नहीं है (Edit में जोड़ें)"}
+                    </p>
+                  </div>
+
+                  {/* Instagram */}
+                  <div className="p-3.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl space-y-1.5 transition">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-pink-400 flex items-center gap-1">
+                        <Smartphone size={14} /> Instagram
+                      </span>
+                      {selectedCompany.instagramUrl && (
+                        <a href={selectedCompany.instagramUrl} target="_blank" rel="noreferrer" className="text-pink-300 hover:text-white text-[11px] flex items-center gap-0.5 font-bold">
+                          खोलें <ExternalLink size={11} />
+                        </a>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-300 truncate font-mono">
+                      {selectedCompany.instagramUrl || "लिंक सेट नहीं है"}
+                    </p>
+                  </div>
+
+                  {/* Facebook */}
+                  <div className="p-3.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl space-y-1.5 transition">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-blue-400 flex items-center gap-1">
+                        <Share2 size={14} /> Facebook Page
+                      </span>
+                      {selectedCompany.facebookUrl && (
+                        <a href={selectedCompany.facebookUrl} target="_blank" rel="noreferrer" className="text-blue-300 hover:text-white text-[11px] flex items-center gap-0.5 font-bold">
+                          खोलें <ExternalLink size={11} />
+                        </a>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-300 truncate font-mono">
+                      {selectedCompany.facebookUrl || "लिंक सेट नहीं है"}
+                    </p>
+                  </div>
+
+                  {/* YouTube */}
+                  <div className="p-3.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl space-y-1.5 transition">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-rose-400 flex items-center gap-1">
+                        <Video size={14} /> YouTube
+                      </span>
+                      {selectedCompany.youtubeUrl && (
+                        <a href={selectedCompany.youtubeUrl} target="_blank" rel="noreferrer" className="text-rose-300 hover:text-white text-[11px] flex items-center gap-0.5 font-bold">
+                          खोलें <ExternalLink size={11} />
+                        </a>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-300 truncate font-mono">
+                      {selectedCompany.youtubeUrl || "लिंक सेट नहीं है"}
+                    </p>
                   </div>
                 </div>
               </div>

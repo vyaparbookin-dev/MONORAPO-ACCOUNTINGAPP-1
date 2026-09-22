@@ -89,12 +89,12 @@ export const getCompany = async (req, res) => {
 export const updateCompany = async (req, res) => {
   try {
     const userId = req.user?._id || req.user?.id;
-    const { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, modulesEnabled, activeModules, linkedModules, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, enableGst } = req.body;
+    const { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, modulesEnabled, activeModules, linkedModules, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, enableGst, googleReviewUrl, instagramUrl, facebookUrl, youtubeUrl, whatsappBusinessNumber, reviewRewardCouponCode, reviewRewardCouponDiscount } = req.body;
     
     let finalEnableGst = enableGst;
     if (gstType === 'unregistered') finalEnableGst = false;
 
-    const updateData = { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, modulesEnabled: Array.isArray(modulesEnabled) ? modulesEnabled : Array.isArray(activeModules) ? activeModules : Array.isArray(linkedModules) ? linkedModules : undefined, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications };
+    const updateData = { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, modulesEnabled: Array.isArray(modulesEnabled) ? modulesEnabled : Array.isArray(activeModules) ? activeModules : Array.isArray(linkedModules) ? linkedModules : undefined, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, googleReviewUrl, instagramUrl, facebookUrl, youtubeUrl, whatsappBusinessNumber, reviewRewardCouponCode, reviewRewardCouponDiscount };
     if (finalEnableGst !== undefined) updateData.enableGst = finalEnableGst;
 
     const company = await Company.findOneAndUpdate(
@@ -112,6 +112,10 @@ export const updateCompany = async (req, res) => {
         gst_number: company.gstNumber || null,
         address: company.address || null,
         upi_id: company.upiId || null,
+        google_review_url: company.googleReviewUrl || null,
+        instagram_url: company.instagramUrl || null,
+        facebook_url: company.facebookUrl || null,
+        youtube_url: company.youtubeUrl || null,
         updated_at: new Date().toISOString()
       }).ilike("name", `%${company.name}%`);
     } catch (sbErr) {

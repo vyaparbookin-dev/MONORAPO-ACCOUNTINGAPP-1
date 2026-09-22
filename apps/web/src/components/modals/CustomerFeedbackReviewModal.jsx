@@ -12,8 +12,14 @@ import {
   ShieldCheck,
   AlertTriangle,
   Award,
-  HeartHandshake
+  HeartHandshake,
+  Gift,
+  Copy,
+  Check,
+  Smartphone,
+  Video
 } from "lucide-react";
+import { useCompany } from "../../contexts/CompanyContext";
 
 export default function CustomerFeedbackReviewModal({
   isOpen,
@@ -25,8 +31,26 @@ export default function CustomerFeedbackReviewModal({
   organizedByManager = "Floor Manager",
   companyName = "Our Business",
   googleReviewUrl = "",
+  instagramUrl = "",
+  facebookUrl = "",
+  youtubeUrl = "",
+  whatsappBusinessNumber = "",
+  reviewRewardCouponCode = "",
+  reviewRewardCouponDiscount = 0,
   onSaveFeedback
 }) {
+  const { selectedCompany } = useCompany() || {};
+  
+  // Fallbacks to Company Settings
+  const effectiveCompanyName = companyName || selectedCompany?.name || "Our Business";
+  const effectiveGoogleReviewUrl = googleReviewUrl || selectedCompany?.googleReviewUrl || "";
+  const effectiveInstagramUrl = instagramUrl || selectedCompany?.instagramUrl || "";
+  const effectiveFacebookUrl = facebookUrl || selectedCompany?.facebookUrl || "";
+  const effectiveYoutubeUrl = youtubeUrl || selectedCompany?.youtubeUrl || "";
+  const effectiveWhatsappNumber = whatsappBusinessNumber || selectedCompany?.whatsappBusinessNumber || selectedCompany?.phone || "";
+  const effectiveCouponCode = reviewRewardCouponCode || selectedCompany?.reviewRewardCouponCode || "STAR5";
+  const effectiveCouponDiscount = reviewRewardCouponDiscount || selectedCompany?.reviewRewardCouponDiscount || 10;
+
   // 1. Private Staff Ratings (Internal Only)
   const [bookingRating, setBookingRating] = useState(5);
   const [organizerRating, setOrganizerRating] = useState(5);
@@ -37,6 +61,7 @@ export default function CustomerFeedbackReviewModal({
   const [firmRating, setFirmRating] = useState(5);
   const [publicReviewText, setPublicReviewText] = useState("");
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [copiedCoupon, setCopiedCoupon] = useState(false);
 
   if (!isOpen) return null;
 
@@ -55,6 +80,7 @@ export default function CustomerFeedbackReviewModal({
       },
       firmRating,
       publicReviewText,
+      rewardCouponCode: firmRating >= 4 ? effectiveCouponCode : null,
       timestamp: new Date().toISOString()
     };
 
@@ -65,14 +91,31 @@ export default function CustomerFeedbackReviewModal({
   };
 
   const handleOpenGoogleReview = () => {
-    const url = googleReviewUrl || `https://www.google.com/search?q=${encodeURIComponent(companyName + " reviews")}`;
+    const url = effectiveGoogleReviewUrl || `https://www.google.com/search?q=${encodeURIComponent(effectiveCompanyName + " reviews")}`;
     window.open(url, "_blank");
   };
 
+  const handleCopyCoupon = () => {
+    navigator.clipboard.writeText(effectiveCouponCode);
+    setCopiedCoupon(true);
+    setTimeout(() => setCopiedCoupon(false), 2500);
+  };
+
   const handleSendWhatsAppFeedbackLink = () => {
-    const text = `Namaste ${customerName}! Thank you for choosing ${companyName}${eventName ? ` for ${eventName}` : ""}. We would love to get your feedback! Please rate your experience: ⭐⭐⭐⭐⭐ ${googleReviewUrl || ""}`;
+    let text = "";
+    if (firmRating >= 4) {
+      text = `नमस्ते ${customerName}! ${effectiveCompanyName} को 5⭐ रेटिंग देने के लिए आपका बहुत-बहुत धन्यवाद! 🙏\n\n🎁 आपके लिए स्पेशल रिव्यू कूपन कोड: *${effectiveCouponCode}* (${effectiveCouponDiscount}% की छूट)। इसे आप अपने अगले बिल पर इस्तेमाल कर सकते हैं!\n\n⭐ कृपया हमारे Google Maps पर भी अपना अनुभव साझा करें:\n${effectiveGoogleReviewUrl || `https://www.google.com/search?q=${encodeURIComponent(effectiveCompanyName + " reviews")}`}\n`;
+      if (effectiveInstagramUrl) text += `\n📸 Instagram पर फॉलो करें: ${effectiveInstagramUrl}`;
+      if (effectiveFacebookUrl) text += `\n📘 Facebook पर लाइक करें: ${effectiveFacebookUrl}`;
+      if (effectiveYoutubeUrl) text += `\n▶️ YouTube पर सब्सक्राइब करें: ${effectiveYoutubeUrl}`;
+    } else {
+      text = `नमस्ते ${customerName}! ${effectiveCompanyName} को अपना महत्वपूर्ण फीडबैक देने के लिए धन्यवाद। हम अपनी सेवा को और बेहतर बनाने के लिए आपकी सलाह पर तुरंत काम कर रहे हैं।`;
+    }
+
     const cleanPhone = String(customerPhone).replace(/[^0-9]/g, "");
-    const waUrl = `https://api.whatsapp.com/send?phone=91${cleanPhone}&text=${encodeURIComponent(text)}`;
+    const waUrl = cleanPhone 
+      ? `https://api.whatsapp.com/send?phone=91${cleanPhone}&text=${encodeURIComponent(text)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(waUrl, "_blank");
   };
 
@@ -88,10 +131,10 @@ export default function CustomerFeedbackReviewModal({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-black tracking-tight">कस्टमर फीडबैक व गूगल रिव्यू सिस्टम</h2>
-                <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold">2-Tier Review Engine</span>
+                <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold">Smart Review & Reward</span>
               </div>
               <p className="text-xs text-amber-100 font-medium mt-0.5">
-                स्टाफ रेटिंग (प्राइवेट इंटरनल) + फर्म के लिए पब्लिक गूगल रिव्यू बूस्टर
+                3⭐ पर निजी सुधार + 4-5⭐ पर पब्लिक गूगल रिव्यू, सोशल फॉलो व कूपन रिवॉर्ड
               </p>
             </div>
           </div>
@@ -103,39 +146,121 @@ export default function CustomerFeedbackReviewModal({
         {/* Content */}
         <div className="p-6 space-y-6 max-h-[78vh] overflow-y-auto">
           {savedSuccess ? (
-            <div className="text-center py-8 space-y-4 animate-in fade-in">
+            <div className="text-center py-6 space-y-4 animate-in fade-in">
               <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
                 <CheckCircle2 size={36} />
               </div>
-              <h3 className="text-xl font-black text-slate-800">फीडबैक सफलतापूर्वक सेव हो गया!</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                स्टाफ की स्टार रेटिंग इंटरनल HR डैशबोर्ड में अपडेट हो गई है।
-              </p>
-              
-              {firmRating >= 4 && (
-                <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl space-y-3 mt-4">
-                  <p className="text-xs font-bold text-amber-900">
-                    🎉 ग्राहक ने {firmRating}⭐ रेटिंग दी है! इसे गूगल मैप्स पर पोस्ट करवाएँ:
+              <h3 className="text-xl font-black text-slate-800">फीडबैक सफलतापूर्वक दर्ज हो गया!</h3>
+
+              {firmRating <= 3 ? (
+                <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl space-y-2 text-left max-w-lg mx-auto">
+                  <div className="flex items-center gap-2 text-amber-900 font-black text-xs">
+                    <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+                    <span>⚠️ 3-स्टार या उससे कम रेटिंग (100% प्राइवेट फीडबैक)</span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    यह फीडबैक केवल दुकान/फर्म के आंतरिक सुधार के लिए सुरक्षित किया गया है। इसे <b>गूगल पर सार्वजनिक पोस्ट नहीं किया जाएगा</b>, जिससे आपकी पब्लिक रेटिंग सुरक्षित रहे।
                   </p>
-                  <div className="flex justify-center gap-3">
+                </div>
+              ) : (
+                <div className="space-y-4 max-w-lg mx-auto text-left">
+                  {/* Public Google Review Box */}
+                  <div className="p-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-amber-50 border border-indigo-200 rounded-2xl space-y-3">
+                    <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Sparkles className="text-amber-500" size={16} />
+                      <span>🎉 ग्राहक ने {firmRating}⭐ रेटिंग दी है! इसे Google Maps पर पोस्ट करवाएं:</span>
+                    </p>
+                    <div className="flex flex-wrap gap-2.5">
+                      <button
+                        onClick={handleOpenGoogleReview}
+                        className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-xs rounded-xl shadow flex items-center gap-1.5 hover:scale-105 transition cursor-pointer"
+                      >
+                        <ExternalLink size={13} /> ⭐⭐⭐⭐⭐ गूगल रिव्यू पेज खोलें
+                      </button>
+                      <button
+                        onClick={handleSendWhatsAppFeedbackLink}
+                        className="px-4 py-2 bg-emerald-600 text-white font-black text-xs rounded-xl shadow flex items-center gap-1.5 hover:scale-105 transition cursor-pointer"
+                      >
+                        <MessageCircle size={13} /> व्हाट्सएप पर कूपन व लिंक भेजें
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 🎁 Review Reward Coupon */}
+                  <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-dashed border-amber-300 rounded-2xl flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className="p-2.5 bg-amber-100 text-amber-700 rounded-xl">
+                        <Gift size={20} />
+                      </span>
+                      <div>
+                        <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider block">5-Star Review Reward Coupon</span>
+                        <span className="text-sm font-black text-slate-900 font-mono tracking-widest">{effectiveCouponCode}</span>
+                        <span className="text-xs text-emerald-700 font-bold ml-2">({effectiveCouponDiscount}% छूट)</span>
+                      </div>
+                    </div>
                     <button
-                      onClick={handleOpenGoogleReview}
-                      className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-xs rounded-xl shadow flex items-center gap-1.5 hover:scale-105 transition"
+                      onClick={handleCopyCoupon}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl flex items-center gap-1 transition shadow-xs cursor-pointer"
                     >
-                      <ExternalLink size={14} /> गूगल रिव्यू पेज खोलें
+                      {copiedCoupon ? <Check size={13} /> : <Copy size={13} />}
+                      <span>{copiedCoupon ? 'कॉपी हो गया' : 'कॉपी करें'}</span>
                     </button>
-                    <button
-                      onClick={handleSendWhatsAppFeedbackLink}
-                      className="px-5 py-2.5 bg-emerald-600 text-white font-black text-xs rounded-xl shadow flex items-center gap-1.5 hover:scale-105 transition"
-                    >
-                      <MessageCircle size={14} /> व्हाट्सएप रिव्यू लिंक भेजें
-                    </button>
+                  </div>
+
+                  {/* 🌐 Social Follow & Subscribe Buttons */}
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+                    <p className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Share2 size={14} className="text-indigo-600" />
+                      <span>हमारे सोशल मीडिया पर फॉलो/सब्सक्राइब करें:</span>
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                      {effectiveInstagramUrl && (
+                        <a
+                          href={effectiveInstagramUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-2 bg-pink-50 hover:bg-pink-100 text-pink-700 font-bold rounded-xl border border-pink-200 flex flex-col items-center gap-1 transition"
+                        >
+                          <Smartphone size={16} /> Instagram
+                        </a>
+                      )}
+                      {effectiveFacebookUrl && (
+                        <a
+                          href={effectiveFacebookUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-xl border border-blue-200 flex flex-col items-center gap-1 transition"
+                        >
+                          <Share2 size={16} /> Facebook
+                        </a>
+                      )}
+                      {effectiveYoutubeUrl && (
+                        <a
+                          href={effectiveYoutubeUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-2 bg-red-50 hover:bg-red-100 text-red-700 font-bold rounded-xl border border-red-200 flex flex-col items-center gap-1 transition"
+                        >
+                          <Video size={16} /> YouTube
+                        </a>
+                      )}
+                      {effectiveWhatsappNumber && (
+                        <a
+                          href={`https://wa.me/${String(effectiveWhatsappNumber).replace(/[^0-9]/g, "")}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl border border-emerald-200 flex flex-col items-center gap-1 transition"
+                        >
+                          <MessageCircle size={16} /> WhatsApp
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
 
-              <div className="pt-4">
-                <button onClick={onClose} className="px-6 py-2.5 bg-slate-800 text-white text-xs font-bold rounded-xl">
+              <div className="pt-2">
+                <button onClick={onClose} className="px-6 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl cursor-pointer transition">
                   विंडो बंद करें
                 </button>
               </div>
