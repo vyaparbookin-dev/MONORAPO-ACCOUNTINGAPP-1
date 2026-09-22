@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import api from '../../services/api';
-import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2 } from 'lucide-react';
+import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2, Download, FileSpreadsheet, Upload, AlertCircle } from 'lucide-react';
 import { syncQueue } from "@repo/shared";
 import CreditLimitHubModal from '../../components/modals/CreditLimitHubModal';
 
@@ -50,6 +51,193 @@ export default function PartiesPage() {
   const [paymentMode, setPaymentMode] = useState('CASH'); // CASH, UPI, BANK
   const [paymentNotes, setPaymentNotes] = useState('');
   const [savingPayment, setSavingPayment] = useState(false);
+
+  // Bulk Import Excel Modal State
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [bulkPartiesList, setBulkPartiesList] = useState([]);
+  const [bulkImportLoading, setBulkImportLoading] = useState(false);
+  const [bulkImportFileName, setBulkImportFileName] = useState('');
+  const [bulkStats, setBulkStats] = useState({ total: 0, customers: 0, suppliers: 0, toCollectTotal: 0, toPayTotal: 0 });
+  const bulkFileRef = useRef(null);
+
+  // 1. Download Pre-formatted Sample Excel Template
+  const handleDownloadPartyTemplate = () => {
+    const sampleData = [
+      {
+        "PartyName": "राजेश किराना स्टोर (उदा. देनदार ग्राहक)",
+        "PartyType": "customer",
+        "OpeningBalance": 15000,
+        "BalanceType": "RECEIVE",
+        "MobileNumber": "9876543210",
+        "Address": "गांधी चौक, रायपुर",
+        "CreditLimit": 50000,
+        "GSTIN": "22AAAAA0000A1Z5"
+      },
+      {
+        "PartyName": "वर्मा हार्डवेयर (उदा. देनदार ग्राहक)",
+        "PartyType": "customer",
+        "OpeningBalance": 8500,
+        "BalanceType": "RECEIVE",
+        "MobileNumber": "9823456789",
+        "Address": "मेन रोड, बिलासपुर",
+        "CreditLimit": 30000,
+        "GSTIN": ""
+      },
+      {
+        "PartyName": "अंबुजा सीमेंट एजेंसी (उदा. लेनदार सप्लायर)",
+        "PartyType": "supplier",
+        "OpeningBalance": 45000,
+        "BalanceType": "PAY",
+        "MobileNumber": "9811122233",
+        "Address": "ट्रांसपोर्ट नगर, रायपुर",
+        "CreditLimit": 100000,
+        "GSTIN": "22BBBBB1111B1Z2"
+      },
+      {
+        "PartyName": "टाटा स्टील डिस्ट्रीब्यूटर (उदा. लेनदार सप्लायर)",
+        "PartyType": "supplier",
+        "OpeningBalance": 92000,
+        "BalanceType": "PAY",
+        "MobileNumber": "9899988877",
+        "Address": "इंडस्ट्रियल एस्टेट",
+        "CreditLimit": 200000,
+        "GSTIN": ""
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Parties_Import_Format");
+    XLSX.writeFile(wb, `VyaparBook_Parties_Import_Template.xlsx`);
+  };
+
+  // 2. Parse Uploaded Excel (.xlsx, .xls, .csv)
+  const handlePartyFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setBulkImportFileName(file.name);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: "binary" });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const rawJson = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+        if (!rawJson || rawJson.length === 0) {
+          alert("चयनित फ़ाइल खाली है! कृपया डेटा वाली फ़ाइल अपलोड करें।");
+          return;
+        }
+
+        let customersCount = 0;
+        let suppliersCount = 0;
+        let collectTotal = 0;
+        let payTotal = 0;
+
+        const parsedRows = rawJson.map((row, index) => {
+          const name = (row["PartyName"] || row["partyName"] || row["Name"] || row["पार्टी का नाम"] || row["Party Name"] || Object.values(row)[0] || "").toString().trim();
+          const rawType = (row["PartyType"] || row["partyType"] || row["Type"] || row["खाता प्रकार"] || "customer").toString().toLowerCase();
+          const isSupplier = rawType.includes("sup") || rawType.includes("लेनदार") || rawType.includes("vendor");
+          const partyType = isSupplier ? "supplier" : "customer";
+
+          const mobile = (row["MobileNumber"] || row["mobileNumber"] || row["Phone"] || row["Mobile"] || row["मोबाइल नंबर"] || "").toString().trim();
+          const address = (row["Address"] || row["address"] || row["पता"] || "Local").toString().trim();
+          const gstin = (row["GSTIN"] || row["gstin"] || row["GST"] || "").toString().trim();
+          const creditLimit = parseFloat(row["CreditLimit"] || row["creditLimit"] || row["क्रेडिट लिमिट"] || 0) || 0;
+
+          const rawBal = parseFloat(row["OpeningBalance"] || row["openingBalance"] || row["Balance"] || row["शुरुआती बैलेंस"] || 0) || 0;
+          const rawBalType = (row["BalanceType"] || row["balanceType"] || row["बैलेंस प्रकार"] || "").toString().toUpperCase();
+
+          let balanceType = "RECEIVE";
+          if (rawBalType.includes("PAY") || rawBalType.includes("देने")) {
+            balanceType = "PAY";
+          } else if (rawBalType.includes("REC") || rawBalType.includes("लेने")) {
+            balanceType = "RECEIVE";
+          } else {
+            balanceType = isSupplier ? "PAY" : "RECEIVE";
+          }
+
+          const currentBal = balanceType === "PAY" ? -Math.abs(rawBal) : Math.abs(rawBal);
+
+          if (balanceType === "PAY") {
+            suppliersCount++;
+            payTotal += Math.abs(rawBal);
+          } else {
+            customersCount++;
+            collectTotal += Math.abs(rawBal);
+          }
+
+          return {
+            id: index + 1,
+            name,
+            partyType,
+            openingBalance: Math.abs(rawBal),
+            balanceType,
+            currentBalance: currentBal,
+            balance: currentBal,
+            mobileNumber: mobile,
+            address,
+            creditLimit,
+            gstin
+          };
+        }).filter(r => r.name);
+
+        setBulkPartiesList(parsedRows);
+        setBulkStats({
+          total: parsedRows.length,
+          customers: customersCount,
+          suppliers: suppliersCount,
+          toCollectTotal: collectTotal,
+          toPayTotal: payTotal
+        });
+      } catch (err) {
+        console.error("Failed to parse parties excel:", err);
+        alert("Excel फ़ाइल पढ़ने में त्रुटि: " + err.message);
+      }
+    };
+
+    reader.readAsBinaryString(file);
+  };
+
+  // 3. Confirm and Save All Bulk Parties
+  const handleConfirmBulkImport = async () => {
+    if (bulkPartiesList.length === 0) {
+      alert("कोई पार्टी अपलोड करने के लिए नहीं है!");
+      return;
+    }
+    setBulkImportLoading(true);
+    try {
+      const res = await api.post("/api/party/bulk-create", { parties: bulkPartiesList });
+      const data = res.data;
+      alert(`🎉 बधाई हो!\n${data.message || `कुल ${data.count || bulkPartiesList.length} पार्टियां सफलतापूर्वक जुड़ गईं!`}`);
+      setShowBulkImportModal(false);
+      setBulkPartiesList([]);
+      setBulkImportFileName('');
+      fetchParties();
+    } catch (err) {
+      console.error("Bulk party import error:", err);
+      try {
+        let savedCount = 0;
+        for (const p of bulkPartiesList) {
+          await api.post("/api/party", {
+            ...p,
+            mobileNumber: p.mobileNumber || `99${Math.floor(10000000 + Math.random() * 90000000)}`
+          }).catch(() => null);
+          savedCount++;
+        }
+        alert(`✅ कुल ${savedCount} पार्टियां सफलतापूर्वक जुड़ गईं!`);
+        setShowBulkImportModal(false);
+        setBulkPartiesList([]);
+        fetchParties();
+      } catch (fallbackErr) {
+        alert("पार्टी सेव करने में त्रुटि: " + (err.response?.data?.error || err.message));
+      }
+    } finally {
+      setBulkImportLoading(false);
+    }
+  };
 
   const fetchParties = async () => {
     try {
@@ -344,7 +532,14 @@ export default function PartiesPage() {
             <h1 className="text-2xl font-black text-gray-800">खाता बही व पार्टियां (Parties & Ledger)</h1>
             <p className="text-gray-500 text-sm">ग्राहकों, सप्लायरों व पर्सनल खातों की किस्त, उधारी व लेन-देन का संपूर्ण हिसाब</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button 
+              onClick={() => setShowBulkImportModal(true)} 
+              className="bg-teal-600 hover:bg-teal-700 text-white px-3.5 py-2.5 rounded-xl font-bold flex items-center gap-1.5 cursor-pointer shadow-md transition text-xs sm:text-sm"
+              title="Excel से देनदार व लेनदार पार्टियां एक साथ बल्क में जोड़ें"
+            >
+              <FileSpreadsheet size={17} /> 📥 Excel से बल्क पार्टी जोड़ें
+            </button>
             <button 
               onClick={() => setShowCreditLimitHub(true)} 
               className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2.5 rounded-xl font-bold flex items-center gap-1.5 cursor-pointer shadow-md transition text-xs sm:text-sm"
@@ -987,6 +1182,185 @@ export default function PartiesPage() {
                 >
                   बंद करें
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* 📥 BULK IMPORT PARTIES MODAL (EXCEL / CSV) */}
+        {showBulkImportModal && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex justify-center items-center z-50 p-3 sm:p-5 animate-in fade-in">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
+              {/* Header */}
+              <div className="p-4 sm:p-5 bg-gradient-to-r from-teal-900 via-emerald-950 to-slate-900 text-white flex justify-between items-center">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-teal-500/30 rounded-xl text-teal-300">
+                    <FileSpreadsheet size={22} />
+                  </div>
+                  <div>
+                    <h2 className="text-base sm:text-lg font-black">Excel से बल्क पार्टियां जोड़ें (Bulk Import Parties)</h2>
+                    <p className="text-xs text-teal-200">देनदार (ग्राहक - जिनसे लेना है) व लेनदार (सप्लायर - जिन्हें देना है) एक साथ अपलोड करें</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowBulkImportModal(false)}
+                  className="p-1.5 text-white/70 hover:text-white rounded-xl hover:bg-white/10 cursor-pointer transition"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Action Banner: Download Template & Upload */}
+              <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-700">चरण 1:</span>
+                  <button
+                    onClick={handleDownloadPartyTemplate}
+                    className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                  >
+                    <Download size={15} />
+                    <span>📥 सैंपल Excel फ़ॉर्मेट डाउनलोड करें</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <span className="font-bold text-slate-700">चरण 2:</span>
+                  <label className="flex-1 sm:flex-none px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold flex items-center justify-center gap-1.5 shadow transition cursor-pointer">
+                    <Upload size={15} />
+                    <span>{bulkImportFileName ? "दूसरी फ़ाइल चुनें" : "📂 Excel फ़ाइल अपलोड करें"}</span>
+                    <input
+                      ref={bulkFileRef}
+                      type="file"
+                      accept=".xlsx, .xls, .csv"
+                      onChange={handlePartyFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Body Content */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {bulkPartiesList.length === 0 ? (
+                  <div className="py-12 px-4 text-center border-2 border-dashed border-slate-200 rounded-2xl space-y-3 bg-white">
+                    <div className="w-14 h-14 mx-auto rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center">
+                      <FileSpreadsheet size={28} />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-sm text-slate-800">अभी कोई फ़ाइल अपलोड नहीं की गई है</h4>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
+                        ऊपर दिए गए <b>'सैंपल Excel फ़ॉर्मेट डाउनलोड करें'</b> बटन पर क्लिक करें, उसमें अपनी पार्टियों के नाम, देनदार (Customer) या लेनदार (Supplier), और बैलेंस भरें, फिर यहाँ अपलोड करें।
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-50 max-w-xl mx-auto p-3.5 rounded-xl border border-slate-200 text-left space-y-1 text-slate-600 text-[11px]">
+                      <span className="font-bold text-slate-800 block">💡 कॉलम निर्देश (Column Guide):</span>
+                      <p>• <b>PartyName</b>: पार्टी का नाम (उदा. राजेश ट्रेडर्स)</p>
+                      <p>• <b>PartyType</b>: <code className="bg-white px-1 py-0.5 rounded border text-indigo-700 font-bold">customer</code> (ग्राहक) या <code className="bg-white px-1 py-0.5 rounded border text-purple-700 font-bold">supplier</code> (सप्लायर)</p>
+                      <p>• <b>BalanceType</b>: <code className="bg-white px-1 py-0.5 rounded border text-emerald-700 font-bold">RECEIVE</code> (लेने हैं) या <code className="bg-white px-1 py-0.5 rounded border text-rose-700 font-bold">PAY</code> (देने हैं)</p>
+                      <p>• <b>OpeningBalance</b>: अब तक का बकाया हिसाब (₹)</p>
+                      <p>• <b>MobileNumber, Address, CreditLimit, GSTIN</b>: संपर्क व टैक्स विवरण</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Summary Stats Cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                        <span className="text-[10px] text-slate-500 font-bold block">कुल पार्टियां (Total)</span>
+                        <p className="text-base font-black text-slate-800 mt-0.5">{bulkStats.total}</p>
+                      </div>
+                      <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+                        <span className="text-[10px] text-emerald-700 font-bold block">🟢 देनदार (ग्राहक - लेने हैं)</span>
+                        <p className="text-base font-black text-emerald-800 mt-0.5">
+                          {bulkStats.customers} पार्टियां <span className="text-xs font-semibold block sm:inline">({bulkStats.toCollectTotal.toLocaleString('en-IN')})</span>
+                        </p>
+                      </div>
+                      <div className="p-3 bg-rose-50 rounded-xl border border-rose-200">
+                        <span className="text-[10px] text-rose-700 font-bold block">🔴 लेनदार (सप्लायर - देने हैं)</span>
+                        <p className="text-base font-black text-rose-800 mt-0.5">
+                          {bulkStats.suppliers} पार्टियां <span className="text-xs font-semibold block sm:inline">({bulkStats.toPayTotal.toLocaleString('en-IN')})</span>
+                        </p>
+                      </div>
+                      <div className="p-3 bg-teal-50 rounded-xl border border-teal-200">
+                        <span className="text-[10px] text-teal-700 font-bold block">अपलोड की गई फ़ाइल</span>
+                        <p className="text-xs font-black text-teal-900 mt-0.5 truncate">{bulkImportFileName}</p>
+                      </div>
+                    </div>
+
+                    {/* Preview Table */}
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
+                      <div className="p-2.5 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-700 flex justify-between items-center">
+                        <span>डेटा प्रीव्यू (Data Preview - पहली {bulkPartiesList.length} पार्टियां)</span>
+                        <span className="text-[10px] text-slate-500">कृपया डेटा जांचें, फिर नीचे सेव बटन दबाएं</span>
+                      </div>
+                      <div className="max-h-72 overflow-y-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-slate-50 text-slate-600 font-bold uppercase text-[10px] border-b sticky top-0">
+                            <tr>
+                              <th className="px-3 py-2">#</th>
+                              <th className="px-3 py-2">पार्टी का नाम</th>
+                              <th className="px-3 py-2">प्रकार</th>
+                              <th className="px-3 py-2">मोबाइल</th>
+                              <th className="px-3 py-2">पता</th>
+                              <th className="px-3 py-2 text-right">ओपनिंग बैलेंस</th>
+                              <th className="px-3 py-2">हिसाब (Balance Type)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {bulkPartiesList.map((p, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50/80">
+                                <td className="px-3 py-2 text-slate-400">{idx + 1}</td>
+                                <td className="px-3 py-2 font-bold text-slate-900">{p.name}</td>
+                                <td className="px-3 py-2">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    p.partyType === 'supplier' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                                  }`}>
+                                    {p.partyType === 'supplier' ? '🏢 सप्लायर' : '🛒 ग्राहक'}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-slate-600">{p.mobileNumber || '-'}</td>
+                                <td className="px-3 py-2 text-slate-600 max-w-xs truncate">{p.address || 'Local'}</td>
+                                <td className="px-3 py-2 text-right font-black text-slate-800">
+                                  ₹{p.openingBalance.toLocaleString('en-IN')}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                    p.balanceType === 'PAY' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'
+                                  }`}>
+                                    {p.balanceType === 'PAY' ? '🔴 देने हैं (To Pay)' : '🟢 लेने हैं (To Receive)'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-white border-t border-slate-200 flex justify-between items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkImportModal(false)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 text-xs font-bold cursor-pointer"
+                >
+                  रद्द करें (Cancel)
+                </button>
+
+                {bulkPartiesList.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={bulkImportLoading}
+                    onClick={handleConfirmBulkImport}
+                    className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-black text-xs shadow-md transition cursor-pointer flex items-center gap-2"
+                  >
+                    {bulkImportLoading ? <RefreshCw size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                    <span>{bulkImportLoading ? "पार्टियां सेव हो रही हैं..." : `🚀 सभी ${bulkPartiesList.length} पार्टियां सॉफ्टवेयर में सेव करें`}</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>

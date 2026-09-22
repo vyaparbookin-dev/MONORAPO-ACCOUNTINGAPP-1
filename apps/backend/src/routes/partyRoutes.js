@@ -1,5 +1,5 @@
 import express from "express";
-import { createParty, listParties, getPartyById, updateParty, deleteParty, getPartyStatement, getPartyQuickSummary, attachPartyTransactionImage } from "../controllers/partyController.js";
+import { createParty, bulkCreateParties, listParties, getPartyById, updateParty, deleteParty, getPartyStatement, getPartyQuickSummary, attachPartyTransactionImage } from "../controllers/partyController.js";
 import { protect, requireCompany } from "../middleware/authmiddleware.js";
 
 const router = express.Router();
@@ -8,6 +8,7 @@ const router = express.Router();
 router.use(protect);
 router.use(requireCompany);
 
+router.post("/bulk-create", bulkCreateParties);
 router.post("/", createParty);
 router.get("/", listParties);
 router.post("/attach-image", attachPartyTransactionImage);

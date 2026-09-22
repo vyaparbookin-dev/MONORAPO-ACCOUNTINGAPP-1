@@ -48,6 +48,106 @@ export const createParty = async (req, res) => {
 };
 
 /**
+ * @desc    Bulk create parties from Excel / JSON import
+ * @route   POST /api/party/bulk-create
+ * @access  Private
+ */
+export const bulkCreateParties = async (req, res) => {
+  try {
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    const { parties } = req.body;
+    if (!Array.isArray(parties) || parties.length === 0) {
+      return res.status(400).json({ success: false, error: "No parties array provided" });
+    }
+
+    let createdCount = 0;
+    let skippedCount = 0;
+    const createdParties = [];
+
+    // Fetch existing active parties to avoid duplicates
+    const existing = await Party.find({ companyId: req.companyId, isActive: true }).select("name mobileNumber address");
+    const existingNames = new Set(existing.map(p => (p.name || "").trim().toLowerCase()));
+    const existingMobiles = new Set(existing.filter(p => p.mobileNumber).map(p => (p.mobileNumber || "").trim()));
+
+    for (const p of parties) {
+      const name = (p.name || p.PartyName || "").trim();
+      if (!name) {
+        skippedCount++;
+        continue;
+      }
+
+      const mobile = (p.mobileNumber || p.phone || p.MobileNumber || "").trim();
+      const addr = (p.address || p.Address || "Local").trim();
+      const lowerName = name.toLowerCase();
+
+      // Skip duplicate name
+      if (existingNames.has(lowerName)) {
+        skippedCount++;
+        continue;
+      }
+      if (mobile && existingMobiles.has(mobile)) {
+        skippedCount++;
+        continue;
+      }
+
+      const rawType = (p.partyType || p.type || p.PartyType || "customer").toLowerCase();
+      const isSupplier = rawType.includes("sup") || rawType.includes("लेनदार") || rawType.includes("vendor");
+      const isPersonal = rawType.includes("per") || rawType.includes("पर्सनल");
+      const partyType = isSupplier ? "supplier" : isPersonal ? "personal" : "customer";
+
+      const rawBal = parseFloat(p.openingBalance || p.OpeningBalance || p.balance || 0) || 0;
+      const balanceType = (p.balanceType || p.BalanceType || "").toUpperCase();
+      
+      // If balanceType is 'PAY' or 'देने हैं' -> negative balance
+      // If balanceType is 'RECEIVE' or 'लेने हैं' -> positive balance
+      // If not specified: customer is positive (to receive), supplier is negative (to pay)
+      let finalBalance = rawBal;
+      if (balanceType.includes("PAY") || balanceType.includes("देने")) {
+        finalBalance = -Math.abs(rawBal);
+      } else if (balanceType.includes("REC") || balanceType.includes("लेने")) {
+        finalBalance = Math.abs(rawBal);
+      } else {
+        finalBalance = isSupplier ? -Math.abs(rawBal) : Math.abs(rawBal);
+      }
+
+      const newPartyDoc = new Party({
+        name,
+        mobileNumber: mobile || `99${Math.floor(10000000 + Math.random() * 90000000)}`,
+        address: addr,
+        partyType,
+        priceLevel: p.priceLevel || "retail",
+        openingBalance: Math.abs(finalBalance),
+        currentBalance: finalBalance,
+        balance: finalBalance,
+        creditLimit: parseFloat(p.creditLimit || p.CreditLimit || 0) || 0,
+        gstin: (p.gstin || p.GSTIN || "").trim(),
+        companyId: req.companyId,
+        isActive: true
+      });
+
+      await newPartyDoc.save();
+      createdParties.push(newPartyDoc);
+      existingNames.add(lowerName);
+      if (mobile) existingMobiles.add(mobile);
+      createdCount++;
+    }
+
+    res.status(200).json({
+      success: true,
+      count: createdCount,
+      skippedCount,
+      parties: createdParties,
+      message: `✅ कुल ${createdCount} पार्टियां सफलतापूर्वक जोड़ी गईं! (${skippedCount} डुप्लीकेट छोड़ी गईं)`
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * @desc    Get quick summary for a party (last purchase date and amount)
  * @route   GET /api/parties/:id/quick-summary
  * @access  Private
