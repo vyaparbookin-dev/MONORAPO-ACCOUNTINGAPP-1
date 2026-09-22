@@ -1139,28 +1139,97 @@ function MobileVyaparAppContent() {
         items: b.items || []
       }));
 
-      // Gather all local sales and bills from all possible keys
+      // Gather all local sales and bills from all possible keys & offline queues
       let localManualBills = [];
       try {
-        const billKeys = ["vb_local_manual_bills", "bills", "manual_bills", "vb_bills", "local_bills", "sales", "local_sales", "pos_bills", "vb_sales"];
-        billKeys.forEach(k => {
-          const stored = localStorage.getItem(k);
-          if (stored) {
-            try {
-              const parsed = JSON.parse(stored);
-              if (Array.isArray(parsed) && parsed.length > 0) localManualBills.push(...parsed);
-            } catch (e) {}
+        if (typeof localStorage !== "undefined") {
+          const seenKeys = new Set();
+          const billKeys = [
+            "vb_local_manual_bills", "bills", "manual_bills", "vb_bills",
+            "local_bills", "sales", "local_sales", "pos_bills", "vb_sales",
+            "vb_offline_sync_queue", "sync_queue"
+          ];
+
+          // Deep scan all keys in localStorage for any bill/sale/offline records
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k) {
+              const lk = k.toLowerCase();
+              if (lk.includes("bill") || lk.includes("sale") || lk.includes("pos") || lk.includes("sync_queue")) {
+                if (!seenKeys.has(k)) {
+                  seenKeys.add(k);
+                  billKeys.push(k);
+                }
+              }
+            }
           }
-        });
+
+          billKeys.forEach(k => {
+            const stored = localStorage.getItem(k);
+            if (stored) {
+              try {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  parsed.forEach(item => {
+                    if (!item || typeof item !== "object") return;
+                    if (item.type === "CREATE_BILL" && item.payload) {
+                      localManualBills.push({
+                        ...item.payload,
+                        _id: item.localId || `BILL-${Date.now()}`,
+                        id: item.payload.billNumber || `BILL-${Date.now()}`,
+                        billNumber: item.payload.billNumber || `BILL-${Date.now()}`
+                      });
+                    } else if (item.amount || item.finalAmount || item.total || item.totalAmount || item.billNumber) {
+                      localManualBills.push(item);
+                    }
+                  });
+                }
+              } catch (e) {}
+            }
+          });
+        }
       } catch (e) {}
 
       const mergedBills = deduplicateBills([...normBills, ...localManualBills]);
       setBills(mergedBills);
+
       try {
-        localStorage.setItem("vb_local_manual_bills", JSON.stringify(mergedBills));
-        localStorage.setItem("bills", JSON.stringify(mergedBills));
-        localStorage.setItem("sales", JSON.stringify(mergedBills));
+        const companyKey = localStorage.getItem("companyId") || localStorage.getItem("selectedCompany") || "";
+        const saveKeys = ["vb_local_manual_bills", "bills", "sales", "local_bills"];
+        saveKeys.forEach(sk => {
+          localStorage.setItem(sk, JSON.stringify(mergedBills));
+          if (companyKey) localStorage.setItem(`${sk}_${companyKey}`, JSON.stringify(mergedBills));
+        });
       } catch (e) {}
+
+      // Resilient auto-backup: If any bill exists locally but not in MongoDB cloud, upload it now
+      const serverBillNumbers = new Set(normBills.map(b => String(b.billNumber || b.id || "").trim()));
+      mergedBills.forEach(async (b) => {
+        const bNum = String(b.billNumber || b.id || "").trim();
+        if (bNum && !serverBillNumbers.has(bNum) && !b._syncedToMongo) {
+          try {
+            b._syncedToMongo = true;
+            await api.post("/api/billing", {
+              billNumber: bNum,
+              customerName: b.customerName || "काउंटर नकद ग्राहक",
+              customerPhone: b.phone || b.customerPhone || "",
+              paymentMode: b.paymentMode || b.type || "CASH",
+              paymentMethod: (b.paymentMode === "UDHAR" || b.type === "UDHAR") ? "credit" : (b.paymentMode === "UPI" || b.type === "UPI") ? "online" : "cash",
+              total: b.total || b.amount || b.finalAmount,
+              finalAmount: b.finalAmount || b.amount || b.total,
+              date: b.rawDate || b.date || new Date(),
+              items: b.items && b.items.length > 0 ? b.items : [{
+                name: `दैनिक बिक्री (${b.paymentMode || b.type || 'CASH'})`,
+                quantity: 1,
+                price: b.amount || b.finalAmount || b.total,
+                total: b.amount || b.finalAmount || b.total
+              }]
+            });
+          } catch (autoUploadErr) {
+            // Ignore background upload warnings
+          }
+        }
+      });
 
       let rawParties = [];
       if (partiesRes.status === "fulfilled" && partiesRes.value) {

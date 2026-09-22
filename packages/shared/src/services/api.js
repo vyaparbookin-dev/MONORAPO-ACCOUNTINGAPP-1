@@ -17,6 +17,7 @@ const getStorageKeysForCompany = (key) => {
 export const readLocalJson = (keys, fallback = []) => {
   if (typeof localStorage === 'undefined') return fallback;
   const candidates = Array.isArray(keys) ? keys : [keys];
+  const isArrayFallback = Array.isArray(fallback);
   const orderedKeys = [];
 
   for (const key of candidates) {
@@ -26,6 +27,64 @@ export const readLocalJson = (keys, fallback = []) => {
     }
   }
 
+  // If expecting an array (e.g. bills, parties, items, expenses), merge across ALL candidate keys!
+  // This prevents newly scoped keys from shadowing or hiding legacy/unscoped records.
+  if (isArrayFallback) {
+    const collected = [];
+    const seen = new Set();
+
+    for (const key of orderedKeys) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw === null || raw === undefined || raw === 'null') continue;
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            if (!item || typeof item !== 'object') continue;
+            const itemId = String(item._id || item.id || item.billNumber || item.invoiceNumber || JSON.stringify(item));
+            if (!seen.has(itemId)) {
+              seen.add(itemId);
+              collected.push(item);
+            }
+          }
+        }
+      } catch (e) {
+        // Continue to next key on error
+      }
+    }
+
+    // Also do a resilient fallback sweep across any matching localStorage keys if none found yet
+    if (collected.length === 0) {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const lk = localStorage.key(i);
+          if (!lk) continue;
+          for (const cand of candidates) {
+            if (lk.includes(cand)) {
+              const raw = localStorage.getItem(lk);
+              if (!raw || raw === 'null') continue;
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) {
+                for (const item of parsed) {
+                  if (!item || typeof item !== 'object') continue;
+                  const itemId = String(item._id || item.id || item.billNumber || item.invoiceNumber || JSON.stringify(item));
+                  if (!seen.has(itemId)) {
+                    seen.add(itemId);
+                    collected.push(item);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (collected.length > 0) return collected;
+    return fallback;
+  }
+
+  // For non-array objects / primitives, return the first valid found value
   for (const key of orderedKeys) {
     try {
       const raw = localStorage.getItem(key);
