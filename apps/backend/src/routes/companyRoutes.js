@@ -1,8 +1,12 @@
 // Example: Companyroutes.js
 import express from "express";
-import { addCompany, listCompanies, getCompany, updateCompany, deleteCompany } from "../controllers/companyController.js";
+import { addCompany, listCompanies, getCompany, updateCompany, deleteCompany, getPublicCompanyInfo, submitPublicReview } from "../controllers/companyController.js";
 import { protect } from "../middleware/authmiddleware.js";
 const router = express.Router();
+
+// Public routes for QR standee & customer feedback (No auth needed)
+router.get("/public-info/:id", getPublicCompanyInfo);
+router.post("/public-review/:id", submitPublicReview);
 
 router.route("/")
   .post(protect, addCompany)

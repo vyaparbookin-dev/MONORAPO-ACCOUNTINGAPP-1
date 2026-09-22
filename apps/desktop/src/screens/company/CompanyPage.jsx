@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Edit, Save, X, Building2, Mail, Phone, MapPin, FileText, Plus, Trash2, Briefcase, CreditCard, UserCheck, Share2, QrCode, Star, Gift, Percent, Video, MessageCircle, ExternalLink, Smartphone } from "lucide-react";
+import { Edit, Save, X, Building2, Mail, Phone, MapPin, FileText, Plus, Trash2, Briefcase, CreditCard, UserCheck, Share2, QrCode, Star, Gift, Percent, Video, MessageCircle, ExternalLink, Smartphone, Printer, Copy, Check } from "lucide-react";
 import api from "../../services/api";
 import { useCompany } from "../../contexts/CompanyContext";
 
@@ -9,6 +9,8 @@ const CompanyPage = () => {
   const [error, setError] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const [showStandeeModal, setShowStandeeModal] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   
   const getInitialFormState = (company = null) => ({
     name: company?.name || "",
@@ -24,6 +26,7 @@ const CompanyPage = () => {
         ? [company.businessType] 
         : ["retail"],
     industryType: company?.industryType || "",
+    modulesEnabled: Array.isArray(company?.modulesEnabled) ? company.modulesEnabled : [],
     businessDescription: company?.businessDescription || "",
     bankName: company?.bankName || "",
     accountName: company?.accountName || "",
@@ -63,6 +66,17 @@ const CompanyPage = () => {
       } else {
         return { ...prev, businessType: [...currentTypes, type] };
       }
+    });
+  };
+
+  const handleModuleToggle = (moduleId) => {
+    setFormData((prev) => {
+      const current = Array.isArray(prev.modulesEnabled) ? prev.modulesEnabled : [];
+      const updated = current.includes(moduleId)
+        ? current.filter((item) => item !== moduleId)
+        : [...current, moduleId];
+
+      return { ...prev, modulesEnabled: updated };
     });
   };
 
@@ -594,8 +608,16 @@ const CompanyPage = () => {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] bg-emerald-500/20 text-emerald-300 font-black px-3 py-1 rounded-full border border-emerald-500/30 flex items-center gap-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowStandeeModal(true)}
+                      className="text-xs bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+                      title="काउंटर पर रखने हेतु स्टैंडी QR पोस्टर देखें या प्रिंट करें"
+                    >
+                      <Printer size={13} /> 🖨️ काउंटर स्टैंडी QR कोड
+                    </button>
+                    <span className="text-[11px] bg-emerald-500/20 text-emerald-300 font-black px-3 py-1.5 rounded-full border border-emerald-500/30 flex items-center gap-1">
                       <Gift size={13} /> {selectedCompany.reviewRewardCouponCode || 'STAR5'} ({selectedCompany.reviewRewardCouponDiscount || 10}% OFF)
                     </span>
                   </div>
@@ -874,6 +896,96 @@ const CompanyPage = () => {
                 </button>
               </div>
           </form>
+        </div>
+      )}
+
+      {/* Standee QR Modal */}
+      {showStandeeModal && selectedCompany && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Actions Bar */}
+            <div className="p-3.5 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <QrCode className="text-amber-400" size={18} />
+                <span className="font-black text-xs">काउंटर रिव्यू स्टैंडी (Print Ready)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `${window.location.origin}/review/${selectedCompany._id || selectedCompany.id}`;
+                    navigator.clipboard.writeText(url);
+                    setCopiedLink(true);
+                    setTimeout(() => setCopiedLink(false), 2000);
+                  }}
+                  className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-xs font-bold rounded-lg flex items-center gap-1 transition cursor-pointer"
+                >
+                  {copiedLink ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                  {copiedLink ? "कॉपी हुआ!" : "लिंक"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black rounded-lg flex items-center gap-1 shadow transition cursor-pointer"
+                >
+                  <Printer size={13} /> प्रिंट करें
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowStandeeModal(false)}
+                  className="p-1 hover:bg-white/10 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Standee Poster Preview */}
+            <div className="p-6 text-center bg-gradient-to-b from-amber-50/70 via-white to-indigo-50/50 flex flex-col items-center select-none">
+              {/* Top Crown/Star */}
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-600 text-white flex items-center justify-center text-2xl font-black shadow-lg shadow-amber-500/30 mb-2.5 border-2 border-white">
+                ⭐
+              </div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight mb-1">
+                {selectedCompany.name || "हमारे प्रतिष्ठान"}
+              </h2>
+              <p className="text-[11px] font-bold text-indigo-600 tracking-wider uppercase mb-4">
+                {selectedCompany.businessType ? (Array.isArray(selectedCompany.businessType) ? selectedCompany.businessType.join(" • ") : selectedCompany.businessType) : "आपका हार्दिक स्वागत करता है"}
+              </p>
+
+              {/* Standee QR Card */}
+              <div className="p-4 bg-white rounded-3xl shadow-xl border-4 border-amber-400/80 mb-4 inline-block">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`${window.location.origin}/review/${selectedCompany._id || selectedCompany.id}`)}&margin=10`}
+                  alt="Review Standee QR"
+                  className="w-52 h-52 object-contain rounded-xl mx-auto"
+                />
+                <div className="mt-2 text-[10px] font-black text-slate-600 tracking-wide flex items-center justify-center gap-1">
+                  📱 कैमरा या Google Lens से स्कैन करें
+                </div>
+              </div>
+
+              {/* Rating Prompt & Reward Banner */}
+              <div className="w-full bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 p-3 rounded-2xl shadow-md mb-3 text-center">
+                <div className="flex justify-center gap-1 mb-1">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <Star key={i} size={15} className="fill-slate-950 text-slate-950" />
+                  ))}
+                </div>
+                <p className="text-xs font-black tracking-wide">
+                  5-स्टार रेटिंग दें व पाएं {selectedCompany.reviewRewardCouponDiscount || 10}% OFF कूपन!
+                </p>
+                <p className="text-[10px] font-bold opacity-90 mt-0.5">
+                  कूपन कोड: <span className="font-mono bg-white/40 px-1.5 py-0.5 rounded text-slate-950 font-black">{selectedCompany.reviewRewardCouponCode || "STAR5"}</span>
+                </p>
+              </div>
+
+              {/* Social Footnote */}
+              <p className="text-[10px] text-slate-500 font-bold">
+                📸 Instagram • 👍 Facebook • 📺 YouTube पर भी जुड़े रहें
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </div>

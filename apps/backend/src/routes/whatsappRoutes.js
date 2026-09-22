@@ -17,9 +17,32 @@ router.post("/send-invoice", async (req, res) => {
     // Generate Payment Link (Format: upi://pay?pa=...)
     const paymentLink = company?.upiId ? `upi://pay?pa=${company.upiId}&pn=${encodeURIComponent(company.name)}&am=${bill.finalAmount}&cu=INR` : '';
 
-    const message = `Hello ${bill.customerName},\n\nHere is your invoice #${bill.billNumber} from ${company.name}.\nTotal Amount: ₹${bill.finalAmount}\n\n${paymentLink ? `Pay exactly ₹${bill.finalAmount} using this link: ${paymentLink}\n\n` : ''}Thank you for your business!`;
+    let message = `नमस्ते ${bill.customerName},\n\n${company.name} से आपका इनवॉइस #${bill.billNumber} तैयार है।\nकुल देय राशि: ₹${bill.finalAmount}\n\n${paymentLink ? `💳 इस लिंक से तुरंत भुगतान करें:\n${paymentLink}\n\n` : ''}`;
 
-    // FUTURE: Yahan par Cloud API (Wati / Twilio / Meta) call aayega real message bhejne ke liye
+    // 🌐 Social Media, Google Review & Reward Coupon Links
+    const socialLines = [];
+    if (company?.googleReviewUrl) {
+      socialLines.push(`⭐ हमें Google पर 5-स्टार रेटिंग दें:\n${company.googleReviewUrl}`);
+    }
+    if (company?.instagramUrl) {
+      socialLines.push(`📸 Instagram पर फॉलो करें: ${company.instagramUrl}`);
+    }
+    if (company?.facebookUrl) {
+      socialLines.push(`📘 Facebook पर लाइक करें: ${company.facebookUrl}`);
+    }
+    if (company?.youtubeUrl) {
+      socialLines.push(`▶️ YouTube सब्सक्राइब करें: ${company.youtubeUrl}`);
+    }
+    if (company?.reviewRewardCouponCode) {
+      socialLines.push(`🎁 5⭐ रिव्यू देने पर अगले बिल के लिए कूपन: *${company.reviewRewardCouponCode}* (${company.reviewRewardCouponDiscount || 10}% OFF)`);
+    }
+
+    if (socialLines.length > 0) {
+      message += `-----------------------------\n${socialLines.join('\n\n')}\n-----------------------------\n\n`;
+    }
+
+    message += `हमारे साथ व्यापार करने के लिए धन्यवाद!\n-${company.name}`;
+
     console.log(`📲 [WHATSAPP PREVIEW] To: ${mobileNumber}\nMessage:\n${message}`);
     
     res.json({ success: true, message: "WhatsApp message triggered successfully!", preview: message });

@@ -1,4 +1,5 @@
 import Company from "../model/company.js";
+import Lead from "../model/lead.js";
 import { supabase } from "../config/supabase.js";
 
 export const addCompany = async (req, res) => {
@@ -136,5 +137,58 @@ export const deleteCompany = async (req, res) => {
     res.json({ success: true, message: 'Company deleted successfully' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// ==================== PUBLIC QR STANDEE REVIEW & CRM LEAD CAPTURE ====================
+export const getPublicCompanyInfo = async (req, res) => {
+  try {
+    const company = await Company.findById(req.params.id)
+      .select("name logo address phone email upiId googleReviewUrl instagramUrl facebookUrl youtubeUrl whatsappBusinessNumber reviewRewardCouponCode reviewRewardCouponDiscount businessDescription")
+      .lean();
+    if (!company) return res.status(404).json({ success: false, message: "Company not found" });
+    res.json({ success: true, company });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+export const submitPublicReview = async (req, res) => {
+  try {
+    const { name, mobileNumber, email, rating, reviewText } = req.body;
+    const company = await Company.findById(req.params.id);
+    if (!company) return res.status(404).json({ success: false, message: "Company not found" });
+
+    // 1. Automatically Capture Customer into CRM as a Lead
+    try {
+      if (name || mobileNumber) {
+        await Lead.create({
+          companyId: company._id,
+          name: name || "Walk-in Guest",
+          mobileNumber: mobileNumber || "",
+          email: email || "",
+          source: "QR Code Review",
+          status: rating >= 4 ? "qualified" : "contacted",
+          notes: `Customer rated ${rating}⭐. Feedback: ${reviewText || "No comment"}. Unlocked coupon: ${rating >= 4 ? (company.reviewRewardCouponCode || "STAR5") : "None"}`
+        });
+      }
+    } catch (leadErr) {
+      console.warn("Could not save lead in CRM:", leadErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: rating >= 4 ? "Review recorded! You unlocked a reward coupon!" : "Thank you for your valuable feedback!",
+      rating,
+      couponCode: rating >= 4 ? (company.reviewRewardCouponCode || "STAR5") : null,
+      couponDiscount: rating >= 4 ? (company.reviewRewardCouponDiscount || 10) : 0,
+      googleReviewUrl: company.googleReviewUrl,
+      instagramUrl: company.instagramUrl,
+      facebookUrl: company.facebookUrl,
+      youtubeUrl: company.youtubeUrl,
+      whatsappBusinessNumber: company.whatsappBusinessNumber
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 };
