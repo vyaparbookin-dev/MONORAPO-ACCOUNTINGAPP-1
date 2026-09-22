@@ -27,11 +27,17 @@ const mergeScopedData = (items, companyId) => {
       continue;
     }
 
-    const key = item._id || item.id || item.billNumber || item.invoiceNumber || JSON.stringify({
+    const billNum = String(item.billNumber || item.invoiceNumber || item.invoiceNo || "").trim().toLowerCase();
+    const cleanId = String(item._id || item.id || "").trim();
+    const amt = Number(item.amount || item.finalAmount || item.total || 0).toFixed(2);
+    const dStr = String(item.rawDate || item.date || item.createdAt || "").slice(0, 10);
+    const cName = String(item.customerName || item.partyName || item.customer || "").trim().toLowerCase();
+
+    const key = billNum || cleanId || `${companyMatch}_${amt}_${dStr}_${cName}` || JSON.stringify({
       company: companyMatch,
-      amount: item.amount || item.finalAmount || item.total || 0,
-      date: item.rawDate || item.date || item.createdAt || "",
-      name: item.customerName || item.partyName || item.customer || ""
+      amount: amt,
+      date: dStr,
+      name: cName
     });
 
     if (seen.has(key)) continue;

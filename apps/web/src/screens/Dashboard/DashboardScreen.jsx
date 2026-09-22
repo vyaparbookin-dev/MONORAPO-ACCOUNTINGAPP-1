@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ArrowUpRight, ArrowDownLeft, TrendingUp, AlertCircle, Clock, RefreshCw, Calendar, DollarSign, Package, Receipt } from "lucide-react";
 import api from "../../services/api";
 import { readCompanyScopedBills } from "../../utils/companyScopedStorage";
+import { deduplicateBills } from "../../utils/deduplicateBills";
 
 export default function DashboardScreen() {
   const [stats, setStats] = useState({
@@ -47,7 +48,7 @@ export default function DashboardScreen() {
 
       const resData = billsRes?.data || billsRes || {};
       const serverBillsList = Array.isArray(resData.bills) ? resData.bills : (Array.isArray(resData.data?.bills) ? resData.data.bills : (Array.isArray(resData.data) ? resData.data : (Array.isArray(resData) ? resData : [])));
-      const billsData = Array.from(new Map([...serverBillsList, ...localBills].map(b => [b._id || b.id || JSON.stringify(b), b])).values());
+      const billsData = deduplicateBills([...serverBillsList, ...localBills]);
       const expensesData = (Array.isArray(expensesRes?.expenses) && expensesRes.expenses.length > 0) ? expensesRes.expenses : (Array.isArray(expensesRes?.data?.expenses) && expensesRes.data.expenses.length > 0) ? expensesRes.data.expenses : (Array.isArray(expensesRes?.data) ? expensesRes.data : []);
       const invSummary = invSummaryRes?.data?.summary || invSummaryRes?.summary || {};
       const approvalsData = approvalsRes?.data?.data || approvalsRes?.data || {};

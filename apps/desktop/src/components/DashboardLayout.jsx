@@ -206,6 +206,7 @@ export default function DashboardLayout() {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "🔧 Hardware Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: ShoppingCart, label: "⚡ Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: FileText, label: "🧾 Retail & Counter Bills", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: Briefcase, label: "🏢 B2B GST Invoices", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
         { icon: PenTool, label: "📐 Dimensions & Cut-Loss Batch", href: "/inventory/batch", color: "text-orange-600", roles: ['admin', 'manager'] },
@@ -216,8 +217,10 @@ export default function DashboardLayout() {
         { icon: Landmark, label: "🏦 Bank & Cash Balances", href: "/banking", color: "text-cyan-500", roles: ['admin', 'manager'] },
         { icon: DollarSign, label: "💸 Shop Kharch & Transport", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
         { icon: UserCheck, label: "👥 Staff Attendance & Pagar", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "📊 Sales & Profit/Loss", href: "/reports/profitloss", color: "text-emerald-400", roles: ['admin'] },
+        { icon: BookOpen, label: "📖 Day Book Ledger", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] },
         { icon: FileText, label: "📑 GST Tax Reports", href: "/reports/gst", color: "text-blue-500", roles: ['admin'] },
-        { icon: BookOpen, label: "📖 Day Book Ledger", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] }
+        { icon: Bot, label: "🤖 AI मुनीम जी Advisor", href: "/ai-advisor", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] }
       ];
     }
 

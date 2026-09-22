@@ -31,6 +31,26 @@ export const addExpense = async (req, res) => {
 
     const expense = await Expense.create(expanceData);
 
+    // --- ASYNC DUAL-WRITE SYNC TO SUPABASE ---
+    (async () => {
+      try {
+        const { supabase } = await import("../config/supabase.js");
+        if (supabase) {
+          await supabase.from('expenses').upsert({
+            title: expense.title || "खर्च",
+            amount: Number(expense.amount || 0),
+            category: expense.category || "अन्य",
+            description: expense.description || expense.notes || expense.title || "",
+            status: expense.status || "approved",
+            date: expense.date ? new Date(expense.date).toISOString() : new Date().toISOString(),
+            is_deleted: false
+          });
+        }
+      } catch (sbErr) {
+        console.warn("[Supabase Dual-Write] expense sync note:", sbErr.message);
+      }
+    })();
+
     // If target bank found and amount > 0, post withdrawal transaction
     if (targetBank && amountNum > 0) {
       targetBank.transactions.push({

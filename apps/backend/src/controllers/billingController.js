@@ -198,6 +198,32 @@ _(कृपया यह OTP दुकानदार को तभी बता
     });
     await bill.save();
 
+    // --- ASYNC DUAL-WRITE SYNC TO SUPABASE ---
+    (async () => {
+      try {
+        const { supabase } = await import("../config/supabase.js");
+        if (supabase) {
+          await supabase.from('sales').upsert({
+            bill_number: bill.billNumber,
+            customer_name: bill.customerName || "काउंटर नकद ग्राहक",
+            customer_mobile: bill.customerMobile || "9876543210",
+            items: bill.items || [],
+            sub_total: Number(bill.total || bill.finalAmount || 0),
+            final_amount: Number(bill.finalAmount || bill.total || 0),
+            amount_received: Number(bill.finalAmount || bill.total || 0),
+            payment_status: bill.paymentStatus || "paid",
+            payment_method: bill.paymentMode || bill.paymentMethod || "Cash",
+            notes: bill.notes || "",
+            status: "complete",
+            date: bill.date ? new Date(bill.date).toISOString() : new Date().toISOString(),
+            is_deleted: false
+          });
+        }
+      } catch (sbErr) {
+        console.warn("[Supabase Dual-Write] bill sync note:", sbErr.message);
+      }
+    })();
+
     // --- AUTO-UPDATE PARTY UDHAR (CREDIT) BALANCE & PENDING GATEKEEPER ---
     try {
       if (isUdhar && pName && pName !== "नकद ग्राहक" && pName !== "Walk-in Customer") {

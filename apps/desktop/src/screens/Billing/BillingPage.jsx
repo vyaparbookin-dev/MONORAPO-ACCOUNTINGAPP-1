@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Plus,
   Filter,
@@ -21,7 +21,8 @@ import {
   PauseCircle,
   Gamepad2,
   ChefHat,
-  Sparkles
+  Sparkles,
+  Mic
 } from "lucide-react";
 import api from "../../services/api";
 import { useNavigate } from "react-router-dom";
@@ -160,6 +161,50 @@ export default function BillingPage() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  // Voice Search Invoices State
+  const [isVoiceSearching, setIsVoiceSearching] = useState(false);
+  const voiceSearchRecognitionRef = useRef(null);
+
+  const handleToggleVoiceSearch = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("आपके सिस्टम / ब्राउज़र में आवाज़ पहचानने की सुविधा उपलब्ध नहीं है। कृपया माइक्रोफ़ोन कनेक्ट करें या Google Chrome में खोलें।");
+      return;
+    }
+
+    if (isVoiceSearching) {
+      if (voiceSearchRecognitionRef.current) {
+        try { voiceSearchRecognitionRef.current.stop(); } catch (e) {}
+      }
+      setIsVoiceSearching(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = "hi-IN";
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => setIsVoiceSearching(true);
+      recognition.onend = () => setIsVoiceSearching(false);
+      recognition.onerror = () => setIsVoiceSearching(false);
+      recognition.onresult = (e) => {
+        const spoken = e.results[0][0].transcript.trim();
+        if (spoken) {
+          let cleanSearch = spoken.replace(/(बिल|खोजो|दिखाओ|सर्च|नंबर|number)/gi, "").trim();
+          setSearchTerm(cleanSearch || spoken);
+        }
+      };
+
+      voiceSearchRecognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.warn("Voice search start error:", err);
+      setIsVoiceSearching(false);
+    }
+  };
+
   const { selectedCompany } = useCompany();
   const business = getBusinessMode(selectedCompany);
   const gstType = selectedCompany?.gstType || "regular";
@@ -275,10 +320,13 @@ export default function BillingPage() {
     let filtered = [...bills];
 
     if (searchTerm) {
+      const q = String(searchTerm || '').toLowerCase().trim();
       filtered = filtered.filter(
         (bill) =>
-          String(bill?.billNumber || '').toLowerCase().includes(String(searchTerm || '').toLowerCase()) ||
-          bill.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
+          String(bill?.billNumber || '').toLowerCase().includes(q) ||
+          String(bill?.customerName || '').toLowerCase().includes(q) ||
+          String(bill?.finalAmount ?? bill?.total ?? '').includes(q) ||
+          String(bill?.customerMobile || bill?.customerPhone || bill?.phone || '').includes(q)
       );
     }
 
@@ -964,15 +1012,27 @@ export default function BillingPage() {
       {/* Search & Filter */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
         <div className="flex gap-4 flex-wrap">
-          <div className="flex-1 min-w-[200px] relative">
+          <div className="flex-1 min-w-[200px] relative flex items-center">
             <Search className="absolute left-3 top-3 text-gray-400" size={20} />
             <input
               type="text"
-              placeholder="Search by invoice number or customer..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="बोलकर या लिखकर बिल खोजें (e.g. 101500, 6500, नकद, ग्राहक)..."
+              className="w-full pl-10 pr-12 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
+            <button
+              type="button"
+              onClick={handleToggleVoiceSearch}
+              className={`absolute right-2 p-1.5 rounded-lg transition cursor-pointer ${
+                isVoiceSearching 
+                  ? "bg-rose-500 text-white animate-pulse ring-2 ring-rose-300" 
+                  : "text-gray-400 hover:text-blue-600 hover:bg-gray-100"
+              }`}
+              title={isVoiceSearching ? "सुन रहे हैं... बोलना बंद करने के लिए क्लिक करें" : "बोलकर बिल खोजें (Voice Search Invoices)"}
+            >
+              <Mic size={18} className={isVoiceSearching ? "animate-bounce text-white" : ""} />
+            </button>
           </div>
 
           <select
