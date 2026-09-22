@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import * as XLSX from "xlsx";
 import api from "../../services/api";
 import { 
   FileText, UploadCloud, Download, CheckCircle2, AlertTriangle, 
@@ -114,73 +115,116 @@ export default function ImportBillPage({ onImport }) {
     }
   };
 
-  // 2. CSV SAMPLE TEMPLATE DOWNLOAD
-  const handleDownloadCsvTemplate = () => {
+  // 2. EXCEL & CSV SAMPLE TEMPLATE DOWNLOAD (WITH OPTIONAL ITEMS & SITEWISE)
+  const handleDownloadExcelTemplate = () => {
     const today = new Date().toISOString().split('T')[0];
-    const csvContent = [
-      "BillNumber,CustomerName,Date,ItemName,Quantity,Rate,TotalAmount,PaymentStatus",
-      `BILL-2026-001,Rajesh Hardware,${today},Ultratech Cement,10,380,3800,PAID`,
-      `BILL-2026-002,Sunil Traders,${today},Tata Tiscon TMT,5,650,3250,UNPAID`,
-      `BILL-2026-003,Ganesh Hardware,${today},Asian Paints Apex,2,2400,4800,PAID`
-    ].join('\n');
+    const sampleBills = [
+      {
+        "CustomerName": "राजेश कंस्ट्रक्शन (*अनिवार्य)",
+        "Date": today,
+        "TotalAmount": 19000,
+        "PaidAmount": 10000,
+        "BillNumber": "INV-2026-001 (वैकल्पिक)",
+        "SiteName": "सिविल लाइन्स साइट (वैकल्पिक)",
+        "ItemName": "अल्ट्राटेक सीमेंट (वैकल्पिक - खाली छोड़ सकते हैं)",
+        "Quantity": 50,
+        "Rate": 380,
+        "BalanceDue": 9000,
+        "PaymentStatus": "PARTIAL"
+      },
+      {
+        "CustomerName": "सुनील ट्रेडर्स (*अनिवार्य)",
+        "Date": today,
+        "TotalAmount": 6500,
+        "PaidAmount": 6500,
+        "BillNumber": "",
+        "SiteName": "",
+        "ItemName": "",
+        "Quantity": "",
+        "Rate": "",
+        "BalanceDue": 0,
+        "PaymentStatus": "PAID"
+      },
+      {
+        "CustomerName": "महेश बिल्डर्स (*अनिवार्य)",
+        "Date": today,
+        "TotalAmount": 12800,
+        "PaidAmount": 0,
+        "BillNumber": "",
+        "SiteName": "",
+        "ItemName": "",
+        "Quantity": "",
+        "Rate": "",
+        "BalanceDue": 12800,
+        "PaymentStatus": "UNPAID"
+      }
+    ];
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `sample_bills_import_template_${today}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const ws = XLSX.utils.json_to_sheet(sampleBills);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Bills_Import_Format");
+    XLSX.writeFile(wb, `VyaparBook_Bulk_Bills_Import_Template.xlsx`);
   };
 
-  // 3. PARSE CSV BILLS
+  const handleDownloadCsvTemplate = () => {
+    handleDownloadExcelTemplate();
+  };
+
+  // 3. PARSE EXCEL & CSV BILLS (HANDLES BOTH .xlsx & .csv)
   const handleCsvFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     setCsvFile(file);
 
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target.result;
-      const lines = text.split('\n');
-      const bills = [];
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: "binary" });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const rawRows = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        const cols = line.split(',');
-        if (cols.length >= 6) {
-          const bNum = cols[0].trim();
-          const cust = cols[1].trim();
-          const d = cols[2].trim() || new Date().toISOString().split('T')[0];
-          const itm = cols[3].trim() || "Item";
-          const qty = parseFloat(cols[4]) || 1;
-          const rate = parseFloat(cols[5]) || 0;
-          const tot = cols[6] ? parseFloat(cols[6]) : (qty * rate);
-          const status = cols[7] ? cols[7].trim().toUpperCase() : "PAID";
+        const bills = rawRows.map((row, i) => {
+          const bNum = (row["BillNumber"] || row["billNumber"] || row["Bill No"] || row["बिल नंबर"] || `BILL-${Date.now().toString().slice(-4)}-${i+1}`).toString().trim();
+          const cust = (row["CustomerName"] || row["customerName"] || row["PartyName"] || row["पार्टी"] || "Walk-in Customer").toString().trim();
+          const site = (row["SiteName"] || row["siteName"] || row["Site"] || row["साइट"] || row["Project"] || "").toString().trim();
+          const d = (row["Date"] || row["date"] || row["तारीख"] || new Date().toISOString().split('T')[0]).toString().trim();
+          const itm = (row["ItemName"] || row["itemName"] || row["Item"] || row["सामान"] || "सामान / Item").toString().trim();
+          const qty = parseFloat(row["Quantity"] || row["quantity"] || row["Qty"] || row["मात्रा"] || 1) || 1;
+          const rate = parseFloat(row["Rate"] || row["rate"] || row["दर"] || 0) || 0;
+          const tot = parseFloat(row["TotalAmount"] || row["totalAmount"] || row["Total"] || row["कुल"] || (qty * rate)) || (qty * rate);
+          const paid = parseFloat(row["PaidAmount"] || row["paidAmount"] || row["Paid"] || row["जमा"] || (tot > 0 && row["PaymentStatus"] === 'PAID' ? tot : 0)) || 0;
+          const rawStatus = (row["PaymentStatus"] || row["paymentStatus"] || row["Status"] || "").toString().toUpperCase();
+          const status = rawStatus || (paid >= tot && tot > 0 ? "PAID" : paid > 0 ? "PARTIAL" : "UNPAID");
 
-          bills.push({
-            id: i,
+          return {
+            id: i + 1,
             billNumber: bNum,
             customerName: cust,
+            siteName: site,
             date: d,
             itemName: itm,
             quantity: qty,
             rate: rate,
             total: tot,
+            paidAmount: paid,
+            balanceDue: Math.max(0, tot - paid),
             paymentStatus: status
-          });
-        }
-      }
+          };
+        }).filter(b => b.total > 0 || b.customerName);
 
-      setParsedCsvBills(bills);
+        setParsedCsvBills(bills);
+      } catch (parseErr) {
+        console.error("Excel/CSV Bills parse error:", parseErr);
+        alert("फ़ाइल पढ़ने में त्रुटि: " + parseErr.message);
+      }
     };
 
-    reader.readAsText(file);
+    reader.readAsBinaryString(file);
   };
 
-  // Save CSV Bills into System
+  // Save Excel / CSV Bills into System
   const handleSaveCsvBills = async () => {
     if (parsedCsvBills.length === 0) return;
     setCsvSaving(true);
@@ -190,22 +234,25 @@ export default function ImportBillPage({ onImport }) {
         await api.post('/api/billing', {
           billNumber: row.billNumber,
           customerName: row.customerName,
+          siteName: row.siteName,
           date: row.date,
           total: row.total,
           finalAmount: row.total,
+          receivedAmount: row.paidAmount,
+          balanceAmount: row.balanceDue,
           paymentStatus: row.paymentStatus,
-          paymentMethod: row.paymentStatus === 'PAID' ? 'cash' : 'credit',
+          paymentMethod: row.paidAmount > 0 ? (row.paidAmount >= row.total ? 'cash' : 'split') : 'credit',
           items: [{ name: row.itemName, quantity: row.quantity, rate: row.rate, total: row.total }]
         });
         savedCount++;
       }
-      alert(`✅ कुल ${savedCount} बिल सफलतापूर्वक सॉफ्टवेयर में दर्ज हो गए!`);
+      alert(`🎉 कुल ${savedCount} बिल सफलतापूर्वक सॉफ्टवेयर में दर्ज हो गए!`);
       setParsedCsvBills([]);
       setCsvFile(null);
       if (onImport) onImport();
       else navigate('/billing/list');
     } catch (err) {
-      alert('CSV बिल सेव करने में त्रुटि: ' + (err.response?.data?.error || err.message));
+      alert('बिल सेव करने में त्रुटि: ' + (err.response?.data?.error || err.message));
     } finally {
       setCsvSaving(false);
     }
@@ -418,25 +465,43 @@ export default function ImportBillPage({ onImport }) {
                 </p>
               </div>
               <button
-                onClick={handleDownloadCsvTemplate}
-                className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200 flex items-center gap-1.5 cursor-pointer transition shrink-0"
+                onClick={handleDownloadExcelTemplate}
+                className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200 flex items-center gap-1.5 cursor-pointer transition shrink-0 shadow-xs"
               >
-                <Download size={15} /> 📥 सैंपल बिल CSV डाउनलोड करें
+                <Download size={15} /> 📥 सैंपल बिल Excel (.xlsx) डाउनलोड करें
               </button>
             </div>
 
-            {/* CSV Upload */}
+            {/* Flexible Rules Guidance Banner */}
+            <div className="bg-emerald-50/80 border border-emerald-200 p-4 rounded-2xl text-xs space-y-1.5">
+              <div className="flex items-center gap-2 text-emerald-900 font-extrabold text-sm">
+                <span>💡 पुराने 200 से 400 बिलों के लिए सबसे आसान व तेज़ नियम:</span>
+              </div>
+              <p className="text-slate-700">
+                • <b>सिर्फ 2 जानकारी अनिवार्य हैं:</b> <code className="bg-white px-1.5 py-0.5 rounded border font-bold text-slate-900">CustomerName</code> (पार्टी का नाम) और <code className="bg-white px-1.5 py-0.5 rounded border font-bold text-slate-900">TotalAmount</code> (बिल रकम)।
+              </p>
+              <p className="text-slate-700">
+                • <b>सामान (Item) व साइट (Site) डालना अनिवार्य नहीं है:</b> यदि आप सामान का नाम या साइट खाली छोड़ेंगे, तो सिस्टम इसे सीधे 'बिल राशि' के रूप में पार्टी के खाते में जोड़ देगा। आपको अलग से 2000 आइटम बनाने या स्टॉक काटने का कोई झंझट नहीं होगा!
+              </p>
+              <p className="text-slate-700">
+                • <b>जमा राशि (PaidAmount):</b> उस बिल में से यदि कुछ पैसा जमा हुआ है, तो रकम लिख दें; बाकी पैसा अपने आप पार्टी की उधारी (Balance Due) में जुड़ जाएगा।
+              </p>
+            </div>
+
+            {/* Excel / CSV Upload */}
             <div className="p-6 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-center space-y-3">
               <span className="p-3 bg-emerald-100 text-emerald-700 rounded-2xl">
                 <FileSpreadsheet size={28} />
               </span>
               <div>
-                <p className="text-xs font-bold text-slate-800">तैयार की गई CSV फ़ाइल चुनें</p>
-                <p className="text-[11px] text-slate-400">कॉलम: BillNumber, CustomerName, Date, ItemName, Quantity, Rate, TotalAmount</p>
+                <p className="text-xs font-bold text-slate-800">तैयार की गई Excel (.xlsx) या CSV फ़ाइल चुनें</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  कॉलम: BillNumber, CustomerName, SiteName (साइट/प्रोजेक्ट), Date, ItemName, Quantity, Rate, TotalAmount, PaidAmount, PaymentStatus
+                </p>
               </div>
               <input
                 type="file"
-                accept=".csv"
+                accept=".xlsx, .xls, .csv"
                 onChange={handleCsvFileChange}
                 className="block text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700 cursor-pointer"
               />
@@ -445,13 +510,21 @@ export default function ImportBillPage({ onImport }) {
             {/* CSV Preview Table */}
             {parsedCsvBills.length > 0 && (
               <div className="space-y-4 pt-4 border-t border-slate-200">
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-center flex-wrap gap-2">
                   <span className="text-xs font-bold text-slate-700">
                     कुल तैयार बिल: <strong>{parsedCsvBills.length}</strong>
                   </span>
-                  <span className="text-xs text-emerald-700 font-black">
-                    कुल योग: ₹{parsedCsvBills.reduce((s, b) => s + (b.total || 0), 0).toLocaleString('en-IN')}
-                  </span>
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="text-slate-700 font-bold">
+                      कुल योग: <strong>₹{parsedCsvBills.reduce((s, b) => s + (b.total || 0), 0).toLocaleString('en-IN')}</strong>
+                    </span>
+                    <span className="text-emerald-700 font-bold">
+                      कुल जमा: <strong>₹{parsedCsvBills.reduce((s, b) => s + (b.paidAmount || 0), 0).toLocaleString('en-IN')}</strong>
+                    </span>
+                    <span className="text-rose-600 font-bold">
+                      कुल बकाया: <strong>₹{parsedCsvBills.reduce((s, b) => s + (b.balanceDue || 0), 0).toLocaleString('en-IN')}</strong>
+                    </span>
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto border border-slate-200 rounded-2xl max-h-72">
@@ -460,11 +533,14 @@ export default function ImportBillPage({ onImport }) {
                       <tr>
                         <th className="p-2.5">बिल #</th>
                         <th className="p-2.5">पार्टी नाम</th>
+                        <th className="p-2.5">साइट (Site)</th>
                         <th className="p-2.5">तारीख</th>
                         <th className="p-2.5">सामान (Item)</th>
                         <th className="p-2.5 text-right">मात्रा</th>
                         <th className="p-2.5 text-right">रेट</th>
-                        <th className="p-2.5 text-right">कुल योग (₹)</th>
+                        <th className="p-2.5 text-right">कुल बिल (₹)</th>
+                        <th className="p-2.5 text-right">जमा राशि (₹)</th>
+                        <th className="p-2.5 text-right">बकाया (₹)</th>
                         <th className="p-2.5 text-center">स्थिति</th>
                       </tr>
                     </thead>
@@ -472,17 +548,22 @@ export default function ImportBillPage({ onImport }) {
                       {parsedCsvBills.map((r, idx) => (
                         <tr key={idx} className="hover:bg-slate-50/70">
                           <td className="p-2.5 font-bold text-slate-900">{r.billNumber}</td>
-                          <td className="p-2.5">{r.customerName}</td>
+                          <td className="p-2.5 font-semibold text-slate-800">{r.customerName}</td>
+                          <td className="p-2.5 text-slate-500">{r.siteName || '-'}</td>
                           <td className="p-2.5">{r.date}</td>
                           <td className="p-2.5">{r.itemName}</td>
                           <td className="p-2.5 text-right">{r.quantity}</td>
                           <td className="p-2.5 text-right">₹{r.rate}</td>
-                          <td className="p-2.5 text-right font-black text-emerald-700">₹{r.total.toLocaleString('en-IN')}</td>
+                          <td className="p-2.5 text-right font-bold text-slate-900">₹{r.total.toLocaleString('en-IN')}</td>
+                          <td className="p-2.5 text-right font-black text-emerald-700">₹{r.paidAmount.toLocaleString('en-IN')}</td>
+                          <td className="p-2.5 text-right font-black text-rose-600">₹{r.balanceDue.toLocaleString('en-IN')}</td>
                           <td className="p-2.5 text-center">
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              r.paymentStatus === 'PAID' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                              r.paymentStatus === 'PAID' ? 'bg-emerald-100 text-emerald-800' :
+                              r.paymentStatus === 'PARTIAL' ? 'bg-blue-100 text-blue-800' :
+                              'bg-amber-100 text-amber-800'
                             }`}>
-                              {r.paymentStatus}
+                              {r.paymentStatus === 'PAID' ? 'चुकता' : r.paymentStatus === 'PARTIAL' ? 'आंशिक जमा' : 'उधारी'}
                             </span>
                           </td>
                         </tr>

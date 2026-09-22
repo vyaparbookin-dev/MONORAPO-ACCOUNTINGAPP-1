@@ -115,46 +115,46 @@ export default function ImportBillPage({ onImport }) {
     }
   };
 
-  // 2. EXCEL & CSV SAMPLE TEMPLATE DOWNLOAD (WITH SITEWISE & PAYMENTS)
+  // 2. EXCEL & CSV SAMPLE TEMPLATE DOWNLOAD (WITH OPTIONAL ITEMS & SITEWISE)
   const handleDownloadExcelTemplate = () => {
     const today = new Date().toISOString().split('T')[0];
     const sampleBills = [
       {
-        "BillNumber": "INV-2026-001",
-        "CustomerName": "राजेश कंस्ट्रक्शन",
-        "SiteName": "सिविल लाइन्स साइट (प्रोजेक्ट A)",
+        "CustomerName": "राजेश कंस्ट्रक्शन (*अनिवार्य)",
         "Date": today,
-        "ItemName": "अल्ट्राटेक सीमेंट (बोरी)",
-        "Quantity": 50,
-        "Rate": 380,
         "TotalAmount": 19000,
         "PaidAmount": 10000,
+        "BillNumber": "INV-2026-001 (वैकल्पिक)",
+        "SiteName": "सिविल लाइन्स साइट (वैकल्पिक)",
+        "ItemName": "अल्ट्राटेक सीमेंट (वैकल्पिक - खाली छोड़ सकते हैं)",
+        "Quantity": 50,
+        "Rate": 380,
         "BalanceDue": 9000,
         "PaymentStatus": "PARTIAL"
       },
       {
-        "BillNumber": "INV-2026-002",
-        "CustomerName": "सुनील ट्रेडर्स",
-        "SiteName": "स्टोर / मुख्य दुकान",
+        "CustomerName": "सुनील ट्रेडर्स (*अनिवार्य)",
         "Date": today,
-        "ItemName": "टाटा टिस्कॉन 12mm सरिया",
-        "Quantity": 10,
-        "Rate": 650,
         "TotalAmount": 6500,
         "PaidAmount": 6500,
+        "BillNumber": "",
+        "SiteName": "",
+        "ItemName": "",
+        "Quantity": "",
+        "Rate": "",
         "BalanceDue": 0,
         "PaymentStatus": "PAID"
       },
       {
-        "BillNumber": "INV-2026-003",
-        "CustomerName": "महेश बिल्डर्स",
-        "SiteName": "रिंग रोड मॉल साइट",
+        "CustomerName": "महेश बिल्डर्स (*अनिवार्य)",
         "Date": today,
-        "ItemName": "एशियन पेंट्स एपेक्स 20L",
-        "Quantity": 4,
-        "Rate": 3200,
         "TotalAmount": 12800,
         "PaidAmount": 0,
+        "BillNumber": "",
+        "SiteName": "",
+        "ItemName": "",
+        "Quantity": "",
+        "Rate": "",
         "BalanceDue": 12800,
         "PaymentStatus": "UNPAID"
       }
@@ -470,6 +470,22 @@ export default function ImportBillPage({ onImport }) {
               >
                 <Download size={15} /> 📥 सैंपल बिल Excel (.xlsx) डाउनलोड करें
               </button>
+            </div>
+
+            {/* Flexible Rules Guidance Banner */}
+            <div className="bg-emerald-50/80 border border-emerald-200 p-4 rounded-2xl text-xs space-y-1.5">
+              <div className="flex items-center gap-2 text-emerald-900 font-extrabold text-sm">
+                <span>💡 पुराने 200 से 400 बिलों के लिए सबसे आसान व तेज़ नियम:</span>
+              </div>
+              <p className="text-slate-700">
+                • <b>सिर्फ 2 जानकारी अनिवार्य हैं:</b> <code className="bg-white px-1.5 py-0.5 rounded border font-bold text-slate-900">CustomerName</code> (पार्टी का नाम) और <code className="bg-white px-1.5 py-0.5 rounded border font-bold text-slate-900">TotalAmount</code> (बिल रकम)।
+              </p>
+              <p className="text-slate-700">
+                • <b>सामान (Item) व साइट (Site) डालना अनिवार्य नहीं है:</b> यदि आप सामान का नाम या साइट खाली छोड़ेंगे, तो सिस्टम इसे सीधे 'बिल राशि' के रूप में पार्टी के खाते में जोड़ देगा। आपको अलग से 2000 आइटम बनाने या स्टॉक काटने का कोई झंझट नहीं होगा!
+              </p>
+              <p className="text-slate-700">
+                • <b>जमा राशि (PaidAmount):</b> उस बिल में से यदि कुछ पैसा जमा हुआ है, तो रकम लिख दें; बाकी पैसा अपने आप पार्टी की उधारी (Balance Due) में जुड़ जाएगा।
+              </p>
             </div>
 
             {/* Excel / CSV Upload */}
