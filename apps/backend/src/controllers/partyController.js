@@ -171,35 +171,50 @@ export const getPartyStatement = async (req, res) => {
     const escapeRegex = (s) => (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const nameRegex = new RegExp(`^${escapeRegex(party.name)}$`, "i");
 
+    const coIdStr = String(req.companyId);
+    const coQuery = [coIdStr];
+    if (mongoose.Types.ObjectId.isValid(coIdStr)) {
+      coQuery.push(new mongoose.Types.ObjectId(coIdStr));
+    }
+
+    const pIdStr = String(party._id);
+    const pIdQuery = [pIdStr];
+    if (mongoose.Types.ObjectId.isValid(pIdStr)) {
+      pIdQuery.push(new mongoose.Types.ObjectId(pIdStr));
+    }
+
     // 1. Direct Party Transactions (Cash/Bank Payments & Receipts)
     const txRecords = await PartyTransaction.find({
-      partyId: party._id,
-      companyId: req.companyId,
+      partyId: { $in: pIdQuery },
+      companyId: { $in: coQuery },
       isDeleted: { $ne: true }
     }).lean();
 
     // 2. Sales Bills for this party
     const billFilter = {
-      companyId: req.companyId,
+      companyId: { $in: coQuery },
       isDeleted: { $ne: true },
       $or: [
-        { partyId: party._id },
-        { customerName: nameRegex }
+        { partyId: { $in: pIdQuery } },
+        { customerName: nameRegex },
+        { partyName: nameRegex },
+        { customer: nameRegex }
       ]
     };
     if (party.mobileNumber && party.mobileNumber.length >= 10) {
-      billFilter.$or.push({ customerMobile: party.mobileNumber });
+      billFilter.$or.push({ customerMobile: party.mobileNumber }, { customerPhone: party.mobileNumber });
     }
     const billRecords = await Bill.find(billFilter).lean();
 
     // 3. Purchase Bills for this party (if supplier)
     const purchaseFilter = {
-      companyId: req.companyId,
+      companyId: { $in: coQuery },
       isDeleted: { $ne: true },
       $or: [
-        { partyId: party._id },
+        { partyId: { $in: pIdQuery } },
         { supplierName: nameRegex },
-        { supplier: nameRegex }
+        { supplier: nameRegex },
+        { partyName: nameRegex }
       ]
     };
     const purchaseRecords = await Purchase.find(purchaseFilter).lean();
@@ -302,19 +317,40 @@ export const getPartyStatement = async (req, res) => {
     let runningBal = Number(party.openingBalance || 0);
     const openingBal = runningBal;
 
-    const formattedTransactions = ledgerEntries.map(entry => {
-      // For customer: debit increases receivable, credit decreases
-      // For supplier: credit increases payable
+    const formattedTransactions = [];
+
+    // --- INCLUDE OPENING BALANCE AS THE VERY FIRST LINE ITEM ---
+    if (openingBal !== 0) {
+      const isSupplier = (party.partyType === "supplier");
+      const isPayable = openingBal < 0 || isSupplier;
+      const absOpening = Math.abs(openingBal);
+      formattedTransactions.push({
+        _id: `open_${party._id}`,
+        date: party.createdAt || new Date(2026, 0, 1),
+        type: isPayable ? "purchase" : "sale",
+        refNo: "OPENING",
+        billNumber: "OPENING-BILL",
+        details: isPayable 
+          ? `प्रारंभिक शेष / बिल (Opening Balance / Bill)` 
+          : `प्रारंभिक शेष / बिल (Opening Balance / Bill)`,
+        debit: isPayable ? 0 : absOpening,
+        credit: isPayable ? absOpening : 0,
+        runningBalance: openingBal,
+        source: "OpeningBalance"
+      });
+    }
+
+    ledgerEntries.forEach(entry => {
       const isSupplier = (party.partyType === "supplier");
       if (isSupplier) {
         runningBal += (entry.debit - entry.credit);
       } else {
         runningBal += (entry.debit - entry.credit);
       }
-      return {
+      formattedTransactions.push({
         ...entry,
         runningBalance: runningBal
-      };
+      });
     });
 
     // Reverse to descending (latest on top) for convenient display

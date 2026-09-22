@@ -1893,85 +1893,87 @@ function MobileVyaparAppContent() {
     setPartyStatementLoading(true);
     try {
       const res = await api.get(`/api/party/${partyId}/statement`).catch(() => api.get(`/api/parties/${partyId}/statement`));
-      const txs = res?.transactions || res?.data?.transactions || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
-      if (Array.isArray(txs) && txs.length > 0) {
-        setPartyTransactions(txs);
-      } else {
-        // Fallback: build statement from bills & allPartyTransactions
-        const pObj = (parties || []).find(p => (p._id === partyId || p.id === partyId)) || selectedPartyDetail;
-        const pNameNorm = String(pObj?.name || '').trim().toLowerCase();
-        const pPhoneNorm = String(pObj?.phone || pObj?.mobileNumber || '').trim();
+      const serverTxs = res?.transactions || res?.data?.transactions || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+      
+      const pObj = (parties || []).find(p => (p._id === partyId || p.id === partyId)) || selectedPartyDetail;
+      const opBal = Number(pObj?.openingBalance ?? res?.openingBalance ?? 0);
+      const isSupplier = (pObj?.type === "supplier" || pObj?.partyType === "supplier") || opBal < 0;
 
-        const localBills = (bills || []).filter(b => {
-          const bPartyId = String(b.partyId || '');
-          const bCust = String(b.customerName || b.partyName || '').trim().toLowerCase();
-          const bPhone = String(b.customerMobile || b.customerPhone || '').trim();
-          return (bPartyId && bPartyId === String(partyId)) || (bCust && bCust === pNameNorm) || (bPhone && pPhoneNorm && bPhone === pPhoneNorm);
+      let combinedTxs = Array.isArray(serverTxs) ? [...serverTxs] : [];
+
+      // If opening balance exists and is not already in transactions, add opening bill/balance row
+      const hasOpening = combinedTxs.some(t => t.refNo === "OPENING" || String(t._id || '').startsWith("open_") || String(t.details || '').includes("प्रारंभिक"));
+      if (!hasOpening && opBal !== 0) {
+        const absOp = Math.abs(opBal);
+        combinedTxs.push({
+          _id: `open_${partyId}`,
+          date: pObj?.createdAt || new Date(2026, 0, 1),
+          type: isSupplier ? "purchase" : "sale",
+          refNo: "OPENING",
+          billNumber: "OPENING-BILL",
+          details: `प्रारंभिक पुराना हिसाब / बिल (Opening Balance / Bill)`,
+          debit: isSupplier ? 0 : absOp,
+          credit: isSupplier ? absOp : 0,
+          runningBalance: opBal,
+          source: "OpeningBalance"
+        });
+      }
+
+      // Also merge any local matching bills not already present
+      const pNameNorm = String(pObj?.name || '').trim().toLowerCase();
+      const pPhoneNorm = String(pObj?.phone || pObj?.mobileNumber || '').trim();
+      const existingRefNos = new Set(combinedTxs.map(t => String(t.billNumber || t.refNo || t._id || '').toLowerCase()));
+
+      const localBills = (bills || []).filter(b => {
+        const bPartyId = String(b.partyId || '');
+        const bCust = String(b.customerName || b.partyName || '').trim().toLowerCase();
+        const bPhone = String(b.customerMobile || b.customerPhone || '').trim();
+        return (bPartyId && bPartyId === String(partyId)) || (bCust && bCust === pNameNorm) || (bPhone && pPhoneNorm && bPhone === pPhoneNorm);
+      });
+
+      for (const b of localBills) {
+        const bNum = String(b.billNumber || b.invoiceNumber || 'BILL');
+        if (existingRefNos.has(bNum.toLowerCase()) || existingRefNos.has(String(b._id || b.id || '').toLowerCase())) continue;
+
+        const finalAmt = Number(b.finalAmount ?? b.total ?? 0);
+        const isPaid = String(b.paymentStatus || b.status || '').toLowerCase() === 'paid';
+        const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
+
+        combinedTxs.push({
+          _id: b._id || b.id,
+          date: b.date || b.createdAt,
+          type: isSupplier ? 'purchase' : 'sale',
+          refNo: bNum,
+          billNumber: bNum,
+          billAmount: finalAmt,
+          paidAmount: paidAmt,
+          details: `बिल #${bNum} (${(b.items || []).length} सामान)`,
+          items: b.items || [],
+          debit: isSupplier ? 0 : finalAmt,
+          credit: isSupplier ? finalAmt : 0,
+          billImageUrl: b.billImageUrl || '',
+          paymentMethod: b.paymentMode || b.paymentMethod || 'CASH'
         });
 
-        const fallbackEntries = [];
-        for (const b of localBills) {
-          const bNum = String(b.billNumber || 'BILL');
-          const finalAmt = Number(b.finalAmount ?? b.total ?? 0);
-          const isPaid = String(b.paymentStatus || b.status || '').toLowerCase() === 'paid';
-          const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
-
-          const itemsSummary = (b.items && b.items.length > 0)
-            ? `: ${b.items.map(i => `${i.name}${i.quantity ? ` (${i.quantity} ${i.unit || 'pcs'})` : ''}`).slice(0, 3).join(', ')}${b.items.length > 3 ? '...' : ''}`
-            : '';
-
-          fallbackEntries.push({
-            _id: b._id || b.id,
+        if (paidAmt > 0) {
+          combinedTxs.push({
+            _id: `pay_${b._id || b.id}`,
             date: b.date || b.createdAt,
-            type: 'sale',
-            refNo: bNum,
+            type: 'payment',
+            refNo: `REC-${bNum}`,
             billNumber: bNum,
-            billAmount: finalAmt,
-            paidAmount: paidAmt,
-            details: `बिक्री बिल #${bNum} (${(b.items || []).length} सामान)${itemsSummary}`,
-            items: b.items || [],
-            debit: finalAmt,
-            credit: 0,
+            details: `बिल #${bNum} पर नकद/UPI जमा (Payment Received)`,
+            debit: isSupplier ? paidAmt : 0,
+            credit: isSupplier ? 0 : paidAmt,
             billImageUrl: b.billImageUrl || '',
             paymentMethod: b.paymentMode || b.paymentMethod || 'CASH'
           });
-
-          if (paidAmt > 0) {
-            fallbackEntries.push({
-              _id: `pay_${b._id || b.id}`,
-              date: b.date || b.createdAt,
-              type: 'payment',
-              refNo: `REC-${bNum}`,
-              billNumber: bNum,
-              details: `बिल #${bNum} पर नकद/UPI जमा (Payment Received)`,
-              debit: 0,
-              credit: paidAmt,
-              billImageUrl: b.billImageUrl || '',
-              paymentMethod: b.paymentMode || b.paymentMethod || 'CASH'
-            });
-          }
         }
-
-        // Also add any local party transactions
-        const localTxs = (allPartyTransactions || []).filter(t => (String(t.partyId) === String(partyId)));
-        for (const t of localTxs) {
-          fallbackEntries.push({
-            _id: t._id || t.id,
-            date: t.date || t.createdAt,
-            type: t.type || (t.credit > 0 ? 'payment' : 'payment_out'),
-            refNo: t.billNumber || 'PAY',
-            billNumber: t.billNumber || '',
-            details: t.details || t.notes || (t.credit > 0 ? 'मुझे मिले (जमा)' : 'मैंने दिए'),
-            debit: Number(t.debit || 0),
-            credit: Number(t.credit || 0),
-            billImageUrl: t.billImageUrl || '',
-            paymentMethod: t.paymentMethod || t.paymentMode || 'CASH'
-          });
-        }
-
-        fallbackEntries.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-        setPartyTransactions(fallbackEntries);
       }
+
+      // Sort descending (latest on top)
+      combinedTxs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      setPartyTransactions(combinedTxs);
     } catch (e) {
       console.error("fetchPartyStatement error:", e);
       setPartyTransactions([]);
@@ -5520,8 +5522,9 @@ function MobileVyaparAppContent() {
                   // Compute chronological running balance
                   const sortedAsc = [...partyTransactions].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
                   
+                  const hasOpeningTx = sortedAsc.some(t => t.refNo === 'OPENING' || String(t._id || '').startsWith('open_') || String(t.details || '').includes('प्रारंभिक'));
                   let initialBal = Number(selectedPartyDetail.openingBalance || 0);
-                  let running = initialBal;
+                  let running = hasOpeningTx ? 0 : initialBal;
 
                   const txWithRunning = sortedAsc.map((tx) => {
                     const debit = Number(tx.debit || 0);
@@ -5532,6 +5535,7 @@ function MobileVyaparAppContent() {
 
                   // Display latest transactions first
                   const txWithRunningDesc = [...txWithRunning].reverse();
+                  const isSupplierParty = (selectedPartyDetail.type === 'supplier' || selectedPartyDetail.partyType === 'supplier') || Number(selectedPartyDetail.openingBalance || 0) < 0;
 
                   return (
                     <div className="space-y-2">
@@ -5539,14 +5543,34 @@ function MobileVyaparAppContent() {
                         const isDebit = Number(tx.debit || 0) > 0;
                         const amt = isDebit ? tx.debit : tx.credit;
                         const mode = tx.paymentMethod || tx.paymentMode || 'CASH';
+                        const isOpening = tx.refNo === 'OPENING' || String(tx._id || '').startsWith('open_') || String(tx.details || '').includes('प्रारंभिक');
+
+                        let badgeText = 'लेन-देन';
+                        let badgeBg = 'bg-slate-100 text-slate-800';
+                        if (isOpening) {
+                          badgeText = '📦 प्रारंभिक शेष / बिल';
+                          badgeBg = 'bg-amber-100 text-amber-900 border border-amber-300';
+                        } else if (tx.type === 'sale') {
+                          badgeText = `🛒 बिक्री बिल #${tx.billNumber || tx.refNo}`;
+                          badgeBg = 'bg-blue-100 text-blue-800';
+                        } else if (tx.type === 'purchase') {
+                          badgeText = `📦 खरीद बिल #${tx.billNumber || tx.refNo}`;
+                          badgeBg = 'bg-purple-100 text-purple-800';
+                        } else if (tx.type === 'payment' || tx.type === 'receipt' || tx.source === 'PartyTransaction') {
+                          badgeText = isDebit ? `🔴 भुगतान #${tx.refNo || 'PAY'}` : `🟢 जमा #${tx.refNo || 'REC'}`;
+                          badgeBg = isDebit ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800';
+                        } else if (tx.refNo) {
+                          badgeText = `#${tx.refNo}`;
+                        }
+
                         return (
                           <div key={tx._id || idx} className="p-3 bg-[#F8FAFC] border border-slate-200/80 rounded-2xl space-y-2 shadow-xs">
                             <div className="flex justify-between items-start">
                               <div className="space-y-1 flex-1 pr-2">
                                 <div className="font-extrabold text-xs text-[#0F172A] flex items-center gap-1.5 flex-wrap">
-                                  <span className={`w-2 h-2 rounded-full shrink-0 ${isDebit ? 'bg-rose-500' : 'bg-emerald-500'}`} />
-                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${isDebit ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                                    {tx.type === 'sale' ? `🛒 बिल #${tx.billNumber || tx.refNo}` : tx.type === 'payment' ? `🟢 जमा #${tx.refNo}` : tx.refNo ? `#${tx.refNo}` : 'लेन-देन'}
+                                  <span className={`w-2 h-2 rounded-full shrink-0 ${isOpening ? 'bg-amber-500' : isDebit ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${badgeBg}`}>
+                                    {badgeText}
                                   </span>
                                   <span className="text-slate-800 font-bold">{tx.details || (isDebit ? "उधारी बिक्री" : "राशि जमा")}</span>
                                 </div>
@@ -5586,11 +5610,19 @@ function MobileVyaparAppContent() {
                               </div>
 
                               <div className="text-right shrink-0">
-                                <div className={`font-black text-sm ${isDebit ? 'text-rose-600' : 'text-emerald-600'}`}>
-                                  {isDebit ? `- ₹${Number(amt).toLocaleString('en-IN')}` : `+ ₹${Number(amt).toLocaleString('en-IN')}`}
+                                <div className={`font-black text-sm ${
+                                  isOpening 
+                                    ? 'text-amber-700' 
+                                    : (isSupplierParty ? (isDebit ? 'text-emerald-600' : 'text-rose-600') : (isDebit ? 'text-rose-600' : 'text-emerald-600'))
+                                }`}>
+                                  ₹{Number(amt).toLocaleString('en-IN')}
                                 </div>
-                                <span className="text-[9px] font-extrabold text-slate-400">
-                                  {isDebit ? "🔴 बिल / दिए" : "🟢 जमा / मिले"}
+                                <span className="text-[9px] font-extrabold text-slate-500">
+                                  {isOpening 
+                                    ? "📦 पुराना हिसाब / बिल" 
+                                    : isSupplierParty
+                                      ? (isDebit ? "🟢 मैंने दिए" : "🔴 खरीद / बिल")
+                                      : (isDebit ? "🔴 उधारी बिल" : "🟢 जमा / मिले")}
                                 </span>
                               </div>
                             </div>
@@ -5636,7 +5668,7 @@ function MobileVyaparAppContent() {
                         );
                       })}
 
-                      {initialBal !== 0 && (
+                      {!hasOpeningTx && initialBal !== 0 && (
                         <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl flex justify-between items-center text-xs text-amber-900 font-bold">
                           <span>📦 प्रारंभिक शेष (Opening Balance)</span>
                           <span>₹ {Math.abs(initialBal).toLocaleString('en-IN')} {initialBal > 0 ? '(लेने थे)' : '(देने थे)'}</span>
