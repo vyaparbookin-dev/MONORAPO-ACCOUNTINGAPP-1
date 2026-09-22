@@ -3644,6 +3644,39 @@ function MobileVyaparAppContent() {
 
             {/* Quick Actions List */}
             <div className="space-y-2 text-xs font-bold">
+              {/* 💰 बचत व निवेश (FD / RD / SIP / Gold) */}
+              <div 
+                onClick={() => setShowSavingsModal(true)} 
+                className="p-3.5 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 hover:border-amber-300 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm transition"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xl">💰</span>
+                  <div>
+                    <span className="text-amber-900 block font-black">बचत व निवेश (FD / RD / SIP / Gold)</span>
+                    <span className="text-[10px] text-amber-700 font-bold">गल्ले से बचत किस्त जमा करें • बिजनेस खर्चों से अलग कुल पोर्टफोलियो</span>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-amber-600" />
+              </div>
+
+              {/* 👔 स्टाफ प्रबंधन व हाजिरी (PagarBook) */}
+              <div 
+                onClick={() => {
+                  fetchPagarBookData();
+                  setShowPagarBookModal(true);
+                }} 
+                className="p-3.5 bg-white border border-slate-100 hover:border-indigo-200 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm transition"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xl">👔</span>
+                  <div>
+                    <span className="text-[#0F172A] block font-extrabold">स्टाफ हाजिरी व सैलरी (PagarBook)</span>
+                    <span className="text-[10px] text-slate-400 font-medium">स्टाफ जोड़ें, दैनिक हाजिरी (P/A/Half), एडवांस व वेतन पर्ची</span>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-slate-400" />
+              </div>
+
               <div 
                 onClick={() => setShowCompanySelectModal(true)} 
                 className="p-3.5 bg-white border border-slate-100 hover:border-indigo-200 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm transition"
