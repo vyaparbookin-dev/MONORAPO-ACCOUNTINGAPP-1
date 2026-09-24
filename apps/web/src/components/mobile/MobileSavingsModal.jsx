@@ -150,13 +150,26 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
     const instAmt = Number(formData.installmentAmount || 0);
     const initDeposit = Number(formData.initialDeposit || 0);
 
-    const computedTotal = isOld && pastAmt > 0 ? pastAmt : (initDeposit > 0 ? initDeposit : (formData.savingsType === "FD" ? initDeposit : instAmt));
+    // FD principal vs RD monthly commitment (RD starts at 0 unless isOld is checked)
+    let computedTotal = 0;
+    if (editingId) {
+      const existing = savingsList.find(x => (x._id || x.id) === editingId);
+      if (formData.isOldOngoingAccount && pastAmt !== Number(existing?.totalDeposited)) {
+        computedTotal = pastAmt;
+      } else {
+        computedTotal = Number(existing?.totalDeposited ?? (isOld && pastAmt > 0 ? pastAmt : (formData.savingsType === "FD" ? initDeposit : 0)));
+      }
+    } else {
+      computedTotal = isOld && pastAmt > 0
+        ? pastAmt
+        : (formData.savingsType === "FD" ? initDeposit : 0);
+    }
 
     const payload = {
       ...formData,
       tenureYears: Number(formData.tenureYears || 1),
       installmentAmount: instAmt,
-      initialDeposit: initDeposit,
+      initialDeposit: formData.savingsType === "FD" ? initDeposit : 0,
       alreadyDepositedAmount: pastAmt,
       totalDeposited: computedTotal,
       currentValue: computedTotal,
@@ -171,15 +184,35 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
     try {
       if (editingId) {
         // Update
+        const existing = savingsList.find(x => (x._id || x.id) === editingId);
+        let updatedInsts = existing?.installments || [];
+
+        // If user manually corrected the total balance in edit form
+        if (formData.isOldOngoingAccount && pastAmt !== Number(existing?.totalDeposited)) {
+          updatedInsts = pastAmt > 0 ? [{
+            amount: pastAmt,
+            date: payload.startDate || new Date().toISOString().split("T")[0],
+            sourceOfFund: payload.fundSource,
+            notes: "सुधारी गई कुल जमा राशि (Manual Correction)"
+          }] : [];
+        }
+
+        const updatePayload = {
+          ...payload,
+          installments: updatedInsts,
+          totalDeposited: computedTotal,
+          currentValue: computedTotal
+        };
+
         try {
-          await api.put(`/api/savings/${editingId}`, payload);
+          await api.put(`/api/savings/${editingId}`, updatePayload);
         } catch (e) {}
 
         let local = JSON.parse(localStorage.getItem("vb_local_savings") || "[]");
-        local = local.map(x => ((x._id || x.id) === editingId ? { ...x, ...payload } : x));
+        local = local.map(x => ((x._id || x.id) === editingId ? { ...x, ...updatePayload } : x));
         localStorage.setItem("vb_local_savings", JSON.stringify(local));
       } else {
-        // Create
+        // Create new account
         const newId = "sav_" + Date.now();
         const newRecord = {
           ...payload,
@@ -192,12 +225,12 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
             date: payload.startDate || new Date().toISOString().split("T")[0],
             sourceOfFund: payload.fundSource,
             notes: `पूर्व संचित बचत (${formData.alreadyPaidCount ? `${formData.alreadyPaidCount} किस्तें` : 'पुराना चालू खाता'})`
-          }] : initDeposit > 0 ? [{
+          }] : (formData.savingsType === "FD" && initDeposit > 0) ? [{
             amount: initDeposit,
             date: payload.startDate || new Date().toISOString().split("T")[0],
             sourceOfFund: payload.fundSource,
-            notes: "Initial Deposit / खाता शुरुआत राशि"
-          }] : []
+            notes: "FD Principal Deposit / फिक्स्ड डिपॉजिट जमा"
+          }] : [] // RD/SIP starts at 0!
         };
 
         try {
@@ -237,9 +270,9 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
       interestRate: String(item.interestRate || ""),
       startDate: sDate,
       tenureYears: tYrs,
-      isOldOngoingAccount: Boolean(item.isOldOngoingAccount || (Number(item.alreadyDepositedAmount || 0) > 0)),
-      alreadyDepositedAmount: String(item.alreadyDepositedAmount || item.totalDeposited || ""),
-      alreadyPaidCount: String(item.alreadyPaidCount || ""),
+      isOldOngoingAccount: true, // Show total deposited amount so user can edit it directly
+      alreadyDepositedAmount: String(item.totalDeposited ?? item.alreadyDepositedAmount ?? ""),
+      alreadyPaidCount: String(item.alreadyPaidCount || (item.installments || []).length || ""),
       maturityDate: item.maturityDate ? String(item.maturityDate).split("T")[0] : calculateMaturity(sDate, tYrs),
       dueDayOfMonth: String(item.dueDayOfMonth || "5"),
       expectedMaturityAmount: String(item.expectedMaturityAmount || ""),
@@ -283,6 +316,50 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
       setSavingsList(prev => prev.filter(x => (x._id || x.id) !== id));
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleDeleteSingleInstallment = async (savingItem, instIndex) => {
+    if (!savingItem) return;
+    const inst = (savingItem.installments || [])[instIndex];
+    if (!inst) return;
+
+    const amt = Number(inst.amount || 0);
+    if (!confirm(`क्या आप ₹${amt.toLocaleString("en-IN")} की इस जमा एंट्री (${inst.notes || 'किस्त'}) को हटाना चाहते हैं? कुल जमा राशि में से यह राशि कम हो जाएगी।`)) {
+      return;
+    }
+
+    const id = savingItem._id || savingItem.id;
+    const updatedInstList = (savingItem.installments || []).filter((_, idx) => idx !== instIndex);
+    const newTotal = Math.max(0, updatedInstList.reduce((sum, x) => sum + Number(x.amount || 0), 0));
+
+    const updatedSaving = {
+      ...savingItem,
+      installments: updatedInstList,
+      totalDeposited: newTotal,
+      currentValue: newTotal
+    };
+
+    try {
+      // 1. Update backend if available
+      try {
+        await api.put(`/api/savings/${id}`, {
+          installments: updatedInstList,
+          totalDeposited: newTotal,
+          currentValue: newTotal
+        });
+      } catch (e) {}
+
+      // 2. Update local storage
+      let local = JSON.parse(localStorage.getItem("vb_local_savings") || "[]");
+      local = local.map(s => ((s._id || s.id) === id ? updatedSaving : s));
+      localStorage.setItem("vb_local_savings", JSON.stringify(local));
+
+      // 3. Update active states
+      setViewHistoryItem(updatedSaving);
+      setSavingsList(prev => prev.map(s => ((s._id || s.id) === id ? updatedSaving : s)));
+    } catch (err) {
+      alert("हटाने में त्रुटि: " + (err.message || err));
     }
   };
 
@@ -385,7 +462,80 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
   const totalMonthlyCommitment = savingsList
     .filter(x => x.frequency === "monthly" && x.status !== "CLOSED")
     .reduce((s, x) => s + Number(x.installmentAmount || 0), 0);
-  const totalMaturityForecast = savingsList.reduce((s, x) => s + Number(x.expectedMaturityAmount || x.totalDeposited || 0), 0);
+  const totalMaturityForecast = savingsList.reduce((s, x) => {
+    const instAmt = Number(x.installmentAmount || 0);
+    const months = Number(x.tenureYears || 1) * 12;
+    const calcTarget = months * instAmt;
+    return s + Number(x.expectedMaturityAmount || (calcTarget > 0 ? calcTarget : x.totalDeposited) || 0);
+  }, 0);
+
+  const totalPaidInstAll = savingsList.reduce((s, x) => {
+    const instAmt = Number(x.installmentAmount || 0);
+    const recCount = (x.installments || []).length;
+    const calcCount = instAmt > 0 ? Math.round(Number(x.totalDeposited || 0) / instAmt) : recCount;
+    return s + Math.max(recCount, calcCount);
+  }, 0);
+
+  const totalRemainingInstAll = savingsList.reduce((s, x) => {
+    const instAmt = Number(x.installmentAmount || 0);
+    const months = Number(x.tenureYears || 1) * (x.frequency === "quarterly" ? 4 : (x.frequency === "yearly" ? 1 : 12));
+    const recCount = (x.installments || []).length;
+    const calcCount = instAmt > 0 ? Math.round(Number(x.totalDeposited || 0) / instAmt) : recCount;
+    const paid = Math.max(recCount, calcCount);
+    return s + (x.savingsType === "FD" ? 0 : Math.max(0, months - paid));
+  }, 0);
+
+  const formatDateDisplay = (dateStr) => {
+    if (!dateStr) return "—";
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return String(dateStr);
+      return d.toLocaleDateString("hi-IN", { day: "numeric", month: "short", year: "numeric" });
+    } catch {
+      return String(dateStr);
+    }
+  };
+
+  const getMonthYearTitle = (dateStr, idx = 1) => {
+    if (!dateStr) return `किस्त #${idx}`;
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return `किस्त #${idx}`;
+      return d.toLocaleDateString("hi-IN", { month: "long", year: "numeric" });
+    } catch {
+      return `किस्त #${idx}`;
+    }
+  };
+
+  const getUpcomingSchedule = (savingItem) => {
+    if (!savingItem || savingItem.savingsType === "FD") return [];
+    const tenureYears = Number(savingItem.tenureYears || 1);
+    const totalMonths = tenureYears * 12;
+    const instAmt = Number(savingItem.installmentAmount || 0);
+    const recorded = savingItem.installments || [];
+    const paidCount = Math.max(recorded.length, instAmt > 0 ? Math.round(Number(savingItem.totalDeposited || 0) / instAmt) : recorded.length);
+    const remainingCount = Math.max(0, totalMonths - paidCount);
+
+    if (remainingCount <= 0 || instAmt <= 0) return [];
+
+    const schedule = [];
+    const baseDate = savingItem.startDate ? new Date(savingItem.startDate) : new Date();
+    const dueDay = Number(savingItem.dueDayOfMonth || 5);
+
+    for (let i = 1; i <= Math.min(remainingCount, 12); i++) {
+      const futureDate = new Date(baseDate);
+      futureDate.setMonth(baseDate.getMonth() + paidCount + i);
+      futureDate.setDate(dueDay);
+
+      schedule.push({
+        installmentNum: paidCount + i,
+        monthLabel: futureDate.toLocaleDateString("hi-IN", { month: "long", year: "numeric" }),
+        dueDate: futureDate.toLocaleDateString("hi-IN", { day: "numeric", month: "short", year: "numeric" }),
+        amount: instAmt
+      });
+    }
+    return schedule;
+  };
 
   const shareWhatsApp = () => {
     const coName = selectedCompany?.name || "मेरी दुकान";
@@ -478,19 +628,44 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24">
         {/* Total Summary Cards */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-gradient-to-br from-amber-600 to-orange-700 text-white rounded-2xl p-3.5 shadow-md col-span-2">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-amber-100">कुल जमा पूंजी (Total Invested)</span>
-              <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold">
-                {savingsList.length} खाते सक्रिय
-              </span>
+        <div className="bg-gradient-to-br from-amber-700 via-orange-800 to-slate-900 text-white rounded-3xl p-4 shadow-xl border border-amber-500/20 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-amber-200">💎 कुल संचित बचत फंड (Total Portfolio)</span>
+            <span className="text-[10px] bg-white/20 text-white px-2.5 py-0.5 rounded-full font-black">
+              {savingsList.length} खाते सक्रिय
+            </span>
+          </div>
+
+          <div className="flex items-baseline justify-between">
+            <div>
+              <div className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+                ₹{totalInvestedAll.toLocaleString("en-IN")}
+              </div>
+              <span className="text-[11px] text-amber-200/90 font-medium">अब तक कुल जमा पूंजी</span>
             </div>
-            <div className="text-2xl sm:text-3xl font-black tracking-tight">
-              ₹{totalInvestedAll.toLocaleString("en-IN")}
+            {totalMaturityForecast > 0 && (
+              <div className="text-right">
+                <div className="text-sm font-black text-emerald-400">
+                  ₹{totalMaturityForecast.toLocaleString("en-IN")}
+                </div>
+                <span className="text-[10px] text-slate-300 font-medium">कुल अपेक्षित फंड</span>
+              </div>
+            )}
+          </div>
+
+          {/* Quick Stats Grid */}
+          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/10 text-center text-[11px]">
+            <div className="bg-white/10 rounded-xl p-2">
+              <span className="text-[10px] text-amber-200 block">मासिक बचत</span>
+              <span className="font-black text-white">₹{totalMonthlyCommitment.toLocaleString("en-IN")}/माह</span>
             </div>
-            <div className="flex items-center gap-3 mt-2 text-[11px] text-amber-100 font-medium">
-              <span>🗓️ मासिक कमिटमेंट: ₹{totalMonthlyCommitment.toLocaleString("en-IN")}/माह</span>
+            <div className="bg-white/10 rounded-xl p-2">
+              <span className="text-[10px] text-emerald-300 block">कुल भरी किस्तें</span>
+              <span className="font-black text-white">{totalPaidInstAll} किस्तें जमा</span>
+            </div>
+            <div className="bg-white/10 rounded-xl p-2">
+              <span className="text-[10px] text-rose-300 block">बची हुई किस्तें</span>
+              <span className="font-black text-white">{totalRemainingInstAll} किस्तें बाकी</span>
             </div>
           </div>
         </div>
@@ -534,6 +709,17 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                 : item.fundSource === "business_capital"
                 ? "🏢 बिजनेस कैपिटल"
                 : "👛 पर्सनल फंड्स";
+
+              const tenureYears = Number(item.tenureYears || 1);
+              const totalMonths = tenureYears * (item.frequency === "quarterly" ? 4 : (item.frequency === "yearly" ? 1 : 12));
+              const instAmt = Number(item.installmentAmount || 0);
+              const calculatedCount = instAmt > 0 ? Math.round(Number(item.totalDeposited || 0) / instAmt) : installmentsCount;
+              const paidCount = Math.max(installmentsCount, calculatedCount);
+              const remainingCount = Math.max(0, totalMonths - paidCount);
+              const targetFund = item.expectedMaturityAmount && Number(item.expectedMaturityAmount) > 0 
+                ? Number(item.expectedMaturityAmount) 
+                : (totalMonths * instAmt);
+              const progressPct = totalMonths > 0 ? Math.min(100, Math.round((paidCount / totalMonths) * 100)) : 0;
 
               return (
                 <div
@@ -602,6 +788,39 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                       </span>
                     </div>
                   </div>
+
+                  {/* Installment Progress & Fund Details (RD / SIP / Post Office) */}
+                  {item.savingsType !== "FD" && (
+                    <div className="bg-amber-50/70 rounded-xl p-3 border border-amber-200/80 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-bold block">किस्त स्थिति (Paid)</span>
+                          <span className="font-black text-emerald-700">
+                            ✅ {paidCount} किस्तें जमा ({progressPct}%)
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-500 font-bold block">शेष बाकी (Remaining)</span>
+                          <span className="font-black text-rose-700">
+                            ⏳ {remainingCount} किस्तें बाकी (₹{(remainingCount * instAmt).toLocaleString("en-IN")})
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Visual Progress Bar */}
+                      <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-emerald-500 to-teal-600 h-full rounded-full transition-all duration-500"
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] text-slate-600 pt-0.5 font-bold">
+                        <span>अवधि: {totalMonths} माह ({tenureYears} वर्ष)</span>
+                        <span>कुल लक्ष्य: ₹{(targetFund || (totalMonths * instAmt)).toLocaleString("en-IN")}</span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Action Buttons */}
                   <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
@@ -898,19 +1117,26 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {formData.savingsType === "FD" ? "मूलधन जमा (Principal ₹)" : "मासिक किस्त (Installment ₹)"}
+                    {formData.savingsType === "FD" ? "मूलधन जमा (Principal ₹) *" : "मासिक किस्त (Installment ₹) *"}
                   </label>
                   <input
                     type="number"
                     placeholder="₹ 0.00"
-                    value={formData.installmentAmount || formData.initialDeposit}
-                    onChange={e => setFormData({
-                      ...formData,
-                      installmentAmount: e.target.value,
-                      initialDeposit: e.target.value
-                    })}
+                    value={formData.savingsType === "FD" ? formData.initialDeposit : formData.installmentAmount}
+                    onChange={e => {
+                      if (formData.savingsType === "FD") {
+                        setFormData({ ...formData, initialDeposit: e.target.value });
+                      } else {
+                        setFormData({ ...formData, installmentAmount: e.target.value, initialDeposit: "0" });
+                      }
+                    }}
                     className="w-full text-sm font-black px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-amber-700"
                   />
+                  {formData.savingsType !== "FD" && (
+                    <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+                      नियमित मासिक किस्त (खाता ₹0 से शुरू होगा)
+                    </span>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">किस्त देय तारीख (Due Day)</label>
@@ -918,11 +1144,14 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                     type="number"
                     min="1"
                     max="31"
-                    placeholder="जैसे: 5 या 10"
+                    placeholder="जैसे: 5 या 28"
                     value={formData.dueDayOfMonth}
                     onChange={e => setFormData({ ...formData, dueDayOfMonth: e.target.value })}
                     className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50"
                   />
+                  <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+                    महीने की तारीख (रिमाइंडर)
+                  </span>
                 </div>
               </div>
 
@@ -1103,51 +1332,296 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
         </div>
       )}
 
-      {/* History Modal */}
-      {viewHistoryItem && (
-        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
-          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
-                  <Clock size={18} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-slate-900">किस्त जमा इतिहास (History)</h3>
-                  <p className="text-[11px] text-slate-500">{viewHistoryItem.title}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setViewHistoryItem(null)}
-                className="p-1 rounded-full text-slate-400 hover:bg-slate-100 cursor-pointer"
-              >
-                <X size={20} />
-              </button>
-            </div>
+      {/* History / Passbook Modal */}
+      {viewHistoryItem && (() => {
+        const vInstAmt = Number(viewHistoryItem.installmentAmount || 0);
+        const vTenureYrs = Number(viewHistoryItem.tenureYears || 1);
+        const vTotalMonths = vTenureYrs * (viewHistoryItem.frequency === "quarterly" ? 4 : (viewHistoryItem.frequency === "yearly" ? 1 : 12));
+        const vRecorded = viewHistoryItem.installments || [];
+        const vSumRecorded = vRecorded.reduce((s, x) => s + Number(x.amount || 0), 0);
+        const vTotalDep = Number(viewHistoryItem.totalDeposited || viewHistoryItem.currentValue || 0);
+        const vPaidCount = Math.max(vRecorded.length, vInstAmt > 0 ? Math.round(vTotalDep / vInstAmt) : vRecorded.length);
+        const vRemainingCount = viewHistoryItem.savingsType === "FD" ? 0 : Math.max(0, vTotalMonths - vPaidCount);
+        const vCalcTarget = vInstAmt > 0 ? (vTotalMonths * vInstAmt) : 0;
+        const vTargetFund = Number(viewHistoryItem.expectedMaturityAmount || (vCalcTarget > 0 ? vCalcTarget : vTotalDep) || 0);
+        const vProgressPct = vTotalMonths > 0 ? Math.min(100, Math.round((vPaidCount / vTotalMonths) * 100)) : 0;
+        const vSchedule = getUpcomingSchedule(viewHistoryItem);
+        const vUnrecordedBalance = vTotalDep - vSumRecorded;
 
-            <div className="space-y-2">
-              {(viewHistoryItem.installments || []).map((inst, idx) => (
-                <div
-                  key={idx}
-                  className="bg-slate-50 rounded-xl p-3 border border-slate-200 flex items-center justify-between text-xs"
-                >
+        return (
+          <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+            <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-amber-50/40 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                    <Clock size={20} />
+                  </div>
                   <div>
-                    <span className="font-bold text-slate-800">
-                      📅 {inst.date ? String(inst.date).split("T")[0] : "—"}
-                    </span>
-                    <p className="text-[10px] text-slate-500 mt-0.5">
-                      {inst.sourceOfFund === "business_salary" ? "🏪 दुकान सैलरी" : "👛 पर्सनल"} • {inst.notes || "किस्त"}
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="text-sm font-black text-slate-900">{viewHistoryItem.title}</h3>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-bold">
+                        {viewHistoryItem.savingsType || "RD"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {viewHistoryItem.institutionName ? `${viewHistoryItem.institutionName} • ` : ""}
+                      पासबुक व किस्त विवरण
                     </p>
                   </div>
-                  <div className="text-right font-black text-emerald-600 text-sm">
-                    + ₹{Number(inst.amount || 0).toLocaleString("en-IN")}
-                  </div>
                 </div>
-              ))}
+                <button
+                  onClick={() => setViewHistoryItem(null)}
+                  className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {/* Top Fund & Progress Summary */}
+                <div className="bg-gradient-to-br from-amber-600 to-orange-700 text-white rounded-2xl p-4 shadow-md space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[11px] text-amber-200 font-medium block">कुल संचित फंड (Total Deposited)</span>
+                      <span className="text-2xl font-black tracking-tight">₹{vTotalDep.toLocaleString("en-IN")}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[11px] text-amber-200 font-medium block">कुल लक्ष्य / मैच्योरिटी</span>
+                      <span className="text-base font-black text-amber-100">₹{vTargetFund.toLocaleString("en-IN")}</span>
+                    </div>
+                  </div>
+
+                  {viewHistoryItem.savingsType !== "FD" && (
+                    <>
+                      {/* Installment Badge Counter */}
+                      <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
+                        <div className="bg-white/15 backdrop-blur-xs rounded-xl p-2 border border-white/20">
+                          <span className="text-[10px] text-emerald-200 font-medium block">जमा किस्तें (Paid)</span>
+                          <span className="font-black text-sm">✅ {vPaidCount} किस्तें पूरी</span>
+                          <span className="text-[10px] text-amber-100 block">₹{(vPaidCount * vInstAmt).toLocaleString("en-IN")}</span>
+                        </div>
+                        <div className="bg-white/15 backdrop-blur-xs rounded-xl p-2 border border-white/20">
+                          <span className="text-[10px] text-rose-200 font-medium block">शेष बाकी (Remaining)</span>
+                          <span className="font-black text-sm">⏳ {vRemainingCount} किस्तें बाकी</span>
+                          <span className="text-[10px] text-amber-100 block">₹{(vRemainingCount * vInstAmt).toLocaleString("en-IN")}</span>
+                        </div>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div>
+                        <div className="flex items-center justify-between text-[11px] font-bold text-amber-100 mb-1">
+                          <span>प्रगति ({vProgressPct}%)</span>
+                          <span>कुल अवधि: {vTotalMonths} माह ({vTenureYrs} वर्ष)</span>
+                        </div>
+                        <div className="w-full bg-black/20 h-2.5 rounded-full overflow-hidden p-0.5">
+                          <div
+                            className="bg-emerald-400 h-full rounded-full transition-all duration-500"
+                            style={{ width: `${vProgressPct}%` }}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Unrecorded Opening Balance Card (if balance was set without individual installment logs) */}
+                {vUnrecordedBalance > 0 && (
+                  <div className="bg-amber-50 rounded-xl p-3 border border-amber-200 flex items-center justify-between text-xs">
+                    <div>
+                      <div className="flex items-center gap-1 font-bold text-amber-900">
+                        <span>📌 पूर्व संचित / ओपनिंग बैलेंस:</span>
+                        <span className="text-amber-800 font-black">₹{vUnrecordedBalance.toLocaleString("en-IN")}</span>
+                      </div>
+                      <p className="text-[10px] text-amber-700 mt-0.5">
+                        (खाता बनाते समय दर्ज किया गया पूर्व बैलेंस)
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const it = viewHistoryItem;
+                        setViewHistoryItem(null);
+                        handleOpenEdit(it);
+                      }}
+                      className="px-2.5 py-1 text-[11px] font-bold text-amber-800 bg-white border border-amber-300 rounded-lg hover:bg-amber-100 cursor-pointer shadow-xs"
+                    >
+                      बैलेंस ठीक करें
+                    </button>
+                  </div>
+                )}
+
+                {/* Section 1: Month-wise & Date-wise Deposited Installments */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                      <span>📜 जमा किस्तों की पासबुक (Date & Month-wise)</span>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-black">
+                        {vRecorded.length} एंट्री
+                      </span>
+                    </h4>
+                    {vRecorded.length > 0 && (
+                      <span className="text-[11px] text-slate-500 font-bold">
+                        योग: ₹{vSumRecorded.toLocaleString("en-IN")}
+                      </span>
+                    )}
+                  </div>
+
+                  {vRecorded.length === 0 ? (
+                    <div className="text-center py-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200 p-4">
+                      <p className="text-slate-400 text-xs font-bold">अभी तक कोई तारीखवार किस्त एंट्री दर्ज नहीं है।</p>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        नीचे दिए गए "पैसे डालें / किस्त भरें" बटन से नई किस्त जोड़ें।
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {vRecorded.map((inst, idx) => {
+                        const monthTitle = getMonthYearTitle(inst.date, idx + 1);
+                        const dateFormatted = formatDateDisplay(inst.date);
+                        const isSalary = inst.sourceOfFund === "business_salary";
+                        const isCap = inst.sourceOfFund === "business_capital";
+
+                        return (
+                          <div
+                            key={idx}
+                            className="bg-slate-50 rounded-xl p-3 border border-slate-200 hover:border-slate-300 transition flex items-center justify-between text-xs"
+                          >
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-black text-slate-900">{monthTitle}</span>
+                                <span className="text-[10px] px-1.5 py-0.2 rounded-md font-bold bg-slate-200 text-slate-700">
+                                  किस्त #{idx + 1}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-600 flex items-center gap-1">
+                                <span>📅 {dateFormatted}</span>
+                              </p>
+                              <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                                <span className={`px-1.5 py-0.2 rounded font-medium ${
+                                  isSalary ? "bg-amber-100 text-amber-800" : isCap ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"
+                                }`}>
+                                  {isSalary ? "🏪 दुकान सैलरी (Drawing)" : isCap ? "🏢 बिजनेस कैपिटल" : "👛 पर्सनल"}
+                                </span>
+                                {inst.notes && <span>• {inst.notes}</span>}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <div className="text-right">
+                                <div className="font-black text-emerald-600 text-sm">
+                                  + ₹{Number(inst.amount || 0).toLocaleString("en-IN")}
+                                </div>
+                                <span className="text-[10px] text-emerald-700 font-bold">सफल जमा</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSingleInstallment(viewHistoryItem, idx)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
+                                title="इस जमा एंट्री को हटाएं"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Section 2: Upcoming Schedule / आगामी किस्तें */}
+                {viewHistoryItem.savingsType !== "FD" && vSchedule.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                        <span>🗓️ आगामी देय किस्तें (Upcoming Schedule)</span>
+                        <span className="text-[10px] bg-rose-100 text-rose-800 px-1.5 py-0.2 rounded font-black">
+                          {vRemainingCount} शेष
+                        </span>
+                      </h4>
+                      <span className="text-[10px] text-slate-400 font-bold">
+                        (हर माह {viewHistoryItem.dueDayOfMonth || 5} तारीख)
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {vSchedule.map((item, sIdx) => (
+                        <div
+                          key={sIdx}
+                          className="bg-white rounded-xl p-2.5 border border-dashed border-slate-300 flex items-center justify-between text-xs"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 font-black text-[10px] flex items-center justify-center">
+                              {item.installmentNum}
+                            </div>
+                            <div>
+                              <span className="font-bold text-slate-800">{item.monthLabel}</span>
+                              <p className="text-[10px] text-slate-400">अपेक्षित तारीख: {item.dueDate}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-slate-700 text-xs">
+                              ₹{item.amount.toLocaleString("en-IN")}
+                            </span>
+                            {sIdx === 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const it = viewHistoryItem;
+                                  setViewHistoryItem(null);
+                                  handleOpenPay(it);
+                                }}
+                                className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] shadow-xs cursor-pointer active:scale-95 transition"
+                              >
+                                जमा करें
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom Fixed Footer Actions */}
+              <div className="p-3 border-t border-slate-100 bg-slate-50 flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const it = viewHistoryItem;
+                    setViewHistoryItem(null);
+                    handleOpenPay(it);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-xs shadow-md active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Plus size={15} /> 💵 नई किस्त जमा करें
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const it = viewHistoryItem;
+                    setViewHistoryItem(null);
+                    handleOpenEdit(it);
+                  }}
+                  className="py-2.5 px-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                >
+                  <Edit2 size={13} /> एडिट
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewHistoryItem(null)}
+                  className="py-2.5 px-3 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs cursor-pointer"
+                >
+                  बंद करें
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
