@@ -33,9 +33,11 @@ import {
   Landmark,
   AlertTriangle,
   Bot,
-  Sparkles
+  Sparkles,
+  PiggyBank
 } from "lucide-react";
 import Footer from "./Footer";
+import MobileSavingsModal from "./mobile/MobileSavingsModal";
 import { useNavigate, Outlet, useLocation } from "react-router-dom";
 import { useCompany } from "../contexts/CompanyContext";
 import { useLanguage } from "../contexts/LanguageContext";
@@ -103,6 +105,7 @@ export default function DashboardLayout() {
   });
   const [referralModalOpen, setReferralModalOpen] = useState(false);
   const [ecosystemModalOpen, setEcosystemModalOpen] = useState(false);
+  const [savingsModalOpen, setSavingsModalOpen] = useState(false);
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -593,6 +596,16 @@ export default function DashboardLayout() {
               >
                 <Bot size={17} className="text-purple-600" />
                 <span className="hidden md:inline text-xs font-black text-purple-900">{t("ai_advisor", "AI मुनीम जी")}</span>
+              </button>
+
+              {/* 5. Savings & Investment Hub (FD / RD / SIP) */}
+              <button
+                onClick={() => setSavingsModalOpen(true)}
+                className="px-3 py-2 bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 text-amber-800 rounded-xl transition border border-amber-200 flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="बचत व निवेश खाता (FD / RD / SIP / Gold) - RD में पैसे डालें"
+              >
+                <PiggyBank size={17} className="text-amber-600" />
+                <span className="hidden sm:inline text-xs font-black text-amber-900">💰 बचत व RD</span>
               </button>
 
               {/* Cloud Sync Toggle */}
@@ -1248,6 +1261,14 @@ function ReferralCashTokensModal({ company, onClose }) {
 
       {/* Multi-Platform Ecosystem Showcase Modal */}
       {ecosystemModalOpen && <EcosystemShowcaseModal onClose={() => setEcosystemModalOpen(false)} />}
+
+      {/* Savings & Investment Modal (FD / RD / SIP) */}
+      {savingsModalOpen && (
+        <MobileSavingsModal
+          isOpen={savingsModalOpen}
+          onClose={() => setSavingsModalOpen(false)}
+        />
+      )}
 
       {/* Footer */}
       <Footer />

@@ -570,6 +570,14 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                       <div className="text-sm font-black text-slate-900">
                         ₹{Number(item.totalDeposited || item.currentValue || 0).toLocaleString("en-IN")}
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenPay(item)}
+                        className="mt-1 text-[11px] font-black text-emerald-700 bg-emerald-50 hover:bg-emerald-100 active:scale-95 px-2 py-0.5 rounded-lg border border-emerald-300 flex items-center gap-1 ml-auto cursor-pointer shadow-xs transition"
+                        title="इस RD में पैसे डालें"
+                      >
+                        <Plus size={12} /> पैसे डालें
+                      </button>
                     </div>
                   </div>
 
@@ -596,23 +604,24 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
                     <button
+                      type="button"
                       onClick={() => handleOpenPay(item)}
-                      className="flex-1 py-1.5 px-3 rounded-xl bg-amber-600 active:bg-amber-700 text-white text-xs font-bold shadow-xs flex items-center justify-center gap-1 cursor-pointer"
+                      className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 active:scale-95 text-white text-xs font-black shadow-md flex items-center justify-center gap-1.5 cursor-pointer transition"
                     >
-                      <Plus size={14} /> + किस्त जमा करें
+                      <CreditCard size={15} /> 💵 पैसे डालें / किस्त भरें
                     </button>
-                    {installmentsCount > 0 && (
-                      <button
-                        onClick={() => setViewHistoryItem(item)}
-                        className="py-1.5 px-2.5 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1 cursor-pointer"
-                        title="किस्त इतिहास"
-                      >
-                        <Clock size={14} /> ({installmentsCount})
-                      </button>
-                    )}
                     <button
+                      type="button"
+                      onClick={() => setViewHistoryItem(item)}
+                      className="py-2 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 text-xs font-bold flex items-center gap-1 cursor-pointer transition"
+                      title="पासबुक व जमा इतिहास देखें"
+                    >
+                      <Clock size={14} /> पासबुक {installmentsCount > 0 ? `(${installmentsCount})` : ''}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleOpenEdit(item)}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
                       title="संपादित करें"
@@ -620,6 +629,7 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                       <Edit2 size={15} />
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleDelete(id)}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
                       title="हटाएं"
@@ -968,16 +978,17 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
           <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                  <Plus size={18} />
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center shadow-md">
+                  <CreditCard size={20} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900">किस्त जमा करें (Pay Installment)</h3>
-                  <p className="text-[11px] text-slate-500">{selectedSavingForPay.title}</p>
+                  <h3 className="text-sm font-black text-slate-900">💰 RD में पैसे डालें / किस्त जमा करें</h3>
+                  <p className="text-[11px] text-slate-500 font-bold">{selectedSavingForPay.title} ({selectedSavingForPay.savingsType || "RD"})</p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => { setIsPayOpen(false); setSelectedSavingForPay(null); }}
                 className="p-1 rounded-full text-slate-400 hover:bg-slate-100 cursor-pointer"
               >
@@ -987,15 +998,48 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
 
             <form onSubmit={handleRecordInstallment} className="space-y-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">जमा राशि (Amount ₹) *</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-slate-700">जमा राशि (Amount ₹) *</label>
+                  {Number(selectedSavingForPay.installmentAmount || 0) > 0 && (
+                    <span className="text-[11px] text-slate-500 font-bold">
+                      नियमित किस्त: ₹{Number(selectedSavingForPay.installmentAmount).toLocaleString("en-IN")}
+                    </span>
+                  )}
+                </div>
                 <input
                   type="number"
                   required
                   placeholder="₹ 0.00"
                   value={payData.amount}
                   onChange={e => setPayData({ ...payData, amount: e.target.value })}
-                  className="w-full text-lg font-black px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-emerald-600"
+                  className="w-full text-xl font-black px-3 py-2.5 rounded-xl border-2 border-emerald-500/50 bg-emerald-50/30 text-emerald-700 outline-none focus:border-emerald-600"
                 />
+
+                {/* Quick Selection Buttons */}
+                <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                  <span className="text-[10px] text-slate-400 font-bold">शॉर्टकट:</span>
+                  {Number(selectedSavingForPay.installmentAmount || 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPayData({ ...payData, amount: String(selectedSavingForPay.installmentAmount) })}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-[11px] font-black rounded-lg shadow-xs transition cursor-pointer"
+                    >
+                      ₹{Number(selectedSavingForPay.installmentAmount).toLocaleString("en-IN")} (1 किस्त)
+                    </button>
+                  )}
+                  {[1000, 2000, 5000, 10000]
+                    .filter(a => a !== Number(selectedSavingForPay.installmentAmount || 0))
+                    .map(amt => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => setPayData({ ...payData, amount: String(amt) })}
+                        className="px-2 py-1 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 text-[10px] font-bold rounded-lg border border-slate-200 transition cursor-pointer"
+                      >
+                        ₹{amt.toLocaleString("en-IN")}
+                      </button>
+                    ))}
+                </div>
               </div>
 
               <div>
@@ -1042,16 +1086,16 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                 <button
                   type="button"
                   onClick={() => { setIsPayOpen(false); setSelectedSavingForPay(null); }}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold cursor-pointer"
+                  className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold cursor-pointer hover:bg-slate-50 transition"
                 >
                   रद्द करें
                 </button>
                 <button
                   type="submit"
                   disabled={paying}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 active:bg-emerald-700 text-white text-xs font-black shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="flex-2 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-xs shadow-lg active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
-                  {paying ? "जमा हो रहा है..." : "✅ किस्त जमा करें"}
+                  {paying ? "⏳ जमा हो रहा है..." : "💾 ₹ पैसे जमा करें (Confirm Deposit)"}
                 </button>
               </div>
             </form>

@@ -33,15 +33,18 @@ import {
   Landmark,
   AlertTriangle,
   Bot,
-  Sparkles
+  Sparkles,
+  PiggyBank
 } from "lucide-react";
 import Footer from "./Footer";
+import MobileSavingsModal from "./mobile/MobileSavingsModal";
 import { useNavigate, Outlet, useLocation } from "react-router-dom";
 import { useCompany } from "../contexts/CompanyContext";
 import { useLanguage } from "../contexts/LanguageContext";
 import { SecurityTracker } from "@repo/shared";
 import CloudSyncToggel from "./CloudSyncToggel";
 import LanguageSwitchButton from "./LanguageSwitchButton";
+import { getBusinessMode, getCompanyModuleList, BUSINESS_MODULE_OPTIONS } from "../utils/businessMode";
 
 // Resilient Page-Level Error Boundary to protect sidebar & topbar navigation
 class ContentErrorBoundary extends React.Component {
@@ -102,6 +105,7 @@ export default function DashboardLayout() {
   });
   const [referralModalOpen, setReferralModalOpen] = useState(false);
   const [ecosystemModalOpen, setEcosystemModalOpen] = useState(false);
+  const [savingsModalOpen, setSavingsModalOpen] = useState(false);
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -159,15 +163,51 @@ export default function DashboardLayout() {
   // Get the selected industry type and make it lowercase for easy checking
   // Dynamic Industry-Tailored Menu Generator (Strict Industry Business Logic)
   const getMenuForBusiness = (company) => {
-    const rawInd = typeof company?.industryType === 'string' 
-      ? company.industryType 
-      : (typeof company?.businessType === 'string' 
-          ? company.businessType 
-          : (company?.industryType?.name || company?.businessType?.name || company?.industryType?.value || company?.businessType?.value || String(company?.industryType || company?.businessType || '')));
-    const indType = String(rawInd || '').toLowerCase();
+    const linkedModules = getCompanyModuleList(company);
+    const business = getBusinessMode(company);
+
+    if (linkedModules.length > 0) {
+      const explicitSet = new Set(linkedModules.map((m) => String(m).toLowerCase()));
+
+      if (explicitSet.has('hardware')) return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "🔧 Hardware Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: ShoppingCart, label: "⚡ Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "🧾 Retail & Counter Bills", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Briefcase, label: "🏢 B2B GST Invoices", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
+        { icon: PenTool, label: "📐 Dimensions & Cut-Loss Batch", href: "/inventory/batch", color: "text-orange-600", roles: ['admin', 'manager'] },
+        { icon: Package, label: "📦 Hardware & Timber Stock", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
+        { icon: Users, label: "👥 Contractor & Supplier Khata", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "📝 Estimates & Quotations", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: Package, label: "🚚 E-Way Bill & Transport", href: "/reports/eway-bill", color: "text-indigo-500", roles: ['admin'] },
+        { icon: Landmark, label: "🏦 Bank & Cash Balances", href: "/banking", color: "text-cyan-500", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "💸 Shop Kharch & Transport", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: UserCheck, label: "👥 Staff Attendance & Pagar", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "📊 Sales & Profit/Loss", href: "/reports/profitloss", color: "text-emerald-400", roles: ['admin'] },
+        { icon: BookOpen, label: "📖 Day Book Ledger", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] },
+        { icon: FileText, label: "📑 GST Tax Reports", href: "/reports/gst", color: "text-blue-500", roles: ['admin'] },
+        { icon: Bot, label: "🤖 AI मुनीम जी Advisor", href: "/ai-advisor", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] }
+      ];
+
+      if (explicitSet.has('restaurant')) return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "🍽️ Restaurant Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: ShoppingCart, label: "⚡ Table KOT & Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Building2, label: "🏰 बैंक्वेट हॉल व इवेंट्स", href: "/banquet", color: "text-amber-500", roles: ['admin', 'manager'] },
+        { icon: FileText, label: "🧾 Bills & Invoices", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Package, label: "🥘 Recipe BOM & Stock", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
+        { icon: Users, label: "👥 Regular Diners", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: DollarSign, label: "💸 Kitchen & Daily Expenses", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: UserCheck, label: "👨‍🍳 Chef & Staff Attendance", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
+        { icon: Gift, label: "⏰ Happy Hours & Offers", href: "/coupons", color: "text-pink-500", roles: ['admin', 'manager'] },
+        { icon: DollarSign, label: "📊 Sales & Profit/Loss", href: "/reports/profitloss", color: "text-emerald-400", roles: ['admin'] },
+        { icon: BookOpen, label: "📖 Daily Cash Register (Daybook)", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] },
+        { icon: Bot, label: "🤖 AI मुनीम जी Advisor", href: "/ai-advisor", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] }
+      ];
+    }
 
     // 2. RESTAURANT & CAFE
-    if (indType.includes('restaurant') || indType.includes('cafe') || indType.includes('food') || indType.includes('dining')) {
+    if (business.isRestaurant) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "🍽️ Restaurant Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -186,7 +226,7 @@ export default function DashboardLayout() {
     }
 
     // 3. GAMEZONE & VR PARK
-    if (indType.includes('gamezone') || indType.includes('gaming') || indType.includes('vr') || indType.includes('arcade')) {
+    if (business.isGamezone) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "🎮 Gamezone Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -202,7 +242,7 @@ export default function DashboardLayout() {
     }
 
     // 4. HARDWARE, PLYWOOD & PAINTS
-    if (indType.includes('hardware') || indType.includes('plywood') || indType.includes('paint') || indType.includes('sanitary') || indType.includes('electrical')) {
+    if (business.isHardware) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "🔧 Hardware Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -225,7 +265,7 @@ export default function DashboardLayout() {
     }
 
     // 5. MOBILE & ELECTRONICS
-    if (indType.includes('electronic') || indType.includes('mobile') || indType.includes('computer') || indType.includes('telecom')) {
+    if (business.isElectronics) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "📱 Electronics Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -243,7 +283,7 @@ export default function DashboardLayout() {
     }
 
     // 6. SUPERMARKET & KIRANA
-    if (indType.includes('supermarket') || indType.includes('kirana') || indType.includes('grocery') || indType.includes('provision')) {
+    if (business.isKirana) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "🛒 Supermarket Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -259,7 +299,7 @@ export default function DashboardLayout() {
     }
 
     // 7. HOTEL & BANQUET
-    if (indType.includes('banquet') || indType.includes('hotel') || indType.includes('resort') || indType.includes('event')) {
+    if (business.isBanquet) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "🏨 Banquet Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -276,7 +316,7 @@ export default function DashboardLayout() {
     }
 
     // 8. SALON, SPA & BEAUTY
-    if (indType.includes('salon') || indType.includes('spa') || indType.includes('beauty') || indType.includes('parlor')) {
+    if (business.isService) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "💇‍♀️ Salon Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -292,7 +332,7 @@ export default function DashboardLayout() {
     }
 
     // 9. GARMENTS & FOOTWEAR
-    if (indType.includes('garment') || indType.includes('apparel') || indType.includes('cloth') || indType.includes('fashion') || indType.includes('footwear')) {
+    if (business.isGarments) {
       return [
         { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: Home, label: "👗 Garments Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
@@ -304,6 +344,20 @@ export default function DashboardLayout() {
         { icon: BarChart3, label: "📈 Best Seller Matrix", href: "/inventory/analytics", color: "text-blue-500", roles: ['admin', 'manager'] },
         { icon: DollarSign, label: "💸 Showroom Expenses", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
         { icon: BookOpen, label: "📖 Day Book Cashflow", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] }
+      ];
+    }
+
+    // 10. PHARMA & HEALTHCARE
+    if (business.isPharma) {
+      return [
+        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "💊 Pharmacy Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: ShoppingCart, label: "⚡ Medical POS & Batch Billing", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: FileText, label: "🧾 Prescription Invoices", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Package, label: "💊 Medicine Batch & Expiry", href: "/inventory/batch", color: "text-rose-500", roles: ['admin', 'manager'] },
+        { icon: Users, label: "👥 Doctor & Patient Khata", href: "/parties", color: "text-blue-400", roles: ['admin', 'manager', 'cashier'] },
+        { icon: DollarSign, label: "💸 Chemist Expenses", href: "/expenses", color: "text-orange-500", roles: ['admin', 'manager'] },
+        { icon: BookOpen, label: "📖 Daily Cash Register", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] }
       ];
     }
 
@@ -544,6 +598,16 @@ export default function DashboardLayout() {
                 <span className="hidden md:inline text-xs font-black text-purple-900">{t("ai_advisor", "AI मुनीम जी")}</span>
               </button>
 
+              {/* 5. Savings & Investment Hub (FD / RD / SIP) */}
+              <button
+                onClick={() => setSavingsModalOpen(true)}
+                className="px-3 py-2 bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 text-amber-800 rounded-xl transition border border-amber-200 flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="बचत व निवेश खाता (FD / RD / SIP / Gold) - RD में पैसे डालें"
+              >
+                <PiggyBank size={17} className="text-amber-600" />
+                <span className="hidden sm:inline text-xs font-black text-amber-900">💰 बचत व RD</span>
+              </button>
+
               {/* Cloud Sync Toggle */}
               <CloudSyncToggel />
 
@@ -740,9 +804,22 @@ export default function DashboardLayout() {
           </div>
         </header>
 
+        {/* Sleek Mobile Return Bar if on mobile screen */}
+        <div className="lg:hidden bg-slate-900 text-white px-3 py-2 flex items-center justify-between shadow-md sticky top-0 z-40">
+          <button
+            onClick={() => navigate('/m')}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-xs transition cursor-pointer"
+          >
+            📱 ⬅️ वापस मोबाइल ऐप (Mobile PWA)
+          </button>
+          <span className="text-[11px] font-bold text-indigo-200 truncate max-w-[150px]">
+            {selectedCompany?.name || "Vyapar App"}
+          </span>
+        </div>
+
         {/* Page Content */}
         <main className="flex-1 overflow-auto">
-          <div className="p-6 lg:p-8">
+          <div className="p-2 sm:p-4 lg:p-8">
             <ContentErrorBoundary>
               <Outlet />
             </ContentErrorBoundary>
@@ -1184,6 +1261,14 @@ function ReferralCashTokensModal({ company, onClose }) {
 
       {/* Multi-Platform Ecosystem Showcase Modal */}
       {ecosystemModalOpen && <EcosystemShowcaseModal onClose={() => setEcosystemModalOpen(false)} />}
+
+      {/* Savings & Investment Modal (FD / RD / SIP) */}
+      {savingsModalOpen && (
+        <MobileSavingsModal
+          isOpen={savingsModalOpen}
+          onClose={() => setSavingsModalOpen(false)}
+        />
+      )}
 
       {/* Footer */}
       <Footer />
