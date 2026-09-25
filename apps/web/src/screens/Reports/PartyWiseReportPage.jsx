@@ -23,6 +23,13 @@ const PartyWiseReportPage = () => {
   const [statementPeriodFilter, setStatementPeriodFilter] = useState("all");
   const [statementStartDate, setStatementStartDate] = useState("");
   const [statementEndDate, setStatementEndDate] = useState("");
+  const [partyMarginPercent, setPartyMarginPercent] = useState(() => {
+    try {
+      return Number(localStorage.getItem("vb_custom_gross_margin_percent")) || 15;
+    } catch (e) {
+      return 15;
+    }
+  });
 
   const fetchReport = async () => {
     setLoading(true);
@@ -483,6 +490,64 @@ const PartyWiseReportPage = () => {
                         समग्र: ₹{Math.abs(curBal).toLocaleString('en-IN')}
                       </span>
                     )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Party Profitability Calculator Banner (Automatic - Zero manual bill editing) */}
+            {(() => {
+              const isFilterActive = statementSiteFilter !== 'all' || statementPeriodFilter !== 'all' || statementStartDate || statementEndDate;
+              const billTotal = isFilterActive ? filteredDebit : (statementData?.totalDebit || 0);
+              if (billTotal <= 0) return null;
+              const marginNum = Math.max(0, Math.min(100, Number(partyMarginPercent) || 15));
+              const partyProfit = Math.round(billTotal * (marginNum / 100));
+              const partyCOGS = billTotal - partyProfit;
+
+              return (
+                <div className="mx-4 my-2.5 p-3 bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-200 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 bg-emerald-600 text-white rounded-lg font-black text-[11px] shadow-xs">
+                      💰 पार्टी मुनाफ़ा विश्लेषक
+                    </span>
+                    <div>
+                      <span className="text-slate-800 font-bold block">
+                        इस पार्टी से कुल बिक्री: <strong className="text-indigo-900">₹{billTotal.toLocaleString('en-IN')}</strong>
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        बिना किसी बिल को खोले पूरे खाते पर ऑटोमैटिक गणना
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-xs">
+                      <span className="text-slate-600 font-bold text-[11px]">मार्जिन %:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="99"
+                        value={partyMarginPercent}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPartyMarginPercent(val);
+                          try {
+                            localStorage.setItem("vb_custom_gross_margin_percent", String(val));
+                          } catch (err) {}
+                        }}
+                        className="w-12 px-1 py-0.5 text-center font-black text-emerald-800 bg-emerald-50 border border-emerald-400 rounded focus:outline-none text-xs"
+                      />
+                      <span className="font-bold text-slate-600">%</span>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="text-emerald-700 font-black text-sm block">
+                        शुद्ध मुनाफ़ा ({marginNum}%): ₹{partyProfit.toLocaleString('en-IN')}
+                      </span>
+                      <span className="text-[10px] text-slate-600 font-medium">
+                        (ऑटोमैटिक खरीद लागत {100 - marginNum}%: ₹{partyCOGS.toLocaleString('en-IN')})
+                      </span>
+                    </div>
                   </div>
                 </div>
               );
