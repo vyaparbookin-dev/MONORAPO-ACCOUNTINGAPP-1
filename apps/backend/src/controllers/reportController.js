@@ -454,20 +454,23 @@ export const getProfitLoss = async (req, res) => {
       return sum + (isNaN(val) ? 0 : val);
     }, 0);
 
-    // Direct Purchases (Raw Materials / Groceries)
-    const directPurchases = purchases.reduce((sum, p) => sum + (Number(p.totalAmount || p.amountPaid || p.total) || 0), 0);
+    // Direct Purchases (Raw Materials / Goods Purchases)
+    const directPurchases = purchases.reduce((sum, p) => {
+      const val = Number(p.finalAmount ?? p.totalAmount ?? p.total ?? p.amountPaid ?? 0);
+      return sum + (isNaN(val) ? 0 : val);
+    }, 0);
 
     // Monthly Fixed Staff Salary liability from Staff Profile (Auto-Overhead)
     const fixedMonthlyStaffSalaries = activeStaffList.reduce((sum, s) => sum + (Number(s.salary || s.wageAmount || 0)), 0);
     const fixedStaffPeriodLiability = Math.round((fixedMonthlyStaffSalaries * daysCount) / 30);
 
-    // Categorize Expenses dynamically
-    let foodCost = directPurchases;
+    // Categorize Operating Expenses dynamically
     let actualPaidSalaries = salaries.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
     let gasAndPower = 0;
     let rentAndProperty = 0;
     let otherExpenses = 0;
     let gharKharch = 0;
+    let directExpensePurchases = 0;
 
     for (const exp of expenses) {
       const amt = Number(exp.amount) || 0;
@@ -487,7 +490,7 @@ export const getProfitLoss = async (req, res) => {
       if (isDrawing) {
         gharKharch += amt;
       } else if (/दूध|सब्जी|राशन|raw|grocery|food|kitchen|paneer|dairy|चिकन|मसाले|किराना|सब्जियां/.test(combined)) {
-        foodCost += amt;
+        directExpensePurchases += amt;
       } else if (/गैस|सिलेंडर|lpg|gas|bijli|बिजली|power|electric/.test(combined)) {
         gasAndPower += amt;
       } else if (/salary|वेतन|staff|मजदूरी|wage|chef|waiter|cashier/.test(combined)) {
@@ -499,13 +502,34 @@ export const getProfitLoss = async (req, res) => {
       }
     }
 
+    // Dynamic Margin & Cost of Goods Sold (COGS) Configuration
+    const marginParam = req.query.marginPercent !== undefined && req.query.marginPercent !== ""
+      ? parseFloat(req.query.marginPercent)
+      : null;
+    const recordedTotalPurchases = directPurchases + directExpensePurchases;
+    const costMode = req.query.costMode || (recordedTotalPurchases > 0 ? "actual" : "margin");
+
+    let estimatedCOGS = 0;
+    if (marginParam !== null && !isNaN(marginParam)) {
+      const marginFrac = Math.max(0, Math.min(100, marginParam)) / 100;
+      estimatedCOGS = Math.round(totalSales * (1 - marginFrac));
+    } else {
+      estimatedCOGS = Math.round(totalSales * 0.85); // 15% default gross margin
+    }
+
+    const effectivePurchases = (costMode === "actual" && recordedTotalPurchases > 0)
+      ? recordedTotalPurchases
+      : (estimatedCOGS > 0 ? estimatedCOGS : recordedTotalPurchases);
+
     // Effective staff salaries: Use actual disbursed or accrued fixed staff liability
     const staffSalaries = Math.max(actualPaidSalaries, fixedStaffPeriodLiability);
 
-    const totalPurchase = foodCost;
-    const businessExpenses = foodCost + staffSalaries + gasAndPower + rentAndProperty + otherExpenses;
+    const totalPurchase = effectivePurchases;
+    const grossProfit = totalSales - effectivePurchases;
+    const businessOperatingExpenses = staffSalaries + gasAndPower + rentAndProperty + otherExpenses;
+    const businessExpenses = effectivePurchases + businessOperatingExpenses;
     const totalExpenses = businessExpenses + gharKharch;
-    const netProfit = totalSales - businessExpenses;
+    const netProfit = grossProfit - businessOperatingExpenses;
 
     const dailyAvgSales = Math.round(totalSales / daysCount);
     const dailyAvgExpenses = Math.round(totalExpenses / daysCount);
@@ -518,10 +542,16 @@ export const getProfitLoss = async (req, res) => {
       data: {
         totalSales,
         totalPurchase,
+        actualPurchases: recordedTotalPurchases,
+        estimatedCOGS,
+        grossProfit,
+        businessOperatingExpenses,
         totalExpenses,
         businessExpenses,
         gharKharch,
         netProfit,
+        costMode,
+        marginPercent: marginParam !== null ? marginParam : (totalSales > 0 ? Math.round(((totalSales - effectivePurchases) / totalSales) * 100) : 15),
         daysCount,
         dailyAvgSales,
         dailyAvgExpenses,

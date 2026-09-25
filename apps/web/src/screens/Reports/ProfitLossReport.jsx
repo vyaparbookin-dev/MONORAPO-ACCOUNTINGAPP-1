@@ -26,7 +26,13 @@ import {
   Target,
   BarChart3,
   CheckCircle2,
-  ArrowLeft
+  ArrowLeft,
+  Sliders,
+  Settings2,
+  ShoppingCart,
+  PlusCircle,
+  Package,
+  FileText
 } from "lucide-react";
 import api from "../../services/api";
 import { readLocalJson } from "@repo/shared";
@@ -47,14 +53,46 @@ const ProfitLossReportPage = () => {
   ).toLowerCase();
   const isRestaurant = indType === "restaurant" || indType === "cafe" || indType === "dhaba";
 
-  const [period, setPeriod] = useState("month"); // 'today' | 'week' | 'month' | 'last_month' | 'year'
-  const [startDate, setStartDate] = useState(
-    new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0]
-  );
-  const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
+  const [period, setPeriod] = useState("all"); // 'all' | 'today' | 'week' | 'month' | 'last_month' | 'year' | 'custom'
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Dynamic User-Configurable Margin % (Persisted in localStorage, NO HARDCODING)
+  const [marginPercent, setMarginPercent] = useState(() => {
+    try {
+      const saved = localStorage.getItem("vb_custom_gross_margin_percent");
+      return saved !== null && saved !== "" ? Number(saved) : 15;
+    } catch (e) {
+      return 15;
+    }
+  });
+
+  // Cost Mode: "auto" | "margin" | "actual"
+  const [costMode, setCostMode] = useState(() => {
+    try {
+      return localStorage.getItem("vb_cost_mode") || "auto";
+    } catch (e) {
+      return "auto";
+    }
+  });
+
+  const handleMarginChange = (val) => {
+    const num = Math.max(0, Math.min(100, Number(val) || 0));
+    setMarginPercent(num);
+    try {
+      localStorage.setItem("vb_custom_gross_margin_percent", String(num));
+    } catch (e) {}
+  };
+
+  const handleCostModeChange = (mode) => {
+    setCostMode(mode);
+    try {
+      localStorage.setItem("vb_cost_mode", mode);
+    } catch (e) {}
+  };
 
   // Month-over-Month (MoM) & Predictive Budgeting State
   const [predictiveBudget, setPredictiveBudget] = useState({
@@ -126,37 +164,43 @@ const ProfitLossReportPage = () => {
     setLoading(true);
     setError(null);
     try {
-      let plUrl = "/api/reports/profitloss";
+      let plUrl = `/api/reports/profitloss?marginPercent=${marginPercent}&costMode=${costMode}`;
       let billingUrl = "/api/billing?limit=500";
       let expenseUrl = "/api/expense";
+      let purchaseUrl = "/api/purchase";
 
       if (startDate && endDate) {
-        plUrl += `?startDate=${startDate}&endDate=${endDate}`;
+        plUrl += `&startDate=${startDate}&endDate=${endDate}`;
         billingUrl = `/api/billing?startDate=${startDate}&endDate=${endDate}&limit=500`;
         expenseUrl = `/api/expense?startDate=${startDate}&endDate=${endDate}`;
+        purchaseUrl = `/api/purchase?startDate=${startDate}&endDate=${endDate}`;
       }
 
-      const [plRes, billsRes, invRes, expRes] = await Promise.all([
+      const [plRes, billsRes, invRes, expRes, purchaseRes] = await Promise.all([
         api.get(plUrl).catch(() => null),
         api.get(billingUrl).catch(() => null),
         api.get('/api/inventory').catch(() => null),
-        api.get(expenseUrl).catch(() => null)
+        api.get(expenseUrl).catch(() => null),
+        api.get(purchaseUrl).catch(() => null)
       ]);
 
       const plData = plRes?.data?.data || plRes?.data || plRes || {};
       const fetchedBills = billsRes?.data?.bills || billsRes?.bills || billsRes?.data || [];
-      const fetchedProducts = invRes?.data?.products || invRes?.data || [];
       const fetchedExpenses = expRes?.data?.expenses || expRes?.expenses || expRes?.data || [];
+      const fetchedPurchases = purchaseRes?.data?.purchases || purchaseRes?.purchases || purchaseRes?.data || [];
 
       // Local Data
       let localBills = [];
       let localExpenses = [];
+      let localPurchases = [];
       try {
         if (typeof localStorage !== "undefined") {
           const storedB = readLocalJson(["vb_local_manual_bills", "bills"], []);
           if (Array.isArray(storedB)) localBills = storedB;
           const storedE = readLocalJson(["vb_local_expenses", "expenses"], []);
           if (Array.isArray(storedE)) localExpenses = storedE;
+          const storedP = readLocalJson(["vb_local_purchases", "purchases"], []);
+          if (Array.isArray(storedP)) localPurchases = storedP;
         }
       } catch (e) {}
 
@@ -180,10 +224,9 @@ const ProfitLossReportPage = () => {
         return true;
       };
 
-      // Strictly filter bills and expenses to the selected date range
+      // Strictly filter bills, expenses, and purchases to selected date range
       const periodLocalBills = localBills.filter(b => checkInRange(b.rawDate || b.date || b.createdAt));
       const periodFetchedBills = Array.isArray(fetchedBills) ? fetchedBills.filter(b => checkInRange(b.date || b.createdAt)) : [];
-
       const allBills = deduplicateBills([
         ...periodFetchedBills,
         ...periodLocalBills
@@ -191,11 +234,17 @@ const ProfitLossReportPage = () => {
 
       const periodLocalExpenses = localExpenses.filter(e => checkInRange(e.date || e.createdAt));
       const periodFetchedExpenses = Array.isArray(fetchedExpenses) ? fetchedExpenses.filter(e => checkInRange(e.date || e.createdAt)) : [];
-
       const allExpenses = deduplicateExpenses([
         ...periodFetchedExpenses,
         ...periodLocalExpenses
       ]);
+
+      const periodLocalPurchases = localPurchases.filter(p => checkInRange(p.date || p.createdAt));
+      const periodFetchedPurchases = Array.isArray(fetchedPurchases) ? fetchedPurchases.filter(p => checkInRange(p.date || p.createdAt)) : [];
+      const allPurchases = [
+        ...periodFetchedPurchases,
+        ...periodLocalPurchases
+      ];
 
       const isPersonalExpense = (e) => {
         if (!e) return false;
@@ -222,21 +271,54 @@ const ProfitLossReportPage = () => {
       const calcSales = allBills.reduce((sum, b) => sum + (Number(b.amount || b.finalAmount || b.total || b.totalAmount || b.grandTotal) || 0), 0);
       const calcOperating = operatingExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
       const calcGharKharch = gharKharchExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+      const calcActualPurchases = allPurchases.reduce((sum, p) => sum + (Number(p.finalAmount || p.totalAmount || p.total || p.amountPaid) || 0), 0);
 
       // Prefer calculated period bills/expenses; fallback to plData from backend
       const finalSales = allBills.length > 0 ? calcSales : (Number(plData.totalSales) || 0);
-      const finalOperating = operatingExpenses.length > 0 ? calcOperating : (Number(plData.businessExpenses) || 0);
+      const finalOperating = operatingExpenses.length > 0 ? calcOperating : (Number(plData.businessOperatingExpenses ?? plData.businessExpenses) || 0);
       const finalGharKharch = gharKharchExpenses.length > 0 ? calcGharKharch : (Number(plData.gharKharch) || 0);
+
+      const recordedPurchases = calcActualPurchases > 0 ? calcActualPurchases : (Number(plData.actualPurchases) || 0);
+      const hasActualPurchases = recordedPurchases > 0;
+
+      // Active Cost of Goods (COGS) Mode Decision
+      const activeMode = costMode === "margin"
+        ? "margin"
+        : costMode === "actual"
+        ? "actual"
+        : hasActualPurchases
+        ? "actual"
+        : "margin";
+
+      const effectiveMarginPercent = Number(marginPercent) || 15;
+      const estimatedCOGS = Math.round(finalSales * (1 - (effectiveMarginPercent / 100)));
+
+      const effectiveCOGS = activeMode === "actual" && hasActualPurchases
+        ? recordedPurchases
+        : (estimatedCOGS > 0 ? estimatedCOGS : recordedPurchases);
+
+      const grossProfit = Math.max(0, finalSales - effectiveCOGS);
+      const netProfit = grossProfit - finalOperating;
 
       setReport({
         ...plData,
         totalSales: finalSales,
-        totalExpenses: finalOperating + finalGharKharch,
-        businessExpenses: finalOperating,
+        totalPurchase: effectiveCOGS,
+        actualPurchases: recordedPurchases,
+        estimatedCOGS,
+        effectivePurchases: effectiveCOGS,
+        grossProfit,
+        businessExpenses: effectiveCOGS + finalOperating,
+        operatingExpenses: finalOperating,
+        totalExpenses: effectiveCOGS + finalOperating + finalGharKharch,
         gharKharch: finalGharKharch,
-        netProfit: finalSales - finalOperating,
+        netProfit,
+        hasActualPurchases,
+        activeMode,
+        marginPercent: effectiveMarginPercent,
+        purchasesCount: allPurchases.length,
         breakdown: {
-          foodCost: Number(plData?.breakdown?.foodCost || 0),
+          foodCost: effectiveCOGS,
           staffSalaries: Number(plData?.breakdown?.staffSalaries || 0),
           gasAndPower: Number(plData?.breakdown?.gasAndPower || 0),
           rentAndProperty: Number(plData?.breakdown?.rentAndProperty || 0),
@@ -277,7 +359,7 @@ const ProfitLossReportPage = () => {
       // Dynamic Predictive Budget
       const curSales = finalSales;
       const curExpenses = finalOperating;
-      const days = Number(plData?.daysCount) || (period === 'daily' ? 1 : period === 'weekly' ? 7 : period === 'monthly' ? 30 : 7);
+      const days = Number(plData?.daysCount) || (period === 'daily' ? 1 : period === 'weekly' ? 7 : period === 'monthly' ? 30 : 30);
       const fixedStaffMonthly = Number(plData?.fixedMonthlyStaffSalaries || plData?.breakdown?.fixedMonthlyStaffSalaries || 0);
       const dailyBurn = Number(plData?.dailyBurnRate) > 0 
         ? Number(plData.dailyBurnRate) 
@@ -321,44 +403,43 @@ const ProfitLossReportPage = () => {
 
   useEffect(() => {
     fetchReport();
-  }, [period, startDate, endDate]);
+  }, [period, startDate, endDate, marginPercent, costMode]);
 
   const sales = Number(report?.totalSales) || 0;
-  const foodCost = Number(report?.breakdown?.foodCost ?? report?.totalPurchase ?? 0);
+  const cogs = Number(report?.totalPurchase ?? report?.effectivePurchases ?? 0);
+  const recordedPurchasesAmt = Number(report?.actualPurchases || 0);
+  const grossProfit = report?.grossProfit !== undefined ? Number(report.grossProfit) : Math.max(0, sales - cogs);
+  const operatingExpenses = Number(report?.operatingExpenses ?? 0);
   const staffCost = Number(report?.breakdown?.staffSalaries ?? 0);
   const gasAndPower = Number(report?.breakdown?.gasAndPower ?? 0);
   const rentCost = Number(report?.breakdown?.rentAndProperty ?? 0);
-  const gharKharch = Number(report?.breakdown?.gharKharch ?? report?.gharKharch ?? 0);
-  const otherExpenses = Number(report?.breakdown?.otherExpenses ?? 0);
-  const businessExpenses = report?.businessExpenses !== undefined ? Number(report.businessExpenses) : (foodCost + staffCost + gasAndPower + rentCost + otherExpenses);
-  const totalExpenses = report?.totalExpenses !== undefined ? Number(report.totalExpenses) : (businessExpenses + gharKharch);
-  const netProfit = report?.netProfit !== undefined ? Number(report.netProfit) : (sales - businessExpenses);
+  const gharKharch = Number(report?.gharKharch || 0);
+  const netProfit = report?.netProfit !== undefined ? Number(report.netProfit) : (grossProfit - operatingExpenses);
+  const activeCostMode = report?.activeMode || (report?.hasActualPurchases ? "actual" : "margin");
 
   // Percentage Calculations
-  const foodCostPercent = sales > 0 ? ((foodCost / sales) * 100).toFixed(1) : 0;
-  const staffPercent = sales > 0 ? ((staffCost / sales) * 100).toFixed(1) : 0;
-  const rentPercent = sales > 0 ? ((rentCost / sales) * 100).toFixed(1) : 0;
-  const gasPowerPercent = sales > 0 ? ((gasAndPower / sales) * 100).toFixed(1) : 0;
-  const gharKharchPercent = sales > 0 ? ((gharKharch / sales) * 100).toFixed(1) : 0;
+  const grossMarginPercent = sales > 0 ? ((grossProfit / sales) * 100).toFixed(1) : Number(marginPercent).toFixed(1);
+  const cogsPercent = sales > 0 ? ((cogs / sales) * 100).toFixed(1) : (100 - Number(marginPercent)).toFixed(1);
+  const operatingExpensePercent = sales > 0 ? ((operatingExpenses / sales) * 100).toFixed(1) : 0;
   const netProfitPercent = sales > 0 ? ((netProfit / sales) * 100).toFixed(1) : 0;
 
   // WhatsApp Flash Report with MoM Comparison & Break-Even
   const shareWhatsAppSummary = () => {
-    let msg = `*📊 BUSINESS P&L & FINANCIAL AUDIT REPORT*\n`;
-    msg += `*Period:* ${startDate || "All Time"} to ${endDate || "Present"}\n`;
+    let msg = `*📊 VYAPAR BUSINESS P&L & PROFIT AUDIT*\n`;
+    msg += `*अवधि (Period):* ${startDate || "सभी समय (All Time)"} से ${endDate || "वर्तमान"}\n`;
     msg += `----------------------------------\n`;
-    msg += `*🟢 Total Sales:* ₹${sales.toLocaleString("en-IN")}\n`;
-    msg += `  • Daily Sales Pace: ₹${predictiveBudget.currentMonthDailyAvgSales.toLocaleString("en-IN")}/day\n`;
-    msg += `  • Daily Break-Even Needed: ₹${predictiveBudget.breakEvenDailySalesNeeded.toLocaleString("en-IN")}/day\n`;
+    msg += `*🟢 कुल बिक्री (Gross Sales):* ₹${sales.toLocaleString("en-IN")}\n`;
+    msg += `*📦 सामान खरीद लागत (COGS):* ₹${cogs.toLocaleString("en-IN")} (${activeCostMode === "actual" ? "वास्तविक खरीद बिल" : `${marginPercent}% मार्जिन आधार`})\n`;
+    msg += `*💰 सकल लाभ (Gross Profit):* ₹${grossProfit.toLocaleString("en-IN")} (${grossMarginPercent}%)\n`;
     msg += `----------------------------------\n`;
-    msg += `*🏢 Business Expenses:* ₹${businessExpenses.toLocaleString("en-IN")}\n`;
+    msg += `*🏢 दुकान संचालन खर्चे (Expenses):* ₹${operatingExpenses.toLocaleString("en-IN")}\n`;
     if (gharKharch > 0) {
-      msg += `*🏡 Family Drawings (घर खर्च):* ₹${gharKharch.toLocaleString("en-IN")}\n`;
+      msg += `*🏡 निजी घर खर्च (Drawings):* ₹${gharKharch.toLocaleString("en-IN")}\n`;
     }
     msg += `----------------------------------\n`;
-    msg += `*💰 NET SHUDDH PROFIT:* *₹${netProfit.toLocaleString("en-IN")} (${netProfitPercent}% Margin)*\n`;
+    msg += `*⭐ शुद्ध व्यापारिक मुनाफ़ा (NET PROFIT):* *₹${netProfit.toLocaleString("en-IN")} (${netProfitPercent}% Net Margin)*\n`;
     msg += `----------------------------------\n`;
-    msg += `_Generated from Vyapar Business Accounting App._`;
+    msg += `_व्यापार अकाउंटिंग सॉफ्टवेयर द्वारा जनरेटेड_`;
 
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
   };
@@ -380,32 +461,38 @@ const ProfitLossReportPage = () => {
             <div>
               <h1 className="text-xl sm:text-2xl font-black text-gray-900 flex items-center gap-2">
                 <PieChart className="text-emerald-700 shrink-0" size={24} />
-                <span>{isRestaurant ? "Hospitality Profit & Loss & Budget Forecast Audit" : "Business Profit & Loss & Financial Audit"}</span>
+                <span>{isRestaurant ? "रेस्टोरेंट व फूड लाभ-हानि ऑडिट" : "व्यापारिक लाभ और हानि रिपोर्ट (Profit & Loss)"}</span>
               </h1>
               <p className="text-xs text-gray-500 mt-0.5">
-                {isRestaurant 
-                  ? "मासिक बजट पूर्वानुमान • दैनिक ब्रेक-इवन • MoM सेल तुलना • बेस्ट सेलर vs वेस्टेज रिस्क" 
-                  : "मासिक बजट पूर्वानुमान • दैनिक ब्रेक-इवन • MoM सेल तुलना • शुद्ध लाभ/हानि रजिस्टर"}
+                बिक्री, खरीद लागत (COGS), दुकान खर्चे एवं शुद्ध व्यापारिक मुनाफ़े का संपूर्ण विश्लेषण
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={shareWhatsAppSummary}
-              className="bg-green-600 hover:bg-green-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow"
+              onClick={() => navigate('/inventory/purchase-entry')}
+              className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow cursor-pointer"
+              title="सप्लायर का खरीद बिल दर्ज करें"
             >
-              <Share2 size={15} /> WhatsApp P&L
+              <ShoppingCart size={15} /> ➕ खरीद बिल जोड़ें
+            </button>
+            <button
+              onClick={shareWhatsAppSummary}
+              className="bg-green-600 hover:bg-green-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow cursor-pointer"
+            >
+              <Share2 size={15} /> WhatsApp
             </button>
             <button
               onClick={() => window.print()}
-              className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow"
+              className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow cursor-pointer"
             >
               <Printer size={15} /> Print
             </button>
             <button
               onClick={fetchReport}
-              className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition"
+              className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition cursor-pointer"
+              title="रिफ्रेश करें"
             >
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
             </button>
@@ -446,7 +533,7 @@ const ProfitLossReportPage = () => {
                 onChange={(e) => setStartDate(e.target.value)}
                 className="px-2 py-0.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:border-emerald-600"
               />
-              <span className="text-xs text-gray-500 font-semibold">to</span>
+              <span className="text-xs text-gray-500 font-semibold">से</span>
               <input
                 type="date"
                 value={endDate}
@@ -458,17 +545,209 @@ const ProfitLossReportPage = () => {
 
           <span className="text-xs text-gray-400 font-medium ml-auto">
             {startDate && endDate ? (
-              <>Range: <strong className="text-gray-700">{startDate}</strong> to <strong className="text-gray-700">{endDate}</strong></>
+              <>अवधि: <strong className="text-gray-700">{startDate}</strong> से <strong className="text-gray-700">{endDate}</strong></>
             ) : (
               <strong className="text-emerald-700">📊 सभी उपलब्ध डेटा (All Time)</strong>
             )}
           </span>
         </div>
 
+        {/* DYNAMIC GROSS MARGIN & PURCHASE CONTROLLER (NO HARDCODING) */}
+        <div className="bg-white p-5 rounded-2xl shadow-sm border-2 border-emerald-500/50 space-y-4 print:hidden">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-gray-200 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
+                <Sliders size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-black text-gray-900 flex items-center gap-2">
+                  <span>व्यापारिक मुनाफ़ा मार्जिन एवं खरीद नियंत्रक (Gross Margin & Cost Settings)</span>
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  प्रत्येक व्यापार का मार्जिन अलग होता है। अपनी दुकान के अनुसार मार्जिन % सेट करें या वास्तविक सप्लायर बिलों से गणना करें।
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 font-medium">लागत का आधार:</span>
+              <div className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => handleCostModeChange("margin")}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
+                    costMode === "margin" || (costMode === "auto" && !report?.hasActualPurchases)
+                      ? "bg-emerald-700 text-white shadow-xs"
+                      : "text-gray-700 hover:text-gray-900"
+                  }`}
+                >
+                  ⚙️ मार्जिन % आधार
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCostModeChange("actual")}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
+                    costMode === "actual" || (costMode === "auto" && report?.hasActualPurchases)
+                      ? "bg-emerald-700 text-white shadow-xs"
+                      : "text-gray-700 hover:text-gray-900"
+                  }`}
+                >
+                  📦 वास्तविक खरीद बिल
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Margin % Input, Slider & Common Retail Presets */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+            <div className="md:col-span-5 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                  <span>अनुमानित सकल मुनाफ़ा मार्जिन (Gross Profit Margin %):</span>
+                </label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="1"
+                    max="99"
+                    step="0.5"
+                    value={marginPercent}
+                    onChange={(e) => handleMarginChange(e.target.value)}
+                    className="w-16 px-2 py-1 text-sm font-black text-center text-emerald-800 bg-emerald-50 border-2 border-emerald-500 rounded-lg focus:outline-none"
+                  />
+                  <span className="text-sm font-bold text-gray-700">%</span>
+                </div>
+              </div>
+
+              {/* Slider for smooth visual control */}
+              <input
+                type="range"
+                min="3"
+                max="75"
+                step="1"
+                value={marginPercent}
+                onChange={(e) => handleMarginChange(e.target.value)}
+                className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+              />
+            </div>
+
+            {/* Quick Retail Industry Presets */}
+            <div className="md:col-span-7">
+              <span className="text-[11px] font-bold text-gray-500 block mb-1.5">व्यापार अनुसार त्वरित मार्जिन चुनें:</span>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { label: "10% किराना (Grocery)", val: 10 },
+                  { label: "15% हार्डवेयर / सेनेटरी", val: 15 },
+                  { label: "20% जनरल स्टोर", val: 20 },
+                  { label: "25% इलेक्ट्रॉनिक्स / ऑटो", val: 25 },
+                  { label: "35% गारमेंट्स / कपड़े", val: 35 },
+                  { label: "50% रेस्टोरेंट / फूड", val: 50 },
+                ].map((item) => (
+                  <button
+                    key={item.val}
+                    type="button"
+                    onClick={() => handleMarginChange(item.val)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer border ${
+                      Number(marginPercent) === item.val
+                        ? "bg-emerald-50 border-emerald-500 text-emerald-900 font-bold shadow-xs"
+                        : "bg-slate-50 border-gray-200 text-gray-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Dynamic Info Feedback Banner */}
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs">
+            <div className="text-gray-700">
+              {activeCostMode === "actual" && recordedPurchasesAmt > 0 ? (
+                <span>
+                  ✓ <strong className="text-emerald-800">वास्तविक खरीद बिल लागू:</strong> सिस्टम में दर्ज सप्लायर खरीद बिल कुल <strong className="text-gray-900">₹{recordedPurchasesAmt.toLocaleString("en-IN")}</strong> की लागत के रूप में गिने जा रहे हैं।
+                </span>
+              ) : (
+                <span>
+                  💡 <strong className="text-emerald-800">कस्टम {marginPercent}% मार्जिन लागू:</strong> कुल बिक्री ₹{sales.toLocaleString("en-IN")} पर {marginPercent}% सकल लाभ = <strong className="text-emerald-800">₹{grossProfit.toLocaleString("en-IN")}</strong> | सामान खरीद लागत = <strong className="text-gray-900">₹{cogs.toLocaleString("en-IN")}</strong>
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => navigate('/inventory/purchase-entry')}
+              className="text-xs text-emerald-700 font-bold hover:underline inline-flex items-center gap-1 cursor-pointer shrink-0"
+            >
+              <span>अशोक हार्डवेयर या अन्य सप्लायर का बिल दर्ज करें</span> →
+            </button>
+          </div>
+        </div>
+
         {loading ? (
           <Loader />
         ) : (
           <>
+            {/* Top 5 Comprehensive Financial Metric Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              {/* 1. Gross Sales */}
+              <div className="bg-emerald-50 p-5 rounded-2xl border border-emerald-200 shadow-sm flex flex-col justify-between">
+                <span className="text-[11px] font-black text-emerald-950 uppercase tracking-wide flex items-center gap-1.5">
+                  <TrendingUp size={15} className="text-emerald-700" /> कुल बिक्री (Sales Revenue)
+                </span>
+                <p className="text-2xl sm:text-3xl font-black text-emerald-900 mt-2">₹{sales.toLocaleString("en-IN")}</p>
+                <p className="text-[11px] text-emerald-700 font-semibold mt-1">100% सकल टर्नओवर</p>
+              </div>
+
+              {/* 2. COGS / Purchase Cost */}
+              <div className="bg-amber-50 p-5 rounded-2xl border border-amber-200 shadow-sm flex flex-col justify-between">
+                <span className="text-[11px] font-black text-amber-950 uppercase tracking-wide flex items-center gap-1.5">
+                  <Box size={15} className="text-amber-700" /> सामान खरीद लागत (COGS)
+                </span>
+                <p className="text-2xl sm:text-3xl font-black text-amber-900 mt-2">₹{cogs.toLocaleString("en-IN")}</p>
+                <p className="text-[11px] text-amber-800 font-semibold mt-1">
+                  {cogsPercent}% of Sales ({activeCostMode === "actual" ? "वास्तविक बिल" : `${marginPercent}% मार्जिन आधार`})
+                </p>
+              </div>
+
+              {/* 3. Gross Profit */}
+              <div className="bg-blue-50 p-5 rounded-2xl border border-blue-200 shadow-sm flex flex-col justify-between">
+                <span className="text-[11px] font-black text-blue-950 uppercase tracking-wide flex items-center gap-1.5">
+                  <Zap size={15} className="text-blue-700" /> सकल मुनाफ़ा (Gross Profit)
+                </span>
+                <p className="text-2xl sm:text-3xl font-black text-blue-900 mt-2">₹{grossProfit.toLocaleString("en-IN")}</p>
+                <p className="text-[11px] text-blue-700 font-bold mt-1">
+                  {grossMarginPercent}% ग्रॉस मार्जिन (बिक्री - खरीद)
+                </p>
+              </div>
+
+              {/* 4. Operating Expenses */}
+              <div className="bg-rose-50 p-5 rounded-2xl border border-rose-200 shadow-sm flex flex-col justify-between">
+                <span className="text-[11px] font-black text-rose-950 uppercase tracking-wide flex items-center gap-1.5">
+                  <TrendingDown size={15} className="text-rose-700" /> दुकान खर्चे (Shop Expenses)
+                </span>
+                <p className="text-2xl sm:text-3xl font-black text-rose-900 mt-2">₹{operatingExpenses.toLocaleString("en-IN")}</p>
+                <p className="text-[11px] text-rose-700 font-semibold mt-1">
+                  किराया + स्टाफ + बिजली + अन्य खर्चे
+                </p>
+              </div>
+
+              {/* 5. Net Profit */}
+              <div
+                className={`p-5 rounded-2xl shadow-md border flex flex-col justify-between ${
+                  netProfit >= 0
+                    ? "bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 text-yellow-400 border-emerald-500"
+                    : "bg-red-900 text-white border-red-700"
+                }`}
+              >
+                <span className="text-[11px] font-black uppercase tracking-wide flex items-center gap-1.5 text-yellow-300">
+                  <DollarSign size={15} /> शुद्ध मुनाफ़ा (Net Profit)
+                </span>
+                <p className="text-2xl sm:text-3xl font-black mt-2">₹{netProfit.toLocaleString("en-IN")}</p>
+                <p className="text-[11px] font-bold text-emerald-300 mt-1">
+                  ✓ {netProfitPercent}% Net Margin
+                </p>
+              </div>
+            </div>
+
             {/* AI Predictive Monthly Budget & MoM Pace Card */}
             <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 rounded-2xl shadow-md border border-indigo-500/40 space-y-4">
               <div className="flex justify-between items-start flex-wrap gap-2 border-b border-indigo-800/60 pb-3">
@@ -499,7 +778,7 @@ const ProfitLossReportPage = () => {
                   <p className="text-xl font-black text-rose-400 mt-1">₹{predictiveBudget.dailyBurnRate.toLocaleString("en-IN")}<span className="text-xs font-normal text-gray-300">/day</span></p>
                   <p className="text-[10px] text-gray-400 mt-0.5">
                     {predictiveBudget.daysCount > 1 
-                      ? `${predictiveBudget.daysCount} दिनों का औसत खर्च (रेंट + वेतन + राशन)`
+                      ? `${predictiveBudget.daysCount} दिनों का औसत खर्च (रेंट + वेतन + बिजली)`
                       : "आज का वास्तविक दैनिक खर्च"}
                   </p>
                 </div>
@@ -531,123 +810,88 @@ const ProfitLossReportPage = () => {
               </div>
             </div>
 
-            {/* Top Metric Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-200 shadow-sm flex flex-col justify-between">
-                <span className="text-xs font-black text-emerald-900 uppercase tracking-wide flex items-center gap-1.5">
-                  <TrendingUp size={16} className="text-emerald-700" /> Total Revenue (बिक्री व बैंक्वेट)
-                </span>
-                <p className="text-3xl font-black text-emerald-800 mt-2">₹{sales.toLocaleString("en-IN")}</p>
-                <p className="text-[11px] text-emerald-700 font-semibold mt-1">100% Gross Inflow Base</p>
-              </div>
-
-              <div className="bg-rose-50 p-6 rounded-2xl border border-rose-200 shadow-sm flex flex-col justify-between">
-                <span className="text-xs font-black text-rose-900 uppercase tracking-wide flex items-center gap-1.5">
-                  <TrendingDown size={16} className="text-rose-700" /> Total Operating Expenses (कुल खर्चे)
-                </span>
-                <p className="text-3xl font-black text-rose-800 mt-2">₹{totalExpenses.toLocaleString("en-IN")}</p>
-                <p className="text-[11px] text-rose-700 font-semibold mt-1">
-                  Food ({foodCostPercent}%) + Staff ({staffPercent}%) + Rent ({rentPercent}%)
-                </p>
-              </div>
-
-              <div
-                className={`p-6 rounded-2xl shadow-md border flex flex-col justify-between ${
-                  netProfit >= 0
-                    ? "bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 text-yellow-400 border-emerald-500"
-                    : "bg-red-900 text-white border-red-700"
-                }`}
-              >
-                <span className="text-xs font-black uppercase tracking-wide flex items-center gap-1.5 text-yellow-300">
-                  <DollarSign size={16} /> Net Shuddh Profit (शुद्ध मुनाफा)
-                </span>
-                <p className="text-3xl font-black mt-2">₹{netProfit.toLocaleString("en-IN")}</p>
-                <p className="text-[11px] font-bold text-emerald-300 mt-1">
-                  ✓ Net Margin: <strong>{netProfitPercent}%</strong> (Industry Benchmark &gt; 25%)
-                </p>
-              </div>
-            </div>
-
             {/* % Percentage Cost Ratio Bars (Industry Gold Standard) */}
             <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-200 space-y-4">
               <div className="flex justify-between items-center border-b pb-2 flex-wrap gap-2">
                 <h3 className="font-black text-gray-900 text-sm flex items-center gap-2">
                   <ChefHat size={18} className="text-emerald-700" />
-                  {isRestaurant ? "Hospitality Cost Breakdown & Percentage Ratios (% of Sales)" : "Operating Expense Breakdown & Financial Ratios (% of Sales)"}
+                  <span>लागत व व्यय अनुपात (Cost & Expense Ratios as % of Sales)</span>
                 </h3>
-                <span className="text-xs text-gray-500">{isRestaurant ? "NRAI & Petpooja 5-Star Benchmarks" : "Commercial Financial Benchmarks"}</span>
+                <span className="text-xs text-gray-500">Commercial Financial Benchmarks</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-emerald-900">{isRestaurant ? "🥬 Food Raw Cost" : "📦 Cost of Goods / Stock"}</span>
-                    <span className={`text-xs font-black px-2 py-0.5 rounded ${parseFloat(foodCostPercent) <= (isRestaurant ? 32 : 60) ? "bg-green-200 text-green-900" : "bg-red-200 text-red-900"}`}>
-                      {foodCostPercent}%
+                    <span className="text-xs font-bold text-emerald-900">{isRestaurant ? "🥬 Food Raw Cost" : "📦 सामान खरीद लागत (COGS)"}</span>
+                    <span className="text-xs font-black px-2 py-0.5 rounded bg-emerald-200 text-emerald-900">
+                      {cogsPercent}%
                     </span>
                   </div>
-                  <p className="text-lg font-black text-emerald-800 mt-1">₹{foodCost.toLocaleString("en-IN")}</p>
+                  <p className="text-lg font-black text-emerald-800 mt-1">₹{cogs.toLocaleString("en-IN")}</p>
                   <div className="w-full bg-gray-200 h-2 rounded-full mt-2 overflow-hidden">
-                    <div className="bg-emerald-600 h-full" style={{ width: `${Math.min(100, foodCostPercent)}%` }}></div>
+                    <div className="bg-emerald-600 h-full" style={{ width: `${Math.min(100, parseFloat(cogsPercent) || 0)}%` }}></div>
                   </div>
-                  <span className="text-[10px] text-gray-500 mt-1 block">{isRestaurant ? "Target: 28% - 32%" : "Benchmark: 30% - 60%"}</span>
+                  <span className="text-[10px] text-gray-500 mt-1 block">
+                    {activeCostMode === "actual" ? "वास्तविक खरीद बिलों से" : `सेट मार्जिन (${marginPercent}%) के अनुसार`}
+                  </span>
                 </div>
 
                 <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-blue-900">{isRestaurant ? "👨‍🍳 Staff & Labor" : "👨‍💼 Staff & Labor Wages"}</span>
+                    <span className="text-xs font-bold text-blue-900">👨‍💼 स्टाफ एवं वेतन (Staff Wages)</span>
                     <span className="text-xs font-black bg-blue-200 text-blue-900 px-2 py-0.5 rounded">
-                      {staffPercent}%
+                      {sales > 0 ? ((staffCost / sales) * 100).toFixed(1) : 0}%
                     </span>
                   </div>
                   <p className="text-lg font-black text-blue-800 mt-1">₹{staffCost.toLocaleString("en-IN")}</p>
                   <div className="w-full bg-gray-200 h-2 rounded-full mt-2 overflow-hidden">
-                    <div className="bg-blue-600 h-full" style={{ width: `${Math.min(100, staffPercent)}%` }}></div>
+                    <div className="bg-blue-600 h-full" style={{ width: `${Math.min(100, sales > 0 ? (staffCost / sales) * 100 : 0)}%` }}></div>
                   </div>
-                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 10% - 20%</span>
+                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 5% - 15%</span>
                 </div>
 
                 <div className="p-4 bg-purple-50/70 border border-purple-200 rounded-xl">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-purple-900">{isRestaurant ? "🏢 Shop / Hall Rent" : "🏢 Shop / Commercial Rent"}</span>
+                    <span className="text-xs font-bold text-purple-900">🏢 दुकान किराया (Shop Rent)</span>
                     <span className="text-xs font-black bg-purple-200 text-purple-900 px-2 py-0.5 rounded">
-                      {rentPercent}%
+                      {sales > 0 ? ((rentCost / sales) * 100).toFixed(1) : 0}%
                     </span>
                   </div>
                   <p className="text-lg font-black text-purple-800 mt-1">₹{rentCost.toLocaleString("en-IN")}</p>
                   <div className="w-full bg-gray-200 h-2 rounded-full mt-2 overflow-hidden">
-                    <div className="bg-purple-600 h-full" style={{ width: `${Math.min(100, rentPercent)}%` }}></div>
+                    <div className="bg-purple-600 h-full" style={{ width: `${Math.min(100, sales > 0 ? (rentCost / sales) * 100 : 0)}%` }}></div>
                   </div>
-                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 5% - 12%</span>
+                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 3% - 10%</span>
                 </div>
 
                 <div className="p-4 bg-orange-50/70 border border-orange-200 rounded-xl">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-orange-900">{isRestaurant ? "🔥 Gas & Electricity" : "⚡ Power & Utilities"}</span>
+                    <span className="text-xs font-bold text-orange-900">⚡ बिजली व अन्य खर्चे (Utilities)</span>
                     <span className="text-xs font-black bg-orange-200 text-orange-900 px-2 py-0.5 rounded">
-                      {gasPowerPercent}%
+                      {sales > 0 ? ((gasAndPower / sales) * 100).toFixed(1) : 0}%
                     </span>
                   </div>
                   <p className="text-lg font-black text-orange-800 mt-1">₹{gasAndPower.toLocaleString("en-IN")}</p>
                   <div className="w-full bg-gray-200 h-2 rounded-full mt-2 overflow-hidden">
-                    <div className="bg-orange-600 h-full" style={{ width: `${Math.min(100, gasPowerPercent)}%` }}></div>
+                    <div className="bg-orange-600 h-full" style={{ width: `${Math.min(100, sales > 0 ? (gasAndPower / sales) * 100 : 0)}%` }}></div>
                   </div>
-                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 3% - 6%</span>
+                  <span className="text-[10px] text-gray-500 mt-1 block">Target: 2% - 5%</span>
                 </div>
 
                 {gharKharch > 0 && (
                   <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl">
                     <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-amber-900">🏡 Family Drawings (घर खर्च)</span>
+                      <span className="text-xs font-bold text-amber-900">🏡 निजी घर खर्च (Drawings)</span>
                       <span className="text-xs font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded">
-                        {gharKharchPercent}%
+                        {sales > 0 ? ((gharKharch / sales) * 100).toFixed(1) : 0}%
                       </span>
                     </div>
                     <p className="text-lg font-black text-amber-800 mt-1">₹{gharKharch.toLocaleString("en-IN")}</p>
                     <div className="w-full bg-gray-200 h-2 rounded-full mt-2 overflow-hidden">
-                      <div className="bg-amber-600 h-full" style={{ width: `${Math.min(100, gharKharchPercent)}%` }}></div>
+                      <div className="bg-amber-600 h-full" style={{ width: `${Math.min(100, sales > 0 ? (gharKharch / sales) * 100 : 0)}%` }}></div>
                     </div>
-                    <span className="text-[10px] text-amber-700 font-semibold mt-1 block">निजी / परिवार खर्च</span>
+                    <span className="text-[10px] text-amber-700 font-semibold mt-1 block">मालिक का पर्सनल खर्च</span>
                   </div>
                 )}
               </div>
@@ -661,10 +905,10 @@ const ProfitLossReportPage = () => {
                   <div className="flex justify-between items-center border-b pb-2">
                     <h3 className="font-black text-gray-900 text-sm flex items-center gap-1.5">
                       <Award size={18} className="text-amber-500" />
-                      {isRestaurant ? "Top Best Sellers & High Profit Dishes (Stars ⭐)" : "Top Best Selling Products & High Margin (Stars ⭐)"}
+                      <span>शीर्ष बिकने वाले सामान (Top Selling Products)</span>
                     </h3>
                     <span className="text-[11px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">
-                      Highest Revenue Driver
+                      Highest Revenue
                     </span>
                   </div>
 
@@ -697,10 +941,10 @@ const ProfitLossReportPage = () => {
                   <div className="flex justify-between items-center border-b pb-2">
                     <h3 className="font-black text-gray-900 text-sm flex items-center gap-1.5">
                       <AlertTriangle size={18} className="text-red-600" />
-                      {isRestaurant ? "Low Sellers & Kitchen Raw Spoilage / Loss Alerts" : "Slow Moving Items & Dead Stock Risk"}
+                      <span>धीमी गति से बिकने वाले सामान (Slow Moving Items)</span>
                     </h3>
                     <span className="text-[11px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-200">
-                      {isRestaurant ? "Food Loss Danger ⚠️" : "Dead Stock Risk ⚠️"}
+                      Dead Stock Risk ⚠️
                     </span>
                   </div>
 
@@ -737,7 +981,7 @@ const ProfitLossReportPage = () => {
                 <div>
                   <h3 className="font-black text-gray-900 text-sm flex items-center gap-1.5">
                     <Clock size={18} className="text-purple-700" />
-                    Accrued Monthly Liabilities vs Cash Paid Settlement Ledger
+                    <span>मासिक देय देनदारियां एवं वास्तविक भुगतान लेजर (Accrual Settlement Ledger)</span>
                   </h3>
                   <p className="text-xs text-gray-500">
                     दैनिक प्रोविजन संचय (Daily Accrual Reserve) vs महीने के अंत में वास्तविक चेक/कैश भुगतान का मिलान

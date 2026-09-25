@@ -50,8 +50,9 @@ export const purchaseItemSchema = z.object({
   productId: z.string().optional(),
   name: z.string().min(1, "Item name is required"),
   quantity: z.number().positive("Quantity must be greater than zero"),
-  price: z.number().nonnegative("Price cannot be negative"),
-  total: z.number().nonnegative("Total cannot be negative"),
+  price: z.number().nonnegative("Price cannot be negative").optional(),
+  rate: z.number().nonnegative("Rate cannot be negative").optional(),
+  total: z.number().nonnegative("Total cannot be negative").optional(),
 });
 
 export const createPurchaseSchema = z.object({

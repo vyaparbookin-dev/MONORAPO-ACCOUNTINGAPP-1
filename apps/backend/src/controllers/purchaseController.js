@@ -11,12 +11,20 @@ export const createPurchase = async (req, res) => {
     const { companyId } = req;
     if (!companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
 
-    const { partyId, items, finalAmount, amountPaid = 0, paymentMethod } = req.body;
+    const { partyId, items = [], finalAmount, amountPaid = 0, paymentMethod } = req.body;
+
+    let supplierName = req.body.supplierName;
+    if (!supplierName && partyId) {
+      const pObj = await Party.findById(partyId).select("name");
+      supplierName = pObj?.name || "Supplier";
+    }
 
     // 1. Create Purchase Bill Record
     const purchase = new Purchase({
       ...req.body,
       companyId,
+      supplierName: supplierName || "Supplier",
+      purchaseNumber: req.body.purchaseNumber || `PUR-${Date.now()}`,
       paymentStatus: amountPaid >= finalAmount ? "paid" : amountPaid > 0 ? "partial" : "unpaid",
       paymentMethod: paymentMethod || "credit"
     });

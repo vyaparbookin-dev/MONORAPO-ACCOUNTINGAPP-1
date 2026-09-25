@@ -10,7 +10,7 @@ const purchaseSchema = new mongoose.Schema({
   dueDate: Date,
   items: [
     {
-      productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
+      productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
       name: String,
       quantity: { type: Number, required: true, default: 1 },
       rate: { type: Number, required: true, default: 0 },
