@@ -15,6 +15,7 @@ import {
   DollarSign,
   Heart,
   CheckCircle2,
+  Building2,
   X
 } from "lucide-react";
 import api from "../../services/api";
@@ -240,6 +241,52 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
       setExpenses((prev) => prev.filter((x) => (x.id || x._id) !== id));
     } catch (err) {
       console.error("Delete error:", err);
+    }
+  };
+
+  const handleConvertToShopExpense = async (expense) => {
+    const id = expense._id || expense.id;
+    if (!id) return;
+    const confirmMsg = `क्या आप "${expense.title || 'बिल'}" (₹${Number(expense.amount || 0).toLocaleString('en-IN')}) को घर खर्च से हटाकर "🏢 दुकान खर्च (Shop Business Expense)" में बदलना चाहते हैं?`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      // 1. Update on backend API
+      const updatedPayload = {
+        title: expense.title || "दुकान बिजली बिल",
+        amount: Number(expense.amount),
+        expenseType: "operating", // Converts from drawings to operating
+        category: expense.category?.includes("बिजली") ? "बिजली बिल" : (expense.category || "बिजली व पावर"),
+        familyMember: "Shop",
+        description: expense.description ? `${expense.description} (घर खर्च से दुकान खर्च में बदला गया)` : "दुकान संचालन खर्च",
+        date: expense.date || new Date()
+      };
+
+      await api.put(`/api/expenses/${id}`, updatedPayload).catch(() => {
+        return api.put(`/api/expense/${id}`, updatedPayload).catch(() => null);
+      });
+
+      // 2. Update localStorage
+      let localList = [];
+      const stored = localStorage.getItem("vb_local_expenses") || localStorage.getItem("expenses");
+      if (stored) localList = JSON.parse(stored) || [];
+      const updatedList = localList.map(item => {
+        if ((item._id || item.id) === id) {
+          return {
+            ...item,
+            ...updatedPayload
+          };
+        }
+        return item;
+      });
+      localStorage.setItem("vb_local_expenses", JSON.stringify(updatedList));
+
+      // 3. Remove from active family expense list
+      setExpenses((prev) => prev.filter((x) => (x.id || x._id) !== id));
+      alert(`✅ "${expense.title || 'बिल'}" (₹${expense.amount}) सफलतापूर्वक दुकान खर्च (Shop Business Expense) में बदल दिया गया!\n\nअब यह P&L रिपोर्ट में दुकान संचालन खर्च में जुड़ेगा।`);
+    } catch (err) {
+      console.error("Convert error:", err);
+      alert("खर्च बदलने में समस्या आई: " + err.message);
     }
   };
 
@@ -549,19 +596,29 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1.5 shrink-0">
                       <div className="text-right">
                         <div className="text-sm font-black text-rose-600">
                           ₹{Number(e.amount || 0).toLocaleString("en-IN")}
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleDeleteExpense(id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
-                        title="हटाएं"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleConvertToShopExpense(e)}
+                          className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-200 flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                          title="दुकान खर्च में बदलें"
+                        >
+                          <Building2 size={12} />
+                          <span>दुकान खर्च बनाएं</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteExpense(id)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
+                          title="हटाएं"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );

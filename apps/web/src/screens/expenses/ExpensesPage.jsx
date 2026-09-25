@@ -275,6 +275,35 @@ const ExpensesPage = () => {
     }
   };
 
+  const handleToggleExpenseType = async (exp) => {
+    const isCurrentlyDrawings = exp.expenseType === 'drawings';
+    const newType = isCurrentlyDrawings ? 'operating' : 'drawings';
+    const newTypeName = isCurrentlyDrawings ? '🏢 दुकान खर्च (Business Expense)' : '🏡 घर खर्च (Drawings)';
+    const confirmMsg = `क्या आप "${exp.title || 'खर्च'}" (₹${Number(exp.amount || 0).toLocaleString('en-IN')}) को ${newTypeName} में बदलना चाहते हैं?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const payload = {
+        ...exp,
+        expenseType: newType,
+        familyMember: newType === 'operating' ? 'Shop' : (exp.familyMember && exp.familyMember !== 'Shop' ? exp.familyMember : 'Self')
+      };
+      await api.put(`/api/expenses/${exp._id}`, payload).catch(() => {
+        return api.put(`/api/expense/${exp._id}`, payload).catch(() => null);
+      });
+
+      // Update state & local storage
+      const updated = expenses.map(x => (x._id === exp._id ? { ...x, ...payload } : x));
+      setExpenses(updated);
+      try {
+        localStorage.setItem("vb_local_expenses", JSON.stringify(updated));
+      } catch (e) {}
+      alert(`सफलतापूर्वक ${newTypeName} में बदल दिया गया! ✅`);
+    } catch (err) {
+      alert("खर्च बदलने में त्रुटि: " + err.message);
+    }
+  };
+
   const businessCategories = ["rent", "utilities", "supplies", "salary", "travel", "marketing", "दुकान किराया", "बिजली बिल", "चाय/नाश्ता", "स्टाफ सैलरी", "other"];
   const gharKharchCategories = ["राशन/किराना", "स्कूल/कॉलेज फीस", "दवाई/अस्पताल", "बिजली/पानी/गैस", "कपड़े/शॉपिंग", "निजी जेब खर्च", "पेट्रोल/वाहन", "अन्य घरेलू खर्च"];
 
@@ -680,11 +709,32 @@ const ExpensesPage = () => {
                     ₹{Number(exp.amount || 0).toLocaleString('en-IN')}
                   </td>
                   <td className="p-3.5 text-center">
-                    <div className="flex justify-center items-center gap-1.5">
-                      <button onClick={() => handleEdit(exp)} className="p-1 text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer">
+                    <div className="flex justify-center items-center gap-1.5 flex-wrap">
+                      <button
+                        onClick={() => handleToggleExpenseType(exp)}
+                        className={`px-2 py-1 text-[10px] font-bold rounded-lg border flex items-center gap-1 cursor-pointer transition shadow-2xs ${
+                          exp.expenseType === 'drawings'
+                            ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                            : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
+                        }`}
+                        title={exp.expenseType === 'drawings' ? "दुकान खर्च में बदलें" : "घर खर्च में बदलें"}
+                      >
+                        {exp.expenseType === 'drawings' ? (
+                          <>
+                            <Building2 size={12} />
+                            <span>दुकान खर्च बनाएं</span>
+                          </>
+                        ) : (
+                          <>
+                            <Home size={12} />
+                            <span>घर खर्च बनाएं</span>
+                          </>
+                        )}
+                      </button>
+                      <button onClick={() => handleEdit(exp)} className="p-1 text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer" title="एडिट करें">
                         <Edit size={14} />
                       </button>
-                      <button onClick={() => handleDelete(exp._id)} className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer">
+                      <button onClick={() => handleDelete(exp._id)} className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer" title="हटाएं">
                         <Trash2 size={14} />
                       </button>
                     </div>
