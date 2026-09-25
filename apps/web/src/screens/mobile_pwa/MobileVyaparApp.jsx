@@ -1286,17 +1286,19 @@ function MobileVyaparAppContent() {
       const partyMap = new Map();
       const getPartyUniqueKey = (p) => {
         const phone = String(p.phone || p.mobileNumber || '').replace(/\D/g, '').slice(-10);
-        if (phone && phone.length === 10) return `phone_${phone}`;
+        if (phone && phone.length === 10 && phone !== '9999999999') return `phone_${phone}`;
         const name = String(p.name || p.partyName || '').trim().toLowerCase();
         if (name) return `name_${name}`;
         return String(p._id || p.id || Math.random());
       };
 
       (Array.isArray(localParties) ? localParties : []).forEach(p => {
+        if (p.isActive === false || p.isDeleted === true) return;
         const key = getPartyUniqueKey(p);
         if (key) partyMap.set(key, p);
       });
       normParties.forEach(p => {
+        if (p.isActive === false || p.isDeleted === true) return;
         const key = getPartyUniqueKey(p);
         if (key) partyMap.set(key, { ...(partyMap.get(key) || {}), ...p });
       });

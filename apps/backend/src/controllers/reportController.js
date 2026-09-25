@@ -811,7 +811,7 @@ export const getPartyWiseReport = async (req, res) => {
         : req.companyId)
       : null;
 
-    const partyQuery = { isDeleted: { $ne: true } };
+    const partyQuery = { isDeleted: { $ne: true }, isActive: { $ne: false } };
     const billQuery = { isDeleted: { $ne: true } };
     const purchaseQuery = { isDeleted: { $ne: true } };
 
