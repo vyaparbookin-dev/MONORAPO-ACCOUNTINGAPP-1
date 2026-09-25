@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import api from '../../services/api';
-import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2, Download, FileSpreadsheet, Upload, AlertCircle } from 'lucide-react';
+import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2, Download, FileSpreadsheet, Upload, AlertCircle, MapPin, RotateCcw, Filter } from 'lucide-react';
 import { syncQueue } from "@repo/shared";
 import CreditLimitHubModal from '../../components/modals/CreditLimitHubModal';
 
@@ -19,6 +19,12 @@ export default function PartiesPage() {
   const [statementLoading, setStatementLoading] = useState(false);
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [previewImage, setPreviewImage] = useState(null); // URL for full-res bill photo preview modal
+
+  // Statement Filters State (Site, Financial Year & Custom Dates)
+  const [statementSiteFilter, setStatementSiteFilter] = useState('all');
+  const [statementPeriodFilter, setStatementPeriodFilter] = useState('all'); // 'all', 'FY2425', 'FY2526', 'FY2627', 'custom'
+  const [statementStartDate, setStatementStartDate] = useState('');
+  const [statementEndDate, setStatementEndDate] = useState('');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -451,6 +457,10 @@ export default function PartiesPage() {
   // Open Full Itemized Ledger Statement
   const handleOpenStatement = async (party) => {
     setStatementParty(party);
+    setStatementSiteFilter('all');
+    setStatementPeriodFilter('all');
+    setStatementStartDate('');
+    setStatementEndDate('');
     setShowStatementModal(true);
     setStatementLoading(true);
     setStatementData(null);
@@ -467,6 +477,77 @@ export default function PartiesPage() {
       setStatementLoading(false);
     }
   };
+
+  // Distinct sites available in active party's statement
+  const availableSites = useMemo(() => {
+    if (!statementData?.transactions) return [];
+    const siteMap = new Map();
+    statementData.transactions.forEach(t => {
+      const s = (t.siteName || '').trim();
+      if (s) {
+        siteMap.set(s, (siteMap.get(s) || 0) + 1);
+      }
+    });
+    return Array.from(siteMap.entries()).map(([name, count]) => ({ name, count }));
+  }, [statementData]);
+
+  // Filtered transactions for active party statement (by Site, FY, and Custom Date)
+  const filteredStatementTransactions = useMemo(() => {
+    if (!statementData?.transactions) return [];
+    let list = [...statementData.transactions];
+
+    // 1. Site filter
+    if (statementSiteFilter && statementSiteFilter !== 'all') {
+      list = list.filter(t => (t.siteName || '').trim().toLowerCase() === statementSiteFilter.toLowerCase());
+    }
+
+    // 2. Financial Year or Date filter
+    if (statementPeriodFilter === 'FY2425') {
+      const from = new Date('2024-04-01T00:00:00.000Z');
+      const to = new Date('2025-03-31T23:59:59.999Z');
+      list = list.filter(t => {
+        const d = new Date(t.date);
+        return d >= from && d <= to;
+      });
+    } else if (statementPeriodFilter === 'FY2526') {
+      const from = new Date('2025-04-01T00:00:00.000Z');
+      const to = new Date('2026-03-31T23:59:59.999Z');
+      list = list.filter(t => {
+        const d = new Date(t.date);
+        return d >= from && d <= to;
+      });
+    } else if (statementPeriodFilter === 'FY2627') {
+      const from = new Date('2026-04-01T00:00:00.000Z');
+      const to = new Date('2027-03-31T23:59:59.999Z');
+      list = list.filter(t => {
+        const d = new Date(t.date);
+        return d >= from && d <= to;
+      });
+    } else if (statementPeriodFilter === 'custom') {
+      if (statementStartDate) {
+        const from = new Date(statementStartDate);
+        from.setHours(0, 0, 0, 0);
+        list = list.filter(t => new Date(t.date) >= from);
+      }
+      if (statementEndDate) {
+        const to = new Date(statementEndDate);
+        to.setHours(23, 59, 59, 999);
+        list = list.filter(t => new Date(t.date) <= to);
+      }
+    }
+
+    return list;
+  }, [statementData, statementSiteFilter, statementPeriodFilter, statementStartDate, statementEndDate]);
+
+  const filteredDebit = useMemo(() => {
+    return filteredStatementTransactions.reduce((acc, t) => acc + (Number(t.debit) || 0), 0);
+  }, [filteredStatementTransactions]);
+
+  const filteredCredit = useMemo(() => {
+    return filteredStatementTransactions.reduce((acc, t) => acc + (Number(t.credit) || 0), 0);
+  }, [filteredStatementTransactions]);
+
+  const filteredNet = filteredDebit - filteredCredit;
 
   // Attach Bill Photo / Receipt Image to Transaction
   const handleAttachImage = async (txId, file) => {
@@ -487,21 +568,48 @@ export default function PartiesPage() {
     }
   };
 
-  // WhatsApp Share Ledger
+  // WhatsApp Share Ledger (incorporates active site and date range)
   const handleShareWhatsApp = () => {
     if (!statementParty) return;
     const p = statementParty;
-    const curBal = Number(p.currentBalance ?? statementData?.currentBalance ?? 0);
-    const text = `*खाता विवरण (Statement of Account)*\n` +
-      `पार्टी: *${p.name}*\n` +
-      `मोबाइल: ${p.mobileNumber || p.phone || '-'}\n` +
-      `शुरूआती बैलेंस: ₹${(statementData?.openingBalance || 0).toLocaleString('en-IN')}\n` +
-      `कुल बिल (Sales): ₹${(statementData?.totalDebit || 0).toLocaleString('en-IN')}\n` +
-      `कुल जमा (Paid): ₹${(statementData?.totalCredit || 0).toLocaleString('en-IN')}\n` +
-      `*शुद्ध बाकी हिसाब:* *₹${Math.abs(curBal).toLocaleString('en-IN')} ${curBal > 0 ? '(लेने हैं)' : curBal < 0 ? '(देने हैं)' : '(चुक्ता)'}*\n\n` +
-      `कृपया हिसाब मिलान कर लें। धन्यवाद!\n- Powered by VyaparBook`;
+
+    let periodLabel = 'सभी समय (All Time)';
+    if (statementPeriodFilter === 'FY2425') periodLabel = 'FY 2024-25 (01 Apr 2024 - 31 Mar 2025)';
+    else if (statementPeriodFilter === 'FY2526') periodLabel = 'FY 2025-26 (01 Apr 2025 - 31 Mar 2026)';
+    else if (statementPeriodFilter === 'FY2627') periodLabel = 'FY 2026-27 (01 Apr 2026 - 31 Mar 2027)';
+    else if (statementPeriodFilter === 'custom') {
+      const fromStr = statementStartDate ? new Date(statementStartDate).toLocaleDateString('hi-IN') : 'शुरुआत';
+      const toStr = statementEndDate ? new Date(statementEndDate).toLocaleDateString('hi-IN') : 'आज तक';
+      periodLabel = `${fromStr} से ${toStr}`;
+    }
+
+    const siteLabel = statementSiteFilter !== 'all' ? statementSiteFilter : 'सभी साइटें (All Sites)';
+    const isFiltered = statementSiteFilter !== 'all' || statementPeriodFilter !== 'all' || statementStartDate || statementEndDate;
+
+    let text = `*खाता विवरण (Statement of Account)*\n` +
+      `🏢 *गणेश हार्डवेयर (Ganesh Hardware)*\n` +
+      `👤 पार्टी: *${p.name}*\n` +
+      `📞 मोबाइल: ${p.mobileNumber && p.mobileNumber !== '9999999999' ? p.mobileNumber : '-'}\n` +
+      `📅 अवधि: *${periodLabel}*\n` +
+      `🏗️ साइट: *${siteLabel}*\n` +
+      `------------------------------------\n` +
+      `📋 कुल प्रविष्टियाँ: ${filteredStatementTransactions.length}\n` +
+      `🔴 कुल बिल (Debit): *₹${filteredDebit.toLocaleString('en-IN')}*\n` +
+      `🟢 कुल जमा (Credit): *₹${filteredCredit.toLocaleString('en-IN')}*\n` +
+      `⚖️ *इस अवधि/साइट का बाकी:* *₹${Math.abs(filteredNet).toLocaleString('en-IN')} ${filteredNet > 0 ? '(लेने हैं / Due)' : filteredNet < 0 ? '(देने हैं / Advance)' : '(चुक्ता / Nil)'}*\n`;
+
+    if (isFiltered) {
+      const overallBal = Number(p.currentBalance ?? statementData?.currentBalance ?? 0);
+      text += `💰 *कुल समग्र बकाया (All Time Net):* *₹${Math.abs(overallBal).toLocaleString('en-IN')} ${overallBal > 0 ? '(लेने हैं)' : '(देने हैं)'}*\n`;
+    }
+
+    text += `------------------------------------\n` +
+      `कृपया हिसाब मिलान कर लें। धन्यवाद!\n- Ganesh Hardware`;
+
     const cleanPhone = (p.mobileNumber || p.phone || '').replace(/[^0-9]/g, '');
-    const url = cleanPhone ? `https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    const url = (cleanPhone && cleanPhone !== '9999999999' && cleanPhone.length >= 10)
+      ? `https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   };
 
@@ -995,35 +1103,139 @@ export default function PartiesPage() {
               </div>
 
               {/* Summary Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-4 bg-slate-50 border-b border-slate-200 text-xs">
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
-                  <span className="text-[10px] text-slate-500 font-bold block">शुरूआती बैलेंस (Opening)</span>
-                  <p className="text-sm font-black text-slate-800 mt-0.5">
-                    ₹{(statementData?.openingBalance || statementParty.openingBalance || 0).toLocaleString('en-IN')}
-                  </p>
+              {(() => {
+                const isFilterActive = statementSiteFilter !== 'all' || statementPeriodFilter !== 'all' || statementStartDate || statementEndDate;
+                return (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-4 bg-slate-50 border-b border-slate-200 text-xs">
+                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-xs">
+                      <span className="text-[10px] text-slate-500 font-bold block">शुरूआती बैलेंस (Opening)</span>
+                      <p className="text-sm font-black text-slate-800 mt-0.5">
+                        ₹{(statementData?.openingBalance || statementParty.openingBalance || 0).toLocaleString('en-IN')}
+                      </p>
+                    </div>
+                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-xs">
+                      <span className="text-[10px] text-indigo-600 font-bold block">
+                        कुल बिल (Debit) {isFilterActive && <span className="text-amber-600 font-normal">(फ़िल्टर)</span>}
+                      </span>
+                      <p className="text-sm font-black text-indigo-700 mt-0.5">
+                        ₹{(isFilterActive ? filteredDebit : (statementData?.totalDebit || 0)).toLocaleString('en-IN')}
+                      </p>
+                      {isFilterActive && (
+                        <span className="text-[9px] text-slate-400">कुल: ₹{(statementData?.totalDebit || 0).toLocaleString('en-IN')}</span>
+                      )}
+                    </div>
+                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-xs">
+                      <span className="text-[10px] text-emerald-600 font-bold block">
+                        कुल जमा (Credit) {isFilterActive && <span className="text-amber-600 font-normal">(फ़िल्टर)</span>}
+                      </span>
+                      <p className="text-sm font-black text-emerald-700 mt-0.5">
+                        ₹{(isFilterActive ? filteredCredit : (statementData?.totalCredit || 0)).toLocaleString('en-IN')}
+                      </p>
+                      {isFilterActive && (
+                        <span className="text-[9px] text-slate-400">कुल: ₹{(statementData?.totalCredit || 0).toLocaleString('en-IN')}</span>
+                      )}
+                    </div>
+                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-xs">
+                      <span className="text-[10px] text-rose-600 font-bold block">
+                        {isFilterActive ? 'अवधि बाकी (Period Net)' : 'मौजूदा बाकी (Net Due)'}
+                      </span>
+                      <p className={`text-sm font-black mt-0.5 ${
+                        (isFilterActive ? filteredNet : Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0)) > 0 ? 'text-rose-600' : 'text-emerald-700'
+                      }`}>
+                        ₹{Math.abs(isFilterActive ? filteredNet : Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0)).toLocaleString('en-IN')}
+                        <span className="text-[10px] font-normal ml-1">
+                          {(isFilterActive ? filteredNet : Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0)) > 0 ? '(लेने हैं)' : '(देने हैं)'}
+                        </span>
+                      </p>
+                      {isFilterActive && (
+                        <span className="text-[9px] text-slate-500 font-medium">
+                          समग्र: ₹{Math.abs(Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0)).toLocaleString('en-IN')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 🔍 FILTER BAR: Site, Financial Year & Custom Dates */}
+              <div className="p-3 bg-indigo-50/60 border-b border-indigo-100 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Site Filter Dropdown */}
+                  <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-xs">
+                    <MapPin size={13} className="text-indigo-600 shrink-0" />
+                    <span className="font-bold text-slate-600 text-[11px]">साइट:</span>
+                    <select
+                      value={statementSiteFilter}
+                      onChange={(e) => setStatementSiteFilter(e.target.value)}
+                      className="bg-transparent font-bold text-indigo-700 outline-none cursor-pointer text-xs pr-1"
+                    >
+                      <option value="all">सभी साइटें ({statementData?.transactions?.length || 0})</option>
+                      {availableSites.map(s => (
+                        <option key={s.name} value={s.name}>
+                          {s.name} ({s.count})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Financial Year / Period Dropdown */}
+                  <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-xs">
+                    <Calendar size={13} className="text-indigo-600 shrink-0" />
+                    <span className="font-bold text-slate-600 text-[11px]">अवधि:</span>
+                    <select
+                      value={statementPeriodFilter}
+                      onChange={(e) => setStatementPeriodFilter(e.target.value)}
+                      className="bg-transparent font-bold text-indigo-700 outline-none cursor-pointer text-xs pr-1"
+                    >
+                      <option value="all">सभी समय (All Time)</option>
+                      <option value="FY2425">FY 2024-25 (01/04/24 - 31/03/25)</option>
+                      <option value="FY2526">FY 2025-26 (01/04/25 - 31/03/26)</option>
+                      <option value="FY2627">FY 2026-27 (01/04/26 - 31/03/27)</option>
+                      <option value="custom">📅 कस्टम तारीख चुनें (Custom Date)</option>
+                    </select>
+                  </div>
+
+                  {/* Custom Date Pickers */}
+                  {statementPeriodFilter === 'custom' && (
+                    <div className="flex items-center gap-1.5 bg-white px-2 py-1 rounded-xl border border-slate-200 shadow-xs animate-in fade-in">
+                      <input
+                        type="date"
+                        value={statementStartDate}
+                        onChange={(e) => setStatementStartDate(e.target.value)}
+                        className="border border-slate-200 rounded px-1.5 py-0.5 text-xs text-slate-700 outline-none"
+                        title="प्रारंभिक तारीख"
+                      />
+                      <span className="text-slate-400 font-bold text-[11px]">से</span>
+                      <input
+                        type="date"
+                        value={statementEndDate}
+                        onChange={(e) => setStatementEndDate(e.target.value)}
+                        className="border border-slate-200 rounded px-1.5 py-0.5 text-xs text-slate-700 outline-none"
+                        title="अंतिम तारीख"
+                      />
+                    </div>
+                  )}
+
+                  {/* Reset Filters Button */}
+                  {(statementSiteFilter !== 'all' || statementPeriodFilter !== 'all' || statementStartDate || statementEndDate) && (
+                    <button
+                      onClick={() => {
+                        setStatementSiteFilter('all');
+                        setStatementPeriodFilter('all');
+                        setStatementStartDate('');
+                        setStatementEndDate('');
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold cursor-pointer transition text-[11px]"
+                      title="फ़िल्टर हटाएं"
+                    >
+                      <RotateCcw size={12} /> रीसेट
+                    </button>
+                  )}
                 </div>
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
-                  <span className="text-[10px] text-indigo-600 font-bold block">कुल बिल (Total Debit)</span>
-                  <p className="text-sm font-black text-indigo-700 mt-0.5">
-                    ₹{(statementData?.totalDebit || 0).toLocaleString('en-IN')}
-                  </p>
-                </div>
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
-                  <span className="text-[10px] text-emerald-600 font-bold block">कुल जमा (Total Credit)</span>
-                  <p className="text-sm font-black text-emerald-700 mt-0.5">
-                    ₹{(statementData?.totalCredit || 0).toLocaleString('en-IN')}
-                  </p>
-                </div>
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
-                  <span className="text-[10px] text-rose-600 font-bold block">मौजूदा बाकी (Net Due)</span>
-                  <p className={`text-sm font-black mt-0.5 ${
-                    Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0) > 0 ? 'text-rose-600' : 'text-emerald-700'
-                  }`}>
-                    ₹{Math.abs(Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0)).toLocaleString('en-IN')}
-                    <span className="text-[10px] font-normal ml-1">
-                      {Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0) > 0 ? '(लेने हैं)' : '(देने हैं)'}
-                    </span>
-                  </p>
+
+                {/* Filter Counter */}
+                <div className="text-[11px] font-bold text-slate-500 ml-auto">
+                  दिखा रहे हैं: <span className="text-indigo-700">{filteredStatementTransactions.length}</span> / {statementData?.transactions?.length || 0}
                 </div>
               </div>
 
@@ -1033,9 +1245,9 @@ export default function PartiesPage() {
                   <div className="py-16 text-center text-slate-400 font-bold text-sm">
                     लेजर स्टेटमेंट लोड हो रहा है...
                   </div>
-                ) : !statementData || (statementData.transactions || []).length === 0 ? (
+                ) : filteredStatementTransactions.length === 0 ? (
                   <div className="py-16 text-center text-slate-400 font-medium text-xs">
-                    इस पार्टी का कोई लेन-देन या बिल दर्ज नहीं है।
+                    चयनित फ़िल्टर (साइट या अवधि) के अनुसार कोई प्रविष्टि नहीं मिली।
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -1046,6 +1258,7 @@ export default function PartiesPage() {
                           <th className="px-3 py-2.5">प्रकार (Type)</th>
                           <th className="px-3 py-2.5">रेफरेंस / बिल #</th>
                           <th className="px-3 py-2.5">विवरण (Details)</th>
+                          <th className="px-3 py-2.5 text-center">साइट (Site)</th>
                           <th className="px-3 py-2.5 text-right">बिल (Debit ₹)</th>
                           <th className="px-3 py-2.5 text-right">जमा (Credit ₹)</th>
                           <th className="px-3 py-2.5 text-right">बाकी (Balance ₹)</th>
@@ -1053,11 +1266,12 @@ export default function PartiesPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {(statementData.transactions || []).map((tx, idx) => {
+                        {filteredStatementTransactions.map((tx, idx) => {
                           const isSale = tx.type === 'sale';
                           const isPurchase = tx.type === 'purchase';
                           const isReceipt = tx.type === 'receipt' || tx.credit > 0;
                           const formattedDate = tx.date ? new Date(tx.date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
+                          const siteStr = (tx.siteName || '').trim();
 
                           return (
                             <tr key={tx._id || idx} className="hover:bg-slate-50/80 transition">
@@ -1077,8 +1291,24 @@ export default function PartiesPage() {
                               <td className="px-3 py-2.5 font-bold text-slate-800 whitespace-nowrap">
                                 {tx.refNo || '-'}
                               </td>
-                              <td className="px-3 py-2.5 text-slate-600 max-w-xs truncate">
+                              <td className="px-3 py-2.5 text-slate-600 max-w-xs truncate" title={tx.details}>
                                 {tx.details || '-'}
+                              </td>
+                              <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                                {siteStr ? (
+                                  <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
+                                    siteStr === 'COMPLEX' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
+                                    siteStr === 'PWD' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                                    siteStr === 'PAINT' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                                    siteStr === 'S' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                                    siteStr.includes('%') ? 'bg-rose-100 text-rose-700 border border-rose-200' :
+                                    'bg-slate-100 text-slate-700 border border-slate-200'
+                                  }`}>
+                                    🏗️ {siteStr}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-300 text-[10px]">-</span>
+                                )}
                               </td>
                               <td className="px-3 py-2.5 text-right font-black text-rose-600 whitespace-nowrap">
                                 {tx.debit > 0 ? `₹${tx.debit.toLocaleString('en-IN')}` : '-'}
@@ -1104,7 +1334,7 @@ export default function PartiesPage() {
                                     />
                                     <button
                                       onClick={() => setPreviewImage(tx.billImageUrl)}
-                                      className="p-1 text-indigo-600 hover:bg-indigo-50 rounded"
+                                      className="p-1 text-indigo-600 hover:bg-indigo-50 rounded cursor-pointer"
                                       title="बड़ा देखें"
                                     >
                                       <Eye size={13} />
@@ -1135,7 +1365,7 @@ export default function PartiesPage() {
               {/* Modal Footer */}
               <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs">
                 <span className="text-slate-500">
-                  कुल प्रविष्टियाँ: <strong>{(statementData?.transactions || []).length}</strong>
+                  प्रदर्शित प्रविष्टियाँ: <strong className="text-slate-800">{filteredStatementTransactions.length}</strong> / कुल: <strong>{(statementData?.transactions || []).length}</strong>
                 </span>
                 <button
                   onClick={() => setShowStatementModal(false)}

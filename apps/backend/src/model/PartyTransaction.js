@@ -10,6 +10,7 @@ const partyTransactionSchema = new mongoose.Schema({
   type: { type: String, default: 'manual' }, // 'manual', 'bill', 'purchase', 'opening_balance'
   billImageUrl: { type: String, default: '' }, // Attached photo of bill / receipt
   billNumber: { type: String, default: '' },
+  siteName: { type: String, default: '' }, // Site tracking (PWD, COMPLEX, PAINT, etc.)
   referenceBillId: { type: mongoose.Schema.Types.ObjectId, ref: 'Bill' },
   isDeleted: { type: Boolean, default: false }
 }, { timestamps: true });

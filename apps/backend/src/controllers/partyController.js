@@ -319,10 +319,13 @@ export const getPartyStatement = async (req, res) => {
     };
     const purchaseRecords = await Purchase.find(purchaseFilter).lean();
 
-    // Track existing bill IDs that might already be in txRecords to prevent double-counting
-    const existingRefBillIds = new Set(
-      txRecords.map(t => String(t.referenceBillId || t.billNumber || "")).filter(Boolean)
-    );
+    // Track existing bill IDs and refNos to prevent double-counting
+    const existingRefBillIds = new Set();
+    txRecords.forEach(t => {
+      if (t.referenceBillId) existingRefBillIds.add(String(t.referenceBillId));
+      if (t.billNumber) existingRefBillIds.add(String(t.billNumber));
+      if (t.refNo) existingRefBillIds.add(String(t.refNo));
+    });
 
     const ledgerEntries = [];
 
@@ -332,8 +335,9 @@ export const getPartyStatement = async (req, res) => {
         _id: tx._id,
         date: tx.date || tx.createdAt,
         type: tx.type || (tx.credit > 0 ? "receipt" : "payment"),
-        refNo: tx.billNumber || "PAY",
+        refNo: tx.refNo || tx.billNumber || "PAY",
         details: tx.details || (tx.credit > 0 ? "मुझे मिले (जमा)" : "मैंने दिए (भुगतान)"),
+        siteName: tx.siteName || "",
         debit: Number(tx.debit || 0),
         credit: Number(tx.credit || 0),
         billImageUrl: tx.billImageUrl || "",
@@ -345,7 +349,8 @@ export const getPartyStatement = async (req, res) => {
     for (const b of billRecords) {
       const bNum = String(b.billNumber || "");
       const bId = String(b._id || "");
-      if (existingRefBillIds.has(bNum) || existingRefBillIds.has(bId)) continue;
+      const refNum = String(b.refBillNo || "");
+      if (existingRefBillIds.has(bNum) || existingRefBillIds.has(bId) || (refNum && existingRefBillIds.has(refNum))) continue;
 
       const finalAmt = Number(b.finalAmount ?? b.total ?? 0);
       const isPaid = String(b.paymentStatus || b.status || "").toLowerCase() === "paid";
@@ -366,6 +371,7 @@ export const getPartyStatement = async (req, res) => {
         paidAmount: paidAmt,
         items: b.items || [],
         details: `बिक्री बिल #${bNum} (${(b.items || []).length} सामान)${itemsSummary}`,
+        siteName: b.siteName || "",
         debit: finalAmt,
         credit: 0,
         billImageUrl: b.billImageUrl || "",
@@ -382,6 +388,7 @@ export const getPartyStatement = async (req, res) => {
           refNo: bNum ? `REC-${bNum}` : "REC",
           billNumber: bNum,
           details: `बिल #${bNum} पर नकद/UPI जमा (Payment Received)`,
+          siteName: b.siteName || "",
           debit: 0,
           credit: paidAmt,
           billImageUrl: b.billImageUrl || "",
