@@ -79,6 +79,7 @@ import clothRoutes from "./src/modules/cloth/routes/clothRoutes.js";
 
 import aiGatewayRoutes from "./src/routes/aiGatewayRoutes.js"; // AI Gateway को इम्पोर्ट करें
 import creditLimitRoutes from "./src/routes/creditLimitRoutes.js";
+import uploadRoutes from "./src/routes/uploadRoutes.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -232,6 +233,7 @@ app.use("/api/sync", syncRoutes);
 app.use("/api/tally", tallyRoutes);
 app.use("/api/tds-tcs", tdsTcsRoutes);
 app.use("/api/unit", unitRoutes);
+app.use("/api/upload", uploadRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/warehouse", warehouseRoutes);
 app.use("/api/whatsapp", whatsappRoutes);

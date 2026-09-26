@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Trash2, Save, FileText, Package, ArrowLeft, Building2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, Trash2, Save, FileText, Package, ArrowLeft, Building2, CheckCircle2, AlertCircle, Camera, Upload, Eye, X, Loader2 } from "lucide-react";
 import api from "../../services/api";
 import Button from "../../components/Button";
 import { useNavigate } from "react-router-dom";
@@ -12,6 +12,8 @@ export default function PurchaseEntryPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [billImage, setBillImage] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   // Common Form Fields
   const [partyId, setPartyId] = useState("");
@@ -78,6 +80,35 @@ export default function PurchaseEntryPage() {
   const currentSupplierBalance = Number(selectedSupplier?.currentBalance || selectedSupplier?.openingBalance || 0);
   const balancePending = Math.max(0, calculatedTotal - Number(amountPaid || 0));
 
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const res = await api.post("/api/upload/bill-image", {
+            fileData: reader.result,
+            fileName: file.name
+          });
+          if (res.data?.url) {
+            setBillImage(res.data.url);
+          }
+        } catch (err) {
+          console.error("Purchase bill photo upload error:", err);
+          alert("पर्ची फोटो अपलोड करने में समस्या आई: " + (err.response?.data?.message || err.message));
+        } finally {
+          setUploadingImage(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      alert("फोटो पढ़ने में त्रुटि: " + err.message);
+      setUploadingImage(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg("");
@@ -129,7 +160,8 @@ export default function PurchaseEntryPage() {
         finalAmount: calculatedTotal,
         amountPaid: Number(amountPaid) || 0,
         paymentMethod: Number(amountPaid) >= calculatedTotal ? paymentMethod : (Number(amountPaid) > 0 ? "partial" : "credit"),
-        notes: notes ? `${notes} | Entry Mode: ${entryMode}` : `Entry Mode: ${entryMode}`
+        notes: notes ? `${notes} | Entry Mode: ${entryMode}` : `Entry Mode: ${entryMode}`,
+        billImageUrl: billImage || ""
       };
 
       await api.post("/api/purchase", payload);
@@ -488,6 +520,58 @@ export default function PurchaseEntryPage() {
               <span className="text-gray-500 font-medium">सप्लायर खाते में बकाया (देने हैं):</span>
               <p className="text-base font-black text-rose-700">₹{balancePending.toLocaleString("en-IN")}</p>
             </div>
+          </div>
+        </div>
+
+        {/* 📷 Supplier Bill Photo Attachment (Cloudinary / Storage) */}
+        <div className="bg-white p-4 rounded-2xl border border-dashed border-emerald-300 bg-emerald-50/20 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-xl">
+              <Camera size={22} />
+            </div>
+            <div>
+              <h4 className="text-sm font-black text-slate-800 flex items-center gap-1.5">
+                📷 सप्लायर मूल बिल की फोटो / पर्ची लगाएं
+              </h4>
+              <p className="text-xs text-slate-500 mt-0.5">
+                हार्ड कॉपी बिल या रसीद का फोटो खींचकर अटैच करें — यह हमेशा क्लाउड पर सुरक्षित रहेगा
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+            {uploadingImage ? (
+              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-white px-3 py-2 rounded-xl border border-emerald-200 shadow-xs">
+                <Loader2 size={15} className="animate-spin" /> अपलोड हो रहा है...
+              </div>
+            ) : billImage ? (
+              <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-emerald-300 shadow-xs">
+                <a href={billImage} target="_blank" rel="noreferrer" className="flex items-center gap-1.5">
+                  <img src={billImage} alt="Uploaded Bill" className="w-10 h-10 object-cover rounded-lg border border-slate-200" />
+                  <span className="text-xs font-bold text-emerald-800 flex items-center gap-1">
+                    <CheckCircle2 size={13} className="text-emerald-600" /> पर्ची जुड़ी हुई है
+                  </span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setBillImage("")}
+                  className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition"
+                  title="हटाएं"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              <label className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold cursor-pointer transition shadow-xs flex items-center gap-1.5">
+                <Camera size={15} /> फोटो खींचें / चुनें
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handlePhotoUpload}
+                />
+              </label>
+            )}
           </div>
         </div>
 

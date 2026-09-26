@@ -1,11 +1,13 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import { readLocalJson } from "@repo/shared";
 import Loader from "../../components/Loader";
+import * as XLSX from "xlsx";
 import { 
   Printer, ArrowLeft, RefreshCw, Search, Eye, FileText, 
-  Share2, X, MapPin, Calendar, RotateCcw, ExternalLink 
+  Share2, X, MapPin, Calendar, RotateCcw, ExternalLink,
+  Camera, Download, Image, Upload, FileSpreadsheet, Loader2
 } from "lucide-react";
 
 const PartyWiseReportPage = () => {
@@ -30,6 +32,13 @@ const PartyWiseReportPage = () => {
       return 15;
     }
   });
+
+  // Bill Photo Upload & Viewer State
+  const [uploadingTxId, setUploadingTxId] = useState(null);
+  const [previewBillImage, setPreviewBillImage] = useState(null);
+  const [previewBillDetails, setPreviewBillDetails] = useState(null);
+  const [targetUploadTx, setTargetUploadTx] = useState(null);
+  const fileInputRef = useRef(null);
 
   const fetchReport = async () => {
     setLoading(true);
@@ -245,6 +254,136 @@ const PartyWiseReportPage = () => {
     window.open(url, '_blank');
   };
 
+  // 📷 Handle Bill Photo Upload (Cloudinary Signed Upload via Backend)
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !targetUploadTx) return;
+
+    const targetTx = targetUploadTx;
+    setUploadingTxId(targetTx._id);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const fileData = reader.result;
+          const res = await api.post("/api/upload/bill-image", {
+            fileData,
+            fileName: file.name,
+            targetId: targetTx._id,
+            targetType: targetTx.type
+          });
+
+          const uploadedUrl = res.data?.url;
+          if (uploadedUrl) {
+            setStatementData(prev => {
+              if (!prev || !prev.transactions) return prev;
+              return {
+                ...prev,
+                transactions: prev.transactions.map(t => {
+                  if (t._id === targetTx._id || (targetTx.refNo && t.refNo === targetTx.refNo)) {
+                    return { ...t, billImageUrl: uploadedUrl };
+                  }
+                  return t;
+                })
+              };
+            });
+            alert("✅ बिल की पर्ची/फोटो सफलतापूर्वक सुरक्षित हो गई!");
+          }
+        } catch (err) {
+          console.error("Upload error:", err);
+          alert("फोटो अपलोड करने में समस्या आई: " + (err.response?.data?.message || err.message));
+        } finally {
+          setUploadingTxId(null);
+          setTargetUploadTx(null);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error("File read error:", err);
+      setUploadingTxId(null);
+      setTargetUploadTx(null);
+    }
+  };
+
+  // 📊 Excel Statement Downloader (.xlsx)
+  const handleExportExcel = () => {
+    if (!statementParty) return;
+    try {
+      const p = statementParty;
+      let periodLabel = "सभी समय (All Time)";
+      if (statementPeriodFilter === "FY2425") periodLabel = "FY 2024-25 (01 Apr 2024 - 31 Mar 2025)";
+      else if (statementPeriodFilter === "FY2526") periodLabel = "FY 2025-26 (01 Apr 2025 - 31 Mar 2026)";
+      else if (statementPeriodFilter === "FY2627") periodLabel = "FY 2026-27 (01 Apr 2026 - 31 Mar 2027)";
+      else if (statementPeriodFilter === "custom") {
+        const fromStr = statementStartDate ? new Date(statementStartDate).toLocaleDateString("hi-IN") : "शुरुआत";
+        const toStr = statementEndDate ? new Date(statementEndDate).toLocaleDateString("hi-IN") : "आज";
+        periodLabel = `${fromStr} से ${toStr}`;
+      }
+
+      const siteLabel = statementSiteFilter !== "all" ? statementSiteFilter : "सभी साइटें";
+      const isFilterActive = statementSiteFilter !== "all" || statementPeriodFilter !== "all" || statementStartDate || statementEndDate;
+      const curBal = Number(p.balance ?? p.currentBalance ?? statementData?.currentBalance ?? 0);
+
+      const rows = [
+        ["🏢 गणेश हार्डवेयर (Ganesh Hardware) - पार्टी खाता विवरण"],
+        ["पार्टी का नाम:", p.name || p.partyName || "-"],
+        ["मोबाइल नंबर:", p.mobileNumber || p.phone || "-"],
+        ["पता:", p.address || "-"],
+        ["अवधि (Period):", periodLabel],
+        ["साइट (Site):", siteLabel],
+        ["शुरूआती बैलेंस (Opening Balance):", Number(statementData?.openingBalance || p.openingBalance || 0)],
+        ["कुल बिल (Total Debit):", isFilterActive ? filteredDebit : Number(statementData?.totalDebit || 0)],
+        ["कुल जमा (Total Credit):", isFilterActive ? filteredCredit : Number(statementData?.totalCredit || 0)],
+        ["मौजूदा बाकी (Net Balance):", Math.abs(isFilterActive ? filteredNet : curBal) + ((isFilterActive ? filteredNet : curBal) > 0 ? " (लेने हैं / Due)" : " (देने हैं / Advance)")],
+        [],
+        ["दिनांक", "प्रकार", "रेफरेंस / बिल #", "विवरण", "साइट", "बिल (Debit ₹)", "जमा (Credit ₹)", "बाकी (Balance ₹)", "बिल फोटो लिंक"]
+      ];
+
+      filteredStatementTransactions.forEach(tx => {
+        const isSale = tx.type === "sale";
+        const isPurchase = tx.type === "purchase";
+        const isReceipt = tx.type === "receipt" || tx.credit > 0;
+        const typeLabel = isSale ? "बिक्री बिल" : isPurchase ? "खरीद बिल" : isReceipt ? "मुझे मिले" : "मैंने दिए";
+        const formattedDate = tx.date ? new Date(tx.date).toLocaleDateString("hi-IN") : "-";
+
+        rows.push([
+          formattedDate,
+          typeLabel,
+          tx.refNo || "-",
+          tx.details || "-",
+          tx.siteName || "-",
+          Number(tx.debit || 0),
+          Number(tx.credit || 0),
+          Number(tx.runningBalance || 0),
+          tx.billImageUrl || "कोई फोटो नहीं"
+        ]);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 18 },
+        { wch: 35 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 16 },
+        { wch: 40 }
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Statement");
+      const safeName = (p.name || p.partyName || "Party").replace(/[^a-zA-Z0-9\u0900-\u097F_-]/g, "_");
+      XLSX.writeFile(wb, `${safeName}_खाता_विवरण.xlsx`);
+    } catch (e) {
+      console.error("Excel export error:", e);
+      alert("एक्सेल फाइल डाउनलोड करने में त्रुटि: " + e.message);
+    }
+  };
+
   const filteredReport = report.filter(item => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -417,8 +556,15 @@ const PartyWiseReportPage = () => {
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={handleShareWhatsApp}
+                  onClick={handleExportExcel}
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow cursor-pointer transition"
+                  title="एक्सेल (.xlsx) फाइल में लेजर डाउनलोड करें"
+                >
+                  <FileSpreadsheet size={14} /> <span>Excel लेजर</span>
+                </button>
+                <button
+                  onClick={handleShareWhatsApp}
+                  className="px-3 py-1.5 bg-emerald-600/80 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow cursor-pointer transition"
                   title="व्हाट्सएप पर स्टेटमेंट भेजें"
                 >
                   <Share2 size={14} /> <span>WhatsApp</span>
@@ -438,6 +584,15 @@ const PartyWiseReportPage = () => {
                 </button>
               </div>
             </div>
+
+            {/* Hidden File Input for Bill Photo Upload */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileUpload}
+            />
 
             {/* Summary Cards */}
             {(() => {
@@ -658,6 +813,7 @@ const PartyWiseReportPage = () => {
                         <th className="px-3 py-2.5 text-right">बिल (Debit ₹)</th>
                         <th className="px-3 py-2.5 text-right">जमा (Credit ₹)</th>
                         <th className="px-3 py-2.5 text-right">बाकी (Balance ₹)</th>
+                        <th className="px-3 py-2.5 text-center">📷 पर्ची / फोटो</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -717,6 +873,55 @@ const PartyWiseReportPage = () => {
                                 {Number(tx.runningBalance || 0) >= 0 ? 'Dr' : 'Cr'}
                               </span>
                             </td>
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                              {uploadingTxId === tx._id ? (
+                                <span className="text-[10px] text-indigo-600 font-bold flex items-center justify-center gap-1">
+                                  <Loader2 size={12} className="animate-spin" /> अपलोडिंग...
+                                </span>
+                              ) : tx.billImageUrl ? (
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPreviewBillImage(tx.billImageUrl);
+                                      setPreviewBillDetails({
+                                        refNo: tx.refNo || "-",
+                                        date: formattedDate,
+                                        amount: tx.debit > 0 ? `₹${tx.debit.toLocaleString('en-IN')}` : `₹${tx.credit.toLocaleString('en-IN')}`,
+                                        partyName: statementParty.partyName || statementParty.name
+                                      });
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold text-[10px] border border-indigo-200 transition cursor-pointer"
+                                    title="पर्ची देखें व डाउनलोड करें"
+                                  >
+                                    <Eye size={11} /> 📷 देखें
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setTargetUploadTx(tx);
+                                      fileInputRef.current?.click();
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-indigo-600 rounded transition cursor-pointer"
+                                    title="दूसरी पर्ची बदलें"
+                                  >
+                                    <RotateCcw size={11} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setTargetUploadTx(tx);
+                                    fileInputRef.current?.click();
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 rounded-lg font-bold text-[10px] border border-dashed border-slate-300 hover:border-indigo-300 transition cursor-pointer"
+                                  title="इस बिल की फोटो / पर्ची लगाएं"
+                                >
+                                  <Camera size={11} /> + पर्ची लगाएं
+                                </button>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}
@@ -737,6 +942,66 @@ const PartyWiseReportPage = () => {
               >
                 बंद करें (Close)
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📷 FULL-SCREEN BILL PHOTO VIEWER MODAL WITH DIRECT DOWNLOAD */}
+      {previewBillImage && (
+        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 animate-in fade-in">
+          <div className="bg-white rounded-3xl p-4 sm:p-5 max-w-lg w-full shadow-2xl relative border border-slate-200">
+            <div className="flex justify-between items-start pb-3 border-b border-slate-100 mb-3">
+              <div>
+                <h3 className="font-black text-sm text-slate-800 flex items-center gap-1.5">
+                  <span>📷</span> बिल / रसीद फोटो (Bill Image)
+                </h3>
+                {previewBillDetails && (
+                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                    पार्टी: <strong className="text-slate-700">{previewBillDetails.partyName}</strong> • {previewBillDetails.refNo} • {previewBillDetails.date} ({previewBillDetails.amount})
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewBillImage(null);
+                  setPreviewBillDetails(null);
+                }}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="max-h-[65vh] overflow-auto flex items-center justify-center bg-slate-50 rounded-2xl p-2 border border-slate-200">
+              <img
+                src={previewBillImage}
+                alt="Bill Photo"
+                className="max-h-[60vh] w-auto object-contain rounded-xl shadow-md"
+              />
+            </div>
+
+            <div className="mt-3.5 flex justify-between items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewBillImage(null);
+                  setPreviewBillDetails(null);
+                }}
+                className="px-4 py-2 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50 cursor-pointer"
+              >
+                बंद करें (Close)
+              </button>
+              <a
+                href={previewBillImage}
+                download={`Bill_${previewBillDetails?.refNo || 'receipt'}.jpg`}
+                target="_blank"
+                rel="noreferrer"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download size={14} /> ⬇️ बिल फोटो डाउनलोड करें
+              </a>
             </div>
           </div>
         </div>

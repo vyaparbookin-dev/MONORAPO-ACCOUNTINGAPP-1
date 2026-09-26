@@ -58,7 +58,9 @@ export const createPurchase = async (req, res) => {
         details: `Purchase Bill #${purchase.purchaseNumber}`,
         debit: 0,
         credit: pendingAmount, // Dukaan ke upar supplier ka paisa jama ho gaya
-        type: 'bill'
+        type: 'bill',
+        billImageUrl: req.body.billImageUrl || "",
+        referenceBillId: purchase._id
       });
     }
 
@@ -71,7 +73,9 @@ export const createPurchase = async (req, res) => {
             details: `Advance Payment for Purchase Bill #${purchase.purchaseNumber}`,
             debit: amountPaid, // Humne paise de diye
             credit: 0,
-            type: 'manual'
+            type: 'manual',
+            billImageUrl: req.body.billImageUrl || "",
+            referenceBillId: purchase._id
           });
     }
 

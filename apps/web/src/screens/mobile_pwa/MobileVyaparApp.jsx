@@ -47,8 +47,10 @@ import {
   PieChart,
   Grid,
   Mic,
+  FileSpreadsheet,
   LogOut
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { useNavigate } from "react-router-dom";
 import { useCompany } from "../../contexts/CompanyContext";
 import api from "../../services/api";
@@ -1968,19 +1970,80 @@ function MobileVyaparAppContent() {
   const handleAttachPartyImage = async (txId, file) => {
     if (!file) return;
     try {
-      const formData = new FormData();
-      formData.append('image', file);
-      formData.append('transactionId', txId);
-      formData.append('partyId', selectedPartyDetail._id || selectedPartyDetail.id);
-      await api.post('/api/party/attach-image', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      alert("✅ बिल की फोटो सफलतापूर्वक जुड़ गई!");
-      if (selectedPartyDetail) {
-        fetchPartyStatement(selectedPartyDetail._id || selectedPartyDetail.id);
-      }
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const fileData = reader.result;
+          const res = await api.post('/api/upload/bill-image', {
+            fileData,
+            fileName: file.name,
+            targetId: txId
+          });
+          const newUrl = res.data?.url;
+          if (newUrl) {
+            setPartyTransactions(prev => prev.map(t => (t._id === txId || t.refNo === txId) ? { ...t, billImageUrl: newUrl } : t));
+          }
+          alert("✅ बिल की फोटो सफलतापूर्वक सुरक्षित व लिंक हो गई!");
+          const pId = selectedPartyDetail._id || selectedPartyDetail.id;
+          if (pId) {
+            fetchPartyStatement(pId);
+          }
+        } catch (postErr) {
+          console.error("Upload error:", postErr);
+          alert("फोटो अपलोड करने में त्रुटि: " + (postErr.response?.data?.message || postErr.message));
+        }
+      };
+      reader.readAsDataURL(file);
     } catch (err) {
-      alert("फोटो अपलोड करने में त्रुटि: " + err.message);
+      alert("फोटो पढ़ने में त्रुटि: " + err.message);
+    }
+  };
+
+  const handleExportPartyExcel = (party, txs) => {
+    if (!party) return;
+    try {
+      const curBal = Number(party.balance ?? party.currentBalance ?? 0);
+      const rows = [
+        ["🏢 गणेश हार्डवेयर - खाता पासबुक विवरण"],
+        ["पार्टी का नाम:", party.name || "-"],
+        ["मोबाइल नंबर:", party.phone || party.mobileNumber || "-"],
+        ["खाता प्रकार:", (party.type || party.partyType) === 'personal' ? 'पर्सनल खाता' : 'व्यापारिक खाता'],
+        ["तारीख:", new Date().toLocaleDateString('hi-IN')],
+        ["कुल बकाया:", Math.abs(curBal) + (curBal > 0 ? " (लेने हैं / Due)" : curBal < 0 ? " (देने हैं / Advance)" : " (चुक्ता)")],
+        [],
+        ["दिनांक", "विवरण", "रेफरेंस / बिल #", "डेबिट (₹)", "क्रेडिट (₹)", "बकाया (₹)", "बिल फोटो लिंक"]
+      ];
+
+      (txs || []).forEach(tx => {
+        rows.push([
+          tx.date ? new Date(tx.date).toLocaleDateString('hi-IN') : '-',
+          tx.details || '-',
+          tx.refNo || tx.billNumber || '-',
+          Number(tx.debit || 0),
+          Number(tx.credit || 0),
+          Number(tx.runningAfter ?? tx.runningBalance ?? 0),
+          tx.billImageUrl || "कोई फोटो नहीं"
+        ]);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 14 },
+        { wch: 32 },
+        { wch: 18 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 16 },
+        { wch: 40 }
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Passbook");
+      const safeName = (party.name || "Party").replace(/[^a-zA-Z0-9\u0900-\u097F_-]/g, "_");
+      XLSX.writeFile(wb, `${safeName}_खाता_पासबुक.xlsx`);
+    } catch (e) {
+      console.error("Excel export error:", e);
+      alert("एक्सेल फाइल बनाने में त्रुटि: " + e.message);
     }
   };
 
@@ -5703,7 +5766,17 @@ function MobileVyaparAppContent() {
               {/* Statement Title & List */}
               <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                 <span className="font-extrabold text-xs text-[#0F172A]">📖 खाता पासबुक व लेन-देन (Running Ledger)</span>
-                {partyStatementLoading && <span className="text-[10px] text-slate-400 animate-pulse">लोड हो रहा है...</span>}
+                <div className="flex items-center gap-1.5">
+                  {partyStatementLoading && <span className="text-[10px] text-slate-400 animate-pulse">लोड हो रहा है...</span>}
+                  <button
+                    type="button"
+                    onClick={() => handleExportPartyExcel(selectedPartyDetail, partyTransactions)}
+                    className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-lg border border-emerald-200 flex items-center gap-1 transition shadow-xs cursor-pointer"
+                    title="Excel स्टेटमेंट डाउनलोड करें"
+                  >
+                    <FileSpreadsheet size={11} /> <span>Excel</span>
+                  </button>
+                </div>
               </div>
 
               {/* Detailed Passbook Ledger List with Running Balance */}
