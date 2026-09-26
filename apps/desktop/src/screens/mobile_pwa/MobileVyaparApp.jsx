@@ -6814,61 +6814,58 @@ function MobileVyaparAppContent() {
             <div className="space-y-3 max-h-72 overflow-y-auto">
               <div>
                 <div className="text-[10px] font-black uppercase text-indigo-900 tracking-wider mb-1 px-1">
-                  🏢 आपकी मुख्य व्यापारिक दुकानें (डेटा सहित)
+                  🏢 आपकी मुख्य व्यापारिक दुकान
                 </div>
                 <div className="space-y-2">
-                  {[
-                    {
-                      _id: "6a8314470d93e58ad0920950",
-                      name: "🔧 Ganesh Hardware, Plywood & Paints",
-                      stats: "1,631+ उत्पाद • 2 पार्टियां • 69 घरेलू खर्च",
-                      badge: "हार्डवेयर स्टोर",
-                      color: "emerald"
-                    },
-                    {
-                      _id: "6a8314470d93e58ad0920952",
-                      name: "🍽️ Royal Spice Restaurant & Cafe",
-                      stats: "505 बिक्री बिल • 11 पार्टियां • 36 उत्पाद",
-                      badge: "फास्ट बिलिंग / रेस्टोरेंट",
-                      color: "indigo"
-                    }
-                  ].map(c => {
-                    const isSelected = selectedCompany?._id === c._id || selectedCompany?.id === c._id;
-                    return (
-                      <div
-                        key={c._id}
-                        onClick={() => {
-                          if (exitDemoModule) exitDemoModule();
-                          if (selectCompany) selectCompany(c);
-                          setShowCompanySelectModal(false);
-                          setTimeout(() => window.location.reload(), 100);
-                        }}
-                        className={`p-3 rounded-2xl border flex justify-between items-center cursor-pointer transition ${isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-950 font-extrabold shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-bold'}`}
-                      >
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-black">{c.name}</span>
-                            <span className="text-[9px] font-bold px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded">
-                              {c.badge}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-semibold">
-                            {c.stats}
-                          </div>
+                  {(() => {
+                    const realList = (companies || []).filter(c => !c.isDemo && !(c._id || c.id || '').toString().startsWith('demo_'));
+                    const listToDisplay = realList.length > 0 ? realList : (selectedCompany && !selectedCompany.isDemo && !(selectedCompany._id || '').toString().startsWith('demo_') ? [selectedCompany] : []);
+                    if (listToDisplay.length === 0) {
+                      return (
+                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-center space-y-1">
+                          <p className="text-xs font-bold text-slate-700">{user?.name ? `${user.name} का खाता` : "नया खाता"}</p>
+                          <p className="text-[10px] text-slate-500">आपकी व्यक्तिगत दुकान सक्रिय है (डेटा पूर्णतः सुरक्षित व प्राइवेट)</p>
                         </div>
-                        {isSelected && <CheckCircle size={18} className="text-indigo-600 shrink-0" />}
-                      </div>
-                    );
-                  })}
+                      );
+                    }
+                    return listToDisplay.map(c => {
+                      const isSelected = selectedCompany?._id === c._id || selectedCompany?.id === c._id;
+                      return (
+                        <div
+                          key={c._id || c.id}
+                          onClick={() => {
+                            if (exitDemoModule) exitDemoModule();
+                            if (selectCompany) selectCompany(c);
+                            setShowCompanySelectModal(false);
+                            setTimeout(() => window.location.reload(), 100);
+                          }}
+                          className={`p-3 rounded-2xl border flex justify-between items-center cursor-pointer transition ${isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-950 font-extrabold shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-bold'}`}
+                        >
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-black">{c.name || c.businessName}</span>
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded">
+                                {c.industryType || "दुकान"}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-semibold">
+                              {c.phone ? `📞 ${c.phone}` : "प्राइवेट सुरक्षित खाता"}
+                            </div>
+                          </div>
+                          {isSelected && <CheckCircle size={18} className="text-indigo-600 shrink-0" />}
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
 
               <div className="pt-2 border-t border-slate-100">
                 <div className="text-[10px] font-black uppercase text-amber-600 tracking-wider mb-1 px-1">
-                  🧪 अन्य इंडस्ट्री डेमो व सैंडबॉक्स मॉड्यूल्स
+                  🧪 टेस्टिंग व डेमो मॉड्यूल्स (सैंपल डेटा)
                 </div>
                 <div className="space-y-1.5">
-                  {(allDemoCompanies || []).filter(d => d._id !== "6a8314470d93e58ad0920950" && d._id !== "6a8314470d93e58ad0920952").map(demoCo => {
+                  {(allDemoCompanies || []).map(demoCo => {
                     const isSelected = selectedCompany?._id === demoCo._id;
                     return (
                       <div

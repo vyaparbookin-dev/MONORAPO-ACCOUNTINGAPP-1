@@ -8,14 +8,14 @@ export const useCompany = () => useContext(CompanyContext);
 export const CompanyProvider = ({ children }) => {
   const allDemoCompanies = [
     {
-      _id: "6a8314470d93e58ad0920950",
-      name: "🔧 Ganesh Hardware, Plywood & Paints",
+      _id: "demo_company_hardware",
+      name: "🔧 हार्डवेयर, प्लाइवुड व पेंट्स (डेमो)",
       businessType: "hardware",
       industryType: "hardware",
-      address: "Timber & Hardware Market, Plot 44",
-      phone: "7828289433",
+      address: "टिम्बर व हार्डवेयर मार्केट, शॉप नं. 12",
+      phone: "9876543215",
       gstin: "22AAAAA0000A1Z5",
-      isDemo: false
+      isDemo: true
     },
     {
       _id: "demo_company_supermarket",

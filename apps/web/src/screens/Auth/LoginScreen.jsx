@@ -22,6 +22,19 @@ export default function LoginScreen() {
 
   const handleSuccessfulAuth = (token, userObj) => {
     localStorage.removeItem("isGuestMode");
+    localStorage.removeItem("isDemoActive");
+
+    // Clean stale offline cache from previous user sessions to ensure strict multi-tenant isolation
+    const legacyKeysToWipe = [
+      "vb_local_manual_bills", "vb_local_parties", "vb_local_expenses",
+      "vb_local_products", "vb_local_purchases", "vb_local_party_txs",
+      "vb_local_pagarbook_summary", "vb_local_bank_accounts",
+      "bills", "parties", "expenses", "products", "inventory", "sales", "local_bills"
+    ];
+    legacyKeysToWipe.forEach(k => {
+      try { localStorage.removeItem(k); } catch (e) {}
+    });
+
     localStorage.setItem("authToken", token);
     localStorage.setItem("token", token);
     localStorage.setItem("last_login_timestamp", String(Date.now()));
@@ -79,16 +92,16 @@ export default function LoginScreen() {
       _id: "demo_guest_user_101",
       name: "Guest Explorer (अतिथि)",
       email: "guest@vyaparbook.in",
-      role: "admin",
-      companyId: "6a8314470d93e58ad0920952",
-      company: "6a8314470d93e58ad0920952",
+      role: "guest",
+      companyId: "demo_company_guest",
+      company: "demo_company_guest",
       isGuest: true
     };
     localStorage.setItem("authToken", "demo_guest_token_2026_valid");
     localStorage.setItem("token", "demo_guest_token_2026_valid");
     localStorage.setItem("user", JSON.stringify(demoUser));
-    localStorage.setItem("companyId", "6a8314470d93e58ad0920952");
-    localStorage.setItem("selectedCompany", "6a8314470d93e58ad0920952");
+    localStorage.setItem("companyId", "demo_company_guest");
+    localStorage.setItem("selectedCompany", "demo_company_guest");
     localStorage.setItem("isGuestMode", "true");
     localStorage.setItem("isDemoActive", "true");
     

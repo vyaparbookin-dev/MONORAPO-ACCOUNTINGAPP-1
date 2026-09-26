@@ -22,27 +22,26 @@ export const createBill = async (req, res) => {
   try {
     let resolvedCompanyId = req.companyId || req.body?.companyId;
     if (!resolvedCompanyId || resolvedCompanyId === "null" || resolvedCompanyId === "undefined") {
-      resolvedCompanyId = "6a8314470d93e58ad0920950";
+      if (req.user?.companyId) {
+        resolvedCompanyId = req.user.companyId.toString();
+      }
     }
 
     // --- RESILIENT COMPANY LOOKUP ---
     let company = null;
-    if (mongoose.Types.ObjectId.isValid(resolvedCompanyId)) {
+    if (resolvedCompanyId && mongoose.Types.ObjectId.isValid(resolvedCompanyId)) {
       company = await Company.findById(resolvedCompanyId);
     }
-    if (!company) {
-      company = await Company.findOne({
-        $or: [
-          { _id: "6a8314470d93e58ad0920950" },
-          { name: "Ganesh Hardware" }
-        ]
-      }) || await Company.findOne({});
+    if (!company && req.user?._id) {
+      company = await Company.findOne({ user: req.user._id });
     }
 
     if (company) {
       req.companyId = company._id;
+    } else if (resolvedCompanyId && (resolvedCompanyId.startsWith("demo_") || resolvedCompanyId.startsWith("custom_"))) {
+      req.companyId = resolvedCompanyId;
     } else {
-      req.companyId = "6a8314470d93e58ad0920950";
+      return res.status(400).json({ success: false, message: "Company ID is missing or invalid. Please select your company." });
     }
 
     // --- LICENSING CHECK ---
@@ -436,9 +435,6 @@ export const listBills = async (req, res) => {
     const companyQuery = [cidStr];
     if (mongoose.Types.ObjectId.isValid(cidStr)) {
       companyQuery.push(new mongoose.Types.ObjectId(cidStr));
-    }
-    if (cidStr === "6a8314470d93e58ad0920950" || cidStr === "6a8314470d93e58ad0920952" || cidStr.startsWith("demo_")) {
-      companyQuery.push("6a8314470d93e58ad0920950", "6a8314470d93e58ad0920952");
     }
 
     const query = { companyId: { $in: companyQuery }, isDeleted: { $ne: true } };

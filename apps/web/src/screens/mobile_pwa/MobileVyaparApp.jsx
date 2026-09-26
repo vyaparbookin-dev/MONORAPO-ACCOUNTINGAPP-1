@@ -153,16 +153,43 @@ function MobileVyaparAppContent() {
   });
   const [showCompanySelectModal, setShowCompanySelectModal] = useState(false);
   const [parties, setParties] = useState(() => {
-    const cached = readLocalJson(["vb_local_parties", "parties", "local_parties"], []);
-    return Array.isArray(cached) && cached.length > 0 ? cached : [];
+    try {
+      const coId = localStorage.getItem("companyId");
+      if (coId) {
+        const scoped = localStorage.getItem(`vb_local_parties_${coId}`);
+        if (scoped) {
+          const parsed = JSON.parse(scoped);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      }
+    } catch (e) {}
+    return [];
   });
   const [items, setItems] = useState(() => {
-    const cached = readLocalJson(["vb_local_products", "products", "inventory", "items"], []);
-    return Array.isArray(cached) && cached.length > 0 ? cached : [];
+    try {
+      const coId = localStorage.getItem("companyId");
+      if (coId) {
+        const scoped = localStorage.getItem(`vb_local_products_${coId}`);
+        if (scoped) {
+          const parsed = JSON.parse(scoped);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      }
+    } catch (e) {}
+    return [];
   });
   const [bills, setBills] = useState(() => {
-    const cached = readLocalJson(["vb_local_manual_bills", "bills", "manual_bills", "vb_bills", "local_bills"], []);
-    return Array.isArray(cached) && cached.length > 0 ? deduplicateBills(cached) : [];
+    try {
+      const coId = localStorage.getItem("companyId");
+      if (coId) {
+        const scoped = localStorage.getItem(`vb_local_manual_bills_${coId}`);
+        if (scoped) {
+          const parsed = JSON.parse(scoped);
+          if (Array.isArray(parsed) && parsed.length > 0) return deduplicateBills(parsed);
+        }
+      }
+    } catch (e) {}
+    return [];
   });
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1150,54 +1177,26 @@ function MobileVyaparAppContent() {
         items: b.items || []
       }));
 
-      // Gather all local sales and bills from all possible keys & offline queues
+      // Scope local offline cache strictly to active company to prevent multi-tenant cross-talk
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
       let localManualBills = [];
       try {
-        if (typeof localStorage !== "undefined") {
-          const seenKeys = new Set();
-          const billKeys = [
-            "vb_local_manual_bills", "bills", "manual_bills", "vb_bills",
-            "local_bills", "sales", "local_sales", "pos_bills", "vb_sales",
-            "vb_offline_sync_queue", "sync_queue"
-          ];
-
-          // Deep scan all keys in localStorage for any bill/sale/offline records
-          for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
-            if (k) {
-              const lk = k.toLowerCase();
-              if (lk.includes("bill") || lk.includes("sale") || lk.includes("pos") || lk.includes("sync_queue")) {
-                if (!seenKeys.has(k)) {
-                  seenKeys.add(k);
-                  billKeys.push(k);
-                }
+        if (typeof localStorage !== "undefined" && currentCoId) {
+          const scopedKey = `vb_local_manual_bills_${currentCoId}`;
+          const stored = localStorage.getItem(scopedKey);
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored);
+              if (Array.isArray(parsed)) {
+                parsed.forEach(item => {
+                  if (!item || typeof item !== "object") return;
+                  if (item.amount || item.finalAmount || item.total || item.totalAmount || item.billNumber) {
+                    localManualBills.push(item);
+                  }
+                });
               }
-            }
+            } catch (e) {}
           }
-
-          billKeys.forEach(k => {
-            const stored = localStorage.getItem(k);
-            if (stored) {
-              try {
-                const parsed = JSON.parse(stored);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  parsed.forEach(item => {
-                    if (!item || typeof item !== "object") return;
-                    if (item.type === "CREATE_BILL" && item.payload) {
-                      localManualBills.push({
-                        ...item.payload,
-                        _id: item.localId || `BILL-${Date.now()}`,
-                        id: item.payload.billNumber || `BILL-${Date.now()}`,
-                        billNumber: item.payload.billNumber || `BILL-${Date.now()}`
-                      });
-                    } else if (item.amount || item.finalAmount || item.total || item.totalAmount || item.billNumber) {
-                      localManualBills.push(item);
-                    }
-                  });
-                }
-              } catch (e) {}
-            }
-          });
         }
       } catch (e) {}
 
@@ -1205,42 +1204,11 @@ function MobileVyaparAppContent() {
       setBills(mergedBills);
 
       try {
-        const companyKey = localStorage.getItem("companyId") || localStorage.getItem("selectedCompany") || "";
-        const saveKeys = ["vb_local_manual_bills", "bills", "sales", "local_bills"];
-        saveKeys.forEach(sk => {
-          localStorage.setItem(sk, JSON.stringify(mergedBills));
-          if (companyKey) localStorage.setItem(`${sk}_${companyKey}`, JSON.stringify(mergedBills));
-        });
-      } catch (e) {}
-
-      // Resilient auto-backup: If any bill exists locally but not in MongoDB cloud, upload it now
-      const serverBillNumbers = new Set(normBills.map(b => String(b.billNumber || b.id || "").trim()));
-      mergedBills.forEach(async (b) => {
-        const bNum = String(b.billNumber || b.id || "").trim();
-        if (bNum && !serverBillNumbers.has(bNum) && !b._syncedToMongo) {
-          try {
-            b._syncedToMongo = true;
-            await api.post("/api/billing", {
-              billNumber: bNum,
-              customerName: b.customerName || "काउंटर नकद ग्राहक",
-              customerPhone: b.phone || b.customerPhone || "",
-              paymentMode: b.paymentMode || b.type || "CASH",
-              paymentMethod: (b.paymentMode === "UDHAR" || b.type === "UDHAR") ? "credit" : (b.paymentMode === "UPI" || b.type === "UPI") ? "online" : "cash",
-              total: b.total || b.amount || b.finalAmount,
-              finalAmount: b.finalAmount || b.amount || b.total,
-              date: b.rawDate || b.date || new Date(),
-              items: b.items && b.items.length > 0 ? b.items : [{
-                name: `दैनिक बिक्री (${b.paymentMode || b.type || 'CASH'})`,
-                quantity: 1,
-                price: b.amount || b.finalAmount || b.total,
-                total: b.amount || b.finalAmount || b.total
-              }]
-            });
-          } catch (autoUploadErr) {
-            // Ignore background upload warnings
-          }
+        if (currentCoId) {
+          localStorage.setItem(`vb_local_manual_bills_${currentCoId}`, JSON.stringify(mergedBills));
         }
-      });
+        localStorage.setItem("vb_local_manual_bills", JSON.stringify(mergedBills));
+      } catch (e) {}
 
       let rawParties = [];
       if (partiesRes.status === "fulfilled" && partiesRes.value) {
@@ -1268,19 +1236,19 @@ function MobileVyaparAppContent() {
         notes: p.notes || ""
       }));
 
-      // Load local parties and merge safely so no party ever gets hidden
+      // Load local parties scoped to active company so new accounts start completely fresh
       let localParties = [];
       try {
-        const pKeys = ["vb_local_parties", "parties", "local_parties"];
-        pKeys.forEach(k => {
-          const storedP = localStorage.getItem(k);
+        if (typeof localStorage !== "undefined" && currentCoId) {
+          const scopedPKey = `vb_local_parties_${currentCoId}`;
+          const storedP = localStorage.getItem(scopedPKey);
           if (storedP) {
             try {
               const parsed = JSON.parse(storedP);
-              if (Array.isArray(parsed) && parsed.length > 0) localParties.push(...parsed);
+              if (Array.isArray(parsed)) localParties.push(...parsed);
             } catch (e) {}
           }
-        });
+        }
       } catch (e) {}
 
       const partyMap = new Map();
@@ -1305,8 +1273,10 @@ function MobileVyaparAppContent() {
       const mergedParties = Array.from(partyMap.values());
       setParties(mergedParties);
       try {
+        if (currentCoId) {
+          localStorage.setItem(`vb_local_parties_${currentCoId}`, JSON.stringify(mergedParties));
+        }
         localStorage.setItem("vb_local_parties", JSON.stringify(mergedParties));
-        localStorage.setItem("parties", JSON.stringify(mergedParties));
       } catch (e) {}
 
       let rawInv = [];
@@ -2725,6 +2695,99 @@ function MobileVyaparAppContent() {
                 </div>
               </div>
             </div>
+
+            {/* 🚀 NEW USER ONBOARDING & QUICK START GUIDE (WHEN ACCOUNT IS FRESH) */}
+            {parties.length === 0 && bills.length === 0 && (
+              <div className="p-4 bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-3xl shadow-xl border border-indigo-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🚀</span>
+                    <div>
+                      <h3 className="font-black text-sm text-white">आपकी डिजिटल दुकान तैयार है!</h3>
+                      <p className="text-[10px] text-indigo-200">खाता शुरू करने के लिए ये 3 आसान कदम उठाएं</p>
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                    नया खाता (Fresh)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 pt-1">
+                  {/* Step 1 */}
+                  <div 
+                    onClick={() => {
+                      setNewPartyType("customer");
+                      setShowAddPartyModal(true);
+                    }}
+                    className="p-3 bg-white/10 hover:bg-white/15 border border-white/10 rounded-2xl flex items-center justify-between cursor-pointer transition active:scale-98"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-black text-sm shadow">
+                        1
+                      </div>
+                      <div>
+                        <div className="font-extrabold text-xs text-white">पहला ग्राहक या पार्टी जोड़ें</div>
+                        <div className="text-[10px] text-slate-300">उधार या जमा का खाता शुरू करें</div>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-emerald-400 bg-emerald-500/20 px-2.5 py-1 rounded-xl">
+                      + पार्टी
+                    </span>
+                  </div>
+
+                  {/* Step 2 */}
+                  <div 
+                    onClick={() => setShowAddItemModal(true)}
+                    className="p-3 bg-white/10 hover:bg-white/15 border border-white/10 rounded-2xl flex items-center justify-between cursor-pointer transition active:scale-98"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-500 text-white flex items-center justify-center font-black text-sm shadow">
+                        2
+                      </div>
+                      <div>
+                        <div className="font-extrabold text-xs text-white">दुकान का सामान (आइटम) जोड़ें</div>
+                        <div className="text-[10px] text-slate-300">रेट लिस्ट और स्टॉक दर्ज करें</div>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-indigo-300 bg-indigo-500/20 px-2.5 py-1 rounded-xl">
+                      + सामान
+                    </span>
+                  </div>
+
+                  {/* Step 3 */}
+                  <div 
+                    onClick={() => setShowManualSaleModal(true)}
+                    className="p-3 bg-white/10 hover:bg-white/15 border border-white/10 rounded-2xl flex items-center justify-between cursor-pointer transition active:scale-98"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-sm shadow">
+                        3
+                      </div>
+                      <div>
+                        <div className="font-extrabold text-xs text-white">10 सेकंड में पहला बिल बनाएं</div>
+                        <div className="text-[10px] text-slate-300">नकद या उधार बिक्री पर्ची काटें</div>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-amber-300 bg-amber-500/20 px-2.5 py-1 rounded-xl">
+                      + बिल बनाएं
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-indigo-200">
+                  <span>💡 ऐप को टेस्ट करना चाहते हैं?</span>
+                  <button
+                    onClick={() => {
+                      if (enterDemoModule) enterDemoModule("hardware");
+                    }}
+                    className="font-black text-amber-300 hover:text-amber-200 underline cursor-pointer"
+                  >
+                    🧪 सैंपल डेमो चलाकर देखें
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Top Promo Banner */}
             <div className="p-3.5 bg-gradient-to-r from-[#EEF2FF] to-[#F5F3FF] border border-[#E0E7FF] rounded-2xl flex justify-between items-center shadow-sm">
               <div>
@@ -3031,10 +3094,34 @@ function MobileVyaparAppContent() {
 
                 if (displayList.length === 0) {
                   return (
-                    <div className="p-8 bg-white border border-slate-100 rounded-2xl text-center space-y-2">
-                      <Receipt size={36} className="mx-auto text-slate-300" />
-                      <p className="text-xs font-bold text-slate-700">कोई लेनदेन नहीं मिला</p>
-                      <p className="text-[11px] text-slate-400">नीचे दिए गए बटन से बिक्री या खर्च दर्ज करें</p>
+                    <div className="p-6 bg-white border border-slate-100 rounded-3xl text-center space-y-3 shadow-xs">
+                      <div className="w-12 h-12 bg-slate-50 text-slate-400 rounded-2xl mx-auto flex items-center justify-center text-xl">
+                        🧾
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-[#0F172A]">
+                          {transactionTab === "sales" ? "अभी कोई बिक्री दर्ज नहीं है" : transactionTab === "expenses" ? "अभी कोई खर्च दर्ज नहीं है" : "अभी कोई लेनदेन नहीं मिला"}
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          दुकान का हिसाब-किताब रखने के लिए पहली बिक्री या खर्च दर्ज करें
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setShowManualSaleModal(true)}
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-sm transition cursor-pointer flex items-center gap-1"
+                        >
+                          <Plus size={13} /> + बिक्री दर्ज करें
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleGharKharchEntry(true)}
+                          className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center gap-1"
+                        >
+                          <Plus size={13} /> + खर्च जोड़ें
+                        </button>
+                      </div>
                     </div>
                   );
                 }
@@ -3195,14 +3282,36 @@ function MobileVyaparAppContent() {
               </div>
 
               {filteredParties.length === 0 ? (
-                <div className="p-8 text-center bg-white rounded-2xl border border-slate-100 text-slate-400 text-xs space-y-2.5">
-                  <p>
-                    {partyFilterTab === "to_pay" 
-                      ? "कोई देनदारी बाकी नहीं है (To Pay / देने हैं खाता शून्य है)।" 
-                      : partyFilterTab === "to_collect" 
-                        ? "कोई वसूली बाकी नहीं है (To Collect / लेने हैं खाता शून्य है)।" 
-                        : "कोई पार्टी नहीं मिली। \"+ Add Party\" दबाकर नई पार्टी या पर्सनल खाता जोड़ें।"}
-                  </p>
+                <div className="p-8 text-center bg-gradient-to-b from-white to-indigo-50/30 rounded-3xl border border-indigo-100/60 shadow-sm space-y-3">
+                  <div className="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-2xl mx-auto flex items-center justify-center text-2xl shadow-inner">
+                    👥
+                  </div>
+                  <div>
+                    <h3 className="font-black text-sm text-[#0F172A]">
+                      {partyFilterTab === "to_pay" 
+                        ? "कोई देनदारी बाकी नहीं है" 
+                        : partyFilterTab === "to_collect" 
+                          ? "कोई वसूली बाकी नहीं है" 
+                          : "अभी कोई पार्टी या ग्राहक नहीं जुड़ा है"}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
+                      {partyFilterTab === "to_pay" || partyFilterTab === "to_collect"
+                        ? "आपके सभी लेन-देन का हिसाब चुकता है।"
+                        : "ग्राहकों के उधार-जमा और सप्लायर के बिलों का डिजिटल हिसाब रखने के लिए पहला खाता जोड़ें।"}
+                    </p>
+                  </div>
+                  {parties.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewPartyType("customer");
+                        setShowAddPartyModal(true);
+                      }}
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md transition cursor-pointer inline-flex items-center gap-1.5"
+                    >
+                      <Plus size={15} /> + पहला ग्राहक या सप्लायर जोड़ें
+                    </button>
+                  )}
                   {parties.length > 0 && partyFilterTab !== "all" && (
                     <button
                       type="button"
@@ -3467,11 +3576,20 @@ function MobileVyaparAppContent() {
               {/* Items List */}
               <div className="space-y-2">
                 {filteredItems.length === 0 ? (
-                  <div className="p-8 bg-white border border-slate-100 rounded-2xl text-center space-y-2.5 shadow-sm">
-                    <p className="text-xs font-bold text-slate-600">कोई आइटम नहीं मिला (No items found)</p>
-                    <p className="text-[10px] text-slate-400">
-                      {items.length > 0 ? `सर्च या फिल्टर के कारण कोई आइटम मैच नहीं हुआ। कुल ${items.length} आइटम उपलब्ध हैं।` : "फिल्टर बदलें या नया आइटम जोड़ें"}
-                    </p>
+                  <div className="p-8 bg-gradient-to-b from-white to-indigo-50/30 border border-indigo-100/60 rounded-3xl text-center space-y-3 shadow-xs">
+                    <div className="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-2xl mx-auto flex items-center justify-center text-2xl shadow-inner">
+                      📦
+                    </div>
+                    <div>
+                      <h3 className="font-black text-sm text-[#0F172A]">
+                        {items.length === 0 ? "अभी दुकान में कोई सामान (आइटम) नहीं है" : "कोई आइटम मैच नहीं हुआ"}
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
+                        {items.length === 0
+                          ? "तेज़ बिलिंग और स्टॉक ट्रैक करने के लिए अपने उत्पाद, रेट व मात्रा जोड़ें।"
+                          : `सर्च या फ़िल्टर के कारण कोई आइटम मैच नहीं हुआ। कुल ${items.length} आइटम उपलब्ध हैं।`}
+                      </p>
+                    </div>
                     {items.length > 0 && (selectedCategoryFilter !== "ALL" || selectedBrandFilter !== "ALL" || selectedStockFilter !== "ALL" || searchQuery) && (
                       <div>
                         <button
@@ -3491,9 +3609,9 @@ function MobileVyaparAppContent() {
                     <div>
                       <button
                         onClick={() => setShowAddItemModal(true)}
-                        className="px-3.5 py-1.5 bg-[#059669] text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer inline-flex items-center gap-1"
+                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md cursor-pointer inline-flex items-center gap-1.5"
                       >
-                        <Plus size={14} /> + Add Item
+                        <Plus size={15} /> + पहला सामान (Item) जोड़ें
                       </button>
                     </div>
                   </div>
@@ -6816,61 +6934,58 @@ function MobileVyaparAppContent() {
             <div className="space-y-3 max-h-72 overflow-y-auto">
               <div>
                 <div className="text-[10px] font-black uppercase text-indigo-900 tracking-wider mb-1 px-1">
-                  🏢 आपकी मुख्य व्यापारिक दुकानें (डेटा सहित)
+                  🏢 आपकी मुख्य व्यापारिक दुकान
                 </div>
                 <div className="space-y-2">
-                  {[
-                    {
-                      _id: "6a8314470d93e58ad0920950",
-                      name: "🔧 Ganesh Hardware, Plywood & Paints",
-                      stats: "1,631+ उत्पाद • 2 पार्टियां • 69 घरेलू खर्च",
-                      badge: "हार्डवेयर स्टोर",
-                      color: "emerald"
-                    },
-                    {
-                      _id: "6a8314470d93e58ad0920952",
-                      name: "🍽️ Royal Spice Restaurant & Cafe",
-                      stats: "505 बिक्री बिल • 11 पार्टियां • 36 उत्पाद",
-                      badge: "फास्ट बिलिंग / रेस्टोरेंट",
-                      color: "indigo"
-                    }
-                  ].map(c => {
-                    const isSelected = selectedCompany?._id === c._id || selectedCompany?.id === c._id;
-                    return (
-                      <div
-                        key={c._id}
-                        onClick={() => {
-                          if (exitDemoModule) exitDemoModule();
-                          if (selectCompany) selectCompany(c);
-                          setShowCompanySelectModal(false);
-                          setTimeout(() => window.location.reload(), 100);
-                        }}
-                        className={`p-3 rounded-2xl border flex justify-between items-center cursor-pointer transition ${isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-950 font-extrabold shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-bold'}`}
-                      >
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-black">{c.name}</span>
-                            <span className="text-[9px] font-bold px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded">
-                              {c.badge}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-semibold">
-                            {c.stats}
-                          </div>
+                  {(() => {
+                    const realList = (companies || []).filter(c => !c.isDemo && !(c._id || c.id || '').toString().startsWith('demo_'));
+                    const listToDisplay = realList.length > 0 ? realList : (selectedCompany && !selectedCompany.isDemo && !(selectedCompany._id || '').toString().startsWith('demo_') ? [selectedCompany] : []);
+                    if (listToDisplay.length === 0) {
+                      return (
+                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-center space-y-1">
+                          <p className="text-xs font-bold text-slate-700">{user?.name ? `${user.name} का खाता` : "नया खाता"}</p>
+                          <p className="text-[10px] text-slate-500">आपकी व्यक्तिगत दुकान सक्रिय है (डेटा पूर्णतः सुरक्षित व प्राइवेट)</p>
                         </div>
-                        {isSelected && <CheckCircle size={18} className="text-indigo-600 shrink-0" />}
-                      </div>
-                    );
-                  })}
+                      );
+                    }
+                    return listToDisplay.map(c => {
+                      const isSelected = selectedCompany?._id === c._id || selectedCompany?.id === c._id;
+                      return (
+                        <div
+                          key={c._id || c.id}
+                          onClick={() => {
+                            if (exitDemoModule) exitDemoModule();
+                            if (selectCompany) selectCompany(c);
+                            setShowCompanySelectModal(false);
+                            setTimeout(() => window.location.reload(), 100);
+                          }}
+                          className={`p-3 rounded-2xl border flex justify-between items-center cursor-pointer transition ${isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-950 font-extrabold shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-bold'}`}
+                        >
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-black">{c.name || c.businessName}</span>
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded">
+                                {c.industryType || "दुकान"}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-semibold">
+                              {c.phone ? `📞 ${c.phone}` : "प्राइवेट सुरक्षित खाता"}
+                            </div>
+                          </div>
+                          {isSelected && <CheckCircle size={18} className="text-indigo-600 shrink-0" />}
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
 
               <div className="pt-2 border-t border-slate-100">
                 <div className="text-[10px] font-black uppercase text-amber-600 tracking-wider mb-1 px-1">
-                  🧪 अन्य इंडस्ट्री डेमो व सैंडबॉक्स मॉड्यूल्स
+                  🧪 टेस्टिंग व डेमो मॉड्यूल्स (सैंपल डेटा)
                 </div>
                 <div className="space-y-1.5">
-                  {(allDemoCompanies || []).filter(d => d._id !== "6a8314470d93e58ad0920950" && d._id !== "6a8314470d93e58ad0920952").map(demoCo => {
+                  {(allDemoCompanies || []).map(demoCo => {
                     const isSelected = selectedCompany?._id === demoCo._id;
                     return (
                       <div

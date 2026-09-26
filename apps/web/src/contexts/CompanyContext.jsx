@@ -8,14 +8,14 @@ export const useCompany = () => useContext(CompanyContext);
 export const CompanyProvider = ({ children }) => {
   const allDemoCompanies = [
     {
-      _id: "6a8314470d93e58ad0920950",
-      name: "🔧 Ganesh Hardware, Plywood & Paints",
+      _id: "demo_company_hardware",
+      name: "🔧 हार्डवेयर, प्लाइवुड व पेंट्स (डेमो)",
       businessType: "hardware",
       industryType: "hardware",
-      address: "Timber & Hardware Market, Plot 44",
-      phone: "7828289433",
+      address: "टिम्बर व हार्डवेयर मार्केट, शॉप नं. 12",
+      phone: "9876543215",
       gstin: "22AAAAA0000A1Z5",
-      isDemo: false
+      isDemo: true
     },
     {
       _id: "demo_company_trading",
@@ -38,11 +38,11 @@ export const CompanyProvider = ({ children }) => {
       isDemo: true
     },
     {
-      _id: "6a8314470d93e58ad0920950",
-      name: "🔧 Bharat Hardware, Plywood & Paints",
+      _id: "demo_company_bharat",
+      name: "🔧 भारत हार्डवेयर व सेनेटरी (डेमो)",
       businessType: "hardware",
       industryType: "hardware",
-      address: "Timber & Hardware Market, Plot 44",
+      address: "मेन रोड, बस स्टैंड के पास",
       phone: "9876543215",
       gstin: "07AAAAA0000A1Z5",
       isDemo: true
@@ -161,20 +161,64 @@ export const CompanyProvider = ({ children }) => {
         localStorage.setItem("companyId", matchedCo._id || matchedCo.id);
         localStorage.setItem("selectedCompany", matchedCo._id || matchedCo.id);
       } else {
-        // Fallback to verified real businesses (Ganesh Hardware & Royal Spice)
+        // Check if user is logged in
+        let userCo = null;
+        try {
+          const userStr = localStorage.getItem("user");
+          if (userStr) {
+            const u = JSON.parse(userStr);
+            if (u.companyId || u._id) {
+              userCo = {
+                _id: u.companyId || `co_${u._id}`,
+                name: u.businessName || `${u.name || 'मेरी'} दुकान`,
+                phone: u.phone || "",
+                isDemo: false
+              };
+            }
+          }
+        } catch (e) {}
+
+        if (userCo && !localStorage.getItem("isGuestMode") && !localStorage.getItem("isDemoActive")) {
+          setCompanies([userCo]);
+          setSelectedCompany(userCo);
+          localStorage.setItem("companyId", userCo._id);
+        } else {
+          const storedCoId = localStorage.getItem("companyId");
+          const matchedDemo = allDemoCompanies.find(c => c._id === storedCoId) || allDemoCompanies[0];
+          setCompanies(allDemoCompanies);
+          setSelectedCompany(matchedDemo);
+          localStorage.setItem("companyId", matchedDemo._id);
+        }
+      }
+    } catch (error) {
+      console.warn('[CompanyContext] Error fetching companies:', error);
+      let userCo = null;
+      try {
+        const userStr = localStorage.getItem("user");
+        if (userStr) {
+          const u = JSON.parse(userStr);
+          if (u.companyId || u._id) {
+            userCo = {
+              _id: u.companyId || `co_${u._id}`,
+              name: u.businessName || `${u.name || 'मेरी'} दुकान`,
+              phone: u.phone || "",
+              isDemo: false
+            };
+          }
+        }
+      } catch (e) {}
+
+      if (userCo && !localStorage.getItem("isGuestMode") && !localStorage.getItem("isDemoActive")) {
+        setCompanies([userCo]);
+        setSelectedCompany(userCo);
+        localStorage.setItem("companyId", userCo._id);
+      } else {
         const storedCoId = localStorage.getItem("companyId");
         const matchedDemo = allDemoCompanies.find(c => c._id === storedCoId) || allDemoCompanies[0];
         setCompanies(allDemoCompanies);
         setSelectedCompany(matchedDemo);
         localStorage.setItem("companyId", matchedDemo._id);
       }
-    } catch (error) {
-      console.warn('[CompanyContext] Error fetching companies:', error);
-      const storedCoId = localStorage.getItem("companyId");
-      const matchedDemo = allDemoCompanies.find(c => c._id === storedCoId) || allDemoCompanies[0];
-      setCompanies(allDemoCompanies);
-      setSelectedCompany(matchedDemo);
-      localStorage.setItem("companyId", matchedDemo._id);
     } finally {
       setLoading(false);
     }

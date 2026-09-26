@@ -14,18 +14,13 @@ export const protect = asyncHandler(async (req, res, next) => {
   // Guest Demo / Mobile Offline Token Fallback (Never 401 on mobile view)
   if (!token || token === "null" || token === "undefined" || token.includes("demo_guest") || token.includes("guest")) {
     req.user = {
-      _id: "6a8314470d93e58ad092094e",
-      name: "Ankush Kesharwani",
-      email: "ankush.bani@gmail.com",
-      role: "admin",
-      isGuest: !token || token.includes("guest")
+      _id: "demo_guest_user_101",
+      name: "Guest Explorer (अतिथि)",
+      email: "guest@vyaparbook.in",
+      role: "guest",
+      isGuest: true
     };
-    let cid = req.headers['x-company-id'] || "6a8314470d93e58ad0920950";
-    if (cid === "demo_company_restaurant" || cid === "demo_company_101" || cid === "demo_company_core" || cid === "6a8314470d93e58ad0920952") {
-      cid = "6a8314470d93e58ad0920952";
-    } else if (cid === "demo_company_hardware" || cid === "demo_company_trading" || cid === "6a8314470d93e58ad0920950") {
-      cid = "6a8314470d93e58ad0920950";
-    }
+    let cid = req.headers['x-company-id'] || "demo_company_guest";
     req.companyId = cid;
     return next();
   }
@@ -43,11 +38,6 @@ export const protect = asyncHandler(async (req, res, next) => {
 
     // --- SaaS Multi-Tenancy Logic ---
     let companyId = req.headers['x-company-id'];
-    if (companyId === "demo_company_restaurant" || companyId === "demo_company_101" || companyId === "demo_company_core" || companyId === "6a8314470d93e58ad0920952") {
-      companyId = "6a8314470d93e58ad0920952";
-    } else if (companyId === "demo_company_hardware" || companyId === "demo_company_trading" || companyId === "6a8314470d93e58ad0920950") {
-      companyId = "6a8314470d93e58ad0920950";
-    }
 
     if (companyId) {
       if (companyId.startsWith("demo_") || companyId.startsWith("custom_co_")) {

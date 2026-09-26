@@ -573,10 +573,13 @@ api.interceptors.request.use(async (config) => {
   }
   config.headers.Authorization = `Bearer ${token}`;
 
-  // Default to primary real company (Ganesh Hardware) if empty or invalid fallback
+  // Default to demo sandbox company only if guest token is active and no company is set
   if (!rawCompanyId || rawCompanyId === "my_primary_company") {
-    rawCompanyId = "6a8314470d93e58ad0920950";
-    await setStorage("companyId", rawCompanyId);
+    if (token && (token.includes("demo_guest") || token.includes("guest"))) {
+      rawCompanyId = "demo_company_guest";
+    } else {
+      rawCompanyId = "";
+    }
   }
 
   let companyId = rawCompanyId;
