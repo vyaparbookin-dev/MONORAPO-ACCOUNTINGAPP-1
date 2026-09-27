@@ -22,6 +22,7 @@ import api from "../../services/api";
 import { readLocalJson } from "@repo/shared";
 import { useCompany } from "../../contexts/CompanyContext";
 import { getBusinessMode } from "../../utils/businessMode";
+import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 
 const getLocalDayStr = (val) => {
   if (!val) return "";
@@ -178,16 +179,7 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
       });
 
       const serverExpenses = Array.isArray(data?.expenses) ? data.expenses : [];
-      const mergedExpenses = [...serverExpenses];
-      localExpenses.forEach(le => {
-        const rawDate = le.date || le.createdAt;
-        if (checkInRange(rawDate)) {
-          const exists = mergedExpenses.some(se => se._id === le._id || se._id === le.id);
-          if (!exists) {
-            mergedExpenses.push(le);
-          }
-        }
-      });
+      const mergedExpenses = deduplicateExpenses([...serverExpenses, ...localExpenses.filter(le => checkInRange(le.date || le.createdAt))]);
 
       const combinedData = {
         ...(data || {}),

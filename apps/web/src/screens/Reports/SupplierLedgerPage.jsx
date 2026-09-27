@@ -31,7 +31,23 @@ export default function SupplierLedgerPage() {
       // Note: This assumes backend has a filter or we filter client side if needed
       // For now, we'll try to hit a purchase endpoint or mock empty
       const res = await api.get(`/api/inventory/purchase?supplier=${selectedSupplier}`);
-      setLedgerData(res.data || []); 
+      // BUG-17: Map raw purchase data to ledger format with running balance
+      const rawData = Array.isArray(res.data) ? res.data : (res.data?.purchases || []);
+      const mapped = rawData.map((p, idx) => ({
+        date: p.date || p.createdAt,
+        type: 'purchase',
+        refNo: p.purchaseNumber || p.billNumber || `PUR-${idx + 1}`,
+        debit: Number(p.amountPaid || 0),
+        credit: Number(p.finalAmount || p.totalAmount || p.total || 0),
+        balance: 0
+      }));
+      // Calculate running balance (credit - debit = amount owed to supplier)
+      let runBal = 0;
+      mapped.forEach(m => {
+        runBal += (m.credit - m.debit);
+        m.balance = runBal;
+      });
+      setLedgerData(mapped); 
     } catch (err) {
       console.error("Failed to fetch ledger", err);
       setLedgerData([]);

@@ -274,8 +274,12 @@ const ProfitLossReportPage = () => {
       const calcGharKharch = gharKharchExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
       const calcActualPurchases = allPurchases.reduce((sum, p) => sum + (Number(p.finalAmount || p.totalAmount || p.total || p.amountPaid) || 0), 0);
 
-      // Prefer calculated period bills/expenses; fallback to plData from backend
-      const finalSales = allBills.length > 0 ? calcSales : (Number(plData.totalSales) || 0);
+      // Use backend aggregate as base, only add unsynced offline bills
+      const backendSales = Number(plData.totalSales) || 0;
+      const unsyncedLocalSales = allBills
+        .filter(b => b.isOfflineCreated && !b._id?.match(/^[0-9a-fA-F]{24}$/))
+        .reduce((sum, b) => sum + Number(b.finalAmount || b.total || 0), 0);
+      const finalSales = backendSales + unsyncedLocalSales;
       const finalOperating = operatingExpenses.length > 0 ? calcOperating : (Number(plData.businessOperatingExpenses ?? plData.businessExpenses) || 0);
       const finalGharKharch = gharKharchExpenses.length > 0 ? calcGharKharch : (Number(plData.gharKharch) || 0);
 

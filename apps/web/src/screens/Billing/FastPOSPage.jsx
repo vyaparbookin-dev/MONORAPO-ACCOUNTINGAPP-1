@@ -429,7 +429,14 @@ export default function FastPOSPage() {
     if (appliedCoupon.type === "PERCENT") return Math.round((getSubTotal() * appliedCoupon.discountPercent) / 100);
     return appliedCoupon.discount || 0;
   };
-  const getGrandTotal = () => Math.max(0, getSubTotal() - getCouponDiscount());
+  // BUG-15: Calculate GST/tax from cart items
+  const getTaxAmount = () => {
+    return cart.reduce((sum, item) => {
+      const gstRate = Number(item.gstRate || item.taxRate || 0);
+      return sum + ((item.total || 0) * gstRate / 100);
+    }, 0);
+  };
+  const getGrandTotal = () => Math.max(0, getSubTotal() - getCouponDiscount() + getTaxAmount());
 
   // Auto-sync Udhar protection toggle based on small-bill threshold
   useEffect(() => {

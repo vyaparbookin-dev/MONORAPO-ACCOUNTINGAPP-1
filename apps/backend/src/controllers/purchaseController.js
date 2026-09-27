@@ -43,26 +43,25 @@ export const createPurchase = async (req, res) => {
 
     // 3. UPDATE SUPPLIER LEDGER (Accounts Payable)
     const pendingAmount = finalAmount - amountPaid;
-    if (pendingAmount > 0) {
-      // Supplier ka current balance ghatayenge (Liabilities/देने हैं badh gaya, represented as negative balance)
-      await Party.findByIdAndUpdate(
-        partyId,
-        { $inc: { currentBalance: -pendingAmount } } 
-      );
+    
+    // Supplier ka current balance ghatayenge
+    await Party.findByIdAndUpdate(
+      partyId,
+      { $inc: { currentBalance: -pendingAmount } } 
+    );
 
-      // Transaction ki entry karenge (Credit means hume supplier ko paise dene hain)
-      await PartyTransaction.create({
-        partyId,
-        companyId,
-        date: req.body.date || new Date(),
-        details: `Purchase Bill #${purchase.purchaseNumber}`,
-        debit: 0,
-        credit: pendingAmount, // Dukaan ke upar supplier ka paisa jama ho gaya
-        type: 'bill',
-        billImageUrl: req.body.billImageUrl || "",
-        referenceBillId: purchase._id
-      });
-    }
+    // Transaction ki entry karenge (Credit means hume supplier ko paise dene hain)
+    await PartyTransaction.create({
+      partyId,
+      companyId,
+      date: req.body.date || new Date(),
+      details: `Purchase Bill #${purchase.purchaseNumber}`,
+      debit: 0,
+      credit: finalAmount, // Full purchase credit
+      type: 'bill',
+      billImageUrl: req.body.billImageUrl || "",
+      referenceBillId: purchase._id
+    });
 
     // Agar turant kuch amount pay kiya hai, uska record alag se transaction me dalna ho toh:
     if (amountPaid > 0) {

@@ -18,7 +18,7 @@ export default function ExpansesList() {
           }
         }
       } catch (e) {}
-      const res = await api.get("/expenses?limit=300").catch(() => null);
+      const res = await api.get("/api/expenses?limit=300").catch(() => null);
       const serverList = res?.recentExpenses || res?.expenses || res?.data?.recentExpenses || res?.data?.expenses || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
       const list = deduplicateExpenses([...(Array.isArray(serverList) ? serverList : []), ...localList]);
       setExpanses(list);

@@ -101,7 +101,7 @@ const PartyWiseReportPage = () => {
           const baseSales = Number(p.totalSales || 0);
           const totalSales = baseSales + unsyncedSales;
           const totalPurchase = Number(p.totalPurchase || 0);
-          const balance = Number(p.balance !== undefined ? p.balance : (p.currentBalance !== undefined ? p.currentBalance : (p.openingBalance || 0)));
+          const balance = Number(p.balance !== undefined ? p.balance : (p.currentBalance !== undefined ? p.currentBalance : (p.openingBalance || 0))) + unsyncedSales;
 
           partyMap.set(k, {
             _id: p._id || p.id || k,

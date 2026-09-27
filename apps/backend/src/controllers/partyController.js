@@ -347,10 +347,6 @@ export const getPartyStatement = async (req, res) => {
 
     // Process sales bills
     for (const b of billRecords) {
-      const bNum = String(b.billNumber || "");
-      const bId = String(b._id || "");
-      const refNum = String(b.refBillNo || "");
-      if (existingRefBillIds.has(bNum) || existingRefBillIds.has(bId) || (refNum && existingRefBillIds.has(refNum))) continue;
 
       const finalAmt = Number(b.finalAmount ?? b.total ?? 0);
       const isPaid = String(b.paymentStatus || b.status || "").toLowerCase() === "paid";

@@ -11,11 +11,14 @@ export default function AddExpensesPage({ onAdded }) {
   // Bank Accounts for Auto-Deduct
   const [bankAccounts, setBankAccounts] = useState([]);
   const [selectedBankId, setSelectedBankId] = useState("");
+  const [staffList, setStaffList] = useState([]);
+  const [selectedStaffId, setSelectedStaffId] = useState("");
 
   const [form, setForm] = useState({
     title: "",
     amount: "",
     category: "Rent",
+    staffId: "",
     date: new Date().toISOString().split("T")[0],
     description: "",
     paymentMethod: "cash",
@@ -45,6 +48,16 @@ export default function AddExpensesPage({ onAdded }) {
       }
     };
     fetchBanks();
+    const fetchStaff = async () => {
+      try {
+        const res = await api.get("/api/staff").catch(() => api.get("/staff"));
+        const list = Array.isArray(res?.staff) ? res.staff : (Array.isArray(res?.data?.staff) ? res.data.staff : (Array.isArray(res?.data) ? res.data : []));
+        setStaffList(list);
+      } catch (err) {
+        console.warn("Could not load staff list:", err);
+      }
+    };
+    fetchStaff();
   }, []);
 
   const handleChange = (e) => {
@@ -87,6 +100,7 @@ export default function AddExpensesPage({ onAdded }) {
         paymentMethod: form.paymentMethod,
         bankAccountId: (form.paymentMethod === 'upi' || form.paymentMethod === 'bank') ? (selectedBankId || undefined) : undefined,
         expenseType: expenseType,
+        staffId: (expenseType === "operating" && form.category === "Salary" && selectedStaffId) ? selectedStaffId : undefined,
         depositDetails: expenseType === "security_deposit" ? {
           dealershipCompany: form.dealershipCompany || form.title,
           depositType: form.depositType,
@@ -253,6 +267,56 @@ export default function AddExpensesPage({ onAdded }) {
               )}
             </div>
           </div>
+
+          {/* Staff Member Selector for Salary / Advance */}
+          {expenseType === "operating" && form.category === "Salary" && (
+            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-4 space-y-2 animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                  👥 किस कर्मचारी / स्टाफ को पेमेंट / एडवांस दिया? (Select Staff Member) *
+                </label>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                  ⚡ पगार बुक में ऑटो एडजस्ट (2-Way Sync)
+                </span>
+              </div>
+
+              {staffList.length === 0 ? (
+                <p className="text-xs text-amber-800 font-medium">
+                  ⚠️ अभी कोई स्टाफ दर्ज नहीं है। स्टाफ मैनेजमेंट / पगार बुक से स्टाफ जोड़ें ताकि उनके खाते में सीधे एडवांस दर्ज हो सके।
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  <select
+                    value={selectedStaffId}
+                    onChange={(e) => {
+                      const sId = e.target.value;
+                      setSelectedStaffId(sId);
+                      const selectedSt = staffList.find(s => s._id === sId);
+                      if (selectedSt) {
+                        setForm(prev => ({
+                          ...prev,
+                          staffId: sId,
+                          title: prev.title.includes('स्टाफ') || !prev.title ? `स्टाफ एडवांस - ${selectedSt.name}` : prev.title
+                        }));
+                      }
+                    }}
+                    className="w-full px-3.5 py-2.5 bg-white border border-emerald-300 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 outline-none"
+                    required
+                  >
+                    <option value="">-- कर्मचारी चुनें (Select Staff) --</option>
+                    {staffList.map((st) => (
+                      <option key={st._id} value={st._id}>
+                        👤 {st.name} ({st.position || st.role || 'Staff'}) {st.mobileNumber ? `- 📱 ${st.mobileNumber}` : ''} - {st.wageType === 'daily' ? `₹${st.dailyRate || st.wageAmount}/दिन` : `₹${st.monthlySalary || st.salary}/माह`}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-emerald-700 font-medium flex items-center gap-1 pt-1">
+                    💡 यह राशि दुकान के खर्चे में दर्ज होगी और कर्मचारी के <b>PagarBook सैलरी खाते से एडवांस के रूप में खुद ब खुद कट जाएगी</b> (2 जगह एंट्री नहीं करनी पड़ेगी)।
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Dealership Specific Terms & Interest Section */}
           {expenseType === "security_deposit" && (

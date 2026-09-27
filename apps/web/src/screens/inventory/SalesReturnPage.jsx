@@ -46,7 +46,7 @@ const SalesReturnPage = () => {
     e.preventDefault();
     try {
       // API endpoint for purchase return (Debit Note)
-      await api.post("/inventory/purchase-return", formData);
+      await api.post("/api/inventory/purchase-return", formData);
       alert("Purchase Return (Debit Note) created successfully!");
       navigate("/inventory");
     } catch (error) {

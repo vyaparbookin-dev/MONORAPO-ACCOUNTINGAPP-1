@@ -47,8 +47,15 @@ export function deduplicatePurchases(purchases = []) {
     // 2. By Purchase/Bill Number
     if (purNum && seenNumbers.has(purNum)) continue;
 
-    // 3. By Content Signature (Date + Amount + Supplier)
-    const sig = `${dateKey}_${amtVal.toFixed(2)}_${suppName}`;
+    // 3. By Content Signature (Date+Time + Amount + Supplier + ItemCount)
+    const timeKey = (() => {
+      const raw = pur.date || pur.createdAt;
+      if (!raw) return '00:00';
+      const d = new Date(raw);
+      return isNaN(d.getTime()) ? '00:00' : `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    })();
+    const itemCount = Array.isArray(pur.items) ? pur.items.length : 0;
+    const sig = `${dateKey}_${timeKey}_${amtVal.toFixed(2)}_${suppName}_${itemCount}`;
     if (amtVal > 0 && seenSignatures.has(sig)) continue;
 
     if (id) seenIds.add(id);

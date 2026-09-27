@@ -3,6 +3,7 @@ import { ArrowUpRight, ArrowDownLeft, TrendingUp, AlertCircle, Clock, RefreshCw,
 import api from "../../services/api";
 import { readCompanyScopedBills } from "../../utils/companyScopedStorage";
 import { deduplicateBills } from "../../utils/deduplicateBills";
+import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 
 export default function DashboardScreen() {
   const [stats, setStats] = useState({
@@ -49,13 +50,20 @@ export default function DashboardScreen() {
       const resData = billsRes?.data || billsRes || {};
       const serverBillsList = Array.isArray(resData.bills) ? resData.bills : (Array.isArray(resData.data?.bills) ? resData.data.bills : (Array.isArray(resData.data) ? resData.data : (Array.isArray(resData) ? resData : [])));
       const billsData = deduplicateBills([...serverBillsList, ...localBills]);
-      const expensesData = (Array.isArray(expensesRes?.expenses) && expensesRes.expenses.length > 0) ? expensesRes.expenses : (Array.isArray(expensesRes?.data?.expenses) && expensesRes.data.expenses.length > 0) ? expensesRes.data.expenses : (Array.isArray(expensesRes?.data) ? expensesRes.data : []);
+      const serverExpenses = (Array.isArray(expensesRes?.expenses) && expensesRes.expenses.length > 0) ? expensesRes.expenses : (Array.isArray(expensesRes?.data?.expenses) && expensesRes.data.expenses.length > 0) ? expensesRes.data.expenses : (Array.isArray(expensesRes?.data) ? expensesRes.data : []);
+      // BUG-18: Merge local offline expenses with server expenses
+      let localExpenses = [];
+      try {
+        const storedExp = localStorage.getItem("vb_local_expenses");
+        if (storedExp) localExpenses = JSON.parse(storedExp);
+      } catch(e) {}
+      const expensesData = deduplicateExpenses([...serverExpenses, ...localExpenses]);
       const invSummary = invSummaryRes?.data?.summary || invSummaryRes?.summary || {};
       const approvalsData = approvalsRes?.data?.data || approvalsRes?.data || {};
 
       // Filter by date range
       const dateFilteredBills = filterBillsByDate(billsData, dateRange);
-      const filteredBills = dateFilteredBills.length > 0 ? dateFilteredBills : billsData;
+      const filteredBills = dateFilteredBills;
       const filteredExpenses = filterBillsByDate(expensesData, dateRange);
       setBills(filteredBills.slice(0, 8));
 

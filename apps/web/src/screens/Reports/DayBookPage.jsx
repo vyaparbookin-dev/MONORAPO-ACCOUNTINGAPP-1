@@ -37,6 +37,7 @@ import {
 import CustomerSummaryModal from "../../components/modals/CustomerSummaryModal";
 import { useCompany } from "../../contexts/CompanyContext";
 import { deduplicateBills } from "../../utils/deduplicateBills";
+import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 
 export default function DayBookPage() {
   const navigate = useNavigate();
@@ -123,9 +124,9 @@ export default function DayBookPage() {
   const fetchDayBook = async () => {
     setLoading(true);
     try {
-      let url = `/api/daybook?period=${period}&limit=500`;
+      let url = `/api/daybook?period=${period}&limit=10000`;
       if (period === "custom") {
-        url = `/api/daybook?startDate=${startDate}&endDate=${endDate}&limit=500`;
+        url = `/api/daybook?startDate=${startDate}&endDate=${endDate}&limit=10000`;
       }
 
       const [res, invRes] = await Promise.all([
@@ -192,7 +193,16 @@ export default function DayBookPage() {
 
       const mergedBills = deduplicateBills([...serverBills, ...periodLocalBills]);
 
-      const combinedData = { ...data, bills: mergedBills };
+      // Merge local offline expenses
+      let localExpenses = [];
+      try {
+        const storedExp = localStorage.getItem("vb_local_expenses");
+        if (storedExp) localExpenses = JSON.parse(storedExp);
+      } catch(e) {}
+      const serverExpenses = Array.isArray(data.expenses) ? data.expenses : [];
+      const mergedExpenses = deduplicateExpenses([...serverExpenses, ...localExpenses]);
+
+      const combinedData = { ...data, bills: mergedBills, expenses: mergedExpenses };
 
       setRawData(combinedData);
       calculateSummary(combinedData);

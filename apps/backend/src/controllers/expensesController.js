@@ -1,5 +1,7 @@
 import Expense from "../model/expenses.js";
 import BankAccount from "../model/bankAccount.js";
+import Staff from "../model/staff.js";
+import StaffTransaction from "../model/StaffTransaction.js";
 import { logActivity } from "../utils/logger.js";
 
 export const addExpense = async (req, res) => {
@@ -8,6 +10,18 @@ export const addExpense = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
     const expanceData = { ...req.body, companyId: req.companyId };
+
+    // Strict separation: Operating / Business expenses MUST NEVER carry a familyMember string (prevents Ghar Kharch misclassification)
+    if (!expanceData.expenseType || expanceData.expenseType === 'operating') {
+      expanceData.expenseType = 'operating';
+      expanceData.familyMember = '';
+    }
+
+    // Strict separation: Operating / Business expenses MUST NEVER carry a familyMember string (prevents Ghar Kharch misclassification)
+    if (!expanceData.expenseType || expanceData.expenseType === 'operating') {
+      expanceData.expenseType = 'operating';
+      expanceData.familyMember = '';
+    }
 
     // Auto-deduct from Bank / UPI Account if paymentMethod is 'upi' or 'bank'
     const pMethod = String(req.body.paymentMethod || 'cash').toLowerCase();
@@ -30,6 +44,26 @@ export const addExpense = async (req, res) => {
     }
 
     const expense = await Expense.create(expanceData);
+
+    // Auto-sync Staff Transaction if staffId is provided (e.g. staff advance / payment from expense form)
+    if (expanceData.staffId && amountNum > 0) {
+      try {
+        const staffDoc = await Staff.findOne({ _id: expanceData.staffId, companyId: req.companyId });
+        if (staffDoc) {
+          await StaffTransaction.create({
+            staffId: staffDoc._id,
+            companyId: req.companyId,
+            type: 'advance',
+            date: expense.date ? new Date(expense.date) : new Date(),
+            debit: amountNum,
+            credit: 0,
+            notes: (expense.description || expense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim()
+          });
+        }
+      } catch (staffTxErr) {
+        console.warn("Auto-sync staff transaction warning:", staffTxErr.message);
+      }
+    }
 
     // --- ASYNC DUAL-WRITE SYNC TO SUPABASE ---
     (async () => {
@@ -235,6 +269,17 @@ export const deleteExpense = async (req, res) => {
      );
      
      if (oldExpense) {
+       // Revert linked Staff Transaction if this expense was for a staff advance
+       if (oldExpense.staffId && Number(oldExpense.amount) > 0) {
+         try {
+           await StaffTransaction.findOneAndUpdate(
+             { staffId: oldExpense.staffId, companyId: req.companyId, debit: Number(oldExpense.amount), isDeleted: { $ne: true } },
+             { isDeleted: true }
+           );
+         } catch (stErr) {
+           console.warn("Error reverting staff transaction on expense deletion:", stErr.message);
+         }
+       }
        await logActivity(req, `Deleted Expense (ID: ${id}) | Title: ${oldExpense?.title || 'Unknown'}, Amount: ₹${oldExpense?.amount || 0}`);
 
        // Revert Bank deduction if this expense was deducted from a bank account

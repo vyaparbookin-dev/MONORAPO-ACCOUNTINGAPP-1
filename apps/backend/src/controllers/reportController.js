@@ -60,8 +60,8 @@ export const generateReport = async (req, res) => {
           taxableValue = b.total;
         }
 
-        // use stored tax if present, otherwise assume 18%
-        const tax = typeof b.tax === "number" ? b.tax : +(taxableValue * 0.18).toFixed(2);
+        // use stored tax if present, otherwise assume 0
+        const tax = typeof b.tax === "number" ? b.tax : 0;
         const cgst = +(tax / 2).toFixed(2);
         const sgst = +(tax / 2).toFixed(2);
         const igst = 0;
@@ -232,7 +232,7 @@ export const generateReport = async (req, res) => {
           taxableValue = b.total;
         }
 
-        const tax = typeof b.tax === "number" ? b.tax : +(taxableValue * 0.18).toFixed(2);
+        const tax = typeof b.tax === "number" ? b.tax : 0;
         const cgst = +(tax / 2).toFixed(2);
         const sgst = +(tax / 2).toFixed(2);
         const igst = 0;
@@ -274,7 +274,7 @@ export const generateReport = async (req, res) => {
           let taxableValue = items.reduce((s, i) => s + (i.taxable || 0), 0);
           if (!items.length && typeof b.total === "number") taxableValue = b.total;
 
-          const tax = typeof b.tax === "number" ? b.tax : +(taxableValue * 0.18).toFixed(2);
+          const tax = typeof b.tax === "number" ? b.tax : 0;
           const cgst = +(tax / 2).toFixed(2);
           const sgst = +(tax / 2).toFixed(2);
           const igst = 0;
@@ -429,7 +429,7 @@ export const getProfitLoss = async (req, res) => {
       daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)));
     }
 
-    const billQuery = { companyId: coFilter, isDeleted: { $ne: true } };
+    const billQuery = { companyId: coFilter, isDeleted: { $ne: true }, status: { $ne: 'cancelled' } };
     const expenseQuery = { companyId: coFilter, isDeleted: { $ne: true } };
     const purchaseQuery = { companyId: coFilter, isDeleted: { $ne: true } };
     const salaryQuery = { companyId: coFilter, isDeleted: { $ne: true } };

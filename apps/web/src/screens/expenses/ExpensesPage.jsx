@@ -17,6 +17,7 @@ const ExpensesPage = () => {
   const [filteredExpenses, setFilteredExpenses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [staffList, setStaffList] = useState([]);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [memberFilter, setMemberFilter] = useState("all");
   const [activeTypeTab, setActiveTypeTab] = useState("all"); // 'all', 'operating' (Business), 'drawings' (Ghar Kharch)
@@ -33,7 +34,8 @@ const ExpensesPage = () => {
     expenseType: "operating", // 'operating' or 'drawings'
     transactionFlow: "given", // 'given' or 'received'
     notes: "",
-    familyMember: "Self",
+    familyMember: "",
+    staffId: "",
     description: "",
     paymentMethod: "cash",
     date: new Date().toISOString().split('T')[0],
@@ -84,6 +86,16 @@ const ExpensesPage = () => {
 
   useEffect(() => {
     fetchExpenses();
+    const fetchStaff = async () => {
+      try {
+        const res = await api.get("/api/staff").catch(() => api.get("/staff"));
+        const list = Array.isArray(res?.staff) ? res.staff : (Array.isArray(res?.data?.staff) ? res.data.staff : (Array.isArray(res?.data) ? res.data : []));
+        setStaffList(list);
+      } catch (err) {
+        console.warn("Could not load staff list:", err);
+      }
+    };
+    fetchStaff();
   }, []);
 
   useEffect(() => {
@@ -185,7 +197,8 @@ const ExpensesPage = () => {
       expenseType: activeTypeTab === "drawings" ? "drawings" : "operating",
       transactionFlow: "given",
       notes: "",
-      familyMember: "Self",
+      familyMember: "",
+      staffId: "",
       description: "",
       paymentMethod: "cash",
       date: new Date().toISOString().split("T")[0],
@@ -304,19 +317,19 @@ const ExpensesPage = () => {
     }
   };
 
-  const businessCategories = ["rent", "utilities", "supplies", "salary", "travel", "marketing", "दुकान किराया", "बिजली बिल", "चाय/नाश्ता", "स्टाफ सैलरी", "other"];
+  const businessCategories = ["स्टाफ सैलरी", "दुकान किराया", "बिजली बिल", "चाय/नाश्ता", "सामान व पैकिंग", "भाड़ा व ट्रांसपोर्ट", "मरम्मत व मेंटेनेंस", "rent", "utilities", "supplies", "salary", "other"];
   const gharKharchCategories = ["राशन/किराना", "स्कूल/कॉलेज फीस", "दवाई/अस्पताल", "बिजली/पानी/गैस", "कपड़े/शॉपिंग", "निजी जेब खर्च", "पेट्रोल/वाहन", "अन्य घरेलू खर्च"];
 
   const safeExpenses = Array.isArray(expenses) ? expenses : [];
   const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
   
-  const totalBusinessExpenses = safeExpenses.filter(e => e.expenseType === 'operating').reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+  const totalBusinessExpenses = filteredExpenses.filter(e => e.expenseType === 'operating' || (!e.expenseType && (!e.familyMember || e.familyMember === 'Shop'))).reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
   
   let totalGharKharchGiven = 0;
   let totalGharKharchReceived = 0;
   const familyMembersMap = {};
 
-  safeExpenses.filter(e => e.expenseType === 'drawings' || (e.familyMember && e.familyMember.trim() !== '')).forEach(e => {
+  filteredExpenses.filter(e => e.expenseType === 'drawings' || (e.expenseType !== 'operating' && e.familyMember && e.familyMember.trim() !== '' && e.familyMember !== 'Shop')).forEach(e => {
     const mem = e.familyMember?.trim() || "Family";
     const amt = Number(e.amount) || 0;
     const flow = e.transactionFlow === 'received' ? 'received' : 'given';
@@ -610,6 +623,72 @@ const ExpensesPage = () => {
                   </select>
                 </div>
               </div>
+
+              {/* Staff Dropdown for Salary in Modal */}
+              {formData.expenseType === "operating" && (formData.category === "Salary" || formData.category === "salary" || formData.category === "स्टाफ सैलरी") && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 animate-fadeIn">
+                  <label className="font-bold text-xs text-emerald-950 block">
+                    👥 कर्मचारी / स्टाफ चुनें (Select Staff for Salary/Advance) *
+                  </label>
+                  <select
+                    value={formData.staffId || ""}
+                    onChange={(e) => {
+                      const sId = e.target.value;
+                      const selectedSt = staffList.find(s => s._id === sId);
+                      setFormData(prev => ({
+                        ...prev,
+                        staffId: sId,
+                        title: selectedSt ? `स्टाफ एडवांस - ${selectedSt.name}` : prev.title
+                      }));
+                    }}
+                    className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                    required
+                  >
+                    <option value="">-- कर्मचारी चुनें (Select Staff) --</option>
+                    {staffList.map((st) => (
+                      <option key={st._id} value={st._id}>
+                        👤 {st.name} ({st.position || st.role || 'Staff'}) {st.mobileNumber ? `- 📱 ${st.mobileNumber}` : ''} - {st.wageType === 'daily' ? `₹${st.dailyRate || st.wageAmount}/दिन` : `₹${st.monthlySalary || st.salary}/माह`}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] text-emerald-700 font-medium block">
+                    ⚡ यह एंट्री दुकान खर्च में दर्ज होगी और स्टाफ की पगार बुक में एडवांस के रूप में अपने आप कट जाएगी।
+                  </span>
+                </div>
+              )}
+
+              {/* Staff Dropdown for Salary in Modal */}
+              {formData.expenseType === "operating" && (formData.category === "Salary" || formData.category === "salary" || formData.category === "स्टाफ सैलरी") && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 animate-fadeIn">
+                  <label className="font-bold text-xs text-emerald-950 block">
+                    👥 कर्मचारी / स्टाफ चुनें (Select Staff for Salary/Advance) *
+                  </label>
+                  <select
+                    value={formData.staffId || ""}
+                    onChange={(e) => {
+                      const sId = e.target.value;
+                      const selectedSt = staffList.find(s => s._id === sId);
+                      setFormData(prev => ({
+                        ...prev,
+                        staffId: sId,
+                        title: selectedSt ? `स्टाफ एडवांस - ${selectedSt.name}` : prev.title
+                      }));
+                    }}
+                    className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                    required
+                  >
+                    <option value="">-- कर्मचारी चुनें (Select Staff) --</option>
+                    {staffList.map((st) => (
+                      <option key={st._id} value={st._id}>
+                        👤 {st.name} ({st.position || st.role || 'Staff'}) {st.mobileNumber ? `- 📱 ${st.mobileNumber}` : ''} - {st.wageType === 'daily' ? `₹${st.dailyRate || st.wageAmount}/दिन` : `₹${st.monthlySalary || st.salary}/माह`}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] text-emerald-700 font-medium block">
+                    ⚡ यह एंट्री दुकान खर्च में दर्ज होगी और स्टाफ की पगार बुक में एडवांस के रूप में अपने आप कट जाएगी।
+                  </span>
+                </div>
+              )}
 
               <div>
                 <label className="font-bold text-slate-700 block mb-1">खर्च का नाम / विवरण (Title)</label>

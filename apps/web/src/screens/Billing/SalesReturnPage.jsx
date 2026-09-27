@@ -52,7 +52,17 @@ export default function SalesReturnPage() {
   };
 
   const calculateTotalRefund = () => {
-    return returnItems.reduce((sum, item) => sum + (item.returnQty * (item.rate || item.price)), 0);
+    if (!bill) return 0;
+    const billTotal = Number(bill.total || 0);
+    const billDiscount = Number(bill.discountAmount || bill.discount || 0);
+    const billTax = Number(bill.tax || 0);
+    return returnItems.reduce((sum, item) => {
+      const lineTotal = item.returnQty * (item.rate || item.price);
+      const proportion = billTotal > 0 ? lineTotal / billTotal : 0;
+      const apportionedDiscount = proportion * billDiscount;
+      const apportionedTax = proportion * billTax;
+      return sum + Number(((lineTotal - apportionedDiscount) + apportionedTax).toFixed(2));
+    }, 0);
   };
 
   const handleSubmit = async () => {

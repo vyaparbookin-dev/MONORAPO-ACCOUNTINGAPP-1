@@ -236,7 +236,12 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
       );
 
       // Prefer calculated local+server if greater, else fallback to API
-      const finalSales = calcSales > 0 ? calcSales : Number(serverPl.totalSales || 0);
+      const backendSales = Number(serverPl.totalSales) || 0;
+      // Only add unsynced offline bills that aren't on server yet
+      const unsyncedLocalSales = allBills
+        .filter(b => b.isOfflineCreated && !b._id?.match(/^[0-9a-fA-F]{24}$/))
+        .reduce((sum, b) => sum + Number(b.finalAmount || b.total || 0), 0);
+      const finalSales = backendSales + unsyncedLocalSales;
       const finalOperating = calcOperating > 0 ? calcOperating : Number(serverPl.businessExpenses || 0);
       const finalGharKharch = calcGharKharch > 0 ? calcGharKharch : Number(serverPl.gharKharch || 0);
       const recordedPurchases = calcActualPurchases > 0 ? calcActualPurchases : Number(serverPl.actualPurchases || 0);

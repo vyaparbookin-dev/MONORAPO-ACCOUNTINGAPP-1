@@ -61,9 +61,16 @@ export function deduplicateBills(bills = []) {
       continue;
     }
 
-    // 4. Content signature check: Same date, same amount, same customer
+    // 4. Content signature check: Same date+time, same amount, same customer, same item count
     // Avoids double counting the exact same sale if one has a temp ID and other has a cloud ID
-    const signature = `${dateKey}_${amtVal.toFixed(2)}_${custName}`;
+    const timeKey = (() => {
+      const raw = bill.rawDate || bill.date || bill.createdAt;
+      if (!raw) return '00:00';
+      const d = new Date(raw);
+      return isNaN(d.getTime()) ? '00:00' : `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    })();
+    const itemCount = Array.isArray(bill.items) ? bill.items.length : 0;
+    const signature = `${dateKey}_${timeKey}_${amtVal.toFixed(2)}_${custName}_${itemCount}`;
     if (amtVal > 0 && seenSignatures.has(signature)) {
       continue;
     }

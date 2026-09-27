@@ -1,3 +1,4 @@
+import Expense from "../../../model/expenses.js";
 import Staff from "../models/staff.js";
 import StaffTransaction from "../models/StaffTransaction.js";
 import Attendance from "../models/attendance.js";
@@ -371,6 +372,24 @@ export const addStaffAdvance = async (req, res) => {
     });
 
     await advanceTx.save();
+
+    // Auto-record as Shop Expense (Operating) under Salary category for 2-way sync
+    try {
+      await Expense.create({
+        companyId: req.companyId,
+        title: `स्टाफ एडवांस - ${staff.name}`,
+        amount: Number(amount),
+        category: "Salary",
+        expenseType: "operating",
+        familyMember: "",
+        date: date ? new Date(date) : new Date(),
+        paymentMethod: (req.body.paymentMode || 'cash').toLowerCase(),
+        description: `PagarBook से दर्ज एडवांस: ${staff.name} (${(notes || 'एडवांस भुगतान').trim()})`,
+        staffId: staff._id
+      });
+    } catch (expErr) {
+      console.warn("Auto shop expense creation warning for staff advance:", expErr.message);
+    }
     res.status(201).json({ success: true, message: `₹${amount} एडवांस सफलतापूर्वक दर्ज हुआ!`, transaction: advanceTx });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

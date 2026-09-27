@@ -1123,6 +1123,14 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
             <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-100 space-y-4">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <h3 className="text-base font-extrabold text-slate-900">एडवांस व लोन एंट्री</h3>
+              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2 text-xs text-blue-900 font-semibold">
+                <span>⚡</span>
+                <span>यह भुगतान <b>दुकान के बिजनेस खर्च (Shop Expense)</b> में भी अपने आप दर्ज होगा (2 जगह डालने की जरूरत नहीं)।</span>
+              </div>
+              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2 text-xs text-blue-900 font-semibold">
+                <span>⚡</span>
+                <span>यह भुगतान <b>दुकान के बिजनेस खर्च (Shop Expense)</b> में भी अपने आप दर्ज होगा (2 जगह डालने की जरूरत नहीं)।</span>
+              </div>
                 <button onClick={() => setShowLoanAdvanceModal(false)} className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>

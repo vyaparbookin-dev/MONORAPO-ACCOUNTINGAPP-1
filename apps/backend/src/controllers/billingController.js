@@ -502,14 +502,59 @@ export const updateBill = async (req, res) => {
     }
     
     const oldBill = await Bill.findOne({ _id: req.params.id, companyId: req.companyId });
+    if (!oldBill) return res.status(404).json({ success: false, error: "Bill not found" });
+
+    // Revert old stock: add back old quantities to inventory
+    if (Array.isArray(oldBill.items)) {
+      for (const item of oldBill.items) {
+        if (item.productId) {
+          await Product.findByIdAndUpdate(item.productId, {
+            $inc: { currentStock: Number(item.quantity || 0) }
+          });
+        }
+      }
+    }
+
+    // Revert old party balance
+    if (oldBill.partyId || oldBill.customer) {
+      const oldPartyId = oldBill.partyId || oldBill.customer;
+      const oldFinalAmt = Number(oldBill.finalAmount || oldBill.total || 0);
+      if (oldFinalAmt > 0) {
+        await Party.findByIdAndUpdate(oldPartyId, {
+          $inc: { currentBalance: -oldFinalAmt }
+        });
+      }
+    }
+
     const bill = await Bill.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
       { ...req.body },
       { new: true }
     );
-    if (!bill) return res.status(404).json({ success: false, error: "Bill not found" });
     
-    await logActivity(req, 'UPDATE', 'bill', bill._id, oldBill ? oldBill.toObject() : {}, bill.toObject());
+    // Apply new stock: deduct new quantities from inventory
+    if (Array.isArray(bill.items)) {
+      for (const item of bill.items) {
+        if (item.productId) {
+          await Product.findByIdAndUpdate(item.productId, {
+            $inc: { currentStock: -Number(item.quantity || 0) }
+          });
+        }
+      }
+    }
+
+    // Apply new party balance
+    if (bill.partyId || bill.customer) {
+      const newPartyId = bill.partyId || bill.customer;
+      const newFinalAmt = Number(bill.finalAmount || bill.total || 0);
+      if (newFinalAmt > 0) {
+        await Party.findByIdAndUpdate(newPartyId, {
+          $inc: { currentBalance: newFinalAmt }
+        });
+      }
+    }
+
+    await logActivity(req, 'UPDATE', 'bill', bill._id, oldBill.toObject(), bill.toObject());
     
     res.json({ success: true, bill, message: "Bill updated successfully!" });
   } catch (error) {
@@ -562,13 +607,35 @@ export const deleteBill = async (req, res) => {
     }
     
     const oldBill = await Bill.findOne({ _id: req.params.id, companyId: req.companyId });
+    if (!oldBill) return res.status(404).json({ success: false, error: "Bill not found" });
+
+    // Revert stock: add back quantities to inventory
+    if (Array.isArray(oldBill.items)) {
+      for (const item of oldBill.items) {
+        if (item.productId) {
+          await Product.findByIdAndUpdate(item.productId, {
+            $inc: { currentStock: Number(item.quantity || 0) }
+          });
+        }
+      }
+    }
+
+    // Revert party balance: remove sale debit
+    if (oldBill.partyId || oldBill.customer) {
+      const partyId = oldBill.partyId || oldBill.customer;
+      const finalAmt = Number(oldBill.finalAmount || oldBill.total || 0);
+      if (finalAmt > 0) {
+        await Party.findByIdAndUpdate(partyId, {
+          $inc: { currentBalance: -finalAmt }
+        });
+      }
+    }
 
     const bill = await Bill.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
       { isDeleted: true },
       { new: true }
     );
-    if (!bill) return res.status(404).json({ success: false, error: "Bill not found" });
     
     await logActivity(req, 'DELETE', 'bill', bill._id, oldBill.toObject(), { isDeleted: true });
     

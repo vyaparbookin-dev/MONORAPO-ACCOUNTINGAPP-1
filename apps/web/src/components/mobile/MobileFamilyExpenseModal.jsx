@@ -106,11 +106,12 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
 
   const isFamilyExpense = (e) => {
     const type = String(e.expenseType || e.type || "").toLowerCase();
+    if (type === "operating") return false; // Strict separation: shop expense is NOT family expense
     const cat = String(e.category || "").toLowerCase();
     const title = String(e.title || e.description || "").toLowerCase();
     const member = String(e.familyMember || "").trim();
 
-    if (member) return true;
+    if (member && member !== "Shop") return true;
     if (type.includes("drawing") || type.includes("ghar") || type.includes("personal") || type.includes("family")) return true;
     if (cat.includes("ghar") || cat.includes("home") || cat.includes("family") || cat.includes("personal") || cat.includes("drawing") || cat.includes("राशन") || cat.includes("किराना") || cat.includes("दवाई") || cat.includes("दूध") || cat.includes("फीस")) return true;
     if (title.includes("ghar") || title.includes("घर") || title.includes("personal") || title.includes("राशन") || title.includes("मम्मी") || title.includes("पापा") || title.includes("बच्चे")) return true;

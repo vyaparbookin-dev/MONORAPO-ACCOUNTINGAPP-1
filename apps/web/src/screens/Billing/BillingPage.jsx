@@ -155,6 +155,7 @@ export default function BillingPage() {
   const [newProdData, setNewProdData] = useState({ name: '', rate: '', unit: 'pcs' });
   const [quickInsight, setQuickInsight] = useState(null); // Phase 5: Live Customer Insights
   const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [appliedSchemeIds, setAppliedSchemeIds] = useState(new Set()); // BUG-13: Track applied schemes
 
   // Pagination states
   const [page, setPage] = useState(1);
@@ -371,7 +372,7 @@ export default function BillingPage() {
         // ensure items use `rate` and `total` fields expected by backend
         const payload = { 
           ...formData,
-          finalAmount: formData.total + (parseFloat(formData.tax) || 0) - (parseFloat(formData.discount) || 0) + (parseFloat(formData.freightCharges) || 0) + (parseFloat(formData.laborCharges) || 0) + (parseFloat(formData.packingForwardingCharges) || 0)
+          finalAmount: Number((formData.total + (parseFloat(formData.tax) || 0) - (parseFloat(formData.discount) || 0) + (parseFloat(formData.freightCharges) || 0) + (parseFloat(formData.laborCharges) || 0) + (parseFloat(formData.packingForwardingCharges) || 0)).toFixed(2))
         };
         payload.items = payload.items.map((it) => ({
           productId: it.productId || "",
@@ -911,6 +912,12 @@ export default function BillingPage() {
   };
 
   const handleSchemeApplied = (result) => {
+    // BUG-13: Prevent duplicate scheme application
+    if (result.schemeId && appliedSchemeIds.has(result.schemeId)) {
+      alert("यह स्कीम पहले से लागू है!");
+      return;
+    }
+
     // If scheme gives a flat discount
     if (result.discount > 0) {
       setFormData(prev => ({
@@ -927,6 +934,11 @@ export default function BillingPage() {
         items: [...prev.items, ...result.freeItems.map(i => ({ ...i, id: Date.now() + Math.random() }))]
       }));
       alert(`Scheme Applied: ${result.freeItems.length} free item(s) added!`);
+    }
+
+    // Track applied scheme
+    if (result.schemeId) {
+      setAppliedSchemeIds(prev => new Set([...prev, result.schemeId]));
     }
   };
 

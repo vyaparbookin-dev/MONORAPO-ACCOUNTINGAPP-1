@@ -14,7 +14,7 @@ export default function GraphicalAnalytics() {
       try {
         // Fetch from Cloud API for Web
         const [billsRes, expRes] = await Promise.all([
-          api.get("/api/billing").catch(() => ({ data: [] })),
+          api.get("/api/billing?limit=10000").catch(() => ({ data: [] })),
           api.get("/api/expenses").catch(() => ({ data: [] }))
         ]);
 
