@@ -1,31 +1,57 @@
 /**
  * Authoritative deduplication and merger of bills across local offline storage
- * and server response. Prevents optimistic manual sales from disappearing on refresh.
+ * and server response. Prevents optimistic manual sales from disappearing on refresh
+ * and eliminates duplicate counting between Cloud (MongoDB) and Local (localStorage).
  */
 export function deduplicateBills(bills = []) {
   if (!Array.isArray(bills)) return [];
+
+  const isServerDoc = (b) => {
+    const id = String(b?._id || b?.id || '');
+    return /^[0-9a-fA-F]{24}$/.test(id) || (!id.startsWith('bill_') && !id.startsWith('temp_') && !b?.isOfflineCreated);
+  };
+
+  // 1. Sort authoritative server records first so they claim identity before local temporary clones
+  const sorted = [...bills].sort((a, b) => {
+    const aServer = isServerDoc(a);
+    const bServer = isServerDoc(b);
+    if (aServer && !bServer) return -1;
+    if (!aServer && bServer) return 1;
+    return 0;
+  });
+
+  const extractDateKey = (val) => {
+    if (!val) return new Date().toISOString().slice(0, 10);
+    const s = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    if (s.toLowerCase() === "today" || s === "आज") {
+      return new Date().toISOString().slice(0, 10);
+    }
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? new Date().toISOString().slice(0, 10) : d.toISOString().slice(0, 10);
+  };
 
   const seenIds = new Set();
   const seenBillNumbers = new Set();
   const seenSignatures = new Set();
   const result = [];
 
-  for (const bill of bills) {
+  for (const bill of sorted) {
     if (!bill || typeof bill !== "object") continue;
 
     const id = String(bill._id || "").trim();
     const localId = String(bill.id || "").trim();
-    const billNum = String(bill.billNumber || bill.invoiceNumber || bill.invoiceNo || "").trim();
+    const billNum = String(bill.billNumber || bill.invoiceNumber || bill.invoiceNo || (localId && !localId.startsWith("bill_") ? localId : "") || "").trim();
     const amtVal = Number(bill.amount ?? bill.finalAmount ?? bill.total ?? bill.totalAmount ?? bill.grandTotal ?? 0);
-    const dStr = String(bill.rawDate || bill.date || bill.createdAt || "").slice(0, 10);
+    const dateKey = extractDateKey(bill.rawDate || bill.date || bill.createdAt);
     const custName = String(bill.customerName || bill.partyName || bill.customer || "").trim().toLowerCase();
 
-    // 1. Check if non-empty billNumber was already seen
+    // 1. Check if bill number already claimed by an authoritative record
     if (billNum && seenBillNumbers.has(billNum.toLowerCase())) {
       continue;
     }
 
-    // 2. Check if primary MongoDB _id was already seen
+    // 2. Check if primary MongoDB _id already claimed
     if (id && seenIds.has(id)) {
       continue;
     }
@@ -37,7 +63,7 @@ export function deduplicateBills(bills = []) {
 
     // 4. Content signature check: Same date, same amount, same customer
     // Avoids double counting the exact same sale if one has a temp ID and other has a cloud ID
-    const signature = `${dStr}_${amtVal.toFixed(2)}_${custName}`;
+    const signature = `${dateKey}_${amtVal.toFixed(2)}_${custName}`;
     if (amtVal > 0 && seenSignatures.has(signature)) {
       continue;
     }
@@ -63,7 +89,7 @@ export function deduplicateBills(bills = []) {
       paymentMode: pmVal,
       paymentMethod: pmVal === "CREDIT" || pmVal === "UDHAR" ? "credit" : "cash",
       rawDate: bill.rawDate || bill.date || bill.createdAt || new Date().toISOString(),
-      date: bill.date || bill.rawDate || "Today"
+      date: bill.date && bill.date !== "Today" ? bill.date : dateKey
     };
 
     if (id) seenIds.add(id);

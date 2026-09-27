@@ -40,6 +40,7 @@ import Loader from "../../components/Loader";
 import { useCompany } from "../../contexts/CompanyContext";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
+import { deduplicatePurchases } from "../../utils/deduplicatePurchases";
 
 const ProfitLossReportPage = () => {
   const navigate = useNavigate();
@@ -241,10 +242,10 @@ const ProfitLossReportPage = () => {
 
       const periodLocalPurchases = localPurchases.filter(p => checkInRange(p.date || p.createdAt));
       const periodFetchedPurchases = Array.isArray(fetchedPurchases) ? fetchedPurchases.filter(p => checkInRange(p.date || p.createdAt)) : [];
-      const allPurchases = [
+      const allPurchases = deduplicatePurchases([
         ...periodFetchedPurchases,
         ...periodLocalPurchases
-      ];
+      ]);
 
       const isPersonalExpense = (e) => {
         if (!e) return false;

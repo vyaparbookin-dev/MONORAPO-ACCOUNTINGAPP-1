@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import CustomerSummaryModal from "../../components/modals/CustomerSummaryModal";
 import { useCompany } from "../../contexts/CompanyContext";
+import { deduplicateBills } from "../../utils/deduplicateBills";
 
 export default function DayBookPage() {
   const navigate = useNavigate();
@@ -169,38 +170,27 @@ export default function DayBookPage() {
       };
 
       const serverBills = Array.isArray(data?.bills) ? data.bills : [];
-      const mergedBills = [...serverBills];
+      const periodLocalBills = localBills.filter(lb => checkInRange(lb.rawDate || lb.date || lb.createdAt)).map(lb => ({
+        ...lb,
+        _id: lb._id || lb.id,
+        billNumber: lb.billNumber || lb.invoiceNumber || lb.id || "SALE-CASH",
+        invoiceNumber: lb.invoiceNumber || lb.billNumber || lb.id || "SALE-CASH",
+        customerName: lb.customerName || lb.partyName || "काउंटर नकद ग्राहक",
+        amount: Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0),
+        finalAmount: Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0),
+        total: Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0),
+        totalAmount: Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0),
+        paymentMode: lb.paymentMode || lb.paymentMethod || lb.type || "CASH",
+        paymentMethod: lb.paymentMode || lb.paymentMethod || lb.type || "CASH",
+        type: lb.paymentMode || lb.paymentMethod || lb.type || "CASH",
+        date: lb.rawDate || lb.date || new Date().toISOString(),
+        rawDate: lb.rawDate || lb.date || new Date().toISOString(),
+        createdAt: lb.rawDate || lb.date || new Date().toISOString(),
+        items: lb.items || [],
+        isOfflineCreated: lb.isOfflineCreated !== false
+      }));
 
-      localBills.forEach(lb => {
-        const rawDate = lb.rawDate || lb.date || lb.createdAt;
-        if (checkInRange(rawDate)) {
-          const exists = mergedBills.some(sb => 
-            (sb.billNumber && (sb.billNumber === lb.id || sb.billNumber === lb.billNumber)) ||
-            (sb._id && (sb._id === lb._id || sb._id === lb.id))
-          );
-          if (!exists) {
-            const amt = Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0);
-            const pm = lb.paymentMode || lb.paymentMethod || lb.type || "CASH";
-            mergedBills.push({
-              ...lb,
-              _id: lb._id || lb.id,
-              billNumber: lb.id || lb.billNumber || "SALE-CASH",
-              customerName: lb.customerName || "काउंटर नकद ग्राहक",
-              amount: amt,
-              finalAmount: amt,
-              total: amt,
-              totalAmount: amt,
-              paymentMode: pm,
-              paymentMethod: pm,
-              type: pm,
-              date: lb.rawDate || lb.date || new Date().toISOString(),
-              rawDate: lb.rawDate || lb.date || new Date().toISOString(),
-              createdAt: lb.rawDate || lb.date || new Date().toISOString(),
-              items: lb.items || []
-            });
-          }
-        }
-      });
+      const mergedBills = deduplicateBills([...serverBills, ...periodLocalBills]);
 
       const combinedData = { ...data, bills: mergedBills };
 

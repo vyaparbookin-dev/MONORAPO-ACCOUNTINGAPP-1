@@ -10,6 +10,8 @@ import {
   Camera, Download, Image, Upload, FileSpreadsheet, Loader2
 } from "lucide-react";
 
+import { deduplicateBills } from "../../utils/deduplicateBills";
+
 const PartyWiseReportPage = () => {
   const navigate = useNavigate();
   const [report, setReport] = useState([]);
@@ -48,7 +50,15 @@ const PartyWiseReportPage = () => {
         api.get("/api/parties").catch(() => null)
       ]);
 
-      const serverReports = Array.isArray(res?.data) ? res.data : (Array.isArray(res?.reports) ? res.reports : []);
+      const serverReports = Array.isArray(res?.data?.data)
+        ? res.data.data
+        : (Array.isArray(res?.data?.reports)
+          ? res.data.reports
+          : (Array.isArray(res?.data)
+            ? res.data
+            : (Array.isArray(res?.reports)
+              ? res.reports
+              : [])));
       const serverParties = Array.isArray(partiesRes?.data?.parties) ? partiesRes.data.parties : (Array.isArray(partiesRes?.data) ? partiesRes.data : []);
 
       let localParties = [];
@@ -61,6 +71,9 @@ const PartyWiseReportPage = () => {
           if (Array.isArray(storedB)) localBills = storedB;
         }
       } catch (e) {}
+
+      // Keep only truly unsynced offline bills to prevent double counting with server reports
+      const unsyncedLocalBills = deduplicateBills(localBills).filter(b => b.isOfflineCreated || String(b._id || '').startsWith('bill_'));
 
       // Server data takes authoritative precedence over stale local cache
       const allParties = [...serverReports, ...serverParties, ...localParties];
@@ -79,15 +92,16 @@ const PartyWiseReportPage = () => {
 
         if (!partyMap.has(k)) {
           const pIdStr = String(p._id || p.id || "");
-          const matchingBills = localBills.filter(b => {
+          const matchingUnsyncedBills = unsyncedLocalBills.filter(b => {
             const bParty = String(b.customerName || b.partyName || "").trim().toLowerCase();
             const bPartyId = String(b.partyId || b.customer || "");
             return (bParty && bParty === k) || (bPartyId && bPartyId === pIdStr);
           });
-          const calcSales = matchingBills.reduce((s, b) => s + (Number(b.amount || b.finalAmount || b.total) || 0), 0);
-          const totalSales = (p.totalSales && p.totalSales > 0) ? p.totalSales : calcSales;
-          const totalPurchase = p.totalPurchase || 0;
-          const balance = Number(p.balance !== undefined ? p.balance : (p.currentBalance !== undefined ? p.currentBalance : 0));
+          const unsyncedSales = matchingUnsyncedBills.reduce((s, b) => s + (Number(b.amount || b.finalAmount || b.total) || 0), 0);
+          const baseSales = Number(p.totalSales || 0);
+          const totalSales = baseSales + unsyncedSales;
+          const totalPurchase = Number(p.totalPurchase || 0);
+          const balance = Number(p.balance !== undefined ? p.balance : (p.currentBalance !== undefined ? p.currentBalance : (p.openingBalance || 0)));
 
           partyMap.set(k, {
             _id: p._id || p.id || k,

@@ -36,7 +36,15 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
           api.get('/api/parties').catch(() => null)
         ]);
 
-        const serverReports = Array.isArray(res?.data) ? res.data : (Array.isArray(res?.reports) ? res.reports : []);
+        const serverReports = Array.isArray(res?.data?.data)
+          ? res.data.data
+          : (Array.isArray(res?.data?.reports)
+            ? res.data.reports
+            : (Array.isArray(res?.data)
+              ? res.data
+              : (Array.isArray(res?.reports)
+                ? res.reports
+                : [])));
         const serverParties = Array.isArray(partiesRes?.data?.parties) ? partiesRes.data.parties : (Array.isArray(partiesRes?.data) ? partiesRes.data : []);
 
         let localParties = [];
@@ -50,26 +58,31 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
           }
         } catch (e) {}
 
-        const allParties = [...localParties, ...serverParties, ...serverReports];
+        // Keep only truly unsynced offline bills to prevent double counting with server reports
+        const unsyncedLocalBills = deduplicateBills(localBills).filter(b => b.isOfflineCreated || String(b._id || '').startsWith('bill_'));
+
+        const allParties = [...serverReports, ...serverParties, ...localParties];
         const partyMap = new Map();
 
         allParties.forEach(p => {
           if (!p) return;
+          if (p.isActive === false || p.isDeleted === true) return;
           const name = p.name || p.partyName || '';
           if (!name) return;
           const k = name.trim().toLowerCase();
           
           if (!partyMap.has(k)) {
             const pIdStr = String(p._id || p.id || '');
-            const matchingBills = localBills.filter(b => {
+            const matchingUnsyncedBills = unsyncedLocalBills.filter(b => {
               const bParty = String(b.customerName || b.partyName || '').trim().toLowerCase();
               const bPartyId = String(b.partyId || b.customer || '');
               return (bParty && bParty === k) || (bPartyId && bPartyId === pIdStr);
             });
-            const calcSales = matchingBills.reduce((s, b) => s + (Number(b.amount || b.finalAmount || b.total) || 0), 0);
-            const totalSales = (p.totalSales && p.totalSales > 0) ? p.totalSales : calcSales;
-            const totalPurchase = p.totalPurchase || 0;
-            const balance = Number(p.balance !== undefined ? p.balance : (p.currentBalance !== undefined ? p.currentBalance : 0));
+            const unsyncedSales = matchingUnsyncedBills.reduce((s, b) => s + (Number(b.amount || b.finalAmount || b.total) || 0), 0);
+            const baseSales = Number(p.totalSales || 0);
+            const totalSales = baseSales + unsyncedSales;
+            const totalPurchase = Number(p.totalPurchase || 0);
+            const balance = Number(p.balance !== undefined ? p.balance : (p.currentBalance !== undefined ? p.currentBalance : (p.openingBalance || 0)));
 
             partyMap.set(k, {
               _id: p._id || p.id || k,
@@ -106,8 +119,9 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
           if (k) itemMap.set(k, { ...it });
         });
 
-        // Add local bills items
-        localBills.forEach(b => {
+        // Add ONLY truly unsynced local offline bills to avoid doubling items already on server
+        const unsyncedBills = deduplicateBills(localBills).filter(b => b.isOfflineCreated || String(b._id || '').startsWith('bill_'));
+        unsyncedBills.forEach(b => {
           (b.items || []).forEach(it => {
             const name = it.name || it.productName || 'दैनिक उत्पाद';
             const k = name.trim().toLowerCase();
@@ -169,29 +183,29 @@ export default function MobileReportViewerModal({ isOpen, onClose, reportType, r
           totalAmount: Number(b.amount || b.finalAmount || b.total || 0),
           amount: Number(b.amount || b.finalAmount || b.total || 0),
           paymentMode: b.type || b.paymentMode || 'CASH',
+          items: b.items || [],
+          isOfflineCreated: b.isOfflineCreated
+        }));
+
+        const cleanCombined = deduplicateBills([
+          ...(Array.isArray(serverBills) ? serverBills : []),
+          ...(Array.isArray(serverReports) ? serverReports : []),
+          ...normalizedLocal
+        ]);
+
+        const mappedBills = cleanCombined.map(b => ({
+          _id: b._id || b.id,
+          invoiceNumber: b.invoiceNumber || b.billNumber || b.id || 'BILL',
+          billNumber: b.billNumber || b.invoiceNumber || b.id || 'BILL',
+          date: b.rawDate || b.date || b.createdAt || new Date().toISOString(),
+          customerName: b.customerName || b.customer || b.partyName || 'काउंटर नकद ग्राहक',
+          totalAmount: Number(b.totalAmount || b.finalAmount || b.amount || b.total || 0),
+          amount: Number(b.totalAmount || b.finalAmount || b.amount || b.total || 0),
+          paymentMode: b.paymentMode || b.type || 'CASH',
           items: b.items || []
         }));
 
-        const dedupMap = new Map();
-        [...normalizedLocal, ...(Array.isArray(serverBills) ? serverBills : []), ...(Array.isArray(serverReports) ? serverReports : [])].forEach(b => {
-          if (!b) return;
-          const k = String(b.invoiceNumber || b.billNumber || b._id || b.id);
-          if (!dedupMap.has(k)) {
-            dedupMap.set(k, {
-              _id: b._id || b.id || k,
-              invoiceNumber: b.invoiceNumber || b.billNumber || k,
-              billNumber: b.billNumber || b.invoiceNumber || k,
-              date: b.rawDate || b.date || b.createdAt || new Date().toISOString(),
-              customerName: b.customerName || b.customer || b.partyName || 'काउंटर नकद ग्राहक',
-              totalAmount: Number(b.totalAmount || b.finalAmount || b.amount || b.total || 0),
-              amount: Number(b.totalAmount || b.finalAmount || b.amount || b.total || 0),
-              paymentMode: b.paymentMode || b.type || 'CASH',
-              items: b.items || []
-            });
-          }
-        });
-
-        setData(Array.from(dedupMap.values()));
+        setData(mappedBills);
       } 
       // 4. GST
       else if (reportType === 'gst' || reportType === 'gstr1' || reportType === 'gstr3b') {

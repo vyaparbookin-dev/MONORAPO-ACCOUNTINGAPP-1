@@ -1162,22 +1162,35 @@ function MobileVyaparAppContent() {
           } catch (e) {}
         }
       }
-      const normBills = (Array.isArray(rawBills) ? rawBills : []).map(b => ({
-        _id: b._id || b.id || `BILL-${Date.now()}`,
-        id: b.billNumber || b.invoiceNumber || (b._id ? `INV-${b._id.slice(-4)}` : "001"),
-        customerName: b.partyName || b.customerName || b.customer || "Walk-in Customer",
-        phone: b.customerPhone || b.phone || b.mobileNumber || "",
-        amount: Number(b.amount || b.finalAmount || b.total || b.grandTotal || 0),
-        finalAmount: Number(b.amount || b.finalAmount || b.total || b.grandTotal || 0),
-        total: Number(b.amount || b.finalAmount || b.total || b.grandTotal || 0),
-        type: (b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase(),
-        paymentMode: (b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase(),
-        paymentMethod: ((b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase() === "UDHAR" || (b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase() === "CREDIT") ? "credit" : "cash",
-        paymentStatus: b.paymentStatus || (b.paymentMode === "UDHAR" || b.type === "UDHAR" ? "unpaid" : "paid"),
-        date: b.date ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today",
-        rawDate: b.rawDate || b.date || b.createdAt || new Date().toISOString(),
-        items: b.items || []
-      }));
+      const normBills = (Array.isArray(rawBills) ? rawBills : []).map(b => {
+        const bNo = b.billNumber || b.invoiceNumber || (b._id ? `INV-${String(b._id).slice(-4)}` : "001");
+        const bAmt = Number(b.amount || b.finalAmount || b.total || b.totalAmount || b.grandTotal || 0);
+        const pMode = (b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase();
+        return {
+          _id: b._id || b.id || `BILL-${Date.now()}`,
+          id: bNo,
+          billNumber: bNo,
+          invoiceNumber: bNo,
+          customerName: b.partyName || b.customerName || b.customer || "Walk-in Customer",
+          party: b.party || b.partyId || "",
+          partyId: b.partyId || (b.party && typeof b.party === 'object' ? b.party._id : b.party) || "",
+          partyName: b.partyName || b.customerName || b.customer || "Walk-in Customer",
+          phone: b.customerPhone || b.phone || b.mobileNumber || "",
+          amount: bAmt,
+          finalAmount: bAmt,
+          total: bAmt,
+          totalAmount: bAmt,
+          grandTotal: bAmt,
+          type: pMode,
+          paymentMode: pMode,
+          paymentMethod: (pMode === "UDHAR" || pMode === "CREDIT") ? "credit" : "cash",
+          paymentStatus: b.paymentStatus || (pMode === "UDHAR" ? "unpaid" : "paid"),
+          date: b.date ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today",
+          rawDate: b.rawDate || b.date || b.createdAt || new Date().toISOString(),
+          items: b.items || [],
+          isOfflineCreated: false
+        };
+      });
 
       // Scope local offline cache strictly to active company to prevent multi-tenant cross-talk
       const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
@@ -1202,14 +1215,17 @@ function MobileVyaparAppContent() {
         }
       } catch (e) {}
 
+      // Authoritative deduplication: server documents always take precedence
       const mergedBills = deduplicateBills([...normBills, ...localManualBills]);
       setBills(mergedBills);
 
+      // Keep only true unsynced offline bills in localManualBills storage to prevent local/cloud duplication
+      const unsyncedOnly = mergedBills.filter(b => b.isOfflineCreated && !normBills.some(nb => nb._id === b._id || nb.billNumber === b.billNumber));
       try {
         if (currentCoId) {
-          localStorage.setItem(`vb_local_manual_bills_${currentCoId}`, JSON.stringify(mergedBills));
+          localStorage.setItem(`vb_local_manual_bills_${currentCoId}`, JSON.stringify(unsyncedOnly));
         }
-        localStorage.setItem("vb_local_manual_bills", JSON.stringify(mergedBills));
+        localStorage.setItem("vb_local_manual_bills", JSON.stringify(unsyncedOnly));
       } catch (e) {}
 
       let rawParties = [];
@@ -1904,10 +1920,22 @@ function MobileVyaparAppContent() {
         });
       }
 
-      // Also merge any local matching bills not already present
+      // Also merge only true unsynced local matching bills not already present in server transactions
       const pNameNorm = String(pObj?.name || '').trim().toLowerCase();
       const pPhoneNorm = String(pObj?.phone || pObj?.mobileNumber || '').trim();
-      const existingRefNos = new Set(combinedTxs.map(t => String(t.billNumber || t.refNo || t._id || '').toLowerCase()));
+      const existingRefNos = new Set();
+      const existingSignatures = new Set();
+      combinedTxs.forEach(t => {
+        if (t.billNumber) existingRefNos.add(String(t.billNumber).trim().toLowerCase());
+        if (t.refNo) existingRefNos.add(String(t.refNo).trim().toLowerCase());
+        if (t._id) existingRefNos.add(String(t._id).trim().toLowerCase());
+        if (t.id) existingRefNos.add(String(t.id).trim().toLowerCase());
+        const dStr = t.date ? new Date(t.date).toISOString().slice(0, 10) : "";
+        const amt = Number(t.billAmount || t.debit || t.credit || 0);
+        if (dStr && amt > 0) {
+          existingSignatures.add(`${dStr}_${amt}`);
+        }
+      });
 
       const localBills = (bills || []).filter(b => {
         const bPartyId = String(b.partyId || '');
@@ -1917,10 +1945,14 @@ function MobileVyaparAppContent() {
       });
 
       for (const b of localBills) {
-        const bNum = String(b.billNumber || b.invoiceNumber || 'BILL');
-        if (existingRefNos.has(bNum.toLowerCase()) || existingRefNos.has(String(b._id || b.id || '').toLowerCase())) continue;
+        const bNum = String(b.billNumber || b.invoiceNumber || 'BILL').trim();
+        const bId = String(b._id || b.id || '').trim();
+        if (existingRefNos.has(bNum.toLowerCase()) || existingRefNos.has(bId.toLowerCase())) continue;
 
-        const finalAmt = Number(b.finalAmount ?? b.total ?? 0);
+        const bDateStr = (b.rawDate || b.date) ? new Date(b.rawDate || b.date).toISOString().slice(0, 10) : "";
+        const finalAmt = Number(b.finalAmount ?? b.total ?? b.amount ?? 0);
+        if (bDateStr && finalAmt > 0 && existingSignatures.has(`${bDateStr}_${finalAmt}`)) continue;
+
         const isPaid = String(b.paymentStatus || b.status || '').toLowerCase() === 'paid';
         const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
 
