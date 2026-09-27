@@ -59,6 +59,8 @@ import brandRoutes from "./src/routes/brandRoutes.js";
 import subCategoryRoutes from "./src/routes/subCategoryRoutes.js";
 import { startCronJobs } from "./src/utils/cronJobs.js";
 import Expense from "./src/model/expenses.js";
+import Staff from "./src/model/staff.js";
+import StaffTransaction from "./src/model/StaffTransaction.js";
 import tallyRoutes from "./src/routes/tallyRoutes.js";
 import leadRoutes from "./src/modules/crm/routes/leadRoutes.js";
 import capitalRoutes from "./src/routes/capitalRoutes.js";
@@ -287,6 +289,35 @@ const startServer = () => {
         }
       } catch (cleanErr) {
         console.warn("Expense auto-migration:", cleanErr.message);
+      }
+
+      // Auto-sync staff advance transactions from operating expenses that have staffId
+      try {
+        const staffExpenses = await Expense.find({
+          expenseType: "operating",
+          staffId: { $exists: true, $ne: null },
+          isDeleted: { $ne: true }
+        });
+        for (const exp of staffExpenses) {
+          const existingTx = await StaffTransaction.findOne({ referenceExpenseId: exp._id });
+          if (!existingTx) {
+            const staffDoc = await Staff.findById(exp.staffId);
+            if (staffDoc) {
+              await StaffTransaction.create({
+                staffId: exp.staffId,
+                type: "advance",
+                amount: Number(exp.amount || 0),
+                paymentMode: exp.paymentMode || "cash",
+                notes: `Advance from Expense: ${exp.title || "Staff Expense"}`,
+                date: exp.date || new Date(),
+                referenceExpenseId: exp._id
+              });
+              console.log(`✅ Synced missing staff advance transaction for staff: ${staffDoc.name} (Amount: ${exp.amount})`);
+            }
+          }
+        }
+      } catch (staffSyncErr) {
+        console.warn("Staff advance auto-sync:", staffSyncErr.message);
       }
     } catch (error) {
       console.error("❌ DB Connection Failed:", error);

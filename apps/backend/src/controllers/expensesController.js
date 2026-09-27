@@ -130,6 +130,36 @@ export const updateExpense = async (req, res) => {
       { new: true }
     );
     if (!expense) return res.status(404).json({ success: false, error: "Expense not found" });
+
+    // Auto-sync Staff Transaction if staffId is provided or updated
+    const targetStaffId = updateData.staffId || expense.staffId;
+    const amountNum = Number(expense.amount) || 0;
+    if (targetStaffId && amountNum > 0 && expense.expenseType === 'operating') {
+      try {
+        const staffDoc = await Staff.findOne({ _id: targetStaffId, companyId: req.companyId }) || await Staff.findById(targetStaffId);
+        if (staffDoc) {
+          const existingTx = await StaffTransaction.findOne({
+            staffId: staffDoc._id,
+            debit: amountNum,
+            isDeleted: { $ne: true }
+          });
+          if (!existingTx) {
+            await StaffTransaction.create({
+              staffId: staffDoc._id,
+              companyId: staffDoc.companyId || req.companyId,
+              type: 'advance',
+              date: expense.date ? new Date(expense.date) : new Date(),
+              debit: amountNum,
+              credit: 0,
+              notes: (expense.description || expense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim()
+            });
+          }
+        }
+      } catch (staffTxErr) {
+        console.warn("Auto-sync staff transaction on update warning:", staffTxErr.message);
+      }
+    }
+
     res.json({ success: true, expense });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

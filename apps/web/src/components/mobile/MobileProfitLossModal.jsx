@@ -68,6 +68,8 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
   const [expensesCount, setExpensesCount] = useState(0);
   const [purchasesCount, setPurchasesCount] = useState(0);
   const [hasActualPurchases, setHasActualPurchases] = useState(false);
+  const [operatingExpensesList, setOperatingExpensesList] = useState([]);
+  const [showExpensesDetail, setShowExpensesDetail] = useState(false);
 
   // Parties Outstanding & Opening Balance summary
   const [showPartiesDetail, setShowPartiesDetail] = useState(false);
@@ -268,6 +270,7 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
       setEffectiveCOGSTotal(effectiveCOGS);
       setGrossProfitTotal(grossProfit);
       setOperatingExpensesTotal(finalOperating);
+      setOperatingExpensesList(operatingList);
       setGharKharchTotal(finalGharKharch);
       setNetBusinessProfit(netProfit);
       setNetRemainingSavings(savings);
@@ -639,6 +642,74 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
                   </span>
                 </div>
               </div>
+            </div>
+
+            {/* 📋 ITEMIZED SHOP EXPENSES BREAKDOWN CARD */}
+            <div className="bg-white p-4 rounded-2xl border border-rose-200/80 shadow-xs space-y-3">
+              <div 
+                onClick={() => setShowExpensesDetail(!showExpensesDetail)}
+                className="flex justify-between items-center cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-700 flex items-center justify-center font-bold">
+                    🏢
+                  </div>
+                  <div>
+                    <h4 className="font-black text-xs text-rose-950">
+                      📋 दुकान खर्चों का मद-वार विवरण (Itemized Shop Expenses)
+                    </h4>
+                    <p className="text-[10px] text-slate-500">
+                      {operatingExpensesList.length} खर्चे दर्ज • स्टाफ एडवांस, किराया, बिजली, चाय आदि
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-black text-xs text-rose-700 font-mono">
+                    ₹{operatingExpensesTotal.toLocaleString('en-IN')}
+                  </span>
+                  <button type="button" className="text-rose-600 p-1">
+                    {showExpensesDetail ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Collapsible Expense List */}
+              {showExpensesDetail && (
+                <div className="pt-2 border-t border-slate-100 space-y-2 max-h-60 overflow-y-auto">
+                  {operatingExpensesList.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-400">
+                      इस अवधि में कोई दुकान खर्च दर्ज नहीं है।
+                    </div>
+                  ) : (
+                    operatingExpensesList.map((exp, idx) => (
+                      <div key={exp._id || exp.id || idx} className="p-2.5 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200 flex justify-between items-center text-xs transition">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-extrabold text-xs text-[#0F172A]">{exp.title}</span>
+                            {exp.staffId && (
+                              <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 font-bold text-[9px] rounded-md">
+                                👔 स्टाफ एडवांस
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 flex items-center gap-2">
+                            <span>🏷️ {exp.category || "दुकान खर्च"}</span>
+                            <span>•</span>
+                            <span>📅 {exp.date ? new Date(exp.date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short' }) : 'Today'}</span>
+                            <span>•</span>
+                            <span className="uppercase">{exp.paymentMethod || 'cash'}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-black font-mono text-rose-700 text-xs">
+                            ₹{Number(exp.amount || 0).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
 
             {/* 👥 ALL PARTIES OUTSTANDING & OPENING BALANCES EXPLAINER CARD */}

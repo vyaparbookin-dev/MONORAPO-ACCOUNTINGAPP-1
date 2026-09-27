@@ -621,7 +621,24 @@ function MobileVyaparAppContent() {
     return [];
   });
   const [gharKharchMemberFilter, setGharKharchMemberFilter] = useState("all");
+  const [ledgerViewTab, setLedgerViewTab] = useState("all"); // 'all', 'drawings' (Ghar Kharch), 'operating' (Shop Kharch)
   const [loadingGharKharch, setLoadingGharKharch] = useState(false);
+
+  // Helper to reliably separate Drawings (Ghar Kharch) from Operating (Dukaan Kharch)
+  const isPersonalExpense = (e) => {
+    if (!e) return false;
+    const t = String(e.expenseType || '').toLowerCase();
+    if (t === 'operating' || t === '') return false;
+    const c = String(e.category || '').toLowerCase();
+    const tit = String(e.title || '').toLowerCase();
+    const mem = String(e.familyMember || e.member || '').trim();
+    return t === 'drawings' || t === 'ghar_kharch' || t === 'personal' ||
+           c.includes('घर खर्च') || c.includes('family') || c.includes('personal') ||
+           tit.includes('घर खर्च') || (mem !== '' && mem !== 'Admin' && mem !== 'Shop');
+  };
+
+  const shopExpensesOnly = (gharKharchList || []).filter(e => !isPersonalExpense(e));
+  const familyDrawingsOnly = (gharKharchList || []).filter(e => isPersonalExpense(e));
 
   // Quick Item Modal
   const [showAddItemModal, setShowAddItemModal] = useState(false);
@@ -3059,14 +3076,68 @@ function MobileVyaparAppContent() {
               <ChevronRight size={16} className="text-amber-700" />
             </div>
 
-            {/* 🏡 GHAR KHARCH (FAMILY & HOUSEHOLD EXPENSE) DASHBOARD STRIP */}
+            {/* 🏢 DUKAAN KHARCH (OPERATING EXPENSES) DASHBOARD STRIP */}
             {(() => {
-              const totalExpVal = (gharKharchList || []).reduce((s, it) => s + (Number(it.amount) || 0), 0);
+              const shopExpVal = (shopExpensesOnly || []).reduce((s, it) => s + (Number(it.amount) || 0), 0);
               return (
-                <div className="p-3.5 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border border-amber-500/30 rounded-2xl flex justify-between items-center shadow-sm hover:border-amber-400 transition">
+                <div className="p-3.5 bg-gradient-to-r from-indigo-500/10 via-blue-500/10 to-indigo-500/10 border border-indigo-500/20 rounded-2xl flex justify-between items-center shadow-xs hover:border-indigo-400 transition">
                   <div 
                     onClick={() => {
                       fetchGharKharchData();
+                      setLedgerViewTab("operating");
+                      handleToggleGharKharchLedger(true);
+                    }}
+                    className="flex items-center gap-2.5 flex-1 cursor-pointer"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white flex items-center justify-center font-bold shadow text-lg">
+                      🏢
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-extrabold text-xs text-indigo-950">दुकान खर्च (Shop Expenses)</h4>
+                        <span className="px-1.5 py-0.2 bg-indigo-600 text-white font-black text-[9px] rounded-md">
+                          ₹ {shopExpVal.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-indigo-800 font-medium">
+                        {(shopExpensesOnly || []).length > 0 ? `${(shopExpensesOnly || []).length} खर्च दर्ज • स्टाफ एडवांस, किराया, बिजली, चाय-नाश्ता` : 'स्टाफ सैलरी, एडवांस, दुकान किराया व अन्य खर्च'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        fetchGharKharchData();
+                        setLedgerViewTab("operating");
+                        handleToggleGharKharchLedger(true);
+                      }}
+                      className="px-2.5 py-1.5 bg-white border border-indigo-200 text-indigo-900 font-bold text-[11px] rounded-xl shadow-xs hover:bg-indigo-50 transition cursor-pointer"
+                    >
+                      हिसाब →
+                    </button>
+                    <button
+                      onClick={() => {
+                        setGharKharchType("operating");
+                        handleToggleGharKharchEntry(true);
+                      }}
+                      className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1"
+                    >
+                      <Plus size={12} /> खर्च
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 🏡 GHAR KHARCH (FAMILY & HOUSEHOLD EXPENSE) DASHBOARD STRIP */}
+            {(() => {
+              const totalFamilyVal = (familyDrawingsOnly || []).reduce((s, it) => s + (Number(it.amount) || 0), 0);
+              return (
+                <div className="p-3.5 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border border-amber-500/30 rounded-2xl flex justify-between items-center shadow-xs hover:border-amber-400 transition">
+                  <div 
+                    onClick={() => {
+                      fetchGharKharchData();
+                      setLedgerViewTab("drawings");
                       handleToggleGharKharchLedger(true);
                     }}
                     className="flex items-center gap-2.5 flex-1 cursor-pointer"
@@ -3078,11 +3149,11 @@ function MobileVyaparAppContent() {
                       <div className="flex items-center gap-2">
                         <h4 className="font-extrabold text-xs text-amber-950">घर खर्च व फैमिली लेजर</h4>
                         <span className="px-1.5 py-0.2 bg-amber-600 text-white font-black text-[9px] rounded-md">
-                          ₹ {totalExpVal.toLocaleString('en-IN')}
+                          ₹ {totalFamilyVal.toLocaleString('en-IN')}
                         </span>
                       </div>
                       <p className="text-[10px] text-amber-800 font-medium">
-                        {(gharKharchList || []).length > 0 ? `${(gharKharchList || []).length} खर्चे दर्ज हैं • पापा, मम्मी, राशन हिसाब` : 'राशन, दवाई, बिजली, स्कूल फीस व फैमिली खर्च'}
+                        {(familyDrawingsOnly || []).length > 0 ? `${(familyDrawingsOnly || []).length} खर्चे दर्ज हैं • पापा, मम्मी, राशन हिसाब` : 'राशन, दवाई, बिजली, स्कूल फीस व फैमिली खर्च'}
                       </p>
                     </div>
                   </div>
@@ -3090,6 +3161,7 @@ function MobileVyaparAppContent() {
                     <button
                       onClick={() => {
                         fetchGharKharchData();
+                        setLedgerViewTab("drawings");
                         handleToggleGharKharchLedger(true);
                       }}
                       className="px-2.5 py-1.5 bg-white border border-amber-300 text-amber-900 font-bold text-[11px] rounded-xl shadow-xs hover:bg-amber-50 transition cursor-pointer"
@@ -3097,7 +3169,10 @@ function MobileVyaparAppContent() {
                       लेजर →
                     </button>
                     <button
-                      onClick={() => handleToggleGharKharchEntry(true)}
+                      onClick={() => {
+                        setGharKharchType("drawings");
+                        handleToggleGharKharchEntry(true);
+                      }}
                       className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1"
                     >
                       <Plus size={12} /> खर्च
@@ -3195,16 +3270,22 @@ function MobileVyaparAppContent() {
                       isPartyTx: true
                     };
                   }),
-                  ...(gharKharchList || []).map(e => ({
-                    _id: e._id || e.id,
-                    typeCategory: 'expense',
-                    title: e.title || `${e.category || 'घरेलू खर्च'} ${e.familyMember ? `(${e.familyMember})` : ''}`,
-                    subtitle: `🏡 ${e.category || 'खर्च'} • ${e.familyMember ? `[${e.familyMember}] • ` : ''}${e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today'}`,
-                    amount: Number(e.amount || 0),
-                    isPositive: false,
-                    dateObj: new Date(e.date || Date.now()),
-                    original: e
-                  }))
+                  ...(gharKharchList || []).map(e => {
+                    const isPersonal = isPersonalExpense(e);
+                    const matchedStaff = e.staffId ? activeStaffList.find(s => s._id === e.staffId) : null;
+                    return {
+                      _id: e._id || e.id,
+                      typeCategory: 'expense',
+                      title: e.title || (isPersonal ? `${e.category || 'घरेलू खर्च'} ${e.familyMember ? `(${e.familyMember})` : ''}` : `${e.category || 'दुकान खर्च'}${matchedStaff ? ` (${matchedStaff.name})` : ''}`),
+                      subtitle: isPersonal
+                        ? `🏡 घर खर्च • ${e.familyMember ? `[${e.familyMember}] • ` : ''}${e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today'}`
+                        : `🏢 दुकान खर्च • ${matchedStaff ? `[${matchedStaff.name} एडवांस] • ` : ''}${e.category || 'संचालन'} • ${e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today'}`,
+                      amount: Number(e.amount || 0),
+                      isPositive: false,
+                      dateObj: new Date(e.date || Date.now()),
+                      original: e
+                    };
+                  })
                 ].sort((a, b) => b.dateObj - a.dateObj);
 
                 const displayList = combinedStream.filter(tx => {
@@ -5301,37 +5382,71 @@ function MobileVyaparAppContent() {
 
             {/* Summary Cards */}
             {(() => {
-              const allItems = gharKharchList;
-              const totalAmt = allItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+              // Determine active item set based on ledgerViewTab
+              const currentTab = ledgerViewTab; // 'all', 'drawings', 'operating'
+              const tabItems = currentTab === "drawings"
+                ? familyDrawingsOnly
+                : currentTab === "operating"
+                  ? shopExpensesOnly
+                  : gharKharchList;
+
+              const totalAmt = tabItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
               const membersMap = {};
-              allItems.forEach(it => {
-                const m = it.familyMember?.trim() || "Unassigned";
-                membersMap[m] = (membersMap[m] || 0) + (Number(it.amount) || 0);
-              });
+              if (currentTab === "drawings" || currentTab === "all") {
+                familyDrawingsOnly.forEach(it => {
+                  const m = it.familyMember?.trim() || "Self";
+                  membersMap[m] = (membersMap[m] || 0) + (Number(it.amount) || 0);
+                });
+              }
               const uniqueMembers = Object.keys(membersMap);
 
-              const filteredItems = gharKharchMemberFilter === "all"
-                ? allItems
-                : allItems.filter(it => String(it.familyMember || 'Unassigned').toLowerCase() === String(gharKharchMemberFilter || 'all').toLowerCase());
-              
-              const filteredTotal = filteredItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+              const filteredItems = currentTab === "drawings" && gharKharchMemberFilter !== "all"
+                ? tabItems.filter(it => String(it.familyMember || 'Self').toLowerCase() === String(gharKharchMemberFilter).toLowerCase())
+                : tabItems;
 
               return (
                 <div className="space-y-3">
+                  {/* Ledger Type Tabs */}
+                  <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-2xl text-xs font-bold">
+                    <button
+                      type="button"
+                      onClick={() => { setLedgerViewTab("all"); setGharKharchMemberFilter("all"); }}
+                      className={`py-2 rounded-xl transition ${currentTab === "all" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-800"}`}
+                    >
+                      सभी ({gharKharchList.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setLedgerViewTab("operating"); setGharKharchMemberFilter("all"); }}
+                      className={`py-2 rounded-xl transition flex items-center justify-center gap-1 ${currentTab === "operating" ? "bg-indigo-600 text-white shadow-xs" : "text-slate-500 hover:text-slate-800"}`}
+                    >
+                      🏢 दुकान ({shopExpensesOnly.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setLedgerViewTab("drawings"); setGharKharchMemberFilter("all"); }}
+                      className={`py-2 rounded-xl transition flex items-center justify-center gap-1 ${currentTab === "drawings" ? "bg-amber-600 text-white shadow-xs" : "text-slate-500 hover:text-slate-800"}`}
+                    >
+                      🏡 घर खर्च ({familyDrawingsOnly.length})
+                    </button>
+                  </div>
+
                   {/* Total Banner */}
-                  <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-4 rounded-2xl text-white shadow-md flex justify-between items-center">
+                  <div className={`p-4 rounded-2xl text-white shadow-md flex justify-between items-center ${currentTab === "operating" ? "bg-gradient-to-r from-indigo-600 to-blue-600" : "bg-gradient-to-r from-amber-500 to-orange-500"}`}>
                     <div>
-                      <span className="text-[11px] font-bold text-amber-100 block">कुल घर खर्च (Total Ghar Kharch)</span>
+                      <span className="text-[11px] font-bold opacity-90 block">
+                        {currentTab === "operating" ? "कुल दुकान खर्च (Total Shop Expenses)" : currentTab === "drawings" ? "कुल फैमिली घर खर्च (Family Ledger)" : "कुल दर्ज खर्चे (All Expenses)"}
+                      </span>
                       <span className="text-2xl font-black">₹ {totalAmt.toLocaleString('en-IN')}</span>
                     </div>
                     <div className="text-right">
-                      <span className="text-[10px] text-amber-100 block">कुल एंट्रीज</span>
-                      <span className="text-sm font-extrabold">{allItems.length} खर्च दर्ज</span>
+                      <span className="text-[10px] opacity-90 block">कुल प्रविष्टियां</span>
+                      <span className="text-sm font-extrabold">{tabItems.length} खर्चे दर्ज</span>
                     </div>
                   </div>
 
-                  {/* Family Members Breakdown Chips & Progress */}
-                  {uniqueMembers.length > 0 && (
+                  {/* Family Members Breakdown Chips & Progress (Only when viewing Family/All) */}
+                  {(currentTab === "drawings" || currentTab === "all") && uniqueMembers.length > 0 && (
                     <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
                       <span className="text-[11px] font-extrabold text-slate-700 block">
                         👥 फैमिली मेंबर के अनुसार खर्च ब्रेकअप:
@@ -5352,86 +5467,94 @@ function MobileVyaparAppContent() {
                           </div>
                         ))}
                       </div>
+
+                      {/* Filter by Family Member Pills */}
+                      <div className="flex gap-1.5 overflow-x-auto pt-1 pb-0.5 no-scrollbar">
+                        <button
+                          onClick={() => setGharKharchMemberFilter("all")}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${gharKharchMemberFilter === "all" ? 'bg-[#0F172A] text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                        >
+                          सभी सदस्य ({familyDrawingsOnly.length})
+                        </button>
+                        {uniqueMembers.map(m => (
+                          <button
+                            key={m}
+                            onClick={() => setGharKharchMemberFilter(m)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap flex items-center gap-1 ${String(gharKharchMemberFilter || '').toLowerCase() === String(m || '').toLowerCase() ? 'bg-amber-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                          >
+                            <span>👤 {m}</span>
+                            <span className="text-[10px] opacity-80">₹{membersMap[m]}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
-
-                  {/* Filter by Family Member Pills */}
-                  <div className="space-y-1">
-                    <span className="text-[11px] font-bold text-slate-600 block">सदस्य अनुसार फिल्टर करें:</span>
-                    <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                      <button
-                        onClick={() => setGharKharchMemberFilter("all")}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${gharKharchMemberFilter === "all" ? 'bg-[#0F172A] text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                      >
-                        सभी सदस्य ({allItems.length})
-                      </button>
-                      {uniqueMembers.map(m => (
-                        <button
-                          key={m}
-                          onClick={() => setGharKharchMemberFilter(m)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap flex items-center gap-1 ${String(gharKharchMemberFilter || '').toLowerCase() === String(m || '').toLowerCase() ? 'bg-amber-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                        >
-                          <span>👤 {m}</span>
-                          <span className="text-[10px] opacity-80">₹{membersMap[m]}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
 
                   {/* Expenses List */}
                   <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                     {loadingGharKharch ? (
-                      <div className="p-8 text-center text-xs text-slate-400">घर खर्च लोड हो रहा है...</div>
+                      <div className="p-8 text-center text-xs text-slate-400">खर्च लोड हो रहा है...</div>
                     ) : filteredItems.length === 0 ? (
                       <div className="p-8 bg-slate-50 border border-dashed border-slate-200 rounded-2xl text-center text-xs text-slate-400 space-y-1">
-                        <p className="font-bold text-slate-600">कोई घर खर्च नहीं मिला</p>
-                        <p className="text-[10px]">ऊपर "+ नया खर्च" बटन से पहला घर खर्च दर्ज करें</p>
+                        <p className="font-bold text-slate-600">कोई खर्च नहीं मिला</p>
+                        <p className="text-[10px]">ऊपर "+ नया खर्च" बटन से पहला खर्च दर्ज करें</p>
                       </div>
                     ) : (
-                      filteredItems.map(exp => (
-                        <div key={exp._id || exp.id} className="p-3 bg-slate-50 hover:bg-slate-100/80 rounded-2xl border border-slate-200 flex justify-between items-center transition">
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-extrabold text-xs text-[#0F172A]">{exp.title}</span>
-                              {exp.familyMember && (
-                                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-900 font-bold text-[10px] rounded-md">
-                                  👤 {exp.familyMember}
-                                </span>
-                              )}
+                      filteredItems.map(exp => {
+                        const isPersonal = isPersonalExpense(exp);
+                        const matchedStaff = exp.staffId ? activeStaffList.find(s => s._id === exp.staffId) : null;
+                        return (
+                          <div key={exp._id || exp.id} className="p-3 bg-slate-50 hover:bg-slate-100/80 rounded-2xl border border-slate-200 flex justify-between items-center transition">
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-extrabold text-xs text-[#0F172A]">{exp.title}</span>
+                                {isPersonal ? (
+                                  exp.familyMember && (
+                                    <span className="px-1.5 py-0.5 bg-amber-100 text-amber-900 font-bold text-[10px] rounded-md">
+                                      👤 {exp.familyMember}
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-900 font-bold text-[10px] rounded-md flex items-center gap-1">
+                                    🏢 दुकान खर्च
+                                    {matchedStaff && <span className="text-emerald-800 font-extrabold">• 👔 {matchedStaff.name} (Advance)</span>}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-slate-400 flex items-center gap-2">
+                                <span>🏷️ {exp.category || (isPersonal ? "घरेलू खर्च" : "दुकान खर्च")}</span>
+                                <span>•</span>
+                                <span>📅 {exp.date ? new Date(exp.date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short' }) : 'Today'}</span>
+                                <span>•</span>
+                                <span className="uppercase">{exp.paymentMethod || 'cash'}</span>
+                              </div>
                             </div>
-                            <div className="text-[10px] text-slate-400 flex items-center gap-2">
-                              <span>🏷️ {exp.category || "घरेलू खर्च"}</span>
-                              <span>•</span>
-                              <span>📅 {exp.date ? new Date(exp.date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short' }) : 'Today'}</span>
-                              <span>•</span>
-                              <span className="uppercase">{exp.paymentMethod || 'cash'}</span>
-                            </div>
-                          </div>
 
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-black text-xs text-amber-800 mr-1">
-                              ₹ {Number(exp.amount || 0).toLocaleString('en-IN')}
-                            </span>
-                            <button
-                              onClick={() => {
-                                handleToggleGharKharchLedger(false);
-                                handleOpenEditGharKharch(exp);
-                              }}
-                              className="p-1.5 text-indigo-600 hover:bg-indigo-100/70 rounded-lg transition cursor-pointer"
-                              title="एडिट करें (Edit Expense)"
-                            >
-                              <Edit size={15} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteGharKharch(exp._id || exp.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                              title="हमेशा के लिए हटाएं (Delete Expense)"
-                            >
-                              <Trash2 size={15} />
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <span className={`font-black text-xs mr-1 ${isPersonal ? 'text-amber-800' : 'text-indigo-800'}`}>
+                                ₹ {Number(exp.amount || 0).toLocaleString('en-IN')}
+                              </span>
+                              <button
+                                onClick={() => {
+                                  handleToggleGharKharchLedger(false);
+                                  handleOpenEditGharKharch(exp);
+                                }}
+                                className="p-1.5 text-indigo-600 hover:bg-indigo-100/70 rounded-lg transition cursor-pointer"
+                                title="एडिट करें (Edit Expense)"
+                              >
+                                <Edit size={15} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteGharKharch(exp._id || exp.id)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                title="हमेशा के लिए हटाएं (Delete Expense)"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>

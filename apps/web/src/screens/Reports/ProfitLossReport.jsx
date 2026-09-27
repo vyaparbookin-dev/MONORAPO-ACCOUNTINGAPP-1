@@ -117,6 +117,7 @@ const ProfitLossReportPage = () => {
 
   // Accrued Monthly Liabilities vs Actual Paid Settlement Tracker
   const [accrualLedger, setAccrualLedger] = useState([]);
+  const [operatingExpensesList, setOperatingExpensesList] = useState([]);
 
   const handlePeriodChange = (p) => {
     setPeriod(p);
@@ -306,6 +307,8 @@ const ProfitLossReportPage = () => {
 
       const grossProfit = Math.max(0, finalSales - effectiveCOGS);
       const netProfit = grossProfit - finalOperating;
+
+      setOperatingExpensesList(operatingExpenses);
 
       setReport({
         ...plData,
@@ -981,6 +984,75 @@ const ProfitLossReportPage = () => {
                 </div>
               </div>
             )}
+
+            {/* 📋 ITEMIZED SHOP EXPENSES BREAKDOWN TABLE */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-4">
+              <div className="flex justify-between items-center border-b pb-2 flex-wrap gap-2">
+                <div>
+                  <h3 className="font-black text-gray-900 text-sm flex items-center gap-2">
+                    <Receipt size={18} className="text-rose-600" />
+                    <span>दुकान संचालन खर्चों का मद-वार विवरण (Itemized Shop Expenses Breakdown)</span>
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    किराया, बिजली, स्टाफ सैलरी/एडवांस, स्टेशनरी व विविध बिजनेस खर्चों की विस्तृत सूची
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs text-gray-500 block">कुल दुकान खर्च</span>
+                  <span className="text-lg font-black text-rose-700">₹{operatingExpenses.toLocaleString("en-IN")}</span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-100 text-slate-700 font-bold border-b">
+                    <tr>
+                      <th className="p-2.5">तारीख (Date)</th>
+                      <th className="p-2.5">मद / विवरण (Expense Title)</th>
+                      <th className="p-2.5">श्रेणी (Category)</th>
+                      <th className="p-2.5">माध्यम (Payment Mode)</th>
+                      <th className="p-2.5 text-right">रकम (Amount)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {operatingExpensesList.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="p-6 text-center text-gray-400">
+                          इस अवधि में कोई दुकान संचालन खर्च दर्ज नहीं है।
+                        </td>
+                      </tr>
+                    ) : (
+                      operatingExpensesList.map((exp, idx) => (
+                        <tr key={exp._id || exp.id || idx} className="hover:bg-slate-50">
+                          <td className="p-2.5 text-gray-500 whitespace-nowrap">
+                            📅 {exp.date ? new Date(exp.date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}
+                          </td>
+                          <td className="p-2.5 font-bold text-gray-900">
+                            {exp.title}
+                            {exp.staffId && (
+                              <span className="ml-2 px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-extrabold rounded">
+                                👔 स्टाफ एडवांस
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-2.5">
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-medium rounded-full text-[11px]">
+                              {exp.category || "दुकान खर्च"}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-gray-600 uppercase font-semibold">
+                            {exp.paymentMethod || exp.paymentMode || "cash"}
+                          </td>
+                          <td className="p-2.5 text-right font-black text-rose-700 text-sm">
+                            ₹{Number(exp.amount || 0).toLocaleString("en-IN")}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
 
             {/* Accrued Monthly Liabilities vs Actual Paid Settlement Tracker */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-4">
