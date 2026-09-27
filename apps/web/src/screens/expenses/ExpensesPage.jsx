@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, Download, Edit, Trash2, DollarSign, Calendar, Tag, PieChart, Users, Home, Building2, CheckCircle2 } from "lucide-react";
+import { Plus, Search, Download, Edit, Trash2, DollarSign, Calendar, Tag, PieChart, Users, Home, Building2, CheckCircle2, UserCheck } from "lucide-react";
 import api from "../../services/api";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 
@@ -86,17 +86,18 @@ const ExpensesPage = () => {
 
   useEffect(() => {
     fetchExpenses();
-    const fetchStaff = async () => {
-      try {
-        const res = await api.get("/api/staff").catch(() => api.get("/staff"));
-        const list = Array.isArray(res?.staff) ? res.staff : (Array.isArray(res?.data?.staff) ? res.data.staff : (Array.isArray(res?.data) ? res.data : []));
-        setStaffList(list);
-      } catch (err) {
-        console.warn("Could not load staff list:", err);
-      }
-    };
     fetchStaff();
   }, []);
+
+  const fetchStaff = async () => {
+    try {
+      const res = await api.get("/api/staff").catch(() => api.get("/staff"));
+      const list = Array.isArray(res?.staff) ? res.staff : (Array.isArray(res?.data?.staff) ? res.data.staff : (Array.isArray(res?.data) ? res.data : []));
+      setStaffList(list);
+    } catch (err) {
+      console.warn("Could not load staff list:", err);
+    }
+  };
 
   useEffect(() => {
     filterExpenses();
@@ -137,8 +138,10 @@ const ExpensesPage = () => {
     let filtered = Array.isArray(expenses) ? [...expenses] : [];
     
     // Filter by Tab (All, Business, Ghar Kharch)
-    if (activeTypeTab !== "all") {
-      filtered = filtered.filter(exp => exp.expenseType === activeTypeTab);
+    if (activeTypeTab === "operating") {
+      filtered = filtered.filter(exp => !exp.expenseType || exp.expenseType === "operating");
+    } else if (activeTypeTab === "drawings") {
+      filtered = filtered.filter(exp => exp.expenseType === "drawings");
     }
 
     // Filter by Date Range
@@ -164,23 +167,25 @@ const ExpensesPage = () => {
       filtered = filtered.filter((exp) => exp.category === categoryFilter);
     }
 
-    if (memberFilter !== "all") {
-      filtered = filtered.filter((exp) => String(exp.familyMember || 'Unassigned').toLowerCase() === String(memberFilter || '').toLowerCase());
+    if (memberFilter !== "all" && activeTypeTab === "drawings") {
+      filtered = filtered.filter((exp) => String(exp.familyMember || '').toLowerCase() === String(memberFilter || '').toLowerCase());
     }
 
     setFilteredExpenses(filtered);
   };
 
   const handleEdit = (expense) => {
-    setEditingId(expense._id);
+    const editId = expense._id || expense.id;
+    setEditingId(editId);
     setFormData({
-      title: expense.title,
-      amount: expense.amount,
+      title: expense.title || "",
+      amount: expense.amount || "",
       category: expense.category || "other",
       expenseType: expense.expenseType || "operating",
       transactionFlow: expense.transactionFlow || "given",
       notes: expense.notes || expense.description || "",
-      familyMember: expense.familyMember || "Self",
+      familyMember: expense.familyMember || "",
+      staffId: expense.staffId || "",
       description: expense.description || "",
       paymentMethod: expense.paymentMethod || "cash",
       date: expense.date ? new Date(expense.date).toISOString().split("T")[0] : new Date().toISOString().split('T')[0],
@@ -216,12 +221,14 @@ const ExpensesPage = () => {
     try {
       const payload = {
         ...formData,
-        amount: Number(formData.amount)
+        amount: Number(formData.amount),
+        familyMember: formData.expenseType === 'operating' ? '' : (formData.familyMember || 'Self'),
+        staffId: (formData.expenseType === 'operating' && (formData.staffId || formData.category === 'स्टाफ सैलरी' || formData.category === 'Salary')) ? (formData.staffId || undefined) : undefined
       };
 
       if (editingId) {
-        await api.put(`/api/expenses/${editingId}`, payload);
-        alert("खर्च सफलतापूर्वक अपडेट हो गया!");
+        await api.put(`/api/expenses/${editingId}`, payload).catch(() => api.put(`/api/expense/${editingId}`, payload));
+        alert("✅ खर्च सफलतापूर्वक अपडेट हो गया!");
       } else {
         const createRes = await api.post("/api/expenses", payload);
         const newExp = createRes?.expense || createRes?.data?.expense;
@@ -233,19 +240,26 @@ const ExpensesPage = () => {
             localStorage.setItem("vb_local_expenses", JSON.stringify(clean));
           } catch (e) {}
         }
-        alert(payload.expenseType === 'drawings' ? `🏡 ${payload.familyMember} का घर खर्च ₹${payload.amount} दर्ज हो गया!` : `🏢 दुकान खर्च ₹${payload.amount} दर्ज हो गया!`);
+        if (payload.expenseType === 'drawings') {
+          alert(`🏡 ${payload.familyMember || 'घर'} का खर्च ₹${payload.amount} दर्ज हो गया!`);
+        } else if (payload.staffId) {
+          const stObj = staffList.find(s => s._id === payload.staffId);
+          alert(`👥 स्टाफ ${stObj ? stObj.name : ''} को एडवांस ₹${payload.amount} दर्ज हुआ और PagarBook में ऑटो-एडजस्ट हो गया! ✅`);
+        } else {
+          alert(`🏢 दुकान खर्च ₹${payload.amount} दर्ज हो गया! ✅`);
+        }
       }
       fetchExpenses();
       resetForm();
     } catch (err) {
       console.error("Error saving expense:", err);
-      alert("खर्च सेव करने में त्रुटि आई।");
+      alert("खर्च सेव करने में त्रुटि आई: " + (err.response?.data?.message || err.message));
     }
   };
 
   const handleDelete = async (id) => {
     if (!id) return;
-    if (window.confirm("क्या आप इस खर्च को हमेशा के लिए हटाना चाहते हैं?")) {
+    if (window.confirm("⚠️ क्या आप इस खर्च को हटाना चाहते हैं?")) {
       try {
         const targetItem = (Array.isArray(expenses) ? expenses : []).find(k => (k._id || k.id) === id || k.id === id || k._id === id);
         const targetTitle = targetItem ? String(targetItem.title || "").trim().toLowerCase() : "";
@@ -280,7 +294,7 @@ const ExpensesPage = () => {
           }
           return true;
         })));
-        await api.delete(`/api/expenses/${id}`).catch(err => console.warn("Backend delete err:", err));
+        await api.delete(`/api/expenses/${id}`).catch(() => api.delete(`/api/expense/${id}`)).catch(err => console.warn("Backend delete err:", err));
         fetchExpenses();
       } catch (err) {
         console.error("Error deleting expense:", err);
@@ -296,17 +310,18 @@ const ExpensesPage = () => {
     if (!window.confirm(confirmMsg)) return;
 
     try {
+      const expId = exp._id || exp.id;
       const payload = {
         ...exp,
         expenseType: newType,
-        familyMember: newType === 'operating' ? 'Shop' : (exp.familyMember && exp.familyMember !== 'Shop' ? exp.familyMember : 'Self')
+        familyMember: newType === 'operating' ? '' : (exp.familyMember || 'Self')
       };
-      await api.put(`/api/expenses/${exp._id}`, payload).catch(() => {
-        return api.put(`/api/expense/${exp._id}`, payload).catch(() => null);
+      await api.put(`/api/expenses/${expId}`, payload).catch(() => {
+        return api.put(`/api/expense/${expId}`, payload).catch(() => null);
       });
 
       // Update state & local storage
-      const updated = expenses.map(x => (x._id === exp._id ? { ...x, ...payload } : x));
+      const updated = expenses.map(x => ((x._id || x.id) === expId ? { ...x, ...payload } : x));
       setExpenses(updated);
       try {
         localStorage.setItem("vb_local_expenses", JSON.stringify(updated));
@@ -320,37 +335,36 @@ const ExpensesPage = () => {
   const businessCategories = ["स्टाफ सैलरी", "दुकान किराया", "बिजली बिल", "चाय/नाश्ता", "सामान व पैकिंग", "भाड़ा व ट्रांसपोर्ट", "मरम्मत व मेंटेनेंस", "rent", "utilities", "supplies", "salary", "other"];
   const gharKharchCategories = ["राशन/किराना", "स्कूल/कॉलेज फीस", "दवाई/अस्पताल", "बिजली/पानी/गैस", "कपड़े/शॉपिंग", "निजी जेब खर्च", "पेट्रोल/वाहन", "अन्य घरेलू खर्च"];
 
-  const safeExpenses = Array.isArray(expenses) ? expenses : [];
   const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
-  
-  const totalBusinessExpenses = filteredExpenses.filter(e => e.expenseType === 'operating' || (!e.expenseType && (!e.familyMember || e.familyMember === 'Shop'))).reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+  const totalBusinessExpenses = filteredExpenses.filter(e => !e.expenseType || e.expenseType === 'operating').reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
   
   let totalGharKharchGiven = 0;
   let totalGharKharchReceived = 0;
   const familyMembersMap = {};
 
-  filteredExpenses.filter(e => e.expenseType === 'drawings' || (e.expenseType !== 'operating' && e.familyMember && e.familyMember.trim() !== '' && e.familyMember !== 'Shop')).forEach(e => {
-    const mem = e.familyMember?.trim() || "Family";
-    const amt = Number(e.amount) || 0;
-    const flow = e.transactionFlow === 'received' ? 'received' : 'given';
+  filteredExpenses
+    .filter(e => e.expenseType === 'drawings')
+    .forEach(e => {
+      const mem = e.familyMember?.trim() || "Self";
+      const amt = Number(e.amount) || 0;
+      const flow = e.transactionFlow === 'received' ? 'received' : 'given';
 
-    if (!familyMembersMap[mem]) {
-      familyMembersMap[mem] = { totalGiven: 0, totalReceived: 0, netBalance: 0 };
-    }
+      if (!familyMembersMap[mem]) {
+        familyMembersMap[mem] = { totalGiven: 0, totalReceived: 0, netBalance: 0 };
+      }
 
-    if (flow === 'received') {
-      totalGharKharchReceived += amt;
-      familyMembersMap[mem].totalReceived += amt;
-    } else {
-      totalGharKharchGiven += amt;
-      familyMembersMap[mem].totalGiven += amt;
-    }
-    familyMembersMap[mem].netBalance = familyMembersMap[mem].totalGiven - familyMembersMap[mem].totalReceived;
-  });
+      if (flow === 'received') {
+        totalGharKharchReceived += amt;
+        familyMembersMap[mem].totalReceived += amt;
+      } else {
+        totalGharKharchGiven += amt;
+        familyMembersMap[mem].totalGiven += amt;
+      }
+      familyMembersMap[mem].netBalance = familyMembersMap[mem].totalGiven - familyMembersMap[mem].totalReceived;
+    });
 
   const uniqueFamilyMembers = Object.keys(familyMembersMap);
   const totalGharKharch = totalGharKharchGiven;
-  const netFamilyBalance = totalGharKharchGiven - totalGharKharchReceived;
 
   return (
     <div className="space-y-6">
@@ -361,27 +375,36 @@ const ExpensesPage = () => {
             💰 खर्च प्रबंधन (Expenses & Ghar Kharch)
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            दुकान का बिजनेस खर्च और घर खर्च (Papa, Mummy, Family-wise) आसानी से मैनेज करें
+            दुकान का बिजनेस खर्च, स्टाफ सैलरी/एडवांस और घर खर्च (Papa, Mummy, Self) आसानी से मैनेज करें
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => {
-              setFormData({ ...formData, expenseType: "drawings" });
+              setFormData({ ...formData, expenseType: "operating", category: "स्टाफ सैलरी", staffId: (staffList[0]?._id || ""), title: (staffList[0] ? `स्टाफ एडवांस - ${staffList[0].name}` : "स्टाफ एडवांस / वेतन"), familyMember: "" });
               setShowForm(true);
             }}
-            className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
           >
-            <Plus size={16} /> 🏡 + घर खर्च दर्ज करें
+            <Users size={16} /> 👥 + स्टाफ एडवांस / पेमेंट
           </button>
           <button
             onClick={() => {
-              setFormData({ ...formData, expenseType: "operating" });
+              setFormData({ ...formData, expenseType: "operating", category: "other", staffId: "", title: "", familyMember: "" });
               setShowForm(true);
             }}
-            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
           >
-            <Plus size={16} /> 🏢 + दुकान खर्च दर्ज करें
+            <Building2 size={16} /> 🏢 + दुकान खर्च दर्ज करें
+          </button>
+          <button
+            onClick={() => {
+              setFormData({ ...formData, expenseType: "drawings", familyMember: "Self", staffId: "", title: "" });
+              setShowForm(true);
+            }}
+            className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+          >
+            <Home size={16} /> 🏡 + घर खर्च दर्ज करें
           </button>
         </div>
       </div>
@@ -398,18 +421,18 @@ const ExpensesPage = () => {
           onClick={() => { setActiveTypeTab("operating"); setMemberFilter("all"); }}
           className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${activeTypeTab === "operating" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"}`}
         >
-          <Building2 size={14} /> 🏢 दुकान खर्च (₹{totalBusinessExpenses.toLocaleString('en-IN')})
+          <span>🏢 दुकान खर्च (Business)</span>
         </button>
         <button
           onClick={() => { setActiveTypeTab("drawings"); setMemberFilter("all"); }}
           className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${activeTypeTab === "drawings" ? "bg-white text-amber-700 shadow-sm" : "text-slate-500"}`}
         >
-          <Home size={14} /> 🏡 घर खर्च (₹{totalGharKharch.toLocaleString('en-IN')})
+          <span>🏡 घर खर्च (Ghar Kharch)</span>
         </button>
       </div>
 
       {/* Period Filter Bar */}
-      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-2">
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-2">
         <span className="text-xs font-bold text-slate-500 mr-1">अवधि (Period):</span>
         {[
           { id: "all", label: "📊 सभी (All)" },
@@ -467,7 +490,7 @@ const ExpensesPage = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
           <span className="text-xs font-bold text-slate-500 block">कुल सिलेक्टेड खर्च</span>
           <span className="text-2xl font-black text-slate-900 mt-1 block">₹{totalExpenses.toLocaleString('en-IN')}</span>
-          <span className="text-[11px] text-slate-400">{filteredExpenses.length} खर्च एंट्रीज</span>
+          <span className="text-[11px] text-slate-400">{filteredExpenses.length} खर्च प्रविष्टियां</span>
         </div>
 
         <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-5 rounded-2xl border border-indigo-100 shadow-sm">
@@ -483,12 +506,12 @@ const ExpensesPage = () => {
         </div>
       </div>
 
-      {/* Family Member Breakdown Bar (Shown when viewing Ghar Kharch or All) */}
-      {(activeTypeTab === "drawings" || activeTypeTab === "all") && uniqueFamilyMembers.length > 0 && (
+      {/* Family Member Breakdown Bar (Shown ONLY when specifically viewing Ghar Kharch) */}
+      {activeTypeTab === "drawings" && uniqueFamilyMembers.length > 0 && (
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
           <div className="flex justify-between items-center">
             <h3 className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
-              <Users size={16} className="text-amber-600" /> 👥 फैमिली मेंबर-वाइज घर खर्च (Family Ledger Breakdown)
+              <Users size={16} className="text-amber-600" /> 👥 फैमिली मेंबर-वाइज घर खर्च (Family Ledger)
             </h3>
             <span className="text-[11px] text-slate-400">सदस्य पर क्लिक करके फिल्टर करें</span>
           </div>
@@ -509,11 +532,6 @@ const ExpensesPage = () => {
                   <span className="text-[10px] opacity-75 block">
                     {memPct}% खर्च
                   </span>
-                  {memData.totalReceived > 0 && (
-                    <span className="text-[9px] text-emerald-600 font-bold block mt-0.5">
-                      (₹{memData.totalReceived.toLocaleString('en-IN')} वापस)
-                    </span>
-                  )}
                 </button>
               );
             })}
@@ -528,72 +546,128 @@ const ExpensesPage = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input
               type="text"
-              placeholder="खर्च का नाम, विवरण या फैमिली मेंबर खोजें..."
+              placeholder="खर्च का नाम, विवरण या स्टाफ का नाम खोजें..."
               className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-600"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
 
-          {memberFilter !== "all" && (
-            <button
-              onClick={() => setMemberFilter("all")}
-              className="px-3 py-1.5 bg-amber-100 text-amber-800 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer"
-            >
-              सदस्य: {memberFilter} ✕
-            </button>
-          )}
+          <select
+            className="border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold bg-white text-slate-700 outline-none"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+          >
+            <option value="all">📂 सभी श्रेणियां (Categories)</option>
+            {businessCategories.map(c => <option key={c} value={c}>🏢 {c}</option>)}
+            {gharKharchCategories.map(c => <option key={c} value={c}>🏡 {c}</option>)}
+          </select>
         </div>
       </div>
 
-      {/* Add / Edit Expense Modal/Form */}
+      {/* ADD / EDIT EXPENSE MODAL */}
       {showForm && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h2 className="text-base font-black text-slate-900">
-                {editingId ? "खर्च एडिट करें" : "नया खर्च दर्ज करें (+ Record Expense)"}
-              </h2>
-              <button onClick={resetForm} className="text-slate-400 hover:text-slate-600 cursor-pointer">✕</button>
-            </div>
-
-            {/* Type Selector */}
-            <div className="grid grid-cols-2 gap-2 text-xs font-bold">
-              <button
-                type="button"
-                onClick={() => setFormData({ ...formData, expenseType: "operating" })}
-                className={`py-2.5 rounded-xl border transition cursor-pointer ${formData.expenseType === "operating" ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" : "bg-slate-50 border-slate-200 text-slate-700"}`}
-              >
-                🏢 दुकान खर्च (Business Expense)
-              </button>
-              <button
-                type="button"
-                onClick={() => setFormData({ ...formData, expenseType: "drawings" })}
-                className={`py-2.5 rounded-xl border transition cursor-pointer ${formData.expenseType === "drawings" ? "bg-amber-600 text-white border-amber-600 shadow-sm" : "bg-slate-50 border-slate-200 text-slate-700"}`}
-              >
-                🏡 घर खर्च (Family & Personal)
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                {editingId ? "✏️ खर्च अपडेट करें" : formData.expenseType === "drawings" ? "🏡 नया घर खर्च दर्ज करें" : "🏢 नया दुकान खर्च / स्टाफ पेमेंट"}
+              </h3>
+              <button onClick={resetForm} className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer">
+                ✕
               </button>
             </div>
 
-            <form onSubmit={handleAddExpense} className="space-y-3 text-xs">
-              {/* If Ghar Kharch: Select Family Member */}
+            {/* Top Mode Selector inside Form */}
+            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, expenseType: "operating", familyMember: "" }))}
+                className={`py-2 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${formData.expenseType === "operating" ? "bg-white text-indigo-700 shadow-xs font-extrabold" : "text-slate-500"}`}
+              >
+                <Building2 size={14} /> 🏢 दुकान खर्च (Business)
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, expenseType: "drawings", familyMember: prev.familyMember || "Self", staffId: "" }))}
+                className={`py-2 rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 ${formData.expenseType === "drawings" ? "bg-white text-amber-700 shadow-xs font-extrabold" : "text-slate-500"}`}
+              >
+                <Home size={14} /> 🏡 घर खर्च (Drawings)
+              </button>
+            </div>
+
+            <form onSubmit={handleAddExpense} className="space-y-4 text-xs font-semibold">
+              {/* If Ghar Kharch: Choose Family Member */}
               {formData.expenseType === "drawings" && (
-                <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200 space-y-2">
-                  <label className="font-extrabold text-amber-900 block">
-                    👤 फैमिली मेंबर चुनें (किसका / किसके लिए खर्च):
-                  </label>
-                  <div className="grid grid-cols-3 gap-1.5 font-bold">
-                    {["Self", "Papa", "Mummy", "Bhai", "Wife", "Children"].map(m => (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl space-y-2">
+                  <label className="font-bold text-amber-900 block">फैमिली मेंबर चुनें (किसे पैसा दिया?):</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {["Self", "Papa", "Mummy", "Bhai", "Wife", "Kids"].map((m) => (
                       <button
                         key={m}
                         type="button"
                         onClick={() => setFormData({ ...formData, familyMember: m })}
-                        className={`p-2 rounded-xl border text-center transition cursor-pointer ${formData.familyMember === m ? 'bg-amber-600 text-white border-amber-600 shadow-sm' : 'bg-white border-amber-200 text-amber-900'}`}
+                        className={`p-2 rounded-xl border text-center transition cursor-pointer ${formData.familyMember === m ? 'bg-amber-600 text-white border-amber-600 shadow-sm font-bold' : 'bg-white border-amber-200 text-amber-900'}`}
                       >
-                        {m === "Self" ? "👨‍💼 Self (खुद)" : m === "Papa" ? "👴 Papa (पिताजी)" : m === "Mummy" ? "👵 Mummy (माताजी)" : m === "Bhai" ? "👦 Bhai (भाई)" : m === "Wife" ? "👩 Wife (पत्नी)" : "👶 बच्चे (Kids)"}
+                        {m === "Self" ? "👨‍💼 खुद (Self)" : m === "Papa" ? "👴 Papa (पिताजी)" : m === "Mummy" ? "👵 Mummy (माताजी)" : m === "Bhai" ? "👦 Bhai (भाई)" : m === "Wife" ? "👩 Wife (पत्नी)" : "👶 बच्चे (Kids)"}
                       </button>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* If Operating / Business: PROMINENT STAFF SELECTOR DROPDOWN */}
+              {formData.expenseType === "operating" && (
+                <div className="p-3.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-extrabold text-xs text-emerald-950 flex items-center gap-1.5">
+                      <UserCheck size={16} className="text-emerald-700" />
+                      👥 क्या यह किसी कर्मचारी/स्टाफ का पेमेंट या एडवांस है?
+                    </label>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                      ⚡ पगार बुक 2-Way Sync
+                    </span>
+                  </div>
+
+                  <select
+                    value={formData.staffId || ""}
+                    onChange={(e) => {
+                      const sId = e.target.value;
+                      const selectedSt = staffList.find(s => s._id === sId);
+                      if (selectedSt) {
+                        setFormData(prev => ({
+                          ...prev,
+                          staffId: sId,
+                          category: "स्टाफ सैलरी",
+                          title: prev.title.includes('स्टाफ') || !prev.title ? `स्टाफ एडवांस - ${selectedSt.name}` : prev.title
+                        }));
+                      } else {
+                        setFormData(prev => ({
+                          ...prev,
+                          staffId: "",
+                          category: prev.category === "स्टाफ सैलरी" ? "other" : prev.category
+                        }));
+                      }
+                    }}
+                    className="w-full px-3.5 py-2.5 bg-white border border-emerald-300 rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"
+                  >
+                    <option value="">-- सामान्य दुकान खर्च (कोई स्टाफ नहीं / Normal Expense) --</option>
+                    {staffList.map((st) => (
+                      <option key={st._id} value={st._id}>
+                        👤 {st.name} ({st.position || st.role || 'Staff'}) {st.mobileNumber ? `- 📱 ${st.mobileNumber}` : ''} - {st.wageType === 'daily' ? `₹${st.dailyRate || st.wageAmount}/दिन` : `₹${st.monthlySalary || st.salary}/माह`}
+                      </option>
+                    ))}
+                  </select>
+
+                  {formData.staffId ? (
+                    <p className="text-[11px] text-emerald-800 font-bold flex items-center gap-1 pt-0.5">
+                      ✅ यह राशि दुकान खर्च में दर्ज होगी और <b>{staffList.find(s => s._id === formData.staffId)?.name}</b> के PagarBook खाते में एडवांस के रूप में स्वतः एडजस्ट हो जाएगी।
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-500 font-medium">
+                      💡 यदि किसी कर्मचारी को बीच में एडवांस या वेतन दिया है, तो ऊपर से उनका नाम चुनें ताकि PagarBook में खुद दर्ज हो जाए।
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -624,77 +698,11 @@ const ExpensesPage = () => {
                 </div>
               </div>
 
-              {/* Staff Dropdown for Salary in Modal */}
-              {formData.expenseType === "operating" && (formData.category === "Salary" || formData.category === "salary" || formData.category === "स्टाफ सैलरी") && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 animate-fadeIn">
-                  <label className="font-bold text-xs text-emerald-950 block">
-                    👥 कर्मचारी / स्टाफ चुनें (Select Staff for Salary/Advance) *
-                  </label>
-                  <select
-                    value={formData.staffId || ""}
-                    onChange={(e) => {
-                      const sId = e.target.value;
-                      const selectedSt = staffList.find(s => s._id === sId);
-                      setFormData(prev => ({
-                        ...prev,
-                        staffId: sId,
-                        title: selectedSt ? `स्टाफ एडवांस - ${selectedSt.name}` : prev.title
-                      }));
-                    }}
-                    className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
-                    required
-                  >
-                    <option value="">-- कर्मचारी चुनें (Select Staff) --</option>
-                    {staffList.map((st) => (
-                      <option key={st._id} value={st._id}>
-                        👤 {st.name} ({st.position || st.role || 'Staff'}) {st.mobileNumber ? `- 📱 ${st.mobileNumber}` : ''} - {st.wageType === 'daily' ? `₹${st.dailyRate || st.wageAmount}/दिन` : `₹${st.monthlySalary || st.salary}/माह`}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-[10px] text-emerald-700 font-medium block">
-                    ⚡ यह एंट्री दुकान खर्च में दर्ज होगी और स्टाफ की पगार बुक में एडवांस के रूप में अपने आप कट जाएगी।
-                  </span>
-                </div>
-              )}
-
-              {/* Staff Dropdown for Salary in Modal */}
-              {formData.expenseType === "operating" && (formData.category === "Salary" || formData.category === "salary" || formData.category === "स्टाफ सैलरी") && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 animate-fadeIn">
-                  <label className="font-bold text-xs text-emerald-950 block">
-                    👥 कर्मचारी / स्टाफ चुनें (Select Staff for Salary/Advance) *
-                  </label>
-                  <select
-                    value={formData.staffId || ""}
-                    onChange={(e) => {
-                      const sId = e.target.value;
-                      const selectedSt = staffList.find(s => s._id === sId);
-                      setFormData(prev => ({
-                        ...prev,
-                        staffId: sId,
-                        title: selectedSt ? `स्टाफ एडवांस - ${selectedSt.name}` : prev.title
-                      }));
-                    }}
-                    className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
-                    required
-                  >
-                    <option value="">-- कर्मचारी चुनें (Select Staff) --</option>
-                    {staffList.map((st) => (
-                      <option key={st._id} value={st._id}>
-                        👤 {st.name} ({st.position || st.role || 'Staff'}) {st.mobileNumber ? `- 📱 ${st.mobileNumber}` : ''} - {st.wageType === 'daily' ? `₹${st.dailyRate || st.wageAmount}/दिन` : `₹${st.monthlySalary || st.salary}/माह`}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-[10px] text-emerald-700 font-medium block">
-                    ⚡ यह एंट्री दुकान खर्च में दर्ज होगी और स्टाफ की पगार बुक में एडवांस के रूप में अपने आप कट जाएगी।
-                  </span>
-                </div>
-              )}
-
               <div>
-                <label className="font-bold text-slate-700 block mb-1">खर्च का नाम / विवरण (Title)</label>
+                <label className="font-bold text-slate-700 block mb-1">खर्च का नाम / विवरण (Title) *</label>
                 <input
                   type="text"
-                  placeholder={formData.expenseType === "drawings" ? "उदा. महीने का राशन, पापा की दवाई..." : "उदा. दुकान का बिजली बिल..."}
+                  placeholder={formData.expenseType === "drawings" ? "उदा. महीने का राशन, पापा की दवाई..." : "उदा. दुकान का बिजली बिल, चाय-नाश्ता, स्टाफ एडवांस..."}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-900 outline-none"
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
@@ -707,7 +715,7 @@ const ExpensesPage = () => {
                   <label className="font-bold text-slate-700 block mb-1">तारीख (Date)</label>
                   <input
                     type="date"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none font-medium"
                     value={formData.date}
                     onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                   />
@@ -739,7 +747,7 @@ const ExpensesPage = () => {
                   type="submit"
                   className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl shadow cursor-pointer"
                 >
-                  {editingId ? "अपडेट करें" : "💾 खर्च सेव करें"}
+                  {editingId ? "✅ अपडेट करें" : "💾 खर्च सेव करें"}
                 </button>
               </div>
             </form>
@@ -755,7 +763,7 @@ const ExpensesPage = () => {
               <th className="p-3.5">तारीख</th>
               <th className="p-3.5">खर्च का विवरण (Title)</th>
               <th className="p-3.5">प्रकार</th>
-              <th className="p-3.5">फैमिली मेंबर</th>
+              <th className="p-3.5">फैमिली / स्टाफ</th>
               <th className="p-3.5">श्रेणी</th>
               <th className="p-3.5">माध्यम</th>
               <th className="p-3.5 text-right">राशि (₹)</th>
@@ -764,62 +772,82 @@ const ExpensesPage = () => {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan="8" className="p-8 text-center text-slate-400">लोड हो रहा है...</td></tr>
+              <tr><td colSpan="8" className="p-8 text-center text-slate-400 font-bold">लोड हो रहा है...</td></tr>
             ) : filteredExpenses.length === 0 ? (
-              <tr><td colSpan="8" className="p-8 text-center text-slate-400">कोई खर्च नहीं मिला</td></tr>
+              <tr><td colSpan="8" className="p-8 text-center text-slate-400 font-bold">कोई खर्च नहीं मिला</td></tr>
             ) : (
-              filteredExpenses.map((exp) => (
-                <tr key={exp._id} className="hover:bg-slate-50/80 transition">
-                  <td className="p-3.5 text-slate-500 font-medium">
-                    {exp.date ? new Date(exp.date).toLocaleDateString("en-IN") : "-"}
-                  </td>
-                  <td className="p-3.5 font-extrabold text-slate-900">{exp.title}</td>
-                  <td className="p-3.5">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${exp.expenseType === 'drawings' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
-                      {exp.expenseType === 'drawings' ? '🏡 घर खर्च' : '🏢 दुकान खर्च'}
-                    </span>
-                  </td>
-                  <td className="p-3.5 font-bold text-slate-700">
-                    {exp.familyMember ? `👤 ${exp.familyMember}` : "-"}
-                  </td>
-                  <td className="p-3.5 text-slate-600">{exp.category || "General"}</td>
-                  <td className="p-3.5 uppercase text-slate-500 text-[10px] font-bold">{exp.paymentMethod || "cash"}</td>
-                  <td className="p-3.5 text-right font-black text-slate-900 text-sm">
-                    ₹{Number(exp.amount || 0).toLocaleString('en-IN')}
-                  </td>
-                  <td className="p-3.5 text-center">
-                    <div className="flex justify-center items-center gap-1.5 flex-wrap">
-                      <button
-                        onClick={() => handleToggleExpenseType(exp)}
-                        className={`px-2 py-1 text-[10px] font-bold rounded-lg border flex items-center gap-1 cursor-pointer transition shadow-2xs ${
-                          exp.expenseType === 'drawings'
-                            ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
-                            : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
-                        }`}
-                        title={exp.expenseType === 'drawings' ? "दुकान खर्च में बदलें" : "घर खर्च में बदलें"}
-                      >
-                        {exp.expenseType === 'drawings' ? (
-                          <>
-                            <Building2 size={12} />
-                            <span>दुकान खर्च बनाएं</span>
-                          </>
-                        ) : (
-                          <>
-                            <Home size={12} />
-                            <span>घर खर्च बनाएं</span>
-                          </>
-                        )}
-                      </button>
-                      <button onClick={() => handleEdit(exp)} className="p-1 text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer" title="एडिट करें">
-                        <Edit size={14} />
-                      </button>
-                      <button onClick={() => handleDelete(exp._id)} className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer" title="हटाएं">
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+              filteredExpenses.map((exp) => {
+                const expId = exp._id || exp.id;
+                const isDrawings = exp.expenseType === 'drawings';
+                const st = exp.staffId ? staffList.find(s => s._id === exp.staffId) : null;
+
+                return (
+                  <tr key={expId} className="hover:bg-slate-50/80 transition">
+                    <td className="p-3.5 text-slate-500 font-medium">
+                      {exp.date ? new Date(exp.date).toLocaleDateString("en-IN") : "-"}
+                    </td>
+                    <td className="p-3.5 font-extrabold text-slate-900">
+                      <div>{exp.title}</div>
+                      {st && <span className="text-[10px] text-emerald-600 font-bold block">👤 स्टाफ: {st.name}</span>}
+                    </td>
+                    <td className="p-3.5">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isDrawings ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                        {isDrawings ? '🏡 घर खर्च' : '🏢 दुकान खर्च'}
+                      </span>
+                    </td>
+                    <td className="p-3.5 font-bold text-slate-700">
+                      {isDrawings ? (exp.familyMember ? `👤 ${exp.familyMember}` : "-") : (st ? `👥 ${st.name}` : "-")}
+                    </td>
+                    <td className="p-3.5 text-slate-600">{exp.category || "General"}</td>
+                    <td className="p-3.5 uppercase text-slate-500 text-[10px] font-bold">{exp.paymentMethod || "cash"}</td>
+                    <td className="p-3.5 text-right font-black text-slate-900 text-sm">
+                      ₹{Number(exp.amount || 0).toLocaleString('en-IN')}
+                    </td>
+                    <td className="p-3.5 text-center">
+                      <div className="flex justify-center items-center gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleExpenseType(exp)}
+                          className={`px-2 py-1 text-[10px] font-bold rounded-lg border flex items-center gap-1 cursor-pointer transition shadow-2xs ${
+                            isDrawings
+                              ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                              : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
+                          }`}
+                          title={isDrawings ? "दुकान खर्च में बदलें" : "घर खर्च में बदलें"}
+                        >
+                          {isDrawings ? (
+                            <>
+                              <Building2 size={12} />
+                              <span>दुकान खर्च</span>
+                            </>
+                          ) : (
+                            <>
+                              <Home size={12} />
+                              <span>घर खर्च</span>
+                            </>
+                          )}
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={() => handleEdit(exp)} 
+                          className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer transition" 
+                          title="एडिट करें"
+                        >
+                          <Edit size={15} />
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={() => handleDelete(expId)} 
+                          className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition" 
+                          title="हटाएं"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
