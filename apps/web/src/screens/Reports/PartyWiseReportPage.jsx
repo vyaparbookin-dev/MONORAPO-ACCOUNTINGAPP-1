@@ -443,24 +443,31 @@ const PartyWiseReportPage = () => {
       </div>
 
       {/* Top Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] font-bold text-slate-500 block">कुल बिक्री (Total Sales Revenue)</span>
+          <span className="text-[11px] font-bold text-slate-500 block">कुल बिक्री (Sales Revenue)</span>
           <p className="text-lg font-black text-slate-900 mt-1">₹{totalSalesAll.toLocaleString('en-IN')}</p>
         </div>
-        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] font-bold text-emerald-600 block">🟢 कुल लेने हैं (To Collect / Due)</span>
-          <p className="text-lg font-black text-emerald-700 mt-1">₹{totalToCollect.toLocaleString('en-IN')}</p>
+        <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-200 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-emerald-800 block">कुल अनुमानित मुनाफा</span>
+            <span className="text-[10px] font-black bg-emerald-200/80 text-emerald-800 px-1.5 py-0.5 rounded-md">{partyMarginPercent}% मार्जिन</span>
+          </div>
+          <p className="text-lg font-black text-emerald-700 mt-1">₹{(totalSalesAll * (partyMarginPercent / 100)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
         </div>
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] font-bold text-rose-600 block">🔴 कुल देने हैं (To Pay / Advance)</span>
+          <span className="text-[11px] font-bold text-blue-600 block">🟢 कुल लेने हैं (To Collect)</span>
+          <p className="text-lg font-black text-blue-700 mt-1">₹{totalToCollect.toLocaleString('en-IN')}</p>
+        </div>
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
+          <span className="text-[11px] font-bold text-rose-600 block">🔴 कुल देने हैं (To Pay)</span>
           <p className="text-lg font-black text-rose-600 mt-1">₹{totalToPay.toLocaleString('en-IN')}</p>
         </div>
       </div>
 
-      {/* Search Filter */}
-      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
-        <div className="relative">
+      {/* Margin Selector Bar & Search Filter */}
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+        <div className="relative flex-1">
           <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
           <input
             type="text"
@@ -469,6 +476,26 @@ const PartyWiseReportPage = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-500"
           />
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+          <span className="text-[11px] font-bold text-slate-600">औसत मुनाफा मार्जिन:</span>
+          {[10, 15, 20, 25].map((pct) => (
+            <button
+              key={pct}
+              type="button"
+              onClick={() => {
+                setPartyMarginPercent(pct);
+                try { localStorage.setItem("vb_custom_gross_margin_percent", String(pct)); } catch(e) {}
+              }}
+              className={`px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                partyMarginPercent === pct
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "bg-white text-slate-700 hover:bg-slate-200 border border-slate-200"
+              }`}
+            >
+              {pct}%
+            </button>
+          ))}
         </div>
       </div>
 
@@ -483,6 +510,7 @@ const PartyWiseReportPage = () => {
               <th className="px-4 py-3 text-left">प्रकार (Type)</th>
               <th className="px-4 py-3 text-right">कुल खरीद (Purchase)</th>
               <th className="px-4 py-3 text-right">कुल बिक्री (Sales)</th>
+              <th className="px-4 py-3 text-right text-emerald-800">अनुमानित लाभ ({partyMarginPercent}%)</th>
               <th className="px-4 py-3 text-right">शुद्ध बकाया (Balance)</th>
               <th className="px-4 py-3 text-center print:hidden">खाता / रिपोर्ट</th>
             </tr>
@@ -490,7 +518,7 @@ const PartyWiseReportPage = () => {
           <tbody className="divide-y divide-slate-100">
             {filteredReport.length === 0 && !loading && (
               <tr>
-                <td colSpan={6} className="py-12 text-center text-slate-400 font-medium">
+                <td colSpan={7} className="py-12 text-center text-slate-400 font-medium">
                   कोई पार्टी रिकॉर्ड नहीं मिला
                 </td>
               </tr>
@@ -520,6 +548,7 @@ const PartyWiseReportPage = () => {
                 </td>
                 <td className="px-4 py-3 text-right font-medium text-slate-600">₹{(item.totalPurchase || 0).toLocaleString('en-IN')}</td>
                 <td className="px-4 py-3 text-right font-black text-indigo-700">₹{(item.totalSales || 0).toLocaleString('en-IN')}</td>
+                <td className="px-4 py-3 text-right font-black text-emerald-700">₹{((item.totalSales || 0) * (partyMarginPercent / 100)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                 <td className={`px-4 py-3 text-right font-black ${
                   item.balance > 0 ? 'text-emerald-700' : item.balance < 0 ? 'text-rose-600' : 'text-slate-600'
                 }`}>

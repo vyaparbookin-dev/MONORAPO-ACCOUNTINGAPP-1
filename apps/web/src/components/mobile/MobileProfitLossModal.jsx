@@ -11,13 +11,20 @@ import {
   Layers,
   Home,
   Building2,
-  Wallet
+  Wallet,
+  Package,
+  Sliders,
+  Users,
+  Info,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react";
 import api from "../../services/api";
 import { readLocalJson } from "@repo/shared";
 import { useCompany } from "../../contexts/CompanyContext";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
+import { deduplicatePurchases } from "../../utils/deduplicatePurchases";
 
 export default function MobileProfitLossModal({ isOpen, onClose }) {
   if (!isOpen) return null;
@@ -29,18 +36,51 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
   );
   const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
   const [loading, setLoading] = useState(false);
-  
+
+  // Dynamic Gross Profit Margin % (Default 15%, User Configurable)
+  const [marginPercent, setMarginPercent] = useState(() => {
+    try {
+      const saved = localStorage.getItem("vb_custom_gross_margin_percent");
+      return saved !== null && saved !== "" ? Number(saved) : 15;
+    } catch (e) {
+      return 15;
+    }
+  });
+
+  // Cost Mode: "auto" | "margin" | "actual"
+  const [costMode, setCostMode] = useState(() => {
+    try {
+      return localStorage.getItem("vb_cost_mode") || "auto";
+    } catch (e) {
+      return "auto";
+    }
+  });
+
   const [salesTotal, setSalesTotal] = useState(0);
+  const [purchasesTotal, setPurchasesTotal] = useState(0);
+  const [effectiveCOGSTotal, setEffectiveCOGSTotal] = useState(0);
+  const [grossProfitTotal, setGrossProfitTotal] = useState(0);
   const [operatingExpensesTotal, setOperatingExpensesTotal] = useState(0);
   const [gharKharchTotal, setGharKharchTotal] = useState(0);
   const [netBusinessProfit, setNetBusinessProfit] = useState(0);
   const [netRemainingSavings, setNetRemainingSavings] = useState(0);
   const [billsCount, setBillsCount] = useState(0);
   const [expensesCount, setExpensesCount] = useState(0);
+  const [purchasesCount, setPurchasesCount] = useState(0);
+  const [hasActualPurchases, setHasActualPurchases] = useState(false);
+
+  // Parties Outstanding & Opening Balance summary
+  const [showPartiesDetail, setShowPartiesDetail] = useState(false);
+  const [partiesSummary, setPartiesSummary] = useState({
+    totalToCollect: 0,
+    totalToPay: 0,
+    openingBalanceTotal: 0,
+    partiesList: []
+  });
 
   useEffect(() => {
     fetchReport();
-  }, [period, startDate, endDate]);
+  }, [period, startDate, endDate, marginPercent, costMode]);
 
   const handlePeriodChange = (p) => {
     setPeriod(p);
@@ -61,6 +101,21 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
       setStartDate("");
       setEndDate("");
     }
+  };
+
+  const handleMarginChange = (val) => {
+    const num = Math.max(0, Math.min(100, Number(val) || 0));
+    setMarginPercent(num);
+    try {
+      localStorage.setItem("vb_custom_gross_margin_percent", String(num));
+    } catch (e) {}
+  };
+
+  const handleCostModeChange = (mode) => {
+    setCostMode(mode);
+    try {
+      localStorage.setItem("vb_cost_mode", mode);
+    } catch (e) {}
   };
 
   const isDateInRange = (dateInput) => {
@@ -99,30 +154,45 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
   const fetchReport = async () => {
     setLoading(true);
     try {
-      let plUrl = "/api/reports/profitloss";
+      let plUrl = `/api/reports/profitloss?marginPercent=${marginPercent}&costMode=${costMode}`;
+      let billingUrl = "/api/billing?limit=500";
+      let expenseUrl = "/api/expense";
+      let purchaseUrl = "/api/purchase";
+      let partyUrl = "/api/parties";
+
       if (startDate && endDate) {
-        plUrl += `?startDate=${startDate}&endDate=${endDate}`;
+        plUrl += `&startDate=${startDate}&endDate=${endDate}`;
+        billingUrl = `/api/billing?startDate=${startDate}&endDate=${endDate}&limit=500`;
+        expenseUrl = `/api/expense?startDate=${startDate}&endDate=${endDate}`;
+        purchaseUrl = `/api/purchase?startDate=${startDate}&endDate=${endDate}`;
       }
-      const [res, billingRes, expenseRes] = await Promise.all([
+
+      const [res, billingRes, expenseRes, purchaseRes, partyRes] = await Promise.all([
         api.get(plUrl).catch(() => null),
-        api.get("/api/billing?limit=500").catch(() => null),
-        api.get("/api/expense").catch(() => null)
+        api.get(billingUrl).catch(() => null),
+        api.get(expenseUrl).catch(() => null),
+        api.get(purchaseUrl).catch(() => null),
+        api.get(partyUrl).catch(() => null)
       ]);
 
       // Server Data
       const serverPl = res?.data?.data || res?.data || res || {};
       const serverBills = billingRes?.data?.bills || billingRes?.bills || billingRes?.data || [];
       const serverExpenses = expenseRes?.data?.expenses || expenseRes?.expenses || expenseRes?.data || [];
+      const serverPurchases = purchaseRes?.data?.purchases || purchaseRes?.purchases || purchaseRes?.data || [];
 
       // Local Data
       let localBills = [];
       let localExpenses = [];
+      let localPurchases = [];
       try {
         if (typeof localStorage !== "undefined") {
           const storedB = readLocalJson(["vb_local_manual_bills", "bills"], []);
           if (Array.isArray(storedB)) localBills = storedB;
           const storedE = readLocalJson(["vb_local_expenses", "expenses"], []);
           if (Array.isArray(storedE)) localExpenses = storedE;
+          const storedP = readLocalJson(["vb_local_purchases", "purchases"], []);
+          if (Array.isArray(storedP)) localPurchases = storedP;
         }
       } catch (e) {}
 
@@ -136,6 +206,11 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
         ...(Array.isArray(serverExpenses) ? serverExpenses : []),
         ...(Array.isArray(localExpenses) ? localExpenses : [])
       ]).filter((e) => isDateInRange(e.date || e.createdAt));
+
+      const allPurchases = deduplicatePurchases([
+        ...(Array.isArray(serverPurchases) ? serverPurchases : []),
+        ...(Array.isArray(localPurchases) ? localPurchases : [])
+      ]).filter((p) => isDateInRange(p.rawDate || p.date || p.createdAt));
 
       // Calculate totals
       const calcSales = allBills.reduce(
@@ -155,21 +230,75 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
         0
       );
 
+      const calcActualPurchases = allPurchases.reduce(
+        (sum, p) => sum + (Number(p.finalAmount || p.totalAmount || p.total || p.amountPaid) || 0),
+        0
+      );
+
       // Prefer calculated local+server if greater, else fallback to API
       const finalSales = calcSales > 0 ? calcSales : Number(serverPl.totalSales || 0);
       const finalOperating = calcOperating > 0 ? calcOperating : Number(serverPl.businessExpenses || 0);
       const finalGharKharch = calcGharKharch > 0 ? calcGharKharch : Number(serverPl.gharKharch || 0);
+      const recordedPurchases = calcActualPurchases > 0 ? calcActualPurchases : Number(serverPl.actualPurchases || 0);
 
-      const profit = finalSales - finalOperating;
-      const savings = profit - finalGharKharch;
+      const actualExists = recordedPurchases > 0;
+      setHasActualPurchases(actualExists);
+
+      // Effective Cost of Goods Sold (COGS) Calculation
+      const effectiveMarginFrac = Math.max(0, Math.min(100, Number(marginPercent) || 15)) / 100;
+      const estimatedCOGS = Math.round(finalSales * (1 - effectiveMarginFrac));
+
+      const effectiveCOGS = (costMode === "actual" && actualExists)
+        ? recordedPurchases
+        : (costMode === "margin" ? estimatedCOGS : (actualExists ? recordedPurchases : estimatedCOGS));
+
+      const grossProfit = Math.max(0, finalSales - effectiveCOGS);
+      const netProfit = grossProfit - finalOperating;
+      const savings = netProfit - finalGharKharch;
 
       setSalesTotal(finalSales);
+      setPurchasesTotal(recordedPurchases);
+      setEffectiveCOGSTotal(effectiveCOGS);
+      setGrossProfitTotal(grossProfit);
       setOperatingExpensesTotal(finalOperating);
       setGharKharchTotal(finalGharKharch);
-      setNetBusinessProfit(profit);
+      setNetBusinessProfit(netProfit);
       setNetRemainingSavings(savings);
       setBillsCount(allBills.length);
       setExpensesCount(allExpenses.length);
+      setPurchasesCount(allPurchases.length);
+
+      // Process Parties Summary
+      const rawParties = partyRes?.data?.parties || (Array.isArray(partyRes?.data) ? partyRes.data : []);
+      let toCollect = 0;
+      let toPay = 0;
+      let openBal = 0;
+      const pList = [];
+
+      (Array.isArray(rawParties) ? rawParties : []).forEach(p => {
+        if (!p || p.isActive === false || p.isDeleted === true) return;
+        const curBal = Number(p.currentBalance ?? p.balance ?? 0);
+        const op = Number(p.openingBalance || 0);
+        openBal += op;
+        if (curBal > 0) toCollect += curBal;
+        else if (curBal < 0) toPay += Math.abs(curBal);
+        pList.push({
+          _id: p._id || p.id,
+          name: p.name || p.partyName,
+          balance: curBal,
+          openingBalance: op,
+          partyType: p.partyType || p.type || "customer",
+          phone: p.mobileNumber || p.phone || ""
+        });
+      });
+
+      setPartiesSummary({
+        totalToCollect: toCollect,
+        totalToPay: toPay,
+        openingBalanceTotal: openBal,
+        partiesList: pList
+      });
+
     } catch (err) {
       console.error("Failed to fetch Mobile P&L", err);
     } finally {
@@ -177,18 +306,20 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
     }
   };
 
-  const marginPercent = salesTotal > 0 ? ((netBusinessProfit / salesTotal) * 100).toFixed(1) : 0;
+  const actualMarginPercent = salesTotal > 0 ? ((grossProfitTotal / salesTotal) * 100).toFixed(1) : marginPercent;
 
   const shareWhatsApp = () => {
     let msg = `*📈 ${selectedCompany?.name || "व्यापार"} - नफा-नुकसान रिपोर्ट (P&L)*\n`;
     msg += `*अवधि:* ${startDate || "All"} से ${endDate || "Now"}\n`;
     msg += `----------------------------------\n`;
-    msg += `*🟢 कुल बिक्री (Revenue):* ₹${salesTotal.toLocaleString("en-IN")}\n`;
+    msg += `*🟢 कुल बिक्री (Gross Sales):* ₹${salesTotal.toLocaleString("en-IN")}\n`;
+    msg += `*📦 माल की खरीद लागत (COGS):* ₹${effectiveCOGSTotal.toLocaleString("en-IN")} (${(100 - Number(actualMarginPercent)).toFixed(0)}%)\n`;
+    msg += `*✨ सकल मुनाफा (Gross Profit):* ₹${grossProfitTotal.toLocaleString("en-IN")} (${actualMarginPercent}% Margin)\n`;
     msg += `*🏢 दुकान संचालन खर्च (Operating Exp):* ₹${operatingExpensesTotal.toLocaleString("en-IN")}\n`;
-    msg += `*💰 शुद्ध व्यापार लाभ (Net Profit):* ₹${netBusinessProfit.toLocaleString("en-IN")} (${marginPercent}% Margin)\n`;
+    msg += `*💰 शुद्ध व्यापार लाभ (Net Profit):* ₹${netBusinessProfit.toLocaleString("en-IN")}\n`;
     if (gharKharchTotal > 0) {
       msg += `*🏡 घर खर्च / पर्सनल निकासी:* ₹${gharKharchTotal.toLocaleString("en-IN")}\n`;
-      msg += `*💵 घर खर्च के बाद शेष बचत:* ₹${netRemainingSavings.toLocaleString("en-IN")}\n`;
+      msg += `*💵 शुद्ध अंतिम बचत:* ₹${netRemainingSavings.toLocaleString("en-IN")}\n`;
     }
     msg += `----------------------------------\n`;
     msg += `_Generated via Mobile Vyapar App_`;
@@ -221,7 +352,7 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
         <div className="flex items-center gap-1.5">
           <button
             onClick={shareWhatsApp}
-            className="p-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white transition flex items-center gap-1 text-xs font-bold shadow-xs"
+            className="p-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white transition flex items-center gap-1 text-xs font-bold shadow-xs cursor-pointer"
             title="WhatsApp Flash Share"
           >
             <Share2 size={16} />
@@ -229,7 +360,7 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
           </button>
           <button
             onClick={fetchReport}
-            className="p-2 rounded-xl bg-white/10 active:bg-white/20 text-white transition"
+            className="p-2 rounded-xl bg-white/10 active:bg-white/20 text-white transition cursor-pointer"
             title="ताज़ा करें"
           >
             <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
@@ -248,7 +379,7 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
           <button
             key={p.id}
             onClick={() => handlePeriodChange(p.id)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition cursor-pointer ${
               period === p.id
                 ? "bg-emerald-700 text-white shadow-xs"
                 : "bg-slate-100 text-slate-700 active:bg-slate-200"
@@ -257,6 +388,78 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
             {p.label}
           </button>
         ))}
+      </div>
+
+      {/* ⚡ PROFIT MARGIN & PURCHASE COST CONTROLLER STRIP */}
+      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-200 px-3.5 py-2.5 space-y-1.5 shrink-0">
+        <div className="flex justify-between items-center text-xs font-extrabold text-amber-950">
+          <div className="flex items-center gap-1.5">
+            <Sliders size={14} className="text-amber-700" />
+            <span>मुनाफा मार्जिन सेटिंग (Gross Margin %):</span>
+          </div>
+          <span className="bg-amber-600 text-white text-[11px] font-black px-2 py-0.5 rounded-lg shadow-2xs">
+            {marginPercent}% मुनाफा
+          </span>
+        </div>
+
+        {/* Quick Margin % Buttons */}
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+          {[
+            { pct: 10, label: "10% (थोक/Wholesale)" },
+            { pct: 12, label: "12%" },
+            { pct: 15, label: "15% (मानक/Standard)" },
+            { pct: 20, label: "20% (फुटकर/Retail)" },
+            { pct: 25, label: "25%" }
+          ].map((item) => (
+            <button
+              key={item.pct}
+              type="button"
+              onClick={() => {
+                handleMarginChange(item.pct);
+                handleCostModeChange("margin");
+              }}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-black whitespace-nowrap transition cursor-pointer border ${
+                marginPercent === item.pct && costMode !== "actual"
+                  ? "bg-amber-700 text-white border-amber-700 shadow-2xs"
+                  : "bg-white text-slate-700 border-amber-200 hover:bg-amber-100/50"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+
+          {/* Custom Margin Input */}
+          <div className="flex items-center gap-1 bg-white border border-amber-300 rounded-lg px-2 py-0.5 shrink-0">
+            <span className="text-[10px] text-slate-500 font-bold">कस्टम %:</span>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={marginPercent}
+              onChange={(e) => handleMarginChange(e.target.value)}
+              className="w-10 text-xs font-black text-amber-900 outline-none text-center"
+            />
+          </div>
+
+          {/* Actual Purchase Bills Toggle (If purchases exist) */}
+          {hasActualPurchases && (
+            <button
+              type="button"
+              onClick={() => handleCostModeChange(costMode === "actual" ? "margin" : "actual")}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-black whitespace-nowrap transition cursor-pointer border ${
+                costMode === "actual"
+                  ? "bg-indigo-700 text-white border-indigo-700 shadow-2xs"
+                  : "bg-white text-indigo-800 border-indigo-200 hover:bg-indigo-50"
+              }`}
+            >
+              🏢 खरीद बिल (₹{purchasesTotal.toLocaleString('en-IN')})
+            </button>
+          )}
+        </div>
+
+        <p className="text-[10px] text-amber-800/90 leading-tight">
+          💡 हर बिल के लिए खरीद बिल डालना ज़रूरी नहीं है। जब तक आप सप्लायर बिल नहीं डालते, सिस्टम आपकी बिक्री पर <strong>{marginPercent}%</strong> का शुद्ध मुनाफा जोड़कर लागत अपने आप घटाता है।
+        </p>
       </div>
 
       {/* Scrollable Mobile Body */}
@@ -281,38 +484,63 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
                   {netBusinessProfit >= 0 ? "💰 शुद्ध व्यापार मुनाफा (Net Profit)" : "⚠️ शुद्ध घाटा (Net Loss)"}
                 </span>
                 <span className="text-[10px] bg-white/20 font-mono font-bold px-2 py-0.5 rounded-full">
-                  मार्जिन: {marginPercent}%
+                  मार्जिन: {actualMarginPercent}%
                 </span>
               </div>
               <div className="text-2xl sm:text-3xl font-black mt-1 font-mono">
                 ₹{netBusinessProfit.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
               </div>
-              <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between text-xs text-white/90">
-                <span>कुल बिक्री: <strong>₹{salesTotal.toLocaleString("en-IN")}</strong></span>
-                <span>दुकान खर्च: <strong>₹{operatingExpensesTotal.toLocaleString("en-IN")}</strong></span>
+              <div className="mt-2.5 pt-2 border-t border-white/20 grid grid-cols-3 gap-1 text-[11px] text-white/95">
+                <div>
+                  <span className="block text-emerald-200 text-[10px]">कुल बिक्री:</span>
+                  <strong className="font-mono">₹{salesTotal.toLocaleString("en-IN")}</strong>
+                </div>
+                <div>
+                  <span className="block text-amber-200 text-[10px]">सकल लाभ:</span>
+                  <strong className="font-mono">₹{grossProfitTotal.toLocaleString("en-IN")}</strong>
+                </div>
+                <div className="text-right">
+                  <span className="block text-rose-200 text-[10px]">दुकान खर्च:</span>
+                  <strong className="font-mono">₹{operatingExpensesTotal.toLocaleString("en-IN")}</strong>
+                </div>
               </div>
             </div>
 
-            {/* Inflow vs Outflow 2-Card Row */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="bg-white p-3 rounded-2xl border border-emerald-200 shadow-xs space-y-1">
-                <span className="text-[11px] font-black uppercase text-emerald-700 block flex items-center gap-1">
-                  <TrendingUp size={13} /> 🟢 कुल बिक्री
+            {/* 3-Card Financial Flow: Sales vs Purchase Cost vs Operating Expense */}
+            <div className="grid grid-cols-3 gap-2">
+              {/* Card 1: Total Sales */}
+              <div className="bg-white p-2.5 rounded-2xl border border-emerald-200 shadow-2xs space-y-1">
+                <span className="text-[10px] font-black uppercase text-emerald-700 block flex items-center gap-0.5">
+                  <TrendingUp size={12} /> कुल बिक्री
                 </span>
-                <div className="text-lg font-black text-emerald-700 font-mono">
+                <div className="text-sm sm:text-base font-black text-emerald-700 font-mono truncate">
                   ₹{salesTotal.toLocaleString("en-IN")}
                 </div>
-                <p className="text-[10px] text-slate-400">{billsCount} बिल / ऑर्डर्स</p>
+                <p className="text-[9px] text-slate-400 truncate">{billsCount} बिल दर्ज</p>
               </div>
 
-              <div className="bg-white p-3 rounded-2xl border border-rose-200 shadow-xs space-y-1">
-                <span className="text-[11px] font-black uppercase text-rose-700 block flex items-center gap-1">
-                  <Building2 size={13} /> 🏢 दुकान खर्च
+              {/* Card 2: Cost of Goods Sold (Purchase Cost) */}
+              <div className="bg-white p-2.5 rounded-2xl border border-amber-200 shadow-2xs space-y-1">
+                <span className="text-[10px] font-black uppercase text-amber-700 block flex items-center gap-0.5 truncate">
+                  <Package size={12} /> माल लागत (COGS)
                 </span>
-                <div className="text-lg font-black text-rose-700 font-mono">
+                <div className="text-sm sm:text-base font-black text-amber-700 font-mono truncate">
+                  ₹{effectiveCOGSTotal.toLocaleString("en-IN")}
+                </div>
+                <p className="text-[9px] text-slate-400 truncate">
+                  {costMode === "actual" && hasActualPurchases ? "खरीद बिल अनुसार" : `${100 - Number(marginPercent)}% अनुमानित लागत`}
+                </p>
+              </div>
+
+              {/* Card 3: Operating Expenses */}
+              <div className="bg-white p-2.5 rounded-2xl border border-rose-200 shadow-2xs space-y-1">
+                <span className="text-[10px] font-black uppercase text-rose-700 block flex items-center gap-0.5 truncate">
+                  <Building2 size={12} /> दुकान खर्च
+                </span>
+                <div className="text-sm sm:text-base font-black text-rose-700 font-mono truncate">
                   ₹{operatingExpensesTotal.toLocaleString("en-IN")}
                 </div>
-                <p className="text-[10px] text-slate-400">दुकान संचालन खर्च</p>
+                <p className="text-[9px] text-slate-400 truncate">{expensesCount} खर्च दर्ज</p>
               </div>
             </div>
 
@@ -327,8 +555,8 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
                   ₹{gharKharchTotal.toLocaleString("en-IN")}
                 </span>
               </div>
-              <p className="text-[10px] text-amber-800/80">
-                नोट: घर खर्च को बिज़नेस के संचालन खर्च (Operating Expense) में नहीं जोड़ा गया है ताकि व्यापार का सही मार्जिन दिखे।
+              <p className="text-[10px] text-amber-800/80 leading-relaxed">
+                नोट: घर खर्च को दुकान के संचालन खर्च में नहीं काटा जाता, यह व्यापार मुनाफे में से मालिक की व्यक्तिगत बचत में से घटता है।
               </p>
               {gharKharchTotal > 0 && (
                 <div className="pt-2 border-t border-amber-200 flex justify-between items-center text-xs font-bold text-slate-800">
@@ -340,41 +568,149 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
               )}
             </div>
 
-            {/* Financial Health Breakdown Box */}
+            {/* Complete Itemized Profit & Loss Breakdown Card */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
               <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                 <PieChart size={14} className="text-indigo-600" />
-                <span>वित्तीय विश्लेषण (Financial Breakdown)</span>
+                <span>नफा-नुकसान पूर्ण गणित (P&L Formula Sheet)</span>
               </h3>
 
               <div className="space-y-2 text-xs divide-y divide-slate-100">
+                {/* 1. Total Sales */}
                 <div className="flex justify-between items-center pt-1.5">
-                  <span className="text-slate-600">कुल बिक्री (Cash + Udhar):</span>
-                  <span className="font-bold text-slate-900 font-mono">₹{salesTotal.toLocaleString("en-IN")}</span>
+                  <span className="text-slate-700 font-bold">1. कुल बिक्री (Total Revenue / Sales):</span>
+                  <span className="font-extrabold text-slate-900 font-mono">₹{salesTotal.toLocaleString("en-IN")}</span>
                 </div>
+
+                {/* 2. Less Cost of Goods Sold */}
                 <div className="flex justify-between items-center pt-1.5">
-                  <span className="text-slate-600">दुकान संचालन खर्च (Operating Exp):</span>
+                  <div>
+                    <span className="text-amber-800 font-bold">2. (-) माल की खरीद लागत (Cost of Goods):</span>
+                    <span className="text-[10px] text-slate-400 block">
+                      {costMode === "actual" && hasActualPurchases ? "सप्लायर खरीद बिलों से" : `बिक्री का ${100 - Number(marginPercent)}% लागत दर`}
+                    </span>
+                  </div>
+                  <span className="font-bold text-amber-800 font-mono">-₹{effectiveCOGSTotal.toLocaleString("en-IN")}</span>
+                </div>
+
+                {/* 3. Gross Profit */}
+                <div className="flex justify-between items-center pt-1.5 bg-emerald-50/70 p-2 rounded-xl">
+                  <span className="text-emerald-900 font-black">3. (=) सकल व्यापार मुनाफा (Gross Profit):</span>
+                  <span className="font-black text-emerald-700 font-mono text-sm">₹{grossProfitTotal.toLocaleString("en-IN")}</span>
+                </div>
+
+                {/* 4. Less Operating Expenses */}
+                <div className="flex justify-between items-center pt-1.5">
+                  <div>
+                    <span className="text-rose-700 font-bold">4. (-) दुकान संचालन खर्च (Operating Exp):</span>
+                    <span className="text-[10px] text-slate-400 block">किराया, बिजली, स्टाफ, चाय, विविध खर्च</span>
+                  </div>
                   <span className="font-bold text-rose-600 font-mono">-₹{operatingExpensesTotal.toLocaleString("en-IN")}</span>
                 </div>
+
+                {/* 5. Net Business Profit */}
                 <div className="flex justify-between items-center pt-1.5 font-bold">
-                  <span className="text-slate-800">शुद्ध दुकान मुनाफा (Operating Profit):</span>
-                  <span className={`font-mono ${netBusinessProfit >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
+                  <span className="text-slate-800">5. (=) शुद्ध व्यापार लाभ (Net Business Profit):</span>
+                  <span className={`font-mono text-sm ${netBusinessProfit >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
                     ₹{netBusinessProfit.toLocaleString("en-IN")}
                   </span>
                 </div>
+
+                {/* 6. Less Personal Drawings */}
                 {gharKharchTotal > 0 && (
                   <div className="flex justify-between items-center pt-1.5">
-                    <span className="text-slate-600">मालिक का घरेलू खर्च (Drawings):</span>
+                    <span className="text-slate-600">6. (-) मालिक का घरेलू खर्च (Drawings):</span>
                     <span className="font-bold text-amber-700 font-mono">-₹{gharKharchTotal.toLocaleString("en-IN")}</span>
                   </div>
                 )}
-                <div className="flex justify-between items-center pt-1.5 font-black text-sm">
-                  <span className="text-slate-900">अंतिम शुद्ध बचत (Net Savings):</span>
+
+                {/* 7. Final Net Savings */}
+                <div className="flex justify-between items-center pt-2 font-black text-sm bg-slate-50 p-2 rounded-xl">
+                  <span className="text-slate-900">7. (=) अंतिम शुद्ध बचत (Final Net Savings):</span>
                   <span className={`font-mono ${netRemainingSavings >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
                     ₹{netRemainingSavings.toLocaleString("en-IN")}
                   </span>
                 </div>
               </div>
+            </div>
+
+            {/* 👥 ALL PARTIES OUTSTANDING & OPENING BALANCES EXPLAINER CARD */}
+            <div className="bg-white p-4 rounded-2xl border border-indigo-200/80 shadow-xs space-y-3">
+              <div 
+                onClick={() => setShowPartiesDetail(!showPartiesDetail)}
+                className="flex justify-between items-center cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold">
+                    <Users size={16} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-xs text-indigo-950">
+                      👥 पार्टियों का कुल उधारी व बैलेंस (Parties Ledger)
+                    </h4>
+                    <p className="text-[10px] text-slate-500">
+                      {partiesSummary.partiesList.length} पार्टियां दर्ज • पुराना हिसाब व उधारी स्थिति
+                    </p>
+                  </div>
+                </div>
+                <button type="button" className="text-indigo-600 p-1">
+                  {showPartiesDetail ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </button>
+              </div>
+
+              {/* 2-Pill Summary: To Collect vs To Pay */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200">
+                  <span className="text-[10px] font-bold text-emerald-800 block">ग्राहकों से कुल लेने हैं (To Collect):</span>
+                  <span className="font-black text-sm text-emerald-700 font-mono">
+                    ₹{partiesSummary.totalToCollect.toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="p-2.5 bg-rose-50 rounded-xl border border-rose-200">
+                  <span className="text-[10px] font-bold text-rose-800 block">सप्लायरों को देने हैं (To Pay):</span>
+                  <span className="font-black text-sm text-rose-700 font-mono">
+                    ₹{partiesSummary.totalToPay.toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Educational Note Explaining Why Opening Balance is in Ledger, not P&L */}
+              <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200/70 text-[11px] text-amber-900 space-y-1">
+                <div className="flex items-center gap-1 font-bold">
+                  <Info size={13} className="text-amber-700 shrink-0" />
+                  <span>💡 P&L और पार्टी बैलेंस में क्या अंतर है?</span>
+                </div>
+                <p className="leading-relaxed text-[10px] text-amber-800">
+                  पार्टियों का <strong>प्रारंभिक पुराना हिसाब (Opening Balance)</strong> या लेजर वसूली (Payment Received) आपकी <strong>बैलेंस शीट / खाता-बही</strong> में दिखती है। नफा-नुकसान (Profit & Loss) केवल इस अवधि में बेचे गए <strong>माल के बिलों (Sales)</strong> और <strong>खर्चों</strong> का लाभ निकालता है।
+                </p>
+              </div>
+
+              {/* Collapsible Party List */}
+              {showPartiesDetail && (
+                <div className="pt-2 border-t border-slate-100 space-y-1.5 max-h-52 overflow-y-auto">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">पार्टी-वार बकाया लिस्ट:</span>
+                  {partiesSummary.partiesList.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-400">कोई पार्टी दर्ज नहीं है।</div>
+                  ) : (
+                    partiesSummary.partiesList.map((p, idx) => (
+                      <div key={p._id || idx} className="p-2 bg-slate-50 hover:bg-slate-100 rounded-xl flex justify-between items-center text-xs">
+                        <div>
+                          <span className="font-bold text-slate-800 block">{p.name}</span>
+                          <span className="text-[10px] text-slate-400 capitalize">{p.partyType} {p.phone ? `• 📞 ${p.phone}` : ""}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className={`font-black font-mono ${p.balance > 0 ? "text-emerald-700" : p.balance < 0 ? "text-rose-600" : "text-slate-600"}`}>
+                            ₹{Math.abs(p.balance).toLocaleString('en-IN')}
+                          </span>
+                          <span className="text-[9px] text-slate-400 block">
+                            {p.balance > 0 ? "(लेने हैं)" : p.balance < 0 ? "(देने हैं)" : "(चुक्ता)"}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           </>
         )}
