@@ -478,14 +478,15 @@ export const getProfitLoss = async (req, res) => {
       const cat = String(exp.category || "").toLowerCase();
       const desc = String(exp.description || "").toLowerCase();
       const combined = `${title} ${cat} ${desc}`;
-      const isDrawing = exp.expenseType === 'drawings' || 
+      const isDrawing = exp.expenseType !== 'operating' && (
+                        exp.expenseType === 'drawings' || 
                         exp.expenseType === 'ghar_kharch' || 
                         exp.expenseType === 'personal' ||
                         cat.includes('घर खर्च') || 
                         cat.includes('family') || 
                         cat.includes('personal') || 
                         title.includes('घर खर्च') ||
-                        (exp.familyMember && String(exp.familyMember).trim() !== '');
+                        (exp.familyMember && String(exp.familyMember).trim() !== ''));
 
       if (isDrawing) {
         gharKharch += amt;

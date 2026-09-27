@@ -250,6 +250,8 @@ const ProfitLossReportPage = () => {
       const isPersonalExpense = (e) => {
         if (!e) return false;
         const t = String(e.expenseType || "").toLowerCase();
+        // Operating / Business expenses are NEVER personal — exit early
+        if (t === 'operating' || t === '') return false;
         const c = String(e.category || "").toLowerCase();
         const tit = String(e.title || "").toLowerCase();
         const mem = String(e.familyMember || e.member || "").trim();

@@ -233,7 +233,7 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
   const handleDeleteExpense = (id) => {
     if (!confirm("क्या आप इस फैमिली खर्च को हटाना चाहते हैं?")) return;
     try {
-      api.delete(`/api/expense/${id}`).catch(() => {});
+      api.delete(`/api/expenses/${id}`).catch(() => api.delete(`/api/expense/${id}`)).catch(() => {});
       let localList = [];
       const stored = localStorage.getItem("vb_local_expenses") || localStorage.getItem("expenses");
       if (stored) localList = JSON.parse(stored) || [];
@@ -258,7 +258,7 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
         amount: Number(expense.amount),
         expenseType: "operating", // Converts from drawings to operating
         category: expense.category?.includes("बिजली") ? "बिजली बिल" : (expense.category || "बिजली व पावर"),
-        familyMember: "Shop",
+        familyMember: "",
         description: expense.description ? `${expense.description} (घर खर्च से दुकान खर्च में बदला गया)` : "दुकान संचालन खर्च",
         date: expense.date || new Date()
       };

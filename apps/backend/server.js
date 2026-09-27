@@ -58,6 +58,7 @@ import reminderRoutes from "./src/routes/reminderRoutes.js";
 import brandRoutes from "./src/routes/brandRoutes.js";
 import subCategoryRoutes from "./src/routes/subCategoryRoutes.js";
 import { startCronJobs } from "./src/utils/cronJobs.js";
+import Expense from "./src/model/expenses.js";
 import tallyRoutes from "./src/routes/tallyRoutes.js";
 import leadRoutes from "./src/modules/crm/routes/leadRoutes.js";
 import capitalRoutes from "./src/routes/capitalRoutes.js";
@@ -275,6 +276,18 @@ const startServer = () => {
     console.log(`📡 Backend accessible at http://localhost:${PORT}`);
     try {
       await connectDB(); // MongoDB connection ko wapas chalu kar diya hai
+      // Auto-cleanup stale operating expenses with invalid familyMember
+      try {
+        const cleanRes = await Expense.updateMany(
+          { expenseType: { $in: ["operating", "", null] }, familyMember: { $exists: true, $nin: ["", null] } },
+          { $set: { expenseType: "operating", familyMember: "" } }
+        );
+        if (cleanRes.modifiedCount > 0) {
+          console.log(`🧹 Auto-migrated ${cleanRes.modifiedCount} stale operating expenses.`);
+        }
+      } catch (cleanErr) {
+        console.warn("Expense auto-migration:", cleanErr.message);
+      }
     } catch (error) {
       console.error("❌ DB Connection Failed:", error);
       Sentry.captureException(error);

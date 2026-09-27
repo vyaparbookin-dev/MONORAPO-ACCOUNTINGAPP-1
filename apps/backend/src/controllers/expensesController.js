@@ -17,12 +17,6 @@ export const addExpense = async (req, res) => {
       expanceData.familyMember = '';
     }
 
-    // Strict separation: Operating / Business expenses MUST NEVER carry a familyMember string (prevents Ghar Kharch misclassification)
-    if (!expanceData.expenseType || expanceData.expenseType === 'operating') {
-      expanceData.expenseType = 'operating';
-      expanceData.familyMember = '';
-    }
-
     // Auto-deduct from Bank / UPI Account if paymentMethod is 'upi' or 'bank'
     const pMethod = String(req.body.paymentMethod || 'cash').toLowerCase();
     const amountNum = Number(req.body.amount) || 0;
@@ -124,9 +118,15 @@ export const getExpenseById = async (req, res) => {
 
 export const updateExpense = async (req, res) => {
   try {
+    const updateData = { ...req.body, companyId: req.companyId };
+    // Strict separation: Operating expenses MUST NEVER carry a familyMember
+    if (!updateData.expenseType || updateData.expenseType === 'operating') {
+      updateData.expenseType = 'operating';
+      updateData.familyMember = '';
+    }
     const expense = await Expense.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId, isDeleted: false },
-      { $set: { ...req.body, companyId: req.companyId } },
+      { $set: updateData },
       { new: true }
     );
     if (!expense) return res.status(404).json({ success: false, error: "Expense not found" });
@@ -190,6 +190,7 @@ export const getGharKharchSummary = async (req, res) => {
 
     const gharKharchFilter = {
       companyId: req.companyId,
+      expenseType: { $ne: 'operating' },
       $or: [
         { expenseType: "drawings" },
         { familyMember: { $exists: true, $nin: ["", null] } }
@@ -253,15 +254,24 @@ export const getGharKharchSummary = async (req, res) => {
 export const deleteExpense = async (req, res) => {
   try {
     const id = req.params.id;
+    
+    // Offline-only IDs (exp_, temp_) don't exist in MongoDB
+    if (id && (id.startsWith('exp_') || id.startsWith('temp_'))) {
+      return res.json({ success: true, message: "Offline expense deleted locally", offline: true });
+    }
+
     let query = { companyId: req.companyId };
 
     if (id && id.match(/^[0-9a-fA-F]{24}$/)) {
-      query.$or = [{ _id: id }, { id: id }];
+      query._id = id;
     } else {
-      query.$or = [{ id: id }, { _id: id.startsWith('exp_') ? undefined : id }].filter(Boolean);
+      return res.status(404).json({ success: false, error: "Invalid expense ID format" });
     }
 
     const oldExpense = await Expense.findOne(query);
+    if (!oldExpense) {
+      return res.status(404).json({ success: false, error: "Expense not found" });
+    }
     const expense = await Expense.findOneAndUpdate(
        query,
        { isDeleted: true },
