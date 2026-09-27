@@ -14,9 +14,20 @@ export const uploadBillImage = async ({ fileData, fileName = "bill.jpg", company
   }
 
   // 1. Check Cloudinary credentials
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-  const apiKey = process.env.CLOUDINARY_API_KEY;
-  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  let cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.cloud_name;
+  let apiKey = process.env.CLOUDINARY_API_KEY || process.env.cloudinery_api_key;
+  let apiSecret = process.env.CLOUDINARY_API_SECRET || process.env.cloudinery_pi_secret;
+
+  if ((!cloudName || !apiKey || !apiSecret) && process.env.CLOUDINARY_URL) {
+    try {
+      const match = process.env.CLOUDINARY_URL.match(/cloudinary:\/\/([^:]+):([^@]+)@(.+)/);
+      if (match) {
+        apiKey = apiKey || match[1];
+        apiSecret = apiSecret || match[2];
+        cloudName = cloudName || match[3];
+      }
+    } catch (e) {}
+  }
 
   const isCloudinaryConfigured = Boolean(
     cloudName && 
