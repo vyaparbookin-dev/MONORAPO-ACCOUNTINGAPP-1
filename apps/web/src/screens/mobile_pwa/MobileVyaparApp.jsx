@@ -48,7 +48,8 @@ import {
   Grid,
   Mic,
   FileSpreadsheet,
-  LogOut
+  LogOut,
+  UserCheck
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useNavigate } from "react-router-dom";
@@ -567,6 +568,24 @@ function MobileVyaparAppContent() {
   const [editingSalaryAmount, setEditingSalaryAmount] = useState("");
   const [editingPaidLeaves, setEditingPaidLeaves] = useState("0");
   const [savingEditSalary, setSavingEditSalary] = useState(false); // 'drawings' (Ghar Kharch) or 'operating' (Dukaan Kharch)
+  const [selectedStaffId, setSelectedStaffId] = useState("");
+  const [mobileStaffList, setMobileStaffList] = useState([]);
+
+  useEffect(() => {
+    const fetchStaff = async () => {
+      try {
+        const res = await api.get("/api/staff").catch(() => api.get("/staff"));
+        const list = Array.isArray(res?.staff) ? res.staff : (Array.isArray(res?.data?.staff) ? res.data.staff : (Array.isArray(res?.data) ? res.data : []));
+        if (list.length > 0) setMobileStaffList(list);
+      } catch (err) {
+        console.warn("Could not load staff list in mobile:", err);
+      }
+    };
+    fetchStaff();
+  }, [selectedCompany]);
+
+  const activeStaffList = mobileStaffList.length > 0 ? mobileStaffList : (Array.isArray(pagarBookData?.staff) ? pagarBookData.staff : []);
+
   const [selectedFamilyMember, setSelectedFamilyMember] = useState("Self");
   const [customFamilyMember, setCustomFamilyMember] = useState("");
   const [gharKharchDate, setGharKharchDate] = useState(() => new Date().toISOString().split("T")[0]);
@@ -938,6 +957,7 @@ function MobileVyaparAppContent() {
     setGharKharchNotes(item.notes || item.description || "");
     setGharKharchPaymentMode(item.paymentMethod || "cash");
     setGharKharchType(item.expenseType || "drawings");
+    setSelectedStaffId(item.staffId || "");
     setGharKharchFlow(item.transactionFlow || "given");
     handleToggleGharKharchEntry(true);
   };
@@ -974,6 +994,7 @@ function MobileVyaparAppContent() {
         expenseType: gharKharchType,
         transactionFlow: gharKharchFlow,
         familyMember: gharKharchType === 'drawings' ? finalMember : '',
+        staffId: (gharKharchType === 'operating' && selectedStaffId) ? selectedStaffId : undefined,
         paymentMethod: gharKharchPaymentMode,
         description: gharKharchNotes.trim(),
         notes: gharKharchNotes.trim(),
@@ -1026,9 +1047,12 @@ function MobileVyaparAppContent() {
             setGharKharchList(cleanList);
           } catch (e) {}
         }
+        const matchedStaff = activeStaffList.find(s => s._id === selectedStaffId);
         const successMsg = gharKharchType === 'drawings'
           ? `🏡 ${finalMember} के लिए ${finalCategory} (₹${gharKharchAmount}) सफलतापूर्वक दर्ज हो गया!`
-          : `🏢 दुकान खर्च ₹${gharKharchAmount} दर्ज हो गया!`;
+          : (matchedStaff
+              ? `🏢 दुकान खर्च ₹${gharKharchAmount} दर्ज हुआ और ${matchedStaff.name} के PagarBook में एडवांस स्वतः दर्ज हो गया!`
+              : `🏢 दुकान खर्च ₹${gharKharchAmount} दर्ज हो गया!`);
         alert(successMsg);
       }
       
@@ -1040,6 +1064,7 @@ function MobileVyaparAppContent() {
       }
 
       setEditingGharKharchItem(null);
+      setSelectedStaffId("");
       setGharKharchTitle("");
       setGharKharchAmount("");
       setGharKharchNotes("");
@@ -1048,6 +1073,7 @@ function MobileVyaparAppContent() {
       setGharKharchCategory("राशन/किराना");
       handleToggleGharKharchEntry(false);
       fetchGharKharchData();
+      fetchPagarBookData(pagarBookMonth, pagarBookYear);
     } catch (err) {
       console.error(err);
       alert("एंट्री सेव/अपडेट करने में त्रुटि आई।");
@@ -5038,6 +5064,54 @@ function MobileVyaparAppContent() {
             </div>
 
             <form onSubmit={handleSaveGharKharch} className="space-y-3">
+              {/* If Operating / Business: PROMINENT STAFF SELECTOR DROPDOWN */}
+              {gharKharchType === "operating" && (
+                <div className="p-3 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="font-extrabold text-[11px] text-emerald-950 flex items-center gap-1.5">
+                      <UserCheck size={14} className="text-emerald-700" />
+                      👥 कर्मचारी / स्टाफ चुनें (PagarBook):
+                    </label>
+                    <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-full border border-emerald-200">
+                      ⚡ 2-Way Sync
+                    </span>
+                  </div>
+
+                  <select
+                    value={selectedStaffId}
+                    onChange={(e) => {
+                      const sId = e.target.value;
+                      setSelectedStaffId(sId);
+                      const selectedSt = activeStaffList.find(s => s._id === sId);
+                      if (selectedSt) {
+                        setGharKharchCategory("स्टाफ सैलरी/मजदूरी");
+                        if (!gharKharchTitle || gharKharchTitle.includes("स्टाफ") || gharKharchTitle.includes("दुकान खर्च")) {
+                          setGharKharchTitle(`स्टाफ एडवांस - ${selectedSt.name}`);
+                        }
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"
+                  >
+                    <option value="">-- सामान्य दुकान खर्च (कोई स्टाफ नहीं) --</option>
+                    {activeStaffList.map((st) => (
+                      <option key={st._id} value={st._id}>
+                        👤 {st.name} ({st.position || st.role || 'Staff'}) {st.mobileNumber ? `- 📱 ${st.mobileNumber}` : ''}
+                      </option>
+                    ))}
+                  </select>
+
+                  {selectedStaffId ? (
+                    <p className="text-[10px] text-emerald-800 font-bold flex items-center gap-1 pt-0.5">
+                      ✅ यह राशि दुकान खर्च में जुड़ेगी और <b>{activeStaffList.find(s => s._id === selectedStaffId)?.name}</b> के PagarBook में एडवांस के रूप में स्वतः दर्ज होगी।
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-500">
+                      💡 यदि आप किसी स्टाफ को एडवांस या पेमेंट दे रहे हैं, तो ऊपर से उनका नाम चुनें।
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* If Ghar Kharch: Select Family Member */}
               {gharKharchType === "drawings" && (
                 <div className="space-y-1.5 bg-amber-50/60 p-3 rounded-2xl border border-amber-200/80">

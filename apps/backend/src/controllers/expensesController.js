@@ -42,11 +42,11 @@ export const addExpense = async (req, res) => {
     // Auto-sync Staff Transaction if staffId is provided (e.g. staff advance / payment from expense form)
     if (expanceData.staffId && amountNum > 0) {
       try {
-        const staffDoc = await Staff.findOne({ _id: expanceData.staffId, companyId: req.companyId });
+        const staffDoc = await Staff.findOne({ _id: expanceData.staffId, companyId: req.companyId }) || await Staff.findById(expanceData.staffId);
         if (staffDoc) {
           await StaffTransaction.create({
             staffId: staffDoc._id,
-            companyId: req.companyId,
+            companyId: staffDoc.companyId || req.companyId,
             type: 'advance',
             date: expense.date ? new Date(expense.date) : new Date(),
             debit: amountNum,
