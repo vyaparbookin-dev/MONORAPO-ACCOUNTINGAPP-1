@@ -1304,7 +1304,8 @@ function MobileVyaparAppContent() {
       let rawBills = [];
       if (billsRes.status === "fulfilled" && billsRes.value) {
         const v = billsRes.value;
-        rawBills = v.bills || v.data?.bills || (Array.isArray(v.data) && v.data.length > 0 ? v.data : (Array.isArray(v) ? v : []));
+        const bList = v.bills || v.data?.bills || (Array.isArray(v.data) && v.data.length > 0 ? v.data : (Array.isArray(v) ? v : []));
+        if (Array.isArray(bList) && bList.length > 0) rawBills.push(...bList);
       }
 
       if (daybookRes.status === "fulfilled" && daybookRes.value) {
@@ -1316,16 +1317,15 @@ function MobileVyaparAppContent() {
             localStorage.setItem("vb_local_party_txs", JSON.stringify(txs));
           } catch (e) {}
         }
-        if (rawBills.length === 0) {
-          const dbBills = dv?.data?.bills || dv?.bills || [];
-          if (Array.isArray(dbBills) && dbBills.length > 0) {
-            rawBills = dbBills;
-          }
+        const dbBills = dv?.data?.bills || dv?.bills || [];
+        if (Array.isArray(dbBills) && dbBills.length > 0) {
+          rawBills.push(...dbBills);
         }
       }
       const normBills = (Array.isArray(rawBills) ? rawBills : []).map(b => {
         const bNo = b.billNumber || b.invoiceNumber || (b._id ? `INV-${String(b._id).slice(-4)}` : "001");
-        const bAmt = Number(b.amount || b.finalAmount || b.total || b.totalAmount || b.grandTotal || 0);
+        const bAmt = Number(b.finalAmount ?? b.amount ?? b.total ?? b.totalAmount ?? b.grandTotal ?? 0) ||
+          ((b.items && Array.isArray(b.items)) ? b.items.reduce((sum, it) => sum + (Number(it.total || (it.quantity * it.price)) || 0), 0) : 0);
         const pMode = (b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase();
         return {
           _id: b._id || b.id || `BILL-${Date.now()}`,
@@ -1346,10 +1346,10 @@ function MobileVyaparAppContent() {
           paymentMode: pMode,
           paymentMethod: (pMode === "UDHAR" || pMode === "CREDIT") ? "credit" : "cash",
           paymentStatus: b.paymentStatus || (pMode === "UDHAR" ? "unpaid" : "paid"),
-          date: b.date ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today",
+          date: b.date ? (String(b.date).includes("-") || String(b.date).includes("/") ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : String(b.date)) : "Today",
           rawDate: b.rawDate || b.date || b.createdAt || new Date().toISOString(),
           items: b.items || [],
-          isOfflineCreated: false
+          isOfflineCreated: Boolean(b.isOfflineCreated)
         };
       });
 
@@ -1374,7 +1374,8 @@ function MobileVyaparAppContent() {
                 if (Array.isArray(parsed)) {
                   parsed.forEach(item => {
                     if (!item || typeof item !== "object") return;
-                    if (item.amount || item.finalAmount || item.total || item.totalAmount || item.billNumber) {
+                    const amt = Number(item.amount || item.finalAmount || item.total || item.totalAmount || item.grandTotal || 0);
+                    if (amt > 0 || item.billNumber) {
                       localManualBills.push(item);
                     }
                   });
@@ -1389,16 +1390,15 @@ function MobileVyaparAppContent() {
       const mergedBills = deduplicateBills([...normBills, ...localManualBills]);
       setBills(mergedBills);
 
-      // Keep only true unsynced offline bills in localManualBills storage to prevent local/cloud duplication
-      // CRITICAL SAFEGUARD: If server returned 0 bills, NEVER wipe local storage!
-      const unsyncedOnly = normBills.length === 0
-        ? mergedBills
-        : mergedBills.filter(b => b.isOfflineCreated && !normBills.some(nb => nb._id === b._id || nb.billNumber === b.billNumber));
+      // CRITICAL SAFEGUARD: NEVER wipe local storage if server returns 0 or partial bills!
       try {
-        if (currentCoId) {
-          localStorage.setItem(`vb_local_manual_bills_${currentCoId}`, JSON.stringify(unsyncedOnly));
+        if (mergedBills.length > 0) {
+          if (currentCoId) {
+            localStorage.setItem(`vb_local_manual_bills_${currentCoId}`, JSON.stringify(mergedBills));
+          }
+          localStorage.setItem("vb_local_manual_bills", JSON.stringify(mergedBills));
+          localStorage.setItem("bills", JSON.stringify(mergedBills));
         }
-        localStorage.setItem("vb_local_manual_bills", JSON.stringify(unsyncedOnly));
       } catch (e) {}
 
       let rawParties = [];
@@ -1427,18 +1427,27 @@ function MobileVyaparAppContent() {
         notes: p.notes || ""
       }));
 
-      // Load local parties scoped to active company so new accounts start completely fresh
+      // Load local parties from ALL candidate keys so parties never disappear
       let localParties = [];
       try {
-        if (typeof localStorage !== "undefined" && currentCoId) {
-          const scopedPKey = `vb_local_parties_${currentCoId}`;
-          const storedP = localStorage.getItem(scopedPKey);
-          if (storedP) {
-            try {
-              const parsed = JSON.parse(storedP);
-              if (Array.isArray(parsed)) localParties.push(...parsed);
-            } catch (e) {}
-          }
+        if (typeof localStorage !== "undefined") {
+          const pKeys = [
+            currentCoId ? `vb_local_parties_${currentCoId}` : null,
+            "vb_local_parties",
+            "parties",
+            "local_parties"
+          ].filter(Boolean);
+          pKeys.forEach(k => {
+            const storedP = localStorage.getItem(k);
+            if (storedP) {
+              try {
+                const parsed = JSON.parse(storedP);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  localParties.push(...parsed);
+                }
+              } catch (e) {}
+            }
+          });
         }
       } catch (e) {}
 
@@ -1464,10 +1473,13 @@ function MobileVyaparAppContent() {
       const mergedParties = Array.from(partyMap.values());
       setParties(mergedParties);
       try {
-        if (currentCoId) {
-          localStorage.setItem(`vb_local_parties_${currentCoId}`, JSON.stringify(mergedParties));
+        if (mergedParties.length > 0) {
+          if (currentCoId) {
+            localStorage.setItem(`vb_local_parties_${currentCoId}`, JSON.stringify(mergedParties));
+          }
+          localStorage.setItem("vb_local_parties", JSON.stringify(mergedParties));
+          localStorage.setItem("parties", JSON.stringify(mergedParties));
         }
-        localStorage.setItem("vb_local_parties", JSON.stringify(mergedParties));
       } catch (e) {}
 
       let rawInv = [];
@@ -1540,21 +1552,48 @@ function MobileVyaparAppContent() {
     const price = Number(it.salePrice ?? it.sellingPrice ?? it.price ?? it.costPrice ?? 0) || 0;
     return sum + (qty * price);
   }, 0);
-  const recentSales = bills.reduce((sum, b) => {
-    const amt = Number(b.finalAmount ?? b.amount ?? b.total ?? b.totalAmount ?? b.grandTotal ?? 0) || 0;
-    return sum + amt;
-  }, 0);
+  const getBillAmount = (b) => {
+    if (!b) return 0;
+    const directAmt = Number(b.finalAmount ?? b.amount ?? b.total ?? b.totalAmount ?? b.grandTotal ?? 0);
+    if (directAmt > 0) return directAmt;
+    if (b.items && Array.isArray(b.items)) {
+      return b.items.reduce((s, it) => s + (Number(it.total || (it.quantity * it.price)) || 0), 0);
+    }
+    return 0;
+  };
+
+  const parseAnyDate = (val) => {
+    if (!val) return null;
+    if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+    if (typeof val === "number") {
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    const str = String(val).trim();
+    if (!str || str.toLowerCase() === "today" || str === "आज") return new Date();
+    const d = new Date(str);
+    if (!isNaN(d.getTime()) && d.getFullYear() > 2020) return d;
+    const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (dmy) {
+      const parsed = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+    const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+    if (ymd) {
+      const parsed = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+    return null;
+  };
+
+  const recentSales = bills.reduce((sum, b) => sum + getBillAmount(b), 0);
 
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const weekSales = bills.filter(b => {
-    const raw = b.rawDate || b.date || b.createdAt;
-    if (!raw) return true;
-    const d = new Date(raw);
-    return isNaN(d.getTime()) ? true : d >= weekAgo;
-  }).reduce((sum, b) => {
-    const amt = Number(b.finalAmount ?? b.amount ?? b.total ?? b.totalAmount ?? b.grandTotal ?? 0) || 0;
-    return sum + amt;
-  }, 0);
+    const d = parseAnyDate(b.rawDate || b.date || b.createdAt);
+    if (!d) return true; // Keep in week sales if date couldn't be parsed
+    return d >= weekAgo;
+  }).reduce((sum, b) => sum + getBillAmount(b), 0);
   const displayWeekSales = weekSales > 0 ? weekSales : recentSales;
 
   const totalBankBalance = bankAccounts
@@ -1588,15 +1627,11 @@ function MobileVyaparAppContent() {
 
   // Filter bills created today
   const todayBills = bills.filter(b => {
-    const raw = b.rawDate || b.date || b.createdAt;
-    if (!raw) return true;
-    const d = new Date(raw);
-    if (isNaN(d.getTime())) return true;
+    const d = parseAnyDate(b.rawDate || b.date || b.createdAt);
+    if (!d) return false;
     const today = new Date();
     return isSameLocalDate(d, today);
   });
-
-  const getBillAmount = (b) => Number(b.finalAmount ?? b.amount ?? b.total ?? b.totalAmount ?? b.grandTotal ?? 0) || 0;
 
   const todaySales = todayBills.reduce((sum, b) => sum + getBillAmount(b), 0);
   const todayCash = todayBills.filter(isCashPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
@@ -1605,10 +1640,8 @@ function MobileVyaparAppContent() {
 
   // Dynamic filter for Daily Sales Card (आज, कल, इस हफ़्ते, सभी)
   const activePeriodBills = bills.filter(b => {
-    const raw = b.rawDate || b.date || b.createdAt;
-    if (!raw) return true;
-    const d = new Date(raw);
-    if (isNaN(d.getTime())) return true;
+    const d = parseAnyDate(b.rawDate || b.date || b.createdAt);
+    if (!d) return true;
     const today = new Date();
     if (dailySaleFilter === "today") {
       return isSameLocalDate(d, today);
@@ -1992,9 +2025,13 @@ function MobileVyaparAppContent() {
           address: payload.address,
         };
 
+        const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
         setParties(prev => {
           const updated = prev.map(p => ((p._id || p.id) === pId ? updatedParty : p));
           try {
+            if (currentCoId) {
+              localStorage.setItem(`vb_local_parties_${currentCoId}`, JSON.stringify(updated));
+            }
             localStorage.setItem("vb_local_parties", JSON.stringify(updated));
             localStorage.setItem("parties", JSON.stringify(updated));
           } catch (e) {}
@@ -2023,9 +2060,13 @@ function MobileVyaparAppContent() {
           notes: ""
         };
 
+        const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
         setParties(prev => {
           const updated = [createdParty, ...prev];
           try {
+            if (currentCoId) {
+              localStorage.setItem(`vb_local_parties_${currentCoId}`, JSON.stringify(updated));
+            }
             localStorage.setItem("vb_local_parties", JSON.stringify(updated));
             localStorage.setItem("parties", JSON.stringify(updated));
           } catch (e) {}
@@ -2319,13 +2360,43 @@ function MobileVyaparAppContent() {
         currentBalance: updatedBalance
       }));
 
-      setParties(prev => prev.map(p => {
-        const id = p.id || p._id;
-        if (id === partyId) {
-          return { ...p, balance: updatedBalance, currentBalance: updatedBalance };
-        }
-        return p;
-      }));
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      setParties(prev => {
+        const updated = prev.map(p => {
+          const id = p.id || p._id;
+          if (id === partyId) {
+            return { ...p, balance: updatedBalance, currentBalance: updatedBalance };
+          }
+          return p;
+        });
+        try {
+          if (currentCoId) {
+            localStorage.setItem(`vb_local_parties_${currentCoId}`, JSON.stringify(updated));
+          }
+          localStorage.setItem("vb_local_parties", JSON.stringify(updated));
+          localStorage.setItem("parties", JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
+
+      // Also record local transaction so ledger updates instantly even offline
+      const newTxDoc = {
+        _id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        partyId,
+        date: txDate.toISOString(),
+        details: notes,
+        debit: type === 'received' ? amt : 0,
+        credit: type === 'paid' ? amt : 0,
+        amount: amt,
+        type: 'manual',
+        source: 'PartyTransaction',
+        paymentMethod: partyTxPaymentMode || 'CASH'
+      };
+      setAllPartyTransactions(prev => [newTxDoc, ...(prev || [])]);
+      try {
+        const storedTxs = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+        localStorage.setItem("vb_local_party_txs", JSON.stringify([newTxDoc, ...storedTxs]));
+      } catch (e) {}
 
       setPartyTxAmount('');
       setPartyTxNotes('');
@@ -2433,11 +2504,17 @@ function MobileVyaparAppContent() {
       };
 
       // 1. Instantly persist in localStorage so it NEVER disappears (Offline-First)
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      const billStorageKeys = [
+        currentCoId ? `vb_local_manual_bills_${currentCoId}` : null,
+        "vb_local_manual_bills",
+        "bills"
+      ].filter(Boolean);
       try {
-        const stored = readLocalJson(["vb_local_manual_bills", "bills"], []);
+        const stored = readLocalJson(billStorageKeys, []);
         const list = Array.isArray(stored) ? stored : [];
         const updatedList = deduplicateBills([createdBill, ...list]);
-        writeLocalJson(["vb_local_manual_bills", "bills"], updatedList);
+        writeLocalJson(billStorageKeys, updatedList);
         setBills(updatedList);
       } catch (storageErr) {
         console.warn("Local bill storage err:", storageErr);
@@ -2466,7 +2543,7 @@ function MobileVyaparAppContent() {
             setBills(prev => {
               const updated = prev.map(b => (b._id === localBillId || b.id === genBillNo) ? { ...b, ...savedBill, isOfflineCreated: false } : b);
               try {
-                writeLocalJson(["vb_local_manual_bills", "bills"], updated);
+                writeLocalJson(billStorageKeys, updated);
               } catch (e) {}
               return updated;
             });
@@ -3144,8 +3221,13 @@ function MobileVyaparAppContent() {
 
               <div 
                 onClick={() => {
-                  setDailySaleFilter("week");
-                  setShowManualSaleModal(true);
+                  setTransactionTab("sales");
+                  const txEl = document.getElementById("recent-tx-section");
+                  if (txEl) {
+                    txEl.scrollIntoView({ behavior: 'smooth' });
+                  } else {
+                    setShowDayBookModal(true);
+                  }
                 }}
                 className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
               >
@@ -3356,7 +3438,7 @@ function MobileVyaparAppContent() {
             </div>
 
             {/* Unified Transactions Section (Sales & Ghar Kharch / Expenses) */}
-            <div className="space-y-2.5 pt-1">
+            <div id="recent-tx-section" className="space-y-2.5 pt-1">
               <div className="flex justify-between items-center px-1">
                 <div className="flex items-center gap-2">
                   <h3 className="font-extrabold text-sm text-[#0F172A]">हालिया लेनदेन (Transactions)</h3>
@@ -3547,7 +3629,12 @@ function MobileVyaparAppContent() {
         {/* ==================== TAB 2: PARTIES ==================== */}
         {activeTab === "parties" && (() => {
           const filteredParties = parties.filter(p => {
-            const matchesSearch = !searchQuery || String(p?.name || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) || String(p?.phone || p?.mobileNumber || '').includes(searchQuery);
+            const hasSearch = searchQuery && searchQuery.trim().length > 0;
+            const matchesSearch = !hasSearch || String(p?.name || '').toLowerCase().includes(searchQuery.toLowerCase().trim()) || String(p?.phone || p?.mobileNumber || '').includes(searchQuery.trim());
+            
+            // If user searches by name or mobile, find across ALL parties regardless of tab
+            if (hasSearch) return matchesSearch;
+
             const pType = (p?.type || p?.partyType || 'customer').toLowerCase();
             const bal = Number(p?.balance ?? p?.currentBalance ?? 0);
 
@@ -3556,6 +3643,8 @@ function MobileVyaparAppContent() {
               matchesFilter = bal > 0;
             } else if (partyFilterTab === "to_pay") {
               matchesFilter = bal < 0;
+            } else if (partyFilterTab === "settled") {
+              matchesFilter = bal === 0;
             } else if (partyFilterTab === "customer") {
               matchesFilter = pType === "customer" || pType === "both";
             } else if (partyFilterTab === "supplier") {
@@ -3563,7 +3652,7 @@ function MobileVyaparAppContent() {
             } else if (partyFilterTab === "personal") {
               matchesFilter = pType === "personal";
             }
-            return matchesSearch && matchesFilter;
+            return matchesFilter;
           });
 
           return (
@@ -3575,14 +3664,18 @@ function MobileVyaparAppContent() {
                       ? `🔴 देने हैं (${filteredParties.length})`
                       : partyFilterTab === "to_collect"
                         ? `🟢 लेने हैं (${filteredParties.length})`
-                        : `Parties (${filteredParties.length})`}
+                        : partyFilterTab === "settled"
+                          ? `✅ हिसाब चुकता (${filteredParties.length})`
+                          : `Parties (${filteredParties.length})`}
                   </h2>
                   <p className="text-[10px] text-slate-400 font-medium">
                     {partyFilterTab === "to_pay"
                       ? `कुल देय रकम: ₹ ${toPay.toLocaleString('en-IN')}`
                       : partyFilterTab === "to_collect"
                         ? `कुल प्राप्य रकम: ₹ ${toCollect.toLocaleString('en-IN')}`
-                        : "व्यापारिक ग्राहक, सप्लायर व पर्सनल खाते"}
+                        : partyFilterTab === "settled"
+                          ? "जिन पार्टियों का पूरा हिसाब चुकता हो चुका है"
+                          : "व्यापारिक ग्राहक, सप्लायर व पर्सनल खाते"}
                   </p>
                 </div>
                 <button 
@@ -3604,12 +3697,13 @@ function MobileVyaparAppContent() {
                 />
               </div>
 
-              {/* Filter Tabs: All / To Collect / To Pay / Customer / Supplier / Personal */}
+              {/* Filter Tabs: All / To Collect / To Pay / Settled / Customer / Supplier / Personal */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
                 {[
                   { id: "all", label: `सभी (${parties.length})` },
                   { id: "to_collect", label: `🟢 लेने हैं (₹${toCollect.toLocaleString('en-IN')})` },
                   { id: "to_pay", label: `🔴 देने हैं (₹${toPay.toLocaleString('en-IN')})` },
+                  { id: "settled", label: `✅ चुकता (${parties.filter(p => Number(p.balance ?? p.currentBalance ?? 0) === 0).length})` },
                   { id: "customer", label: "🛒 ग्राहक" },
                   { id: "supplier", label: "🏢 सप्लायर" },
                   { id: "personal", label: "👤 पर्सनल खाता" }
@@ -3623,9 +3717,11 @@ function MobileVyaparAppContent() {
                           ? "bg-emerald-600 text-white shadow-sm"
                           : tab.id === "to_pay"
                             ? "bg-rose-600 text-white shadow-sm"
-                            : tab.id === "personal"
-                              ? "bg-amber-600 text-white shadow-sm"
-                              : "bg-[#4338CA] text-white shadow-sm"
+                            : tab.id === "settled"
+                              ? "bg-slate-700 text-white shadow-sm"
+                              : tab.id === "personal"
+                                ? "bg-amber-600 text-white shadow-sm"
+                                : "bg-[#4338CA] text-white shadow-sm"
                         : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
                     }`}
                   >
