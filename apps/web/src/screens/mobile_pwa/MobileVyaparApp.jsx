@@ -1405,8 +1405,15 @@ function MobileVyaparAppContent() {
   // Metrics
   const toCollect = parties.filter(p => Number(p.balance || 0) > 0).reduce((sum, p) => sum + Number(p.balance || 0), 0);
   const toPay = Math.abs(parties.filter(p => Number(p.balance || 0) < 0).reduce((sum, p) => sum + Number(p.balance || 0), 0));
-  const stockValue = items.reduce((sum, it) => sum + (it.stock * it.salePrice), 0);
-  const recentSales = bills.reduce((sum, b) => sum + b.amount, 0);
+  const stockValue = items.reduce((sum, it) => {
+    const qty = Number(it.currentStock ?? it.stock ?? 0) || 0;
+    const price = Number(it.salePrice ?? it.sellingPrice ?? it.price ?? it.costPrice ?? 0) || 0;
+    return sum + (qty * price);
+  }, 0);
+  const recentSales = bills.reduce((sum, b) => {
+    const amt = Number(b.finalAmount ?? b.amount ?? b.total ?? b.totalAmount ?? b.grandTotal ?? 0) || 0;
+    return sum + amt;
+  }, 0);
 
   const totalBankBalance = bankAccounts
     .filter(a => a.accountType !== "CC_OVERDRAFT")
@@ -5991,6 +5998,46 @@ function MobileVyaparAppContent() {
                   </button>
                 </div>
               )}
+
+              {/* Monthly Breakdown Card (महीनेवार बिक्री व जमा) */}
+              {partyTransactions.length > 0 && (() => {
+                const monthMap = new Map();
+                partyTransactions.forEach(tx => {
+                  const d = new Date(tx.date || Date.now());
+                  const mKey = isNaN(d.getTime()) ? 'अन्य' : d.toLocaleDateString('hi-IN', { month: 'short', year: 'numeric' });
+                  if (!monthMap.has(mKey)) {
+                    monthMap.set(mKey, { month: mKey, sales: 0, received: 0, count: 0 });
+                  }
+                  const mObj = monthMap.get(mKey);
+                  mObj.sales += Number(tx.debit || 0);
+                  mObj.received += Number(tx.credit || 0);
+                  mObj.count += 1;
+                });
+                const monthList = Array.from(monthMap.values());
+                if (monthList.length === 0) return null;
+
+                return (
+                  <div className="p-3 bg-gradient-to-r from-slate-50 to-indigo-50/50 rounded-2xl border border-indigo-100 space-y-2">
+                    <span className="text-[11px] font-black text-indigo-950 flex items-center gap-1">
+                      📅 महीनेवार हिसाब (Month-wise Sales & Received):
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs">
+                      {monthList.map(m => (
+                        <div key={m.month} className="p-2 bg-white rounded-xl border border-slate-100 shadow-2xs flex justify-between items-center">
+                          <div>
+                            <span className="font-bold text-slate-800 block text-xs">{m.month}</span>
+                            <span className="text-[10px] text-slate-400">{m.count} लेन-देन</span>
+                          </div>
+                          <div className="text-right text-[11px]">
+                            <div className="text-indigo-700 font-bold">बिक्री: ₹{m.sales.toLocaleString('en-IN')}</div>
+                            <div className="text-emerald-700 font-bold">जमा मिला: ₹{m.received.toLocaleString('en-IN')}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Statement Title & List */}
               <div className="flex items-center justify-between pt-2 border-t border-slate-100">

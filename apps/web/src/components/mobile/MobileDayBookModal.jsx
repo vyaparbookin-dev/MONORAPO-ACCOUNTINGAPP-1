@@ -42,9 +42,9 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
   const business = getBusinessMode(selectedCompany);
   const isRestaurant = business.isRestaurant;
 
-  const [period, setPeriod] = useState("today");
-  const [startDate, setStartDate] = useState(() => getLocalDayStr(new Date()));
-  const [endDate, setEndDate] = useState(() => getLocalDayStr(new Date()));
+  const [period, setPeriod] = useState("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [activeTxTab, setActiveTxTab] = useState("all"); // 'all' | 'bills' | 'expenses' | 'salaries' | 'parties'
   const [rawdata, setRawData] = useState(null);
@@ -85,6 +85,9 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       setStartDate(getLocalDayStr(startOfMonth));
       setEndDate(getLocalDayStr(now));
+    } else if (newPeriod === "all") {
+      setStartDate("");
+      setEndDate("");
     }
   };
 
@@ -136,6 +139,7 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
       const yestStr = getLocalDayStr(yestDate);
 
       const checkInRange = (rawDateVal) => {
+        if (period === "all" || (!startDate && !endDate)) return true;
         const dStr = getLocalDayStr(rawDateVal) || todayStr;
         if (period === "today") return dStr === todayStr;
         if (period === "yesterday") return dStr === yestStr;
@@ -318,6 +322,7 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
       {/* Period Selector Tabs (Swipeable Pills) */}
       <div className="bg-white border-b border-slate-200 px-3 py-2 flex items-center gap-2 overflow-x-auto shrink-0 scrollbar-none">
         {[
+          { id: "all", label: "🔄 सभी (All)" },
           { id: "today", label: "📅 आज (Today)" },
           { id: "yesterday", label: "⏮️ कल (Yesterday)" },
           { id: "week", label: "📆 इस हफ्ते (Week)" },

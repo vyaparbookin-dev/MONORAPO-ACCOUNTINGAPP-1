@@ -30,11 +30,9 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   const { selectedCompany } = useCompany() || {};
-  const [period, setPeriod] = useState("month");
-  const [startDate, setStartDate] = useState(
-    new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0]
-  );
-  const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
+  const [period, setPeriod] = useState("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(false);
 
   // Dynamic Gross Profit Margin % (Default 15%, User Configurable)
@@ -218,7 +216,7 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
 
       // Calculate totals
       const calcSales = allBills.reduce(
-        (sum, b) => sum + (Number(b.amount || b.finalAmount || b.total) || 0),
+        (sum, b) => sum + (Number(b.finalAmount ?? b.amount ?? b.total ?? b.totalAmount ?? b.grandTotal ?? 0) || 0),
         0
       );
 
