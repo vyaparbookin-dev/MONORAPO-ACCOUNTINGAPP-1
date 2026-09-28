@@ -6,9 +6,14 @@ export const getAgingReport = async (req, res) => {
     const today = new Date();
 
     // Find all bills that are on credit (issued) or partially paid
+    // Also check paymentStatus and paymentMethod for imported/credit bills
     const bills = await Bill.find({
       companyId,
-      status: { $in: ['issued', 'partial', 'draft'] }, // Considering these might have pending amounts
+      $or: [
+        { status: { $in: ['issued', 'partial', 'draft'] } },
+        { paymentStatus: { $in: ['unpaid', 'partial'] } },
+        { paymentMethod: 'credit' }
+      ],
       isDeleted: false
     }).populate('partyId', 'name mobileNumber');
 

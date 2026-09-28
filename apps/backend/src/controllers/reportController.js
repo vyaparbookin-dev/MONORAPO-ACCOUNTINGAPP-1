@@ -561,7 +561,7 @@ export const getProfitLoss = async (req, res) => {
         activeStaffCount: activeStaffList.length,
         breakEvenDailySalesNeeded,
         breakdown: {
-          foodCost,
+          foodCost: effectivePurchases,
           staffSalaries,
           fixedMonthlyStaffSalaries,
           actualPaidSalaries,

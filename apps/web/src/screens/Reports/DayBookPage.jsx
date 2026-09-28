@@ -162,6 +162,7 @@ export default function DayBookPage() {
       const yestStr = getLocalDayStr(yestDate);
 
       const checkInRange = (rawDateVal) => {
+        if (period === "all") return true;
         const dStr = getLocalDayStr(rawDateVal) || todayStr;
         if (period === "today") return dStr === todayStr;
         if (period === "yesterday") return dStr === yestStr;
@@ -543,6 +544,9 @@ export default function DayBookPage() {
       const startOfYear = new Date(now.getFullYear(), 0, 1);
       setStartDate(startOfYear.toISOString().split("T")[0]);
       setEndDate(now.toISOString().split("T")[0]);
+    } else if (newPeriod === "all") {
+      setStartDate("2020-01-01");
+      setEndDate(now.toISOString().split("T")[0]);
     }
   };
 
@@ -692,6 +696,7 @@ export default function DayBookPage() {
             { id: "month", label: "🗓️ This Month" },
             { id: "quarter", label: "📊 This Quarter" },
             { id: "year", label: "📈 This Year" },
+            { id: "all", label: "🔄 All (सभी)" },
             { id: "custom", label: "⚙️ Custom Range" },
           ].map((p) => (
             <button
