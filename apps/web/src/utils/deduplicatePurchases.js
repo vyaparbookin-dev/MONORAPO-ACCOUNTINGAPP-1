@@ -47,16 +47,41 @@ export function deduplicatePurchases(purchases = []) {
     // 2. By Purchase/Bill Number
     if (purNum && seenNumbers.has(purNum)) continue;
 
-    // 3. By Content Signature (Date+Time + Amount + Supplier + ItemCount)
-    const timeKey = (() => {
+    // 3. By Content Signature with 3-minute tolerance
+    const purTime = (() => {
       const raw = pur.date || pur.createdAt;
-      if (!raw) return '00:00';
+      if (!raw) return 0;
       const d = new Date(raw);
-      return isNaN(d.getTime()) ? '00:00' : `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      return isNaN(d.getTime()) ? 0 : d.getTime();
     })();
-    const itemCount = Array.isArray(pur.items) ? pur.items.length : 0;
-    const sig = `${dateKey}_${timeKey}_${amtVal.toFixed(2)}_${suppName}_${itemCount}`;
-    if (amtVal > 0 && seenSignatures.has(sig)) continue;
+
+    const isDuplicateContent = result.some(existing => {
+      const exAmt = Number(existing.finalAmount ?? existing.totalAmount ?? existing.total ?? existing.amountPaid ?? 0);
+      if (Math.abs(exAmt - amtVal) > 0.01) return false;
+
+      const exSupp = String(existing.supplierName || existing.partyName || existing.supplier || "").trim().toLowerCase();
+      if (suppName && exSupp && suppName !== exSupp) return false;
+
+      const exDate = extractDateKey(existing.date || existing.createdAt);
+      if (exDate !== dateKey) return false;
+
+      const exItems = Array.isArray(existing.items) ? existing.items.length : 0;
+      if (itemCount > 0 && exItems > 0 && itemCount !== exItems) return false;
+
+      const exTime = (() => {
+        const raw = existing.date || existing.createdAt;
+        if (!raw) return 0;
+        const d = new Date(raw);
+        return isNaN(d.getTime()) ? 0 : d.getTime();
+      })();
+
+      if (purTime > 0 && exTime > 0) {
+        return Math.abs(purTime - exTime) <= 180000;
+      }
+      return true;
+    });
+
+    if (amtVal > 0 && isDuplicateContent) continue;
 
     if (id) seenIds.add(id);
     if (purNum) seenNumbers.add(purNum);

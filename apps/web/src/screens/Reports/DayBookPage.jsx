@@ -116,6 +116,7 @@ export default function DayBookPage() {
   // State for Customer 360° Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+  const [expandedPartyIds, setExpandedPartyIds] = useState(new Set());
 
   useEffect(() => {
     fetchDayBook();
@@ -1583,20 +1584,108 @@ export default function DayBookPage() {
                   <span className="font-black text-rose-600">- ₹{s.amount}</span>
                 </div>
               ))}
-              {Array.isArray(rawdata?.partyTransactions) && rawdata.partyTransactions.map((t) => (
-                <div key={t._id || t.id || Math.random()} className="py-2.5 flex justify-between items-center hover:bg-slate-50 px-2 rounded">
-                  <span className="font-bold text-gray-800">
-                    {t.details || "Party Transaction"} ({t.partyId?.name || "Party"})
-                  </span>
-                  <span
-                    className={`font-black ${
-                      t.credit > 0 ? "text-emerald-600" : "text-rose-600"
-                    }`}
-                  >
-                    {t.credit > 0 ? `+ ₹${t.credit}` : `- ₹${t.debit}`}
-                  </span>
-                </div>
-              ))}
+              {/* Grouped Party Transactions with Click-to-Expand */}
+              {(() => {
+                const txs = Array.isArray(rawdata?.partyTransactions) ? rawdata.partyTransactions : [];
+                if (txs.length === 0) return null;
+
+                const partyMap = new Map();
+                for (const t of txs) {
+                  const pId = String(t.partyId?._id || t.partyId?.id || t.partyId || t.details || 'unknown');
+                  const pName = t.partyId?.name || t.partyName || "पार्टी खाता";
+                  if (!partyMap.has(pId)) {
+                    partyMap.set(pId, {
+                      id: pId,
+                      name: pName,
+                      totalCredit: 0,
+                      totalDebit: 0,
+                      items: []
+                    });
+                  }
+                  const group = partyMap.get(pId);
+                  group.totalCredit += Number(t.credit || 0);
+                  group.totalDebit += Number(t.debit || 0);
+                  group.items.push(t);
+                }
+
+                return Array.from(partyMap.values()).map((p) => {
+                  const isExpanded = expandedPartyIds.has(p.id);
+                  const netAmt = p.totalCredit - p.totalDebit;
+                  const isCredit = netAmt >= 0;
+
+                  return (
+                    <div key={p.id} className="border border-slate-100 rounded-xl my-1.5 overflow-hidden transition-all bg-white shadow-sm">
+                      <div
+                        onClick={() => {
+                          setExpandedPartyIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(p.id)) next.delete(p.id);
+                            else next.add(p.id);
+                            return next;
+                          });
+                        }}
+                        className="p-3 flex justify-between items-center hover:bg-slate-50 cursor-pointer select-none"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-400 font-mono transition-transform duration-200">
+                            {isExpanded ? "▼" : "▶"}
+                          </span>
+                          <div>
+                            <span className="font-bold text-gray-900 block text-sm">
+                              {p.name}
+                            </span>
+                            <span className="text-[11px] text-gray-500">
+                              {p.items.length} लेन-देन (क्लिक करके विवरण {isExpanded ? 'छुपाएं' : 'देखें'})
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <span
+                            className={`font-black text-sm block ${
+                              p.totalCredit > 0 && p.totalDebit === 0
+                                ? "text-emerald-600"
+                                : p.totalDebit > 0 && p.totalCredit === 0
+                                ? "text-rose-600"
+                                : isCredit
+                                ? "text-emerald-600"
+                                : "text-rose-600"
+                            }`}
+                          >
+                            {p.totalCredit > 0 && p.totalDebit === 0
+                              ? `+ ₹${p.totalCredit.toLocaleString('en-IN')}`
+                              : p.totalDebit > 0 && p.totalCredit === 0
+                              ? `- ₹${p.totalDebit.toLocaleString('en-IN')}`
+                              : isCredit
+                              ? `+ ₹${netAmt.toLocaleString('en-IN')} (नेट जमा)`
+                              : `- ₹${Math.abs(netAmt).toLocaleString('en-IN')} (नेट दिया)`}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Expandable Individual Transaction Details */}
+                      {isExpanded && (
+                        <div className="bg-slate-50/80 border-t border-slate-100 p-2.5 space-y-1.5 animate-in fade-in duration-150">
+                          {p.items.map((it, idx) => {
+                            const dtStr = it.date ? new Date(it.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '';
+                            return (
+                              <div key={it._id || it.id || idx} className="flex justify-between items-center py-1.5 px-3 bg-white rounded-lg border border-slate-100 text-xs">
+                                <div>
+                                  <span className="text-gray-700 font-medium">{it.details || "Party Payment"}</span>
+                                  {dtStr && <span className="text-[10px] text-gray-400 ml-2">📅 {dtStr}</span>}
+                                </div>
+                                <span className={`font-bold ${it.credit > 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                                  {it.credit > 0 ? `+ ₹${Number(it.credit).toLocaleString('en-IN')}` : `- ₹${Number(it.debit).toLocaleString('en-IN')}`}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
               {!rawdata?.expenses?.length &&
                 !rawdata?.salaries?.length &&
                 !rawdata?.partyTransactions?.length && (

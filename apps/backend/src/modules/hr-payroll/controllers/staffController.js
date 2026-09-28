@@ -375,7 +375,7 @@ export const addStaffAdvance = async (req, res) => {
 
     // Auto-record as Shop Expense (Operating) under Salary category for 2-way sync
     try {
-      await Expense.create({
+      const linkedExpense = await Expense.create({
         companyId: req.companyId,
         title: `स्टाफ एडवांस - ${staff.name}`,
         amount: Number(amount),
@@ -385,8 +385,11 @@ export const addStaffAdvance = async (req, res) => {
         date: date ? new Date(date) : new Date(),
         paymentMethod: (req.body.paymentMode || 'cash').toLowerCase(),
         description: `PagarBook से दर्ज एडवांस: ${staff.name} (${(notes || 'एडवांस भुगतान').trim()})`,
-        staffId: staff._id
+        staffId: staff._id,
+        staffTransactionId: advanceTx._id
       });
+      advanceTx.expenseId = linkedExpense._id;
+      await advanceTx.save();
     } catch (expErr) {
       console.warn("Auto shop expense creation warning for staff advance:", expErr.message);
     }
@@ -644,6 +647,15 @@ export const deleteStaffTransaction = async (req, res) => {
       { new: true }
     );
     if (!tx) return res.status(404).json({ success: false, error: "Transaction not found" });
+    try {
+      if (tx.expenseId) {
+        await Expense.findOneAndUpdate({ _id: tx.expenseId, companyId: req.companyId }, { $set: { isDeleted: true } });
+      } else if (tx.staffId && tx.debit > 0) {
+        await Expense.findOneAndUpdate({ staffId: tx.staffId, companyId: req.companyId, amount: tx.debit, isDeleted: { $ne: true } }, { $set: { isDeleted: true } });
+      }
+    } catch (expDelErr) {
+      console.warn("Linked expense deletion warning:", expDelErr.message);
+    }
     res.json({ success: true, message: "Transaction deleted successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

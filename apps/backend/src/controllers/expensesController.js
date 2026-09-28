@@ -43,17 +43,18 @@ export const addExpense = async (req, res) => {
     if (expanceData.staffId && amountNum > 0) {
       try {
         const staffDoc = await Staff.findOne({ _id: expanceData.staffId, companyId: req.companyId }) || await Staff.findById(expanceData.staffId);
-        if (staffDoc) {
-          await StaffTransaction.create({
+          const stTx = await StaffTransaction.create({
             staffId: staffDoc._id,
             companyId: staffDoc.companyId || req.companyId,
             type: 'advance',
             date: expense.date ? new Date(expense.date) : new Date(),
             debit: amountNum,
             credit: 0,
-            notes: (expense.description || expense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim()
+            notes: (expense.description || expense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim(),
+            expenseId: expense._id
           });
-        }
+          expense.staffTransactionId = stTx._id;
+          await expense.save();
       } catch (staffTxErr) {
         console.warn("Auto-sync staff transaction warning:", staffTxErr.message);
       }
@@ -138,21 +139,31 @@ export const updateExpense = async (req, res) => {
       try {
         const staffDoc = await Staff.findOne({ _id: targetStaffId, companyId: req.companyId }) || await Staff.findById(targetStaffId);
         if (staffDoc) {
-          const existingTx = await StaffTransaction.findOne({
-            staffId: staffDoc._id,
-            debit: amountNum,
-            isDeleted: { $ne: true }
-          });
-          if (!existingTx) {
-            await StaffTransaction.create({
+          let targetTx = null;
+          if (expense.staffTransactionId) {
+            targetTx = await StaffTransaction.findById(expense.staffTransactionId);
+          }
+          if (!targetTx) {
+            targetTx = await StaffTransaction.findOne({ expenseId: expense._id, isDeleted: { $ne: true } });
+          }
+          if (targetTx) {
+            targetTx.debit = amountNum;
+            targetTx.date = expense.date ? new Date(expense.date) : new Date();
+            targetTx.notes = (expense.description || expense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim();
+            await targetTx.save();
+          } else {
+            const newStTx = await StaffTransaction.create({
               staffId: staffDoc._id,
               companyId: staffDoc.companyId || req.companyId,
               type: 'advance',
               date: expense.date ? new Date(expense.date) : new Date(),
               debit: amountNum,
               credit: 0,
-              notes: (expense.description || expense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim()
+              notes: (expense.description || expense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim(),
+              expenseId: expense._id
             });
+            expense.staffTransactionId = newStTx._id;
+            await expense.save();
           }
         }
       } catch (staffTxErr) {
@@ -310,17 +321,30 @@ export const deleteExpense = async (req, res) => {
      
      if (oldExpense) {
        // Revert linked Staff Transaction if this expense was for a staff advance
-       if (oldExpense.staffId && Number(oldExpense.amount) > 0) {
-         try {
-           await StaffTransaction.findOneAndUpdate(
-             { staffId: oldExpense.staffId, companyId: req.companyId, debit: Number(oldExpense.amount), isDeleted: { $ne: true } },
-             { isDeleted: true }
-           );
-         } catch (stErr) {
-           console.warn("Error reverting staff transaction on expense deletion:", stErr.message);
-         }
-       }
-       await logActivity(req, `Deleted Expense (ID: ${id}) | Title: ${oldExpense?.title || 'Unknown'}, Amount: ₹${oldExpense?.amount || 0}`);
+        if (oldExpense.staffId && Number(oldExpense.amount) > 0) {
+          try {
+            if (oldExpense.staffTransactionId) {
+              await StaffTransaction.findOneAndUpdate(
+                { _id: oldExpense.staffTransactionId, companyId: req.companyId },
+                { isDeleted: true }
+              );
+            } else {
+              const byExp = await StaffTransaction.findOneAndUpdate(
+                { expenseId: oldExpense._id, companyId: req.companyId },
+                { isDeleted: true }
+              );
+              if (!byExp) {
+                await StaffTransaction.findOneAndUpdate(
+                  { staffId: oldExpense.staffId, companyId: req.companyId, debit: Number(oldExpense.amount), isDeleted: { $ne: true } },
+                  { isDeleted: true }
+                );
+              }
+            }
+          } catch (stErr) {
+            console.warn("Error reverting staff transaction on expense deletion:", stErr.message);
+          }
+        }
+        await logActivity(req, `Deleted Expense (ID: ${id}) | Title: ${oldExpense?.title || 'Unknown'}, Amount: ₹${oldExpense?.amount || 0}`);
 
        // Revert Bank deduction if this expense was deducted from a bank account
        if (oldExpense.bankAccountId && Number(oldExpense.amount) > 0) {

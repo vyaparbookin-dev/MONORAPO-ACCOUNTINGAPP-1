@@ -9,6 +9,7 @@ const staffTransactionSchema = new mongoose.Schema({
   debit: { type: Number, default: 0 },
   credit: { type: Number, default: 0 },
   notes: String,
+  expenseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Expense' },
   isDeleted: { type: Boolean, default: false }
 }, { timestamps: true });
 

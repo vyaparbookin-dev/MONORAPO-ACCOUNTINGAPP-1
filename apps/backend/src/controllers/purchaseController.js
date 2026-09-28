@@ -125,20 +125,52 @@ export const exportPurchasesCSV = async (req, res) => {
   }
 };
 
-// Soft Delete a Purchase
+// Soft Delete a Purchase (with Stock & Supplier Ledger Revert)
 export const deletePurchase = async (req, res) => {
   try {
     const oldPurchase = await Purchase.findOne({ _id: req.params.id, companyId: req.companyId });
+    if (!oldPurchase) return res.status(404).json({ success: false, error: "Purchase not found" });
+
     const purchase = await Purchase.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
       { isDeleted: true },
       { new: true }
     );
-    if (!purchase) return res.status(404).json({ success: false, error: "Purchase not found" });
-    
+
+    // 1. REVERT INVENTORY (Reduce the stock that was added on purchase)
+    if (Array.isArray(oldPurchase.items)) {
+      for (const item of oldPurchase.items) {
+        if (item.productId && Number(item.quantity) > 0) {
+          await Product.findByIdAndUpdate(
+            item.productId,
+            { $inc: { currentStock: -Number(item.quantity) } }
+          );
+        }
+      }
+    }
+
+    // 2. REVERT SUPPLIER BALANCE & LEDGER
+    if (oldPurchase.partyId) {
+      const finalAmt = Number(oldPurchase.finalAmount || 0);
+      const paidAmt = Number(oldPurchase.amountPaid || 0);
+      const pendingAmt = finalAmt - paidAmt;
+
+      if (pendingAmt !== 0) {
+        await Party.findByIdAndUpdate(
+          oldPurchase.partyId,
+          { $inc: { currentBalance: pendingAmt } }
+        );
+      }
+
+      await PartyTransaction.updateMany(
+        { referenceBillId: oldPurchase._id, companyId: req.companyId },
+        { $set: { isDeleted: true } }
+      );
+    }
+
     await logActivity(req, `Deleted Purchase #${purchase.purchaseNumber || req.params.id} | Supplier: ${oldPurchase?.supplierName || 'Unknown'}, Amount was: ₹${oldPurchase?.finalAmount || 0}`);
-    
-    res.json({ success: true, message: "Purchase deleted successfully!" });
+
+    res.json({ success: true, message: "Purchase deleted and inventory/supplier ledger reverted successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

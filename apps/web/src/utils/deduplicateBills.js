@@ -61,17 +61,43 @@ export function deduplicateBills(bills = []) {
       continue;
     }
 
-    // 4. Content signature check: Same date+time, same amount, same customer, same item count
-    // Avoids double counting the exact same sale if one has a temp ID and other has a cloud ID
-    const timeKey = (() => {
+    // 4. Content signature check & 3-minute window fuzzy match
+    // Check if an existing authoritative record matches this bill
+    const billTime = (() => {
       const raw = bill.rawDate || bill.date || bill.createdAt;
-      if (!raw) return '00:00';
+      if (!raw) return 0;
       const d = new Date(raw);
-      return isNaN(d.getTime()) ? '00:00' : `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      return isNaN(d.getTime()) ? 0 : d.getTime();
     })();
-    const itemCount = Array.isArray(bill.items) ? bill.items.length : 0;
-    const signature = `${dateKey}_${timeKey}_${amtVal.toFixed(2)}_${custName}_${itemCount}`;
-    if (amtVal > 0 && seenSignatures.has(signature)) {
+
+    const isDuplicateContent = result.some(existing => {
+      const exAmt = Number(existing.amount ?? existing.finalAmount ?? 0);
+      if (Math.abs(exAmt - amtVal) > 0.01) return false;
+
+      const exCust = String(existing.customerName || existing.partyName || "").trim().toLowerCase();
+      if (custName && exCust && custName !== exCust && custName !== "काउंटर नकद ग्राहक" && exCust !== "काउंटर नकद ग्राहक") return false;
+
+      const exDate = extractDateKey(existing.rawDate || existing.date || existing.createdAt);
+      if (exDate !== dateKey) return false;
+
+      const exItems = Array.isArray(existing.items) ? existing.items.length : 0;
+      if (itemCount > 0 && exItems > 0 && itemCount !== exItems) return false;
+
+      // Time proximity: within 3 minutes (180,000 ms) or one time is unknown
+      const exTime = (() => {
+        const raw = existing.rawDate || existing.date || existing.createdAt;
+        if (!raw) return 0;
+        const d = new Date(raw);
+        return isNaN(d.getTime()) ? 0 : d.getTime();
+      })();
+
+      if (billTime > 0 && exTime > 0) {
+        return Math.abs(billTime - exTime) <= 180000;
+      }
+      return true; // Same day, same amount, same customer, same item count
+    });
+
+    if (amtVal > 0 && isDuplicateContent) {
       continue;
     }
 
