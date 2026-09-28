@@ -68,6 +68,7 @@ import CreditLimitHubModal from "../../components/modals/CreditLimitHubModal";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 import { speakUpiPayment, playPaymentChime } from "../../utils/soundBox";
+import { storageManager } from "../../services/storageManager";
 
 
 class MobileErrorBoundary extends React.Component {
@@ -158,20 +159,8 @@ function MobileVyaparAppContent() {
   const [parties, setParties] = useState(() => {
     try {
       const coId = localStorage.getItem("companyId");
-      const pKeys = [
-        coId ? `vb_local_parties_${coId}` : null,
-        "vb_local_parties",
-        "parties",
-        "customers",
-        "local_parties"
-      ].filter(Boolean);
-      for (const k of pKeys) {
-        const raw = localStorage.getItem(k);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      }
+      const list = storageManager.getParties(coId);
+      if (Array.isArray(list) && list.length > 0) return list;
     } catch (e) {}
     return [];
   });
@@ -198,27 +187,8 @@ function MobileVyaparAppContent() {
   const [bills, setBills] = useState(() => {
     try {
       const coId = typeof localStorage !== 'undefined' ? localStorage.getItem("companyId") : '';
-      const bKeys = [
-        coId ? `vb_local_manual_bills_${coId}` : null,
-        "vb_local_manual_bills",
-        "bills",
-        "manual_bills",
-        "vb_bills",
-        "local_bills",
-        "sales",
-        "pos_bills"
-      ].filter(Boolean);
-      const allFound = [];
-      for (const k of bKeys) {
-        const raw = localStorage.getItem(k);
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed) && parsed.length > 0) allFound.push(...parsed);
-          } catch (e) {}
-        }
-      }
-      if (allFound.length > 0) return deduplicateBills(allFound);
+      const list = storageManager.getBills(coId);
+      if (Array.isArray(list) && list.length > 0) return list;
     } catch (e) {}
     return [];
   });
@@ -820,12 +790,9 @@ function MobileVyaparAppContent() {
       }
       
       // Authoritative deduplication: server records always supersede temp local entries
-      const combined = deduplicateExpenses([...(Array.isArray(serverList) ? serverList : []), ...localList]);
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      const combined = storageManager.saveExpenses(currentCoId, [...(Array.isArray(serverList) ? serverList : []), ...localList]);
       setGharKharchList(combined);
-      try {
-        localStorage.setItem("vb_local_expenses", JSON.stringify(combined));
-        localStorage.setItem("expenses", JSON.stringify(combined));
-      } catch (e) {}
     } catch (e) {
       console.error("Failed to fetch Ghar Kharch:", e);
     } finally {
@@ -1355,51 +1322,8 @@ function MobileVyaparAppContent() {
 
       // Scope local offline cache strictly to active company to prevent multi-tenant cross-talk
       const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
-      let localManualBills = [];
-      try {
-        if (typeof localStorage !== "undefined") {
-          const bKeys = [
-            currentCoId ? `vb_local_manual_bills_${currentCoId}` : null,
-            "vb_local_manual_bills",
-            "bills",
-            "manual_bills",
-            "vb_bills",
-            "sales"
-          ].filter(Boolean);
-          for (const k of bKeys) {
-            const stored = localStorage.getItem(k);
-            if (stored) {
-              try {
-                const parsed = JSON.parse(stored);
-                if (Array.isArray(parsed)) {
-                  parsed.forEach(item => {
-                    if (!item || typeof item !== "object") return;
-                    const amt = Number(item.amount || item.finalAmount || item.total || item.totalAmount || item.grandTotal || 0);
-                    if (amt > 0 || item.billNumber) {
-                      localManualBills.push(item);
-                    }
-                  });
-                }
-              } catch (e) {}
-            }
-          }
-        }
-      } catch (e) {}
-
-      // Authoritative deduplication: server documents always take precedence
-      const mergedBills = deduplicateBills([...normBills, ...localManualBills]);
+      const mergedBills = storageManager.mergeBills(currentCoId, normBills);
       setBills(mergedBills);
-
-      // CRITICAL SAFEGUARD: NEVER wipe local storage if server returns 0 or partial bills!
-      try {
-        if (mergedBills.length > 0) {
-          if (currentCoId) {
-            localStorage.setItem(`vb_local_manual_bills_${currentCoId}`, JSON.stringify(mergedBills));
-          }
-          localStorage.setItem("vb_local_manual_bills", JSON.stringify(mergedBills));
-          localStorage.setItem("bills", JSON.stringify(mergedBills));
-        }
-      } catch (e) {}
 
       let rawParties = [];
       if (partiesRes.status === "fulfilled" && partiesRes.value) {
@@ -1427,60 +1351,8 @@ function MobileVyaparAppContent() {
         notes: p.notes || ""
       }));
 
-      // Load local parties from ALL candidate keys so parties never disappear
-      let localParties = [];
-      try {
-        if (typeof localStorage !== "undefined") {
-          const pKeys = [
-            currentCoId ? `vb_local_parties_${currentCoId}` : null,
-            "vb_local_parties",
-            "parties",
-            "local_parties"
-          ].filter(Boolean);
-          pKeys.forEach(k => {
-            const storedP = localStorage.getItem(k);
-            if (storedP) {
-              try {
-                const parsed = JSON.parse(storedP);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  localParties.push(...parsed);
-                }
-              } catch (e) {}
-            }
-          });
-        }
-      } catch (e) {}
-
-      const partyMap = new Map();
-      const getPartyUniqueKey = (p) => {
-        const phone = String(p.phone || p.mobileNumber || '').replace(/\D/g, '').slice(-10);
-        if (phone && phone.length === 10 && phone !== '9999999999') return `phone_${phone}`;
-        const name = String(p.name || p.partyName || '').trim().toLowerCase();
-        if (name) return `name_${name}`;
-        return String(p._id || p.id || Math.random());
-      };
-
-      (Array.isArray(localParties) ? localParties : []).forEach(p => {
-        if (p.isActive === false || p.isDeleted === true) return;
-        const key = getPartyUniqueKey(p);
-        if (key) partyMap.set(key, p);
-      });
-      normParties.forEach(p => {
-        if (p.isActive === false || p.isDeleted === true) return;
-        const key = getPartyUniqueKey(p);
-        if (key) partyMap.set(key, { ...(partyMap.get(key) || {}), ...p });
-      });
-      const mergedParties = Array.from(partyMap.values());
+      const mergedParties = storageManager.mergeParties(currentCoId, normParties);
       setParties(mergedParties);
-      try {
-        if (mergedParties.length > 0) {
-          if (currentCoId) {
-            localStorage.setItem(`vb_local_parties_${currentCoId}`, JSON.stringify(mergedParties));
-          }
-          localStorage.setItem("vb_local_parties", JSON.stringify(mergedParties));
-          localStorage.setItem("parties", JSON.stringify(mergedParties));
-        }
-      } catch (e) {}
 
       let rawInv = [];
       if (invRes.status === "fulfilled" && invRes.value) {
@@ -1803,14 +1675,9 @@ function MobileVyaparAppContent() {
       createdAt: new Date().toISOString()
     };
 
-    setBills(prev => {
-      const updated = deduplicateBills([createdBill, ...prev]);
-      try {
-        localStorage.setItem("vb_local_manual_bills", JSON.stringify(updated));
-        localStorage.setItem("bills", JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
+    const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+    const updatedBillsList = storageManager.saveBill(currentCoId, createdBill);
+    setBills(updatedBillsList);
 
     setBillCart([]);
     setBillCustomer("");
@@ -1845,14 +1712,9 @@ function MobileVyaparAppContent() {
 
         if (res?.data?.bill) {
           const serverBill = res.data.bill;
-          setBills(prev => {
-            const updated = prev.map(b => (b._id === localBillId || b.id === genBillNo) ? { ...b, ...serverBill, isOfflineCreated: false } : b);
-            try {
-              localStorage.setItem("vb_local_manual_bills", JSON.stringify(updated));
-              localStorage.setItem("bills", JSON.stringify(updated));
-            } catch (e) {}
-            return updated;
-          });
+          const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+          const syncedBills = storageManager.saveBill(currentCoId, { ...serverBill, isOfflineCreated: false });
+          setBills(syncedBills);
 
           if (res?.data?.udharProtection) {
             setActiveUdharBillData({
@@ -2026,17 +1888,8 @@ function MobileVyaparAppContent() {
         };
 
         const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
-        setParties(prev => {
-          const updated = prev.map(p => ((p._id || p.id) === pId ? updatedParty : p));
-          try {
-            if (currentCoId) {
-              localStorage.setItem(`vb_local_parties_${currentCoId}`, JSON.stringify(updated));
-            }
-            localStorage.setItem("vb_local_parties", JSON.stringify(updated));
-            localStorage.setItem("parties", JSON.stringify(updated));
-          } catch (e) {}
-          return updated;
-        });
+        storageManager.saveParty(currentCoId, updatedParty);
+        setParties(storageManager.getParties(currentCoId));
         if (selectedPartyDetail && ((selectedPartyDetail._id || selectedPartyDetail.id) === pId)) {
           setSelectedPartyDetail(updatedParty);
         }
@@ -2061,17 +1914,8 @@ function MobileVyaparAppContent() {
         };
 
         const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
-        setParties(prev => {
-          const updated = [createdParty, ...prev];
-          try {
-            if (currentCoId) {
-              localStorage.setItem(`vb_local_parties_${currentCoId}`, JSON.stringify(updated));
-            }
-            localStorage.setItem("vb_local_parties", JSON.stringify(updated));
-            localStorage.setItem("parties", JSON.stringify(updated));
-          } catch (e) {}
-          return updated;
-        });
+        storageManager.saveParty(currentCoId, createdParty);
+        setParties(storageManager.getParties(currentCoId));
         alert(`✅ पार्टी '${createdParty.name}' सफलतापूर्वक जुड़ गई!`);
       }
 
@@ -2369,13 +2213,7 @@ function MobileVyaparAppContent() {
           }
           return p;
         });
-        try {
-          if (currentCoId) {
-            localStorage.setItem(`vb_local_parties_${currentCoId}`, JSON.stringify(updated));
-          }
-          localStorage.setItem("vb_local_parties", JSON.stringify(updated));
-          localStorage.setItem("parties", JSON.stringify(updated));
-        } catch (e) {}
+        storageManager.saveParties(currentCoId, updated);
         return updated;
       });
 
@@ -2505,21 +2343,8 @@ function MobileVyaparAppContent() {
 
       // 1. Instantly persist in localStorage so it NEVER disappears (Offline-First)
       const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
-      const billStorageKeys = [
-        currentCoId ? `vb_local_manual_bills_${currentCoId}` : null,
-        "vb_local_manual_bills",
-        "bills"
-      ].filter(Boolean);
-      try {
-        const stored = readLocalJson(billStorageKeys, []);
-        const list = Array.isArray(stored) ? stored : [];
-        const updatedList = deduplicateBills([createdBill, ...list]);
-        writeLocalJson(billStorageKeys, updatedList);
-        setBills(updatedList);
-      } catch (storageErr) {
-        console.warn("Local bill storage err:", storageErr);
-        setBills(prev => [createdBill, ...prev]);
-      }
+      const updatedList = storageManager.saveBill(currentCoId, createdBill);
+      setBills(updatedList);
 
       setShowManualSaleModal(false);
       setManualSaleAmount("");
@@ -2540,13 +2365,9 @@ function MobileVyaparAppContent() {
           const res = await api.post("/api/billing", payload);
           const savedBill = res?.data?.bill || res?.data?.data || res?.data;
           if (savedBill && savedBill._id) {
-            setBills(prev => {
-              const updated = prev.map(b => (b._id === localBillId || b.id === genBillNo) ? { ...b, ...savedBill, isOfflineCreated: false } : b);
-              try {
-                writeLocalJson(billStorageKeys, updated);
-              } catch (e) {}
-              return updated;
-            });
+            const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+            const syncedBills = storageManager.saveBill(currentCoId, { ...savedBill, isOfflineCreated: false });
+            setBills(syncedBills);
           }
         } catch (postErr) {
           console.warn("Background manual sale sync deferred to offline queue:", postErr);
