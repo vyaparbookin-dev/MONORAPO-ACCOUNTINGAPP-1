@@ -81,6 +81,199 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
     }
   };
 
+  const getElapsedMonths = (startDateStr, dueDayStr, maxMonths) => {
+    if (!startDateStr) return 0;
+    try {
+      const start = new Date(startDateStr);
+      const now = new Date();
+      if (isNaN(start.getTime()) || start > now) return 0;
+      let months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+      const dueDay = Number(dueDayStr || start.getDate() || 5);
+      if (now.getDate() >= dueDay) {
+        months += 1;
+      }
+      const limit = Number(maxMonths) || 360;
+      return Math.min(Math.max(0, months), limit);
+    } catch {
+      return 0;
+    }
+  };
+
+  const calculateExpectedMaturity = (itemOrForm) => {
+    if (!itemOrForm) return 0;
+    const explicit = Number(itemOrForm.expectedMaturityAmount || 0);
+    if (explicit > 0) return explicit;
+
+    const type = itemOrForm.savingsType || "RD";
+    const rate = Number(itemOrForm.interestRate || 0);
+    const tenureYears = Number(itemOrForm.tenureYears || 1);
+    const freq = itemOrForm.frequency || "monthly";
+    const totalMonths = tenureYears * (freq === "quarterly" ? 4 : (freq === "yearly" ? 1 : 12));
+    const instAmt = Number(itemOrForm.installmentAmount || 0);
+    const initDeposit = Number(itemOrForm.initialDeposit || itemOrForm.totalDeposited || 0);
+
+    if (type === "FD") {
+      if (initDeposit <= 0) return 0;
+      if (rate <= 0) return initDeposit;
+      // Standard Indian Bank quarterly compounded FD formula: A = P * (1 + r/400)^(4*t)
+      return Math.round(initDeposit * Math.pow(1 + rate / 400, 4 * tenureYears));
+    }
+
+    // RD / SIP / PPF / LIC / OTHER
+    const totalPrincipal = totalMonths * instAmt;
+    if (totalPrincipal <= 0) return Number(itemOrForm.totalDeposited || 0);
+    if (rate <= 0) return totalPrincipal;
+
+    // RD quarterly compounding (Indian Banking standard)
+    const i = rate / 400; // quarterly rate
+    let maturity = 0;
+    for (let m = 1; m <= totalMonths; m++) {
+      const quarters = (totalMonths - m + 1) / 3;
+      maturity += instAmt * Math.pow(1 + i, quarters);
+    }
+    return Math.round(maturity);
+  };
+
+  const generatePastInstallments = (startDateStr, paidCount, instAmt, fundSource, dueDayOfMonth, totalPastAmt) => {
+    const result = [];
+    const base = startDateStr ? new Date(startDateStr) : new Date();
+    const dueDay = Number(dueDayOfMonth || 5);
+    const count = Number(paidCount || 0);
+    const total = Number(totalPastAmt || 0);
+    const perInst = Number(instAmt || 0);
+
+    for (let i = 0; i < count; i++) {
+      const instDate = new Date(base);
+      instDate.setMonth(base.getMonth() + i);
+      instDate.setDate(dueDay);
+
+      let thisAmt = perInst;
+      if (i === count - 1 && total > 0) {
+        const allocated = perInst * (count - 1);
+        if (allocated + perInst !== total && total > allocated) {
+          thisAmt = Math.max(0, total - allocated);
+        }
+      }
+
+      result.push({
+        amount: thisAmt > 0 ? thisAmt : perInst,
+        date: instDate.toISOString().split("T")[0],
+        sourceOfFund: fundSource || "business_salary",
+        notes: `किस्त #${i + 1} (${instDate.toLocaleDateString("hi-IN", { month: "short", year: "numeric" })})`
+      });
+    }
+    return result;
+  };
+
+  const getRdMetrics = (item) => {
+    if (!item) return {};
+    const type = item.savingsType || "RD";
+    const tenureYears = Number(item.tenureYears || 1);
+    const totalMonths = tenureYears * (item.frequency === "quarterly" ? 4 : (item.frequency === "yearly" ? 1 : 12));
+    const instAmt = Number(item.installmentAmount || 0);
+
+    // Elapsed installments from startDate up to today
+    const elapsedMonths = type === "FD" ? 1 : getElapsedMonths(item.startDate, item.dueDayOfMonth, totalMonths);
+
+    // Explicit recorded installments in the array
+    const recordedList = Array.isArray(item.installments) ? item.installments : [];
+    const recordedCount = recordedList.length;
+
+    // Deposited amount recorded
+    const rawDeposited = Number(item.totalDeposited ?? item.currentValue ?? 0);
+    const countFromDeposited = instAmt > 0 && rawDeposited > 0 ? Math.round(rawDeposited / instAmt) : 0;
+
+    // Explicit count saved on item if any
+    const explicitCount = item.alreadyPaidCount != null && item.alreadyPaidCount !== "" ? Number(item.alreadyPaidCount) : 0;
+
+    // The core automatic calculation: if startDate is in past, elapsed months are counted as PAID
+    const paidCount = type === "FD" 
+      ? 1 
+      : Math.min(totalMonths, Math.max(elapsedMonths, recordedCount, explicitCount, countFromDeposited));
+
+    // Total deposited so far
+    const totalDeposited = type === "FD"
+      ? (rawDeposited > 0 ? rawDeposited : Number(item.initialDeposit || 0))
+      : Math.max(rawDeposited, paidCount * instAmt);
+
+    // Remaining installments and remaining amount to pay
+    const remainingCount = type === "FD" ? 0 : Math.max(0, totalMonths - paidCount);
+    const remainingAmount = remainingCount * instAmt;
+
+    // Progress percentage
+    const progressPct = totalMonths > 0 ? Math.min(100, Math.round((paidCount / totalMonths) * 100)) : 0;
+
+    // Expected maturity amount for this individual card
+    const expectedMaturity = calculateExpectedMaturity(item);
+    const totalPrincipal = type === "FD" ? totalDeposited : (totalMonths * instAmt);
+    const interestGain = Math.max(0, expectedMaturity - totalPrincipal);
+
+    return {
+      tenureYears,
+      totalMonths,
+      instAmt,
+      elapsedMonths,
+      paidCount,
+      totalDeposited,
+      remainingCount,
+      remainingAmount,
+      progressPct,
+      expectedMaturity,
+      interestGain,
+      totalPrincipal
+    };
+  };
+
+  const getUpcomingSchedule = (savingItem) => {
+    if (!savingItem || savingItem.savingsType === "FD") return [];
+    const m = getRdMetrics(savingItem);
+    const instAmt = m.instAmt;
+    const paidCount = m.paidCount;
+    const remainingCount = m.remainingCount;
+
+    if (remainingCount <= 0 || instAmt <= 0) return [];
+
+    const schedule = [];
+    const baseDate = savingItem.startDate ? new Date(savingItem.startDate) : new Date();
+    const dueDay = Number(savingItem.dueDayOfMonth || 5);
+
+    for (let i = 1; i <= Math.min(remainingCount, 12); i++) {
+      const futureDate = new Date(baseDate);
+      futureDate.setMonth(baseDate.getMonth() + paidCount + (i - 1));
+      futureDate.setDate(dueDay);
+
+      schedule.push({
+        installmentNum: paidCount + i,
+        monthLabel: futureDate.toLocaleDateString("hi-IN", { month: "long", year: "numeric" }),
+        dueDate: futureDate.toLocaleDateString("hi-IN", { day: "numeric", month: "short", year: "numeric" }),
+        amount: instAmt
+      });
+    }
+    return schedule;
+  };
+
+  const formatDateDisplay = (dateStr) => {
+    if (!dateStr) return "—";
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return String(dateStr);
+      return d.toLocaleDateString("hi-IN", { day: "numeric", month: "short", year: "numeric" });
+    } catch {
+      return String(dateStr);
+    }
+  };
+
+  const getMonthYearTitle = (dateStr, idx = 1) => {
+    if (!dateStr) return `किस्त #${idx}`;
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return `किस्त #${idx}`;
+      return d.toLocaleDateString("hi-IN", { month: "long", year: "numeric" });
+    } catch {
+      return `किस्त #${idx}`;
+    }
+  };
+
   const [formData, setFormData] = useState({
     title: "",
     savingsType: "RD",
@@ -190,38 +383,57 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
       return;
     }
 
-    const isOld = Boolean(formData.isOldOngoingAccount);
-    const pastAmt = Number(formData.alreadyDepositedAmount || 0);
+    const type = formData.savingsType || "RD";
+    const tenureYears = Number(formData.tenureYears || 1);
+    const totalMonths = tenureYears * (formData.frequency === "quarterly" ? 4 : (formData.frequency === "yearly" ? 1 : 12));
     const instAmt = Number(formData.installmentAmount || 0);
     const initDeposit = Number(formData.initialDeposit || 0);
+    const pastAmt = Number(formData.alreadyDepositedAmount || 0);
 
-    // FD principal vs RD monthly commitment (RD starts at 0 unless isOld is checked)
-    let computedTotal = 0;
-    if (editingId) {
-      const existing = savingsList.find(x => (x._id || x.id) === editingId);
-      if (formData.isOldOngoingAccount && pastAmt !== Number(existing?.totalDeposited)) {
-        computedTotal = pastAmt;
-      } else {
-        computedTotal = Number(existing?.totalDeposited ?? (isOld && pastAmt > 0 ? pastAmt : (formData.savingsType === "FD" ? initDeposit : 0)));
-      }
-    } else {
-      computedTotal = isOld && pastAmt > 0
-        ? pastAmt
-        : (formData.savingsType === "FD" ? initDeposit : 0);
-    }
+    // Elapsed months from Start Date up to current date (आज तक कितने माह बीते)
+    const autoElapsed = type === "FD" ? 1 : getElapsedMonths(formData.startDate, formData.dueDayOfMonth, totalMonths);
+
+    // If user provided a specific paid count, respect it; otherwise automatically count elapsed months as PAID!
+    const effectivePaidCount = type === "FD"
+      ? 1
+      : Math.min(
+          totalMonths,
+          formData.alreadyPaidCount != null && formData.alreadyPaidCount !== ""
+            ? Number(formData.alreadyPaidCount)
+            : autoElapsed
+        );
+
+    // Effective deposited amount
+    const computedTotal = type === "FD"
+      ? (initDeposit > 0 ? initDeposit : pastAmt)
+      : (pastAmt > 0 ? pastAmt : effectivePaidCount * instAmt);
+
+    // Auto-calculate expected maturity if user didn't enter one
+    const calcExpectedMaturity = Number(formData.expectedMaturityAmount || 0) > 0
+      ? Number(formData.expectedMaturityAmount)
+      : calculateExpectedMaturity({
+          ...formData,
+          tenureYears,
+          installmentAmount: instAmt,
+          initialDeposit: initDeposit,
+          totalDeposited: computedTotal
+        });
+
+    const maturityDate = formData.maturityDate || calculateMaturity(formData.startDate, tenureYears);
 
     const payload = {
       ...formData,
-      tenureYears: Number(formData.tenureYears || 1),
+      tenureYears,
       installmentAmount: instAmt,
-      initialDeposit: formData.savingsType === "FD" ? initDeposit : 0,
-      alreadyDepositedAmount: pastAmt,
+      initialDeposit: type === "FD" ? initDeposit : 0,
+      alreadyPaidCount: effectivePaidCount,
+      alreadyDepositedAmount: computedTotal,
       totalDeposited: computedTotal,
       currentValue: computedTotal,
       interestRate: Number(formData.interestRate || 0),
       dueDayOfMonth: Number(formData.dueDayOfMonth || 5),
-      expectedMaturityAmount: Number(formData.expectedMaturityAmount || 0),
-      maturityDate: formData.maturityDate || calculateMaturity(formData.startDate, formData.tenureYears),
+      expectedMaturityAmount: calcExpectedMaturity,
+      maturityDate,
       updatedAt: new Date().toISOString()
     };
 
@@ -232,19 +444,10 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
         const existing = savingsList.find(x => (x._id || x.id) === editingId);
         let updatedInsts = existing?.installments || [];
 
-        // If user manually corrected the total balance or paid count in edit form
-        if (formData.isOldOngoingAccount && (pastAmt !== Number(existing?.totalDeposited) || Number(formData.alreadyPaidCount) !== (existing?.installments || []).length)) {
-          if (pastAmt > 0 && Number(formData.alreadyPaidCount) > 1 && instAmt > 0) {
-            updatedInsts = generatePastInstallments(payload.startDate, Number(formData.alreadyPaidCount), instAmt, payload.fundSource, payload.dueDayOfMonth, pastAmt);
-          } else if (pastAmt > 0) {
-            updatedInsts = [{
-              amount: pastAmt,
-              date: payload.startDate || new Date().toISOString().split("T")[0],
-              sourceOfFund: payload.fundSource,
-              notes: `पूर्व संचित बचत (${formData.alreadyPaidCount ? `${formData.alreadyPaidCount} किस्तें` : 'सुधारी गई कुल जमा राशि'})`
-            }];
-          } else {
-            updatedInsts = [];
+        // If installments are fewer than paid count, generate past installments for complete passbook
+        if (type !== "FD" && (updatedInsts.length < effectivePaidCount || pastAmt !== Number(existing?.totalDeposited))) {
+          if (effectivePaidCount > 0 && instAmt > 0) {
+            updatedInsts = generatePastInstallments(payload.startDate, effectivePaidCount, instAmt, payload.fundSource, payload.dueDayOfMonth, computedTotal);
           }
         }
 
@@ -265,27 +468,24 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
       } else {
         // Create new account
         const newId = "sav_" + Date.now();
+        const pastInstallments = type !== "FD" && effectivePaidCount > 0 && instAmt > 0
+          ? generatePastInstallments(payload.startDate, effectivePaidCount, instAmt, payload.fundSource, payload.dueDayOfMonth, computedTotal)
+          : (type === "FD" && initDeposit > 0
+              ? [{
+                  amount: initDeposit,
+                  date: payload.startDate || new Date().toISOString().split("T")[0],
+                  sourceOfFund: payload.fundSource,
+                  notes: "FD Principal Deposit / फिक्स्ड डिपॉजिट जमा"
+                }]
+              : []);
+
         const newRecord = {
           ...payload,
           _id: newId,
           id: newId,
           createdAt: new Date().toISOString(),
           status: "ACTIVE",
-          installments: isOld && pastAmt > 0 ? (
-            Number(formData.alreadyPaidCount) > 1 && instAmt > 0
-              ? generatePastInstallments(payload.startDate, Number(formData.alreadyPaidCount), instAmt, payload.fundSource, payload.dueDayOfMonth, pastAmt)
-              : [{
-                  amount: pastAmt,
-                  date: payload.startDate || new Date().toISOString().split("T")[0],
-                  sourceOfFund: payload.fundSource,
-                  notes: `पूर्व संचित बचत (${formData.alreadyPaidCount ? `${formData.alreadyPaidCount} किस्तें` : 'पुराना चालू खाता'})`
-                }]
-          ) : (formData.savingsType === "FD" && initDeposit > 0) ? [{
-            amount: initDeposit,
-            date: payload.startDate || new Date().toISOString().split("T")[0],
-            sourceOfFund: payload.fundSource,
-            notes: "FD Principal Deposit / फिक्स्ड डिपॉजिट जमा"
-          }] : [] // RD/SIP starts at 0!
+          installments: pastInstallments
         };
 
         try {
@@ -310,11 +510,9 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
 
   const handleOpenEdit = (item) => {
     setEditingId(item._id || item.id);
+    const m = getRdMetrics(item);
     const sDate = item.startDate ? String(item.startDate).split("T")[0] : new Date().toISOString().split("T")[0];
-    const instAmt = Number(item.installmentAmount || 0);
-    const totalDep = Number(item.totalDeposited ?? item.alreadyDepositedAmount ?? 0);
-    const recordedLen = (item.installments || []).length;
-    const calcCount = instAmt > 0 && totalDep > 0 ? Math.round(totalDep / instAmt) : recordedLen;
+    const tYrs = String(item.tenureYears || "1");
 
     setFormData({
       title: item.title || "",
@@ -329,12 +527,12 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
       interestRate: String(item.interestRate || ""),
       startDate: sDate,
       tenureYears: tYrs,
-      isOldOngoingAccount: true, // Show total deposited amount so user can edit it directly
-      alreadyDepositedAmount: String(totalDep || ""),
-      alreadyPaidCount: String(item.alreadyPaidCount || (recordedLen > 1 ? recordedLen : (calcCount || ""))),
+      isOldOngoingAccount: m.paidCount > 0,
+      alreadyDepositedAmount: String(m.totalDeposited || ""),
+      alreadyPaidCount: String(m.paidCount || ""),
       maturityDate: item.maturityDate ? String(item.maturityDate).split("T")[0] : calculateMaturity(sDate, tYrs),
       dueDayOfMonth: String(item.dueDayOfMonth || "5"),
-      expectedMaturityAmount: String(item.expectedMaturityAmount || ""),
+      expectedMaturityAmount: String(item.expectedMaturityAmount || (m.expectedMaturity || "")),
       notes: item.notes || ""
     });
     setIsFormOpen(true);
@@ -517,132 +715,29 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
     return (item.classification || "personal") === activeFilter;
   });
 
-  const totalInvestedAll = savingsList.reduce((s, x) => s + Number(x.totalDeposited || x.currentValue || x.initialDeposit || 0), 0);
+  const totalInvestedAll = savingsList.reduce((s, x) => {
+    const m = getRdMetrics(x);
+    return s + Number(m.totalDeposited || 0);
+  }, 0);
+
   const totalMonthlyCommitment = savingsList
     .filter(x => x.frequency === "monthly" && x.status !== "CLOSED")
     .reduce((s, x) => s + Number(x.installmentAmount || 0), 0);
+
   const totalMaturityForecast = savingsList.reduce((s, x) => {
-    const instAmt = Number(x.installmentAmount || 0);
-    const months = Number(x.tenureYears || 1) * 12;
-    const calcTarget = months * instAmt;
-    return s + Number(x.expectedMaturityAmount || (calcTarget > 0 ? calcTarget : x.totalDeposited) || 0);
+    const m = getRdMetrics(x);
+    return s + Number(m.expectedMaturity || 0);
   }, 0);
 
   const totalPaidInstAll = savingsList.reduce((s, x) => {
-    const instAmt = Number(x.installmentAmount || 0);
-    const recCount = (x.installments || []).length;
-    const calcCount = instAmt > 0 ? Math.round(Number(x.totalDeposited || 0) / instAmt) : recCount;
-    return s + Math.max(recCount, calcCount);
+    const m = getRdMetrics(x);
+    return s + Number(m.paidCount || 0);
   }, 0);
 
   const totalRemainingInstAll = savingsList.reduce((s, x) => {
-    const instAmt = Number(x.installmentAmount || 0);
-    const months = Number(x.tenureYears || 1) * (x.frequency === "quarterly" ? 4 : (x.frequency === "yearly" ? 1 : 12));
-    const recCount = (x.installments || []).length;
-    const calcCount = instAmt > 0 ? Math.round(Number(x.totalDeposited || 0) / instAmt) : recCount;
-    const paid = Math.max(recCount, calcCount);
-    return s + (x.savingsType === "FD" ? 0 : Math.max(0, months - paid));
+    const m = getRdMetrics(x);
+    return s + Number(m.remainingCount || 0);
   }, 0);
-
-  const formatDateDisplay = (dateStr) => {
-    if (!dateStr) return "—";
-    try {
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) return String(dateStr);
-      return d.toLocaleDateString("hi-IN", { day: "numeric", month: "short", year: "numeric" });
-    } catch {
-      return String(dateStr);
-    }
-  };
-
-  const getMonthYearTitle = (dateStr, idx = 1) => {
-    if (!dateStr) return `किस्त #${idx}`;
-    try {
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) return `किस्त #${idx}`;
-      return d.toLocaleDateString("hi-IN", { month: "long", year: "numeric" });
-    } catch {
-      return `किस्त #${idx}`;
-    }
-  };
-
-  const getElapsedMonths = (startDateStr, dueDayStr) => {
-    if (!startDateStr) return 0;
-    try {
-      const start = new Date(startDateStr);
-      const now = new Date();
-      if (isNaN(start.getTime()) || start > now) return 0;
-      let months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
-      const dueDay = Number(dueDayStr || start.getDate() || 5);
-      if (now.getDate() >= dueDay) {
-        months += 1;
-      }
-      return Math.max(0, months);
-    } catch {
-      return 0;
-    }
-  };
-
-  const generatePastInstallments = (startDateStr, paidCount, instAmt, fundSource, dueDayOfMonth, totalPastAmt) => {
-    const result = [];
-    const base = startDateStr ? new Date(startDateStr) : new Date();
-    const dueDay = Number(dueDayOfMonth || 5);
-    const count = Number(paidCount || 0);
-    const total = Number(totalPastAmt || 0);
-    const perInst = Number(instAmt || 0);
-
-    for (let i = 0; i < count; i++) {
-      const instDate = new Date(base);
-      instDate.setMonth(base.getMonth() + i);
-      instDate.setDate(dueDay);
-
-      let thisAmt = perInst;
-      if (i === count - 1 && total > 0) {
-        const allocated = perInst * (count - 1);
-        if (allocated + perInst !== total) {
-          thisAmt = Math.max(0, total - allocated);
-        }
-      }
-
-      result.push({
-        amount: thisAmt,
-        date: instDate.toISOString().split("T")[0],
-        sourceOfFund: fundSource || "business_salary",
-        notes: `किस्त #${i + 1} (${instDate.toLocaleDateString("hi-IN", { month: "short", year: "numeric" })})`
-      });
-    }
-    return result;
-  };
-
-  const getUpcomingSchedule = (savingItem) => {
-    if (!savingItem || savingItem.savingsType === "FD") return [];
-    const tenureYears = Number(savingItem.tenureYears || 1);
-    const totalMonths = tenureYears * 12;
-    const instAmt = Number(savingItem.installmentAmount || 0);
-    const recorded = savingItem.installments || [];
-    const paidCount = Math.max(recorded.length, instAmt > 0 ? Math.round(Number(savingItem.totalDeposited || 0) / instAmt) : recorded.length);
-    const remainingCount = Math.max(0, totalMonths - paidCount);
-
-    if (remainingCount <= 0 || instAmt <= 0) return [];
-
-    const schedule = [];
-    const baseDate = savingItem.startDate ? new Date(savingItem.startDate) : new Date();
-    const dueDay = Number(savingItem.dueDayOfMonth || 5);
-
-    for (let i = 1; i <= Math.min(remainingCount, 12); i++) {
-      const futureDate = new Date(baseDate);
-      futureDate.setMonth(baseDate.getMonth() + paidCount + (i - 1));
-      futureDate.setDate(dueDay);
-
-      schedule.push({
-        installmentNum: paidCount + i,
-        monthLabel: futureDate.toLocaleDateString("hi-IN", { month: "long", year: "numeric" }),
-        dueDate: futureDate.toLocaleDateString("hi-IN", { day: "numeric", month: "short", year: "numeric" }),
-        amount: instAmt
-      });
-    }
-    return schedule;
-  };
 
   const shareWhatsApp = () => {
     const coName = selectedCompany?.name || "मेरी दुकान";
@@ -817,16 +912,7 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                 ? "🏢 बिजनेस कैपिटल"
                 : "👛 पर्सनल फंड्स";
 
-              const tenureYears = Number(item.tenureYears || 1);
-              const totalMonths = tenureYears * (item.frequency === "quarterly" ? 4 : (item.frequency === "yearly" ? 1 : 12));
-              const instAmt = Number(item.installmentAmount || 0);
-              const calculatedCount = instAmt > 0 ? Math.round(Number(item.totalDeposited || 0) / instAmt) : installmentsCount;
-              const paidCount = Math.max(installmentsCount, calculatedCount);
-              const remainingCount = Math.max(0, totalMonths - paidCount);
-              const targetFund = item.expectedMaturityAmount && Number(item.expectedMaturityAmount) > 0 
-                ? Number(item.expectedMaturityAmount) 
-                : (totalMonths * instAmt);
-              const progressPct = totalMonths > 0 ? Math.min(100, Math.round((paidCount / totalMonths) * 100)) : 0;
+              const m = getRdMetrics(item);
 
               return (
                 <div
@@ -854,6 +940,9 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                         </p>
                         <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
                           <span>स्रोत: {fundSrcLabel}</span>
+                          {item.startDate && (
+                            <span>• शुरू: {formatDateDisplay(item.startDate)}</span>
+                          )}
                         </p>
                       </div>
                     </div>
@@ -861,7 +950,7 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                     <div className="text-right shrink-0">
                       <span className="text-[10px] text-slate-400 font-medium">कुल जमा</span>
                       <div className="text-sm font-black text-slate-900">
-                        ₹{Number(item.totalDeposited || item.currentValue || 0).toLocaleString("en-IN")}
+                        ₹{m.totalDeposited.toLocaleString("en-IN")}
                       </div>
                       <button
                         type="button"
@@ -874,12 +963,49 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                     </div>
                   </div>
 
+                  {/* ⭐ INDIVIDUAL CARD EXPECTED MATURITY RETURN (हर कार्ड का अपेक्षित मिलने वाला अमाउंट) */}
+                  <div className="bg-gradient-to-r from-emerald-50 via-teal-50/70 to-emerald-50 border-2 border-emerald-500/30 rounded-2xl p-3 shadow-xs space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-emerald-950 flex items-center gap-1">
+                        <span>🌟 अपेक्षित मिलने वाली रकम (Expected Maturity)</span>
+                      </span>
+                      <span className="text-[10px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full shadow-xs">
+                        मैच्योरिटी पर
+                      </span>
+                    </div>
+
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div>
+                        <div className="text-xl sm:text-2xl font-black text-emerald-700 tracking-tight">
+                          ₹{m.expectedMaturity.toLocaleString("en-IN")}
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-bold block mt-0.5">
+                          {m.interestGain > 0 ? (
+                            <span className="text-emerald-800">
+                              (मूलधन ₹{m.totalPrincipal.toLocaleString("en-IN")} + ₹{m.interestGain.toLocaleString("en-IN")} ब्याज लाभ)
+                            </span>
+                          ) : (
+                            `कुल लक्ष्य बचत फंड (Principal Fund)`
+                          )}
+                        </span>
+                      </div>
+                      {item.maturityDate && (
+                        <div className="text-right shrink-0">
+                          <span className="text-[10px] text-slate-400 block font-bold">परिपक्वता तारीख</span>
+                          <span className="text-xs font-black text-slate-800 underline">
+                            {formatDateDisplay(item.maturityDate)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Highlights Bar */}
                   <div className="bg-slate-50 rounded-xl p-2.5 grid grid-cols-3 gap-2 text-center text-[10px] border border-slate-100">
                     <div>
                       <span className="text-slate-400 block">किस्त / आवृत्ति</span>
                       <span className="font-bold text-slate-800">
-                        {item.installmentAmount > 0 ? `₹${Number(item.installmentAmount).toLocaleString("en-IN")}` : "एकमुश्त"}
+                        {m.instAmt > 0 ? `₹${m.instAmt.toLocaleString("en-IN")}/माह` : "एकमुश्त"}
                       </span>
                     </div>
                     <div>
@@ -901,30 +1027,40 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                     <div className="bg-amber-50/70 rounded-xl p-3 border border-amber-200/80 space-y-2">
                       <div className="flex items-center justify-between text-xs">
                         <div>
-                          <span className="text-[10px] text-slate-500 font-bold block">किस्त स्थिति (Paid)</span>
+                          <span className="text-[10px] text-slate-500 font-bold block">
+                            शुरुआत से आज तक जमा (Paid)
+                          </span>
                           <span className="font-black text-emerald-700">
-                            ✅ {paidCount} किस्तें जमा ({progressPct}%)
+                            ✅ {m.paidCount} किस्तें जमा (₹{m.totalDeposited.toLocaleString("en-IN")})
+                          </span>
+                          <span className="text-[10px] text-slate-400 block">
+                            ({m.progressPct}% पूर्ण)
                           </span>
                         </div>
                         <div className="text-right">
-                          <span className="text-[10px] text-slate-500 font-bold block">शेष बाकी (Remaining)</span>
+                          <span className="text-[10px] text-slate-500 font-bold block">
+                            आगे देना बाकी है (Remaining)
+                          </span>
                           <span className="font-black text-rose-700">
-                            ⏳ {remainingCount} किस्तें बाकी (₹{(remainingCount * instAmt).toLocaleString("en-IN")})
+                            ⏳ {m.remainingCount} किस्तें बाकी (₹{m.remainingAmount.toLocaleString("en-IN")})
+                          </span>
+                          <span className="text-[10px] text-slate-400 block">
+                            कुल {m.totalMonths} माह की अवधि
                           </span>
                         </div>
                       </div>
 
                       {/* Visual Progress Bar */}
-                      <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                      <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden p-0.5">
                         <div
                           className="bg-gradient-to-r from-emerald-500 to-teal-600 h-full rounded-full transition-all duration-500"
-                          style={{ width: `${progressPct}%` }}
+                          style={{ width: `${m.progressPct}%` }}
                         />
                       </div>
 
                       <div className="flex items-center justify-between text-[10px] text-slate-600 pt-0.5 font-bold">
-                        <span>अवधि: {totalMonths} माह ({tenureYears} वर्ष)</span>
-                        <span>कुल लक्ष्य: ₹{(targetFund || (totalMonths * instAmt)).toLocaleString("en-IN")}</span>
+                        <span>शुरुआत: {formatDateDisplay(item.startDate)}</span>
+                        <span>अवधि: {m.totalMonths} माह ({m.tenureYears} वर्ष)</span>
                       </div>
                     </div>
                   )}
@@ -1057,10 +1193,26 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                   value={formData.startDate}
                   onChange={e => {
                     const newDate = e.target.value;
+                    const tenure = Number(formData.tenureYears || 1);
+                    const totalMonths = tenure * 12;
+                    const elapsed = getElapsedMonths(newDate, formData.dueDayOfMonth, totalMonths);
+                    const inst = Number(formData.installmentAmount || 0);
+                    const matDate = calculateMaturity(newDate, tenure);
+                    const expMaturity = calculateExpectedMaturity({
+                      ...formData,
+                      startDate: newDate,
+                      tenureYears: tenure,
+                      installmentAmount: inst,
+                      interestRate: formData.interestRate
+                    });
                     setFormData(prev => ({
                       ...prev,
                       startDate: newDate,
-                      maturityDate: calculateMaturity(newDate, prev.tenureYears)
+                      maturityDate: matDate,
+                      isOldOngoingAccount: elapsed > 0,
+                      alreadyPaidCount: elapsed > 0 ? String(elapsed) : prev.alreadyPaidCount,
+                      alreadyDepositedAmount: elapsed > 0 && inst > 0 ? String(elapsed * inst) : prev.alreadyDepositedAmount,
+                      expectedMaturityAmount: !prev.expectedMaturityAmount || Number(prev.expectedMaturityAmount) <= 0 ? (expMaturity > 0 ? String(expMaturity) : "") : prev.expectedMaturityAmount
                     }));
                   }}
                   className="w-full text-xs font-bold p-2.5 rounded-xl border border-amber-300/70 bg-white text-slate-800 outline-none"
@@ -1071,7 +1223,7 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                   <div className="flex justify-between items-center mb-1">
                     <label className="text-xs font-bold text-amber-950">अवधि / कितने साल के लिए है (Tenure):</label>
                     <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
-                      {formData.tenureYears} साल (Years)
+                      {formData.tenureYears} साल ({Number(formData.tenureYears || 1) * 12} माह)
                     </span>
                   </div>
                   <div className="grid grid-cols-5 gap-1.5 text-xs font-bold">
@@ -1080,10 +1232,24 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                         key={yr}
                         type="button"
                         onClick={() => {
+                          const tenure = Number(yr);
+                          const totalMonths = tenure * 12;
+                          const elapsed = getElapsedMonths(formData.startDate, formData.dueDayOfMonth, totalMonths);
+                          const inst = Number(formData.installmentAmount || 0);
+                          const matDate = calculateMaturity(formData.startDate, yr);
+                          const expMaturity = calculateExpectedMaturity({
+                            ...formData,
+                            tenureYears: yr,
+                            installmentAmount: inst,
+                            interestRate: formData.interestRate
+                          });
                           setFormData(prev => ({
                             ...prev,
                             tenureYears: yr,
-                            maturityDate: calculateMaturity(prev.startDate, yr)
+                            maturityDate: matDate,
+                            alreadyPaidCount: elapsed > 0 ? String(elapsed) : prev.alreadyPaidCount,
+                            alreadyDepositedAmount: elapsed > 0 && inst > 0 ? String(elapsed * inst) : prev.alreadyDepositedAmount,
+                            expectedMaturityAmount: !prev.expectedMaturityAmount || Number(prev.expectedMaturityAmount) <= 0 ? (expMaturity > 0 ? String(expMaturity) : "") : prev.expectedMaturityAmount
                           }));
                         }}
                         className={`py-1.5 rounded-lg border text-center transition cursor-pointer ${
@@ -1170,17 +1336,35 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                     placeholder="₹ 0.00"
                     value={formData.savingsType === "FD" ? formData.initialDeposit : formData.installmentAmount}
                     onChange={e => {
+                      const val = e.target.value;
+                      const inst = Number(val || 0);
+                      const elapsed = Number(formData.alreadyPaidCount || 0);
+                      const expMaturity = calculateExpectedMaturity({
+                        ...formData,
+                        installmentAmount: inst,
+                        initialDeposit: formData.savingsType === "FD" ? val : "0"
+                      });
                       if (formData.savingsType === "FD") {
-                        setFormData({ ...formData, initialDeposit: e.target.value });
+                        setFormData(prev => ({
+                          ...prev,
+                          initialDeposit: val,
+                          expectedMaturityAmount: !prev.expectedMaturityAmount || Number(prev.expectedMaturityAmount) <= 0 ? (expMaturity > 0 ? String(expMaturity) : "") : prev.expectedMaturityAmount
+                        }));
                       } else {
-                        setFormData({ ...formData, installmentAmount: e.target.value, initialDeposit: "0" });
+                        setFormData(prev => ({
+                          ...prev,
+                          installmentAmount: val,
+                          initialDeposit: "0",
+                          alreadyDepositedAmount: elapsed > 0 && inst > 0 ? String(elapsed * inst) : prev.alreadyDepositedAmount,
+                          expectedMaturityAmount: !prev.expectedMaturityAmount || Number(prev.expectedMaturityAmount) <= 0 ? (expMaturity > 0 ? String(expMaturity) : "") : prev.expectedMaturityAmount
+                        }));
                       }
                     }}
                     className="w-full text-sm font-black px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-amber-700"
                   />
                   {formData.savingsType !== "FD" && (
                     <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
-                      नियमित मासिक किस्त (खाता ₹0 से शुरू होगा)
+                      नियमित मासिक किस्त
                     </span>
                   )}
                 </div>
@@ -1216,7 +1400,7 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                     type="button"
                     onClick={() => {
                       const nextVal = !formData.isOldOngoingAccount;
-                      const elapsed = getElapsedMonths(formData.startDate, formData.dueDayOfMonth);
+                      const elapsed = getElapsedMonths(formData.startDate, formData.dueDayOfMonth, Number(formData.tenureYears || 1) * 12);
                       const inst = Number(formData.installmentAmount || 0);
                       setFormData(prev => ({
                         ...prev,
@@ -1238,11 +1422,12 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                 </div>
 
                 {formData.isOldOngoingAccount && (() => {
-                  const elapsedMonths = getElapsedMonths(formData.startDate, formData.dueDayOfMonth);
+                  const totalMonths = Number(formData.tenureYears || 1) * 12;
+                  const elapsedMonths = getElapsedMonths(formData.startDate, formData.dueDayOfMonth, totalMonths);
                   const inst = Number(formData.installmentAmount || 0);
                   const expectedTotal = elapsedMonths * inst;
                   const paidCount = Number(formData.alreadyPaidCount || 0);
-                  const missedCount = Math.max(0, elapsedMonths - paidCount);
+                  const remainingCount = Math.max(0, totalMonths - paidCount);
 
                   return (
                     <div className="pt-2 border-t border-slate-200 space-y-2.5 animate-in fade-in">
@@ -1258,10 +1443,7 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                           </span>
                         </div>
                         <p className="text-[11px] text-amber-900 leading-relaxed">
-                          खाता शुरुआत (<b>{formatDateDisplay(formData.startDate)}</b>) से अब तक कुल <b>{elapsedMonths} महीने</b> की किस्तें बनती हैं।
-                          {inst > 0 && (
-                            <span> (अपेक्षित कुल: {elapsedMonths} × ₹{inst.toLocaleString("en-IN")} = <b>₹{expectedTotal.toLocaleString("en-IN")}</b>)</span>
-                          )}
+                          खाता शुरुआत (<b>{formatDateDisplay(formData.startDate)}</b>) से अब तक कुल <b>{elapsedMonths} महीने</b> की किस्तें बनती हैं (₹{expectedTotal.toLocaleString("en-IN")}), जिन्हें सिस्टम स्वतः <b>जमा</b> मान रहा है। आगे <b>{remainingCount} किस्तें</b> देना बाकी रहेंगी।
                         </p>
                       </div>
 
@@ -1548,19 +1730,26 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
 
       {/* History / Passbook Modal */}
       {viewHistoryItem && (() => {
-        const vInstAmt = Number(viewHistoryItem.installmentAmount || 0);
-        const vTenureYrs = Number(viewHistoryItem.tenureYears || 1);
-        const vTotalMonths = vTenureYrs * (viewHistoryItem.frequency === "quarterly" ? 4 : (viewHistoryItem.frequency === "yearly" ? 1 : 12));
-        const vRecorded = viewHistoryItem.installments || [];
-        const vSumRecorded = vRecorded.reduce((s, x) => s + Number(x.amount || 0), 0);
-        const vTotalDep = Number(viewHistoryItem.totalDeposited || viewHistoryItem.currentValue || 0);
-        const vPaidCount = Math.max(vRecorded.length, vInstAmt > 0 ? Math.round(vTotalDep / vInstAmt) : vRecorded.length);
-        const vRemainingCount = viewHistoryItem.savingsType === "FD" ? 0 : Math.max(0, vTotalMonths - vPaidCount);
-        const vCalcTarget = vInstAmt > 0 ? (vTotalMonths * vInstAmt) : 0;
-        const vTargetFund = Number(viewHistoryItem.expectedMaturityAmount || (vCalcTarget > 0 ? vCalcTarget : vTotalDep) || 0);
-        const vProgressPct = vTotalMonths > 0 ? Math.min(100, Math.round((vPaidCount / vTotalMonths) * 100)) : 0;
+        const m = getRdMetrics(viewHistoryItem);
+        const vInstAmt = m.instAmt;
+        const vTenureYrs = m.tenureYears;
+        const vTotalMonths = m.totalMonths;
+        const vPaidCount = m.paidCount;
+        const vRemainingCount = m.remainingCount;
+        const vTotalDep = m.totalDeposited;
+        const vTargetFund = m.expectedMaturity;
+        const vProgressPct = m.progressPct;
         const vSchedule = getUpcomingSchedule(viewHistoryItem);
-        const vUnrecordedBalance = vTotalDep - vSumRecorded;
+
+        // Ensure passbook list has records for all paid months up to today:
+        const rawRecorded = Array.isArray(viewHistoryItem.installments) ? viewHistoryItem.installments : [];
+        const vRecorded = rawRecorded.length >= vPaidCount
+          ? rawRecorded
+          : (vPaidCount > 0 && vInstAmt > 0
+              ? generatePastInstallments(viewHistoryItem.startDate, vPaidCount, vInstAmt, viewHistoryItem.fundSource, viewHistoryItem.dueDayOfMonth, vTotalDep)
+              : rawRecorded);
+        const vSumRecorded = vRecorded.reduce((s, x) => s + Number(x.amount || 0), 0);
+        const vUnrecordedBalance = Math.max(0, vTotalDep - vSumRecorded);
 
         return (
           <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
