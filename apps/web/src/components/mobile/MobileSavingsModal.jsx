@@ -38,7 +38,29 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   const { selectedCompany } = useCompany() || {};
-  const [savingsList, setSavingsList] = useState([]);
+  const [savingsList, setSavingsList] = useState(() => {
+    try {
+      if (typeof localStorage !== "undefined") {
+        const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+        const candidateKeys = [
+          "vb_local_savings",
+          currentCoId ? `vb_local_savings_${currentCoId}` : null,
+          "savings",
+          "local_savings"
+        ].filter(Boolean);
+        for (const k of candidateKeys) {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
   const [loading, setLoading] = useState(false);
   const [activeFilter, setActiveFilter] = useState("ALL"); // ALL, personal, business
 
@@ -97,8 +119,10 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
   const [viewHistoryItem, setViewHistoryItem] = useState(null);
 
   useEffect(() => {
-    fetchSavings();
-  }, []);
+    if (isOpen) {
+      fetchSavings();
+    }
+  }, [isOpen, selectedCompany]);
 
   const fetchSavings = async () => {
     setLoading(true);
@@ -114,24 +138,44 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
       let localData = [];
       try {
         if (typeof localStorage !== "undefined") {
-          const stored = localStorage.getItem("vb_local_savings");
-          if (stored) localData = JSON.parse(stored) || [];
+          const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+          const candidateKeys = [
+            "vb_local_savings",
+            currentCoId ? `vb_local_savings_${currentCoId}` : null,
+            "savings",
+            "local_savings"
+          ].filter(Boolean);
+          for (const k of candidateKeys) {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length > 0) localData.push(...parsed);
+              } catch (e) {}
+            }
+          }
         }
       } catch (e) {}
 
-      // Merge by _id or id
+      // Resilient ID extraction
       const map = new Map();
-      (Array.isArray(localData) ? localData : []).forEach(item => {
-        const id = item._id || item.id;
+      const getSavKey = (item, idx) => String(item._id || item.id || item.accountNumber || (item.title ? `${item.title}_${item.savingsType || ''}` : '') || `sav_${idx}`);
+      (Array.isArray(serverData) ? serverData : []).forEach((item, idx) => {
+        const id = getSavKey(item, idx);
         if (id) map.set(id, item);
       });
-      (Array.isArray(serverData) ? serverData : []).forEach(item => {
-        const id = item._id || item.id;
+      (Array.isArray(localData) ? localData : []).forEach((item, idx) => {
+        const id = getSavKey(item, idx);
         if (id && !map.has(id)) map.set(id, item);
       });
 
       const list = Array.from(map.values());
       setSavingsList(list);
+      if (list.length > 0 && typeof localStorage !== "undefined") {
+        try {
+          localStorage.setItem("vb_local_savings", JSON.stringify(list));
+        } catch (e) {}
+      }
     } catch (err) {
       console.error("Error loading savings:", err);
     } finally {

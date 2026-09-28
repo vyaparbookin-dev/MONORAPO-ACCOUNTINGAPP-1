@@ -46,7 +46,8 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(false);
-  const [activeTxTab, setActiveTxTab] = useState("all"); // 'all' | 'bills' | 'expenses' | 'salaries' | 'parties'
+  const [activeTxTab, setActiveTxTab] = useState("all"); // 'all' | 'bills' | 'purchases' | 'expenses' | 'salaries' | 'parties'
+  const [summaryCardFilter, setSummaryCardFilter] = useState("all"); // 'all' | 'in' | 'out' | 'cash_sales' | 'credit_sales' | 'party_in' | 'purchases' | 'expenses' | 'salaries' | 'party_out'
   const [rawdata, setRawData] = useState(null);
   const [summary, setSummary] = useState({
     totalIn: 0,
@@ -66,6 +67,7 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
 
   const handlePeriodChange = (newPeriod) => {
     setPeriod(newPeriod);
+    setSummaryCardFilter("all");
     const now = new Date();
     if (newPeriod === "today") {
       const todayStr = getLocalDayStr(now);
@@ -191,11 +193,43 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
       const serverExpenses = Array.isArray(data?.expenses) ? data.expenses : [];
       const mergedExpenses = deduplicateExpenses([...serverExpenses, ...localExpenses.filter(le => checkInRange(le.date || le.createdAt))]);
 
+      let localPurchases = [];
+      try {
+        if (typeof localStorage !== "undefined") {
+          const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+          const pKeys = [
+            currentCoId ? `vb_local_purchases_${currentCoId}` : null,
+            "vb_local_purchases",
+            "purchases",
+            "local_purchases"
+          ].filter(Boolean);
+          for (const k of pKeys) {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length > 0) localPurchases.push(...parsed);
+              } catch (e) {}
+            }
+          }
+        }
+      } catch (e) {}
+
+      const serverPurchases = Array.isArray(data?.purchases) ? data.purchases : [];
+      const mergedPurchases = [...serverPurchases];
+      localPurchases.forEach(lp => {
+        const rawDate = lp.date || lp.createdAt;
+        if (checkInRange(rawDate)) {
+          const exists = mergedPurchases.some(sp => (sp._id && sp._id === lp._id) || (sp.invoiceNumber && sp.invoiceNumber === lp.invoiceNumber));
+          if (!exists) mergedPurchases.push(lp);
+        }
+      });
+
       const combinedData = {
         ...(data || {}),
         bills: mergedBills,
         expenses: mergedExpenses,
-        purchases: Array.isArray(data?.purchases) ? data.purchases : [],
+        purchases: mergedPurchases,
         salaries: Array.isArray(data?.salaries) ? data.salaries : [],
         partyTransactions: Array.isArray(data?.partyTransactions) ? data.partyTransactions : []
       };
@@ -274,6 +308,7 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
   };
 
   const billsList = rawdata?.bills || [];
+  const purchasesList = rawdata?.purchases || [];
   const expensesList = rawdata?.expenses || [];
   const salariesList = rawdata?.salaries || [];
   const partiesList = rawdata?.partyTransactions || [];
@@ -352,17 +387,23 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
         ) : (
           <>
             {/* 1. Net Balance / Shuddh Munafa Hero Card */}
-            <div className={`p-4 rounded-2xl text-white shadow-md border ${
-              summary.netBalance >= 0
-                ? "bg-gradient-to-br from-emerald-600 to-teal-700 border-emerald-500/30"
-                : "bg-gradient-to-br from-rose-600 to-red-700 border-rose-500/30"
-            }`}>
+            <div 
+              onClick={() => {
+                setSummaryCardFilter("all");
+                setActiveTxTab("all");
+              }}
+              className={`p-4 rounded-2xl text-white shadow-md border cursor-pointer active:scale-98 transition ${
+                summary.netBalance >= 0
+                  ? "bg-gradient-to-br from-emerald-600 to-teal-700 border-emerald-500/30"
+                  : "bg-gradient-to-br from-rose-600 to-red-700 border-rose-500/30"
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-white/90">
-                  {summary.netBalance >= 0 ? "💰 शुद्ध बचत / शुद्ध मुनाफा (In-Hand Surplus)" : "⚠️ शुद्ध घाटा (Net Deficit)"}
+                  {summary.netBalance >= 0 ? "💰 शुद्ध बचत / शुद्ध मुनाफा (In-Hand Surplus)" : "⚠️ शुद्ध घाटा / अधिक निकासी (Net Deficit)"}
                 </span>
                 <span className="text-[10px] bg-white/20 font-mono font-bold px-2 py-0.5 rounded-full">
-                  Net Balance
+                  {summaryCardFilter !== "all" ? "फ़िल्टर रीसेट करें" : "Net Balance"}
                 </span>
               </div>
               <div className="text-2xl sm:text-3xl font-black mt-1 font-mono">
@@ -374,10 +415,32 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
               </div>
             </div>
 
-            {/* 2. Inflow & Outflow 2-Card Grid */}
+            {/* Deficit / Loss Explanation Banner */}
+            {summary.netBalance < 0 && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-xs space-y-1">
+                <div className="font-black text-rose-800 flex items-center gap-1.5">
+                  <span>⚠️</span> <span>शुद्ध घाटे का कारण (Breakdown of Net Deficit):</span>
+                </div>
+                <p className="text-slate-600 text-[11px] leading-relaxed">
+                  इस अवधि में कुल आवक ₹{summary.totalIn.toLocaleString("en-IN")} (बिक्री व उधारी जमा) के मुकाबले कुल जावक ₹{summary.totalOut.toLocaleString("en-IN")} (खरीद ₹{summary.cashPurchases.toLocaleString("en-IN")}, खर्चे ₹{summary.expenses.toLocaleString("en-IN")}, वेतन ₹{summary.salaries.toLocaleString("en-IN")}, सप्लायर ₹{summary.partyOut.toLocaleString("en-IN")}) अधिक रही। नीचे दिए गए आवक/जावक कार्ड्स पर टैप करके जांचें कि कौन-कौन से लेनदेन इसमें शामिल हैं।
+                </p>
+              </div>
+            )}
+
+            {/* 2. Inflow & Outflow 2-Card Grid (Clickable Interactive Cards) */}
             <div className="grid grid-cols-2 gap-2.5">
               {/* Green Inflow Card */}
-              <div className="bg-white p-3 rounded-2xl border border-emerald-200 shadow-xs space-y-2">
+              <div 
+                onClick={() => {
+                  setSummaryCardFilter(prev => prev === "in" ? "all" : "in");
+                  setActiveTxTab("all");
+                }}
+                className={`bg-white p-3 rounded-2xl border shadow-xs space-y-2 cursor-pointer transition active:scale-98 ${
+                  summaryCardFilter === "in" || summaryCardFilter === "cash_sales" || summaryCardFilter === "credit_sales" || summaryCardFilter === "party_in"
+                    ? "border-emerald-500 ring-2 ring-emerald-400 bg-emerald-50/20"
+                    : "border-emerald-200 hover:border-emerald-400"
+                }`}
+              >
                 <div className="flex items-center justify-between text-emerald-700">
                   <span className="text-[11px] font-black uppercase">🟢 कुल आवक (IN)</span>
                   <ArrowDownCircle size={16} />
@@ -386,17 +449,38 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
                   ₹{summary.totalIn.toLocaleString("en-IN")}
                 </div>
                 <div className="space-y-1 text-[11px] text-slate-600 pt-1 border-t border-slate-100">
-                  <div className="flex justify-between">
+                  <div 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSummaryCardFilter(prev => prev === "cash_sales" ? "all" : "cash_sales");
+                      setActiveTxTab("bills");
+                    }}
+                    className={`flex justify-between p-1 rounded-lg cursor-pointer ${summaryCardFilter === 'cash_sales' ? 'bg-emerald-100 font-black text-emerald-900' : 'hover:bg-slate-50'}`}
+                  >
                     <span>नकद सेल:</span>
                     <span className="font-bold text-slate-900">₹{(summary.cashSales || 0).toLocaleString("en-IN")}</span>
                   </div>
                   {(summary.creditSales || 0) > 0 && (
-                    <div className="flex justify-between text-amber-700">
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSummaryCardFilter(prev => prev === "credit_sales" ? "all" : "credit_sales");
+                        setActiveTxTab("bills");
+                      }}
+                      className={`flex justify-between text-amber-700 p-1 rounded-lg cursor-pointer ${summaryCardFilter === 'credit_sales' ? 'bg-amber-100 font-black text-amber-900' : 'hover:bg-slate-50'}`}
+                    >
                       <span>उधार सेल:</span>
                       <span className="font-bold">₹{(summary.creditSales || 0).toLocaleString("en-IN")}</span>
                     </div>
                   )}
-                  <div className="flex justify-between">
+                  <div 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSummaryCardFilter(prev => prev === "party_in" ? "all" : "party_in");
+                      setActiveTxTab("parties");
+                    }}
+                    className={`flex justify-between p-1 rounded-lg cursor-pointer ${summaryCardFilter === 'party_in' ? 'bg-emerald-100 font-black text-emerald-900' : 'hover:bg-slate-50'}`}
+                  >
                     <span>उधारी जमा:</span>
                     <span className="font-bold text-slate-900">₹{(summary.partyIn || 0).toLocaleString("en-IN")}</span>
                   </div>
@@ -404,7 +488,17 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
               </div>
 
               {/* Red Outflow Card */}
-              <div className="bg-white p-3 rounded-2xl border border-rose-200 shadow-xs space-y-2">
+              <div 
+                onClick={() => {
+                  setSummaryCardFilter(prev => prev === "out" ? "all" : "out");
+                  setActiveTxTab("all");
+                }}
+                className={`bg-white p-3 rounded-2xl border shadow-xs space-y-2 cursor-pointer transition active:scale-98 ${
+                  summaryCardFilter === "out" || summaryCardFilter === "purchases" || summaryCardFilter === "salaries" || summaryCardFilter === "expenses" || summaryCardFilter === "party_out"
+                    ? "border-rose-500 ring-2 ring-rose-400 bg-rose-50/20"
+                    : "border-rose-200 hover:border-rose-400"
+                }`}
+              >
                 <div className="flex items-center justify-between text-rose-700">
                   <span className="text-[11px] font-black uppercase">🔴 कुल जावक (OUT)</span>
                   <ArrowUpCircle size={16} />
@@ -413,19 +507,47 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
                   ₹{summary.totalOut.toLocaleString("en-IN")}
                 </div>
                 <div className="space-y-1 text-[11px] text-slate-600 pt-1 border-t border-slate-100">
-                  <div className="flex justify-between">
+                  <div 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSummaryCardFilter(prev => prev === "purchases" ? "all" : "purchases");
+                      setActiveTxTab("purchases");
+                    }}
+                    className={`flex justify-between p-1 rounded-lg cursor-pointer ${summaryCardFilter === 'purchases' ? 'bg-rose-100 font-black text-rose-900' : 'hover:bg-slate-50'}`}
+                  >
                     <span>खरीद:</span>
                     <span className="font-bold text-slate-900">₹{summary.cashPurchases.toLocaleString("en-IN")}</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSummaryCardFilter(prev => prev === "salaries" ? "all" : "salaries");
+                      setActiveTxTab("salaries");
+                    }}
+                    className={`flex justify-between p-1 rounded-lg cursor-pointer ${summaryCardFilter === 'salaries' ? 'bg-rose-100 font-black text-rose-900' : 'hover:bg-slate-50'}`}
+                  >
                     <span>वेतन:</span>
                     <span className="font-bold text-slate-900">₹{summary.salaries.toLocaleString("en-IN")}</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSummaryCardFilter(prev => prev === "expenses" ? "all" : "expenses");
+                      setActiveTxTab("expenses");
+                    }}
+                    className={`flex justify-between p-1 rounded-lg cursor-pointer ${summaryCardFilter === 'expenses' ? 'bg-rose-100 font-black text-rose-900' : 'hover:bg-slate-50'}`}
+                  >
                     <span>खर्च:</span>
                     <span className="font-bold text-slate-900">₹{summary.expenses.toLocaleString("en-IN")}</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSummaryCardFilter(prev => prev === "party_out" ? "all" : "party_out");
+                      setActiveTxTab("parties");
+                    }}
+                    className={`flex justify-between p-1 rounded-lg cursor-pointer ${summaryCardFilter === 'party_out' ? 'bg-rose-100 font-black text-rose-900' : 'hover:bg-slate-50'}`}
+                  >
                     <span>पार्टी:</span>
                     <span className="font-bold text-slate-900">₹{summary.partyOut.toLocaleString("en-IN")}</span>
                   </div>
@@ -433,13 +555,44 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
               </div>
             </div>
 
+            {/* Active Card Filter Banner with Reset */}
+            {summaryCardFilter !== "all" && (
+              <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between text-xs animate-in fade-in">
+                <div className="font-bold text-indigo-950 flex items-center gap-1.5">
+                  <span>🔍</span>
+                  <span>
+                    {summaryCardFilter === 'in' && `फिल्टर: 🟢 कुल आवक (₹${summary.totalIn.toLocaleString('en-IN')})`}
+                    {summaryCardFilter === 'out' && `फिल्टर: 🔴 कुल जावक (₹${summary.totalOut.toLocaleString('en-IN')})`}
+                    {summaryCardFilter === 'cash_sales' && `फिल्टर: 💵 नकद बिक्री (₹${(summary.cashSales || 0).toLocaleString('en-IN')})`}
+                    {summaryCardFilter === 'credit_sales' && `फिल्टर: 📒 उधार बिक्री (₹${(summary.creditSales || 0).toLocaleString('en-IN')})`}
+                    {summaryCardFilter === 'party_in' && `फिल्टर: 🤝 उधारी वसूली / जमा (₹${(summary.partyIn || 0).toLocaleString('en-IN')})`}
+                    {summaryCardFilter === 'purchases' && `फिल्टर: 📦 माल खरीद (₹${(summary.cashPurchases || 0).toLocaleString('en-IN')})`}
+                    {summaryCardFilter === 'salaries' && `फिल्टर: 👨‍🍳 स्टाफ वेतन (₹${(summary.salaries || 0).toLocaleString('en-IN')})`}
+                    {summaryCardFilter === 'expenses' && `फिल्टर: ⚡ दुकान खर्चे (₹${(summary.expenses || 0).toLocaleString('en-IN')})`}
+                    {summaryCardFilter === 'party_out' && `फिल्टर: 🔴 सप्लायर भुगतान (₹${(summary.partyOut || 0).toLocaleString('en-IN')})`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSummaryCardFilter("all");
+                    setActiveTxTab("all");
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white border border-indigo-300 text-indigo-700 font-black text-[10px] cursor-pointer hover:bg-indigo-100 shadow-2xs"
+                >
+                  ✕ सभी देखें
+                </button>
+              </div>
+            )}
+
             {/* 3. Transaction Filter Pills */}
-            <div className="pt-2">
+            <div className="pt-1">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
                   लेनदेन रजिस्टर ({
-                    activeTxTab === "all" ? billsList.length + expensesList.length + salariesList.length + partiesList.length :
+                    activeTxTab === "all" ? billsList.length + purchasesList.length + expensesList.length + salariesList.length + partiesList.length :
                     activeTxTab === "bills" ? billsList.length :
+                    activeTxTab === "purchases" ? purchasesList.length :
                     activeTxTab === "expenses" ? expensesList.length :
                     activeTxTab === "salaries" ? salariesList.length : partiesList.length
                   })
@@ -449,6 +602,7 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
                 {[
                   { id: "all", label: "सभी (All)" },
                   { id: "bills", label: `बिल (${billsList.length})` },
+                  { id: "purchases", label: `खरीद (${purchasesList.length})` },
                   { id: "expenses", label: `खर्चे (${expensesList.length})` },
                   { id: "salaries", label: `वेतन (${salariesList.length})` },
                   { id: "parties", label: `पार्टी (${partiesList.length})` },
@@ -456,7 +610,7 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
                   <button
                     key={t.id}
                     onClick={() => setActiveTxTab(t.id)}
-                    className={`px-3 py-1 rounded-xl text-xs font-black shrink-0 transition ${
+                    className={`px-3 py-1 rounded-xl text-xs font-black shrink-0 transition cursor-pointer ${
                       activeTxTab === t.id
                         ? "bg-slate-900 text-white shadow-xs"
                         : "bg-white text-slate-600 border border-slate-200"
@@ -471,61 +625,117 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
             {/* 4. Mobile Transaction Cards List */}
             <div className="space-y-2">
               {/* Bills */}
-              {(activeTxTab === "all" || activeTxTab === "bills") &&
-                billsList.map((b) => (
-                  <div
-                    key={`b-${b._id || b.id || Math.random()}`}
-                    className="p-3 bg-white rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between"
-                  >
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 font-mono text-[10px] font-black rounded border border-blue-100">
-                          #{b.billNumber || b.invoiceNo || "BILL"}
+              {(activeTxTab === "all" || activeTxTab === "bills" || summaryCardFilter === "in" || summaryCardFilter === "cash_sales" || summaryCardFilter === "credit_sales") &&
+                !["out", "purchases", "expenses", "salaries", "party_out", "party_in"].includes(summaryCardFilter) &&
+                billsList
+                  .filter((b) => {
+                    const pm = String(b.paymentMode || b.paymentMethod || b.type || "").toLowerCase();
+                    const ps = String(b.paymentStatus || b.status || "").toLowerCase();
+                    const isCredit = pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || ps === "issued" || Boolean(b.isCredit);
+                    if (summaryCardFilter === "cash_sales" || summaryCardFilter === "in") return !isCredit;
+                    if (summaryCardFilter === "credit_sales") return isCredit;
+                    return true;
+                  })
+                  .map((b) => (
+                    <div
+                      key={`b-${b._id || b.id || Math.random()}`}
+                      className="p-3 bg-white rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 font-mono text-[10px] font-black rounded border border-blue-100">
+                            #{b.billNumber || b.invoiceNo || "BILL"}
+                          </span>
+                          <span className="font-extrabold text-xs text-slate-900">
+                            {b.customerName || b.partyId?.name || "Walk-in Guest"}
+                          </span>
+                        </div>
+                        {(() => {
+                          const pm = String(b.paymentMode || b.paymentMethod || b.type || "").toLowerCase();
+                          const ps = String(b.paymentStatus || b.status || "").toLowerCase();
+                          const isCredit = pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || ps === "issued" || Boolean(b.isCredit);
+                          const isUpi = pm.includes("upi") || pm.includes("online");
+                          return (
+                            <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                              <span>{b.date || "Today"}</span>
+                              <span>•</span>
+                              <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
+                                isCredit ? "bg-amber-100 text-amber-800 border border-amber-200" :
+                                isUpi ? "bg-blue-100 text-blue-700 border border-blue-200" :
+                                "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              }`}>
+                                {isCredit ? "उधार (Credit)" : isUpi ? "UPI ऑनलाइन" : "नकद (Cash)"}
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      <div className="text-right">
+                        <span className="font-black text-sm text-emerald-700 font-mono">
+                          +₹{(Number(b.amount || b.finalAmount || b.total || b.totalAmount || 0)).toLocaleString("en-IN")}
                         </span>
-                        <span className="font-extrabold text-xs text-slate-900">
-                          {b.customerName || b.partyId?.name || "Walk-in Guest"}
+                        {(() => {
+                          const pm = String(b.paymentMode || b.paymentMethod || b.type || "").toLowerCase();
+                          const ps = String(b.paymentStatus || b.status || "").toLowerCase();
+                          const isCredit = pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || ps === "issued" || Boolean(b.isCredit);
+                          return (
+                            <span className={`text-[10px] block font-bold uppercase ${isCredit ? 'text-amber-700' : 'text-slate-400'}`}>
+                              {isCredit ? 'उधार बिक्री' : 'नकद बिक्री'}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  ))}
+
+              {/* Purchases (माल खरीद) */}
+              {(activeTxTab === "all" || activeTxTab === "purchases" || summaryCardFilter === "out" || summaryCardFilter === "purchases") &&
+                !["in", "cash_sales", "credit_sales", "party_in", "expenses", "salaries", "party_out"].includes(summaryCardFilter) &&
+                purchasesList.map((pur) => {
+                  const pAmt = Number(pur.amountPaid ?? pur.total ?? pur.finalAmount ?? 0);
+                  return (
+                    <div
+                      key={`pur-${pur._id || pur.id || Math.random()}`}
+                      className="p-3 bg-white rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 font-mono text-[10px] font-black rounded border border-purple-100">
+                            #{pur.invoiceNumber || pur.billNumber || "PUR"}
+                          </span>
+                          <span className="font-extrabold text-xs text-slate-900">
+                            {pur.partyId?.name || pur.supplierName || "सप्लायर / माल खरीद"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                          <span>{pur.date ? new Date(pur.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today"}</span>
+                          <span>•</span>
+                          <span className="px-1.5 py-0.5 rounded font-bold text-[9px] uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                            📦 माल खरीद (Purchase)
+                          </span>
+                        </div>
+                        {pur.items && pur.items.length > 0 && (
+                          <div className="text-[10px] text-slate-500 pt-0.5">
+                            सामान: {pur.items.map(it => it.name).filter(Boolean).slice(0, 3).join(", ")}
+                            {pur.items.length > 3 ? ` +${pur.items.length - 3} अन्य` : ''}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <span className="font-black text-sm text-rose-600 font-mono">
+                          -₹{pAmt.toLocaleString("en-IN")}
+                        </span>
+                        <span className="text-[10px] block text-slate-400 font-semibold uppercase">
+                          खरीद
                         </span>
                       </div>
-                      {(() => {
-                        const pm = String(b.paymentMode || b.paymentMethod || b.type || "").toLowerCase();
-                        const ps = String(b.paymentStatus || b.status || "").toLowerCase();
-                        const isCredit = pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || ps === "issued" || Boolean(b.isCredit);
-                        const isUpi = pm.includes("upi") || pm.includes("online");
-                        return (
-                          <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                            <span>{b.date || "Today"}</span>
-                            <span>•</span>
-                            <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
-                              isCredit ? "bg-amber-100 text-amber-800 border border-amber-200" :
-                              isUpi ? "bg-blue-100 text-blue-700 border border-blue-200" :
-                              "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                            }`}>
-                              {isCredit ? "उधार (Credit)" : isUpi ? "UPI ऑनलाइन" : "नकद (Cash)"}
-                            </span>
-                          </div>
-                        );
-                      })()}
                     </div>
-                    <div className="text-right">
-                      <span className="font-black text-sm text-emerald-700 font-mono">
-                        +₹{(Number(b.amount || b.finalAmount || b.total || b.totalAmount || 0)).toLocaleString("en-IN")}
-                      </span>
-                      {(() => {
-                        const pm = String(b.paymentMode || b.paymentMethod || b.type || "").toLowerCase();
-                        const ps = String(b.paymentStatus || b.status || "").toLowerCase();
-                        const isCredit = pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || ps === "issued" || Boolean(b.isCredit);
-                        return (
-                          <span className={`text-[10px] block font-bold uppercase ${isCredit ? 'text-amber-700' : 'text-slate-400'}`}>
-                            {isCredit ? 'उधार बिक्री' : 'नकद बिक्री'}
-                          </span>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
 
               {/* Expenses */}
-              {(activeTxTab === "all" || activeTxTab === "expenses") &&
+              {(activeTxTab === "all" || activeTxTab === "expenses" || summaryCardFilter === "out" || summaryCardFilter === "expenses") &&
+                !["in", "cash_sales", "credit_sales", "party_in", "purchases", "salaries", "party_out"].includes(summaryCardFilter) &&
                 expensesList.map((e) => (
                   <div
                     key={`e-${e._id || e.id || Math.random()}`}
@@ -552,7 +762,8 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
                 ))}
 
               {/* Salaries */}
-              {(activeTxTab === "all" || activeTxTab === "salaries") &&
+              {(activeTxTab === "all" || activeTxTab === "salaries" || summaryCardFilter === "out" || summaryCardFilter === "salaries") &&
+                !["in", "cash_sales", "credit_sales", "party_in", "purchases", "expenses", "party_out"].includes(summaryCardFilter) &&
                 salariesList.map((s) => (
                   <div
                     key={`s-${s._id || s.id || Math.random()}`}
@@ -578,36 +789,45 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
                 ))}
 
               {/* Party Transactions */}
-              {(activeTxTab === "all" || activeTxTab === "parties") &&
-                partiesList.map((p) => {
-                  const isCredit = (p.credit || 0) > 0;
-                  return (
-                    <div
-                      key={`p-${p._id || p.id || Math.random()}`}
-                      className="p-3 bg-white rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between"
-                    >
-                      <div className="space-y-0.5">
-                        <div className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5">
-                          <span>🤝 {p.partyId?.name || p.details || "Party"}</span>
+              {(activeTxTab === "all" || activeTxTab === "parties" || summaryCardFilter === "in" || summaryCardFilter === "out" || summaryCardFilter === "party_in" || summaryCardFilter === "party_out") &&
+                !["cash_sales", "credit_sales", "purchases", "expenses", "salaries"].includes(summaryCardFilter) &&
+                partiesList
+                  .filter((p) => {
+                    const isCredit = (p.credit || 0) > 0;
+                    if (summaryCardFilter === "in" || summaryCardFilter === "party_in") return isCredit;
+                    if (summaryCardFilter === "out" || summaryCardFilter === "party_out") return !isCredit;
+                    return true;
+                  })
+                  .map((p) => {
+                    const isCredit = (p.credit || 0) > 0;
+                    return (
+                      <div
+                        key={`p-${p._id || p.id || Math.random()}`}
+                        className="p-3 bg-white rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between"
+                      >
+                        <div className="space-y-0.5">
+                          <div className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5">
+                            <span>🤝 {p.partyId?.name || p.details || "Party"}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400">
+                            {isCredit ? "ग्राहक से प्राप्त उधारी" : "सप्लायर को भुगतान"}
+                          </p>
                         </div>
-                        <p className="text-[10px] text-slate-400">
-                          {isCredit ? "ग्राहक से प्राप्त उधारी" : "सप्लायर को भुगतान"}
-                        </p>
+                        <div className="text-right">
+                          <span className={`font-black text-sm font-mono ${isCredit ? "text-emerald-700" : "text-rose-600"}`}>
+                            {isCredit ? `+₹${p.credit}` : `-₹${p.debit}`}
+                          </span>
+                          <span className="text-[10px] block text-slate-400 font-semibold uppercase">
+                            {isCredit ? "आवक" : "जावक"}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <span className={`font-black text-sm font-mono ${isCredit ? "text-emerald-700" : "text-rose-600"}`}>
-                          {isCredit ? `+₹${p.credit}` : `-₹${p.debit}`}
-                        </span>
-                        <span className="text-[10px] block text-slate-400 font-semibold uppercase">
-                          {isCredit ? "आवक" : "जावक"}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
 
               {/* Empty state */}
               {billsList.length === 0 &&
+                purchasesList.length === 0 &&
                 expensesList.length === 0 &&
                 salariesList.length === 0 &&
                 partiesList.length === 0 && (

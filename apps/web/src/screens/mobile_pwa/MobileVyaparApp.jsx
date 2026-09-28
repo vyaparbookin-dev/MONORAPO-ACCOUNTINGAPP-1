@@ -197,7 +197,7 @@ function MobileVyaparAppContent() {
   });
   const [bills, setBills] = useState(() => {
     try {
-      const coId = localStorage.getItem("companyId");
+      const coId = typeof localStorage !== 'undefined' ? localStorage.getItem("companyId") : '';
       const bKeys = [
         coId ? `vb_local_manual_bills_${coId}` : null,
         "vb_local_manual_bills",
@@ -208,13 +208,17 @@ function MobileVyaparAppContent() {
         "sales",
         "pos_bills"
       ].filter(Boolean);
+      const allFound = [];
       for (const k of bKeys) {
         const raw = localStorage.getItem(k);
         if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) return deduplicateBills(parsed);
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) allFound.push(...parsed);
+          } catch (e) {}
         }
       }
+      if (allFound.length > 0) return deduplicateBills(allFound);
     } catch (e) {}
     return [];
   });
@@ -404,6 +408,12 @@ function MobileVyaparAppContent() {
   const [partyTxPaymentMode, setPartyTxPaymentMode] = useState('CASH');
   const [savingPartyTx, setSavingPartyTx] = useState(false);
   const [previewBillImage, setPreviewBillImage] = useState(null);
+
+  // 📖 Party Ledger & Passbook Filters: मैंने दिए, मुझे मिले, Month-wise, Site-wise
+  const [partyPassbookFilter, setPartyPassbookFilter] = useState('all'); // 'all', 'received' (मुझे मिले / जमा), 'given' (मैंने दिए / बिक्री)
+  const [partyMonthFilter, setPartyMonthFilter] = useState('all'); // 'all', 'YYYY-MM'
+  const [partySiteFilter, setPartySiteFilter] = useState('all'); // 'all', site name
+
   // Sync tab & modal states to sessionStorage
   const handleTabChange = (tab) => {
     setActiveTab(tab);
@@ -451,7 +461,41 @@ function MobileVyaparAppContent() {
   const [showFamilyExpenseModal, setShowFamilyExpenseModal] = useState(() => sessionStorage.getItem("mobile_show_family_expense") === "true");
   const [showSavingsModal, setShowSavingsModal] = useState(() => sessionStorage.getItem("mobile_show_savings") === "true");
   const [showBankCCModal, setShowBankCCModal] = useState(() => sessionStorage.getItem("mobile_show_bank_cc") === "true");
-  const [bankAccounts, setBankAccounts] = useState([]);
+  const [bankAccounts, setBankAccounts] = useState(() => {
+    try {
+      if (typeof localStorage !== "undefined") {
+        const currentCoId = String(localStorage.getItem("companyId") || "").trim();
+        const candidateKeys = [
+          "vb_local_bank_accounts",
+          currentCoId ? `vb_local_bank_accounts_${currentCoId}` : null,
+          "bank_accounts",
+          "bankAccounts",
+          "local_bank_accounts",
+          "vb_bank_accounts"
+        ].filter(Boolean);
+
+        const collected = [];
+        for (const k of candidateKeys) {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed) && parsed.length > 0) collected.push(...parsed);
+            } catch (e) {}
+          }
+        }
+        if (collected.length > 0) {
+          const map = new Map();
+          collected.forEach((item, idx) => {
+            const key = String(item._id || item.id || item.accountNumber || (item.bankName ? `${item.bankName}_${item.accountName || ''}` : '') || `acc_${idx}`);
+            if (!map.has(key)) map.set(key, item);
+          });
+          return Array.from(map.values());
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
 
   const fetchBankAccounts = async () => {
     try {
@@ -520,13 +564,14 @@ function MobileVyaparAppContent() {
       }
 
       const map = new Map();
-      sData.forEach(item => {
-        const id = item._id || item.id || item.clientTempId;
-        if (id) map.set(String(id), item);
+      const getAccKey = (item, idx) => String(item._id || item.id || item.clientTempId || item.accountNumber || (item.bankName ? `${item.bankName}_${item.accountNumber || item.accountName || ''}` : '') || `acc_${idx}`);
+      sData.forEach((item, idx) => {
+        const id = getAccKey(item, idx);
+        if (id) map.set(id, item);
       });
-      lData.forEach(item => {
-        const id = item._id || item.id || item.clientTempId;
-        if (id && !map.has(String(id))) map.set(String(id), item);
+      lData.forEach((item, idx) => {
+        const id = getAccKey(item, idx);
+        if (id && !map.has(id)) map.set(id, item);
       });
 
       const merged = Array.from(map.values());
@@ -1271,6 +1316,12 @@ function MobileVyaparAppContent() {
             localStorage.setItem("vb_local_party_txs", JSON.stringify(txs));
           } catch (e) {}
         }
+        if (rawBills.length === 0) {
+          const dbBills = dv?.data?.bills || dv?.bills || [];
+          if (Array.isArray(dbBills) && dbBills.length > 0) {
+            rawBills = dbBills;
+          }
+        }
       }
       const normBills = (Array.isArray(rawBills) ? rawBills : []).map(b => {
         const bNo = b.billNumber || b.invoiceNumber || (b._id ? `INV-${String(b._id).slice(-4)}` : "001");
@@ -1493,6 +1544,18 @@ function MobileVyaparAppContent() {
     const amt = Number(b.finalAmount ?? b.amount ?? b.total ?? b.totalAmount ?? b.grandTotal ?? 0) || 0;
     return sum + amt;
   }, 0);
+
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const weekSales = bills.filter(b => {
+    const raw = b.rawDate || b.date || b.createdAt;
+    if (!raw) return true;
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? true : d >= weekAgo;
+  }).reduce((sum, b) => {
+    const amt = Number(b.finalAmount ?? b.amount ?? b.total ?? b.totalAmount ?? b.grandTotal ?? 0) || 0;
+    return sum + amt;
+  }, 0);
+  const displayWeekSales = weekSales > 0 ? weekSales : recentSales;
 
   const totalBankBalance = bankAccounts
     .filter(a => a.accountType !== "CC_OVERDRAFT")
@@ -3087,7 +3150,7 @@ function MobileVyaparAppContent() {
                 className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
               >
                 <div className="flex justify-between items-center">
-                  <span className="font-black text-sm text-[#0F172A]">₹ {recentSales.toLocaleString('en-IN')}</span>
+                  <span className="font-black text-sm text-[#0F172A]">₹ {displayWeekSales.toLocaleString('en-IN')}</span>
                   <ChevronRight size={16} className="text-[#94A3B8]" />
                 </div>
                 <div className="text-xs font-bold text-[#64748B]">This week's sale (बिक्री देखें)</div>
@@ -6136,6 +6199,123 @@ function MobileVyaparAppContent() {
                 </div>
               </div>
 
+              {/* 🎯 LEDGER CONTROLS & FILTERS: मैंने दिए, मुझे मिले, Month, Site */}
+              {(() => {
+                const availableMonths = Array.from(new Set((partyTransactions || []).map(t => {
+                  const raw = t.date || t.createdAt;
+                  if (!raw) return null;
+                  const d = new Date(raw);
+                  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 7);
+                }).filter(Boolean))).sort().reverse();
+
+                const availableSites = Array.from(new Set((partyTransactions || []).map(t => (t.siteName || t.site || '').trim()).filter(Boolean)));
+
+                return (
+                  <div className="space-y-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-200 shadow-2xs">
+                    {/* 3 Main Filter Tabs */}
+                    <div className="grid grid-cols-3 gap-1.5 text-xs font-black">
+                      <button
+                        type="button"
+                        onClick={() => setPartyPassbookFilter('all')}
+                        className={`py-1.5 px-2 rounded-xl text-center transition cursor-pointer ${
+                          partyPassbookFilter === 'all'
+                            ? 'bg-slate-900 text-white shadow-xs'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        🔄 सभी ({partyTransactions.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPartyPassbookFilter('received')}
+                        className={`py-1.5 px-2 rounded-xl text-center transition cursor-pointer flex items-center justify-center gap-1 ${
+                          partyPassbookFilter === 'received'
+                            ? 'bg-emerald-600 text-white shadow-xs font-black'
+                            : 'bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-50'
+                        }`}
+                      >
+                        <span>🟢</span> <span>मुझे मिले</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPartyPassbookFilter('given')}
+                        className={`py-1.5 px-2 rounded-xl text-center transition cursor-pointer flex items-center justify-center gap-1 ${
+                          partyPassbookFilter === 'given'
+                            ? 'bg-rose-600 text-white shadow-xs font-black'
+                            : 'bg-white text-rose-800 border border-rose-200 hover:bg-rose-50'
+                        }`}
+                      >
+                        <span>🔴</span> <span>मैंने दिए</span>
+                      </button>
+                    </div>
+
+                    {/* Month & Site Selectors */}
+                    <div className={`grid ${availableSites.length > 0 ? 'grid-cols-2' : 'grid-cols-1'} gap-2 text-xs`}>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 block mb-0.5">📅 माह (Month):</label>
+                        <select
+                          value={partyMonthFilter}
+                          onChange={(e) => setPartyMonthFilter(e.target.value)}
+                          className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                        >
+                          <option value="all">सभी माह (All Months)</option>
+                          {availableMonths.map((m) => {
+                            const [y, mo] = m.split("-");
+                            const dateObj = new Date(parseInt(y), parseInt(mo) - 1, 1);
+                            const label = dateObj.toLocaleDateString("hi-IN", { month: "long", year: "numeric" });
+                            return (
+                              <option key={m} value={m}>
+                                {label}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      {availableSites.length > 0 && (
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 block mb-0.5">🏗️ साइट (Site):</label>
+                          <select
+                            value={partySiteFilter}
+                            onChange={(e) => setPartySiteFilter(e.target.value)}
+                            className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                          >
+                            <option value="all">सभी साइट्स (All Sites)</option>
+                            {availableSites.map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Reset Filter Button if active */}
+                    {(partyPassbookFilter !== 'all' || partyMonthFilter !== 'all' || partySiteFilter !== 'all') && (
+                      <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/80 text-slate-600 font-bold">
+                        <span>
+                          फिल्टर: {partyPassbookFilter === 'received' ? '🟢 मुझे मिले' : partyPassbookFilter === 'given' ? '🔴 मैंने दिए' : 'सभी'}
+                          {partyMonthFilter !== 'all' ? ` • माह: ${partyMonthFilter}` : ''}
+                          {partySiteFilter !== 'all' ? ` • साइट: ${partySiteFilter}` : ''}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPartyPassbookFilter('all');
+                            setPartyMonthFilter('all');
+                            setPartySiteFilter('all');
+                          }}
+                          className="text-[10px] text-indigo-600 hover:underline cursor-pointer"
+                        >
+                          ✕ रीसेट करें
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* Detailed Passbook Ledger List with Running Balance */}
               <div className="space-y-2">
                 {partyTransactions.length === 0 ? (
@@ -6161,9 +6341,48 @@ function MobileVyaparAppContent() {
                   const txWithRunningDesc = [...txWithRunning].reverse();
                   const isSupplierParty = (selectedPartyDetail.type === 'supplier' || selectedPartyDetail.partyType === 'supplier') || Number(selectedPartyDetail.openingBalance || 0) < 0;
 
+                  // Apply active filters
+                  const filteredPartyTxs = txWithRunningDesc.filter(tx => {
+                    if (partyPassbookFilter === 'received') {
+                      const isCredit = Number(tx.credit || 0) > 0;
+                      const isReturn = tx.type === 'sales_return' || tx.type === 'return';
+                      if (!isCredit && !isReturn) return false;
+                    } else if (partyPassbookFilter === 'given') {
+                      const isDebit = Number(tx.debit || 0) > 0;
+                      const isSale = tx.type === 'sale';
+                      if (!isDebit && !isSale) return false;
+                    }
+
+                    if (partyMonthFilter !== 'all') {
+                      const raw = tx.date || tx.createdAt;
+                      if (raw) {
+                        const d = new Date(raw);
+                        if (!isNaN(d.getTime())) {
+                          const ym = d.toISOString().slice(0, 7);
+                          if (ym !== partyMonthFilter) return false;
+                        }
+                      }
+                    }
+
+                    if (partySiteFilter !== 'all') {
+                      const sName = (tx.siteName || tx.site || '').trim();
+                      if (sName !== partySiteFilter) return false;
+                    }
+
+                    return true;
+                  });
+
+                  if (filteredPartyTxs.length === 0) {
+                    return (
+                      <div className="py-6 text-center text-slate-400 text-xs bg-slate-50/60 rounded-2xl border border-dashed border-slate-200">
+                        इस फ़िल्टर में कोई लेन-देन नहीं मिला।
+                      </div>
+                    );
+                  }
+
                   return (
                     <div className="space-y-2">
-                      {txWithRunningDesc.map((tx, idx) => {
+                      {filteredPartyTxs.map((tx, idx) => {
                         const isDebit = Number(tx.debit || 0) > 0;
                         const amt = isDebit ? tx.debit : tx.credit;
                         const mode = tx.paymentMethod || tx.paymentMode || 'CASH';

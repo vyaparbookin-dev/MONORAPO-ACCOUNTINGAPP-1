@@ -39,7 +39,29 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
   if (!isOpen) return null;
 
   const { selectedCompany } = useCompany() || {};
-  const [accounts, setAccounts] = useState([]);
+  const [accounts, setAccounts] = useState(() => {
+    try {
+      if (typeof localStorage !== "undefined") {
+        const candidateKeys = [
+          "vb_local_bank_accounts",
+          "bank_accounts",
+          "bankAccounts",
+          "local_bank_accounts",
+          "vb_bank_accounts"
+        ];
+        for (const k of candidateKeys) {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("ALL"); // ALL, CURRENT, PERSONAL_BUSINESS, CC_OVERDRAFT
   const [toast, setToast] = useState(null); // { type: "success" | "error", text: string }
@@ -99,8 +121,10 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
   const [historyAcc, setHistoryAcc] = useState(null);
 
   useEffect(() => {
-    fetchAccounts();
-  }, []);
+    if (isOpen) {
+      fetchAccounts();
+    }
+  }, [isOpen, selectedCompany]);
 
   const fetchAccounts = async () => {
     setLoading(true);
@@ -175,17 +199,21 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
 
       // Merge: Server accounts first, then local records not on server
       const map = new Map();
-      (Array.isArray(serverData) ? serverData : []).forEach(item => {
-        const id = item._id || item.id || item.clientTempId;
-        if (id) map.set(String(id), item);
+      const getAccKey = (item, idx) => String(item._id || item.id || item.clientTempId || item.accountNumber || (item.bankName ? `${item.bankName}_${item.accountNumber || item.accountName || ''}` : '') || `acc_${idx}`);
+      (Array.isArray(serverData) ? serverData : []).forEach((item, idx) => {
+        const id = getAccKey(item, idx);
+        if (id) map.set(id, item);
       });
-      (Array.isArray(localData) ? localData : []).forEach(item => {
-        const id = item._id || item.id || item.clientTempId;
-        if (id && !map.has(String(id))) map.set(String(id), item);
+      (Array.isArray(localData) ? localData : []).forEach((item, idx) => {
+        const id = getAccKey(item, idx);
+        if (id && !map.has(id)) map.set(id, item);
       });
 
       const list = Array.from(map.values());
       setAccounts(list);
+      if (typeof onAccountsChange === "function") {
+        try { onAccountsChange(list); } catch (e) {}
+      }
       if (list.length > 0 && typeof localStorage !== "undefined") {
         try {
           localStorage.setItem("vb_local_bank_accounts", JSON.stringify(list));
