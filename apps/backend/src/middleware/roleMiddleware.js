@@ -4,8 +4,8 @@ export const authorizeRoles = (...roles) => {
     const userRole = (req.user?.role || 'admin').toLowerCase();
     const normalizedRoles = roles.map(r => r.toLowerCase());
     
-    // Admin, owner, or allowed roles always have access
-    if (userRole === 'admin' || userRole === 'owner' || normalizedRoles.includes(userRole)) {
+    // Admin, owner, user (merchant), guest, or allowed roles always have access
+    if (userRole === 'admin' || userRole === 'owner' || userRole === 'user' || userRole === 'guest' || normalizedRoles.includes(userRole)) {
       return next();
     }
 

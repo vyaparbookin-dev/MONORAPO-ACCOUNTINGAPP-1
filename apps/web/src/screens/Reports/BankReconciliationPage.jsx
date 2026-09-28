@@ -81,22 +81,57 @@ export default function BankReconciliationPage() {
       let localAccounts = [];
       try {
         if (typeof localStorage !== 'undefined') {
-          const stored = localStorage.getItem('vb_local_bank_accounts');
-          if (stored) localAccounts = JSON.parse(stored) || [];
+          const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+          const candidateKeys = [
+            "vb_local_bank_accounts",
+            currentCoId ? `vb_local_bank_accounts_${currentCoId}` : null,
+            "bank_accounts",
+            "bankAccounts",
+            "local_bank_accounts",
+            "vb_bank_accounts"
+          ].filter(Boolean);
+
+          for (const k of candidateKeys) {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  localAccounts.push(...parsed);
+                }
+              } catch (e) {}
+            }
+          }
         }
       } catch (e) {}
 
-      if (serverAccounts.length === 0 && localAccounts.length === 0 && selectedCompany?.bankName) {
-        localAccounts.push({
-          _id: 'co_bank_default',
-          id: 'co_bank_default',
-          accountName: selectedCompany.accountName || selectedCompany.bankName,
-          bankName: selectedCompany.bankName,
-          accountNumber: selectedCompany.accountNumber || '',
-          accountType: 'CURRENT',
-          openingBalance: 0,
-          currentBalance: 0
-        });
+      // If both server and local are empty, check selectedCompany and user profile for bank details
+      if (serverAccounts.length === 0 && localAccounts.length === 0) {
+        let uBank = null;
+        try {
+          const uStr = localStorage.getItem("user");
+          if (uStr) uBank = JSON.parse(uStr);
+        } catch (e) {}
+
+        const bName = (selectedCompany?.bankName || selectedCompany?.accountName || uBank?.bankName || uBank?.accountName || "").trim();
+        const accNo = (selectedCompany?.accountNumber || uBank?.accountNumber || "").trim();
+        const ifsc = (selectedCompany?.ifscCode || uBank?.ifscCode || "").trim();
+        const upi = (selectedCompany?.upiId || uBank?.upiId || "").trim();
+
+        if (bName || accNo) {
+          localAccounts.push({
+            _id: "co_bank_default",
+            id: "co_bank_default",
+            accountName: selectedCompany?.accountName || bName || "मुख्य बैंक खाता",
+            bankName: bName || "बैंक खाता",
+            accountNumber: accNo,
+            ifscCode: ifsc,
+            upiId: upi,
+            accountType: "CURRENT",
+            openingBalance: 0,
+            currentBalance: 0
+          });
+        }
       }
 
       const map = new Map();

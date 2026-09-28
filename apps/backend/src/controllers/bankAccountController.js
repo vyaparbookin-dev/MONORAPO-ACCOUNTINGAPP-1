@@ -6,15 +6,16 @@ export const getBankAccounts = async (req, res) => {
   try {
     const coConditions = [];
     if (req.companyId) {
+      coConditions.push({ companyId: req.companyId });
       if (mongoose.Types.ObjectId.isValid(req.companyId)) {
-        coConditions.push({ companyId: req.companyId });
         coConditions.push({ companyId: new mongoose.Types.ObjectId(req.companyId) });
-      } else {
-        coConditions.push({ companyId: req.companyId });
       }
     }
     if (req.user?._id) {
       coConditions.push({ userId: req.user._id });
+      if (mongoose.Types.ObjectId.isValid(req.user._id)) {
+        coConditions.push({ userId: new mongoose.Types.ObjectId(req.user._id) });
+      }
     }
 
     const query = { isDeleted: { $ne: true } };

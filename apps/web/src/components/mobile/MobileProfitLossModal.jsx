@@ -158,15 +158,15 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
     try {
       let plUrl = `/api/reports/profitloss?marginPercent=${marginPercent}&costMode=${costMode}`;
       let billingUrl = "/api/billing?limit=500";
-      let expenseUrl = "/api/expense";
-      let purchaseUrl = "/api/purchase";
-      let partyUrl = "/api/parties";
+      let expenseUrl = "/api/expenses?limit=500";
+      let purchaseUrl = "/api/purchase?limit=500";
+      let partyUrl = "/api/party?limit=500";
 
       if (startDate && endDate) {
         plUrl += `&startDate=${startDate}&endDate=${endDate}`;
         billingUrl = `/api/billing?startDate=${startDate}&endDate=${endDate}&limit=500`;
-        expenseUrl = `/api/expense?startDate=${startDate}&endDate=${endDate}`;
-        purchaseUrl = `/api/purchase?startDate=${startDate}&endDate=${endDate}`;
+        expenseUrl = `/api/expenses?startDate=${startDate}&endDate=${endDate}&limit=500`;
+        purchaseUrl = `/api/purchase?startDate=${startDate}&endDate=${endDate}&limit=500`;
       }
 
       const [res, billingRes, expenseRes, purchaseRes, partyRes] = await Promise.all([
@@ -189,11 +189,11 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
       let localPurchases = [];
       try {
         if (typeof localStorage !== "undefined") {
-          const storedB = readLocalJson(["vb_local_manual_bills", "bills"], []);
+          const storedB = readLocalJson(["vb_local_manual_bills", "bills", "manual_bills", "sales", "vb_bills"], []);
           if (Array.isArray(storedB)) localBills = storedB;
-          const storedE = readLocalJson(["vb_local_expenses", "expenses"], []);
+          const storedE = readLocalJson(["vb_local_expenses", "expenses", "local_expenses"], []);
           if (Array.isArray(storedE)) localExpenses = storedE;
-          const storedP = readLocalJson(["vb_local_purchases", "purchases"], []);
+          const storedP = readLocalJson(["vb_local_purchases", "purchases", "local_purchases"], []);
           if (Array.isArray(storedP)) localPurchases = storedP;
         }
       } catch (e) {}
@@ -243,10 +243,10 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
       const unsyncedLocalSales = allBills
         .filter(b => b.isOfflineCreated && !b._id?.match(/^[0-9a-fA-F]{24}$/))
         .reduce((sum, b) => sum + Number(b.finalAmount || b.total || 0), 0);
-      const finalSales = backendSales + unsyncedLocalSales;
-      const finalOperating = calcOperating > 0 ? calcOperating : Number(serverPl.businessExpenses || 0);
-      const finalGharKharch = calcGharKharch > 0 ? calcGharKharch : Number(serverPl.gharKharch || 0);
-      const recordedPurchases = calcActualPurchases > 0 ? calcActualPurchases : Number(serverPl.actualPurchases || 0);
+      const finalSales = Math.max(calcSales, backendSales + unsyncedLocalSales);
+      const finalOperating = Math.max(calcOperating, Number(serverPl.businessExpenses || 0));
+      const finalGharKharch = Math.max(calcGharKharch, Number(serverPl.gharKharch || 0));
+      const recordedPurchases = Math.max(calcActualPurchases, Number(serverPl.actualPurchases || 0));
 
       const actualExists = recordedPurchases > 0;
       setHasActualPurchases(actualExists);

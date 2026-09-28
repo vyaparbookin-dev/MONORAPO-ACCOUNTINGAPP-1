@@ -118,27 +118,59 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
       let localData = [];
       try {
         if (typeof localStorage !== "undefined") {
-          const stored = localStorage.getItem("vb_local_bank_accounts");
-          if (stored) localData = JSON.parse(stored) || [];
+          const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+          const candidateKeys = [
+            "vb_local_bank_accounts",
+            currentCoId ? `vb_local_bank_accounts_${currentCoId}` : null,
+            "bank_accounts",
+            "bankAccounts",
+            "local_bank_accounts",
+            "vb_bank_accounts"
+          ].filter(Boolean);
+
+          for (const k of candidateKeys) {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  localData.push(...parsed);
+                }
+              } catch (e) {}
+            }
+          }
         }
       } catch (e) {}
 
-      // If both server and local are empty, but selectedCompany has bankName or accountNumber,
-      // create a default CURRENT account from company details
-      if (serverData.length === 0 && localData.length === 0 && selectedCompany?.bankName) {
-        localData.push({
-          _id: "co_bank_default",
-          id: "co_bank_default",
-          accountName: selectedCompany.accountName || selectedCompany.bankName,
-          bankName: selectedCompany.bankName,
-          accountNumber: selectedCompany.accountNumber || "",
-          ifscCode: selectedCompany.ifscCode || "",
-          accountType: "CURRENT",
-          openingBalance: 0,
-          currentBalance: 0,
-          interestRate: 0,
-          createdAt: new Date().toISOString()
-        });
+      // If both server and local are empty, check selectedCompany and user profile for bank details
+      if (serverData.length === 0 && localData.length === 0) {
+        let uBank = null;
+        try {
+          const uStr = localStorage.getItem("user");
+          if (uStr) uBank = JSON.parse(uStr);
+        } catch (e) {}
+
+        const bName = (selectedCompany?.bankName || selectedCompany?.accountName || uBank?.bankName || uBank?.accountName || "").trim();
+        const accNo = (selectedCompany?.accountNumber || uBank?.accountNumber || "").trim();
+        const ifsc = (selectedCompany?.ifscCode || uBank?.ifscCode || "").trim();
+        const upi = (selectedCompany?.upiId || uBank?.upiId || "").trim();
+
+        if (bName || accNo) {
+          localData.push({
+            _id: "co_bank_default",
+            id: "co_bank_default",
+            accountName: selectedCompany?.accountName || bName || "मुख्य बैंक खाता",
+            bankName: bName || "बैंक खाता",
+            accountNumber: accNo,
+            ifscCode: ifsc,
+            upiId: upi,
+            accountType: "CURRENT",
+            openingBalance: 0,
+            currentBalance: 0,
+            interestRate: 0,
+            createdAt: new Date().toISOString()
+          });
+        }
       }
 
       // Merge: Server accounts first, then local records not on server
@@ -154,6 +186,11 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
 
       const list = Array.from(map.values());
       setAccounts(list);
+      if (list.length > 0 && typeof localStorage !== "undefined") {
+        try {
+          localStorage.setItem("vb_local_bank_accounts", JSON.stringify(list));
+        } catch (e) {}
+      }
     } catch (err) {
       console.error("Error loading bank accounts:", err);
     } finally {

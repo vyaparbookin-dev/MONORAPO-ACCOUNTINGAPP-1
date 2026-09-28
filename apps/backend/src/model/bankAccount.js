@@ -7,7 +7,7 @@ const bankAccountSchema = new mongoose.Schema(
       required: false,
     },
     userId: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.Mixed,
       ref: "User",
       required: false,
     },

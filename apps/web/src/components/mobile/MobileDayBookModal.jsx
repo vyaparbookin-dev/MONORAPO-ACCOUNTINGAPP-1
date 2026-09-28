@@ -110,14 +110,14 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
       // Merge local manual bills from localStorage (ensures offline / recent manual sales ALWAYS show)
       let localBills = [];
       try {
-        const stored = readLocalJson(["vb_local_manual_bills", "bills"], []);
+        const stored = readLocalJson(["vb_local_manual_bills", "bills", "manual_bills", "sales", "vb_bills"], []);
         if (Array.isArray(stored)) localBills = stored;
       } catch (e) {}
 
       // Also merge local expenses from localStorage
       let localExpenses = [];
       try {
-        const storedExp = readLocalJson(["vb_local_expenses", "expenses"], []);
+        const storedExp = readLocalJson(["vb_local_expenses", "expenses", "local_expenses"], []);
         if (Array.isArray(storedExp)) localExpenses = storedExp;
       } catch (e) {}
 

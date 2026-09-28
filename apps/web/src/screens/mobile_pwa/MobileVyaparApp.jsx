@@ -158,10 +158,17 @@ function MobileVyaparAppContent() {
   const [parties, setParties] = useState(() => {
     try {
       const coId = localStorage.getItem("companyId");
-      if (coId) {
-        const scoped = localStorage.getItem(`vb_local_parties_${coId}`);
-        if (scoped) {
-          const parsed = JSON.parse(scoped);
+      const pKeys = [
+        coId ? `vb_local_parties_${coId}` : null,
+        "vb_local_parties",
+        "parties",
+        "customers",
+        "local_parties"
+      ].filter(Boolean);
+      for (const k of pKeys) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) return parsed;
         }
       }
@@ -171,10 +178,17 @@ function MobileVyaparAppContent() {
   const [items, setItems] = useState(() => {
     try {
       const coId = localStorage.getItem("companyId");
-      if (coId) {
-        const scoped = localStorage.getItem(`vb_local_products_${coId}`);
-        if (scoped) {
-          const parsed = JSON.parse(scoped);
+      const iKeys = [
+        coId ? `vb_local_products_${coId}` : null,
+        "vb_local_products",
+        "products",
+        "inventory",
+        "items"
+      ].filter(Boolean);
+      for (const k of iKeys) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) return parsed;
         }
       }
@@ -184,10 +198,20 @@ function MobileVyaparAppContent() {
   const [bills, setBills] = useState(() => {
     try {
       const coId = localStorage.getItem("companyId");
-      if (coId) {
-        const scoped = localStorage.getItem(`vb_local_manual_bills_${coId}`);
-        if (scoped) {
-          const parsed = JSON.parse(scoped);
+      const bKeys = [
+        coId ? `vb_local_manual_bills_${coId}` : null,
+        "vb_local_manual_bills",
+        "bills",
+        "manual_bills",
+        "vb_bills",
+        "local_bills",
+        "sales",
+        "pos_bills"
+      ].filter(Boolean);
+      for (const k of bKeys) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) return deduplicateBills(parsed);
         }
       }
@@ -435,27 +459,64 @@ function MobileVyaparAppContent() {
       try {
         const res = await api.get("/api/bank-accounts");
         sData = Array.isArray(res?.accounts) ? res.accounts : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
-      } catch (e) {}
+      } catch (e) {
+        console.warn("fetchBankAccounts server fetch error:", e);
+      }
 
       let lData = [];
       try {
         if (typeof localStorage !== "undefined") {
-          const stored = localStorage.getItem("vb_local_bank_accounts");
-          if (stored) lData = JSON.parse(stored) || [];
+          const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+          const candidateKeys = [
+            "vb_local_bank_accounts",
+            currentCoId ? `vb_local_bank_accounts_${currentCoId}` : null,
+            "bank_accounts",
+            "bankAccounts",
+            "local_bank_accounts",
+            "vb_bank_accounts"
+          ].filter(Boolean);
+
+          for (const k of candidateKeys) {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  lData.push(...parsed);
+                }
+              } catch (e) {}
+            }
+          }
         }
       } catch (e) {}
 
-      if (sData.length === 0 && lData.length === 0 && selectedCompany?.bankName) {
-        lData.push({
-          _id: "co_bank_default",
-          id: "co_bank_default",
-          accountName: selectedCompany.accountName || selectedCompany.bankName,
-          bankName: selectedCompany.bankName,
-          accountNumber: selectedCompany.accountNumber || "",
-          accountType: "CURRENT",
-          openingBalance: 0,
-          currentBalance: 0
-        });
+      // If both server and local are empty, check selectedCompany and user profile for bank details
+      if (sData.length === 0 && lData.length === 0) {
+        let uBank = null;
+        try {
+          const uStr = localStorage.getItem("user");
+          if (uStr) uBank = JSON.parse(uStr);
+        } catch (e) {}
+
+        const bName = (selectedCompany?.bankName || selectedCompany?.accountName || uBank?.bankName || uBank?.accountName || "").trim();
+        const accNo = (selectedCompany?.accountNumber || uBank?.accountNumber || "").trim();
+        const ifsc = (selectedCompany?.ifscCode || uBank?.ifscCode || "").trim();
+        const upi = (selectedCompany?.upiId || uBank?.upiId || "").trim();
+
+        if (bName || accNo) {
+          lData.push({
+            _id: "co_bank_default",
+            id: "co_bank_default",
+            accountName: selectedCompany?.accountName || bName || "मुख्य बैंक खाता",
+            bankName: bName || "बैंक खाता",
+            accountNumber: accNo,
+            ifscCode: ifsc,
+            upiId: upi,
+            accountType: "CURRENT",
+            openingBalance: 0,
+            currentBalance: 0
+          });
+        }
       }
 
       const map = new Map();
@@ -468,7 +529,13 @@ function MobileVyaparAppContent() {
         if (id && !map.has(String(id))) map.set(String(id), item);
       });
 
-      setBankAccounts(Array.from(map.values()));
+      const merged = Array.from(map.values());
+      setBankAccounts(merged);
+      if (merged.length > 0 && typeof localStorage !== "undefined") {
+        try {
+          localStorage.setItem("vb_local_bank_accounts", JSON.stringify(merged));
+        } catch (e) {}
+      }
     } catch (e) {
       console.warn("fetchBankAccounts error:", e);
     }
@@ -1239,21 +1306,30 @@ function MobileVyaparAppContent() {
       const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
       let localManualBills = [];
       try {
-        if (typeof localStorage !== "undefined" && currentCoId) {
-          const scopedKey = `vb_local_manual_bills_${currentCoId}`;
-          const stored = localStorage.getItem(scopedKey);
-          if (stored) {
-            try {
-              const parsed = JSON.parse(stored);
-              if (Array.isArray(parsed)) {
-                parsed.forEach(item => {
-                  if (!item || typeof item !== "object") return;
-                  if (item.amount || item.finalAmount || item.total || item.totalAmount || item.billNumber) {
-                    localManualBills.push(item);
-                  }
-                });
-              }
-            } catch (e) {}
+        if (typeof localStorage !== "undefined") {
+          const bKeys = [
+            currentCoId ? `vb_local_manual_bills_${currentCoId}` : null,
+            "vb_local_manual_bills",
+            "bills",
+            "manual_bills",
+            "vb_bills",
+            "sales"
+          ].filter(Boolean);
+          for (const k of bKeys) {
+            const stored = localStorage.getItem(k);
+            if (stored) {
+              try {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed)) {
+                  parsed.forEach(item => {
+                    if (!item || typeof item !== "object") return;
+                    if (item.amount || item.finalAmount || item.total || item.totalAmount || item.billNumber) {
+                      localManualBills.push(item);
+                    }
+                  });
+                }
+              } catch (e) {}
+            }
           }
         }
       } catch (e) {}
@@ -1263,7 +1339,10 @@ function MobileVyaparAppContent() {
       setBills(mergedBills);
 
       // Keep only true unsynced offline bills in localManualBills storage to prevent local/cloud duplication
-      const unsyncedOnly = mergedBills.filter(b => b.isOfflineCreated && !normBills.some(nb => nb._id === b._id || nb.billNumber === b.billNumber));
+      // CRITICAL SAFEGUARD: If server returned 0 bills, NEVER wipe local storage!
+      const unsyncedOnly = normBills.length === 0
+        ? mergedBills
+        : mergedBills.filter(b => b.isOfflineCreated && !normBills.some(nb => nb._id === b._id || nb.billNumber === b.billNumber));
       try {
         if (currentCoId) {
           localStorage.setItem(`vb_local_manual_bills_${currentCoId}`, JSON.stringify(unsyncedOnly));
@@ -1454,10 +1533,12 @@ function MobileVyaparAppContent() {
     return isSameLocalDate(d, today);
   });
 
-  const todaySales = todayBills.reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const todayCash = todayBills.filter(isCashPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const todayUpi = todayBills.filter(isUpiPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const todayCredit = todayBills.filter(isCreditPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const getBillAmount = (b) => Number(b.finalAmount ?? b.amount ?? b.total ?? b.totalAmount ?? b.grandTotal ?? 0) || 0;
+
+  const todaySales = todayBills.reduce((sum, b) => sum + getBillAmount(b), 0);
+  const todayCash = todayBills.filter(isCashPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
+  const todayUpi = todayBills.filter(isUpiPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
+  const todayCredit = todayBills.filter(isCreditPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
 
   // Dynamic filter for Daily Sales Card (आज, कल, इस हफ़्ते, सभी)
   const activePeriodBills = bills.filter(b => {
@@ -1480,10 +1561,10 @@ function MobileVyaparAppContent() {
     return true; // "all"
   });
 
-  const activePeriodSales = activePeriodBills.reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const activePeriodCash = activePeriodBills.filter(isCashPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const activePeriodUpi = activePeriodBills.filter(isUpiPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
-  const activePeriodCredit = activePeriodBills.filter(isCreditPayment).reduce((sum, b) => sum + Number(b.amount || 0), 0);
+  const activePeriodSales = activePeriodBills.reduce((sum, b) => sum + getBillAmount(b), 0);
+  const activePeriodCash = activePeriodBills.filter(isCashPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
+  const activePeriodUpi = activePeriodBills.filter(isUpiPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
+  const activePeriodCredit = activePeriodBills.filter(isCreditPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
 
   const handleShareWhatsAppBill = (bill) => {
     if (!bill) return;
