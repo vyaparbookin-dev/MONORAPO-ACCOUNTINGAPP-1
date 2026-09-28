@@ -647,13 +647,49 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
     }
   };
 
+  const handleQuickCashDeposit = () => {
+    let targetAcc = accounts.find(a => a.accountType === "CURRENT") || accounts[0];
+    if (!targetAcc) {
+      // Auto-create default primary business bank account so user never gets stuck in a 15-field form!
+      const defaultAcc = {
+        _id: "bnk_primary_current",
+        id: "bnk_primary_current",
+        accountName: "मुख्य व्यापारिक चालू खाता (Primary Business)",
+        bankName: "मुख्य व्यापारिक बैंक खाता (SBI/PNB/HDFC)",
+        accountType: "CURRENT",
+        balance: 0,
+        currentBalance: 0,
+        openingBalance: 0,
+        transactions: [],
+        createdAt: new Date().toISOString()
+      };
+      setAccounts([defaultAcc]);
+      try {
+        let local = JSON.parse(localStorage.getItem("vb_local_bank_accounts") || "[]");
+        local = [defaultAcc, ...local];
+        localStorage.setItem("vb_local_bank_accounts", JSON.stringify(local));
+      } catch (e) {}
+      targetAcc = defaultAcc;
+    }
+
+    setSelectedAccForTx(targetAcc);
+    setTxData({
+      type: "DEPOSIT",
+      amount: "",
+      date: new Date().toISOString().split("T")[0],
+      description: "गल्ले से बैंक में नकद जमा (Cash Deposit from Counter)",
+      referenceNo: ""
+    });
+    setIsTxOpen(true);
+  };
+
   const handleOpenTx = (acc, defaultType = "DEPOSIT") => {
     setSelectedAccForTx(acc);
     setTxData({
       type: defaultType,
       amount: "",
       date: new Date().toISOString().split("T")[0],
-      description: "",
+      description: defaultType === "DEPOSIT" ? "गल्ले से बैंक में नकद जमा (Cash Deposit)" : "",
       referenceNo: ""
     });
     setIsTxOpen(true);
@@ -931,6 +967,26 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-28">
+        {/* 💵 ONE-CLICK CASH DEPOSIT ACTION BANNER */}
+        <div className="bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-800 text-white rounded-2xl p-3.5 shadow-md flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl shrink-0">
+              💵
+            </div>
+            <div className="min-w-0">
+              <h4 className="text-xs font-black truncate">गल्ले से बैंक में नकद जमा करें</h4>
+              <p className="text-[10px] text-emerald-100 truncate">दुकान की नकद बिक्री राशि बैंक में 1-क्लिक में जमा दर्ज करें</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleQuickCashDeposit}
+            className="px-3 py-2 bg-white text-emerald-900 hover:bg-emerald-50 active:scale-95 text-xs font-black rounded-xl shadow-md shrink-0 flex items-center gap-1 cursor-pointer transition"
+          >
+            <span>+ नकद जमा करें</span>
+          </button>
+        </div>
+
         {/* ⚡ 2 LINKED BUSINESS ACCOUNTS QUICK OVERVIEW */}
         {(() => {
           const currentAcc = accounts.find(a => a.accountType === "CURRENT");
@@ -1137,20 +1193,32 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
               <p className="text-xs font-medium">खाते लोड हो रहे हैं...</p>
             </div>
           ) : filteredAccounts.length === 0 ? (
-            <div className="bg-white rounded-2xl p-8 text-center border border-slate-200">
-              <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
+            <div className="bg-white rounded-2xl p-6 text-center border border-slate-200 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
                 <Building2 size={24} />
               </div>
-              <h4 className="text-sm font-bold text-slate-800 mb-1">कोई बैंक खाता नहीं मिला</h4>
-              <p className="text-xs text-slate-500 max-w-xs mx-auto mb-4">
-                यहाँ अपना करंट अकाउंट, पर्सनल बिजनेस खाता या CC लिमिट जोड़ें और हर माह का ब्याज हिसाब रखें।
-              </p>
-              <button
-                onClick={() => { resetForm(); setIsFormOpen(true); }}
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-black shadow-md active:scale-95 transition cursor-pointer"
-              >
-                <Plus size={16} /> + नया बैंक खाता जोड़ें
-              </button>
+              <div>
+                <h4 className="text-sm font-bold text-slate-800 mb-0.5">कोई बैंक खाता नहीं मिला</h4>
+                <p className="text-xs text-slate-500 max-w-xs mx-auto">
+                  यहाँ अपना करंट अकाउंट या CC लिमिट जोड़ें, या सीधे दुकान के गल्ले का नकद बैंक में जमा करें।
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleQuickCashDeposit}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-black shadow-md cursor-pointer transition"
+                >
+                  💵 तुरंत नकद जमा करें
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { resetForm(); setIsFormOpen(true); }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 text-xs font-bold cursor-pointer transition border border-slate-200"
+                >
+                  <Plus size={14} /> + पूरा खाता जोड़ें
+                </button>
+              </div>
             </div>
           ) : (
             filteredAccounts.map(acc => {
@@ -1667,6 +1735,27 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
             </div>
 
             <form onSubmit={handleRecordTransaction} className="space-y-3">
+              {/* Account Selector if multiple accounts exist */}
+              {accounts.length > 1 && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">बैंक खाता चुनें (Select Bank Account) *</label>
+                  <select
+                    value={selectedAccForTx._id || selectedAccForTx.id}
+                    onChange={(e) => {
+                      const found = accounts.find(a => (a._id || a.id) === e.target.value);
+                      if (found) setSelectedAccForTx(found);
+                    }}
+                    className="w-full text-xs font-bold px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-slate-900"
+                  >
+                    {accounts.map(a => (
+                      <option key={a._id || a.id} value={a._id || a.id}>
+                        {a.bankName || a.accountName} ({a.accountType === "CURRENT" ? "करंट" : a.accountType === "PERSONAL_BUSINESS" ? "पर्सनल" : a.accountType === "CC_OVERDRAFT" ? "CC" : "बचत"}) - ₹{Number(a.balance || a.currentBalance || 0).toLocaleString("en-IN")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Type Select */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">लेन-देन प्रकार *</label>

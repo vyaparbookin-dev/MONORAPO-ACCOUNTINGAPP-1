@@ -201,7 +201,19 @@ class StorageManager {
       paymentMethod: (pMode === "UDHAR" || pMode === "CREDIT") ? "credit" : "cash",
       paymentStatus: b.paymentStatus || (pMode === "UDHAR" ? "unpaid" : "paid"),
       date: b.date ? (String(b.date).includes("-") || String(b.date).includes("/") ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : String(b.date)) : "Today",
-      rawDate: b.rawDate || b.date || b.createdAt || new Date().toISOString(),
+      rawDate: (() => {
+        const candidates = [b.rawDate, b.createdAt, b.date];
+        for (const c of candidates) {
+          if (!c) continue;
+          if (c instanceof Date && !isNaN(c.getTime())) return c.toISOString();
+          const str = String(c).trim();
+          if (str.includes("T") || str.match(/^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}/)) {
+            const d = new Date(str);
+            if (!isNaN(d.getTime())) return d.toISOString();
+          }
+        }
+        return b.rawDate || b.createdAt || new Date().toISOString();
+      })(),
       items: Array.isArray(b.items) ? b.items : [],
       isOfflineCreated: Boolean(b.isOfflineCreated),
       createdAt: b.createdAt || new Date().toISOString(),

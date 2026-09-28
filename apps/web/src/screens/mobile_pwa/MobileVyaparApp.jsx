@@ -1443,18 +1443,36 @@ function MobileVyaparAppContent() {
     }
     const str = String(val).trim();
     if (!str || str.toLowerCase() === "today" || str === "आज") return new Date();
-    const d = new Date(str);
-    if (!isNaN(d.getTime()) && d.getFullYear() > 2020) return d;
-    const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-    if (dmy) {
-      const parsed = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
-      if (!isNaN(parsed.getTime())) return parsed;
-    }
+
+    // Check for standard ISO or YYYY-MM-DD
     const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
     if (ymd) {
       const parsed = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
       if (!isNaN(parsed.getTime())) return parsed;
     }
+
+    // Check for DD/MM/YYYY or DD-MM-YYYY
+    const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (dmy) {
+      const parsed = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+
+    // Try standard Date parsing
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      if (d.getFullYear() > 2020) return d;
+      // If year defaulted to e.g. 2001 because format was "28 Sep", attach current year!
+      const currentYear = new Date().getFullYear();
+      const withYear = new Date(`${str} ${currentYear}`);
+      if (!isNaN(withYear.getTime())) return withYear;
+    }
+
+    // Fallback: try parsing with current year appended
+    const currentYear = new Date().getFullYear();
+    const tryWithYear = new Date(`${str} ${currentYear}`);
+    if (!isNaN(tryWithYear.getTime())) return tryWithYear;
+
     return null;
   };
 
@@ -1462,7 +1480,8 @@ function MobileVyaparAppContent() {
 
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const weekSales = bills.filter(b => {
-    const d = parseAnyDate(b.rawDate || b.date || b.createdAt);
+    if (String(b.date || "").toLowerCase() === "today" || String(b.date || "") === "आज") return true;
+    const d = parseAnyDate(b.rawDate || b.createdAt || b.date);
     if (!d) return true; // Keep in week sales if date couldn't be parsed
     return d >= weekAgo;
   }).reduce((sum, b) => sum + getBillAmount(b), 0);
@@ -1499,7 +1518,8 @@ function MobileVyaparAppContent() {
 
   // Filter bills created today
   const todayBills = bills.filter(b => {
-    const d = parseAnyDate(b.rawDate || b.date || b.createdAt);
+    if (String(b.date || "").toLowerCase() === "today" || String(b.date || "") === "आज") return true;
+    const d = parseAnyDate(b.rawDate || b.createdAt || b.date);
     if (!d) return false;
     const today = new Date();
     return isSameLocalDate(d, today);
@@ -1512,12 +1532,14 @@ function MobileVyaparAppContent() {
 
   // Dynamic filter for Daily Sales Card (आज, कल, इस हफ़्ते, सभी)
   const activePeriodBills = bills.filter(b => {
-    const d = parseAnyDate(b.rawDate || b.date || b.createdAt);
-    if (!d) return true;
-    const today = new Date();
     if (dailySaleFilter === "today") {
-      return isSameLocalDate(d, today);
+      if (String(b.date || "").toLowerCase() === "today" || String(b.date || "") === "आज") return true;
+      const d = parseAnyDate(b.rawDate || b.createdAt || b.date);
+      if (!d) return false;
+      return isSameLocalDate(d, new Date());
     }
+    const d = parseAnyDate(b.rawDate || b.createdAt || b.date);
+    if (!d) return true;
     if (dailySaleFilter === "yesterday") {
       const yest = new Date(Date.now() - 86400000);
       return isSameLocalDate(d, yest);
@@ -1981,17 +2003,17 @@ function MobileVyaparAppContent() {
 
       let combinedTxs = Array.isArray(serverTxs) ? [...serverTxs] : [];
 
-      // If opening balance exists and is not already in transactions, add opening bill/balance row
+      // 1. If opening balance exists or was ever set, add opening bill/balance row if not already present
       const hasOpening = combinedTxs.some(t => t.refNo === "OPENING" || String(t._id || '').startsWith("open_") || String(t.details || '').includes("प्रारंभिक"));
-      if (!hasOpening && opBal !== 0) {
+      if (!hasOpening && (opBal !== 0 || pObj?.openingBalance)) {
         const absOp = Math.abs(opBal);
         combinedTxs.push({
           _id: `open_${partyId}`,
-          date: pObj?.createdAt || new Date(2026, 0, 1),
+          date: pObj?.createdAt || new Date(2026, 0, 1).toISOString(),
           type: isSupplier ? "purchase" : "sale",
           refNo: "OPENING",
           billNumber: "OPENING-BILL",
-          details: `प्रारंभिक पुराना हिसाब / बिल (Opening Balance / Bill)`,
+          details: `प्रारंभिक पुराना हिसाब / बिल (Opening Balance: ${isSupplier ? 'देने हैं' : 'लेने हैं'})`,
           debit: isSupplier ? 0 : absOp,
           credit: isSupplier ? absOp : 0,
           runningBalance: opBal,
@@ -1999,7 +2021,51 @@ function MobileVyaparAppContent() {
         });
       }
 
-      // Also merge only true unsynced local matching bills not already present in server transactions
+      // 2. Merge local manual party transactions (मैंने दिए / मुझे मिले) from state and localStorage
+      let localPartyTxs = [];
+      try {
+        const storedTxs = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+        if (Array.isArray(storedTxs)) localPartyTxs.push(...storedTxs);
+      } catch (e) {}
+      if (Array.isArray(allPartyTransactions)) localPartyTxs.push(...allPartyTransactions);
+
+      const matchingLocalTxs = localPartyTxs.filter(t => {
+        const tPartyId = String(t.partyId?._id || t.partyId?.id || t.partyId || "");
+        return tPartyId && tPartyId === String(partyId);
+      });
+
+      matchingLocalTxs.forEach(lt => {
+        const ltId = String(lt._id || lt.id || "").trim();
+        const exists = combinedTxs.some(t => {
+          const tId = String(t._id || t.id || "").trim();
+          if (tId && ltId && tId === ltId) return true;
+          const tDate = t.date ? new Date(t.date).toISOString().slice(0, 10) : "";
+          const ltDate = lt.date ? new Date(lt.date).toISOString().slice(0, 10) : "";
+          const tAmt = Number(t.amount || t.debit || t.credit || 0);
+          const ltAmt = Number(lt.amount || lt.debit || lt.credit || 0);
+          return tDate && ltDate && tDate === ltDate && tAmt === ltAmt && (t.type === lt.type || t.source === lt.source);
+        });
+
+        if (!exists) {
+          const isPaid = lt.type === 'paid' || (Number(lt.debit || 0) > 0 && lt.source === 'PartyTransaction');
+          const amt = Number(lt.amount || lt.debit || lt.credit || 0);
+          combinedTxs.push({
+            _id: lt._id || lt.id,
+            date: lt.date || lt.createdAt || new Date().toISOString(),
+            type: lt.type || (isPaid ? 'payment' : 'receipt'),
+            refNo: lt.refNo || (isPaid ? 'PAY-ENTRY' : 'REC-ENTRY'),
+            billNumber: lt.billNumber || '',
+            details: lt.details || (isPaid ? 'मैंने दिए (भुगतान)' : 'मुझे मिले (जमा)'),
+            debit: lt.debit !== undefined ? Number(lt.debit) : (isPaid ? amt : 0),
+            credit: lt.credit !== undefined ? Number(lt.credit) : (isPaid ? 0 : amt),
+            amount: amt,
+            source: 'PartyTransaction',
+            paymentMethod: lt.paymentMethod || 'CASH'
+          });
+        }
+      });
+
+      // 3. Also merge unsynced local matching bills not already present in server transactions
       const pNameNorm = String(pObj?.name || '').trim().toLowerCase();
       const pPhoneNorm = String(pObj?.phone || pObj?.mobileNumber || '').trim();
       const existingRefNos = new Set();
@@ -2223,10 +2289,10 @@ function MobileVyaparAppContent() {
         partyId,
         date: txDate.toISOString(),
         details: notes,
-        debit: type === 'received' ? amt : 0,
-        credit: type === 'paid' ? amt : 0,
+        debit: type === 'paid' ? amt : 0,
+        credit: type === 'received' ? amt : 0,
         amount: amt,
-        type: 'manual',
+        type: type === 'paid' ? 'payment' : 'receipt',
         source: 'PartyTransaction',
         paymentMethod: partyTxPaymentMode || 'CASH'
       };
@@ -3042,12 +3108,16 @@ function MobileVyaparAppContent() {
 
               <div 
                 onClick={() => {
+                  setDailySaleFilter("week");
                   setTransactionTab("sales");
-                  const txEl = document.getElementById("recent-tx-section");
-                  if (txEl) {
-                    txEl.scrollIntoView({ behavior: 'smooth' });
+                  setShowAllTransactions(true);
+                  const sumEl = document.getElementById("eod-summary-section");
+                  if (sumEl) {
+                    sumEl.scrollIntoView({ behavior: 'smooth' });
                   } else {
-                    setShowDayBookModal(true);
+                    const txEl = document.getElementById("recent-tx-section");
+                    if (txEl) txEl.scrollIntoView({ behavior: 'smooth' });
+                    else setShowDayBookModal(true);
                   }
                 }}
                 className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
@@ -3236,24 +3306,61 @@ function MobileVyaparAppContent() {
               );
             })()}
 
-            {/* EOD Daily Summary */}
-            <div className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="font-extrabold text-xs text-[#0F172A]">Today's Business Summary (EOD)</span>
-                <span className="text-[11px] font-bold text-[#6366F1]">{new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+            {/* EOD Business Summary Card with Period Filters */}
+            <div id="eod-summary-section" className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-3">
+              <div className="flex justify-between items-center flex-wrap gap-2">
+                <div>
+                  <span className="font-extrabold text-xs text-[#0F172A] block">
+                    {dailySaleFilter === "today" ? "आज का व्यापार सारांश (Today's EOD)" :
+                     dailySaleFilter === "yesterday" ? "कल का व्यापार सारांश (Yesterday)" :
+                     dailySaleFilter === "week" ? "इस हफ़्ते का व्यापार सारांश (This Week's Sales)" :
+                     "कुल व्यापार सारांश (All-Time Sales)"}
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    {dailySaleFilter === "today" ? new Date().toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' }) :
+                     dailySaleFilter === "week" ? "पिछले 7 दिनों की कुल बिक्री व उधारी" :
+                     dailySaleFilter === "yesterday" ? "कल की तारीख का हिसाब" : "शुरुआत से अब तक की कुल बिक्री"}
+                  </span>
+                </div>
+
+                {/* 4 Period Toggle Buttons */}
+                <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-[10px] font-black">
+                  {[
+                    { id: "today", label: "आज" },
+                    { id: "yesterday", label: "कल" },
+                    { id: "week", label: "हफ़्ता" },
+                    { id: "all", label: "सभी" }
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setDailySaleFilter(f.id)}
+                      className={`px-2 py-1 rounded-lg transition cursor-pointer ${
+                        dailySaleFilter === f.id
+                          ? "bg-indigo-600 text-white shadow-xs font-black"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
               </div>
+
               <div className="grid grid-cols-3 divide-x divide-slate-100 text-center pt-1">
                 <div className="px-1">
-                  <div className="text-[10px] font-bold text-slate-400">Today's Sales</div>
-                  <div className="font-black text-xs text-[#0F172A] mt-0.5">₹ {todaySales.toLocaleString('en-IN')}</div>
+                  <div className="text-[10px] font-bold text-slate-400">
+                    {dailySaleFilter === "today" ? "Today's Sales" : dailySaleFilter === "week" ? "This Week" : "Total Sales"}
+                  </div>
+                  <div className="font-black text-xs text-[#0F172A] mt-0.5">₹ {activePeriodSales.toLocaleString('en-IN')}</div>
                 </div>
                 <div className="px-1">
                   <div className="text-[10px] font-bold text-slate-400">Cash Sales</div>
-                  <div className="font-black text-xs text-[#059669] mt-0.5">₹ {todayCash.toLocaleString('en-IN')}</div>
+                  <div className="font-black text-xs text-[#059669] mt-0.5">₹ {activePeriodCash.toLocaleString('en-IN')}</div>
                 </div>
                 <div className="px-1">
                   <div className="text-[10px] font-bold text-slate-400">Credit (Udhar)</div>
-                  <div className="font-black text-xs text-[#DC2626] mt-0.5">₹ {todayCredit.toLocaleString('en-IN')}</div>
+                  <div className="font-black text-xs text-[#DC2626] mt-0.5">₹ {activePeriodCredit.toLocaleString('en-IN')}</div>
                 </div>
               </div>
             </div>
@@ -3342,13 +3449,30 @@ function MobileVyaparAppContent() {
                   })
                 ].sort((a, b) => b.dateObj - a.dateObj);
 
-                const displayList = combinedStream.filter(tx => {
+                const baseList = combinedStream.filter(tx => {
                   if (transactionTab === "sales") return tx.typeCategory === "sale";
                   if (transactionTab === "expenses") return tx.typeCategory === "expense";
                   return true;
                 });
 
-                if (displayList.length === 0) {
+                const displayList = baseList.filter(tx => {
+                  if (dailySaleFilter === "today") {
+                    return isSameLocalDate(tx.dateObj, new Date());
+                  }
+                  if (dailySaleFilter === "yesterday") {
+                    return isSameLocalDate(tx.dateObj, new Date(Date.now() - 86400000));
+                  }
+                  if (dailySaleFilter === "week") {
+                    const weekAgo = new Date(Date.now() - 7 * 86400000);
+                    return tx.dateObj >= weekAgo;
+                  }
+                  return true;
+                });
+
+                // Fall back to baseList if specific period yielded 0 items but baseList has items, unless user explicitly clicked week
+                const finalDisplayList = (displayList.length === 0 && dailySaleFilter === "today" && baseList.length > 0) ? baseList : displayList;
+
+                if (finalDisplayList.length === 0) {
                   return (
                     <div className="p-6 bg-white border border-slate-100 rounded-3xl text-center space-y-3 shadow-xs">
                       <div className="w-12 h-12 bg-slate-50 text-slate-400 rounded-2xl mx-auto flex items-center justify-center text-xl">
@@ -3356,26 +3480,28 @@ function MobileVyaparAppContent() {
                       </div>
                       <div>
                         <p className="text-xs font-black text-[#0F172A]">
-                          {transactionTab === "sales" ? "अभी कोई बिक्री दर्ज नहीं है" : transactionTab === "expenses" ? "अभी कोई खर्च दर्ज नहीं है" : "अभी कोई लेनदेन नहीं मिला"}
+                          {transactionTab === "sales" ? "इस अवधि में कोई बिक्री दर्ज नहीं है" : transactionTab === "expenses" ? "इस अवधि में कोई खर्च दर्ज नहीं है" : "कोई लेनदेन नहीं मिला"}
                         </p>
                         <p className="text-[11px] text-slate-400 mt-0.5">
-                          दुकान का हिसाब-किताब रखने के लिए पहली बिक्री या खर्च दर्ज करें
+                          {dailySaleFilter !== "all" ? `फ़िल्टर '${dailySaleFilter === 'week' ? 'हफ़्ता' : dailySaleFilter === 'today' ? 'आज' : 'कल'}' लागू है।` : "दुकान का हिसाब-किताब रखने के लिए पहली बिक्री या खर्च दर्ज करें"}
                         </p>
                       </div>
                       <div className="flex items-center justify-center gap-2 pt-1">
+                        {dailySaleFilter !== "all" && (
+                          <button
+                            type="button"
+                            onClick={() => setDailySaleFilter("all")}
+                            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                          >
+                            🔄 सभी लेनदेन देखें
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => setShowManualSaleModal(true)}
                           className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-sm transition cursor-pointer flex items-center gap-1"
                         >
                           <Plus size={13} /> + बिक्री दर्ज करें
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleGharKharchEntry(true)}
-                          className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center gap-1"
-                        >
-                          <Plus size={13} /> + खर्च जोड़ें
                         </button>
                       </div>
                     </div>
@@ -3384,7 +3510,21 @@ function MobileVyaparAppContent() {
 
                 return (
                   <div className="space-y-2">
-                    {(showAllTransactions ? displayList : displayList.slice(0, 8)).map((tx) => (
+                    {dailySaleFilter !== "all" && (
+                      <div className="flex items-center justify-between bg-indigo-50/80 border border-indigo-200 px-3 py-1.5 rounded-xl text-xs font-black text-indigo-900">
+                        <span>
+                          {dailySaleFilter === "week" ? "📅 इस हफ़्ते की बिक्री व लेनदेन" : dailySaleFilter === "today" ? "☀️ आज के लेनदेन" : "कल के लेनदेन"} ({finalDisplayList.length})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setDailySaleFilter("all")}
+                          className="text-indigo-600 hover:text-indigo-800 underline text-[11px] cursor-pointer"
+                        >
+                          ✕ सभी दिखाएं
+                        </button>
+                      </div>
+                    )}
+                    {(showAllTransactions ? finalDisplayList : finalDisplayList.slice(0, 8)).map((tx) => (
                       <div 
                         key={tx._id}
                         onClick={() => {
@@ -5885,16 +6025,47 @@ function MobileVyaparAppContent() {
                       ? "bg-emerald-50/70 border-emerald-200" 
                       : bal < 0 
                         ? "bg-rose-50/70 border-rose-200" 
-                        : "bg-slate-50 border-slate-200"
+                        : "bg-emerald-50/60 border-emerald-300"
                   }`}>
                     <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                       {bal > 0 ? "कुल बकाया राशि (आपको लेने हैं)" : bal < 0 ? "कुल बकाया राशि (आपको देने हैं)" : "हिसाब-किताब स्थिति"}
                     </div>
-                    <div className={`text-2xl font-black mt-0.5 ${bal > 0 ? "text-emerald-700" : bal < 0 ? "text-rose-700" : "text-slate-700"}`}>
+                    <div className={`text-2xl font-black mt-0.5 ${bal > 0 ? "text-emerald-700" : bal < 0 ? "text-rose-700" : "text-emerald-800"}`}>
                       ₹ {Math.abs(bal).toLocaleString('en-IN')}
                     </div>
-                    <div className="text-[11px] font-semibold text-slate-500 mt-0.5">
-                      {bal > 0 ? "🟢 You'll Get" : bal < 0 ? "🔴 You'll Give" : "✅ हिसाब चुकता है"}
+                    <div className="text-[11px] font-semibold mt-0.5">
+                      {bal > 0 ? <span className="text-emerald-700">🟢 You'll Get (लेने हैं)</span> : bal < 0 ? <span className="text-rose-700">🔴 You'll Give (देने हैं)</span> : <span className="text-emerald-800 font-extrabold bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300 inline-block">✅ हिसाब पूर्णतः चुकता है (Settled / ₹0)</span>}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 📊 Enterprise Account Audit Summary (Tally / Zoho style breakdown) */}
+              {partyTransactions.length > 0 && (() => {
+                const totalDebit = partyTransactions.reduce((s, t) => s + Number(t.debit || 0), 0);
+                const totalCredit = partyTransactions.reduce((s, t) => s + Number(t.credit || 0), 0);
+                const curBal = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0);
+                return (
+                  <div className="p-3 bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-extrabold text-slate-700 border-b border-slate-100 pb-1.5">
+                      <span>📊 खाता ऑडिट सारांश (Audit Summary)</span>
+                      <span className="text-[10px] text-slate-500 font-bold">{partyTransactions.length} लेन-देन</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                        <span className="text-[10px] text-slate-400 font-bold block">कुल डेबिट / सामान</span>
+                        <span className="font-black text-slate-800 mt-0.5 block text-xs">₹{totalDebit.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-emerald-50/70 border border-emerald-100">
+                        <span className="text-[10px] text-emerald-700 font-bold block">कुल क्रेडिट / जमा</span>
+                        <span className="font-black text-emerald-800 mt-0.5 block text-xs">₹{totalCredit.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                        <span className="text-[10px] text-slate-400 font-bold block">शुद्ध बाकी (Balance)</span>
+                        <span className={`font-black mt-0.5 block text-xs ${curBal === 0 ? 'text-emerald-700' : curBal > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          ₹{Math.abs(curBal).toLocaleString('en-IN')} {curBal === 0 ? '✓' : ''}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 );
