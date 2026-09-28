@@ -156,19 +156,25 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
           );
           if (!exists) {
             const amt = Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0);
-            const pm = lb.paymentMode || lb.paymentMethod || lb.type || "CASH";
+            const isCredit = String(lb.paymentMode || "").toUpperCase() === "UDHAR" || 
+                             String(lb.paymentMethod || "").toLowerCase() === "credit" ||
+                             String(lb.paymentStatus || "").toLowerCase() === "unpaid" ||
+                             Boolean(lb.isCredit);
+            const resolvedMode = isCredit ? "UDHAR" : (lb.paymentMode || lb.paymentMethod || "CASH");
+            const resolvedMethod = isCredit ? "credit" : (lb.paymentMethod || lb.paymentMode || "cash");
             mergedBills.push({
               ...lb,
               _id: lb._id || lb.id,
-              billNumber: lb.id || lb.billNumber || "SALE-CASH",
-              customerName: lb.customerName || "काउंटर नकद ग्राहक",
+              billNumber: lb.id || lb.billNumber || (isCredit ? "SALE-UDHAR" : "SALE-CASH"),
+              customerName: lb.customerName || (isCredit ? "उधार ग्राहक" : "काउंटर नकद ग्राहक"),
               amount: amt,
               finalAmount: amt,
               total: amt,
               totalAmount: amt,
-              paymentMode: pm,
-              paymentMethod: pm,
-              type: pm,
+              paymentMode: resolvedMode,
+              paymentMethod: resolvedMethod,
+              type: resolvedMode,
+              paymentStatus: isCredit ? "unpaid" : (lb.paymentStatus || "paid"),
               date: lb.rawDate || lb.date || new Date().toISOString(),
               rawDate: lb.rawDate || lb.date || new Date().toISOString(),
               createdAt: lb.rawDate || lb.date || new Date().toISOString(),
@@ -203,12 +209,21 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
     let tIn = 0,
       tOut = 0;
 
-    const cashSales = (data.bills || [])
-      .filter((b) => {
-        const pm = String(b.paymentMethod || b.paymentMode || b.type || "").toLowerCase();
-        return pm !== "credit" && pm !== "udhar";
-      })
+    const isCreditBill = (b) => {
+      if (!b) return false;
+      const pm = String(b.paymentMode || b.paymentMethod || b.type || "").toLowerCase();
+      const ps = String(b.paymentStatus || b.status || "").toLowerCase();
+      return pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || ps === "issued" || Boolean(b.isCredit);
+    };
+
+    const totalBillSales = (data.bills || [])
       .reduce((sum, b) => sum + Number(b.amount || b.finalAmount || b.total || b.totalAmount || b.grandTotal || 0), 0);
+
+    const creditSales = (data.bills || [])
+      .filter(isCreditBill)
+      .reduce((sum, b) => sum + Number(b.amount || b.finalAmount || b.total || b.totalAmount || b.grandTotal || 0), 0);
+
+    const cashSales = Math.max(0, totalBillSales - creditSales);
     const partyIn = (data.partyTransactions || []).reduce((sum, t) => sum + (t.credit || 0), 0);
     tIn = cashSales + partyIn;
 
@@ -222,7 +237,9 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
       totalIn: tIn,
       totalOut: tOut,
       netBalance: tIn - tOut,
+      totalBillSales,
       cashSales,
+      creditSales,
       partyIn,
       cashPurchases,
       expenses,
@@ -365,12 +382,18 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
                 </div>
                 <div className="space-y-1 text-[11px] text-slate-600 pt-1 border-t border-slate-100">
                   <div className="flex justify-between">
-                    <span>नकद/सेल:</span>
-                    <span className="font-bold text-slate-900">₹{summary.cashSales.toLocaleString("en-IN")}</span>
+                    <span>नकद सेल:</span>
+                    <span className="font-bold text-slate-900">₹{(summary.cashSales || 0).toLocaleString("en-IN")}</span>
                   </div>
+                  {(summary.creditSales || 0) > 0 && (
+                    <div className="flex justify-between text-amber-700">
+                      <span>उधार सेल:</span>
+                      <span className="font-bold">₹{(summary.creditSales || 0).toLocaleString("en-IN")}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
-                    <span>उधारी आई:</span>
-                    <span className="font-bold text-slate-900">₹{summary.partyIn.toLocaleString("en-IN")}</span>
+                    <span>उधारी जमा:</span>
+                    <span className="font-bold text-slate-900">₹{(summary.partyIn || 0).toLocaleString("en-IN")}</span>
                   </div>
                 </div>
               </div>
@@ -458,17 +481,40 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
                           {b.customerName || b.partyId?.name || "Walk-in Guest"}
                         </span>
                       </div>
-                      <p className="text-[10px] text-slate-400">
-                        {b.date || "Today"} • {b.paymentMode || b.paymentMethod || "CASH"}
-                      </p>
+                      {(() => {
+                        const pm = String(b.paymentMode || b.paymentMethod || b.type || "").toLowerCase();
+                        const ps = String(b.paymentStatus || b.status || "").toLowerCase();
+                        const isCredit = pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || ps === "issued" || Boolean(b.isCredit);
+                        const isUpi = pm.includes("upi") || pm.includes("online");
+                        return (
+                          <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                            <span>{b.date || "Today"}</span>
+                            <span>•</span>
+                            <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
+                              isCredit ? "bg-amber-100 text-amber-800 border border-amber-200" :
+                              isUpi ? "bg-blue-100 text-blue-700 border border-blue-200" :
+                              "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                            }`}>
+                              {isCredit ? "उधार (Credit)" : isUpi ? "UPI ऑनलाइन" : "नकद (Cash)"}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className="text-right">
                       <span className="font-black text-sm text-emerald-700 font-mono">
                         +₹{(Number(b.amount || b.finalAmount || b.total || b.totalAmount || 0)).toLocaleString("en-IN")}
                       </span>
-                      <span className="text-[10px] block text-slate-400 font-semibold uppercase">
-                        बिक्री
-                      </span>
+                      {(() => {
+                        const pm = String(b.paymentMode || b.paymentMethod || b.type || "").toLowerCase();
+                        const ps = String(b.paymentStatus || b.status || "").toLowerCase();
+                        const isCredit = pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || ps === "issued" || Boolean(b.isCredit);
+                        return (
+                          <span className={`text-[10px] block font-bold uppercase ${isCredit ? 'text-amber-700' : 'text-slate-400'}`}>
+                            {isCredit ? 'उधार बिक्री' : 'नकद बिक्री'}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}

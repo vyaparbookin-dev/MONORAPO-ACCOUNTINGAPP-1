@@ -347,6 +347,12 @@ export const getPartyStatement = async (req, res) => {
 
     // Process sales bills
     for (const b of billRecords) {
+      const bNum = String(b.billNumber || b.invoiceNumber || b.id || b._id || "BILL");
+      const bId = String(b._id || "");
+      const invNo = String(b.invoiceNumber || "");
+
+      // If this bill was already recorded in party transactions, skip adding duplicate debit entry
+      const alreadyInTx = existingRefBillIds.has(bNum) || existingRefBillIds.has(bId) || (invNo && existingRefBillIds.has(invNo));
 
       const finalAmt = Number(b.finalAmount ?? b.total ?? 0);
       const isPaid = String(b.paymentStatus || b.status || "").toLowerCase() === "paid";
@@ -356,32 +362,37 @@ export const getPartyStatement = async (req, res) => {
         ? `: ${b.items.map(i => `${i.name}${i.quantity ? ` (${i.quantity} ${i.unit || 'pcs'})` : ''}`).slice(0, 3).join(', ')}${b.items.length > 3 ? '...' : ''}`
         : '';
 
-      // 1. Bill Entry (Debit to customer)
-      ledgerEntries.push({
-        _id: b._id,
-        date: b.date || b.createdAt,
-        type: "sale",
-        refNo: bNum || "BILL",
-        billNumber: bNum,
-        billAmount: finalAmt,
-        paidAmount: paidAmt,
-        items: b.items || [],
-        details: `बिक्री बिल #${bNum} (${(b.items || []).length} सामान)${itemsSummary}`,
-        siteName: b.siteName || "",
-        debit: finalAmt,
-        credit: 0,
-        billImageUrl: b.billImageUrl || "",
-        paymentMethod: b.paymentMode || b.paymentMethod || "CASH",
-        source: "Bill"
-      });
+      const isCreditBill = b.paymentMethod === 'credit' || b.paymentMode === 'UDHAR' || b.paymentMode === 'CREDIT' || b.paymentStatus === 'unpaid' || b.paymentStatus === 'partial';
 
-      // 2. If any amount was paid/jama at bill time or if bill was paid, record Payment (Credit)
-      if (paidAmt > 0) {
+      // 1. Bill Entry (Debit to customer) - only add if not already in PartyTransaction
+      if (!alreadyInTx) {
+        ledgerEntries.push({
+          _id: b._id,
+          date: b.date || b.createdAt,
+          type: "sale",
+          refNo: bNum,
+          billNumber: bNum,
+          billAmount: finalAmt,
+          paidAmount: paidAmt,
+          items: b.items || [],
+          details: `बिक्री बिल #${bNum} (${isCreditBill ? 'उधार' : 'नकद'})${itemsSummary}`,
+          siteName: b.siteName || "",
+          debit: finalAmt,
+          credit: 0,
+          billImageUrl: b.billImageUrl || "",
+          paymentMethod: isCreditBill ? "UDHAR" : (b.paymentMode || b.paymentMethod || "CASH"),
+          source: "Bill"
+        });
+      }
+
+      // 2. If any amount was paid/jama at bill time or if bill was paid, record Payment (Credit) IF NOT already in txRecords
+      const payRef = `REC-${bNum}`;
+      if (paidAmt > 0 && !existingRefBillIds.has(payRef) && !existingRefBillIds.has(`pay_${bId}`)) {
         ledgerEntries.push({
           _id: `pay_${b._id}`,
           date: b.date || b.createdAt,
           type: "payment",
-          refNo: bNum ? `REC-${bNum}` : "REC",
+          refNo: payRef,
           billNumber: bNum,
           details: `बिल #${bNum} पर नकद/UPI जमा (Payment Received)`,
           siteName: b.siteName || "",

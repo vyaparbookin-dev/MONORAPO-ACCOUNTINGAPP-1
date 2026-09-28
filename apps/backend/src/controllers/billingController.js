@@ -51,10 +51,11 @@ export const createBill = async (req, res) => {
     // --- END LICENSING CHECK ---
 
     const { billNumber, companyId, partyId, customerName, customerMobile, customerAddress, customerGst, siteName, date, dueDate, items, total, tax, discountPercent, discountAmount, finalAmount, paymentMethod, paymentMode, notes, status, billImageUrl } = req.body;
-    const pMode = String(paymentMode || paymentMethod || req.body.type || "CASH").toUpperCase();
+    const rawMode = String(paymentMode || paymentMethod || req.body.type || "CASH").toUpperCase();
     const finalBillAmount = Number(finalAmount || total || 0);
 
-    const isUdhar = pMode === "UDHAR" || pMode === "CREDIT" || req.body.paymentStatus === "unpaid";
+    const isUdhar = rawMode === "UDHAR" || rawMode === "CREDIT" || req.body.paymentStatus === "unpaid" || String(req.body.paymentMethod || "").toLowerCase() === "credit" || Boolean(req.body.isCredit);
+    const pMode = isUdhar ? "UDHAR" : rawMode;
     const udharThreshold = Number(req.body.udharOtpThreshold ?? company.udharOtpThreshold ?? 500);
 
     // --- LOOKUP MATCHED PARTY UPFRONT FOR CREDIT LINE / LIMIT CHECK ---

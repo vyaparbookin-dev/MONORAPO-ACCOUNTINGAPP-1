@@ -170,26 +170,34 @@ export default function DayBookPage() {
         return true;
       };
 
-      const serverBills = Array.isArray(data?.bills) ? data.bills : [];
-      const periodLocalBills = localBills.filter(lb => checkInRange(lb.rawDate || lb.date || lb.createdAt)).map(lb => ({
-        ...lb,
-        _id: lb._id || lb.id,
-        billNumber: lb.billNumber || lb.invoiceNumber || lb.id || "SALE-CASH",
-        invoiceNumber: lb.invoiceNumber || lb.billNumber || lb.id || "SALE-CASH",
-        customerName: lb.customerName || lb.partyName || "काउंटर नकद ग्राहक",
-        amount: Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0),
-        finalAmount: Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0),
-        total: Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0),
-        totalAmount: Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0),
-        paymentMode: lb.paymentMode || lb.paymentMethod || lb.type || "CASH",
-        paymentMethod: lb.paymentMode || lb.paymentMethod || lb.type || "CASH",
-        type: lb.paymentMode || lb.paymentMethod || lb.type || "CASH",
-        date: lb.rawDate || lb.date || new Date().toISOString(),
-        rawDate: lb.rawDate || lb.date || new Date().toISOString(),
-        createdAt: lb.rawDate || lb.date || new Date().toISOString(),
-        items: lb.items || [],
-        isOfflineCreated: lb.isOfflineCreated !== false
-      }));
+      const periodLocalBills = localBills.filter(lb => checkInRange(lb.rawDate || lb.date || lb.createdAt)).map(lb => {
+        const isCredit = String(lb.paymentMode || "").toUpperCase() === "UDHAR" || 
+                         String(lb.paymentMethod || "").toLowerCase() === "credit" ||
+                         String(lb.paymentStatus || "").toLowerCase() === "unpaid" ||
+                         Boolean(lb.isCredit);
+        const resolvedMode = isCredit ? "UDHAR" : (lb.paymentMode || lb.paymentMethod || "CASH");
+        const resolvedMethod = isCredit ? "credit" : (lb.paymentMethod || lb.paymentMode || "cash");
+        return {
+          ...lb,
+          _id: lb._id || lb.id,
+          billNumber: lb.billNumber || lb.invoiceNumber || lb.id || (isCredit ? "SALE-UDHAR" : "SALE-CASH"),
+          invoiceNumber: lb.invoiceNumber || lb.billNumber || lb.id || (isCredit ? "SALE-UDHAR" : "SALE-CASH"),
+          customerName: lb.customerName || lb.partyName || (isCredit ? "उधार ग्राहक" : "काउंटर नकद ग्राहक"),
+          amount: Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0),
+          finalAmount: Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0),
+          total: Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0),
+          totalAmount: Number(lb.amount || lb.finalAmount || lb.total || lb.totalAmount || lb.grandTotal || 0),
+          paymentMode: resolvedMode,
+          paymentMethod: resolvedMethod,
+          type: resolvedMode,
+          paymentStatus: isCredit ? "unpaid" : (lb.paymentStatus || "paid"),
+          date: lb.rawDate || lb.date || new Date().toISOString(),
+          rawDate: lb.rawDate || lb.date || new Date().toISOString(),
+          createdAt: lb.rawDate || lb.date || new Date().toISOString(),
+          items: lb.items || [],
+          isOfflineCreated: lb.isOfflineCreated !== false
+        };
+      });
 
       const mergedBills = deduplicateBills([...serverBills, ...periodLocalBills]);
 
@@ -542,17 +550,21 @@ export default function DayBookPage() {
     let tIn = 0,
       tOut = 0;
 
+    const isCreditBillRecord = (b) => {
+      if (!b) return false;
+      const pm = String(b.paymentMode || b.paymentMethod || b.type || "").toLowerCase();
+      const ps = String(b.paymentStatus || b.status || "").toLowerCase();
+      return pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || ps === "issued" || Boolean(b.isCredit);
+    };
+
     const totalBillSales = (data.bills || [])
       .reduce((sum, b) => sum + (Number(b.amount || b.finalAmount || b.total || b.totalAmount || b.grandTotal) || 0), 0);
 
-    const cashSales = (data.bills || [])
-      .filter((b) => {
-        const pm = String(b.paymentMethod || b.paymentMode || b.type || "").toLowerCase();
-        return pm !== "credit" && pm !== "udhar";
-      })
+    const creditSales = (data.bills || [])
+      .filter(isCreditBillRecord)
       .reduce((sum, b) => sum + (Number(b.amount || b.finalAmount || b.total || b.totalAmount || b.grandTotal) || 0), 0);
 
-    const creditSales = Math.max(0, totalBillSales - cashSales);
+    const cashSales = Math.max(0, totalBillSales - creditSales);
     const partyIn = (data.partyTransactions || []).reduce((sum, t) => sum + (t.credit || 0), 0);
     tIn = cashSales + partyIn;
 
@@ -1515,11 +1527,21 @@ export default function DayBookPage() {
                       >
                         {bill.partyId?.name || bill.customerName || "Walk-in Guest"}
                       </button>
-                      {bill.paymentMethod && (
-                        <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-700 border uppercase">
-                          {bill.paymentMethod}
-                        </span>
-                      )}
+                      {(() => {
+                        const pm = String(bill.paymentMode || bill.paymentMethod || bill.type || "").toLowerCase();
+                        const ps = String(bill.paymentStatus || bill.status || "").toLowerCase();
+                        const isCredit = pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || ps === "issued" || Boolean(bill.isCredit);
+                        const isUpi = pm.includes("upi") || pm.includes("online");
+                        return (
+                          <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${
+                            isCredit ? "bg-amber-100 text-amber-800 border-amber-300" :
+                            isUpi ? "bg-blue-100 text-blue-700 border-blue-200" :
+                            "bg-emerald-100 text-emerald-800 border-emerald-200"
+                          }`}>
+                            {isCredit ? "उधार (Credit)" : isUpi ? "UPI ऑनलाइन" : "नकद (Cash)"}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <span className="font-black text-gray-900 text-sm">
                       ₹{(bill.finalAmount || bill.total || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
