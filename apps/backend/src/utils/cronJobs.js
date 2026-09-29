@@ -2,7 +2,33 @@ import cron from 'node-cron';
 import Bill from '../model/bill.js';
 import Company from '../model/company.js';
 
+// --- Supabase Keep-Alive Ping (Prevents Supabase Free Tier auto-pause) ---
+export const pingSupabaseKeepAlive = async () => {
+  try {
+    const { supabase } = await import('../config/supabase.js');
+    if (supabase) {
+      const { data, error } = await supabase.from('companies').select('id').limit(1);
+      if (error) {
+        console.warn('⚠️ [Supabase Keep-Alive] Ping note:', error.message);
+      } else {
+        console.log('💚 [Supabase Keep-Alive] Supabase is alive and active! (Auto-pause prevented)');
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ [Supabase Keep-Alive] Error:', err.message);
+  }
+};
+
 export const startCronJobs = () => {
+  // Run immediate keep-alive ping on server startup
+  pingSupabaseKeepAlive();
+
+  // Run every 2 days at 03:00 AM ('0 3 */2 * *') to keep Supabase active
+  cron.schedule('0 3 */2 * *', async () => {
+    console.log('⏳ Running Supabase Keep-Alive Cron...');
+    await pingSupabaseKeepAlive();
+  });
+
   // Run every day at 10:00 AM ('0 10 * * *')
   cron.schedule('0 10 * * *', async () => {
     console.log('⏳ Running Daily Auto-Payment Reminder Cron Job...');
@@ -30,4 +56,4 @@ export const startCronJobs = () => {
       console.error('❌ Cron Job Error:', error);
     }
   });
-};
+};
