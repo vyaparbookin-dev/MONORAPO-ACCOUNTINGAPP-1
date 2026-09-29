@@ -3412,7 +3412,7 @@ function MobileVyaparAppContent() {
                     subtitle: `Invoice #${b.id} • ${b.date} • ${b.paymentStatus === 'unpaid' ? 'Due (उधार)' : 'Paid'}`,
                     amount: Number(b.amount || b.finalAmount || b.total || 0),
                     isPositive: true,
-                    dateObj: new Date(b.rawDate || b.date || Date.now()),
+                    dateObj: parseAnyDate(b.rawDate || b.createdAt || b.date) || new Date(),
                     original: b
                   })),
                   ...(allPartyTransactions || []).map(tx => {
@@ -3426,7 +3426,7 @@ function MobileVyaparAppContent() {
                       subtitle: `🤝 पार्टी लेनदेन • ${tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today'}`,
                       amount: amt,
                       isPositive: isDebit,
-                      dateObj: new Date(tx.date || tx.createdAt || Date.now()),
+                      dateObj: parseAnyDate(tx.date || tx.createdAt) || new Date(),
                       original: tx,
                       isPartyTx: true
                     };
@@ -3443,7 +3443,7 @@ function MobileVyaparAppContent() {
                         : `🏢 दुकान खर्च • ${matchedStaff ? `[${matchedStaff.name} एडवांस] • ` : ''}${e.category || 'संचालन'} • ${e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today'}`,
                       amount: Number(e.amount || 0),
                       isPositive: false,
-                      dateObj: new Date(e.date || Date.now()),
+                      dateObj: parseAnyDate(e.date || e.createdAt) || new Date(),
                       original: e
                     };
                   })
@@ -3469,8 +3469,9 @@ function MobileVyaparAppContent() {
                   return true;
                 });
 
-                // Fall back to baseList if specific period yielded 0 items but baseList has items, unless user explicitly clicked week
-                const finalDisplayList = (displayList.length === 0 && dailySaleFilter === "today" && baseList.length > 0) ? baseList : displayList;
+                // Fall back to baseList if specific period yielded 0 items but baseList has items
+                const isFilteredEmpty = displayList.length === 0 && baseList.length > 0;
+                const finalDisplayList = isFilteredEmpty ? baseList : displayList;
 
                 if (finalDisplayList.length === 0) {
                   return (
@@ -3510,7 +3511,20 @@ function MobileVyaparAppContent() {
 
                 return (
                   <div className="space-y-2">
-                    {dailySaleFilter !== "all" && (
+                    {isFilteredEmpty ? (
+                      <div className="flex items-center justify-between bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-xs font-bold text-amber-900">
+                        <span>
+                          💡 चयनित अवधि में कोई नया लेनदेन नहीं था • सभी कुल ({finalDisplayList.length}) लेनदेन दिखाए जा रहे हैं
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setDailySaleFilter("all")}
+                          className="text-amber-700 font-black underline text-[11px] cursor-pointer"
+                        >
+                          ठीक है
+                        </button>
+                      </div>
+                    ) : dailySaleFilter !== "all" ? (
                       <div className="flex items-center justify-between bg-indigo-50/80 border border-indigo-200 px-3 py-1.5 rounded-xl text-xs font-black text-indigo-900">
                         <span>
                           {dailySaleFilter === "week" ? "📅 इस हफ़्ते की बिक्री व लेनदेन" : dailySaleFilter === "today" ? "☀️ आज के लेनदेन" : "कल के लेनदेन"} ({finalDisplayList.length})
@@ -3523,7 +3537,7 @@ function MobileVyaparAppContent() {
                           ✕ सभी दिखाएं
                         </button>
                       </div>
-                    )}
+                    ) : null}
                     {(showAllTransactions ? finalDisplayList : finalDisplayList.slice(0, 8)).map((tx) => (
                       <div 
                         key={tx._id}

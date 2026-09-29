@@ -39,6 +39,60 @@ import { useCompany } from "../../contexts/CompanyContext";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 
+const parseAnyDate = (val) => {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  if (typeof val === "number") {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const str = String(val).trim();
+  if (!str || str.toLowerCase() === "today" || str === "आज") return new Date();
+
+  const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (ymd) {
+    const parsed = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+
+  const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (dmy) {
+    const parsed = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    if (d.getFullYear() > 2020) return d;
+    const currentYear = new Date().getFullYear();
+    const withYear = new Date(`${str} ${currentYear}`);
+    if (!isNaN(withYear.getTime())) return withYear;
+  }
+
+  const currentYear = new Date().getFullYear();
+  const tryWithYear = new Date(`${str} ${currentYear}`);
+  if (!isNaN(tryWithYear.getTime())) return tryWithYear;
+
+  return null;
+};
+
+const getLocalDayStr = (val) => {
+  if (!val) return "";
+  if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+  const d = parseAnyDate(val);
+  if (!d || isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+const HINDI_MONTHS = [
+  "जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून",
+  "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"
+];
+const HINDI_DAYS = ["रवि", "सोम", "मंगल", "बुध", "गुरु", "शुक्र", "शनि"];
+
 export default function DayBookPage() {
   const navigate = useNavigate();
   const { selectedCompany } = useCompany() || {};
@@ -51,9 +105,15 @@ export default function DayBookPage() {
   ).toLowerCase();
   const isRestaurant = indType === "restaurant" || indType === "cafe" || indType === "dhaba";
 
+  const initialNow = new Date();
+  const initialMonthStr = `${initialNow.getFullYear()}-${String(initialNow.getMonth() + 1).padStart(2, "0")}`;
+  const initialTodayStr = getLocalDayStr(initialNow);
+
   const [period, setPeriod] = useState("today");
-  const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
+  const [startDate, setStartDate] = useState(initialTodayStr);
+  const [endDate, setEndDate] = useState(initialTodayStr);
+  const [selectedMonth, setSelectedMonth] = useState(initialMonthStr);
+  const [selectedDayDate, setSelectedDayDate] = useState(initialTodayStr);
   const [loading, setLoading] = useState(false);
   const [rawdata, setRawData] = useState(null);
   const [summary, setSummary] = useState({
@@ -126,7 +186,9 @@ export default function DayBookPage() {
     setLoading(true);
     try {
       let url = `/api/daybook?period=${period}&limit=10000`;
-      if (period === "custom") {
+      if (startDate && endDate) {
+        url = `/api/daybook?startDate=${startDate}&endDate=${endDate}&limit=10000`;
+      } else if (period === "custom") {
         url = `/api/daybook?startDate=${startDate}&endDate=${endDate}&limit=10000`;
       }
 
@@ -145,17 +207,6 @@ export default function DayBookPage() {
         if (Array.isArray(stored)) localBills = stored;
       } catch (e) {}
 
-      const getLocalDayStr = (val) => {
-        if (!val) return "";
-        if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
-        const d = new Date(val);
-        if (isNaN(d.getTime())) return "";
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, "0");
-        const day = String(d.getDate()).padStart(2, "0");
-        return `${y}-${m}-${day}`;
-      };
-
       const now = new Date();
       const todayStr = getLocalDayStr(now);
       const yestDate = new Date(now);
@@ -163,8 +214,9 @@ export default function DayBookPage() {
       const yestStr = getLocalDayStr(yestDate);
 
       const checkInRange = (rawDateVal) => {
-        if (period === "all") return true;
-        const dStr = getLocalDayStr(rawDateVal) || todayStr;
+        if (period === "all" || (!startDate && !endDate)) return true;
+        const dStr = getLocalDayStr(rawDateVal);
+        if (!dStr) return true;
         if (period === "today") return dStr === todayStr;
         if (period === "yesterday") return dStr === yestStr;
         if (startDate && dStr < startDate) return false;
@@ -512,44 +564,135 @@ export default function DayBookPage() {
     });
   };
 
+  useEffect(() => {
+    if (selectedDayDate) {
+      setTimeout(() => {
+        const el = document.getElementById(`day-pill-desktop-${selectedDayDate}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        }
+      }, 100);
+    }
+  }, [selectedDayDate, selectedMonth]);
+
   const handlePeriodChange = (newPeriod) => {
     setPeriod(newPeriod);
     const now = new Date();
     if (newPeriod === "today") {
-      const todayStr = now.toISOString().split("T")[0];
+      const todayStr = getLocalDayStr(now);
+      const currYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      setSelectedMonth(currYm);
+      setSelectedDayDate(todayStr);
       setStartDate(todayStr);
       setEndDate(todayStr);
     } else if (newPeriod === "yesterday") {
       const yesterday = new Date(now);
       yesterday.setDate(now.getDate() - 1);
-      const yStr = yesterday.toISOString().split("T")[0];
+      const yStr = getLocalDayStr(yesterday);
+      const yYm = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}`;
+      setSelectedMonth(yYm);
+      setSelectedDayDate(yStr);
       setStartDate(yStr);
       setEndDate(yStr);
     } else if (newPeriod === "week") {
+      setSelectedDayDate("");
       const startOfWeek = new Date(now);
       const day = now.getDay();
       const diff = now.getDate() - day + (day === 0 ? -6 : 1);
       startOfWeek.setDate(diff);
-      setStartDate(startOfWeek.toISOString().split("T")[0]);
-      setEndDate(now.toISOString().split("T")[0]);
+      setStartDate(getLocalDayStr(startOfWeek));
+      setEndDate(getLocalDayStr(now));
     } else if (newPeriod === "month") {
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      setStartDate(startOfMonth.toISOString().split("T")[0]);
-      setEndDate(now.toISOString().split("T")[0]);
+      const currYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      setSelectedMonth(currYm);
+      handleSelectWholeMonth(currYm);
     } else if (newPeriod === "quarter") {
+      setSelectedDayDate("");
       const currentQuarter = Math.floor(now.getMonth() / 3);
       const startOfQuarter = new Date(now.getFullYear(), currentQuarter * 3, 1);
       setStartDate(startOfQuarter.toISOString().split("T")[0]);
       setEndDate(now.toISOString().split("T")[0]);
     } else if (newPeriod === "year") {
+      setSelectedDayDate("");
       const startOfYear = new Date(now.getFullYear(), 0, 1);
       setStartDate(startOfYear.toISOString().split("T")[0]);
       setEndDate(now.toISOString().split("T")[0]);
     } else if (newPeriod === "all") {
-      setStartDate("2020-01-01");
-      setEndDate(now.toISOString().split("T")[0]);
+      setSelectedDayDate("");
+      setStartDate("");
+      setEndDate("");
     }
   };
+
+  const handleSelectDay = (dayDateStr) => {
+    setSelectedDayDate(dayDateStr);
+    setPeriod("custom");
+    setStartDate(dayDateStr);
+    setEndDate(dayDateStr);
+  };
+
+  const handleSelectWholeMonth = (mStr = selectedMonth) => {
+    setSelectedDayDate("");
+    const [y, m] = mStr.split("-").map(Number);
+    const daysInM = new Date(y, m, 0).getDate();
+    setPeriod("month");
+    setStartDate(`${mStr}-01`);
+    setEndDate(`${mStr}-${String(daysInM).padStart(2, "0")}`);
+  };
+
+  const handleMonthChange = (newMonthStr) => {
+    setSelectedMonth(newMonthStr);
+    handleSelectWholeMonth(newMonthStr);
+  };
+
+  const handlePrevMonth = () => {
+    const [y, m] = selectedMonth.split("-").map(Number);
+    const prevDate = new Date(y, m - 2, 1);
+    const prevYm = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
+    handleMonthChange(prevYm);
+  };
+
+  const handleNextMonth = () => {
+    const [y, m] = selectedMonth.split("-").map(Number);
+    const nextDate = new Date(y, m, 1);
+    const nextYm = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}`;
+    handleMonthChange(nextYm);
+  };
+
+  const daysInSelectedMonth = (() => {
+    const [y, m] = (selectedMonth || initialMonthStr).split("-").map(Number);
+    if (!y || !m) return [];
+    const daysCount = new Date(y, m, 0).getDate();
+    const todayStr = getLocalDayStr(new Date());
+    const list = [];
+    for (let d = 1; d <= daysCount; d++) {
+      const dStr = String(d).padStart(2, "0");
+      const fullDateStr = `${selectedMonth}-${dStr}`;
+      const dt = new Date(y, m - 1, d);
+      list.push({
+        dayNum: d,
+        dateStr: fullDateStr,
+        dayName: HINDI_DAYS[dt.getDay()],
+        isToday: fullDateStr === todayStr,
+        isSunday: dt.getDay() === 0
+      });
+    }
+    return list;
+  })();
+
+  const availableMonths = (() => {
+    const list = [];
+    const curr = new Date();
+    for (let i = -11; i <= 2; i++) {
+      const d = new Date(curr.getFullYear(), curr.getMonth() + i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      list.push({
+        value: ym,
+        label: `${HINDI_MONTHS[d.getMonth()]} ${d.getFullYear()}`
+      });
+    }
+    return list.reverse();
+  })();
 
   const calculateSummary = (data) => {
     let tIn = 0,
@@ -712,6 +855,106 @@ export default function DayBookPage() {
               {p.label}
             </button>
           ))}
+        </div>
+
+        {/* 📅 Interactive Month Picker & Horizontal Day Scroller Strip */}
+        <div className="bg-slate-900 text-white rounded-2xl p-3 shadow-sm border border-slate-800 space-y-2.5">
+          {/* Month Navigation Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-2">
+            <div className="flex items-center gap-2">
+              <Calendar size={16} className="text-indigo-400" />
+              <span className="text-xs font-bold text-slate-300">माह चुनें (Select Month):</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handlePrevMonth}
+                  className="p-1 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 transition text-xs font-black cursor-pointer"
+                  title="पिछला महीना"
+                >
+                  ◀
+                </button>
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => handleMonthChange(e.target.value)}
+                  className="bg-slate-800 hover:bg-slate-700 text-white text-xs font-black px-3 py-1 rounded-lg border border-slate-700 outline-none cursor-pointer text-center"
+                >
+                  {availableMonths.map((m) => (
+                    <option key={m.value} value={m.value} className="bg-slate-900 text-white">
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleNextMonth}
+                  className="p-1 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 transition text-xs font-black cursor-pointer"
+                  title="अगला महीना"
+                >
+                  ▶
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400 font-medium">सक्रिय अवधि:</span>
+              <span className="bg-indigo-950 border border-indigo-700/80 px-2.5 py-0.5 rounded-lg text-emerald-400 font-mono text-xs font-black">
+                {selectedDayDate
+                  ? `${selectedDayDate.split("-")[2]} ${HINDI_MONTHS[(Number(selectedMonth.split("-")[1]) - 1) % 12]} ${selectedMonth.split("-")[0]}`
+                  : `पूरा महीना (${selectedMonth})`}
+              </span>
+            </div>
+          </div>
+
+          {/* Horizontal Scrollable Day Strip */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            {/* Whole Month Pill Button */}
+            <button
+              type="button"
+              onClick={() => handleSelectWholeMonth()}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition cursor-pointer flex flex-col items-center justify-center border ${
+                !selectedDayDate && (period === "month" || (startDate && endDate && startDate !== endDate))
+                  ? "bg-gradient-to-r from-indigo-500 to-blue-600 text-white border-indigo-400 shadow-md ring-2 ring-indigo-400/40"
+                  : "bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700"
+              }`}
+            >
+              <span className="text-[10px] uppercase tracking-tighter opacity-80 leading-none">🗓️ पूरा</span>
+              <span className="text-xs leading-tight font-black mt-0.5">माह</span>
+            </button>
+
+            {/* Date Buttons for each day */}
+            {daysInSelectedMonth.map((item) => {
+              const isSelected = selectedDayDate === item.dateStr;
+              return (
+                <button
+                  key={item.dateStr}
+                  id={`day-pill-desktop-${item.dateStr}`}
+                  type="button"
+                  onClick={() => handleSelectDay(item.dateStr)}
+                  className={`min-w-[48px] px-2 py-1.5 rounded-xl text-center shrink-0 transition cursor-pointer flex flex-col items-center border active:scale-95 ${
+                    isSelected
+                      ? "bg-gradient-to-b from-indigo-500 to-indigo-700 text-white border-indigo-300 shadow-md ring-2 ring-indigo-400 scale-105 font-black"
+                      : item.isToday
+                      ? "bg-emerald-950/70 text-emerald-300 border-emerald-600 hover:bg-emerald-900/60"
+                      : item.isSunday
+                      ? "bg-slate-800/90 text-rose-300 border-slate-700 hover:bg-slate-700"
+                      : "bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700"
+                  }`}
+                >
+                  <span className="text-[9px] uppercase tracking-tighter opacity-80 leading-none">
+                    {item.dayName}
+                  </span>
+                  <span className="text-sm font-black leading-tight mt-0.5">
+                    {item.dayNum}
+                  </span>
+                  {item.isToday && (
+                    <span className="text-[8px] bg-emerald-500 text-slate-950 font-black px-1 rounded-full leading-none mt-0.5">
+                      आज
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Custom Date Pickers */}
