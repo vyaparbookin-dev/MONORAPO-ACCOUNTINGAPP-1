@@ -50,7 +50,8 @@ const sendEmail = async (options) => {
         console.log(`✅ Brevo email sent successfully to ${normalizedEmail}`);
         return;
       }
-      console.warn("[Brevo Debug] Brevo API responded with non-200, trying SMTP fallback.");
+      const errText = await response.text();
+      console.warn(`[Brevo Debug] Brevo API responded with ${response.status}:`, errText);
     } catch (brevoError) {
       console.warn("[Brevo Debug] Brevo request error:", brevoError.message);
     }

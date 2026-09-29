@@ -225,19 +225,43 @@ class StorageManager {
     this.runAutoMigration(companyId);
     if (typeof localStorage === "undefined") return [];
 
-    const key = this.getKey("bills", companyId);
+    const cid = String(companyId || localStorage.getItem("companyId") || "default").trim();
+    const key = this.getKey("bills", cid);
+    const collected = [];
+
+    // 1. Read primary v2 key
     try {
       const stored = localStorage.getItem(key);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          return parsed.map(b => this.normalizeBill(b)).filter(Boolean);
-        }
+        if (Array.isArray(parsed)) collected.push(...parsed);
       }
     } catch (e) {
       console.warn("[StorageManager] getBills error:", e);
     }
-    return [];
+
+    // 2. Also sweep candidate keys so offline / manual cash sales (like vb_local_manual_bills) are never missed
+    const candidateKeys = [
+      cid && cid !== "default" ? `vb_local_manual_bills_${cid}` : null,
+      "vb_local_manual_bills",
+      "bills",
+      "manual_bills",
+      "vb_bills",
+      "sales"
+    ].filter(Boolean);
+
+    for (const k of candidateKeys) {
+      try {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) collected.push(...parsed);
+        }
+      } catch (err) {}
+    }
+
+    const deduped = deduplicateBills(collected.map(b => this.normalizeBill(b)).filter(Boolean));
+    return deduped;
   }
 
   saveBills(companyId, billsList = []) {
