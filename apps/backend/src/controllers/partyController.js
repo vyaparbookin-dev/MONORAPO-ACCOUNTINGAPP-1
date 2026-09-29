@@ -19,7 +19,7 @@ export const createParty = async (req, res) => {
     const trimmedAddress = address.trim();
     const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    // 1. Duplicate check: Same name and same address
+    // 1. Duplicate check: Same name and same address among ACTIVE parties
     const duplicateByNameAndAddr = await Party.findOne({
       companyId: req.companyId,
       isActive: true,
@@ -33,10 +33,41 @@ export const createParty = async (req, res) => {
       });
     }
 
-    // 2. Duplicate check: Same mobile number
+    // 2. Duplicate check: Same mobile number among ACTIVE parties
     const existingParty = await Party.findOne({ mobileNumber, companyId: req.companyId, isActive: true });
     if (existingParty) {
-      return res.status(400).json({ success: false, error: "Party with this mobile already exists" });
+      return res.status(400).json({ success: false, error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!" });
+    }
+
+    // 3. Check if a previously deleted / inactive party exists with this mobile number or name
+    const inactiveParty = await Party.findOne({
+      companyId: req.companyId,
+      isActive: false,
+      $or: [
+        { mobileNumber },
+        { name: { $regex: new RegExp(`^${escapeRegex(trimmedName)}$`, "i") } }
+      ]
+    });
+
+    if (inactiveParty) {
+      // Re-activate and update the deleted party slot with new details
+      inactiveParty.name = trimmedName;
+      inactiveParty.address = trimmedAddress;
+      inactiveParty.mobileNumber = mobileNumber;
+      inactiveParty.partyType = req.body.partyType || "supplier";
+      inactiveParty.contactPerson = req.body.contactPerson || "";
+      inactiveParty.email = req.body.email || "";
+      inactiveParty.alternatePhone = req.body.alternatePhone || "";
+      inactiveParty.gstNumber = req.body.gstNumber || undefined;
+      inactiveParty.panNumber = req.body.panNumber || "";
+      inactiveParty.creditLimit = Number(req.body.creditLimit || 0);
+      inactiveParty.openingBalance = Number(req.body.openingBalance || 0);
+      inactiveParty.currentBalance = Number(req.body.openingBalance || 0);
+      inactiveParty.notes = req.body.notes || "";
+      inactiveParty.isActive = true;
+      inactiveParty.updatedAt = new Date();
+      await inactiveParty.save();
+      return res.status(201).json({ success: true, party: inactiveParty, message: `Party ${name} created successfully!` });
     }
 
     const party = new Party({ ...req.body, companyId: req.companyId });
@@ -590,12 +621,23 @@ export const deleteParty = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const party = await Party.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId },
-      { isActive: false },
-      { new: true }
-    );
+    const party = await Party.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!party) return res.status(404).json({ success: false, error: "Party not found" });
+
+    // Check if the party has any bills or transactions
+    const txCount = await PartyTransaction.countDocuments({ partyId: req.params.id, isDeleted: { $ne: true } });
+    const billCount = await Bill.countDocuments({ partyId: req.params.id, isDeleted: { $ne: true } });
+
+    if (txCount === 0 && billCount === 0) {
+      // Clean permanent delete so mobile number is immediately freed with 0 conflicts!
+      await Party.deleteOne({ _id: req.params.id, companyId: req.companyId });
+      return res.json({ success: true, message: "पार्टी सफलतापूर्वक हटा दी गई!" });
+    }
+
+    // If it has financial history, soft-delete and release mobileNumber to prevent duplicate index conflicts
+    party.isActive = false;
+    party.mobileNumber = `${party.mobileNumber}_del_${Date.now()}`;
+    await party.save();
 
     // Cascade soft-delete party transactions so they do not show up as ghost duplicates
     await PartyTransaction.updateMany(

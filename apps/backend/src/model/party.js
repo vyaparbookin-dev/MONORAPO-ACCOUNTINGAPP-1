@@ -45,7 +45,8 @@ const partySchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
-// Ensure uniqueness per company
-partySchema.index({ companyId: 1, mobileNumber: 1 }, { unique: true });
+// Ensure uniqueness per company only for active parties
+partySchema.index({ companyId: 1, mobileNumber: 1 }, { unique: true, partialFilterExpression: { isActive: true } });
 
 export default mongoose.model("Party", partySchema);
+
