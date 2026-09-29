@@ -99,16 +99,41 @@ export const register = async (req, res) => {
     });
 
     if (user) {
+      if (user.isVerified) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "यह ईमेल या मोबाइल पहले से पंजीकृत है! कृपया सीधे लॉगिन करें।" 
+        });
+      }
+      // User exists but unverified: send fresh OTP to verify
+      const otp = generateOtp();
+      user.otp = otp;
+      user.otpExpires = Date.now() + 15 * 60 * 1000;
       user.password = await bcryptjs.hash(cleanPassword, 10);
-      user.isVerified = true;
-      if (cleanPhone) user.phone = cleanPhone;
       await user.save();
-      return res.status(200).json({ success: true, message: "खाता पहले से मौजूद है! नया पासवर्ड सेट हो गया है। कृपया लॉगिन करें।" });
+
+      try {
+        await sendEmail({
+          email: normalizedEmail,
+          subject: "VyaparBook खाता सत्यापन OTP",
+          message: `VyaparBook में आपका स्वागत है! आपका 6-अंकों का सत्यापन कोड (OTP) है: ${otp}। यह कोड 15 मिनट के लिए मान्य है।`
+        });
+      } catch (mailErr) {
+        console.warn("⚠️ OTP email sending error:", mailErr.message);
+      }
+
+      return res.status(200).json({ 
+        success: true, 
+        requiresVerification: true,
+        message: "सत्यापन कोड (OTP) आपके ईमेल पर भेज दिया गया है। कृपया OTP दर्ज करके खाता सक्रिय करें।", 
+        userId: user._id 
+      });
     }
 
     const hashedPassword = await bcryptjs.hash(cleanPassword, 10);
     const userId = new mongoose.Types.ObjectId();
     const companyId = new mongoose.Types.ObjectId();
+    const otp = generateOtp();
 
     user = new User({
       _id: userId,
@@ -118,7 +143,9 @@ export const register = async (req, res) => {
       phone: cleanPhone,
       role: role || 'admin',
       companyId: companyId,
-      isVerified: true,
+      isVerified: false,
+      otp: otp,
+      otpExpires: Date.now() + 15 * 60 * 1000
     });
     await user.save();
 
@@ -134,9 +161,20 @@ export const register = async (req, res) => {
     });
     await company.save();
 
+    try {
+      await sendEmail({
+        email: normalizedEmail,
+        subject: "VyaparBook खाता सत्यापन OTP",
+        message: `VyaparBook में आपका स्वागत है! आपका 6-अंकों का सत्यापन कोड (OTP) है: ${otp}। यह कोड 15 मिनट के लिए मान्य है।`
+      });
+    } catch (mailErr) {
+      console.warn("⚠️ OTP email sending error:", mailErr.message);
+    }
+
     return res.status(201).json({ 
       success: true, 
-      message: "खाता सफलतापूर्वक बन गया! अब आप लॉगिन कर सकते हैं।", 
+      requiresVerification: true,
+      message: "सत्यापन कोड (OTP) आपके ईमेल पर भेज दिया गया है। कृपया OTP दर्ज करके खाता सक्रिय करें।", 
       userId: user._id 
     });
 
