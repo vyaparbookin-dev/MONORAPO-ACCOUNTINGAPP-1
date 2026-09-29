@@ -534,6 +534,44 @@ export const attachPartyTransactionImage = async (req, res) => {
   }
 };
 
+export const deletePartyTransaction = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    const tx = await PartyTransaction.findOne({ _id: id, companyId: req.companyId });
+    if (!tx) {
+      return res.status(404).json({ success: false, error: "लेनदेन (Transaction) नहीं मिला" });
+    }
+
+    // Soft delete transaction
+    tx.isDeleted = true;
+    await tx.save();
+
+    // Revert party balance
+    const party = await Party.findOne({ _id: tx.partyId, companyId: req.companyId });
+    if (party) {
+      const deb = Number(tx.debit) || 0;
+      const cred = Number(tx.credit) || 0;
+      // Revert: subtract debit, add credit
+      party.currentBalance = (Number(party.currentBalance) || 0) - (deb - cred);
+      party.updatedAt = new Date();
+      await party.save();
+    }
+
+    res.json({
+      success: true,
+      message: "लेनदेन सफलतापूर्वक हटा दिया गया!",
+      newBalance: party?.currentBalance
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+
 export const listParties = async (req, res) => {
   try {
     if (!req.companyId) {
