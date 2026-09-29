@@ -113,16 +113,20 @@ export default function DashboardLayout() {
   const { t, isEnglish } = useLanguage();
 
   useEffect(() => {
-    // Get user from localStorage
+    // 🔒 STRICT SECURITY AUTH CHECK: An unauthenticated user must NEVER enter the dashboard or see data!
+    const token = localStorage.getItem("token") || localStorage.getItem("authToken");
     const storedUser = localStorage.getItem("user");
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (e) {
-        console.warn("Invalid stored user", e);
-      }
+    if (!token || token === "null" || token === "undefined" || token.includes("demo_guest") || token.includes("guest") || !storedUser) {
+      navigate("/login", { replace: true });
+      return;
     }
-  }, []);
+    try {
+      setUser(JSON.parse(storedUser));
+    } catch (e) {
+      console.warn("Invalid stored user", e);
+      navigate("/login", { replace: true });
+    }
+  }, [navigate]);
 
   // Keep user on dashboard; only suggest adding company if empty without forced navigation
   useEffect(() => {

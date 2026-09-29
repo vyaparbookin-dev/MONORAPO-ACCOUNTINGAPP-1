@@ -134,6 +134,15 @@ function MobileVyaparAppContent() {
 
   const userRole = (user?.role || 'admin').toLowerCase();
 
+  // 🔒 STRICT SECURITY AUTH GUARD: An unauthenticated user must NEVER enter the app or see business data!
+  useEffect(() => {
+    const token = localStorage.getItem("token") || localStorage.getItem("authToken");
+    const storedUser = localStorage.getItem("user") || localStorage.getItem("auth_user");
+    if (!token || token === "null" || token === "undefined" || token.includes("demo_guest") || token.includes("guest") || !storedUser) {
+      navigate("/login", { replace: true });
+    }
+  }, [navigate]);
+
   const isGuestMode = localStorage.getItem("isGuestMode") === "true";
 
   const handleExitGuestMode = () => {
