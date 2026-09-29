@@ -672,6 +672,9 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
       targetAcc = defaultAcc;
     }
 
+    // Close any open add-account form to prevent overlay conflicts
+    setIsFormOpen(false);
+    setEditingId(null);
     setSelectedAccForTx(targetAcc);
     setTxData({
       type: "DEPOSIT",
@@ -1428,14 +1431,23 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
       </div>
 
       {/* Floating Add Button - hidden when form drawer is open */}
-      {!isFormOpen && (
+      {!isFormOpen && !isTxOpen && (
         <div className="fixed bottom-4 left-0 right-0 px-4 max-w-md mx-auto z-40">
-          <button
-            onClick={() => { resetForm(); setIsFormOpen(true); }}
-            className="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-700 to-indigo-700 text-white font-black text-sm shadow-lg active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Plus size={18} /> + नया बैंक या CC लिमिट खाता जोड़ें
-          </button>
+          {accounts.length === 0 ? (
+            <button
+              onClick={handleQuickCashDeposit}
+              className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white font-black text-sm shadow-lg active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer"
+            >
+              💵 तुरंत नकद जमा करें (Quick Cash Deposit)
+            </button>
+          ) : (
+            <button
+              onClick={() => { resetForm(); setIsFormOpen(true); }}
+              className="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-700 to-indigo-700 text-white font-black text-sm shadow-lg active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Plus size={18} /> + नया बैंक या CC लिमिट खाता जोड़ें
+            </button>
+          )}
         </div>
       )}
 

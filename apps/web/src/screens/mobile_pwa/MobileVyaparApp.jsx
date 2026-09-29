@@ -1479,13 +1479,31 @@ function MobileVyaparAppContent() {
   const recentSales = bills.reduce((sum, b) => sum + getBillAmount(b), 0);
 
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const weekSales = bills.filter(b => {
+  const weekBillSales = bills.filter(b => {
     if (String(b.date || "").toLowerCase() === "today" || String(b.date || "") === "आज") return true;
     const d = parseAnyDate(b.rawDate || b.createdAt || b.date);
-    if (!d) return true; // Keep in week sales if date couldn't be parsed
+    if (!d) return true;
     return d >= weekAgo;
   }).reduce((sum, b) => sum + getBillAmount(b), 0);
-  const displayWeekSales = weekSales > 0 ? weekSales : recentSales;
+
+  // Also include customer party transaction sales (debit entries for customers, not suppliers)
+  const weekPartyTxSales = (allPartyTransactions || []).filter(tx => {
+    const isDebit = Number(tx.debit || 0) > 0;
+    const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
+    if (!isDebit || isSupplierTx) return false;
+    const d = parseAnyDate(tx.date || tx.createdAt);
+    if (!d) return true;
+    return d >= weekAgo;
+  }).reduce((sum, tx) => sum + Number(tx.debit || 0), 0);
+
+  const weekSales = weekBillSales + weekPartyTxSales;
+  const recentPartyTxSales = (allPartyTransactions || []).filter(tx => {
+    const isDebit = Number(tx.debit || 0) > 0;
+    const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
+    return isDebit && !isSupplierTx;
+  }).reduce((sum, tx) => sum + Number(tx.debit || 0), 0);
+  const totalRecentSales = recentSales + recentPartyTxSales;
+  const displayWeekSales = weekSales > 0 ? weekSales : totalRecentSales;
 
   const totalBankBalance = bankAccounts
     .filter(a => a.accountType !== "CC_OVERDRAFT")
@@ -1525,10 +1543,21 @@ function MobileVyaparAppContent() {
     return isSameLocalDate(d, today);
   });
 
-  const todaySales = todayBills.reduce((sum, b) => sum + getBillAmount(b), 0);
+  let todaySales = todayBills.reduce((sum, b) => sum + getBillAmount(b), 0);
   const todayCash = todayBills.filter(isCashPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
   const todayUpi = todayBills.filter(isUpiPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
   const todayCredit = todayBills.filter(isCreditPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
+
+  const todayPartyTxSales = (allPartyTransactions || []).filter(tx => {
+    const isDebit = Number(tx.debit || 0) > 0;
+    const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
+    if (!isDebit || isSupplierTx) return false;
+    const d = parseAnyDate(tx.date || tx.createdAt);
+    if (!d) return false;
+    const today = new Date();
+    return isSameLocalDate(d, today);
+  }).reduce((sum, tx) => sum + Number(tx.debit || 0), 0);
+  todaySales += todayPartyTxSales;
 
   // Dynamic filter for Daily Sales Card (आज, कल, इस हफ़्ते, सभी)
   const activePeriodBills = bills.filter(b => {
@@ -1551,10 +1580,23 @@ function MobileVyaparAppContent() {
     return true; // "all"
   });
 
-  const activePeriodSales = activePeriodBills.reduce((sum, b) => sum + getBillAmount(b), 0);
+  let activePeriodSales = activePeriodBills.reduce((sum, b) => sum + getBillAmount(b), 0);
   const activePeriodCash = activePeriodBills.filter(isCashPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
   const activePeriodUpi = activePeriodBills.filter(isUpiPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
   const activePeriodCredit = activePeriodBills.filter(isCreditPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
+
+  const activePeriodPartyTxSales = (allPartyTransactions || []).filter(tx => {
+    const isDebit = Number(tx.debit || 0) > 0;
+    const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
+    if (!isDebit || isSupplierTx) return false;
+    const d = parseAnyDate(tx.date || tx.createdAt);
+    if (!d) return true;
+    if (dailySaleFilter === "today") return isSameLocalDate(d, new Date());
+    if (dailySaleFilter === "yesterday") return isSameLocalDate(d, new Date(Date.now() - 86400000));
+    if (dailySaleFilter === "week") return d >= new Date(Date.now() - 7 * 86400000);
+    return true;
+  }).reduce((sum, tx) => sum + Number(tx.debit || 0), 0);
+  activePeriodSales += activePeriodPartyTxSales;
 
   const handleShareWhatsAppBill = (bill) => {
     if (!bill) return;
@@ -3381,13 +3423,22 @@ function MobileVyaparAppContent() {
                       onClick={() => setTransactionTab("sales")}
                       className={`px-2 py-0.5 rounded-md transition ${transactionTab === "sales" ? "bg-emerald-600 text-white shadow-xs" : "text-slate-500"}`}
                     >
-                      बिक्री ({bills.length + (allPartyTransactions || []).filter(tx => Number(tx.debit || 0) > 0).length})
+                      बिक्री ({bills.length + (allPartyTransactions || []).filter(tx => {
+                        const isDebit = Number(tx.debit || 0) > 0;
+                        const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
+                        return isDebit && !isSupplierTx;
+                      }).length})
                     </button>
                     <button
                       onClick={() => setTransactionTab("expenses")}
                       className={`px-2 py-0.5 rounded-md transition ${transactionTab === "expenses" ? "bg-amber-600 text-white shadow-xs" : "text-slate-500"}`}
                     >
-                      खर्च ({(gharKharchList || []).length + (allPartyTransactions || []).filter(tx => Number(tx.credit || 0) > 0).length})
+                      खर्च ({(gharKharchList || []).length + (allPartyTransactions || []).filter(tx => {
+                        const isCredit = Number(tx.credit || 0) > 0;
+                        const isDebit = Number(tx.debit || 0) > 0;
+                        const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
+                        return isCredit || (isDebit && isSupplierTx);
+                      }).length})
                     </button>
                   </div>
                 </div>
@@ -3401,8 +3452,17 @@ function MobileVyaparAppContent() {
               </div>
 
               {(() => {
-                const salesTxsCount = bills.length + (allPartyTransactions || []).filter(tx => Number(tx.debit || 0) > 0).length;
-                const expensesTxsCount = (gharKharchList || []).length + (allPartyTransactions || []).filter(tx => Number(tx.credit || 0) > 0).length;
+                const salesTxsCount = bills.length + (allPartyTransactions || []).filter(tx => {
+                  const isDebit = Number(tx.debit || 0) > 0;
+                  const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
+                  return isDebit && !isSupplierTx;
+                }).length;
+                const expensesTxsCount = (gharKharchList || []).length + (allPartyTransactions || []).filter(tx => {
+                  const isCredit = Number(tx.credit || 0) > 0;
+                  const isDebit = Number(tx.debit || 0) > 0;
+                  const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
+                  return isCredit || (isDebit && isSupplierTx);
+                }).length;
 
                 const combinedStream = [
                   ...bills.map(b => ({
@@ -3417,15 +3477,23 @@ function MobileVyaparAppContent() {
                   })),
                   ...(allPartyTransactions || []).map(tx => {
                     const isDebit = Number(tx.debit || 0) > 0;
+                    const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
                     const pName = tx.partyId?.name || tx.partyName || 'पार्टी खाता';
                     const amt = Number(tx.debit || tx.credit || tx.amount || 0);
+                    // For supplier: debit = payment TO supplier (expense), credit = return FROM supplier
+                    // For customer: debit = sale/bill amount (sale), credit = payment received
+                    const typeCategory = isSupplierTx ? 'expense' : (isDebit ? 'sale' : 'expense');
+                    const isPositive = isSupplierTx ? false : isDebit;
+                    const defaultLabel = isSupplierTx
+                      ? (isDebit ? 'सप्लायर को भुगतान' : 'सप्लायर से वापसी')
+                      : (isDebit ? 'रकम मिली / बिक्री' : 'भुगतान दिया');
                     return {
                       _id: tx._id || `ptx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                      typeCategory: isDebit ? 'sale' : 'expense',
-                      title: `${pName} • ${tx.details || (isDebit ? 'रकम मिली / बिक्री' : 'भुगतान दिया')}`,
-                      subtitle: `🤝 पार्टी लेनदेन • ${tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today'}`,
+                      typeCategory,
+                      title: `${pName} • ${tx.details || defaultLabel}`,
+                      subtitle: `${isSupplierTx ? '🏭' : '🤝'} ${isSupplierTx ? 'सप्लायर लेनदेन' : 'पार्टी लेनदेन'} • ${tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today'}`,
                       amount: amt,
-                      isPositive: isDebit,
+                      isPositive,
                       dateObj: parseAnyDate(tx.date || tx.createdAt) || new Date(),
                       original: tx,
                       isPartyTx: true
