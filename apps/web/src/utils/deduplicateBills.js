@@ -33,7 +33,7 @@ export function deduplicateBills(bills = []) {
 
   const seenIds = new Set();
   const seenBillNumbers = new Set();
-  const seenSignatures = new Set();
+  // Note: signature-based dedup replaced by isDuplicateContent fuzzy match below
   const result = [];
 
   for (const bill of sorted) {
@@ -130,7 +130,7 @@ export function deduplicateBills(bills = []) {
     if (localId) seenIds.add(localId);
     if (billNum) seenBillNumbers.add(billNum.toLowerCase());
     if (fallbackNum) seenBillNumbers.add(fallbackNum.toLowerCase());
-    if (amtVal > 0) seenSignatures.add(signature);
+    // seenSignatures no longer used — dedup now uses isDuplicateContent fuzzy match above
 
     result.push(normalizedBill);
   }
