@@ -388,6 +388,20 @@ function MobileVyaparAppContent() {
   const [savingPartyTx, setSavingPartyTx] = useState(false);
   const [previewBillImage, setPreviewBillImage] = useState(null);
 
+  // 🏭 Dedicated Vendor / Supplier Workflow States
+  const [showVendorForm, setShowVendorForm] = useState(false);
+  const [vendorActionType, setVendorActionType] = useState('purchase'); // 'purchase' (माल आया) or 'payment' (भुगतान दिया)
+  const [vendorBillAmount, setVendorBillAmount] = useState('');
+  const [vendorItemDesc, setVendorItemDesc] = useState('');
+  const [vendorBillNo, setVendorBillNo] = useState('');
+  const [vendorBillDate, setVendorBillDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [vendorIsPaidNow, setVendorIsPaidNow] = useState(false);
+  const [vendorPaidAmount, setVendorPaidAmount] = useState('');
+  const [vendorPaymentMode, setVendorPaymentMode] = useState('CASH');
+  const [vendorNotes, setVendorNotes] = useState('');
+  const [vendorBillImage, setVendorBillImage] = useState('');
+  const [savingVendorAction, setSavingVendorAction] = useState(false);
+
   // 📖 Party Ledger & Passbook Filters: मैंने दिए, मुझे मिले, Month-wise, Site-wise
   const [partyPassbookFilter, setPartyPassbookFilter] = useState('all'); // 'all', 'received' (मुझे मिले / जमा), 'given' (मैंने दिए / बिक्री)
   const [partyMonthFilter, setPartyMonthFilter] = useState('all'); // 'all', 'YYYY-MM'
@@ -2370,6 +2384,221 @@ function MobileVyaparAppContent() {
       alert("लेन-देन दर्ज करने में त्रुटि आई।");
     } finally {
       setSavingPartyTx(false);
+    }
+  };
+
+  // ==================== DEDICATED VENDOR (SUPPLIER) WORKFLOW HANDLERS ====================
+  const handleVendorImageCapture = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setVendorBillImage(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveVendorPurchase = async () => {
+    if (!selectedPartyDetail) return;
+    const amt = Number(vendorBillAmount);
+    if (!vendorBillAmount || isNaN(amt) || amt <= 0) {
+      alert("कृपया मान्य खरीद बिल राशि (₹) दर्ज करें!");
+      return;
+    }
+    const paidAmt = vendorIsPaidNow ? Number(vendorPaidAmount || 0) : 0;
+    if (paidAmt > amt) {
+      alert("भुगतान राशि कुल बिल राशि से अधिक नहीं हो सकती!");
+      return;
+    }
+
+    setSavingVendorAction(true);
+    try {
+      const partyId = selectedPartyDetail.id || selectedPartyDetail._id;
+      const pName = selectedPartyDetail.name || "वेंडर";
+      const genPurNo = vendorBillNo.trim() || `PUR-${Date.now().toString().slice(-6)}`;
+      const pDate = vendorBillDate ? new Date(vendorBillDate) : new Date();
+
+      const payload = {
+        partyId,
+        supplierName: pName,
+        purchaseNumber: genPurNo,
+        items: [{
+          name: vendorItemDesc.trim() || "सप्लायर से माल खरीद",
+          quantity: 1,
+          price: amt,
+          total: amt
+        }],
+        finalAmount: amt,
+        amountPaid: paidAmt,
+        paymentMethod: paidAmt > 0 ? (vendorPaymentMode || 'CASH') : 'credit',
+        date: pDate.toISOString(),
+        billImageUrl: vendorBillImage || ""
+      };
+
+      // 1. Sync to backend purchase API
+      try {
+        await api.post("/api/purchase", payload);
+      } catch (apiErr) {
+        console.warn("Purchase backend sync deferred or error:", apiErr);
+      }
+
+      // 2. Update local Party balance (Payable decreases/becomes more negative by netDue)
+      const netDue = amt - paidAmt;
+      const currentBal = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0);
+      const updatedBalance = currentBal - netDue;
+
+      setSelectedPartyDetail(prev => ({
+        ...prev,
+        balance: updatedBalance,
+        currentBalance: updatedBalance
+      }));
+
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      setParties(prev => {
+        const updated = prev.map(p => {
+          const id = p.id || p._id;
+          if (id === partyId) {
+            return { ...p, balance: updatedBalance, currentBalance: updatedBalance };
+          }
+          return p;
+        });
+        storageManager.saveParties(currentCoId, updated);
+        return updated;
+      });
+
+      // 3. Record in local ledger
+      const purchaseTxDoc = {
+        _id: `pur_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        partyId,
+        date: pDate.toISOString(),
+        details: `📦 माल खरीद #${genPurNo}${vendorItemDesc.trim() ? ` - ${vendorItemDesc.trim()}` : ''}`,
+        debit: 0,
+        credit: amt,
+        amount: amt,
+        type: 'purchase',
+        source: 'Purchase',
+        billNumber: genPurNo,
+        billImageUrl: vendorBillImage || ""
+      };
+
+      const newTxs = [purchaseTxDoc];
+      if (paidAmt > 0) {
+        const payTxDoc = {
+          _id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          partyId,
+          date: pDate.toISOString(),
+          details: `तुरंत भुगतान (${vendorPaymentMode === 'CASH' ? 'नकद' : vendorPaymentMode === 'UPI' ? 'UPI' : 'बैंक'}) #${genPurNo}`,
+          debit: paidAmt,
+          credit: 0,
+          amount: paidAmt,
+          type: 'payment',
+          source: 'PartyTransaction',
+          paymentMethod: vendorPaymentMode || 'CASH'
+        };
+        newTxs.push(payTxDoc);
+      }
+
+      setAllPartyTransactions(prev => [...newTxs, ...(prev || [])]);
+      try {
+        const storedTxs = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+        localStorage.setItem("vb_local_party_txs", JSON.stringify([...newTxs, ...storedTxs]));
+      } catch (e) {}
+
+      // Reset form
+      setShowVendorForm(false);
+      setVendorBillAmount('');
+      setVendorItemDesc('');
+      setVendorBillNo('');
+      setVendorIsPaidNow(false);
+      setVendorPaidAmount('');
+      setVendorBillImage('');
+      setVendorBillDate(new Date().toISOString().split('T')[0]);
+      fetchPartyStatement(partyId);
+
+      alert(`🎉 वेंडर ${pName} से ₹${amt.toLocaleString('en-IN')} का माल (खरीद बिल #${genPurNo}) सफलता से दर्ज हुआ!${paidAmt > 0 ? ` (₹${paidAmt.toLocaleString('en-IN')} तुरंत भुगतान किया गया)` : ''}`);
+    } catch (err) {
+      console.error("Vendor purchase error:", err);
+      alert("माल खरीद दर्ज करने में त्रुटि आई।");
+    } finally {
+      setSavingVendorAction(false);
+    }
+  };
+
+  const handleSaveVendorPayment = async () => {
+    if (!selectedPartyDetail) return;
+    const amt = Number(vendorBillAmount);
+    if (!vendorBillAmount || isNaN(amt) || amt <= 0) {
+      alert("कृपया मान्य भुगतान राशि (₹) दर्ज करें!");
+      return;
+    }
+
+    setSavingVendorAction(true);
+    try {
+      const partyId = selectedPartyDetail.id || selectedPartyDetail._id;
+      const pName = selectedPartyDetail.name || "वेंडर";
+      const txDate = vendorBillDate ? new Date(vendorBillDate) : new Date();
+      const notes = vendorNotes.trim() || 'सप्लायर को भुगतान दिया';
+
+      await api.post("/api/payment/entry", {
+        partyId,
+        amount: amt,
+        type: 'paid',
+        date: txDate.toISOString(),
+        paymentMethod: vendorPaymentMode || 'CASH',
+        notes
+      });
+
+      // For vendor, debt decreases (balance increases towards 0)
+      const currentBal = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0);
+      const updatedBalance = currentBal + amt;
+
+      setSelectedPartyDetail(prev => ({
+        ...prev,
+        balance: updatedBalance,
+        currentBalance: updatedBalance
+      }));
+
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      setParties(prev => {
+        const updated = prev.map(p => {
+          const id = p.id || p._id;
+          if (id === partyId) {
+            return { ...p, balance: updatedBalance, currentBalance: updatedBalance };
+          }
+          return p;
+        });
+        storageManager.saveParties(currentCoId, updated);
+        return updated;
+      });
+
+      const newTxDoc = {
+        _id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        partyId,
+        date: txDate.toISOString(),
+        details: notes,
+        debit: amt,
+        credit: 0,
+        amount: amt,
+        type: 'payment',
+        source: 'PartyTransaction',
+        paymentMethod: vendorPaymentMode || 'CASH'
+      };
+      setAllPartyTransactions(prev => [newTxDoc, ...(prev || [])]);
+      try {
+        const storedTxs = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+        localStorage.setItem("vb_local_party_txs", JSON.stringify([newTxDoc, ...storedTxs]));
+      } catch (e) {}
+
+      setShowVendorForm(false);
+      setVendorBillAmount('');
+      setVendorNotes('');
+      setVendorBillDate(new Date().toISOString().split('T')[0]);
+      fetchPartyStatement(partyId);
+
+      alert(`✅ वेंडर ${pName} को ₹${amt.toLocaleString('en-IN')} का भुगतान (${vendorPaymentMode === 'CASH' ? 'नकद' : vendorPaymentMode === 'UPI' ? 'UPI' : 'बैंक'}) सफलतापूर्वक दर्ज हुआ!`);
+    } catch (err) {
+      console.error("Vendor payment error:", err);
+      alert("भुगतान दर्ज करने में त्रुटि आई।");
+    } finally {
+      setSavingVendorAction(false);
     }
   };
 
@@ -6097,7 +6326,7 @@ function MobileVyaparAppContent() {
                 </button>
                 <button 
                   type="button"
-                  onClick={() => { setSelectedPartyDetail(null); setShowPartyTxForm(false); }} 
+                  onClick={() => { setSelectedPartyDetail(null); setShowPartyTxForm(false); setShowVendorForm(false); }} 
                   className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 cursor-pointer ml-0.5"
                 >
                   <X size={18} />
@@ -6110,6 +6339,7 @@ function MobileVyaparAppContent() {
               {/* Balance Card */}
               {(() => {
                 const bal = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0);
+                const isSupplier = (selectedPartyDetail.type === 'supplier' || selectedPartyDetail.partyType === 'supplier');
                 return (
                   <div className={`p-3.5 rounded-2xl border text-center transition ${
                     bal > 0 
@@ -6119,80 +6349,165 @@ function MobileVyaparAppContent() {
                         : "bg-emerald-50/60 border-emerald-300"
                   }`}>
                     <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      {bal > 0 ? "कुल बकाया राशि (आपको लेने हैं)" : bal < 0 ? "कुल बकाया राशि (आपको देने हैं)" : "हिसाब-किताब स्थिति"}
+                      {isSupplier
+                        ? (bal < 0 ? "कुल बकाया राशि (आपको वेंडर को देने हैं)" : bal > 0 ? "अग्रिम जमा (वेंडर को एडवांस दिया हुआ है)" : "हिसाब-किताब स्थिति (वेंडर खाता)")
+                        : (bal > 0 ? "कुल बकाया राशि (आपको लेने हैं)" : bal < 0 ? "कुल बकाया राशि (आपको देने हैं)" : "हिसाब-किताब स्थिति")
+                      }
                     </div>
-                    <div className={`text-2xl font-black mt-0.5 ${bal > 0 ? "text-emerald-700" : bal < 0 ? "text-rose-700" : "text-emerald-800"}`}>
+                    <div className={`text-2xl font-black mt-0.5 ${
+                      isSupplier
+                        ? (bal < 0 ? "text-rose-700" : bal > 0 ? "text-emerald-700" : "text-emerald-800")
+                        : (bal > 0 ? "text-emerald-700" : bal < 0 ? "text-rose-700" : "text-emerald-800")
+                    }`}>
                       ₹ {Math.abs(bal).toLocaleString('en-IN')}
                     </div>
                     <div className="text-[11px] font-semibold mt-0.5">
-                      {bal > 0 ? <span className="text-emerald-700">🟢 You'll Get (लेने हैं)</span> : bal < 0 ? <span className="text-rose-700">🔴 You'll Give (देने हैं)</span> : <span className="text-emerald-800 font-extrabold bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300 inline-block">✅ हिसाब पूर्णतः चुकता है (Settled / ₹0)</span>}
+                      {isSupplier ? (
+                        bal < 0 
+                          ? <span className="text-rose-700 font-extrabold">🔴 You'll Give (वेंडर को देने हैं)</span> 
+                          : bal > 0 
+                            ? <span className="text-emerald-700 font-extrabold">🟢 Advance (एडवांस दिया हुआ है)</span> 
+                            : <span className="text-emerald-800 font-extrabold bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300 inline-block">✅ हिसाब पूर्णतः चुकता है (Settled / ₹0)</span>
+                      ) : (
+                        bal > 0 
+                          ? <span className="text-emerald-700">🟢 You'll Get (लेने हैं)</span> 
+                          : bal < 0 
+                            ? <span className="text-rose-700">🔴 You'll Give (देने हैं)</span> 
+                            : <span className="text-emerald-800 font-extrabold bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300 inline-block">✅ हिसाब पूर्णतः चुकता है (Settled / ₹0)</span>
+                      )}
                     </div>
                   </div>
                 );
               })()}
 
-              {/* 📊 Enterprise Account Audit Summary (Tally / Zoho style breakdown) */}
+              {/* 📊 Enterprise Account Audit Summary */}
               {partyTransactions.length > 0 && (() => {
+                const isSupplier = (selectedPartyDetail.type === 'supplier' || selectedPartyDetail.partyType === 'supplier');
                 const totalDebit = partyTransactions.reduce((s, t) => s + Number(t.debit || 0), 0);
                 const totalCredit = partyTransactions.reduce((s, t) => s + Number(t.credit || 0), 0);
                 const curBal = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0);
                 return (
                   <div className="p-3 bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-2">
                     <div className="flex items-center justify-between text-[11px] font-extrabold text-slate-700 border-b border-slate-100 pb-1.5">
-                      <span>📊 खाता ऑडिट सारांश (Audit Summary)</span>
+                      <span>📊 खाता ऑडिट सारांश ({isSupplier ? 'वेंडर / सप्लायर' : 'ग्राहक'})</span>
                       <span className="text-[10px] text-slate-500 font-bold">{partyTransactions.length} लेन-देन</span>
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-                        <span className="text-[10px] text-slate-400 font-bold block">कुल डेबिट / सामान</span>
-                        <span className="font-black text-slate-800 mt-0.5 block text-xs">₹{totalDebit.toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="p-2 rounded-xl bg-emerald-50/70 border border-emerald-100">
-                        <span className="text-[10px] text-emerald-700 font-bold block">कुल क्रेडिट / जमा</span>
-                        <span className="font-black text-emerald-800 mt-0.5 block text-xs">₹{totalCredit.toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-                        <span className="text-[10px] text-slate-400 font-bold block">शुद्ध बाकी (Balance)</span>
-                        <span className={`font-black mt-0.5 block text-xs ${curBal === 0 ? 'text-emerald-700' : curBal > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                          ₹{Math.abs(curBal).toLocaleString('en-IN')} {curBal === 0 ? '✓' : ''}
-                        </span>
-                      </div>
+                      {isSupplier ? (
+                        <>
+                          <div className="p-2 rounded-xl bg-indigo-50/70 border border-indigo-100">
+                            <span className="text-[10px] text-indigo-700 font-bold block">📦 कुल खरीद</span>
+                            <span className="font-black text-indigo-900 mt-0.5 block text-xs">₹{totalCredit.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div className="p-2 rounded-xl bg-emerald-50/70 border border-emerald-100">
+                            <span className="text-[10px] text-emerald-700 font-bold block">💵 भुगतान दिया</span>
+                            <span className="font-black text-emerald-800 mt-0.5 block text-xs">₹{totalDebit.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                            <span className="text-[10px] text-slate-500 font-bold block">शुद्ध बाकी</span>
+                            <span className={`font-black mt-0.5 block text-xs ${curBal === 0 ? 'text-emerald-700' : curBal < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                              ₹{Math.abs(curBal).toLocaleString('en-IN')} {curBal === 0 ? '✓' : ''}
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                            <span className="text-[10px] text-slate-400 font-bold block">कुल डेबिट / सामान</span>
+                            <span className="font-black text-slate-800 mt-0.5 block text-xs">₹{totalDebit.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div className="p-2 rounded-xl bg-emerald-50/70 border border-emerald-100">
+                            <span className="text-[10px] text-emerald-700 font-bold block">कुल क्रेडिट / जमा</span>
+                            <span className="font-black text-emerald-800 mt-0.5 block text-xs">₹{totalCredit.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                            <span className="text-[10px] text-slate-400 font-bold block">शुद्ध बाकी</span>
+                            <span className={`font-black mt-0.5 block text-xs ${curBal === 0 ? 'text-emerald-700' : curBal > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              ₹{Math.abs(curBal).toLocaleString('en-IN')} {curBal === 0 ? '✓' : ''}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 );
               })()}
 
-              {/* Action Buttons: मैंने दिए, मुझे मिले */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPartyTxType('paid');
-                    setShowPartyTxForm(true);
-                  }}
-                  className={`py-2.5 px-3 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition ${
-                    showPartyTxForm && partyTxType === 'paid' 
-                      ? 'bg-rose-700 ring-2 ring-rose-400 ring-offset-1 text-white' 
-                      : 'bg-rose-600 hover:bg-rose-700 text-white'
-                  }`}
-                >
-                  🔴 मैंने दिए (You Gave)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPartyTxType('received');
-                    setShowPartyTxForm(true);
-                  }}
-                  className={`py-2.5 px-3 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition ${
-                    showPartyTxForm && partyTxType === 'received' 
-                      ? 'bg-emerald-700 ring-2 ring-emerald-400 ring-offset-1 text-white' 
-                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                  }`}
-                >
-                  🟢 मुझे मिले (You Got)
-                </button>
-              </div>
+              {/* Action Buttons: DEDICATED FOR VENDOR VS CUSTOMER */}
+              {(() => {
+                const isSupplier = (selectedPartyDetail.type === 'supplier' || selectedPartyDetail.partyType === 'supplier');
+                if (isSupplier) {
+                  return (
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVendorActionType('purchase');
+                          setShowVendorForm(true);
+                          setShowPartyTxForm(false);
+                        }}
+                        className={`py-2.5 px-3 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition ${
+                          showVendorForm && vendorActionType === 'purchase'
+                            ? 'bg-indigo-700 ring-2 ring-indigo-400 ring-offset-1 text-white'
+                            : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                        }`}
+                      >
+                        📦 माल आया (खरीद बिल)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVendorActionType('payment');
+                          setShowVendorForm(true);
+                          setShowPartyTxForm(false);
+                        }}
+                        className={`py-2.5 px-3 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition ${
+                          showVendorForm && vendorActionType === 'payment'
+                            ? 'bg-emerald-700 ring-2 ring-emerald-400 ring-offset-1 text-white'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                        }`}
+                      >
+                        💵 भुगतान दिया (Payment)
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPartyTxType('paid');
+                        setShowPartyTxForm(true);
+                        setShowVendorForm(false);
+                      }}
+                      className={`py-2.5 px-3 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition ${
+                        showPartyTxForm && partyTxType === 'paid' 
+                          ? 'bg-rose-700 ring-2 ring-rose-400 ring-offset-1 text-white' 
+                          : 'bg-rose-600 hover:bg-rose-700 text-white'
+                      }`}
+                    >
+                      🔴 मैंने दिए (You Gave)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPartyTxType('received');
+                        setShowPartyTxForm(true);
+                        setShowVendorForm(false);
+                      }}
+                      className={`py-2.5 px-3 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition ${
+                        showPartyTxForm && partyTxType === 'received' 
+                          ? 'bg-emerald-700 ring-2 ring-emerald-400 ring-offset-1 text-white' 
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      }`}
+                    >
+                      🟢 मुझे मिले (You Got)
+                    </button>
+                  </div>
+                );
+              })()}
 
               {/* WhatsApp & Call */}
               <div className="flex gap-2">
@@ -6213,7 +6528,280 @@ function MobileVyaparAppContent() {
                 )}
               </div>
 
-              {/* Inline Transaction Entry Form */}
+              {/* 🏭 DEDICATED VENDOR ACTION FORM (माल आया / भुगतान दिया) */}
+              {showVendorForm && (
+                <div className={`p-4 rounded-2xl border-2 shadow-sm space-y-3 animate-in fade-in ${
+                  vendorActionType === 'purchase' ? 'bg-indigo-50/40 border-indigo-200' : 'bg-emerald-50/40 border-emerald-200'
+                }`}>
+                  <div className="flex justify-between items-center pb-1.5 border-b border-slate-200/70">
+                    <span className={`font-black text-xs flex items-center gap-1.5 ${vendorActionType === 'purchase' ? 'text-indigo-800' : 'text-emerald-800'}`}>
+                      <span className="w-2 h-2 rounded-full inline-block animate-pulse" style={{ backgroundColor: vendorActionType === 'purchase' ? '#4f46e5' : '#059669' }} />
+                      {vendorActionType === 'purchase' ? '📦 सप्लायर से माल आया (खरीद बिल प्रविष्टि)' : '💵 सप्लायर को भुगतान दिया (Payment to Vendor)'}
+                    </span>
+                    <button 
+                      type="button"
+                      onClick={() => setShowVendorForm(false)} 
+                      className="text-slate-400 hover:text-slate-700 text-xs font-bold px-2 py-0.5 rounded-lg bg-white border border-slate-200 cursor-pointer"
+                    >
+                      ✕ रद्द करें
+                    </button>
+                  </div>
+
+                  {vendorActionType === 'purchase' ? (
+                    /* ====== VENDOR PURCHASE FORM ====== */
+                    <div className="space-y-3">
+                      {/* Amount */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                          खरीद बिल कुल राशि (Total Bill Amount ₹) *
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">₹</span>
+                          <input 
+                            type="number"
+                            inputMode="decimal"
+                            placeholder="0.00"
+                            value={vendorBillAmount}
+                            onChange={(e) => setVendorBillAmount(e.target.value)}
+                            className="w-full pl-7 pr-3 py-2.5 bg-white border-2 border-indigo-200 rounded-xl text-base font-black text-[#0F172A] outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-xs"
+                            autoFocus
+                          />
+                        </div>
+                      </div>
+
+                      {/* Items / Goods Description */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                          सामान का विवरण / माल (Goods Description)
+                        </label>
+                        <input 
+                          type="text"
+                          placeholder="उदा. 20 बोरी सीमेंट, 5 पेटी तेल, हार्डवेयर सामान"
+                          value={vendorItemDesc}
+                          onChange={(e) => setVendorItemDesc(e.target.value)}
+                          className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-indigo-500 shadow-xs"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* Bill / Invoice Number */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                            बिल / पर्ची नं. (Bill No.)
+                          </label>
+                          <input 
+                            type="text"
+                            placeholder="उदा. INV-104"
+                            value={vendorBillNo}
+                            onChange={(e) => setVendorBillNo(e.target.value)}
+                            className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-indigo-500 shadow-xs"
+                          />
+                        </div>
+
+                        {/* Date */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                            <Calendar size={12} className="text-indigo-600" />
+                            <span>बिल तारीख (Date) *</span>
+                          </label>
+                          <input 
+                            type="date"
+                            value={vendorBillDate}
+                            onChange={(e) => setVendorBillDate(e.target.value)}
+                            className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-indigo-500 shadow-xs"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Immediate Payment Option */}
+                      <div className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-700">क्या तुरंत कुछ भुगतान किया?</span>
+                          <button
+                            type="button"
+                            onClick={() => setVendorIsPaidNow(!vendorIsPaidNow)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                              vendorIsPaidNow ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 border border-slate-300'
+                            }`}
+                          >
+                            {vendorIsPaidNow ? '✓ हाँ, भुगतान किया' : 'पूरा उधार (₹0 भुगतान)'}
+                          </button>
+                        </div>
+
+                        {vendorIsPaidNow && (
+                          <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 block mb-0.5">भुगतान राशि (₹):</label>
+                              <input 
+                                type="number"
+                                inputMode="decimal"
+                                placeholder="0.00"
+                                value={vendorPaidAmount}
+                                onChange={(e) => setVendorPaidAmount(e.target.value)}
+                                className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black text-[#0F172A] outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 block mb-0.5">माध्यम (Mode):</label>
+                              <select
+                                value={vendorPaymentMode}
+                                onChange={(e) => setVendorPaymentMode(e.target.value)}
+                                className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-[#0F172A] outline-none"
+                              >
+                                <option value="CASH">💵 नकद (गल्ला)</option>
+                                <option value="UPI">📱 UPI</option>
+                                <option value="BANK">🏛️ बैंक ट्रांसफर</option>
+                              </select>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bill Photo Attachment */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider flex items-center justify-between">
+                          <span>📸 सप्लायर के बिल की फोटो खींचें / अपलोड करें</span>
+                          {vendorBillImage && (
+                            <button
+                              type="button"
+                              onClick={() => setVendorBillImage('')}
+                              className="text-rose-600 hover:underline text-[10px] font-bold cursor-pointer"
+                            >
+                              ✕ फोटो हटाएं
+                            </button>
+                          )}
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <label className="flex-1 py-2 px-3 bg-white border border-dashed border-indigo-300 rounded-xl flex items-center justify-center gap-2 cursor-pointer hover:bg-indigo-50 transition text-xs font-bold text-indigo-700 shadow-2xs">
+                            <Camera size={14} />
+                            <span>{vendorBillImage ? "✓ बिल फोटो लोड हो गई (बदलें)" : "📷 कैमरा खोलें / बिल फोटो लें"}</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              onChange={handleVendorImageCapture}
+                              className="hidden"
+                            />
+                          </label>
+                          {vendorBillImage && (
+                            <img 
+                              src={vendorBillImage} 
+                              alt="Vendor Bill Preview" 
+                              onClick={() => setPreviewBillImage(vendorBillImage)}
+                              className="w-10 h-10 rounded-lg object-cover border border-indigo-400 cursor-pointer shadow-xs active:scale-95" 
+                            />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Save Purchase Button */}
+                      <button
+                        type="button"
+                        onClick={handleSaveVendorPurchase}
+                        disabled={savingVendorAction}
+                        className="w-full py-3 px-4 font-black text-sm rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 shadow-md cursor-pointer active:scale-95 transition flex items-center justify-center gap-2"
+                      >
+                        {savingVendorAction ? (
+                          <span>⏳ खरीद दर्ज हो रही है...</span>
+                        ) : (
+                          <span>💾 माल खरीद दर्ज करें {vendorBillAmount ? `(₹${Number(vendorBillAmount).toLocaleString('en-IN')})` : ''}</span>
+                        )}
+                      </button>
+                    </div>
+                  ) : (
+                    /* ====== VENDOR PAYMENT FORM ====== */
+                    <div className="space-y-3">
+                      {/* Payment Amount */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                          भुगतान राशि (Payment Amount ₹) *
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">₹</span>
+                          <input 
+                            type="number"
+                            inputMode="decimal"
+                            placeholder="0.00"
+                            value={vendorBillAmount}
+                            onChange={(e) => setVendorBillAmount(e.target.value)}
+                            className="w-full pl-7 pr-3 py-2.5 bg-white border-2 border-emerald-200 rounded-xl text-base font-black text-[#0F172A] outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 shadow-xs"
+                            autoFocus
+                          />
+                        </div>
+                      </div>
+
+                      {/* Date */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                          <Calendar size={12} className="text-emerald-600" />
+                          <span>भुगतान तारीख (Payment Date) *</span>
+                        </label>
+                        <input 
+                          type="date"
+                          value={vendorBillDate}
+                          onChange={(e) => setVendorBillDate(e.target.value)}
+                          className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-emerald-500 shadow-xs"
+                        />
+                      </div>
+
+                      {/* Payment Mode */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                          भुगतान माध्यम (Payment Mode)
+                        </label>
+                        <div className="grid grid-cols-3 gap-1.5 bg-slate-200/70 p-1 rounded-xl">
+                          {[
+                            { id: 'CASH', label: '💵 नकद (गल्ला)' },
+                            { id: 'UPI', label: '📱 UPI' },
+                            { id: 'BANK', label: '🏛️ बैंक' }
+                          ].map(m => (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => setVendorPaymentMode(m.id)}
+                              className={`py-1.5 text-xs font-black rounded-lg transition cursor-pointer ${
+                                vendorPaymentMode === m.id ? 'bg-white text-[#0F172A] shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                              }`}
+                            >
+                              {m.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Notes / Description */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                          विवरण / नोट (Description)
+                        </label>
+                        <input 
+                          type="text"
+                          placeholder="उदा. चेक नंबर, UTR नंबर, नकद गल्ले से दिया"
+                          value={vendorNotes}
+                          onChange={(e) => setVendorNotes(e.target.value)}
+                          className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-emerald-500 shadow-xs"
+                        />
+                      </div>
+
+                      {/* Save Payment Button */}
+                      <button
+                        type="button"
+                        onClick={handleSaveVendorPayment}
+                        disabled={savingVendorAction}
+                        className="w-full py-3 px-4 font-black text-sm rounded-xl text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 shadow-md cursor-pointer active:scale-95 transition flex items-center justify-center gap-2"
+                      >
+                        {savingVendorAction ? (
+                          <span>⏳ भुगतान सुरक्षित हो रहा है...</span>
+                        ) : (
+                          <span>💾 भुगतान दर्ज करें {vendorBillAmount ? `(₹${Number(vendorBillAmount).toLocaleString('en-IN')})` : ''}</span>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Inline Transaction Entry Form (FOR CUSTOMERS) */}
               {showPartyTxForm && (
                 <div className={`p-4 rounded-2xl border-2 shadow-sm space-y-3 animate-in fade-in ${
                   partyTxType === 'paid' ? 'bg-rose-50/40 border-rose-200' : 'bg-emerald-50/40 border-emerald-200'

@@ -288,12 +288,12 @@ class StorageManager {
 
   saveBill(companyId, bill) {
     const norm = this.normalizeBill(bill);
-    if (!norm) return null;
+    if (!norm) return this.getBills(companyId);
 
     const current = this.getBills(companyId);
     const updated = deduplicateBills([norm, ...current]);
     this.saveBills(companyId, updated);
-    return norm;
+    return updated;
   }
 
   mergeBills(companyId, serverBills = []) {

@@ -45,6 +45,7 @@ export function deduplicateBills(bills = []) {
     const amtVal = Number(bill.amount ?? bill.finalAmount ?? bill.total ?? bill.totalAmount ?? bill.grandTotal ?? 0);
     const dateKey = extractDateKey(bill.rawDate || bill.date || bill.createdAt);
     const custName = String(bill.customerName || bill.partyName || bill.customer || "").trim().toLowerCase();
+    const itemCount = Array.isArray(bill.items) ? bill.items.length : 0;
 
     // 1. Check if bill number already claimed by an authoritative record
     if (billNum && seenBillNumbers.has(billNum.toLowerCase())) {

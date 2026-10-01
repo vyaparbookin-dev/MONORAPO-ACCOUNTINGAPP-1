@@ -40,6 +40,8 @@ export function deduplicatePurchases(purchases = []) {
     const amtVal = Number(pur.finalAmount ?? pur.totalAmount ?? pur.total ?? pur.amountPaid ?? 0);
     const dateKey = extractDateKey(pur.date || pur.createdAt);
     const suppName = String(pur.supplierName || pur.partyName || pur.supplier || "").trim().toLowerCase();
+    const itemCount = Array.isArray(pur.items) ? pur.items.length : 0;
+    const sig = `${dateKey}_${amtVal.toFixed(2)}_${suppName}_${itemCount}`;
 
     // 1. By ID
     if (id && seenIds.has(id)) continue;
