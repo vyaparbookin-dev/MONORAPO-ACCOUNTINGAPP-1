@@ -1505,7 +1505,7 @@ function MobileVyaparAppContent() {
   const weekBillSales = bills.filter(b => {
     if (String(b.date || "").toLowerCase() === "today" || String(b.date || "") === "आज") return true;
     const d = parseAnyDate(b.rawDate || b.createdAt || b.date);
-    if (!d) return true;
+    if (!d) return false;
     return d >= weekAgo;
   }).reduce((sum, b) => sum + getBillAmount(b), 0);
 
@@ -1515,7 +1515,7 @@ function MobileVyaparAppContent() {
     const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
     if (!isDebit || isSupplierTx) return false;
     const d = parseAnyDate(tx.date || tx.createdAt);
-    if (!d) return true;
+    if (!d) return false;
     return d >= weekAgo;
   }).reduce((sum, tx) => sum + Number(tx.debit || 0), 0);
 
@@ -1526,7 +1526,7 @@ function MobileVyaparAppContent() {
     return isDebit && !isSupplierTx;
   }).reduce((sum, tx) => sum + Number(tx.debit || 0), 0);
   const totalRecentSales = recentSales + recentPartyTxSales;
-  const displayWeekSales = weekSales > 0 ? weekSales : totalRecentSales;
+  const displayWeekSales = weekSales;
 
   const totalBankBalance = bankAccounts
     .filter(a => a.accountType !== "CC_OVERDRAFT")
@@ -1584,6 +1584,7 @@ function MobileVyaparAppContent() {
 
   // Dynamic filter for Daily Sales Card (आज, कल, इस हफ़्ते, सभी)
   const activePeriodBills = bills.filter(b => {
+    if (dailySaleFilter === "all") return true;
     if (dailySaleFilter === "today") {
       if (String(b.date || "").toLowerCase() === "today" || String(b.date || "") === "आज") return true;
       const d = parseAnyDate(b.rawDate || b.createdAt || b.date);
@@ -1591,7 +1592,7 @@ function MobileVyaparAppContent() {
       return isSameLocalDate(d, new Date());
     }
     const d = parseAnyDate(b.rawDate || b.createdAt || b.date);
-    if (!d) return true;
+    if (!d) return false;
     if (dailySaleFilter === "yesterday") {
       const yest = new Date(Date.now() - 86400000);
       return isSameLocalDate(d, yest);
@@ -1600,26 +1601,28 @@ function MobileVyaparAppContent() {
       const weekAgo = new Date(Date.now() - 7 * 86400000);
       return d >= weekAgo;
     }
-    return true; // "all"
+    return true;
   });
 
   let activePeriodSales = activePeriodBills.reduce((sum, b) => sum + getBillAmount(b), 0);
   const activePeriodCash = activePeriodBills.filter(isCashPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
   const activePeriodUpi = activePeriodBills.filter(isUpiPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
-  const activePeriodCredit = activePeriodBills.filter(isCreditPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
+  let activePeriodCredit = activePeriodBills.filter(isCreditPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
 
   const activePeriodPartyTxSales = (allPartyTransactions || []).filter(tx => {
     const isDebit = Number(tx.debit || 0) > 0;
     const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
     if (!isDebit || isSupplierTx) return false;
+    if (dailySaleFilter === "all") return true;
     const d = parseAnyDate(tx.date || tx.createdAt);
-    if (!d) return true;
+    if (!d) return false;
     if (dailySaleFilter === "today") return isSameLocalDate(d, new Date());
     if (dailySaleFilter === "yesterday") return isSameLocalDate(d, new Date(Date.now() - 86400000));
     if (dailySaleFilter === "week") return d >= new Date(Date.now() - 7 * 86400000);
     return true;
   }).reduce((sum, tx) => sum + Number(tx.debit || 0), 0);
   activePeriodSales += activePeriodPartyTxSales;
+  activePeriodCredit += activePeriodPartyTxSales;
 
   const handleShareWhatsAppBill = (bill) => {
     if (!bill) return;
@@ -3388,7 +3391,7 @@ function MobileVyaparAppContent() {
 
               <div 
                 onClick={() => {
-                  setDailySaleFilter("week");
+                  setDailySaleFilter("all");
                   setTransactionTab("sales");
                   setShowAllTransactions(true);
                   const sumEl = document.getElementById("eod-summary-section");
@@ -3403,10 +3406,15 @@ function MobileVyaparAppContent() {
                 className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-sm cursor-pointer space-y-1 hover:border-slate-200 transition"
               >
                 <div className="flex justify-between items-center">
-                  <span className="font-black text-sm text-[#0F172A]">₹ {displayWeekSales.toLocaleString('en-IN')}</span>
+                  <span className="font-black text-sm text-[#0F172A]">₹ {totalRecentSales.toLocaleString('en-IN')}</span>
                   <ChevronRight size={16} className="text-[#94A3B8]" />
                 </div>
-                <div className="text-xs font-bold text-[#64748B]">This week's sale (बिक्री देखें)</div>
+                <div className="flex items-center justify-between text-[11px] font-bold text-[#64748B]">
+                  <span>कुल बिक्री (Total Sales)</span>
+                  <span className="text-[10px] text-emerald-700 font-extrabold bg-emerald-50 px-1.5 py-0.5 rounded">
+                    हफ़्ता: ₹{weekSales.toLocaleString('en-IN')}
+                  </span>
+                </div>
               </div>
 
               <div 
