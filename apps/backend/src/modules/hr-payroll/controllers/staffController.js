@@ -474,8 +474,36 @@ export const addPayment = async (req, res) => {
 
     const transaction = new StaffTransaction({ staffId, companyId: req.companyId, type: paymentType, date: new Date(), debit, credit, notes });
     await transaction.save();
-    await staff.save();
 
+    // 2-Way Sync: Create linked Expense for debit transactions (advance/salary/deduction)
+    if (debit > 0) {
+      try {
+        const typeLabels = {
+          advance: 'स्टाफ एडवांस',
+          salary_settlement: 'वेतन भुगतान',
+          deduction: 'स्टाफ कटौती'
+        };
+        const linkedExpense = await Expense.create({
+          companyId: req.companyId,
+          title: `${typeLabels[paymentType] || 'स्टाफ भुगतान'} - ${staff.name}`,
+          amount: Number(amount),
+          category: "Salary",
+          expenseType: "operating",
+          familyMember: "",
+          date: new Date(),
+          paymentMethod: (req.body.paymentMode || 'cash').toLowerCase(),
+          description: `PagarBook भुगतान: ${staff.name} (${(notes || paymentType).trim()})`,
+          staffId: staff._id,
+          staffTransactionId: transaction._id
+        });
+        transaction.expenseId = linkedExpense._id;
+        await transaction.save();
+      } catch (expErr) {
+        console.warn("Auto expense creation warning for staff payment:", expErr.message);
+      }
+    }
+
+    await staff.save();
     res.status(201).json({ success: true, transaction });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -507,7 +535,7 @@ export const markAttendance = async (req, res) => {
 
 export const getStaffStatement = async (req, res) => {
   try {
-    const transactions = await StaffTransaction.find({ staffId: req.params.id, companyId: req.companyId }).sort({ date: -1 });
+    const transactions = await StaffTransaction.find({ staffId: req.params.id, companyId: req.companyId, isDeleted: { $ne: true } }).sort({ date: -1 });
     res.status(200).json({ success: true, transactions });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -641,21 +669,78 @@ export const deleteStaffTransaction = async (req, res) => {
     if (!req.companyId) {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
-    const tx = await StaffTransaction.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId },
-      { $set: { isDeleted: true } },
-      { new: true }
+    
+    // Idempotency: only find non-deleted transactions
+    const tx = await StaffTransaction.findOne(
+      { _id: req.params.id, companyId: req.companyId, isDeleted: { $ne: true } }
     );
-    if (!tx) return res.status(404).json({ success: false, error: "Transaction not found" });
+    if (!tx) return res.status(404).json({ success: false, error: "Transaction not found or already deleted" });
+
+    // Soft delete the transaction
+    tx.isDeleted = true;
+    await tx.save();
+
+    // Revert staff balance
     try {
+      const staff = await Staff.findById(tx.staffId);
+      if (staff) {
+        if (tx.debit > 0) staff.balance += tx.debit;    // Was deducted, add back
+        if (tx.credit > 0) staff.balance -= tx.credit;  // Was credited, remove
+        await staff.save();
+      }
+    } catch (balErr) {
+      console.warn("Staff balance revert warning:", balErr.message);
+    }
+
+    // Delete linked expense (2-way sync)
+    try {
+      let linkedExpense = null;
       if (tx.expenseId) {
-        await Expense.findOneAndUpdate({ _id: tx.expenseId, companyId: req.companyId }, { $set: { isDeleted: true } });
+        linkedExpense = await Expense.findOneAndUpdate(
+          { _id: tx.expenseId, companyId: req.companyId }, 
+          { $set: { isDeleted: true } },
+          { new: false } // return OLD doc to read bankAccountId
+        );
       } else if (tx.staffId && tx.debit > 0) {
-        await Expense.findOneAndUpdate({ staffId: tx.staffId, companyId: req.companyId, amount: tx.debit, isDeleted: { $ne: true } }, { $set: { isDeleted: true } });
+        linkedExpense = await Expense.findOneAndUpdate(
+          { staffTransactionId: tx._id, companyId: req.companyId, isDeleted: { $ne: true } }, 
+          { $set: { isDeleted: true } },
+          { new: false }
+        );
+        if (!linkedExpense) {
+          linkedExpense = await Expense.findOneAndUpdate(
+            { staffId: tx.staffId, companyId: req.companyId, amount: tx.debit, isDeleted: { $ne: true } }, 
+            { $set: { isDeleted: true } },
+            { new: false }
+          );
+        }
+      }
+
+      // Revert bank balance if expense was bank-linked
+      if (linkedExpense && linkedExpense.bankAccountId && Number(linkedExpense.amount) > 0) {
+        const BankAccount = (await import("../../model/BankAccount.js")).default;
+        const bank = await BankAccount.findOne({ _id: linkedExpense.bankAccountId, companyId: req.companyId });
+        if (bank) {
+          const revAmt = Number(linkedExpense.amount);
+          if (bank.accountType === "CC_OVERDRAFT") {
+            bank.currentOutstanding = Math.max(0, (Number(bank.currentOutstanding) || 0) - revAmt);
+          } else {
+            bank.currentBalance = (Number(bank.currentBalance) || 0) + revAmt;
+          }
+          bank.transactions.push({
+            date: new Date(),
+            type: "deposit",
+            amount: revAmt,
+            note: `स्टाफ लेनदेन हटाया (रिफंड): ${linkedExpense.title || 'खर्च'}`,
+            referenceNo: `REV-STF-${tx._id}`
+          });
+          await bank.save();
+        }
       }
     } catch (expDelErr) {
       console.warn("Linked expense deletion warning:", expDelErr.message);
     }
+
     res.json({ success: true, message: "Transaction deleted successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

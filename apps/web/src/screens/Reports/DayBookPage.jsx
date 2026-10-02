@@ -259,7 +259,9 @@ export default function DayBookPage() {
       let localExpenses = [];
       try {
         const storedExp = localStorage.getItem("vb_local_expenses");
-        if (storedExp) localExpenses = JSON.parse(storedExp);
+        if (storedExp) localExpenses = JSON.parse(storedExp).filter(
+          le => checkInRange(le.date || le.createdAt)
+        );
       } catch(e) {}
       const serverExpenses = Array.isArray(data.expenses) ? data.expenses : [];
       const mergedExpenses = deduplicateExpenses([...serverExpenses, ...localExpenses]);
@@ -600,6 +602,11 @@ export default function DayBookPage() {
       const day = now.getDay();
       const diff = now.getDate() - day + (day === 0 ? -6 : 1);
       startOfWeek.setDate(diff);
+      // Clamp: week start should not go before 1st of current month
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      if (startOfWeek < monthStart) {
+        startOfWeek.setTime(monthStart.getTime());
+      }
       setStartDate(getLocalDayStr(startOfWeek));
       setEndDate(getLocalDayStr(now));
     } else if (newPeriod === "month") {
@@ -610,13 +617,13 @@ export default function DayBookPage() {
       setSelectedDayDate("");
       const currentQuarter = Math.floor(now.getMonth() / 3);
       const startOfQuarter = new Date(now.getFullYear(), currentQuarter * 3, 1);
-      setStartDate(startOfQuarter.toISOString().split("T")[0]);
-      setEndDate(now.toISOString().split("T")[0]);
+      setStartDate(getLocalDayStr(startOfQuarter));
+      setEndDate(getLocalDayStr(now));
     } else if (newPeriod === "year") {
       setSelectedDayDate("");
       const startOfYear = new Date(now.getFullYear(), 0, 1);
-      setStartDate(startOfYear.toISOString().split("T")[0]);
-      setEndDate(now.toISOString().split("T")[0]);
+      setStartDate(getLocalDayStr(startOfYear));
+      setEndDate(getLocalDayStr(now));
     } else if (newPeriod === "all") {
       setSelectedDayDate("");
       setStartDate("");
@@ -1832,20 +1839,25 @@ export default function DayBookPage() {
                 const txs = Array.isArray(rawdata?.partyTransactions) ? rawdata.partyTransactions : [];
                 if (txs.length === 0) return null;
 
+                // Group strictly by normalized Party Name (not by ID/details)
                 const partyMap = new Map();
                 for (const t of txs) {
-                  const pId = String(t.partyId?._id || t.partyId?.id || t.partyId || t.details || 'unknown');
-                  const pName = t.partyId?.name || t.partyName || "पार्टी खाता";
-                  if (!partyMap.has(pId)) {
-                    partyMap.set(pId, {
-                      id: pId,
+                  const rawName = t.partyId?.name || t.partyName || 
+                    (typeof t.partyId === "string" && !/^[0-9a-fA-F]{24}$/.test(t.partyId) ? t.partyId : "") || 
+                    "अज्ञात पार्टी खाता";
+                  const pName = rawName.trim();
+                  const groupKey = pName.toLowerCase(); // Case-insensitive grouping
+
+                  if (!partyMap.has(groupKey)) {
+                    partyMap.set(groupKey, {
+                      id: groupKey,
                       name: pName,
                       totalCredit: 0,
                       totalDebit: 0,
                       items: []
                     });
                   }
-                  const group = partyMap.get(pId);
+                  const group = partyMap.get(groupKey);
                   group.totalCredit += Number(t.credit || 0);
                   group.totalDebit += Number(t.debit || 0);
                   group.items.push(t);

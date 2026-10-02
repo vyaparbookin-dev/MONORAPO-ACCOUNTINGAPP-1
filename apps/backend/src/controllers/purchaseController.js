@@ -128,8 +128,12 @@ export const exportPurchasesCSV = async (req, res) => {
 // Soft Delete a Purchase (with Stock & Supplier Ledger Revert)
 export const deletePurchase = async (req, res) => {
   try {
-    const oldPurchase = await Purchase.findOne({ _id: req.params.id, companyId: req.companyId });
-    if (!oldPurchase) return res.status(404).json({ success: false, error: "Purchase not found" });
+    const oldPurchase = await Purchase.findOne({ 
+      _id: req.params.id, 
+      companyId: req.companyId, 
+      isDeleted: { $ne: true } 
+    });
+    if (!oldPurchase) return res.status(404).json({ success: false, error: "Purchase not found or already deleted" });
 
     const purchase = await Purchase.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },

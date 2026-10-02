@@ -2,6 +2,7 @@ import Party from "../model/party.js";
 import Bill from "../model/bill.js";
 import Purchase from "../model/purchase.js";
 import PartyTransaction from "../model/PartyTransaction.js";
+import Product from "../model/product.js";
 import mongoose from "mongoose";
 
 export const createParty = async (req, res) => {
@@ -559,6 +560,47 @@ export const deletePartyTransaction = async (req, res) => {
       party.currentBalance = (Number(party.currentBalance) || 0) - (deb - cred);
       party.updatedAt = new Date();
       await party.save();
+    }
+
+
+    // CASCADE: If this transaction was linked to a Purchase, revert stock too
+    if (tx.referenceBillId) {
+      try {
+        const linkedPurchase = await Purchase.findOne({ 
+          _id: tx.referenceBillId, 
+          companyId: req.companyId,
+          isDeleted: { $ne: true }
+        });
+        if (linkedPurchase) {
+          // Revert inventory stock
+          if (Array.isArray(linkedPurchase.items)) {
+            for (const item of linkedPurchase.items) {
+              if (item.productId && Number(item.quantity) > 0) {
+                await Product.findByIdAndUpdate(
+                  item.productId,
+                  { $inc: { currentStock: -Number(item.quantity) } }
+                );
+              }
+            }
+          }
+          // Mark purchase as deleted
+          linkedPurchase.isDeleted = true;
+          linkedPurchase.updatedAt = new Date();
+          await linkedPurchase.save();
+          
+          // Also soft-delete any other PartyTransactions linked to this purchase
+          await PartyTransaction.updateMany(
+            { 
+              referenceBillId: linkedPurchase._id, 
+              companyId: req.companyId,
+              _id: { $ne: tx._id } // Don't re-process current tx
+            },
+            { $set: { isDeleted: true } }
+          );
+        }
+      } catch (cascadeErr) {
+        console.warn("Purchase cascade deletion warning:", cascadeErr.message);
+      }
     }
 
     res.json({
