@@ -102,12 +102,94 @@ export const createStaff = async (req, res) => {
   }
 };
 
+// Auto-backfill existing expenses that were added for staff before 2-way sync
+export const autoBackfillStaffExpenses = async (companyId) => {
+  if (!companyId) return;
+  try {
+    const staffMembers = await Staff.find({ companyId, isActive: true });
+    if (staffMembers.length === 0) return;
+
+    const staffIdMap = new Map();
+    staffMembers.forEach(s => {
+      staffIdMap.set(s._id.toString(), s);
+    });
+
+    // Find operating expenses that might belong to staff
+    const query = {
+      companyId,
+      isDeleted: { $ne: true },
+      $or: [
+        { staffId: { $exists: true, $ne: null } },
+        { category: { $in: ['Salary', 'Staff', 'वेतन', 'स्टाफ', 'स्टाफ खर्च', 'salary', 'staff', 'Advance', 'Staff Payment'] } }
+      ]
+    };
+
+    const candidateExpenses = await Expense.find(query);
+    for (const exp of candidateExpenses) {
+      let existingTx = null;
+      if (exp.staffTransactionId) {
+        existingTx = await StaffTransaction.findOne({ _id: exp.staffTransactionId, isDeleted: { $ne: true } });
+      }
+      if (!existingTx) {
+        existingTx = await StaffTransaction.findOne({ expenseId: exp._id, isDeleted: { $ne: true } });
+      }
+
+      if (!existingTx) {
+        let targetStaff = null;
+        if (exp.staffId && staffIdMap.has(exp.staffId.toString())) {
+          targetStaff = staffIdMap.get(exp.staffId.toString());
+        }
+        if (!targetStaff) {
+          const text = `${exp.title || ''} ${exp.description || ''}`.toLowerCase();
+          for (const s of staffMembers) {
+            if (s.name && text.includes(s.name.trim().toLowerCase())) {
+              targetStaff = s;
+              break;
+            }
+          }
+        }
+        if (!targetStaff && staffMembers.length === 1) {
+          targetStaff = staffMembers[0];
+        }
+
+        if (targetStaff) {
+          const amt = Number(exp.amount) || 0;
+          if (amt > 0) {
+            const stTx = await StaffTransaction.create({
+              staffId: targetStaff._id,
+              companyId,
+              type: 'advance',
+              date: exp.date ? new Date(exp.date) : (exp.createdAt ? new Date(exp.createdAt) : new Date()),
+              debit: amt,
+              credit: 0,
+              notes: (exp.description || exp.title || `दुकान खर्च से बैकफिल्ड स्टाफ भुगतान: ${targetStaff.name}`).trim(),
+              expenseId: exp._id
+            });
+            exp.staffTransactionId = stTx._id;
+            exp.staffId = targetStaff._id;
+            await exp.save();
+
+            targetStaff.balance = (Number(targetStaff.balance) || 0) - amt;
+            targetStaff.updatedAt = new Date();
+            await targetStaff.save();
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[Auto-backfill Staff Expenses Error]:", err.message);
+  }
+};
+
 // --- PAGARBOOK SUMMARY & DASHBOARD (Includes Day-by-Day Attendance Map for 30/31 Days) ---
 export const getPagarBookSummary = async (req, res) => {
   try {
     if (!req.companyId) {
       return res.status(400).json({ success: false, message: "Company ID missing" });
     }
+
+    // Auto-sync unlinked historical expenses before calculating summaries
+    await autoBackfillStaffExpenses(req.companyId);
 
     const now = new Date();
     const month = parseInt(req.query.month) || (now.getMonth() + 1); // 1-12
@@ -135,6 +217,18 @@ export const getPagarBookSummary = async (req, res) => {
       date: { $gte: startDate, $lte: endDate },
       isDeleted: false
     }).sort({ date: -1 });
+
+    // Fetch prior transactions & attendance before this month to calculate cumulative previous balance
+    const priorTransactions = await StaffTransaction.find({
+      companyId: req.companyId,
+      date: { $lt: startDate },
+      isDeleted: false
+    }).sort({ date: -1 });
+
+    const priorAttendance = await Attendance.find({
+      staffId: { $in: staffIds },
+      date: { $lt: startDate }
+    });
 
     const todayStr = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toDateString();
 
@@ -208,7 +302,85 @@ export const getPagarBookSummary = async (req, res) => {
         monthlyEquivalent = monthlySalaryVal;
       }
 
-      // Overtime & Commission
+      // Cumulative Previous Balance (from all months prior to current month)
+      const priorStaffTx = priorTransactions.filter(t => t.staffId.toString() === staffIdStr);
+      const priorStaffAtt = priorAttendance.filter(a => a.staffId.toString() === staffIdStr);
+
+      let totalPriorEarned = 0;
+      // Loop through each prior month from joining date (or up to 12 months back)
+      const joinDate = s.dateOfJoining ? new Date(s.dateOfJoining) : new Date(year, month - 2, 1);
+      let curY = joinDate.getFullYear();
+      let curM = joinDate.getMonth(); // 0-11
+
+      // Guard: do not go further back than 12 months
+      const minDate = new Date(year, month - 13, 1);
+      if (new Date(curY, curM, 1) < minDate) {
+        curY = minDate.getFullYear();
+        curM = minDate.getMonth();
+      }
+
+      while (curY < year || (curY === year && curM < (month - 1))) {
+        const pmDaysInMonth = new Date(curY, curM + 1, 0).getDate();
+        let pmPresent = 0;
+        let pmHalfDay = 0;
+        let pmAbsent = 0;
+
+        for (let day = 1; day <= pmDaysInMonth; day++) {
+          const match = priorStaffAtt.find(a => {
+            const ad = new Date(a.date);
+            return ad.getDate() === day && ad.getMonth() === curM && ad.getFullYear() === curY;
+          });
+          const rawSt = match ? match.status : 'present';
+          const st = (rawSt === 'half-day' || rawSt === 'halfday' || rawSt === 'half_day')
+            ? 'half_day'
+            : (rawSt === 'absent' || rawSt === 'leave')
+            ? 'absent'
+            : 'present';
+
+          if (st === 'absent') pmAbsent++;
+          else if (st === 'half_day') pmHalfDay++;
+          else pmPresent++;
+        }
+
+        const pmWorked = pmPresent + (pmHalfDay * 0.5);
+        const pmPaidLeaves = Math.min(pmAbsent, allowedPaidLeaves);
+        const pmPayable = pmWorked + pmPaidLeaves;
+
+        if (isDaily) {
+          totalPriorEarned += Math.round(dailyRateVal * pmPayable);
+        } else {
+          const pmPerDay = pmDaysInMonth > 0 ? (monthlySalaryVal / pmDaysInMonth) : 0;
+          totalPriorEarned += Math.round(pmPerDay * pmPayable);
+        }
+
+        curM++;
+        if (curM > 11) {
+          curM = 0;
+          curY++;
+        }
+      }
+
+      // Prior credits (overtime, commission, incentives)
+      const priorCredits = priorStaffTx
+        .filter(t => ['overtime', 'commission', 'incentive'].includes(t.type))
+        .reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
+
+      // Deduplicate identical prior debits (e.g. twin auto-sync entries)
+      const seenPriorDebits = new Set();
+      const priorDebits = priorStaffTx
+        .filter(t => ['advance', 'salary_settlement', 'deduction', 'loan_emi', 'payment'].includes(t.type))
+        .reduce((sum, t) => {
+          const amt = Number(t.debit) || Number(t.amount) || 0;
+          const dStr = t.date ? new Date(t.date).toISOString().slice(0, 16) : '';
+          const key = `${amt}_${dStr}`;
+          if (seenPriorDebits.has(key)) return sum;
+          seenPriorDebits.add(key);
+          return sum + amt;
+        }, 0);
+
+      const previousBalance = (totalPriorEarned + priorCredits) - priorDebits;
+
+      // Overtime & Commission for current month
       const otTransactions = staffTx.filter(t => t.type === 'overtime');
       const otEarnings = otTransactions.reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
       const overtimeHours = otTransactions.reduce((sum, t) => sum + (Number(t.hours || 0) || 0), 0);
@@ -216,12 +388,22 @@ export const getPagarBookSummary = async (req, res) => {
       const commTransactions = staffTx.filter(t => t.type === 'commission' || t.type === 'incentive');
       const commEarnings = commTransactions.reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
 
-      // Advances & Payments Given
-      const advanceTransactions = staffTx.filter(t => ['advance', 'salary_settlement', 'deduction', 'loan_emi'].includes(t.type));
-      const totalAdvance = advanceTransactions.reduce((sum, t) => sum + (Number(t.debit) || 0), 0);
+      // Advances & Payments Given in current month (deduplicating identical timestamp entries)
+      const seenCurDebits = new Set();
+      const advanceTransactions = staffTx.filter(t => ['advance', 'salary_settlement', 'deduction', 'loan_emi', 'payment'].includes(t.type))
+        .filter(t => {
+          const amt = Number(t.debit) || Number(t.amount) || 0;
+          const dStr = t.date ? new Date(t.date).toISOString().slice(0, 16) : '';
+          const key = `${amt}_${dStr}`;
+          if (seenCurDebits.has(key)) return false;
+          seenCurDebits.add(key);
+          return true;
+        });
+      const totalAdvance = advanceTransactions.reduce((sum, t) => sum + (Number(t.debit) || Number(t.amount) || 0), 0);
 
       const grossSalary = earnedSalary + otEarnings + commEarnings;
-      const netPayable = Math.max(0, grossSalary - totalAdvance);
+      // Net payable carries forward previous balance, adds current earnings, subtracts current payments/advances
+      const netPayable = Math.max(0, previousBalance + grossSalary - totalAdvance);
 
       return {
         _id: s._id,
@@ -260,6 +442,7 @@ export const getPagarBookSummary = async (req, res) => {
         commissionEarnings: commEarnings,
         grossSalary,
         totalAdvance,
+        previousBalance,
         netPayable,
         advancesList: advanceTransactions.map(t => ({
           _id: t._id,
@@ -279,6 +462,7 @@ export const getPagarBookSummary = async (req, res) => {
     const totalStaffCount = staffSummaries.length;
     const totalCompanySalaryEarned = staffSummaries.reduce((sum, s) => sum + s.earnedSalary, 0);
     const totalCompanyAdvanceGiven = staffSummaries.reduce((sum, s) => sum + s.totalAdvance, 0);
+    const totalCompanyPreviousBalance = staffSummaries.reduce((sum, s) => sum + (s.previousBalance || 0), 0);
     const totalCompanyNetPayable = staffSummaries.reduce((sum, s) => sum + s.netPayable, 0);
 
     res.json({
@@ -290,6 +474,7 @@ export const getPagarBookSummary = async (req, res) => {
       totalStaffCount,
       totalCompanySalaryEarned,
       totalCompanyAdvanceGiven,
+      totalCompanyPreviousBalance,
       totalCompanyNetPayable,
       staff: staffSummaries
     });
@@ -393,6 +578,12 @@ export const addStaffAdvance = async (req, res) => {
     } catch (expErr) {
       console.warn("Auto shop expense creation warning for staff advance:", expErr.message);
     }
+
+    // Update staff balance (Advance reduces net payable)
+    staff.balance = (Number(staff.balance) || 0) - Number(amount);
+    staff.updatedAt = new Date();
+    await staff.save();
+
     res.status(201).json({ success: true, message: `₹${amount} एडवांस सफलतापूर्वक दर्ज हुआ!`, transaction: advanceTx });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -423,6 +614,12 @@ export const addStaffOvertime = async (req, res) => {
     });
 
     await otTx.save();
+
+    // Update staff balance (Overtime increases net payable)
+    staff.balance = (Number(staff.balance) || 0) + Math.round(totalOtPay);
+    staff.updatedAt = new Date();
+    await staff.save();
+
     res.status(201).json({ success: true, message: `₹${Math.round(totalOtPay)} ओवरटाइम दर्ज हुआ!`, transaction: otTx });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -451,6 +648,12 @@ export const addStaffCommission = async (req, res) => {
     });
 
     await commTx.save();
+
+    // Update staff balance (Commission increases net payable)
+    staff.balance = (Number(staff.balance) || 0) + Number(amount);
+    staff.updatedAt = new Date();
+    await staff.save();
+
     res.status(201).json({ success: true, message: `₹${amount} कमीशन दर्ज हुआ!`, transaction: commTx });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -547,6 +750,9 @@ export const listStaff = async (req, res) => {
     if (!req.companyId) {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
+
+    // Auto-sync unlinked historical expenses before returning staff
+    await autoBackfillStaffExpenses(req.companyId);
 
     const staff = await Staff.find({ isActive: true, companyId: req.companyId }).select("-bankDetails -aadharNumber").sort({ name: 1 });
     res.json({ success: true, staff });

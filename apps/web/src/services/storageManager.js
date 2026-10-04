@@ -36,7 +36,19 @@ class StorageManager {
 
   normalizeParty(p) {
     if (!p || typeof p !== "object") return null;
-    const rawBal = Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0);
+    const pType = String(p.partyType || p.type || "customer").toLowerCase();
+    const isSupplier = pType === "supplier" || pType.includes("sup") || pType.includes("vendor");
+
+    let rawBal = Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0);
+    const opBal = Math.abs(Number(p.openingBalance || 0));
+
+    // If supplier balance is 0 or positive from opening balance, treat as payable (negative / देने हैं)
+    if (isSupplier && opBal > 0) {
+      if (rawBal === 0 || (rawBal > 0 && Math.abs(rawBal) === opBal)) {
+        rawBal = -opBal;
+      }
+    }
+    const finalBal = isNaN(rawBal) ? 0 : rawBal;
     const pName = String(p.name || p.partyName || "").trim();
     const pMobile = String(p.mobileNumber || p.phone || "").trim();
     const id = p._id || p.id || this.generateId("party");
@@ -47,11 +59,11 @@ class StorageManager {
       name: pName || "अज्ञात पार्टी",
       mobileNumber: pMobile,
       phone: pMobile,
-      balance: isNaN(rawBal) ? 0 : rawBal,
-      currentBalance: isNaN(rawBal) ? 0 : rawBal,
-      openingBalance: Number(p.openingBalance ?? 0),
-      partyType: p.partyType || p.type || "customer",
-      type: p.partyType || p.type || "customer",
+      balance: finalBal,
+      currentBalance: finalBal,
+      openingBalance: opBal,
+      partyType: isSupplier ? "supplier" : (pType === "personal" ? "personal" : (pType === "both" ? "both" : "customer")),
+      type: isSupplier ? "supplier" : (pType === "personal" ? "personal" : (pType === "both" ? "both" : "customer")),
       address: p.address || "",
       creditLimit: Number(p.creditLimit ?? 0),
       isCreditLimitActive: Boolean(p.isCreditLimitActive),
@@ -68,10 +80,10 @@ class StorageManager {
 
   getPartyUniqueKey(p) {
     if (!p) return "";
-    const phone = String(p.phone || p.mobileNumber || "").replace(/\D/g, "").slice(-10);
-    if (phone && phone.length === 10 && phone !== "9999999999") return `phone_${phone}`;
     const name = String(p.name || p.partyName || "").trim().toLowerCase();
+    const phone = String(p.phone || p.mobileNumber || "").replace(/\D/g, "").slice(-10);
     if (name) return `name_${name}`;
+    if (phone && phone.length === 10 && phone !== "9999999999") return `phone_${phone}`;
     return String(p._id || p.id || Math.random());
   }
 
@@ -122,12 +134,21 @@ class StorageManager {
     if (!norm) return null;
 
     const current = this.getParties(companyId);
-    const key = this.getPartyUniqueKey(norm);
+    const pId = String(norm._id || norm.id || '').trim();
+    const pName = String(norm.name || norm.partyName || '').trim().toLowerCase();
+    const pPhone = String(norm.phone || norm.mobileNumber || '').replace(/\D/g, '').slice(-10);
 
     let updated = false;
     const nextList = current.map(p => {
-      const pKey = this.getPartyUniqueKey(p);
-      if (pKey === key || p.id === norm.id || p._id === norm._id) {
+      const eId = String(p._id || p.id || '').trim();
+      const eName = String(p.name || p.partyName || '').trim().toLowerCase();
+      const ePhone = String(p.phone || p.mobileNumber || '').replace(/\D/g, '').slice(-10);
+
+      const isMatch = (pId && eId && pId === eId) ||
+        (pName && eName && pName === eName) ||
+        (pPhone && ePhone && pPhone.length === 10 && ePhone.length === 10 && pPhone === ePhone && pPhone !== "9999999999");
+
+      if (isMatch) {
         updated = true;
         return { ...p, ...norm, updatedAt: new Date().toISOString() };
       }
@@ -144,29 +165,50 @@ class StorageManager {
 
   mergeParties(companyId, serverParties = []) {
     const localParties = this.getParties(companyId);
-    const partyMap = new Map();
+    const partyList = [];
 
-    // 1. Load local parties first
+    const findMatchIndex = (party) => {
+      const pId = String(party._id || party.id || '').trim();
+      const pName = String(party.name || party.partyName || '').trim().toLowerCase();
+      const pPhone = String(party.phone || party.mobileNumber || '').replace(/\D/g, '').slice(-10);
+
+      return partyList.findIndex(existing => {
+        const eId = String(existing._id || existing.id || '').trim();
+        const eName = String(existing.name || existing.partyName || '').trim().toLowerCase();
+        const ePhone = String(existing.phone || existing.mobileNumber || '').replace(/\D/g, '').slice(-10);
+
+        if (pId && eId && pId === eId) return true;
+        if (pName && eName && pName === eName) return true;
+        if (pPhone && ePhone && pPhone.length === 10 && ePhone.length === 10 && pPhone === ePhone && pPhone !== "9999999999") return true;
+        return false;
+      });
+    };
+
+    // 1. Add local parties, deduplicating among themselves
     localParties.forEach(p => {
-      if (p.isActive === false || p.isDeleted === true) return;
-      const key = this.getPartyUniqueKey(p);
-      if (key) partyMap.set(key, p);
-    });
-
-    // 2. Authoritative server merge
-    (Array.isArray(serverParties) ? serverParties : []).forEach(sp => {
-      const normServer = this.normalizeParty(sp);
-      if (!normServer || normServer.isActive === false || normServer.isDeleted === true) return;
-      const key = this.getPartyUniqueKey(normServer);
-      if (key) {
-        const existing = partyMap.get(key) || {};
-        partyMap.set(key, { ...existing, ...normServer });
+      if (!p || p.isActive === false || p.isDeleted === true) return;
+      const idx = findMatchIndex(p);
+      if (idx >= 0) {
+        partyList[idx] = { ...partyList[idx], ...p };
+      } else {
+        partyList.push(p);
       }
     });
 
-    const merged = Array.from(partyMap.values());
-    this.saveParties(companyId, merged);
-    return merged;
+    // 2. Authoritative server merge (server data takes precedence)
+    (Array.isArray(serverParties) ? serverParties : []).forEach(sp => {
+      const normServer = this.normalizeParty(sp);
+      if (!normServer || normServer.isActive === false || normServer.isDeleted === true) return;
+      const idx = findMatchIndex(normServer);
+      if (idx >= 0) {
+        partyList[idx] = { ...partyList[idx], ...normServer };
+      } else {
+        partyList.push(normServer);
+      }
+    });
+
+    this.saveParties(companyId, partyList);
+    return partyList;
   }
 
   // ==========================================

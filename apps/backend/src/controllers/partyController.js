@@ -50,20 +50,40 @@ export const createParty = async (req, res) => {
       ]
     });
 
+    const rawType = (req.body.partyType || req.body.type || "customer").toLowerCase();
+    const isSupplier = rawType === "supplier" || rawType.includes("sup") || rawType.includes("vendor") || rawType.includes("लेनदार");
+    const isPersonal = rawType === "personal" || rawType.includes("पर्सनल");
+    const finalPartyType = isSupplier ? "supplier" : isPersonal ? "personal" : (rawType === "both" ? "both" : "customer");
+
+    const rawBal = parseFloat(req.body.openingBalance ?? req.body.balance ?? 0) || 0;
+    const bType = String(req.body.balanceType || req.body.balanceDir || "").toUpperCase();
+
+    let finalBalance = rawBal;
+    if (bType.includes("PAY") || bType.includes("देने") || bType.includes("NEG")) {
+      finalBalance = -Math.abs(rawBal);
+    } else if (bType.includes("REC") || bType.includes("लेने") || bType.includes("POS")) {
+      finalBalance = Math.abs(rawBal);
+    } else if (req.body.currentBalance !== undefined && req.body.currentBalance !== null && !isNaN(Number(req.body.currentBalance))) {
+      const cb = Number(req.body.currentBalance);
+      finalBalance = (isSupplier && cb > 0) ? -Math.abs(cb) : cb;
+    } else {
+      finalBalance = isSupplier ? -Math.abs(rawBal) : Math.abs(rawBal);
+    }
+
     if (inactiveParty) {
       // Re-activate and update the deleted party slot with new details
       inactiveParty.name = trimmedName;
       inactiveParty.address = trimmedAddress;
       inactiveParty.mobileNumber = mobileNumber;
-      inactiveParty.partyType = req.body.partyType || "supplier";
+      inactiveParty.partyType = finalPartyType;
       inactiveParty.contactPerson = req.body.contactPerson || "";
       inactiveParty.email = req.body.email || "";
       inactiveParty.alternatePhone = req.body.alternatePhone || "";
       inactiveParty.gstNumber = req.body.gstNumber || undefined;
       inactiveParty.panNumber = req.body.panNumber || "";
       inactiveParty.creditLimit = Number(req.body.creditLimit || 0);
-      inactiveParty.openingBalance = Number(req.body.openingBalance || 0);
-      inactiveParty.currentBalance = Number(req.body.openingBalance || 0);
+      inactiveParty.openingBalance = Math.abs(rawBal);
+      inactiveParty.currentBalance = finalBalance;
       inactiveParty.notes = req.body.notes || "";
       inactiveParty.isActive = true;
       inactiveParty.updatedAt = new Date();
@@ -71,7 +91,13 @@ export const createParty = async (req, res) => {
       return res.status(201).json({ success: true, party: inactiveParty, message: `Party ${name} created successfully!` });
     }
 
-    const party = new Party({ ...req.body, companyId: req.companyId });
+    const party = new Party({
+      ...req.body,
+      companyId: req.companyId,
+      partyType: finalPartyType,
+      openingBalance: Math.abs(rawBal),
+      currentBalance: finalBalance
+    });
     await party.save();
     res.status(201).json({ success: true, party, message: `Party ${name} created successfully!` });
   } catch (error) {
@@ -460,16 +486,18 @@ export const getPartyStatement = async (req, res) => {
     // Sort chronologically ascending (oldest first) to compute running balance accurately
     ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    let runningBal = Number(party.openingBalance || 0);
-    const openingBal = runningBal;
+    const isSupplier = (party.partyType === "supplier");
+    const rawOpening = Number(party.openingBalance || 0);
+    // Opening balance for supplier is payable (negative / credit)
+    const openingBal = isSupplier ? -Math.abs(rawOpening) : Math.abs(rawOpening);
+    let runningBal = openingBal;
 
     const formattedTransactions = [];
 
     // --- INCLUDE OPENING BALANCE AS THE VERY FIRST LINE ITEM ---
-    if (openingBal !== 0) {
-      const isSupplier = (party.partyType === "supplier");
+    if (rawOpening !== 0) {
       const isPayable = openingBal < 0 || isSupplier;
-      const absOpening = Math.abs(openingBal);
+      const absOpening = Math.abs(rawOpening);
       formattedTransactions.push({
         _id: `open_${party._id}`,
         date: party.createdAt || new Date(2026, 0, 1),
@@ -477,22 +505,17 @@ export const getPartyStatement = async (req, res) => {
         refNo: "OPENING",
         billNumber: "OPENING-BILL",
         details: isPayable 
-          ? `प्रारंभिक शेष / बिल (Opening Balance / Bill)` 
-          : `प्रारंभिक शेष / बिल (Opening Balance / Bill)`,
+          ? `प्रारंभिक शेष / बिल (Opening Balance: देने हैं)` 
+          : `प्रारंभिक शेष / बिल (Opening Balance: लेने हैं)`,
         debit: isPayable ? 0 : absOpening,
         credit: isPayable ? absOpening : 0,
-        runningBalance: openingBal,
+        runningBalance: isPayable ? -absOpening : absOpening,
         source: "OpeningBalance"
       });
     }
 
     ledgerEntries.forEach(entry => {
-      const isSupplier = (party.partyType === "supplier");
-      if (isSupplier) {
-        runningBal += (entry.debit - entry.credit);
-      } else {
-        runningBal += (entry.debit - entry.credit);
-      }
+      runningBal += (entry.debit - entry.credit);
       formattedTransactions.push({
         ...entry,
         runningBalance: runningBal
@@ -505,11 +528,16 @@ export const getPartyStatement = async (req, res) => {
     const totalDebit = ledgerEntries.reduce((s, e) => s + (Number(e.debit) || 0), 0);
     const totalCredit = ledgerEntries.reduce((s, e) => s + (Number(e.credit) || 0), 0);
 
+    let finalPartyCurrentBal = party.currentBalance;
+    if (isSupplier && finalPartyCurrentBal > 0 && Math.abs(finalPartyCurrentBal) === Math.abs(rawOpening)) {
+      finalPartyCurrentBal = -Math.abs(finalPartyCurrentBal);
+    }
+
     res.json({
       success: true,
       party,
       openingBalance: openingBal,
-      currentBalance: party.currentBalance ?? runningBal,
+      currentBalance: finalPartyCurrentBal ?? runningBal,
       totalDebit,
       totalCredit,
       transactions: formattedTransactions
@@ -637,7 +665,27 @@ export const listParties = async (req, res) => {
     const parties = await Party.find(filter).select(
       "_id name mobileNumber phone address gstNumber partyType openingBalance currentBalance creditLimit notes"
     );
-    res.json({ success: true, parties });
+
+    // Auto-heal suppliers whose openingBalance was saved with 0 or positive currentBalance
+    const normalizedParties = parties.map(p => {
+      const pDoc = p.toObject ? p.toObject() : { ...p };
+      const isSupplier = (pDoc.partyType === "supplier");
+      let curBal = Number(pDoc.currentBalance || 0);
+      const opBal = Math.abs(Number(pDoc.openingBalance || 0));
+
+      if (isSupplier && opBal > 0) {
+        if (curBal === 0 || (curBal > 0 && Math.abs(curBal) === opBal)) {
+          curBal = -opBal;
+          pDoc.currentBalance = curBal;
+          // Background update to persist correct negative balance in DB
+          Party.updateOne({ _id: pDoc._id }, { $set: { currentBalance: curBal } }).exec().catch(() => {});
+        }
+      }
+      pDoc.balance = curBal;
+      return pDoc;
+    });
+
+    res.json({ success: true, parties: normalizedParties });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

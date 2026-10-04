@@ -100,7 +100,7 @@ export default function AddExpensesPage({ onAdded }) {
         paymentMethod: form.paymentMethod,
         bankAccountId: (form.paymentMethod === 'upi' || form.paymentMethod === 'bank') ? (selectedBankId || undefined) : undefined,
         expenseType: expenseType,
-        staffId: (expenseType === "operating" && form.category === "Salary" && selectedStaffId) ? selectedStaffId : undefined,
+        staffId: (expenseType === "operating" && selectedStaffId) ? selectedStaffId : undefined,
         depositDetails: expenseType === "security_deposit" ? {
           dealershipCompany: form.dealershipCompany || form.title,
           depositType: form.depositType,

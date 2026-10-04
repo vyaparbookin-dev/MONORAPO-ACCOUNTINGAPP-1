@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Expense from "../model/expenses.js";
 import BankAccount from "../model/bankAccount.js";
 import Staff from "../model/staff.js";
@@ -42,7 +43,14 @@ export const addExpense = async (req, res) => {
     // Auto-sync Staff Transaction if staffId is provided (e.g. staff advance / payment from expense form)
     if (expanceData.staffId && amountNum > 0) {
       try {
-        const staffDoc = await Staff.findOne({ _id: expanceData.staffId, companyId: req.companyId }) || await Staff.findById(expanceData.staffId);
+        let staffDoc = null;
+        if (mongoose.Types.ObjectId.isValid(expanceData.staffId)) {
+          staffDoc = await Staff.findOne({ _id: expanceData.staffId, companyId: req.companyId }) || await Staff.findById(expanceData.staffId);
+        }
+        if (!staffDoc && expanceData.staffId) {
+          staffDoc = await Staff.findOne({ companyId: req.companyId, name: new RegExp(`^${expanceData.staffId}$`, "i") });
+        }
+        if (staffDoc) {
           const stTx = await StaffTransaction.create({
             staffId: staffDoc._id,
             companyId: staffDoc.companyId || req.companyId,
@@ -54,7 +62,14 @@ export const addExpense = async (req, res) => {
             expenseId: expense._id
           });
           expense.staffTransactionId = stTx._id;
+          expense.staffId = staffDoc._id;
           await expense.save();
+
+          // Sync Staff Balance: Advance reduces due salary (Negative: Advance, Positive: Due Salary)
+          staffDoc.balance = (Number(staffDoc.balance) || 0) - amountNum;
+          staffDoc.updatedAt = new Date();
+          await staffDoc.save();
+        }
       } catch (staffTxErr) {
         console.warn("Auto-sync staff transaction warning:", staffTxErr.message);
       }
@@ -125,16 +140,21 @@ export const updateExpense = async (req, res) => {
       updateData.expenseType = 'operating';
       updateData.familyMember = '';
     }
+    const oldExpense = await Expense.findOne({ _id: req.params.id, companyId: req.companyId, isDeleted: false });
+    if (!oldExpense) return res.status(404).json({ success: false, error: "Expense not found" });
+
     const expense = await Expense.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId, isDeleted: false },
       { $set: updateData },
       { new: true }
     );
-    if (!expense) return res.status(404).json({ success: false, error: "Expense not found" });
 
     // Auto-sync Staff Transaction if staffId is provided or updated
     const targetStaffId = updateData.staffId || expense.staffId;
     const amountNum = Number(expense.amount) || 0;
+    const oldStaffId = oldExpense.staffId ? String(oldExpense.staffId) : null;
+    const oldAmount = Number(oldExpense.amount) || 0;
+
     if (targetStaffId && amountNum > 0 && expense.expenseType === 'operating') {
       try {
         const staffDoc = await Staff.findOne({ _id: targetStaffId, companyId: req.companyId }) || await Staff.findById(targetStaffId);
@@ -164,6 +184,25 @@ export const updateExpense = async (req, res) => {
             });
             expense.staffTransactionId = newStTx._id;
             await expense.save();
+          }
+
+          // Balance adjustment
+          if (oldStaffId === String(staffDoc._id)) {
+            staffDoc.balance = (Number(staffDoc.balance) || 0) + oldAmount - amountNum;
+            staffDoc.updatedAt = new Date();
+            await staffDoc.save();
+          } else {
+            staffDoc.balance = (Number(staffDoc.balance) || 0) - amountNum;
+            staffDoc.updatedAt = new Date();
+            await staffDoc.save();
+            if (oldStaffId) {
+              const oldStaff = await Staff.findOne({ _id: oldStaffId, companyId: req.companyId }) || await Staff.findById(oldStaffId);
+              if (oldStaff) {
+                oldStaff.balance = (Number(oldStaff.balance) || 0) + oldAmount;
+                oldStaff.updatedAt = new Date();
+                await oldStaff.save();
+              }
+            }
           }
         }
       } catch (staffTxErr) {
@@ -339,6 +378,14 @@ export const deleteExpense = async (req, res) => {
                   { isDeleted: true }
                 );
               }
+            }
+
+            // Revert staff balance
+            const staffDoc = await Staff.findOne({ _id: oldExpense.staffId, companyId: req.companyId }) || await Staff.findById(oldExpense.staffId);
+            if (staffDoc) {
+              staffDoc.balance = (Number(staffDoc.balance) || 0) + Number(oldExpense.amount);
+              staffDoc.updatedAt = new Date();
+              await staffDoc.save();
             }
           } catch (stErr) {
             console.warn("Error reverting staff transaction on expense deletion:", stErr.message);

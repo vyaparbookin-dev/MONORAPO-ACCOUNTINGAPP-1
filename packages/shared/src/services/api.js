@@ -518,6 +518,27 @@ const getGuestMockData = (url, method = 'GET') => {
     };
   }
 
+  // 14. Staff & PagarBook
+  if (u.includes('staff') || u.includes('pagarbook')) {
+    let localStaff = [];
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('vb_local_staff') || localStorage.getItem('staff');
+        if (stored) localStaff = JSON.parse(stored) || [];
+      }
+    } catch (e) {}
+    const sList = Array.isArray(localStaff) ? localStaff : [];
+    return {
+      success: true,
+      staff: sList,
+      data: sList,
+      totalStaffCount: sList.length,
+      totalCompanySalaryEarned: sList.reduce((sum, s) => sum + Number(s.salary || s.wageAmount || 0), 0),
+      totalCompanyAdvanceGiven: 0,
+      totalCompanyNetPayable: sList.reduce((sum, s) => sum + Number(s.balance || s.salary || s.wageAmount || 0), 0)
+    };
+  }
+
   // Default Fallback
   return { success: true, data: [], items: [], list: [] };
 };

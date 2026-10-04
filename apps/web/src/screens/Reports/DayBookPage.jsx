@@ -38,6 +38,7 @@ import CustomerSummaryModal from "../../components/modals/CustomerSummaryModal";
 import { useCompany } from "../../contexts/CompanyContext";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
+import storageManager from "../../services/storageManager";
 
 const parseAnyDate = (val) => {
   if (!val) return null;
@@ -200,11 +201,16 @@ export default function DayBookPage() {
       const data = res?.data?.data || res?.data || res || {};
       const products = invRes?.data?.products || invRes?.data || [];
 
-      // Merge local manual bills from localStorage
+      // Merge local bills from localStorage & storageManager
       let localBills = [];
       try {
-        const stored = readLocalJson(["vb_local_manual_bills", "bills"], []);
-        if (Array.isArray(stored)) localBills = stored;
+        const stored = readLocalJson(["vb_local_bills", "vb_local_manual_bills", "bills", "local_bills"], []);
+        if (Array.isArray(stored)) localBills = [...stored];
+        const currentCoId = String(localStorage.getItem("companyId") || "").trim();
+        const smBills = storageManager.getBills(currentCoId);
+        if (Array.isArray(smBills) && smBills.length > 0) {
+          localBills = [...localBills, ...smBills];
+        }
       } catch (e) {}
 
       const now = new Date();
@@ -215,6 +221,9 @@ export default function DayBookPage() {
 
       const checkInRange = (rawDateVal) => {
         if (period === "all" || (!startDate && !endDate)) return true;
+        if (typeof rawDateVal === "string" && (rawDateVal.toLowerCase() === "today" || rawDateVal === "आज")) {
+          return period === "today" || (startDate <= todayStr && endDate >= todayStr);
+        }
         const dStr = getLocalDayStr(rawDateVal);
         if (!dStr) return true;
         if (period === "today") return dStr === todayStr;
@@ -253,6 +262,17 @@ export default function DayBookPage() {
         };
       });
 
+      let serverBills = Array.isArray(data.bills) ? data.bills : (Array.isArray(data) ? data : []);
+      // Resilient Fallback: If /api/daybook timed out (Render 408) or returned empty, fetch from /api/billing
+      if (serverBills.length === 0) {
+        try {
+          const fbRes = await api.get('/api/billing?limit=1000').catch(() => null);
+          const fbBills = fbRes?.data?.bills || fbRes?.data || fbRes?.bills || [];
+          if (Array.isArray(fbBills) && fbBills.length > 0) {
+            serverBills = fbBills.filter(b => checkInRange(b.date || b.rawDate || b.createdAt));
+          }
+        } catch (fbErr) {}
+      }
       const mergedBills = deduplicateBills([...serverBills, ...periodLocalBills]);
 
       // Merge local offline expenses
@@ -262,8 +282,22 @@ export default function DayBookPage() {
         if (storedExp) localExpenses = JSON.parse(storedExp).filter(
           le => checkInRange(le.date || le.createdAt)
         );
+        const currentCoId = String(localStorage.getItem("companyId") || "").trim();
+        const smExpenses = storageManager.getExpenses(currentCoId);
+        if (Array.isArray(smExpenses) && smExpenses.length > 0) {
+          localExpenses = [...localExpenses, ...smExpenses.filter(le => checkInRange(le.date || le.createdAt))];
+        }
       } catch(e) {}
-      const serverExpenses = Array.isArray(data.expenses) ? data.expenses : [];
+      let serverExpenses = Array.isArray(data.expenses) ? data.expenses : [];
+      if (serverExpenses.length === 0) {
+        try {
+          const expFb = await api.get('/api/expenses?limit=1000').catch(() => null);
+          const fbExp = expFb?.data?.expenses || expFb?.data || expFb?.expenses || [];
+          if (Array.isArray(fbExp) && fbExp.length > 0) {
+            serverExpenses = fbExp.filter(e => checkInRange(e.date || e.createdAt));
+          }
+        } catch (eErr) {}
+      }
       const mergedExpenses = deduplicateExpenses([...serverExpenses, ...localExpenses]);
 
       const combinedData = { ...data, bills: mergedBills, expenses: mergedExpenses };

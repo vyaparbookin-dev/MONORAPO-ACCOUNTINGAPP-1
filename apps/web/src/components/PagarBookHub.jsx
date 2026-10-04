@@ -95,9 +95,58 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
 
     try {
       setLoading(true);
-      const res = await api.get(`/staff/pagarbook-summary?month=${m}&year=${y}`);
-      if (res?.data && res.data.success) {
-        const nextData = { ...defaultSummaryData, ...res.data };
+      const res = await api.get(`/api/staff/pagarbook-summary?month=${m}&year=${y}`).catch(() => api.get(`/staff/pagarbook-summary?month=${m}&year=${y}`));
+      const rawData = res?.data?.success ? res.data : (res?.success ? res : (res?.data || res));
+      let finalStaff = Array.isArray(rawData?.staff) ? rawData.staff : [];
+
+      // Fallback: If pagarbook-summary returned 0 staff, fetch staff list directly from /api/staff
+      if (finalStaff.length === 0) {
+        try {
+          const staffRes = await api.get("/api/staff").catch(() => api.get("/staff"));
+          const sList = Array.isArray(staffRes?.staff) 
+            ? staffRes.staff 
+            : (Array.isArray(staffRes?.data?.staff) 
+              ? staffRes.data.staff 
+              : (Array.isArray(staffRes?.data) ? staffRes.data : (Array.isArray(staffRes) ? staffRes : [])));
+          if (sList.length > 0) {
+            finalStaff = sList.map(s => {
+              const isDaily = s.wageType === 'daily';
+              const rate = Number(s.dailyRate || s.wageAmount || s.salary || 0);
+              return {
+                ...s,
+                dailyAttendanceMap: s.dailyAttendanceMap || {},
+                presentDays: s.presentDays || 0,
+                presentCount: s.presentCount || 0,
+                halfDays: s.halfDays || 0,
+                halfDayCount: s.halfDayCount || 0,
+                absentDays: s.absentDays || 0,
+                absentCount: s.absentCount || 0,
+                payableDays: s.payableDays || 0,
+                earnedSalary: s.earnedSalary || 0,
+                grossSalary: s.grossSalary || 0,
+                totalAdvance: s.totalAdvance || 0,
+                previousBalance: Number(s.previousBalance || 0),
+                netPayable: Number(s.netPayable ?? s.balance ?? 0),
+                baseSalary: rate,
+                perDaySalary: isDaily ? rate : Math.round(rate / 30),
+                advancesList: s.advancesList || [],
+                transactions: s.transactions || []
+              };
+            });
+          }
+        } catch (sErr) {
+          console.warn("PagarBook fallback staff list error:", sErr);
+        }
+      }
+
+      if (rawData && (rawData.success || finalStaff.length > 0)) {
+        const nextData = {
+          ...defaultSummaryData,
+          ...rawData,
+          staff: finalStaff,
+          totalCompanySalaryEarned: rawData.totalCompanySalaryEarned || finalStaff.reduce((sum, s) => sum + (s.earnedSalary || 0), 0),
+          totalCompanyNetPayable: rawData.totalCompanyNetPayable || finalStaff.reduce((sum, s) => sum + (s.netPayable || 0), 0)
+        };
         setSummaryData(nextData);
         writeLocalJson(["vb_local_pagarbook_summary", "pagarbook_summary"], nextData);
       } else if (cached && typeof cached === "object") {
@@ -179,11 +228,15 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
       });
 
       const targetDate = new Date(currentYear, currentMonth - 1, dayNum, 12, 0, 0);
-      await api.post("/staff/quick-attendance", {
+      await api.post("/api/staff/quick-attendance", {
         staffId,
         status,
         date: targetDate
-      });
+      }).catch(() => api.post("/staff/quick-attendance", {
+        staffId,
+        status,
+        date: targetDate
+      }));
 
       fetchData(currentMonth, currentYear);
     } catch (err) {
@@ -277,10 +330,10 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
       };
 
       if (isEditingStaff && modalStaffId) {
-        await api.put(`/staff/${modalStaffId}`, payload);
+        await api.put(`/api/staff/${modalStaffId}`, payload).catch(() => api.put(`/staff/${modalStaffId}`, payload));
         alert(`✅ ${staffName} का विवरण सफलतापूर्वक अपडेट हो गया!`);
       } else {
-        await api.post("/staff", payload);
+        await api.post("/api/staff", payload).catch(() => api.post("/staff", payload));
         alert(`✅ नया स्टाफ '${staffName}' सफलतापूर्वक जुड़ गया!`);
       }
 
@@ -299,7 +352,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     if (!ok) return;
 
     try {
-      await api.delete(`/staff/${staffId}`);
+      await api.delete(`/api/staff/${staffId}`).catch(() => api.delete(`/staff/${staffId}`));
       alert(`✅ स्टाफ '${sName}' हटा दिया गया!`);
       setShowStaffModal(false);
       setActiveScreen("home");
@@ -323,13 +376,19 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
         ? `स्टाफ लोन (${loanEmiMonths} माह ईएमआई) - ${advanceNotes || 'व्यक्तिगत जरूरत'}`
         : (advanceNotes.trim() || "बीच में लिया गया एडवांस");
 
-      await api.post("/staff/advance", {
+      await api.post("/api/staff/advance", {
         staffId: selectedStaffId,
         amount: Number(advanceAmount),
         paymentMode: advancePaymentMode,
         notes: finalNotes,
         date: new Date()
-      });
+      }).catch(() => api.post("/staff/advance", {
+        staffId: selectedStaffId,
+        amount: Number(advanceAmount),
+        paymentMode: advancePaymentMode,
+        notes: finalNotes,
+        date: new Date()
+      }));
 
       alert(`✅ ${loanAdvanceTab === 'loan' ? 'लोन' : 'एडवांस'} ₹${advanceAmount} सफलतापूर्वक दर्ज हो गया!`);
       setAdvanceAmount("");
@@ -348,7 +407,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     const ok = window.confirm("⚠️ क्या आप इस एंट्री को हटाना चाहते हैं?");
     if (!ok) return;
     try {
-      await api.delete(`/staff/transaction/${txId}`);
+      await api.delete(`/api/staff/transaction/${txId}`).catch(() => api.delete(`/staff/transaction/${txId}`));
       alert("✅ प्रविष्टि हटा दी गई!");
       fetchData(currentMonth, currentYear);
     } catch (err) {
@@ -376,6 +435,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
       `  ✅ कुल वेतन योग्य दिन: ${staff.payableDays || 0} दिन`,
       `━━━━━━━━━━━━━━━━━━━━`,
       `💰 *वेतन गणना:*`,
+      staff.previousBalance ? `  ⏳ पिछला बकाया (Previous Due): ${staff.previousBalance > 0 ? '+' : ''}₹${(staff.previousBalance || 0).toLocaleString('en-IN')}` : null,
       `  💵 अर्जित मूल वेतन: ₹${(staff.earnedSalary || 0).toLocaleString('en-IN')}`,
       staff.overtimeEarnings > 0 ? `  ⏱️ ओवर-टाइम कमाई: +₹${(staff.overtimeEarnings || 0).toLocaleString('en-IN')}` : null,
       `  ✨ कुल ग्रॉस वेतन: ₹${(staff.grossSalary || staff.earnedSalary || 0).toLocaleString('en-IN')}`,
@@ -405,6 +465,21 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
   const dailyStaffList = (summaryData.staff || []).filter(s => s.wageType === "daily");
   const monthlyStaffList = (summaryData.staff || []).filter(s => s.wageType === "monthly");
   const totalPendingAmount = summaryData.totalCompanyNetPayable || 0;
+
+  const todayDay = new Date().getDate();
+  const allStaff = summaryData.staff || [];
+  const todayPresentCount = allStaff.filter(s => (s.dailyAttendanceMap?.[todayDay] || "").toLowerCase() === "present").length;
+  const todayHalfDayCount = allStaff.filter(s => (s.dailyAttendanceMap?.[todayDay] || "").toLowerCase() === "half_day").length;
+  const todayAbsentCount = allStaff.filter(s => (s.dailyAttendanceMap?.[todayDay] || "").toLowerCase() === "absent").length;
+
+  const handleMarkAllPresentToday = async () => {
+    if (allStaff.length === 0) return;
+    const ok = window.confirm(`क्या आप सभी ${allStaff.length} कर्मचारियों को आज उपस्थित (Present) मार्क करना चाहते हैं?`);
+    if (!ok) return;
+    for (const st of allStaff) {
+      handleMarkDayAttendance(st._id, todayDay, "present");
+    }
+  };
 
   return (
     <div className="w-full flex justify-center bg-[#F4F6F9] min-h-screen text-[#1E293B] p-0 sm:p-4 md:p-6">
@@ -476,6 +551,37 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                 </div>
               </div>
 
+              {/* Today's Live Attendance Dashboard Banner */}
+              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 p-4 rounded-2xl border border-emerald-200/60 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                      आज की दैनिक हाजिरी (Today's Live Attendance) • {todayDay} {monthShortName}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 mt-1.5 text-xs font-bold text-slate-600">
+                    <span className="flex items-center gap-1 text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-md">
+                      🟢 उपस्थित: {todayPresentCount}
+                    </span>
+                    <span className="flex items-center gap-1 text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-md">
+                      🟡 हाफ-डे: {todayHalfDayCount}
+                    </span>
+                    <span className="flex items-center gap-1 text-rose-700 bg-rose-100/70 px-2 py-0.5 rounded-md">
+                      🔴 अनुपस्थित: {todayAbsentCount}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleMarkAllPresentToday}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>सबको हाजिर लगाएं (All Present)</span>
+                </button>
+              </div>
+
               <div className="space-y-6 pt-2">
                 {dailyStaffList.length > 0 && (
                   <div>
@@ -487,8 +593,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {dailyStaffList.map((staff) => {
-                        const todayDay = new Date().getDate();
-                        const todayStatus = staff.dailyAttendanceMap?.[todayDay] || "Absent";
+                        const todayStatus = staff.dailyAttendanceMap?.[todayDay] || "absent";
                         const statusLabel = todayStatus === "present" ? "Present" : todayStatus === "half_day" ? "Half Day" : "Absent";
 
                         return (
@@ -498,25 +603,67 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                               setSelectedStaffId(staff._id);
                               setActiveScreen("staff_hub");
                             }}
-                            className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex items-center justify-between hover:border-blue-300 transition cursor-pointer active:bg-slate-50"
+                            className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs hover:border-blue-300 transition cursor-pointer active:bg-slate-50 flex flex-col justify-between"
                           >
-                            <div className="flex items-center gap-3">
-                              <div className="w-11 h-11 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center font-bold">
-                                <User className="w-6 h-6" />
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-11 h-11 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                                  <User className="w-6 h-6" />
+                                </div>
+                                <div>
+                                  <h4 className="text-sm font-bold text-slate-900">{staff.name}</h4>
+                                  <span className={`text-[11px] font-semibold ${statusLabel === 'Present' ? 'text-emerald-600' : statusLabel === 'Half Day' ? 'text-amber-600' : 'text-slate-400'}`}>
+                                    ● {statusLabel}
+                                  </span>
+                                </div>
                               </div>
-                              <div>
-                                <h4 className="text-sm font-bold text-slate-900">{staff.name}</h4>
-                                <span className={`text-xs font-medium ${statusLabel === 'Present' ? 'text-emerald-600' : statusLabel === 'Half Day' ? 'text-amber-600' : 'text-slate-400'}`}>
-                                  {statusLabel}
-                                </span>
+
+                              <div className="text-right">
+                                <div className="text-sm font-black text-[#DC2626]">
+                                  ₹ {(staff.netPayable || 0).toLocaleString('en-IN')}
+                                </div>
+                                <span className="text-[10px] font-medium text-slate-400">बकाया</span>
                               </div>
                             </div>
 
-                            <div className="text-right">
-                              <div className="text-sm font-bold text-[#DC2626]">
-                                ₹ {(staff.netPayable || 0).toLocaleString('en-IN')}
+                            {/* 1-Click Direct Attendance Controls */}
+                            <div className="flex items-center justify-between gap-1 mt-3 pt-2.5 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
+                              <span className="text-[10px] text-slate-400 font-bold">हाजिरी:</span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkDayAttendance(staff._id, todayDay, "present")}
+                                  className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                                    todayStatus === "present"
+                                      ? "bg-emerald-600 text-white shadow-xs"
+                                      : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                                  }`}
+                                >
+                                  ✓ P
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkDayAttendance(staff._id, todayDay, "half_day")}
+                                  className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                                    todayStatus === "half_day"
+                                      ? "bg-amber-500 text-white shadow-xs"
+                                      : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
+                                  }`}
+                                >
+                                  ½ HD
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkDayAttendance(staff._id, todayDay, "absent")}
+                                  className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                                    todayStatus === "absent"
+                                      ? "bg-rose-600 text-white shadow-xs"
+                                      : "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200"
+                                  }`}
+                                >
+                                  ✕ AB
+                                </button>
                               </div>
-                              <span className="text-[11px] font-medium text-slate-400">Pending</span>
                             </div>
                           </div>
                         );
@@ -535,8 +682,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {monthlyStaffList.map((staff) => {
-                        const todayDay = new Date().getDate();
-                        const todayStatus = staff.dailyAttendanceMap?.[todayDay] || "Absent";
+                        const todayStatus = staff.dailyAttendanceMap?.[todayDay] || "absent";
                         const statusLabel = todayStatus === "present" ? "Present" : todayStatus === "half_day" ? "Half Day" : "Absent";
 
                         return (
@@ -546,25 +692,67 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                               setSelectedStaffId(staff._id);
                               setActiveScreen("staff_hub");
                             }}
-                            className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex items-center justify-between hover:border-blue-300 transition cursor-pointer active:bg-slate-50"
+                            className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs hover:border-blue-300 transition cursor-pointer active:bg-slate-50 flex flex-col justify-between"
                           >
-                            <div className="flex items-center gap-3">
-                              <div className="w-11 h-11 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center font-bold">
-                                <User className="w-6 h-6" />
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-11 h-11 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                                  <User className="w-6 h-6" />
+                                </div>
+                                <div>
+                                  <h4 className="text-sm font-bold text-slate-900">{staff.name}</h4>
+                                  <span className={`text-[11px] font-semibold ${statusLabel === 'Present' ? 'text-emerald-600' : statusLabel === 'Half Day' ? 'text-amber-600' : 'text-slate-400'}`}>
+                                    ● {statusLabel}
+                                  </span>
+                                </div>
                               </div>
-                              <div>
-                                <h4 className="text-sm font-bold text-slate-900">{staff.name}</h4>
-                                <span className={`text-xs font-medium ${statusLabel === 'Present' ? 'text-emerald-600' : statusLabel === 'Half Day' ? 'text-amber-600' : 'text-slate-400'}`}>
-                                  {statusLabel}
-                                </span>
+
+                              <div className="text-right">
+                                <div className="text-sm font-black text-[#DC2626]">
+                                  ₹ {(staff.netPayable || 0).toLocaleString('en-IN')}
+                                </div>
+                                <span className="text-[10px] font-medium text-slate-400">बकाया</span>
                               </div>
                             </div>
 
-                            <div className="text-right">
-                              <div className="text-sm font-bold text-[#DC2626]">
-                                ₹ {(staff.netPayable || 0).toLocaleString('en-IN')}
+                            {/* 1-Click Direct Attendance Controls */}
+                            <div className="flex items-center justify-between gap-1 mt-3 pt-2.5 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
+                              <span className="text-[10px] text-slate-400 font-bold">हाजिरी:</span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkDayAttendance(staff._id, todayDay, "present")}
+                                  className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                                    todayStatus === "present"
+                                      ? "bg-emerald-600 text-white shadow-xs"
+                                      : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                                  }`}
+                                >
+                                  ✓ P
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkDayAttendance(staff._id, todayDay, "half_day")}
+                                  className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                                    todayStatus === "half_day"
+                                      ? "bg-amber-500 text-white shadow-xs"
+                                      : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
+                                  }`}
+                                >
+                                  ½ HD
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkDayAttendance(staff._id, todayDay, "absent")}
+                                  className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                                    todayStatus === "absent"
+                                      ? "bg-rose-600 text-white shadow-xs"
+                                      : "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200"
+                                  }`}
+                                >
+                                  ✕ AB
+                                </button>
                               </div>
-                              <span className="text-[11px] font-medium text-slate-400">Pending</span>
                             </div>
                           </div>
                         );
@@ -743,6 +931,12 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
 
                     {earningsExpanded && (
                       <div className="mt-2.5 p-3 bg-slate-50 rounded-xl space-y-1.5 text-xs text-slate-600">
+                        {currentStaff.previousBalance !== undefined && currentStaff.previousBalance !== 0 && (
+                          <div className={`flex justify-between ${currentStaff.previousBalance > 0 ? 'text-amber-800' : 'text-emerald-700'} font-bold bg-amber-50/60 px-2 py-1 rounded-lg border border-amber-200/50`}>
+                            <span>⏳ पिछला बकाया (Previous Due):</span>
+                            <span>{currentStaff.previousBalance > 0 ? '+' : ''}₹{Number(currentStaff.previousBalance || 0).toLocaleString('en-IN')}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between">
                           <span>Basic Earned ({currentStaff.payableDays || 0} days):</span>
                           <span className="font-bold text-slate-900">₹{(currentStaff.earnedSalary || 0).toLocaleString('en-IN')}</span>
@@ -1073,6 +1267,12 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                   <span>कुल काम के दिन (Payable Days):</span>
                   <span className="font-extrabold text-slate-900">{currentStaff.payableDays || 0} दिन</span>
                 </div>
+                {currentStaff.previousBalance !== undefined && currentStaff.previousBalance !== 0 && (
+                  <div className={`flex justify-between ${currentStaff.previousBalance > 0 ? 'text-amber-800' : 'text-emerald-700'} font-bold border-t border-slate-200 pt-1.5`}>
+                    <span>⏳ पिछला बकाया (Previous Due):</span>
+                    <span>{currentStaff.previousBalance > 0 ? '+' : ''}₹ {Number(currentStaff.previousBalance || 0).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-slate-800 font-bold border-t border-slate-200 pt-1.5">
                   <span>💵 बना हुआ मूल वेतन:</span>
                   <span>₹ {(currentStaff.earnedSalary || 0).toLocaleString('en-IN')}</span>

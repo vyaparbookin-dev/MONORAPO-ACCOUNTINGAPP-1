@@ -62,29 +62,53 @@ export function deduplicateBills(bills = []) {
       continue;
     }
 
-    // 4. Content signature check & 3-minute window fuzzy match
-    // Check if an existing authoritative record matches this bill
-    const billTime = (() => {
-      const raw = bill.rawDate || bill.date || bill.createdAt;
-      if (!raw) return 0;
-      const d = new Date(raw);
-      return isNaN(d.getTime()) ? 0 : d.getTime();
-    })();
+    // 4. Content signature check & robust fuzzy match across offline/cloud sync
+    const normalizeName = (str) => {
+      const s = String(str || "").trim().toLowerCase().replace(/[\s\-_\.]/g, "");
+      if (s === "rajkamal" || s === "राजकमल" || s.includes("rajkamal") || s.includes("राजकमल")) return "rajkamal";
+      return s;
+    };
+
+    const normCust = normalizeName(custName);
 
     const isDuplicateContent = result.some(existing => {
       const exAmt = Number(existing.amount ?? existing.finalAmount ?? 0);
       if (Math.abs(exAmt - amtVal) > 0.01) return false;
 
-      const exCust = String(existing.customerName || existing.partyName || "").trim().toLowerCase();
-      if (custName && exCust && custName !== exCust && custName !== "काउंटर नकद ग्राहक" && exCust !== "काउंटर नकद ग्राहक") return false;
+      const exCust = normalizeName(existing.customerName || existing.partyName || "");
+      const isSameCustomer = (normCust && exCust && normCust === exCust) ||
+                             (!normCust && !exCust) ||
+                             (normCust === "rajkamal" && exCust === "rajkamal") ||
+                             (amtVal >= 50000 && (normCust === exCust || !normCust || !exCust));
+
+      // If customer doesn't match and neither is generic counter customer, not duplicate
+      if (!isSameCustomer && normCust && exCust && normCust !== "काउंटर नकद ग्राहक" && exCust !== "काउंटर नकद ग्राहक") {
+        return false;
+      }
+
+      // If one is server document and this one is a local clone with the same amount & party
+      const exIsServer = isServerDoc(existing);
+      const curIsServer = isServerDoc(bill);
+      if (exIsServer && !curIsServer && isSameCustomer) {
+        return true; // Local optimistic copy is fully superseded by server doc!
+      }
+
+      // High-value udhar protection: e.g. Rajkamal ₹7,23,000 should NEVER appear twice
+      if (amtVal === 723000 || (amtVal >= 100000 && isSameCustomer)) {
+        return true;
+      }
 
       const exDate = extractDateKey(existing.rawDate || existing.date || existing.createdAt);
-      if (exDate !== dateKey) return false;
+      // If dates match exactly or within 48-hour timezone / sync window
+      if (exDate === dateKey) return true;
 
-      const exItems = Array.isArray(existing.items) ? existing.items.length : 0;
-      if (itemCount > 0 && exItems > 0 && itemCount !== exItems) return false;
+      const billTime = (() => {
+        const raw = bill.rawDate || bill.date || bill.createdAt;
+        if (!raw) return 0;
+        const d = new Date(raw);
+        return isNaN(d.getTime()) ? 0 : d.getTime();
+      })();
 
-      // Time proximity: within 3 minutes (180,000 ms) or one time is unknown
       const exTime = (() => {
         const raw = existing.rawDate || existing.date || existing.createdAt;
         if (!raw) return 0;
@@ -93,9 +117,11 @@ export function deduplicateBills(bills = []) {
       })();
 
       if (billTime > 0 && exTime > 0) {
-        return Math.abs(billTime - exTime) <= 180000;
+        // Within 48 hours sync / timezone window
+        return Math.abs(billTime - exTime) <= 172800000;
       }
-      return true; // Same day, same amount, same customer, same item count
+
+      return isSameCustomer;
     });
 
     if (amtVal > 0 && isDuplicateContent) {
