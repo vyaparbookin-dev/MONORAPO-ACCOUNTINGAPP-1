@@ -17,6 +17,7 @@ import { Parser } from "json2csv";
 import { logActivity } from "../utils/logger.js";
 import { sendAutoWhatsappMessage } from "../services/whatsappService.js";
 import { processStampAwardOnBill } from "./stampController.js";
+import { syncBillToSupabase, syncBillDeleteToSupabase } from "../services/supabaseSyncService.js";
 
 export const createBill = async (req, res) => {
   try {
@@ -199,30 +200,7 @@ _(कृपया यह OTP दुकानदार को तभी बता
     await bill.save();
 
     // --- ASYNC DUAL-WRITE SYNC TO SUPABASE ---
-    (async () => {
-      try {
-        const { supabase } = await import("../config/supabase.js");
-        if (supabase) {
-          await supabase.from('sales').upsert({
-            bill_number: bill.billNumber,
-            customer_name: bill.customerName || "काउंटर नकद ग्राहक",
-            customer_mobile: bill.customerMobile || "9876543210",
-            items: bill.items || [],
-            sub_total: Number(bill.total || bill.finalAmount || 0),
-            final_amount: Number(bill.finalAmount || bill.total || 0),
-            amount_received: Number(bill.finalAmount || bill.total || 0),
-            payment_status: bill.paymentStatus || "paid",
-            payment_method: bill.paymentMode || bill.paymentMethod || "Cash",
-            notes: bill.notes || "",
-            status: "complete",
-            date: bill.date ? new Date(bill.date).toISOString() : new Date().toISOString(),
-            is_deleted: false
-          });
-        }
-      } catch (sbErr) {
-        console.warn("[Supabase Dual-Write] bill sync note:", sbErr.message);
-      }
-    })();
+    syncBillToSupabase(bill).catch(e => console.warn("[Supabase Dual-Write] bill sync note:", e.message));
 
     // --- AUTO-UPDATE PARTY UDHAR (CREDIT) BALANCE & PENDING GATEKEEPER ---
     try {
@@ -557,6 +535,9 @@ export const updateBill = async (req, res) => {
 
     await logActivity(req, 'UPDATE', 'bill', bill._id, oldBill.toObject(), bill.toObject());
     
+    // Sync to Supabase
+    syncBillToSupabase(bill).catch(e => console.warn("[Supabase Dual-Write] updateBill sync note:", e.message));
+
     res.json({ success: true, bill, message: "Bill updated successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -640,6 +621,11 @@ export const deleteBill = async (req, res) => {
     
     await logActivity(req, 'DELETE', 'bill', bill._id, oldBill.toObject(), { isDeleted: true });
     
+    // Sync delete to Supabase
+    if (oldBill.billNumber) {
+      syncBillDeleteToSupabase(oldBill.billNumber).catch(e => console.warn("[Supabase Dual-Write] deleteBill sync note:", e.message));
+    }
+
     res.json({ success: true, message: "Bill deleted successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

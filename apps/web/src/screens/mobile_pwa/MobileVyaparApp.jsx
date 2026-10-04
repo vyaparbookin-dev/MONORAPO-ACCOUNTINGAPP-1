@@ -10,6 +10,7 @@ import {
   Search,
   ArrowDown,
   ArrowUp,
+  ChevronLeft,
   ChevronRight,
   ChevronDown,
   Calculator,
@@ -387,6 +388,9 @@ function MobileVyaparAppContent() {
   const [partyTxPaymentMode, setPartyTxPaymentMode] = useState('CASH');
   const [savingPartyTx, setSavingPartyTx] = useState(false);
   const [previewBillImage, setPreviewBillImage] = useState(null);
+  const [previewImageList, setPreviewImageList] = useState([]);
+  const [previewImageIndex, setPreviewImageIndex] = useState(0);
+  const [previewTargetTxId, setPreviewTargetTxId] = useState(null);
 
   // 🏭 Dedicated Vendor / Supplier Workflow States
   const [showVendorForm, setShowVendorForm] = useState(false);
@@ -2282,37 +2286,141 @@ function MobileVyaparAppContent() {
     }
   };
 
-  const handleAttachPartyImage = async (txId, file) => {
-    if (!file) return;
+  const handleAttachPartyImage = async (txId, filesInput) => {
+    if (!filesInput) return;
+    const files = filesInput instanceof FileList || Array.isArray(filesInput)
+      ? Array.from(filesInput)
+      : [filesInput];
+    if (files.length === 0) return;
+
+    // Up to 5 files
+    const validFiles = files.slice(0, 5);
+
     try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const fileData = reader.result;
-          const res = await api.post('/api/upload/bill-image', {
-            fileData,
-            fileName: file.name,
-            targetId: txId
-          });
-          const newUrl = res.data?.url;
-          if (newUrl) {
-            setPartyTransactions(prev => prev.map(t => (t._id === txId || t.refNo === txId) ? { ...t, billImageUrl: newUrl } : t));
-          }
-          alert("✅ बिल की फोटो सफलतापूर्वक सुरक्षित व लिंक हो गई!");
-          const pId = selectedPartyDetail._id || selectedPartyDetail.id;
-          if (pId) {
-            fetchPartyStatement(pId);
-          }
-        } catch (postErr) {
-          console.error("Upload error:", postErr);
-          alert("फोटो अपलोड करने में त्रुटि: " + (postErr.response?.data?.message || postErr.message));
+      let latestUrls = [];
+      let latestPrimaryUrl = "";
+
+      for (let i = 0; i < validFiles.length; i++) {
+        const file = validFiles[i];
+        const base64Data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        const res = await api.post('/api/upload/bill-image', {
+          fileData: base64Data,
+          fileName: file.name,
+          targetId: txId
+        });
+
+        if (res.data?.url) {
+          latestPrimaryUrl = res.data.url;
+          latestUrls = res.data.urls || [...latestUrls, res.data.url];
         }
-      };
-      reader.readAsDataURL(file);
+      }
+
+      if (latestUrls.length > 0 || latestPrimaryUrl) {
+        setPartyTransactions(prev => prev.map(t => {
+          if (t._id === txId || t.refNo === txId) {
+            const currentList = t.billImageUrls || (t.billImageUrl ? [t.billImageUrl] : []);
+            const merged = Array.from(new Set([...currentList, ...latestUrls, latestPrimaryUrl].filter(Boolean)));
+            return {
+              ...t,
+              billImageUrl: latestPrimaryUrl || merged[0],
+              billImageUrls: merged
+            };
+          }
+          return t;
+        }));
+
+        setAllPartyTransactions(prev => {
+          const next = (prev || []).map(t => {
+            if (t._id === txId || t.refNo === txId) {
+              const currentList = t.billImageUrls || (t.billImageUrl ? [t.billImageUrl] : []);
+              const merged = Array.from(new Set([...currentList, ...latestUrls, latestPrimaryUrl].filter(Boolean)));
+              return {
+                ...t,
+                billImageUrl: latestPrimaryUrl || merged[0],
+                billImageUrls: merged
+              };
+            }
+            return t;
+          });
+          try {
+            localStorage.setItem("vb_local_party_txs", JSON.stringify(next));
+          } catch (e) {}
+          return next;
+        });
+      }
+
+      alert(`✅ ${validFiles.length} बिल फोटो सफलतापूर्वक सुरक्षित व लिंक हो गईं!`);
+      const pId = selectedPartyDetail?._id || selectedPartyDetail?.id;
+      if (pId) {
+        fetchPartyStatement(pId);
+      }
     } catch (err) {
-      alert("फोटो पढ़ने में त्रुटि: " + err.message);
+      console.error("Upload error:", err);
+      alert("फोटो अपलोड करने में त्रुटि: " + (err.response?.data?.message || err.message));
     }
   };
+
+  const handleDeletePartyImage = async (txId, imageUrl) => {
+    if (!imageUrl) return;
+    if (!window.confirm("क्या आप वाकई यह बिल फोटो हटाना चाहते हैं?")) return;
+    try {
+      const res = await api.post('/api/upload/delete-bill-image', {
+        targetId: txId,
+        imageUrl
+      });
+      const updatedUrls = res.data?.urls || [];
+      const primaryUrl = res.data?.primaryUrl || (updatedUrls[0] || "");
+
+      setPartyTransactions(prev => prev.map(t => {
+        if (t._id === txId || t.refNo === txId) {
+          return { ...t, billImageUrl: primaryUrl, billImageUrls: updatedUrls };
+        }
+        return t;
+      }));
+
+      setAllPartyTransactions(prev => {
+        const next = (prev || []).map(t => {
+          if (t._id === txId || t.refNo === txId) {
+            return { ...t, billImageUrl: primaryUrl, billImageUrls: updatedUrls };
+          }
+          return t;
+        });
+        try {
+          localStorage.setItem("vb_local_party_txs", JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
+
+      if (previewBillImage === imageUrl) {
+        if (updatedUrls.length > 0) {
+          setPreviewBillImage(updatedUrls[0]);
+          setPreviewImageList(updatedUrls);
+          setPreviewImageIndex(0);
+        } else {
+          setPreviewBillImage(null);
+          setPreviewImageList([]);
+          setPreviewImageIndex(0);
+          setPreviewTargetTxId(null);
+        }
+      }
+
+      alert("🗑️ बिल फोटो सफलतापूर्वक हटा दी गई!");
+      const pId = selectedPartyDetail?._id || selectedPartyDetail?.id;
+      if (pId) {
+        fetchPartyStatement(pId);
+      }
+    } catch (err) {
+      console.error("Delete photo error:", err);
+      alert("फोटो हटाने में त्रुटि: " + (err.response?.data?.message || err.message));
+    }
+  };
+
 
   const handleExportPartyExcel = (party, txs) => {
     if (!party) return;
@@ -7370,37 +7478,80 @@ function MobileVyaparAppContent() {
                               </div>
                             </div>
                             
-                            {/* Attached Bill Photo Preview & Running Balance */}
-                            <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between gap-2">
-                              {tx.billImageUrl ? (
-                                <div className="flex items-center gap-2">
-                                  <img
-                                    src={tx.billImageUrl}
-                                    alt="Bill"
-                                    onClick={() => setPreviewBillImage(tx.billImageUrl)}
-                                    className="w-8 h-8 rounded-lg object-cover border border-indigo-300 cursor-pointer shadow-xs active:scale-95"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => setPreviewBillImage(tx.billImageUrl)}
-                                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer underline"
-                                  >
-                                    📷 बिल फोटो देखें
-                                  </button>
-                                </div>
-                              ) : (
-                                <label className="text-[10px] font-bold text-slate-500 hover:text-indigo-600 flex items-center gap-1 cursor-pointer bg-slate-100 hover:bg-indigo-50 px-2 py-1 rounded-lg border border-dashed border-slate-300 transition">
-                                  <span>📷 + बिल फोटो जोड़ें</span>
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    className="hidden"
-                                    onChange={(e) => handleAttachPartyImage(tx._id, e.target.files[0])}
-                                  />
-                                </label>
-                              )}
+                            {/* Attached Bill Photos Gallery (1-5 images) & Running Balance */}
+                            <div className="pt-2 border-t border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              {(() => {
+                                const rawImages = (tx.billImageUrls && tx.billImageUrls.length > 0)
+                                  ? tx.billImageUrls
+                                  : (tx.billImageUrl ? [tx.billImageUrl] : []);
+                                const uniqueImages = Array.from(new Set(rawImages.filter(Boolean)));
+                                const canAddMore = uniqueImages.length < 5;
 
-                              <div className="text-right">
+                                return (
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {uniqueImages.map((imgUrl, imgIdx) => (
+                                      <div key={imgIdx} className="relative group shrink-0">
+                                        <img
+                                          src={imgUrl}
+                                          alt={`Bill ${imgIdx + 1}`}
+                                          onClick={() => {
+                                            setPreviewBillImage(imgUrl);
+                                            setPreviewImageList(uniqueImages);
+                                            setPreviewImageIndex(imgIdx);
+                                            setPreviewTargetTxId(tx._id || tx.refNo);
+                                          }}
+                                          className="w-9 h-9 rounded-lg object-cover border border-indigo-300 cursor-pointer shadow-xs active:scale-95 hover:opacity-90 transition"
+                                        />
+                                        {/* Direct Delete button on thumbnail */}
+                                        <button
+                                          type="button"
+                                          title="यह फोटो हटाएं"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeletePartyImage(tx._id || tx.refNo, imgUrl);
+                                          }}
+                                          className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-rose-600 text-white flex items-center justify-center text-[10px] font-black shadow hover:bg-rose-700 cursor-pointer transition active:scale-90"
+                                        >
+                                          ✕
+                                        </button>
+                                        <span className="absolute bottom-0 left-0 bg-black/60 text-[8px] text-white px-1 rounded-bl-lg font-mono">
+                                          #{imgIdx + 1}
+                                        </span>
+                                      </div>
+                                    ))}
+
+                                    {uniqueImages.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setPreviewBillImage(uniqueImages[0]);
+                                          setPreviewImageList(uniqueImages);
+                                          setPreviewImageIndex(0);
+                                          setPreviewTargetTxId(tx._id || tx.refNo);
+                                        }}
+                                        className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer underline mr-1"
+                                      >
+                                        📷 {uniqueImages.length} फोटो देखें
+                                      </button>
+                                    )}
+
+                                    {canAddMore && (
+                                      <label className="text-[10px] font-bold text-slate-600 hover:text-indigo-600 flex items-center gap-1 cursor-pointer bg-slate-100 hover:bg-indigo-50 px-2 py-1 rounded-lg border border-dashed border-slate-300 transition">
+                                        <span>📷 + {uniqueImages.length > 0 ? "और फोटो" : "बिल फोटो"} ({uniqueImages.length}/5)</span>
+                                        <input
+                                          type="file"
+                                          multiple
+                                          accept="image/*"
+                                          className="hidden"
+                                          onChange={(e) => handleAttachPartyImage(tx._id || tx.refNo, e.target.files)}
+                                        />
+                                      </label>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+
+                              <div className="text-right shrink-0">
                                 <span className="text-slate-500 font-bold text-[9px] block">इसके बाद बकाया:</span>
                                 <span className={`font-black text-xs ${tx.runningAfter > 0 ? 'text-emerald-700' : tx.runningAfter < 0 ? 'text-rose-700' : 'text-slate-600'}`}>
                                   ₹ {Math.abs(tx.runningAfter).toLocaleString('en-IN')} {tx.runningAfter > 0 ? '(लेने हैं)' : tx.runningAfter < 0 ? '(देने हैं)' : '(चुक्ता)'}
@@ -7426,14 +7577,24 @@ function MobileVyaparAppContent() {
         </div>
       )}
 
-      {/* 📱 BILL PHOTO ZOOM MODAL */}
+      {/* 📱 BILL PHOTO ZOOM & GALLERY MODAL */}
       {previewBillImage && (
         <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white rounded-3xl p-4 max-w-md w-full shadow-2xl relative">
             <div className="flex justify-between items-center pb-2 border-b mb-3">
-              <h3 className="font-black text-sm text-slate-800 flex items-center gap-1.5">
-                <span>📷</span> बिल / रसीद फोटो (Bill Image)
-              </h3>
+              <div className="flex items-center gap-2">
+                <span className="text-base">📷</span>
+                <div>
+                  <h3 className="font-black text-sm text-slate-800">
+                    बिल / रसीद फोटो (Bill Image)
+                  </h3>
+                  {previewImageList.length > 1 && (
+                    <span className="text-[11px] font-bold text-indigo-600">
+                      फोटो {previewImageIndex + 1} / {previewImageList.length}
+                    </span>
+                  )}
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setPreviewBillImage(null)}
@@ -7442,34 +7603,98 @@ function MobileVyaparAppContent() {
                 <X size={20} />
               </button>
             </div>
-            <div className="max-h-[70vh] overflow-auto flex items-center justify-center bg-slate-50 rounded-2xl p-2 border border-slate-200">
+
+            {/* Main Preview Image with Prev/Next buttons */}
+            <div className="relative max-h-[65vh] overflow-hidden flex items-center justify-center bg-slate-900 rounded-2xl p-2 border border-slate-200">
               <img
                 src={previewBillImage}
                 alt="Full Bill"
-                className="max-h-[65vh] w-auto object-contain rounded-xl shadow-md"
+                className="max-h-[60vh] w-auto object-contain rounded-xl shadow-md"
               />
+
+              {previewImageList.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prevIdx = (previewImageIndex - 1 + previewImageList.length) % previewImageList.length;
+                      setPreviewImageIndex(prevIdx);
+                      setPreviewBillImage(previewImageList[prevIdx]);
+                    }}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center cursor-pointer shadow transition"
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextIdx = (previewImageIndex + 1) % previewImageList.length;
+                      setPreviewImageIndex(nextIdx);
+                      setPreviewBillImage(previewImageList[nextIdx]);
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center cursor-pointer shadow transition"
+                  >
+                    <ChevronRight size={20} />
+                  </button>
+                </>
+              )}
             </div>
-            <div className="mt-3 flex justify-between items-center">
-              <button
-                type="button"
-                onClick={() => setPreviewBillImage(null)}
-                className="px-4 py-2 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50 cursor-pointer"
-              >
-                बंद करें
-              </button>
-              <a
-                href={previewBillImage}
-                download="bill_photo.jpg"
-                target="_blank"
-                rel="noreferrer"
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1"
-              >
-                <Download size={14} /> डाउनलोड करें
-              </a>
+
+            {/* Thumbnail carousel strip if multiple images */}
+            {previewImageList.length > 1 && (
+              <div className="flex items-center gap-2 mt-2.5 overflow-x-auto py-1">
+                {previewImageList.map((url, i) => (
+                  <img
+                    key={i}
+                    src={url}
+                    alt={`Thumb ${i + 1}`}
+                    onClick={() => {
+                      setPreviewImageIndex(i);
+                      setPreviewBillImage(url);
+                    }}
+                    className={`w-11 h-11 rounded-lg object-cover cursor-pointer shrink-0 border-2 transition ${
+                      i === previewImageIndex ? "border-indigo-600 scale-105 shadow-md" : "border-slate-200 opacity-60 hover:opacity-100"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Actions: Delete photo, Close, Download */}
+            <div className="mt-3.5 flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-100">
+              {previewTargetTxId && (
+                <button
+                  type="button"
+                  onClick={() => handleDeletePartyImage(previewTargetTxId, previewBillImage)}
+                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95"
+                >
+                  <Trash2 size={13} /> यह फोटो हटाएं
+                </button>
+              )}
+
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => setPreviewBillImage(null)}
+                  className="px-3.5 py-2 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50 cursor-pointer"
+                >
+                  बंद करें
+                </button>
+                <a
+                  href={previewBillImage}
+                  download="bill_photo.jpg"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1 cursor-pointer"
+                >
+                  <Download size={13} /> डाउनलोड करें
+                </a>
+              </div>
             </div>
           </div>
         </div>
       )}
+
 
       {/* 📱 10. VYAPAR-STYLE FAST ADD ITEM MODAL (AUTOMATIC BARCODE, SKU & CATEGORY) */}
       {showAddItemModal && (

@@ -12,6 +12,7 @@ const billSchema = new mongoose.Schema({
   siteName: String, // Hardware/Builder - Tracking multiple sites for same customer
   projectName: String, // Builder/Developer project grouping
   billImageUrl: { type: String }, // Field to store the URL of the bill image
+  billImageUrls: [{ type: String }], // Multiple bill photos (2-5 slips)
   date: { type: Date, default: Date.now },
   dueDate: Date,
   // 🍽️ RESTAURANT SPECIFIC FIELDS (Petpooja Benchmark)

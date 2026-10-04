@@ -191,6 +191,8 @@ export const addAccountTransaction = async (req, res) => {
     }
 
     const txAmt = Number(amount) || 0;
+    const normalizedType = String(type || "deposit").toLowerCase();
+
     account.transactions.push({
       date: date ? new Date(date) : new Date(),
       type: type || "deposit",
@@ -200,15 +202,27 @@ export const addAccountTransaction = async (req, res) => {
     });
 
     if (account.accountType === "CC_OVERDRAFT") {
-      if (type === "deposit") {
+      if (normalizedType === "deposit" || normalizedType === "transfer_in") {
         account.currentOutstanding = Math.max(0, (Number(account.currentOutstanding) || 0) - txAmt);
-      } else if (type === "withdrawal" || type === "interest_debit" || type === "charges") {
+      } else if (
+        normalizedType === "withdrawal" ||
+        normalizedType === "interest_debit" ||
+        normalizedType === "charges" ||
+        normalizedType === "bank_charges" ||
+        normalizedType === "transfer_out"
+      ) {
         account.currentOutstanding = (Number(account.currentOutstanding) || 0) + txAmt;
       }
     } else {
-      if (type === "deposit") {
+      if (normalizedType === "deposit" || normalizedType === "transfer_in") {
         account.currentBalance = (Number(account.currentBalance) || 0) + txAmt;
-      } else if (type === "withdrawal" || type === "interest_debit" || type === "charges") {
+      } else if (
+        normalizedType === "withdrawal" ||
+        normalizedType === "interest_debit" ||
+        normalizedType === "charges" ||
+        normalizedType === "bank_charges" ||
+        normalizedType === "transfer_out"
+      ) {
         account.currentBalance = (Number(account.currentBalance) || 0) - txAmt;
       }
     }
@@ -295,3 +309,78 @@ export const addMonthlyInterest = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// Bank-to-Bank / Contra Transfer endpoint
+export const transferFunds = async (req, res) => {
+  try {
+    const { fromAccountId, toAccountId, amount, date, referenceNo, note } = req.body;
+    const txAmt = Number(amount) || 0;
+    if (txAmt <= 0) {
+      return res.status(400).json({ success: false, message: "कृपया मान्य ट्रांसफर राशि दर्ज करें!" });
+    }
+    if (!fromAccountId || !toAccountId) {
+      return res.status(400).json({ success: false, message: "भेजने और पाने वाले दोनों बैंक खाते चुनें!" });
+    }
+    if (fromAccountId === toAccountId) {
+      return res.status(400).json({ success: false, message: "दोनों बैंक खाते एक ही नहीं हो सकते!" });
+    }
+
+    const fromQuery = mongoose.Types.ObjectId.isValid(fromAccountId)
+      ? { _id: fromAccountId }
+      : { $or: [{ _id: fromAccountId }, { clientTempId: fromAccountId }] };
+    const toQuery = mongoose.Types.ObjectId.isValid(toAccountId)
+      ? { _id: toAccountId }
+      : { $or: [{ _id: toAccountId }, { clientTempId: toAccountId }] };
+
+    const fromAccount = await BankAccount.findOne(fromQuery);
+    const toAccount = await BankAccount.findOne(toQuery);
+
+    if (!fromAccount || !toAccount) {
+      return res.status(404).json({ success: false, message: "एक या दोनों बैंक खाते नहीं मिले!" });
+    }
+
+    const txDate = date ? new Date(date) : new Date();
+    const ref = referenceNo || `TRF-${Date.now().toString().slice(-6)}`;
+
+    // 1. Deduct from fromAccount (Record TRANSFER_OUT)
+    fromAccount.transactions.push({
+      date: txDate,
+      type: "TRANSFER_OUT",
+      amount: txAmt,
+      note: note || `फंड ट्रांसफर दिया ➡️ ${toAccount.bankName || toAccount.accountName}`,
+      referenceNo: ref,
+    });
+    if (fromAccount.accountType === "CC_OVERDRAFT") {
+      fromAccount.currentOutstanding = (Number(fromAccount.currentOutstanding) || 0) + txAmt;
+    } else {
+      fromAccount.currentBalance = (Number(fromAccount.currentBalance) || 0) - txAmt;
+    }
+    await fromAccount.save();
+
+    // 2. Add to toAccount (Record TRANSFER_IN)
+    toAccount.transactions.push({
+      date: txDate,
+      type: "TRANSFER_IN",
+      amount: txAmt,
+      note: note || `फंड ट्रांसफर मिला ⬅️ ${fromAccount.bankName || fromAccount.accountName}`,
+      referenceNo: ref,
+    });
+    if (toAccount.accountType === "CC_OVERDRAFT") {
+      toAccount.currentOutstanding = Math.max(0, (Number(toAccount.currentOutstanding) || 0) - txAmt);
+    } else {
+      toAccount.currentBalance = (Number(toAccount.currentBalance) || 0) + txAmt;
+    }
+    await toAccount.save();
+
+    res.status(200).json({
+      success: true,
+      fromAccount,
+      toAccount,
+      message: `✅ ₹${txAmt.toLocaleString("en-IN")} सफलतापूर्वक ट्रांसफर हो गए!`,
+    });
+  } catch (error) {
+    console.error("Error transferring funds:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+

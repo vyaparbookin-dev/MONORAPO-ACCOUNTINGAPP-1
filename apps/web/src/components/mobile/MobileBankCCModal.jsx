@@ -97,6 +97,18 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
   });
   const [processingTx, setProcessingTx] = useState(false);
 
+  // Bank-to-Bank / Contra Transfer Modal State
+  const [isTransferOpen, setIsTransferOpen] = useState(false);
+  const [transferData, setTransferData] = useState({
+    fromAccId: "",
+    toAccId: "",
+    amount: "",
+    date: new Date().toISOString().split("T")[0],
+    referenceNo: "",
+    note: ""
+  });
+  const [processingTransfer, setProcessingTransfer] = useState(false);
+
   // Monthly Interest Modal (Auto Calculate vs Manual Original Entry)
   const [isInterestOpen, setIsInterestOpen] = useState(false);
   const [selectedAccForInterest, setSelectedAccForInterest] = useState(null);
@@ -698,6 +710,218 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
     setIsTxOpen(true);
   };
 
+  const handleOpenTransferModal = (defaultFromAcc = null) => {
+    let currentAccounts = [...accounts];
+    if (currentAccounts.length < 2) {
+      if (currentAccounts.length === 0) {
+        const defaultCurrent = {
+          _id: "bnk_primary_current",
+          id: "bnk_primary_current",
+          accountName: "मुख्य व्यापारिक चालू खाता (SBI/PNB/HDFC)",
+          bankName: "मुख्य व्यापारिक बैंक खाता",
+          accountType: "CURRENT",
+          balance: 0,
+          currentBalance: 0,
+          openingBalance: 0,
+          transactions: [],
+          createdAt: new Date().toISOString()
+        };
+        const defaultCC = {
+          _id: "bnk_primary_cc",
+          id: "bnk_primary_cc",
+          accountName: "बिजनेस CC / OD लिमिट खाता",
+          bankName: "CC लिमिट खाता",
+          accountType: "CC_OVERDRAFT",
+          hasCcLimit: true,
+          sanctionedLimit: 500000,
+          currentOutstanding: 0,
+          balance: 0,
+          transactions: [],
+          createdAt: new Date().toISOString()
+        };
+        currentAccounts = [defaultCurrent, defaultCC];
+        setAccounts(currentAccounts);
+        try {
+          localStorage.setItem("vb_local_bank_accounts", JSON.stringify(currentAccounts));
+        } catch (e) {}
+      } else if (currentAccounts.length === 1) {
+        const first = currentAccounts[0];
+        const newType = first.accountType === "CURRENT" ? "CC_OVERDRAFT" : "CURRENT";
+        const second = {
+          _id: "bnk_secondary_" + Date.now(),
+          id: "bnk_secondary_" + Date.now(),
+          accountName: newType === "CC_OVERDRAFT" ? "CC / OD लिमिट खाता" : "दूसरा बैंक खाता (Current/Savings)",
+          bankName: newType === "CC_OVERDRAFT" ? "बैंक CC लिमिट" : "दूसरा बैंक खाता",
+          accountType: newType,
+          hasCcLimit: newType === "CC_OVERDRAFT",
+          sanctionedLimit: newType === "CC_OVERDRAFT" ? 200000 : 0,
+          currentOutstanding: 0,
+          balance: 0,
+          currentBalance: 0,
+          transactions: [],
+          createdAt: new Date().toISOString()
+        };
+        currentAccounts = [...currentAccounts, second];
+        setAccounts(currentAccounts);
+        try {
+          localStorage.setItem("vb_local_bank_accounts", JSON.stringify(currentAccounts));
+        } catch (e) {}
+      }
+    }
+
+    const fromId = defaultFromAcc ? (defaultFromAcc._id || defaultFromAcc.id) : (currentAccounts[0]?._id || currentAccounts[0]?.id || "");
+    const toId = currentAccounts.find(a => (a._id || a.id) !== fromId)?._id || currentAccounts.find(a => (a._id || a.id) !== fromId)?.id || "";
+
+    setTransferData({
+      fromAccId: fromId,
+      toAccId: toId,
+      amount: "",
+      date: new Date().toISOString().split("T")[0],
+      referenceNo: "",
+      note: ""
+    });
+    setIsTransferOpen(true);
+  };
+
+  const handleSaveBankTransfer = async (e) => {
+    e.preventDefault();
+    const amt = Number(transferData.amount);
+    if (!transferData.amount || isNaN(amt) || amt <= 0) {
+      alert("कृपया मान्य ट्रांसफर राशि दर्ज करें!");
+      return;
+    }
+    if (!transferData.fromAccId || !transferData.toAccId) {
+      alert("कृपया भेजने वाला और पाने वाला दोनों बैंक खाते चुनें!");
+      return;
+    }
+    if (transferData.fromAccId === transferData.toAccId) {
+      alert("भेजने वाला और पाने वाला खाता एक ही नहीं हो सकता!");
+      return;
+    }
+
+    const fromAcc = accounts.find(a => (a._id || a.id) === transferData.fromAccId);
+    const toAcc = accounts.find(a => (a._id || a.id) === transferData.toAccId);
+    if (!fromAcc || !toAcc) {
+      alert("चुने गए बैंक खाते नहीं मिले!");
+      return;
+    }
+
+    setProcessingTransfer(true);
+    const refNo = transferData.referenceNo.trim() || `TRF-${Date.now().toString().slice(-6)}`;
+    const txDate = transferData.date || new Date().toISOString().split("T")[0];
+
+    try {
+      // 1. Try server endpoint
+      try {
+        await api.post("/api/bank-accounts/transfer", {
+          fromAccountId: transferData.fromAccId,
+          toAccountId: transferData.toAccId,
+          amount: amt,
+          date: txDate,
+          referenceNo: refNo,
+          note: transferData.note.trim()
+        });
+      } catch (srvErr) {
+        console.warn("Backend transfer route fallback to local:", srvErr);
+        try {
+          await api.post(`/api/bank-accounts/${transferData.fromAccId}/transaction`, {
+            type: "TRANSFER_OUT",
+            amount: amt,
+            date: txDate,
+            referenceNo: refNo,
+            note: transferData.note.trim() || `फंड ट्रांसफर दिया ➡️ ${toAcc.bankName || toAcc.accountName}`
+          });
+          await api.post(`/api/bank-accounts/${transferData.toAccId}/transaction`, {
+            type: "TRANSFER_IN",
+            amount: amt,
+            date: txDate,
+            referenceNo: refNo,
+            note: transferData.note.trim() || `फंड ट्रांसफर मिला ⬅️ ${fromAcc.bankName || fromAcc.accountName}`
+          });
+        } catch (e2) {}
+      }
+
+      // 2. Update local state and localStorage for both accounts
+      const updatedAccounts = accounts.map(a => {
+        const aId = a._id || a.id;
+        if (aId === transferData.fromAccId) {
+          const outTx = {
+            id: "tx_out_" + Date.now(),
+            type: "TRANSFER_OUT",
+            amount: amt,
+            date: txDate,
+            description: transferData.note.trim() || `फंड ट्रांसफर दिया ➡️ ${toAcc.bankName || toAcc.accountName}`,
+            referenceNo: refNo,
+            createdAt: new Date().toISOString()
+          };
+          const txs = Array.isArray(a.transactions) ? [outTx, ...a.transactions] : [outTx];
+          let updatedOutstanding = Number(a.currentOutstanding || 0);
+          let updatedBalance = Number(a.balance || a.currentBalance || 0);
+          if (a.accountType === "CC_OVERDRAFT") {
+            updatedOutstanding += amt;
+          } else {
+            updatedBalance -= amt;
+          }
+          return {
+            ...a,
+            transactions: txs,
+            currentOutstanding: updatedOutstanding,
+            balance: updatedBalance,
+            currentBalance: updatedBalance
+          };
+        } else if (aId === transferData.toAccId) {
+          const inTx = {
+            id: "tx_in_" + Date.now(),
+            type: "TRANSFER_IN",
+            amount: amt,
+            date: txDate,
+            description: transferData.note.trim() || `फंड ट्रांसफर मिला ⬅️ ${fromAcc.bankName || fromAcc.accountName}`,
+            referenceNo: refNo,
+            createdAt: new Date().toISOString()
+          };
+          const txs = Array.isArray(a.transactions) ? [inTx, ...a.transactions] : [inTx];
+          let updatedOutstanding = Number(a.currentOutstanding || 0);
+          let updatedBalance = Number(a.balance || a.currentBalance || 0);
+          if (a.accountType === "CC_OVERDRAFT") {
+            updatedOutstanding = Math.max(0, updatedOutstanding - amt);
+          } else {
+            updatedBalance += amt;
+          }
+          return {
+            ...a,
+            transactions: txs,
+            currentOutstanding: updatedOutstanding,
+            balance: updatedBalance,
+            currentBalance: updatedBalance
+          };
+        }
+        return a;
+      });
+
+      setAccounts(updatedAccounts);
+      try {
+        localStorage.setItem("vb_local_bank_accounts", JSON.stringify(updatedAccounts));
+      } catch (e) {}
+
+      setIsTransferOpen(false);
+      const successMsg = `✅ ₹${amt.toLocaleString("en-IN")} का फंड ट्रांसफर (${fromAcc.bankName || fromAcc.accountName} ➡️ ${toAcc.bankName || toAcc.accountName}) सफलतापूर्वक दर्ज हो गया!`;
+      setToast({ type: "success", text: successMsg });
+      alert(successMsg);
+      setTimeout(() => setToast(null), 6000);
+      if (typeof onAccountsChange === "function") {
+        onAccountsChange();
+      }
+      try {
+        await fetchAccounts();
+      } catch (fErr) {}
+    } catch (err) {
+      console.error("Transfer error:", err);
+      alert("फंड ट्रांसफर दर्ज करने में त्रुटि: " + (err.message || err));
+    } finally {
+      setProcessingTransfer(false);
+    }
+  };
+
   const handleRecordTransaction = async (e) => {
     e.preventDefault();
     if (!txData.amount || Number(txData.amount) <= 0) {
@@ -970,25 +1194,49 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-28">
-        {/* 💵 ONE-CLICK CASH DEPOSIT ACTION BANNER */}
-        <div className="bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-800 text-white rounded-2xl p-3.5 shadow-md flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl shrink-0">
-              💵
+        {/* 💵 & 🔄 QUICK ACTIONS: CASH DEPOSIT & BANK TRANSFER */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {/* Action 1: Cash Deposit from Counter */}
+          <div className="bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-800 text-white rounded-2xl p-3.5 shadow-md flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl shrink-0">
+                💵
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-xs font-black truncate">गल्ले से बैंक में जमा</h4>
+                <p className="text-[10px] text-emerald-100 truncate">नकद बिक्री राशि बैंक में जमा करें</p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <h4 className="text-xs font-black truncate">गल्ले से बैंक में नकद जमा करें</h4>
-              <p className="text-[10px] text-emerald-100 truncate">दुकान की नकद बिक्री राशि बैंक में 1-क्लिक में जमा दर्ज करें</p>
-            </div>
+            <button
+              type="button"
+              onClick={handleQuickCashDeposit}
+              className="px-3 py-2 bg-white text-emerald-900 hover:bg-emerald-50 active:scale-95 text-xs font-black rounded-xl shadow-md shrink-0 flex items-center gap-1 cursor-pointer transition"
+            >
+              <span>+ नकद जमा</span>
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleQuickCashDeposit}
-            className="px-3 py-2 bg-white text-emerald-900 hover:bg-emerald-50 active:scale-95 text-xs font-black rounded-xl shadow-md shrink-0 flex items-center gap-1 cursor-pointer transition"
-          >
-            <span>+ नकद जमा करें</span>
-          </button>
+
+          {/* Action 2: Bank-to-Bank / CC Limit Fund Transfer */}
+          <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-900 text-white rounded-2xl p-3.5 shadow-md flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl shrink-0">
+                🔄
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-xs font-black truncate">बैंक-टू-बैंक ट्रांसफर</h4>
+                <p className="text-[10px] text-blue-100 truncate">करंट ➡️ CC लिमिट या बैंक ➡️ बैंक</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleOpenTransferModal()}
+              className="px-3 py-2 bg-white text-blue-950 hover:bg-blue-50 active:scale-95 text-xs font-black rounded-xl shadow-md shrink-0 flex items-center gap-1 cursor-pointer transition"
+            >
+              <span>🔄 ट्रांसफर करें</span>
+            </button>
+          </div>
         </div>
+
 
         {/* ⚡ 2 LINKED BUSINESS ACCOUNTS QUICK OVERVIEW */}
         {(() => {
@@ -1366,35 +1614,47 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
                     )}
                   </div>
 
-                  {/* Action Buttons: 4 Grid */}
-                  <div className="grid grid-cols-4 gap-1.5 pt-1 border-t border-slate-100">
+                  {/* Action Buttons: 5 Grid */}
+                  <div className="grid grid-cols-5 gap-1 pt-1 border-t border-slate-100">
                     <button
                       onClick={() => handleOpenTx(acc, "DEPOSIT")}
-                      className="py-2 px-1 rounded-xl bg-emerald-50 active:bg-emerald-100 text-emerald-700 text-[11px] font-black flex items-center justify-center gap-1 cursor-pointer border border-emerald-200"
+                      className="py-2 px-0.5 rounded-xl bg-emerald-50 active:bg-emerald-100 text-emerald-700 text-[10px] font-black flex flex-col items-center justify-center gap-0.5 cursor-pointer border border-emerald-200"
                       title="पैसे जमा करें"
                     >
-                      <ArrowDownRight size={13} /> जमा
+                      <ArrowDownRight size={13} />
+                      <span>जमा</span>
                     </button>
                     <button
                       onClick={() => handleOpenTx(acc, "WITHDRAWAL")}
-                      className="py-2 px-1 rounded-xl bg-rose-50 active:bg-rose-100 text-rose-700 text-[11px] font-black flex items-center justify-center gap-1 cursor-pointer border border-rose-200"
+                      className="py-2 px-0.5 rounded-xl bg-rose-50 active:bg-rose-100 text-rose-700 text-[10px] font-black flex flex-col items-center justify-center gap-0.5 cursor-pointer border border-rose-200"
                       title="निकासी या खर्च दर्ज करें"
                     >
-                      <ArrowUpRight size={13} /> निकासी
+                      <ArrowUpRight size={13} />
+                      <span>निकासी</span>
+                    </button>
+                    <button
+                      onClick={() => handleOpenTransferModal(acc)}
+                      className="py-2 px-0.5 rounded-xl bg-blue-50 active:bg-blue-100 text-blue-700 text-[10px] font-black flex flex-col items-center justify-center gap-0.5 cursor-pointer border border-blue-200"
+                      title="इस खाते से दूसरे बैंक में ट्रांसफर करें"
+                    >
+                      <RefreshCw size={13} />
+                      <span>ट्रांसफर</span>
                     </button>
                     <button
                       onClick={() => handleOpenQrModal(acc)}
-                      className="py-2 px-1 rounded-xl bg-indigo-50 active:bg-indigo-100 text-indigo-700 text-[11px] font-black flex items-center justify-center gap-1 cursor-pointer border border-indigo-200"
+                      className="py-2 px-0.5 rounded-xl bg-indigo-50 active:bg-indigo-100 text-indigo-700 text-[10px] font-black flex flex-col items-center justify-center gap-0.5 cursor-pointer border border-indigo-200"
                       title="UPI QR कोड दिखाएं व WhatsApp शेयर करें"
                     >
-                      <QrCode size={13} /> QR शेयर
+                      <QrCode size={13} />
+                      <span>QR शेयर</span>
                     </button>
                     <button
                       onClick={() => setHistoryAcc(acc)}
-                      className="py-2 px-1 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer"
+                      className="py-2 px-0.5 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 text-[10px] font-bold flex flex-col items-center justify-center gap-0.5 cursor-pointer"
                       title="लेन-देन इतिहास देखें"
                     >
-                      <Clock size={13} /> इतिहास ({txCount})
+                      <Clock size={13} />
+                      <span>इतिहास</span>
                     </button>
                   </div>
 
@@ -1885,6 +2145,162 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
                   className="flex-1 py-2.5 rounded-xl bg-blue-600 active:bg-blue-700 text-white text-xs font-black shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   {processingTx ? "सहेज रहे हैं..." : "💾 लेन-देन दर्ज करें"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 🔄 BANK-TO-BANK FUND TRANSFER MODAL */}
+      {isTransferOpen && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center text-lg font-black">
+                  🔄
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">बैंक ट्रांसफर (Fund Transfer)</h3>
+                  <p className="text-[11px] text-slate-500">एक बैंक से दूसरे बैंक / CC लिमिट में रकम ट्रांसफर करें</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTransferOpen(false)}
+                className="p-1 rounded-full text-slate-400 hover:bg-slate-100 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveBankTransfer} className="space-y-3.5">
+              {/* From Account Selector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  १. किस बैंक खाते से पैसे निकालें (From Bank) *
+                </label>
+                <select
+                  required
+                  value={transferData.fromAccId}
+                  onChange={(e) => setTransferData({ ...transferData, fromAccId: e.target.value })}
+                  className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-rose-200 bg-rose-50/40 text-slate-900"
+                >
+                  <option value="">-- भेजने वाला बैंक चुनें --</option>
+                  {accounts.map(a => {
+                    const aId = a._id || a.id;
+                    const isCC = a.accountType === "CC_OVERDRAFT";
+                    const bal = Number(a.balance || a.currentBalance || 0);
+                    const out = Number(a.currentOutstanding || 0);
+                    const limit = Number(a.sanctionedLimit || 0);
+                    const avail = Math.max(0, limit - out);
+                    return (
+                      <option key={aId} value={aId}>
+                        {a.bankName || a.accountName} ({isCC ? "CC लिमिट" : "करंट/सेविंग्स"}) - {isCC ? `उपलब्ध: ₹${avail.toLocaleString("en-IN")}` : `बैलेंस: ₹${bal.toLocaleString("en-IN")}`}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* To Account Selector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  २. किस बैंक खाते में पैसे जमा करें (To Bank) *
+                </label>
+                <select
+                  required
+                  value={transferData.toAccId}
+                  onChange={(e) => setTransferData({ ...transferData, toAccId: e.target.value })}
+                  className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-emerald-200 bg-emerald-50/40 text-slate-900"
+                >
+                  <option value="">-- पाने वाला बैंक चुनें --</option>
+                  {accounts
+                    .filter(a => (a._id || a.id) !== transferData.fromAccId)
+                    .map(a => {
+                      const aId = a._id || a.id;
+                      const isCC = a.accountType === "CC_OVERDRAFT";
+                      const bal = Number(a.balance || a.currentBalance || 0);
+                      const out = Number(a.currentOutstanding || 0);
+                      return (
+                        <option key={aId} value={aId}>
+                          {a.bankName || a.accountName} ({isCC ? "CC लिमिट" : "करंट/सेविंग्स"}) - {isCC ? `बकाया कर्ज़: ₹${out.toLocaleString("en-IN")}` : `बैलेंस: ₹${bal.toLocaleString("en-IN")}`}
+                        </option>
+                      );
+                    })}
+                </select>
+              </div>
+
+              {/* Transfer Amount */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  ३. ट्रांसफर राशि (₹ Amount) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base font-black text-slate-400">₹</span>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="0.00"
+                    value={transferData.amount}
+                    onChange={(e) => setTransferData({ ...transferData, amount: e.target.value })}
+                    className="w-full pl-8 pr-3 py-2.5 rounded-xl border border-slate-300 text-lg font-black text-slate-900 bg-slate-50 focus:bg-white focus:border-indigo-600 transition"
+                  />
+                </div>
+              </div>
+
+              {/* Date & Reference */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">तारीख (Date)</label>
+                  <input
+                    type="date"
+                    value={transferData.date}
+                    onChange={(e) => setTransferData({ ...transferData, date: e.target.value })}
+                    className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">UTR / चेक नं. (Ref No.)</label>
+                  <input
+                    type="text"
+                    placeholder="उदा. UTR12345"
+                    value={transferData.referenceNo}
+                    onChange={(e) => setTransferData({ ...transferData, referenceNo: e.target.value })}
+                    className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50"
+                  />
+                </div>
+              </div>
+
+              {/* Remarks / Note */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">विवरण / नोट (Remarks)</label>
+                <input
+                  type="text"
+                  placeholder="उदा. चालू खाते से CC लिमिट में कर्ज़ अदायगी ट्रांसफर"
+                  value={transferData.note}
+                  onChange={(e) => setTransferData({ ...transferData, note: e.target.value })}
+                  className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-slate-50"
+                />
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsTransferOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 cursor-pointer"
+                >
+                  रद्द करें
+                </button>
+                <button
+                  type="submit"
+                  disabled={processingTransfer}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white text-xs font-black shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition active:scale-95"
+                >
+                  {processingTransfer ? <RefreshCw size={14} className="animate-spin" /> : <span>🔄 तुरंत ट्रांसफर करें</span>}
                 </button>
               </div>
             </form>

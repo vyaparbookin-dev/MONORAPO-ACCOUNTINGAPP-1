@@ -8,7 +8,8 @@ const partyTransactionSchema = new mongoose.Schema({
   debit: { type: Number, default: 0 },  // Udhar (Paisa Lena Hai / Bill Amount)
   credit: { type: Number, default: 0 }, // Jama (Paisa Aa Gaya)
   type: { type: String, default: 'manual' }, // 'manual', 'bill', 'purchase', 'opening_balance'
-  billImageUrl: { type: String, default: '' }, // Attached photo of bill / receipt
+  billImageUrl: { type: String, default: '' }, // Attached photo of bill / receipt (primary)
+  billImageUrls: [{ type: String }], // Attached multiple photos (up to 5 slips)
   billNumber: { type: String, default: '' },
   siteName: { type: String, default: '' }, // Site tracking (PWD, COMPLEX, PAINT, etc.)
   referenceBillId: { type: mongoose.Schema.Types.ObjectId, ref: 'Bill' },
