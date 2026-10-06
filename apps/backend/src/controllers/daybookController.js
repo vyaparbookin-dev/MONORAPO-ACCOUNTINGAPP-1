@@ -80,15 +80,49 @@ export const getDayBook = async (req, res) => {
       endOfDay = ISTDayEnd(targetStr);
     }
 
-    // Common time query logic
-    const timeQuery = { $gte: startOfDay, $lte: endOfDay };
+    // Common time query logic supporting both BSON Date objects and ISO/YYYY-MM-DD strings
+    const startIso = startOfDay.toISOString();
+    const endIso = endOfDay.toISOString();
+    const startDateStr = startIso.split("T")[0];
+    const endDateStr = endIso.split("T")[0];
+
+    const makeFieldDateQuery = (field) => ({
+      $or: [
+        { [field]: { $gte: startOfDay, $lte: endOfDay } },
+        { [field]: { $gte: startIso, $lte: endIso } },
+        { [field]: { $gte: startDateStr, $lte: endDateStr } }
+      ]
+    });
+
+    const makeDocDateQuery = (dateField = "date") => {
+      if (period === "all") return {};
+      return {
+        $or: [
+          makeFieldDateQuery(dateField),
+          {
+            $and: [
+              { $or: [{ [dateField]: { $exists: false } }, { [dateField]: null }] },
+              makeFieldDateQuery("createdAt")
+            ]
+          }
+        ]
+      };
+    };
     
     // Filter queries
-    const billQuery = { companyId: coFilter, $or: [{ date: timeQuery }, { createdAt: timeQuery }], isDeleted: { $ne: true } };
-    const purchaseQuery = { companyId: coFilter, $or: [{ date: timeQuery }, { createdAt: timeQuery }], isDeleted: { $ne: true } };
-    const expanceQuery = { companyId: coFilter, $or: [{ date: timeQuery }, { createdAt: timeQuery }], isDeleted: { $ne: true } };
-    const partyTxQuery = { companyId: coFilter, date: timeQuery, isDeleted: { $ne: true } };
-    const salaryQuery = { companyId: coFilter, $or: [{ date: timeQuery }, { paymentDate: timeQuery }, { createdAt: timeQuery }], isDeleted: { $ne: true } };
+    const billQuery = { companyId: coFilter, isDeleted: { $ne: true }, ...makeDocDateQuery("date") };
+    const purchaseQuery = { companyId: coFilter, isDeleted: { $ne: true }, ...makeDocDateQuery("date") };
+    const expanceQuery = { 
+      companyId: coFilter, 
+      isDeleted: { $ne: true },
+      expenseType: { $nin: ["drawings", "personal_investment", "ghar_kharch", "personal"] },
+      category: { $not: /घर खर्च|personal|family/i },
+      title: { $not: /घर खर्च/i },
+      familyMember: { $in: ["", null, "Shop", "Admin"] },
+      ...makeDocDateQuery("date") 
+    };
+    const partyTxQuery = { companyId: coFilter, isDeleted: { $ne: true }, ...(period === "all" ? {} : makeFieldDateQuery("date")) };
+    const salaryQuery = { companyId: coFilter, isDeleted: { $ne: true }, ...makeDocDateQuery("date") };
 
     // Sabhi collections me ek sath request bhejenge (Maximum Speed)
     const [

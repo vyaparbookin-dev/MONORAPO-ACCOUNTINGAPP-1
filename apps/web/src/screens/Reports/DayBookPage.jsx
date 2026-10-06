@@ -262,9 +262,10 @@ export default function DayBookPage() {
         };
       });
 
-      let serverBills = Array.isArray(data.bills) ? data.bills : (Array.isArray(data) ? data : []);
+      let serverBills = (Array.isArray(data.bills) ? data.bills : (Array.isArray(data) ? data : []))
+        .filter(b => checkInRange(b.date || b.rawDate || b.createdAt));
       // Resilient Fallback: If /api/daybook timed out (Render 408) or returned empty, fetch from /api/billing
-      if (serverBills.length === 0) {
+      if (serverBills.length === 0 && period !== "custom") {
         try {
           const fbRes = await api.get('/api/billing?limit=1000').catch(() => null);
           const fbBills = fbRes?.data?.bills || fbRes?.data || fbRes?.bills || [];
@@ -275,26 +276,42 @@ export default function DayBookPage() {
       }
       const mergedBills = deduplicateBills([...serverBills, ...periodLocalBills]);
 
-      // Merge local offline expenses
+      const isPersonalExp = (e) => {
+        if (!e) return false;
+        const t = String(e.expenseType || '').toLowerCase();
+        if (t === 'operating' || t === '') return false;
+        const c = String(e.category || '').toLowerCase();
+        const tit = String(e.title || '').toLowerCase();
+        const mem = String(e.familyMember || e.member || '').trim();
+        return t === 'drawings' || t === 'ghar_kharch' || t === 'personal' || t === 'personal_investment' ||
+               c.includes('घर खर्च') || c.includes('family') || c.includes('personal') ||
+               tit.includes('घर खर्च') || (mem !== '' && mem !== 'Admin' && mem !== 'Shop');
+      };
+
+      // Merge local offline expenses (operating business only, exclude personal drawings)
       let localExpenses = [];
       try {
         const storedExp = localStorage.getItem("vb_local_expenses");
-        if (storedExp) localExpenses = JSON.parse(storedExp).filter(
-          le => checkInRange(le.date || le.createdAt)
-        );
+        if (storedExp) {
+          const parsed = JSON.parse(storedExp);
+          if (Array.isArray(parsed)) {
+            localExpenses = parsed.filter(le => !isPersonalExp(le) && checkInRange(le.date || le.createdAt));
+          }
+        }
         const currentCoId = String(localStorage.getItem("companyId") || "").trim();
         const smExpenses = storageManager.getExpenses(currentCoId);
         if (Array.isArray(smExpenses) && smExpenses.length > 0) {
-          localExpenses = [...localExpenses, ...smExpenses.filter(le => checkInRange(le.date || le.createdAt))];
+          localExpenses = [...localExpenses, ...smExpenses.filter(le => !isPersonalExp(le) && checkInRange(le.date || le.createdAt))];
         }
       } catch(e) {}
-      let serverExpenses = Array.isArray(data.expenses) ? data.expenses : [];
-      if (serverExpenses.length === 0) {
+      let serverExpenses = (Array.isArray(data.expenses) ? data.expenses : [])
+        .filter(e => !isPersonalExp(e) && checkInRange(e.date || e.createdAt));
+      if (serverExpenses.length === 0 && period !== "custom") {
         try {
           const expFb = await api.get('/api/expenses?limit=1000').catch(() => null);
           const fbExp = expFb?.data?.expenses || expFb?.data || expFb?.expenses || [];
           if (Array.isArray(fbExp) && fbExp.length > 0) {
-            serverExpenses = fbExp.filter(e => checkInRange(e.date || e.createdAt));
+            serverExpenses = fbExp.filter(e => !isPersonalExp(e) && checkInRange(e.date || e.createdAt));
           }
         } catch (eErr) {}
       }

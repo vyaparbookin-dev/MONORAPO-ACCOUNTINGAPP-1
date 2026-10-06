@@ -281,7 +281,20 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
         return true;
       };
 
-      const serverBills = Array.isArray(data?.bills) ? data.bills : [];
+      const isPersonalExp = (e) => {
+        if (!e) return false;
+        const t = String(e.expenseType || '').toLowerCase();
+        if (t === 'operating' || t === '') return false;
+        const c = String(e.category || '').toLowerCase();
+        const tit = String(e.title || '').toLowerCase();
+        const mem = String(e.familyMember || e.member || '').trim();
+        return t === 'drawings' || t === 'ghar_kharch' || t === 'personal' || t === 'personal_investment' ||
+               c.includes('घर खर्च') || c.includes('family') || c.includes('personal') ||
+               tit.includes('घर खर्च') || (mem !== '' && mem !== 'Admin' && mem !== 'Shop');
+      };
+
+      const serverBills = (Array.isArray(data?.bills) ? data.bills : [])
+        .filter(b => checkInRange(b.date || b.rawDate || b.createdAt));
       const mergedBills = [...serverBills];
 
       localBills.forEach(lb => {
@@ -321,8 +334,12 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
         }
       });
 
-      const serverExpenses = Array.isArray(data?.expenses) ? data.expenses : [];
-      const mergedExpenses = deduplicateExpenses([...serverExpenses, ...localExpenses.filter(le => checkInRange(le.date || le.createdAt))]);
+      // Strictly operating business expenses (Ghar Kharch / Drawings are separated into Family Ledger)
+      const serverExpenses = (Array.isArray(data?.expenses) ? data.expenses : [])
+        .filter(e => !isPersonalExp(e) && checkInRange(e.date || e.createdAt));
+      const operatingLocalExpenses = localExpenses
+        .filter(le => !isPersonalExp(le) && checkInRange(le.date || le.createdAt));
+      const mergedExpenses = deduplicateExpenses([...serverExpenses, ...operatingLocalExpenses]);
 
       let localPurchases = [];
       try {
@@ -346,7 +363,8 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
         }
       } catch (e) {}
 
-      const serverPurchases = Array.isArray(data?.purchases) ? data.purchases : [];
+      const serverPurchases = (Array.isArray(data?.purchases) ? data.purchases : [])
+        .filter(p => checkInRange(p.date || p.createdAt));
       const mergedPurchases = [...serverPurchases];
       localPurchases.forEach(lp => {
         const rawDate = lp.date || lp.createdAt;
@@ -356,13 +374,18 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
         }
       });
 
+      const serverSalaries = (Array.isArray(data?.salaries) ? data.salaries : [])
+        .filter(s => checkInRange(s.date || s.paymentDate || s.createdAt));
+      const serverPartyTransactions = (Array.isArray(data?.partyTransactions) ? data.partyTransactions : [])
+        .filter(t => checkInRange(t.date || t.createdAt));
+
       const combinedData = {
         ...(data || {}),
         bills: mergedBills,
         expenses: mergedExpenses,
         purchases: mergedPurchases,
-        salaries: Array.isArray(data?.salaries) ? data.salaries : [],
-        partyTransactions: Array.isArray(data?.partyTransactions) ? data.partyTransactions : []
+        salaries: serverSalaries,
+        partyTransactions: serverPartyTransactions
       };
 
       setRawData(combinedData);

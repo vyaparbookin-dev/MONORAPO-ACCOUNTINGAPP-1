@@ -741,6 +741,7 @@ function MobileVyaparAppContent() {
     return [];
   });
   const [gharKharchMemberFilter, setGharKharchMemberFilter] = useState("all");
+  const [gharKharchMonthFilter, setGharKharchMonthFilter] = useState("all"); // 'all' or 'YYYY-MM'
   const [ledgerViewTab, setLedgerViewTab] = useState("all"); // 'all', 'drawings' (Ghar Kharch), 'operating' (Shop Kharch)
   const [loadingGharKharch, setLoadingGharKharch] = useState(false);
   const [showWealthTrackerModal, setShowWealthTrackerModal] = useState(false);
@@ -2305,13 +2306,22 @@ function MobileVyaparAppContent() {
         currentBalance: trueBalance
       }) : prev);
 
-      setParties(prev => prev.map(p => {
-        const id = p.id || p._id;
-        if (id === partyId) {
-          return { ...p, balance: trueBalance, currentBalance: trueBalance };
+      setParties(prev => {
+        const updated = prev.map(p => {
+          const id = p.id || p._id;
+          if (id === partyId) {
+            return { ...p, balance: trueBalance, currentBalance: trueBalance };
+          }
+          return p;
+        });
+        const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+        if (currentCoId) {
+          try {
+            storageManager.saveParties(currentCoId, updated);
+          } catch (e) {}
         }
-        return p;
-      }));
+        return updated;
+      });
     } catch (e) {
       console.error("fetchPartyStatement error:", e);
       setPartyTransactions([]);
@@ -2565,8 +2575,42 @@ function MobileVyaparAppContent() {
     try {
       await api.post(`/api/party/${pId}/clear-balance`).catch(() => api.post(`/api/parties/${pId}/clear-balance`));
 
-      setSelectedPartyDetail(prev => prev ? ({ ...prev, balance: 0, currentBalance: 0 }) : prev);
-      setParties(prev => prev.map(p => ((p.id || p._id) === pId ? { ...p, balance: 0, currentBalance: 0 } : p)));
+      // 1. Purge any stale local transactions for this party from vb_local_party_txs
+      try {
+        const storedTxs = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+        if (Array.isArray(storedTxs)) {
+          const filtered = storedTxs.filter(t => {
+            const tPartyId = String(t.partyId?._id || t.partyId?.id || t.partyId || "");
+            return tPartyId !== String(pId);
+          });
+          localStorage.setItem("vb_local_party_txs", JSON.stringify(filtered));
+        }
+      } catch (e) {}
+
+      setAllPartyTransactions(prev => (prev || []).filter(t => {
+        const tPartyId = String(t.partyId?._id || t.partyId?.id || t.partyId || "");
+        return tPartyId !== String(pId);
+      }));
+
+      // 2. Update persistent storageManager cache so background sync never reverts
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      const zeroParty = { ...party, balance: 0, currentBalance: 0, openingBalance: 0 };
+      if (currentCoId) {
+        try {
+          storageManager.saveParty(currentCoId, zeroParty);
+        } catch (e) {}
+      }
+
+      setSelectedPartyDetail(prev => prev ? ({ ...prev, balance: 0, currentBalance: 0, openingBalance: 0 }) : prev);
+      setParties(prev => {
+        const updated = prev.map(p => ((p.id || p._id) === pId ? { ...p, balance: 0, currentBalance: 0, openingBalance: 0 } : p));
+        if (currentCoId) {
+          try {
+            storageManager.saveParties(currentCoId, updated);
+          } catch (e) {}
+        }
+        return updated;
+      });
 
       alert(`✅ '${pName}' का खाता चुकता कर दिया गया! अब बकाया ₹0 है।`);
       fetchPartyStatement(pId);
@@ -6344,10 +6388,33 @@ function MobileVyaparAppContent() {
                   ? shopExpensesOnly
                   : gharKharchList;
 
-              const totalAmt = tabItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+              // Available months from all expenses
+              const availableGharKharchMonths = Array.from(new Set((gharKharchList || []).map(it => {
+                const d = parseAnyDate(it.date || it.createdAt);
+                return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : null;
+              }).filter(Boolean))).sort().reverse();
+
+              // Filter by month
+              const monthFilteredItems = tabItems.filter(it => {
+                if (gharKharchMonthFilter === "all") return true;
+                const d = parseAnyDate(it.date || it.createdAt);
+                if (!d) return true;
+                const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                return ym === gharKharchMonthFilter;
+              });
+
+              const monthFilteredFamily = familyDrawingsOnly.filter(it => {
+                if (gharKharchMonthFilter === "all") return true;
+                const d = parseAnyDate(it.date || it.createdAt);
+                if (!d) return true;
+                const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                return ym === gharKharchMonthFilter;
+              });
+
+              const totalAmt = monthFilteredItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
               const membersMap = {};
               if (currentTab === "drawings" || currentTab === "all") {
-                familyDrawingsOnly.forEach(it => {
+                monthFilteredFamily.forEach(it => {
                   const m = it.familyMember?.trim() || "Self";
                   membersMap[m] = (membersMap[m] || 0) + (Number(it.amount) || 0);
                 });
@@ -6355,8 +6422,13 @@ function MobileVyaparAppContent() {
               const uniqueMembers = Object.keys(membersMap);
 
               const filteredItems = currentTab === "drawings" && gharKharchMemberFilter !== "all"
-                ? tabItems.filter(it => String(it.familyMember || 'Self').toLowerCase() === String(gharKharchMemberFilter).toLowerCase())
-                : tabItems;
+                ? monthFilteredItems.filter(it => String(it.familyMember || 'Self').toLowerCase() === String(gharKharchMemberFilter).toLowerCase())
+                : monthFilteredItems;
+
+              const activeMonthLabel = gharKharchMonthFilter === "all" ? "सभी महीने" : (() => {
+                const [y, m] = gharKharchMonthFilter.split("-").map(Number);
+                return new Date(y, m - 1, 1).toLocaleDateString("hi-IN", { month: "long", year: "numeric" });
+              })();
 
               return (
                 <div className="space-y-3">
@@ -6385,17 +6457,70 @@ function MobileVyaparAppContent() {
                     </button>
                   </div>
 
+                  {/* 📅 Month Filter & WhatsApp Quick Share Strip */}
+                  <div className="flex items-center justify-between gap-2 p-2 bg-slate-50 rounded-2xl border border-slate-200">
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                      <span className="text-[11px] font-black text-slate-700 shrink-0">📅 माह:</span>
+                      <select
+                        value={gharKharchMonthFilter}
+                        onChange={(e) => setGharKharchMonthFilter(e.target.value)}
+                        className="bg-white border border-slate-300 text-slate-800 text-xs font-bold rounded-xl px-2 py-1.5 outline-none cursor-pointer flex-1 min-w-0 truncate shadow-2xs"
+                      >
+                        <option value="all">🔄 सभी महीने (All Months)</option>
+                        {availableGharKharchMonths.map(ym => {
+                          const [y, m] = ym.split("-").map(Number);
+                          const dateObj = new Date(y, m - 1, 1);
+                          const label = dateObj.toLocaleDateString("hi-IN", { month: "long", year: "numeric" });
+                          return (
+                            <option key={ym} value={ym}>
+                              {label} ({y})
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let msg = `*🏡 फैमिली घर खर्च रिपोर्ट (${activeMonthLabel})*\n`;
+                        msg += `*🏢 कंपनी:* ${selectedCompany?.name || 'व्यापार'}\n`;
+                        msg += `----------------------------------\n`;
+                        msg += `*💰 कुल खर्च:* *₹${totalAmt.toLocaleString('en-IN')}*\n`;
+                        msg += `*📝 कुल प्रविष्टियां:* ${filteredItems.length}\n`;
+                        if (uniqueMembers.length > 0) {
+                          msg += `----------------------------------\n*👥 सदस्यवार खर्च:*\n`;
+                          uniqueMembers.forEach(mem => {
+                            msg += `  • ${mem}: ₹${(membersMap[mem] || 0).toLocaleString('en-IN')}\n`;
+                          });
+                        }
+                        msg += `----------------------------------\n*📋 प्रमुख खर्चे:*\n`;
+                        filteredItems.slice(0, 15).forEach((it, idx) => {
+                          const d = it.date ? new Date(it.date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' }) : '';
+                          msg += `${idx + 1}. ${it.title} - ₹${Number(it.amount || 0).toLocaleString('en-IN')} (${d})\n`;
+                        });
+                        if (filteredItems.length > 15) msg += `...और ${filteredItems.length - 15} अन्य खर्चे\n`;
+                        msg += `----------------------------------\n_Generated via Mobile Vyapar App_`;
+                        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+                      }}
+                      className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] rounded-xl shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1 shrink-0"
+                      title="इस माह की रिपोर्ट WhatsApp पर भेजें"
+                    >
+                      <span>📲 WhatsApp शेयर</span>
+                    </button>
+                  </div>
+
                   {/* Total Banner */}
                   <div className={`p-4 rounded-2xl text-white shadow-md flex justify-between items-center ${currentTab === "operating" ? "bg-gradient-to-r from-indigo-600 to-blue-600" : "bg-gradient-to-r from-amber-500 to-orange-500"}`}>
                     <div>
                       <span className="text-[11px] font-bold opacity-90 block">
-                        {currentTab === "operating" ? "कुल दुकान खर्च (Total Shop Expenses)" : currentTab === "drawings" ? "कुल फैमिली घर खर्च (Family Ledger)" : "कुल दर्ज खर्चे (All Expenses)"}
+                        {currentTab === "operating" ? `कुल दुकान खर्च (${activeMonthLabel})` : currentTab === "drawings" ? `कुल फैमिली घर खर्च (${activeMonthLabel})` : `कुल दर्ज खर्चे (${activeMonthLabel})`}
                       </span>
                       <span className="text-2xl font-black">₹ {totalAmt.toLocaleString('en-IN')}</span>
                     </div>
                     <div className="text-right">
                       <span className="text-[10px] opacity-90 block">कुल प्रविष्टियां</span>
-                      <span className="text-sm font-extrabold">{tabItems.length} खर्चे दर्ज</span>
+                      <span className="text-sm font-extrabold">{filteredItems.length} खर्चे दर्ज</span>
                     </div>
                   </div>
 

@@ -806,29 +806,99 @@ export const clearPartyBalance = async (req, res) => {
     const party = await Party.findOne({ _id: id, companyId: req.companyId });
     if (!party) return res.status(404).json({ success: false, error: "पार्टी नहीं मिली" });
 
-    const currentBal = Number(party.currentBalance || 0);
-    if (currentBal !== 0) {
-      // Record a settlement transaction so ledger mathematically balances to ₹0
+    // Compute ground-truth ledger running balance across all transactions, bills & purchases
+    const txRecords = await PartyTransaction.find({
+      partyId: party._id,
+      companyId: req.companyId,
+      isDeleted: { $ne: true }
+    });
+
+    const isSupplier = (party.partyType === "supplier");
+    const rawOpening = Number(party.openingBalance || 0);
+    const openingBal = isSupplier ? -Math.abs(rawOpening) : Math.abs(rawOpening);
+    let trueNetBalance = openingBal;
+
+    txRecords.forEach(t => {
+      trueNetBalance += (Number(t.debit || 0) - Number(t.credit || 0));
+    });
+
+    const existingRefBillIds = new Set();
+    txRecords.forEach(t => {
+      if (t.referenceBillId) existingRefBillIds.add(String(t.referenceBillId));
+      if (t.billNumber) existingRefBillIds.add(String(t.billNumber));
+      if (t.refNo) existingRefBillIds.add(String(t.refNo));
+    });
+
+    const billRecords = await Bill.find({
+      partyId: party._id,
+      companyId: req.companyId,
+      isDeleted: { $ne: true },
+      status: { $ne: "cancelled" }
+    });
+
+    for (const b of billRecords) {
+      const bNum = String(b.billNumber || b.invoiceNumber || b.id || b._id || "BILL");
+      const bId = String(b._id || "");
+      const invNo = String(b.invoiceNumber || "");
+      const alreadyInTx = existingRefBillIds.has(bNum) || existingRefBillIds.has(bId) || (invNo && existingRefBillIds.has(invNo));
+      if (!alreadyInTx) {
+        const finalAmt = Number(b.finalAmount ?? b.total ?? 0);
+        const isPaid = String(b.paymentStatus || b.status || "").toLowerCase() === "paid";
+        const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
+        trueNetBalance += (finalAmt - paidAmt);
+      }
+    }
+
+    const purchaseRecords = await Purchase.find({
+      partyId: party._id,
+      companyId: req.companyId,
+      isDeleted: { $ne: true }
+    });
+
+    for (const p of purchaseRecords) {
+      const pNum = String(p.billNumber || p.invoiceNo || p.purchaseNumber || "PUR");
+      const pId = String(p._id || "");
+      if (!existingRefBillIds.has(pNum) && !existingRefBillIds.has(pId)) {
+        const totalAmt = Number(p.totalAmount ?? p.total ?? 0);
+        trueNetBalance -= totalAmt;
+      }
+    }
+
+    // If true net balance is non-zero, record exact settlement entry to bring running ledger to ₹0
+    if (Math.abs(trueNetBalance) > 0.001) {
       const settleTx = new PartyTransaction({
         partyId: party._id,
         companyId: req.companyId,
         date: new Date(),
         details: "खाता चुकता / सेटलमेंट (Account Settled to ₹0)",
-        debit: currentBal < 0 ? Math.abs(currentBal) : 0,
-        credit: currentBal > 0 ? Math.abs(currentBal) : 0,
+        debit: trueNetBalance < 0 ? Math.abs(trueNetBalance) : 0,
+        credit: trueNetBalance > 0 ? Math.abs(trueNetBalance) : 0,
         type: "settlement"
       });
       await settleTx.save();
     }
 
+    // Mark any pending credit bills as settled
+    await Bill.updateMany(
+      {
+        partyId: party._id,
+        companyId: req.companyId,
+        isDeleted: { $ne: true },
+        paymentStatus: { $in: ["unpaid", "partial"] }
+      },
+      { $set: { paymentStatus: "paid" } }
+    ).catch(() => {});
+
     party.currentBalance = 0;
     party.openingBalance = 0;
+    party.balance = 0;
     party.updatedAt = new Date();
     await party.save();
 
     res.json({
       success: true,
       message: `पार्टी '${party.name}' का हिसाब सफलतापूर्वक चुकता (₹0) कर दिया गया!`,
+      currentBalance: 0,
       party
     });
   } catch (error) {

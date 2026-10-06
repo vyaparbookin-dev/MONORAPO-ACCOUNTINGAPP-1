@@ -77,6 +77,42 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
     fetchExpenses();
   }, [startDate, endDate]);
 
+  const [selectedMonthStr, setSelectedMonthStr] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+
+  const availableMonths = (() => {
+    const list = [];
+    const curr = new Date();
+    for (let i = -11; i <= 2; i++) {
+      const d = new Date(curr.getFullYear(), curr.getMonth() + i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const hindiMonth = [
+        "जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून",
+        "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"
+      ][d.getMonth()];
+      list.push({
+        value: ym,
+        label: `${hindiMonth} ${d.getFullYear()}`
+      });
+    }
+    return list.reverse();
+  })();
+
+  const handleMonthSelect = (ym) => {
+    setSelectedMonthStr(ym);
+    if (ym === "all") {
+      handlePeriodChange("all");
+      return;
+    }
+    setPeriod("month");
+    const [y, m] = ym.split("-").map(Number);
+    const daysInM = new Date(y, m, 0).getDate();
+    setStartDate(`${ym}-01`);
+    setEndDate(`${ym}-${String(daysInM).padStart(2, "0")}`);
+  };
+
   const handlePeriodChange = (p) => {
     setPeriod(p);
     const now = new Date();
@@ -386,26 +422,42 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
         </div>
       </div>
 
-      {/* Period Selector Tabs */}
-      <div className="bg-white border-b border-slate-200 px-3 py-2 flex items-center gap-2 overflow-x-auto shrink-0 scrollbar-none">
-        {[
-          { id: "today", label: "📅 आज" },
-          { id: "month", label: "🗓️ इस महीने" },
-          { id: "year", label: "📈 इस वर्ष" },
-          { id: "all", label: "📊 कुल (All Time)" }
-        ].map((p) => (
-          <button
-            key={p.id}
-            onClick={() => handlePeriodChange(p.id)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition cursor-pointer ${
-              period === p.id
-                ? "bg-rose-700 text-white shadow-xs"
-                : "bg-slate-100 text-slate-700 active:bg-slate-200"
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
+      {/* Period Selector Tabs & Month Dropdown */}
+      <div className="bg-white border-b border-slate-200 px-3 py-2 flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none flex-1 min-w-0">
+          {[
+            { id: "today", label: "📅 आज" },
+            { id: "month", label: "🗓️ इस महीने" },
+            { id: "year", label: "📈 इस वर्ष" },
+            { id: "all", label: "📊 सभी (All)" }
+          ].map((p) => (
+            <button
+              key={p.id}
+              onClick={() => handlePeriodChange(p.id)}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition cursor-pointer ${
+                period === p.id
+                  ? "bg-rose-700 text-white shadow-xs"
+                  : "bg-slate-100 text-slate-700 active:bg-slate-200"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Specific Month Selector */}
+        <select
+          value={selectedMonthStr}
+          onChange={(e) => handleMonthSelect(e.target.value)}
+          className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl px-2 py-1.5 border border-slate-200 outline-none cursor-pointer shrink-0 max-w-[145px] truncate"
+        >
+          <option value="all">माह चुनें (All)</option>
+          {availableMonths.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Main Content Area */}
