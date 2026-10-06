@@ -16,11 +16,13 @@ import {
   Heart,
   CheckCircle2,
   Building2,
-  X
+  X,
+  Sparkles
 } from "lucide-react";
 import api from "../../services/api";
 import { useCompany } from "../../contexts/CompanyContext";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
+import WealthTrackerExportModal from "../wealth_tracker/WealthTrackerExportModal";
 
 const DEFAULT_MEMBERS = [
   "खुद (Self)",
@@ -56,6 +58,7 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
   const [selectedMember, setSelectedMember] = useState("ALL");
   const [loading, setLoading] = useState(false);
   const [expenses, setExpenses] = useState([]);
+  const [isWealthTrackerOpen, setIsWealthTrackerOpen] = useState(false);
 
   // Add Expense Dialog state
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -357,6 +360,14 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
         </div>
 
         <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setIsWealthTrackerOpen(true)}
+            className="p-2 rounded-xl bg-violet-600 hover:bg-violet-700 active:scale-95 text-white transition flex items-center gap-1.5 text-xs font-bold shadow-xs cursor-pointer"
+            title="Export for Wealth Tracker"
+          >
+            <Sparkles size={16} />
+            <span className="hidden sm:inline">Wealth Tracker</span>
+          </button>
           <button
             onClick={shareWhatsApp}
             className="p-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white transition flex items-center gap-1 text-xs font-bold shadow-xs cursor-pointer"
@@ -785,6 +796,15 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
           </div>
         </div>
       )}
+
+      {/* 📊 Wealth Tracker Export Modal */}
+      <WealthTrackerExportModal
+        isOpen={isWealthTrackerOpen}
+        onClose={() => setIsWealthTrackerOpen(false)}
+        expenses={expenses}
+        companyName={selectedCompany?.name || "VyaparBook"}
+        defaultType="drawings"
+      />
     </div>
   );
 }

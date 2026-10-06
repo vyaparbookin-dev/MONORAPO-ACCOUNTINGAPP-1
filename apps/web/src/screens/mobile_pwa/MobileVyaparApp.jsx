@@ -62,6 +62,7 @@ import MobileDayBookModal from "../../components/mobile/MobileDayBookModal";
 import MobileProfitLossModal from "../../components/mobile/MobileProfitLossModal";
 import MobileReportViewerModal from "../../components/mobile/MobileReportViewerModal";
 import MobileFamilyExpenseModal from "../../components/mobile/MobileFamilyExpenseModal";
+import WealthTrackerExportModal from "../../components/wealth_tracker/WealthTrackerExportModal";
 import MobileSavingsModal from "../../components/mobile/MobileSavingsModal";
 import MobileBankCCModal from "../../components/mobile/MobileBankCCModal";
 import UdharOtpVerificationModal from "../../components/modals/UdharOtpVerificationModal";
@@ -387,6 +388,16 @@ function MobileVyaparAppContent() {
   const [partyTxDate, setPartyTxDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [partyTxPaymentMode, setPartyTxPaymentMode] = useState('CASH');
   const [savingPartyTx, setSavingPartyTx] = useState(false);
+
+  // Edit Party Transaction State
+  const [editingPartyTx, setEditingPartyTx] = useState(null);
+  const [editPartyTxAmount, setEditPartyTxAmount] = useState('');
+  const [editPartyTxType, setEditPartyTxType] = useState('paid');
+  const [editPartyTxNotes, setEditPartyTxNotes] = useState('');
+  const [editPartyTxDate, setEditPartyTxDate] = useState('');
+  const [editPartyTxPaymentMode, setEditPartyTxPaymentMode] = useState('CASH');
+  const [savingEditPartyTx, setSavingEditPartyTx] = useState(false);
+
   const [previewBillImage, setPreviewBillImage] = useState(null);
   const [previewImageList, setPreviewImageList] = useState([]);
   const [previewImageIndex, setPreviewImageIndex] = useState(0);
@@ -732,6 +743,7 @@ function MobileVyaparAppContent() {
   const [gharKharchMemberFilter, setGharKharchMemberFilter] = useState("all");
   const [ledgerViewTab, setLedgerViewTab] = useState("all"); // 'all', 'drawings' (Ghar Kharch), 'operating' (Shop Kharch)
   const [loadingGharKharch, setLoadingGharKharch] = useState(false);
+  const [showWealthTrackerModal, setShowWealthTrackerModal] = useState(false);
 
   // Helper to reliably separate Drawings (Ghar Kharch) from Operating (Dukaan Kharch)
   const isPersonalExpense = (e) => {
@@ -2278,6 +2290,28 @@ function MobileVyaparAppContent() {
       // Sort descending (latest on top)
       combinedTxs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
       setPartyTransactions(combinedTxs);
+
+      // Calculate true running balance from all transactions
+      const sortedChronological = [...combinedTxs].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+      let running = 0;
+      sortedChronological.forEach(tx => {
+        running += (Number(tx.debit || 0) - Number(tx.credit || 0));
+      });
+      const trueBalance = res?.currentBalance !== undefined ? Number(res.currentBalance) : running;
+
+      setSelectedPartyDetail(prev => prev ? ({
+        ...prev,
+        balance: trueBalance,
+        currentBalance: trueBalance
+      }) : prev);
+
+      setParties(prev => prev.map(p => {
+        const id = p.id || p._id;
+        if (id === partyId) {
+          return { ...p, balance: trueBalance, currentBalance: trueBalance };
+        }
+        return p;
+      }));
     } catch (e) {
       console.error("fetchPartyStatement error:", e);
       setPartyTransactions([]);
@@ -2418,6 +2452,127 @@ function MobileVyaparAppContent() {
     } catch (err) {
       console.error("Delete photo error:", err);
       alert("फोटो हटाने में त्रुटि: " + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const handleDeletePartyTransaction = async (tx) => {
+    if (!tx) return;
+    const txId = tx._id || tx.id;
+    const amt = Number(tx.amount || tx.debit || tx.credit || 0);
+    const confirmMsg = `क्या आप इस प्रविष्टि (₹${amt.toLocaleString('en-IN')}) को हमेशा के लिए हटाना चाहते हैं?\n\nइससे पार्टी का खाता व बकाया बैलेंस स्वतः सही हो जाएगा।`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      await api.delete(`/api/party/transaction/${txId}`).catch(() => api.delete(`/api/parties/transaction/${txId}`));
+
+      // Also clean up local storage matching tx
+      try {
+        const stored = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+        const filtered = stored.filter(t => (t._id || t.id) !== txId);
+        localStorage.setItem("vb_local_party_txs", JSON.stringify(filtered));
+      } catch (e) {}
+
+      setAllPartyTransactions(prev => (prev || []).filter(t => (t._id || t.id) !== txId));
+      setPartyTransactions(prev => prev.filter(t => (t._id || t.id) !== txId));
+
+      alert("🗑️ प्रविष्टि सफलतापूर्वक हटा दी गई!");
+      const pId = selectedPartyDetail?._id || selectedPartyDetail?.id;
+      if (pId) {
+        fetchPartyStatement(pId);
+      }
+    } catch (err) {
+      console.error("Delete transaction error:", err);
+      alert("प्रविष्टि हटाने में त्रुटि: " + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const handleOpenEditPartyTx = (tx) => {
+    if (!tx) return;
+    const isDebit = Number(tx.debit || 0) > 0;
+    const amt = isDebit ? tx.debit : (tx.credit || tx.amount || 0);
+    setEditingPartyTx(tx);
+    setEditPartyTxAmount(String(amt));
+    setEditPartyTxType(isDebit ? 'paid' : 'received');
+    setEditPartyTxNotes(tx.details || '');
+    setEditPartyTxDate(tx.date ? new Date(tx.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+    setEditPartyTxPaymentMode(tx.paymentMethod || tx.paymentMode || 'CASH');
+  };
+
+  const handleSaveEditPartyTx = async (e) => {
+    if (e) e.preventDefault();
+    if (!editingPartyTx) return;
+    const amt = Number(editPartyTxAmount);
+    if (!editPartyTxAmount || isNaN(amt) || amt <= 0) {
+      alert("कृपया मान्य राशि दर्ज करें!");
+      return;
+    }
+
+    setSavingEditPartyTx(true);
+    try {
+      const txId = editingPartyTx._id || editingPartyTx.id;
+      const payload = {
+        amount: amt,
+        type: editPartyTxType,
+        details: editPartyTxNotes.trim(),
+        date: editPartyTxDate ? new Date(editPartyTxDate).toISOString() : new Date().toISOString(),
+        paymentMethod: editPartyTxPaymentMode
+      };
+
+      await api.put(`/api/party/transaction/${txId}`, payload).catch(() => api.put(`/api/parties/transaction/${txId}`, payload));
+
+      // Also update local storage
+      try {
+        const stored = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+        const updatedList = stored.map(t => {
+          if ((t._id || t.id) === txId) {
+            return {
+              ...t,
+              amount: amt,
+              debit: editPartyTxType === 'paid' ? amt : 0,
+              credit: editPartyTxType === 'received' ? amt : 0,
+              details: payload.details,
+              date: payload.date,
+              paymentMethod: editPartyTxPaymentMode
+            };
+          }
+          return t;
+        });
+        localStorage.setItem("vb_local_party_txs", JSON.stringify(updatedList));
+      } catch (e) {}
+
+      alert("✅ प्रविष्टि सफलतापूर्वक अपडेट हो गई!");
+      setEditingPartyTx(null);
+      const pId = selectedPartyDetail?._id || selectedPartyDetail?.id;
+      if (pId) {
+        fetchPartyStatement(pId);
+      }
+    } catch (err) {
+      console.error("Update transaction error:", err);
+      alert("प्रविष्टि अपडेट करने में त्रुटि: " + (err.response?.data?.message || err.message));
+    } finally {
+      setSavingEditPartyTx(false);
+    }
+  };
+
+  const handleClearPartyBalance = async (party) => {
+    if (!party) return;
+    const pId = party._id || party.id;
+    const pName = party.name || "पार्टी";
+    const curBal = Number(party.balance ?? party.currentBalance ?? 0);
+    const confirmMsg = `क्या आप '${pName}' का हिसाब-किताब चुकता (Clear Balance) करके बकाया ₹0 करना चाहते हैं?\n\nवर्तमान बकाया: ₹${Math.abs(curBal).toLocaleString('en-IN')} ${curBal > 0 ? '(लेने हैं)' : curBal < 0 ? '(देने हैं)' : '(₹0)'}`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      await api.post(`/api/party/${pId}/clear-balance`).catch(() => api.post(`/api/parties/${pId}/clear-balance`));
+
+      setSelectedPartyDetail(prev => prev ? ({ ...prev, balance: 0, currentBalance: 0 }) : prev);
+      setParties(prev => prev.map(p => ((p.id || p._id) === pId ? { ...p, balance: 0, currentBalance: 0 } : p)));
+
+      alert(`✅ '${pName}' का खाता चुकता कर दिया गया! अब बकाया ₹0 है।`);
+      fetchPartyStatement(pId);
+    } catch (err) {
+      console.error("Clear balance error:", err);
+      alert("खाता चुकता करने में त्रुटि: " + (err.response?.data?.message || err.message));
     }
   };
 
@@ -3751,6 +3906,16 @@ function MobileVyaparAppContent() {
                     <button
                       onClick={() => {
                         fetchGharKharchData();
+                        setShowWealthTrackerModal(true);
+                      }}
+                      className="px-2 py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 text-white font-bold text-[11px] rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1"
+                      title="Export for Wealth Tracker"
+                    >
+                      <Sparkles size={11} /> 📊 Export
+                    </button>
+                    <button
+                      onClick={() => {
+                        fetchGharKharchData();
                         setLedgerViewTab("drawings");
                         handleToggleGharKharchLedger(true);
                       }}
@@ -3862,12 +4027,24 @@ function MobileVyaparAppContent() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => handleToggleGharKharchEntry(true)}
-                  className="text-[10px] font-black text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-1 rounded-lg transition flex items-center gap-1"
-                >
-                  <Plus size={11} /> + खर्च
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      fetchGharKharchData();
+                      setShowWealthTrackerModal(true);
+                    }}
+                    className="text-[10px] font-black text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 px-2 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                    title="Export for Wealth Tracker"
+                  >
+                    <Sparkles size={11} /> Wealth Tracker
+                  </button>
+                  <button
+                    onClick={() => handleToggleGharKharchEntry(true)}
+                    className="text-[10px] font-black text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-1 rounded-lg transition flex items-center gap-1"
+                  >
+                    <Plus size={11} /> + खर्च
+                  </button>
+                </div>
               </div>
 
               {(() => {
@@ -6134,6 +6311,14 @@ function MobileVyaparAppContent() {
               </div>
               <div className="flex items-center gap-1.5">
                 <button
+                  onClick={() => setShowWealthTrackerModal(true)}
+                  className="px-2.5 py-1 bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-1 active:scale-95 transition cursor-pointer"
+                  title="Export / Share for Wealth Tracker"
+                >
+                  <Sparkles size={12} />
+                  <span>Wealth Tracker</span>
+                </button>
+                <button
                   onClick={() => {
                     setEditingGharKharchItem(null);
                     handleToggleGharKharchLedger(false);
@@ -6212,6 +6397,25 @@ function MobileVyaparAppContent() {
                       <span className="text-[10px] opacity-90 block">कुल प्रविष्टियां</span>
                       <span className="text-sm font-extrabold">{tabItems.length} खर्चे दर्ज</span>
                     </div>
+                  </div>
+
+                  {/* Wealth Tracker Quick Export Bar */}
+                  <div className="flex items-center justify-between p-2.5 bg-violet-50/90 rounded-2xl border border-violet-200 shadow-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-violet-600 text-white flex items-center justify-center text-xs font-bold">
+                        📊
+                      </div>
+                      <div>
+                        <span className="text-xs font-black text-violet-950 block leading-tight">Export for Wealth Tracker</span>
+                        <span className="text-[10px] text-violet-700">WhatsApp / Clipboard / JSON फॉर्मेट</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowWealthTrackerModal(true)}
+                      className="px-3 py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 text-white font-bold text-xs rounded-xl shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1"
+                    >
+                      <span>एक्सपोर्ट करें →</span>
+                    </button>
                   </div>
 
                   {/* Family Members Breakdown Chips & Progress (Only when viewing Family/All) */}
@@ -6750,19 +6954,27 @@ function MobileVyaparAppContent() {
                 );
               })()}
 
-              {/* WhatsApp & Call */}
+              {/* WhatsApp & Call & Clear Balance */}
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => handleSharePartyStatementWhatsApp(selectedPartyDetail)}
                   className="flex-1 py-2 bg-[#25D366] hover:bg-green-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition"
                 >
-                  💬 WhatsApp पर हिसाब भेजें
+                  💬 WhatsApp
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleClearPartyBalance(selectedPartyDetail)}
+                  className="py-2 px-3 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition shadow-xs"
+                  title="खाता चुकता करके बैलेंस ₹0 करें"
+                >
+                  ⚖️ हिसाब चुकता (₹0)
                 </button>
                 {(selectedPartyDetail.phone || selectedPartyDetail.mobileNumber) && (
                   <a
                     href={`tel:${selectedPartyDetail.phone || selectedPartyDetail.mobileNumber}`}
-                    className="py-2 px-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition"
+                    className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition"
                   >
                     <Phone size={13} /> कॉल
                   </a>
@@ -7452,11 +7664,33 @@ function MobileVyaparAppContent() {
                                   </div>
                                 )}
 
-                                <div className="text-[10px] text-slate-500 flex items-center gap-2 pt-0.5">
-                                  <span>📅 {tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'आज'}</span>
-                                  <span className="px-1.5 py-0.2 bg-slate-200/60 rounded text-[9px] font-bold text-slate-700">
-                                    {mode === 'UPI' ? '📱 UPI' : mode === 'BANK' ? '🏛️ Bank' : '💵 Cash'}
-                                  </span>
+                                <div className="text-[10px] text-slate-500 flex items-center justify-between pt-1 gap-2 flex-wrap">
+                                  <div className="flex items-center gap-2">
+                                    <span>📅 {tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'आज'}</span>
+                                    <span className="px-1.5 py-0.2 bg-slate-200/60 rounded text-[9px] font-bold text-slate-700">
+                                      {mode === 'UPI' ? '📱 UPI' : mode === 'BANK' ? '🏛️ Bank' : '💵 Cash'}
+                                    </span>
+                                  </div>
+
+                                  {/* ✏️ Edit & 🗑️ Delete Action Buttons */}
+                                  <div className="flex items-center gap-1 ml-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditPartyTx(tx)}
+                                      className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-200 flex items-center gap-0.5 transition active:scale-95 cursor-pointer shadow-2xs"
+                                      title="प्रविष्टि संपादित करें (Edit)"
+                                    >
+                                      <Edit2 size={10} /> <span>बदलें</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeletePartyTransaction(tx)}
+                                      className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold rounded-lg border border-rose-200 flex items-center gap-0.5 transition active:scale-95 cursor-pointer shadow-2xs"
+                                      title="प्रविष्टि हटाएं (Delete)"
+                                    >
+                                      <Trash2 size={10} /> <span>हटाएं</span>
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
 
@@ -7573,6 +7807,140 @@ function MobileVyaparAppContent() {
                 })()}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📱 EDIT PARTY TRANSACTION MODAL */}
+      {editingPartyTx && (
+        <div className="fixed inset-0 z-[90] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3.5 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  ✏️
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">प्रविष्टि संपादित करें (Edit Entry)</h3>
+                  <p className="text-[10px] text-slate-400">राशि, प्रकार, तारीख व विवरण बदलें</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingPartyTx(null)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditPartyTx} className="space-y-3">
+              {/* Type Switch: मैंने दिए vs मुझे मिले */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 block mb-1">प्रकार (Type):</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditPartyTxType('paid')}
+                    className={`py-2 px-3 rounded-xl text-xs font-black transition cursor-pointer ${
+                      editPartyTxType === 'paid'
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    🔴 मैंने दिए (You Gave)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditPartyTxType('received')}
+                    className={`py-2 px-3 rounded-xl text-xs font-black transition cursor-pointer ${
+                      editPartyTxType === 'received'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    🟢 मुझे मिले (You Got)
+                  </button>
+                </div>
+              </div>
+
+              {/* Amount */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 block mb-1">राशि (Amount ₹):</label>
+                <input
+                  type="number"
+                  required
+                  min="0.01"
+                  step="any"
+                  value={editPartyTxAmount}
+                  onChange={(e) => setEditPartyTxAmount(e.target.value)}
+                  placeholder="₹ 0.00"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base font-black text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 block mb-1">तारीख (Date):</label>
+                <input
+                  type="date"
+                  value={editPartyTxDate}
+                  onChange={(e) => setEditPartyTxDate(e.target.value)}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Details / Notes */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 block mb-1">विवरण / नोट (Details):</label>
+                <input
+                  type="text"
+                  value={editPartyTxNotes}
+                  onChange={(e) => setEditPartyTxNotes(e.target.value)}
+                  placeholder="उदा. नकद भुगतान, फोनपे ट्रांसफर..."
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Payment Mode */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 block mb-1">भुगतान माध्यम (Mode):</label>
+                <div className="grid grid-cols-3 gap-1.5 text-xs font-bold">
+                  {['CASH', 'UPI', 'BANK'].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setEditPartyTxPaymentMode(m)}
+                      className={`py-1.5 rounded-xl transition cursor-pointer ${
+                        editPartyTxPaymentMode === m
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {m === 'CASH' ? '💵 Cash' : m === 'UPI' ? '📱 UPI' : '🏛️ Bank'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingPartyTx(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold cursor-pointer hover:bg-slate-50"
+                >
+                  रद्द करें
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEditPartyTx}
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-md flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  {savingEditPartyTx ? "सहेज रहे हैं..." : "💾 बदलाव सेव करें"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -8039,6 +8407,16 @@ function MobileVyaparAppContent() {
           isOpen={showFamilyExpenseModal}
           onClose={() => setShowFamilyExpenseModal(false)}
           onOpenSavings={() => setShowSavingsModal(true)}
+        />
+      )}
+
+      {showWealthTrackerModal && (
+        <WealthTrackerExportModal
+          isOpen={showWealthTrackerModal}
+          onClose={() => setShowWealthTrackerModal(false)}
+          expenses={gharKharchList}
+          companyName={companyDisplayName}
+          defaultType={ledgerViewTab || "all"}
         />
       )}
 

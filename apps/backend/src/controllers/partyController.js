@@ -528,16 +528,22 @@ export const getPartyStatement = async (req, res) => {
     const totalDebit = ledgerEntries.reduce((s, e) => s + (Number(e.debit) || 0), 0);
     const totalCredit = ledgerEntries.reduce((s, e) => s + (Number(e.credit) || 0), 0);
 
-    let finalPartyCurrentBal = party.currentBalance;
-    if (isSupplier && finalPartyCurrentBal > 0 && Math.abs(finalPartyCurrentBal) === Math.abs(rawOpening)) {
-      finalPartyCurrentBal = -Math.abs(finalPartyCurrentBal);
+    // Ground truth balance of the party is the actual running balance of all active transactions!
+    // Auto-sync party currentBalance in DB so it NEVER gets stuck on stale / out-of-sync values
+    if (party.currentBalance !== runningBal) {
+      party.currentBalance = runningBal;
+      party.updatedAt = new Date();
+      party.save().catch(e => console.warn("Failed to auto-sync party balance:", e));
     }
 
     res.json({
       success: true,
-      party,
+      party: {
+        ...(party.toObject ? party.toObject() : party),
+        currentBalance: runningBal
+      },
       openingBalance: openingBal,
-      currentBalance: finalPartyCurrentBal ?? runningBal,
+      currentBalance: runningBal,
       totalDebit,
       totalCredit,
       transactions: formattedTransactions
@@ -570,71 +576,300 @@ export const deletePartyTransaction = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const tx = await PartyTransaction.findOne({ _id: id, companyId: req.companyId });
-    if (!tx) {
-      return res.status(404).json({ success: false, error: "लेनदेन (Transaction) नहीं मिला" });
-    }
-
-    // Soft delete transaction
-    tx.isDeleted = true;
-    await tx.save();
-
-    // Revert party balance
-    const party = await Party.findOne({ _id: tx.partyId, companyId: req.companyId });
-    if (party) {
-      const deb = Number(tx.debit) || 0;
-      const cred = Number(tx.credit) || 0;
-      // Revert: subtract debit, add credit
-      party.currentBalance = (Number(party.currentBalance) || 0) - (deb - cred);
-      party.updatedAt = new Date();
-      await party.save();
-    }
-
-
-    // CASCADE: If this transaction was linked to a Purchase, revert stock too
-    if (tx.referenceBillId) {
-      try {
-        const linkedPurchase = await Purchase.findOne({ 
-          _id: tx.referenceBillId, 
-          companyId: req.companyId,
-          isDeleted: { $ne: true }
+    // 1. Check if it's an opening balance row (open_partyId)
+    if (String(id).startsWith("open_")) {
+      const pId = String(id).replace("open_", "");
+      const party = await Party.findOne({ _id: pId, companyId: req.companyId });
+      if (party) {
+        const isSupplier = (party.partyType === "supplier");
+        const rawOpening = Number(party.openingBalance || 0);
+        const openingBal = isSupplier ? -Math.abs(rawOpening) : Math.abs(rawOpening);
+        party.openingBalance = 0;
+        party.currentBalance = (Number(party.currentBalance) || 0) - openingBal;
+        party.updatedAt = new Date();
+        await party.save();
+        return res.json({
+          success: true,
+          message: "प्रारंभिक शेष (Opening Balance) हटा दिया गया!",
+          newBalance: party.currentBalance
         });
-        if (linkedPurchase) {
-          // Revert inventory stock
-          if (Array.isArray(linkedPurchase.items)) {
-            for (const item of linkedPurchase.items) {
-              if (item.productId && Number(item.quantity) > 0) {
-                await Product.findByIdAndUpdate(
-                  item.productId,
-                  { $inc: { currentStock: -Number(item.quantity) } }
-                );
-              }
-            }
-          }
-          // Mark purchase as deleted
-          linkedPurchase.isDeleted = true;
-          linkedPurchase.updatedAt = new Date();
-          await linkedPurchase.save();
-          
-          // Also soft-delete any other PartyTransactions linked to this purchase
-          await PartyTransaction.updateMany(
-            { 
-              referenceBillId: linkedPurchase._id, 
-              companyId: req.companyId,
-              _id: { $ne: tx._id } // Don't re-process current tx
-            },
-            { $set: { isDeleted: true } }
-          );
-        }
-      } catch (cascadeErr) {
-        console.warn("Purchase cascade deletion warning:", cascadeErr.message);
       }
     }
 
+    // 2. Check PartyTransaction
+    const tx = await PartyTransaction.findOne({ _id: id, companyId: req.companyId });
+    if (tx) {
+      // Soft delete transaction
+      tx.isDeleted = true;
+      tx.updatedAt = new Date();
+      await tx.save();
+
+      // Revert party balance
+      const party = await Party.findOne({ _id: tx.partyId, companyId: req.companyId });
+      if (party) {
+        const deb = Number(tx.debit) || 0;
+        const cred = Number(tx.credit) || 0;
+        // Revert: subtract debit, add credit
+        party.currentBalance = (Number(party.currentBalance) || 0) - (deb - cred);
+        party.updatedAt = new Date();
+        await party.save();
+      }
+
+      // CASCADE: If this transaction was linked to a Purchase, revert stock too
+      if (tx.referenceBillId) {
+        try {
+          const linkedPurchase = await Purchase.findOne({ 
+            _id: tx.referenceBillId, 
+            companyId: req.companyId,
+            isDeleted: { $ne: true }
+          });
+          if (linkedPurchase) {
+            // Revert inventory stock
+            if (Array.isArray(linkedPurchase.items)) {
+              for (const item of linkedPurchase.items) {
+                if (item.productId && Number(item.quantity) > 0) {
+                  await Product.findByIdAndUpdate(
+                    item.productId,
+                    { $inc: { currentStock: -Number(item.quantity) } }
+                  );
+                }
+              }
+            }
+            // Mark purchase as deleted
+            linkedPurchase.isDeleted = true;
+            linkedPurchase.updatedAt = new Date();
+            await linkedPurchase.save();
+            
+            // Also soft-delete any other PartyTransactions linked to this purchase
+            await PartyTransaction.updateMany(
+              { 
+                referenceBillId: linkedPurchase._id, 
+                companyId: req.companyId,
+                _id: { $ne: tx._id } // Don't re-process current tx
+              },
+              { $set: { isDeleted: true } }
+            );
+          }
+        } catch (cascadeErr) {
+          console.warn("Purchase cascade deletion warning:", cascadeErr.message);
+        }
+      }
+
+      return res.json({
+        success: true,
+        message: "लेनदेन सफलतापूर्वक हटा दिया गया!",
+        newBalance: party?.currentBalance
+      });
+    }
+
+    // 3. Check if it's a Bill
+    const bill = await Bill.findOne({ _id: id, companyId: req.companyId });
+    if (bill) {
+      bill.isDeleted = true;
+      bill.status = "cancelled";
+      bill.updatedAt = new Date();
+      await bill.save();
+
+      if (bill.partyId) {
+        const party = await Party.findOne({ _id: bill.partyId, companyId: req.companyId });
+        if (party) {
+          const finalAmt = Number(bill.finalAmount || bill.total || 0);
+          party.currentBalance = (Number(party.currentBalance) || 0) - finalAmt;
+          party.updatedAt = new Date();
+          await party.save();
+        }
+      }
+
+      return res.json({
+        success: true,
+        message: "बिल प्रविष्टि सफलतापूर्वक हटा दी गई!"
+      });
+    }
+
+    return res.status(404).json({ success: false, error: "लेनदेन (Transaction) नहीं मिला" });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const updatePartyTransaction = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    const { amount, type, details, date, paymentMethod } = req.body;
+
+    // 1. If opening balance (open_partyId)
+    if (String(id).startsWith("open_")) {
+      const pId = String(id).replace("open_", "");
+      const party = await Party.findOne({ _id: pId, companyId: req.companyId });
+      if (party) {
+        const isSupplier = (party.partyType === "supplier");
+        const oldOpening = isSupplier ? -Math.abs(party.openingBalance || 0) : Math.abs(party.openingBalance || 0);
+        const newOpeningVal = Number(amount || 0);
+        const newOpening = isSupplier ? -Math.abs(newOpeningVal) : Math.abs(newOpeningVal);
+
+        party.openingBalance = Math.abs(newOpeningVal);
+        party.currentBalance = (Number(party.currentBalance) || 0) - oldOpening + newOpening;
+        party.updatedAt = new Date();
+        await party.save();
+        return res.json({
+          success: true,
+          message: "प्रारंभिक शेष (Opening Balance) सफलतापूर्वक अपडेट हो गया!",
+          newBalance: party.currentBalance
+        });
+      }
+    }
+
+    // 2. Check PartyTransaction
+    const tx = await PartyTransaction.findOne({ _id: id, companyId: req.companyId });
+    if (tx) {
+      const oldDeb = Number(tx.debit || 0);
+      const oldCred = Number(tx.credit || 0);
+
+      const amt = Number(amount !== undefined ? amount : (oldDeb > 0 ? oldDeb : oldCred));
+      const isPaid = type ? (type === 'paid' || type === 'payment' || type === 'debit') : (oldDeb > 0);
+
+      const newDeb = isPaid ? amt : 0;
+      const newCred = isPaid ? 0 : amt;
+
+      tx.debit = newDeb;
+      tx.credit = newCred;
+      if (details !== undefined) tx.details = details;
+      if (date) tx.date = new Date(date);
+      if (paymentMethod) tx.paymentMethod = paymentMethod;
+      tx.updatedAt = new Date();
+      await tx.save();
+
+      // Update party currentBalance: revert old net, add new net
+      const party = await Party.findOne({ _id: tx.partyId, companyId: req.companyId });
+      if (party) {
+        const netDiff = (newDeb - newCred) - (oldDeb - oldCred);
+        party.currentBalance = (Number(party.currentBalance) || 0) + netDiff;
+        party.updatedAt = new Date();
+        await party.save();
+      }
+
+      return res.json({
+        success: true,
+        message: "लेनदेन सफलतापूर्वक संपादित (Update) हो गया!",
+        transaction: tx,
+        newBalance: party?.currentBalance
+      });
+    }
+
+    // 3. Check if it's a Bill
+    const bill = await Bill.findOne({ _id: id, companyId: req.companyId });
+    if (bill) {
+      const oldAmt = Number(bill.finalAmount || bill.total || 0);
+      const newAmt = Number(amount !== undefined ? amount : oldAmt);
+      const diff = newAmt - oldAmt;
+
+      bill.finalAmount = newAmt;
+      bill.total = newAmt;
+      if (details) bill.notes = details;
+      if (date) bill.date = new Date(date);
+      bill.updatedAt = new Date();
+      await bill.save();
+
+      if (bill.partyId) {
+        const party = await Party.findOne({ _id: bill.partyId, companyId: req.companyId });
+        if (party) {
+          party.currentBalance = (Number(party.currentBalance) || 0) + diff;
+          party.updatedAt = new Date();
+          await party.save();
+        }
+      }
+
+      return res.json({
+        success: true,
+        message: "बिल सफलतापूर्वक अपडेट हो गया!",
+        bill
+      });
+    }
+
+    return res.status(404).json({ success: false, error: "लेनदेन (Transaction) नहीं मिला" });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const clearPartyBalance = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    const party = await Party.findOne({ _id: id, companyId: req.companyId });
+    if (!party) return res.status(404).json({ success: false, error: "पार्टी नहीं मिली" });
+
+    const currentBal = Number(party.currentBalance || 0);
+    if (currentBal !== 0) {
+      // Record a settlement transaction so ledger mathematically balances to ₹0
+      const settleTx = new PartyTransaction({
+        partyId: party._id,
+        companyId: req.companyId,
+        date: new Date(),
+        details: "खाता चुकता / सेटलमेंट (Account Settled to ₹0)",
+        debit: currentBal < 0 ? Math.abs(currentBal) : 0,
+        credit: currentBal > 0 ? Math.abs(currentBal) : 0,
+        type: "settlement"
+      });
+      await settleTx.save();
+    }
+
+    party.currentBalance = 0;
+    party.openingBalance = 0;
+    party.updatedAt = new Date();
+    await party.save();
+
     res.json({
       success: true,
-      message: "लेनदेन सफलतापूर्वक हटा दिया गया!",
-      newBalance: party?.currentBalance
+      message: `पार्टी '${party.name}' का हिसाब सफलतापूर्वक चुकता (₹0) कर दिया गया!`,
+      party
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const syncPartyBalance = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    const party = await Party.findOne({ _id: id, companyId: req.companyId });
+    if (!party) return res.status(404).json({ success: false, error: "पार्टी नहीं मिली" });
+
+    const txRecords = await PartyTransaction.find({
+      partyId: party._id,
+      companyId: req.companyId,
+      isDeleted: { $ne: true }
+    });
+
+    const isSupplier = (party.partyType === "supplier");
+    const rawOpening = Number(party.openingBalance || 0);
+    const openingBal = isSupplier ? -Math.abs(rawOpening) : Math.abs(rawOpening);
+
+    let actualNet = openingBal;
+    txRecords.forEach(t => {
+      actualNet += (Number(t.debit || 0) - Number(t.credit || 0));
+    });
+
+    party.currentBalance = actualNet;
+    party.updatedAt = new Date();
+    await party.save();
+
+    res.json({
+      success: true,
+      message: "बैलेंस सफलतापूर्वक सिंक्रोनाइज़ हो गया!",
+      currentBalance: actualNet,
+      party
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

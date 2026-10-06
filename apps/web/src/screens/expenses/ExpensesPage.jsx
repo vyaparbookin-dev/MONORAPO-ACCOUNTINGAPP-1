@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, Download, Edit, Trash2, DollarSign, Calendar, Tag, PieChart, Users, Home, Building2, CheckCircle2, UserCheck } from "lucide-react";
+import { Plus, Search, Download, Edit, Trash2, DollarSign, Calendar, Tag, PieChart, Users, Home, Building2, CheckCircle2, UserCheck, Sparkles } from "lucide-react";
 import api from "../../services/api";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
+import WealthTrackerExportModal from "../../components/wealth_tracker/WealthTrackerExportModal";
 
 const ExpensesPage = () => {
   const [expenses, setExpenses] = useState(() => {
@@ -24,6 +25,7 @@ const ExpensesPage = () => {
   const [period, setPeriod] = useState("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [showWealthTrackerModal, setShowWealthTrackerModal] = useState(false);
   
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -405,6 +407,13 @@ const ExpensesPage = () => {
             className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
           >
             <Home size={16} /> 🏡 + घर खर्च दर्ज करें
+          </button>
+          <button
+            onClick={() => setShowWealthTrackerModal(true)}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+            title="Export / Share for Wealth Tracker"
+          >
+            <Sparkles size={16} /> 📊 Wealth Tracker Export
           </button>
         </div>
       </div>
@@ -852,6 +861,15 @@ const ExpensesPage = () => {
           </tbody>
         </table>
       </div>
+
+      {/* 📊 Wealth Tracker Export Modal */}
+      <WealthTrackerExportModal
+        isOpen={showWealthTrackerModal}
+        onClose={() => setShowWealthTrackerModal(false)}
+        expenses={expenses}
+        companyName="VyaparBook"
+        defaultType={activeTypeTab}
+      />
     </div>
   );
 };
