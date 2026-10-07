@@ -13,7 +13,8 @@ import {
   exportBillsCSV,
   verifyUdharOtp,
   resendUdharOtp,
-  bypassUdharOtp
+  bypassUdharOtp,
+  linkItemAlias
 } from "../controllers/billingController.js";
 import { protect, requireCompany } from "../middleware/authmiddleware.js";
 import { validateRequest } from "../middleware/validateData.js";
@@ -42,6 +43,7 @@ router.get("/pdf/:id", downloadBillPDF);
 
 // POST /api/billing/parse-image - accepts JSON { image: base64 }
 router.post("/parse-image", parseBillImage);
+router.post("/link-item-alias", linkItemAlias);
 router.post("/nongst", createNonGstBill);
 router.post("/dispatch", addDispatchRecord);
 router.post("/import", importBills); // Note: Should handle multipart/form-data via multer if needed

@@ -18,6 +18,7 @@ import { logActivity } from "../utils/logger.js";
 import { sendAutoWhatsappMessage } from "../services/whatsappService.js";
 import { processStampAwardOnBill } from "./stampController.js";
 import { syncBillToSupabase, syncBillDeleteToSupabase } from "../services/supabaseSyncService.js";
+import { scanBillToEntry } from "../bill-scanner/index.js";
 
 export const createBill = async (req, res) => {
   try {
@@ -690,15 +691,64 @@ Return STRICTLY a JSON object without markdown formatting:
   "rawText": "Transcribed text"
 }`;
 
+    // Fetch product catalog for tenant once to enable smart product matching & alias memory
+    let productCatalog = [];
+    if (req.companyId) {
+      try {
+        productCatalog = await Product.find({ companyId: req.companyId })
+          .select("_id name barcode sku aliases sellingPrice costPrice unit currentStock hsnCode")
+          .lean();
+      } catch (catErr) {
+        console.warn("[parseBillImage] Catalog fetch note:", catErr.message);
+      }
+    }
+
     const parseSingleImage = async (b64) => {
       let mimeType = "image/jpeg";
       let pureB64 = b64;
-      const match = b64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      const match = b64.match(/^data:([a-zA-Z0-9.+/-]+);base64,(.+)$/);
       if (match) {
         mimeType = match[1];
         pureB64 = match[2];
       }
       const fullDataUri = match ? b64 : `data:${mimeType};base64,${pureB64}`;
+
+      // -------------------------------------------------------------
+      // PIPELINE A: COMPUTER-GENERATED / PRINTED BILL / PDF SCANNER
+      // Triggered if explicitly requested or if file is a PDF
+      // -------------------------------------------------------------
+      const isPrintedMode = req.body?.scannerType === "printed" || req.body?.mode === "printed" || mimeType.includes("pdf");
+      if (isPrintedMode) {
+        try {
+          const imgBuffer = Buffer.from(pureB64, "base64");
+          const scanRes = await scanBillToEntry(imgBuffer, productCatalog, {
+            mimeType,
+            date: req.body?.date,
+            partyName: req.body?.partyName,
+          });
+
+          if (scanRes && scanRes.scannedCount > 0) {
+            return {
+              ...scanRes,
+              parsedItems: [
+                ...(scanRes.readyLines || []),
+                ...(scanRes.pendingConfirmation || []),
+                ...(scanRes.unmatched || [])
+              ],
+              totalAmount: scanRes.bill?.totalAmount || 0,
+              partyName: scanRes.bill?.partyName || "",
+              partyType: scanRes.bill?.partyType || "customer",
+              billType: scanRes.bill?.billType || "sale",
+            };
+          }
+        } catch (scanErr) {
+          console.warn("[parseBillImage] Computer bill pipeline fallback:", scanErr.message);
+        }
+      }
+
+      // -------------------------------------------------------------
+      // PIPELINE B: HANDWRITTEN / KACHHI PARCHI (OpenAI + Gemini AI Vision)
+      // -------------------------------------------------------------
 
       // 1. Try OpenAI GPT-4o Mini First
       if (openAiKey) {
@@ -1056,4 +1106,53 @@ export const bypassUdharOtp = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+/**
+ * 🔗 SMART ITEM MERGE MEMORY (Add scanned vendor name to Product.aliases)
+ * Keeps track of previous merges so future scans auto-map directly to this product!
+ */
+export const linkItemAlias = async (req, res) => {
+  try {
+    const { productId, alias, keepName } = req.body;
+    if (!productId || !alias) {
+      return res.status(400).json({ success: false, message: "Product ID and Alias are required" });
+    }
+
+    const product = await Product.findOne({ _id: productId, companyId: req.companyId });
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    const cleanAlias = String(alias).trim();
+    if (!Array.isArray(product.aliases)) {
+      product.aliases = [];
+    }
+
+    // Add clean alias if not already present
+    if (!product.aliases.some(a => a.toLowerCase() === cleanAlias.toLowerCase())) {
+      product.aliases.push(cleanAlias);
+    }
+
+    // If user chose to update main product name to the new scanned name
+    if (keepName === "new" && cleanAlias.length > 1) {
+      const oldName = product.name;
+      if (!product.aliases.some(a => a.toLowerCase() === oldName.toLowerCase())) {
+        product.aliases.push(oldName);
+      }
+      product.name = cleanAlias;
+    }
+
+    await product.save();
+
+    res.json({
+      success: true,
+      message: `✅ '${cleanAlias}' को '${product.name}' से सफलतापुर्वक लिंक कर दिया गया!`,
+      product
+    });
+  } catch (err) {
+    console.error("linkItemAlias error:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 

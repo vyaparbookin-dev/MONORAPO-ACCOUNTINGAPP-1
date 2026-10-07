@@ -16,6 +16,7 @@ const productSchema = new mongoose.Schema({
   // Codes & Identifiers
   sku: { type: String }, // Auto-generated
   barcode: { type: String, sparse: true }, // Optional & Unique if provided
+  aliases: [{ type: String }], // Scanned bill alternative names / vendor aliases for smart match memory
   
   // Pricing
   dpl: { type: Number, default: 0 }, // Company Rate / Basic Rate

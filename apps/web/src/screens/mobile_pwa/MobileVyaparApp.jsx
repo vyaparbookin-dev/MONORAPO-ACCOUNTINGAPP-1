@@ -347,6 +347,7 @@ function MobileVyaparAppContent() {
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrStatusText, setOcrStatusText] = useState("");
   const [ocrBillType, setOcrBillType] = useState('sale'); // 'sale' (Customer) or 'purchase' (Vendor)
+  const [ocrScannerMode, setOcrScannerMode] = useState('printed'); // 'printed' (Computer/PDF Scanner) or 'handwritten' (AI Vision Kacchi Parchi)
   const [openaiApiKey, setOpenaiApiKey] = useState(() => localStorage.getItem("OPENAI_API_KEY") || "");
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem("GEMINI_API_KEY") || "");
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
@@ -3166,9 +3167,10 @@ function MobileVyaparAppContent() {
       setOcrProgress(35);
       setOcrStatusText(`🤖 AI Vision ${files.length} बिलों को पढ़ रहा है...`);
 
-      // Call Backend Multi-Image AI Endpoint
+      // Call Backend Multi-Image Scanner Endpoint (Supports both Printed POS & Handwritten Slip)
       const res = await api.post("/api/billing/parse-image", {
         images: base64List,
+        scannerType: ocrScannerMode,
         openaiApiKey: openaiApiKey.trim() || undefined,
         geminiApiKey: geminiApiKey.trim() || undefined
       }).catch(err => {
@@ -3203,25 +3205,48 @@ function MobileVyaparAppContent() {
           const rawPrice = Number(it.price || it.rate) || 0;
           const rawQty = Number(it.quantity || it.qty) || 1;
 
-          // Fuzzy Match with 1600+ Catalog
-          const matchedItem = items.find(catItem => {
-            const catName = (catItem.name || '').toLowerCase();
-            const pName = rawName.toLowerCase();
-            if (catName === pName) return true;
-            const tokens = pName.split(/\s+/).filter(t => t.length >= 3);
-            return tokens.some(t => catName.includes(t));
-          });
+          // 1. Check if backend scanner pipeline already matched an item with high confidence
+          let matchedItem = null;
+          if (it.productId) {
+            matchedItem = items.find(ci => String(ci._id || ci.id) === String(it.productId));
+          }
 
-          const finalPrice = rawPrice > 0 ? rawPrice : (matchedItem ? matchedItem.salePrice : 100);
+          // 2. Exact or Alias match from local catalog
+          if (!matchedItem) {
+            matchedItem = items.find(catItem => {
+              const catName = (catItem.name || '').toLowerCase();
+              const pName = rawName.toLowerCase();
+              if (catName === pName) return true;
+              if (Array.isArray(catItem.aliases) && catItem.aliases.some(a => String(a).toLowerCase() === pName)) return true;
+              return false;
+            });
+          }
+
+          // 3. Fallback token-based match
+          if (!matchedItem) {
+            matchedItem = items.find(catItem => {
+              const catName = (catItem.name || '').toLowerCase();
+              const pName = rawName.toLowerCase();
+              const tokens = pName.split(/\s+/).filter(t => t.length >= 3);
+              return tokens.length > 0 && tokens.some(t => catName.includes(t));
+            });
+          }
+
+          const finalPrice = rawPrice > 0 ? rawPrice : (matchedItem ? (matchedItem.sellingPrice || matchedItem.salePrice) : 100);
           const finalTotal = +(rawQty * finalPrice).toFixed(2);
 
           return {
-            id: matchedItem?.id || `scanned-${Date.now()}-${billIdx}-${itemIdx}`,
-            name: rawName || (matchedItem?.name || `सामान ${itemIdx + 1}`),
+            id: matchedItem?.id || matchedItem?._id || `scanned-${Date.now()}-${billIdx}-${itemIdx}`,
+            productId: matchedItem?._id || matchedItem?.id || null,
+            name: matchedItem ? matchedItem.name : (rawName || `सामान ${itemIdx + 1}`),
+            rawScannedName: rawName,
             qty: rawQty,
             unit: it.unit || (matchedItem?.unit || "Pcs"),
             price: finalPrice,
             total: finalTotal,
+            confidence: it.confidence || (matchedItem ? 90 : 0),
+            matchType: it.matchType || (matchedItem ? 'catalog-match' : 'no-match'),
+            candidates: it.candidates || [],
             matchedCatalogItem: matchedItem || null
           };
         });
@@ -5690,13 +5715,39 @@ function MobileVyaparAppContent() {
               </div>
             </div>
 
+            {/* Scanner Mode Selector: Printed Computer Bill vs Handwritten Kacchi Parchi */}
+            <div className="bg-slate-100 p-1 rounded-2xl flex text-xs font-black">
+              <button
+                type="button"
+                onClick={() => setOcrScannerMode('printed')}
+                className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                  ocrScannerMode === 'printed'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>🧾 कंप्यूटर / पक्का बिल (Printed / PDF)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setOcrScannerMode('handwritten')}
+                className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                  ocrScannerMode === 'handwritten'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>✍️ हाथ की कच्ची पर्ची (Handwritten)</span>
+              </button>
+            </div>
+
             {/* Bill Type Selector (Customer Sale vs Vendor Purchase) */}
             <div className="grid grid-cols-2 gap-2 text-xs font-bold">
               <button
                 onClick={() => setOcrBillType('sale')}
                 className={`py-2 rounded-xl border transition cursor-pointer flex items-center justify-center gap-1.5 ${ocrBillType === 'sale' ? 'bg-[#059669] text-white border-[#059669] shadow-md' : 'bg-slate-50 border-slate-200 text-slate-700'}`}
               >
-                🛍️ ग्राहक कच्ची पर्ची
+                🛍️ ग्राहक बिक्री पर्ची
               </button>
               <button
                 onClick={() => setOcrBillType('purchase')}
@@ -5918,11 +5969,56 @@ function MobileVyaparAppContent() {
                           </button>
                         </div>
 
-                        {item.matchedCatalogItem && (
-                          <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded-md">
-                            <CheckCircle size={10} /> 1600+ लिस्ट से मैच्ड: {item.matchedCatalogItem.name}
-                          </div>
-                        )}
+                        {/* Match Status Badge & Memory Link */}
+                        <div className="flex items-center justify-between gap-1 text-[10px]">
+                          {item.matchedCatalogItem ? (
+                            <div className="flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                              <CheckCircle size={10} /> 
+                              <span>दुकान से मैच्ड: <strong>{item.matchedCatalogItem.name}</strong></span>
+                              {item.confidence ? <span className="opacity-75">({item.confidence}%)</span> : null}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                              <span>⚠️ नया सामान (दुकान में नहीं मिला)</span>
+                            </div>
+                          )}
+
+                          {/* Quick Link/Search Dropdown to link to existing catalog item */}
+                          <select
+                            value={item.matchedCatalogItem?._id || item.matchedCatalogItem?.id || ""}
+                            onChange={async (e) => {
+                              const chosenId = e.target.value;
+                              if (!chosenId) return;
+                              const chosenProduct = items.find(ci => String(ci._id || ci.id) === String(chosenId));
+                              if (chosenProduct) {
+                                handleUpdateActiveBillItem(itemIdx, 'name', chosenProduct.name);
+                                handleUpdateActiveBillItem(itemIdx, 'price', chosenProduct.sellingPrice || chosenProduct.salePrice || item.price);
+                                
+                                // Auto-learn Alias memory in backend!
+                                const scannedAlias = item.rawScannedName || item.name;
+                                if (scannedAlias && scannedAlias !== chosenProduct.name) {
+                                  try {
+                                    await api.post('/api/billing/link-item-alias', {
+                                      productId: chosenProduct._id || chosenProduct.id,
+                                      alias: scannedAlias,
+                                      keepName: "old"
+                                    });
+                                  } catch (aliasErr) {
+                                    console.warn("Alias learning note:", aliasErr.message);
+                                  }
+                                }
+                              }
+                            }}
+                            className="text-[10px] bg-white border border-slate-200 text-slate-700 font-bold px-1.5 py-0.5 rounded outline-none max-w-[170px] truncate"
+                          >
+                            <option value="">🔗 दुकान के सामान से जोड़ें...</option>
+                            {items.slice(0, 50).map(catIt => (
+                              <option key={catIt._id || catIt.id} value={catIt._id || catIt.id}>
+                                {catIt.name} (₹{catIt.sellingPrice || catIt.salePrice || 0})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
                         <div className="flex items-center justify-between gap-2">
                           {/* Qty Stepper */}
