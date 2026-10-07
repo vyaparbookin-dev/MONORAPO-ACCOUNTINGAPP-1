@@ -1260,7 +1260,7 @@ function MobileVyaparAppContent() {
     let includedCount = 0;
 
     for (const it of filtered) {
-      const dStr = it.date ? new Date(it.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'आज';
+      const dStr = it.date ? new Date(it.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'आज';
       const line = `• ${dStr} | ${it.familyMember ? `[${it.familyMember}] ` : ''}${it.category || it.title || 'खर्च'} : ₹${Number(it.amount || 0).toLocaleString('en-IN')}`;
       if (currentLength + line.length > 2800) {
         break;
@@ -1297,7 +1297,7 @@ function MobileVyaparAppContent() {
       `📅 तारीख: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`,
       "--------------------------------",
       ...list.map((it, idx) => {
-        const dStr = it.date ? new Date(it.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'आज';
+        const dStr = it.date ? new Date(it.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'आज';
         return `${idx + 1}. ${dStr} | ${it.familyMember ? `[${it.familyMember}] ` : ''}${it.category || it.title || 'खर्च'} : ₹${Number(it.amount || 0).toLocaleString('en-IN')}`;
       }),
       "--------------------------------",
@@ -1432,7 +1432,7 @@ function MobileVyaparAppContent() {
           paymentMode: pMode,
           paymentMethod: (pMode === "UDHAR" || pMode === "CREDIT") ? "credit" : "cash",
           paymentStatus: b.paymentStatus || (pMode === "UDHAR" ? "unpaid" : "paid"),
-          date: b.date ? (String(b.date).includes("-") || String(b.date).includes("/") ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : String(b.date)) : "Today",
+          date: b.date ? (String(b.date).includes("-") || String(b.date).includes("/") ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : String(b.date)) : "Today",
           rawDate: b.rawDate || b.date || b.createdAt || new Date().toISOString(),
           items: b.items || [],
           isOfflineCreated: Boolean(b.isOfflineCreated)
@@ -3141,7 +3141,7 @@ function MobileVyaparAppContent() {
 
       const saleDateObj = manualSaleDate ? new Date(manualSaleDate) : new Date();
       const saleDateDisplay = manualSaleDate 
-        ? new Date(manualSaleDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+        ? new Date(manualSaleDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
         : "Today";
 
       const localBillId = `bill_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -4276,7 +4276,7 @@ function MobileVyaparAppContent() {
                       _id: tx._id || `ptx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
                       typeCategory,
                       title: `${pName} • ${tx.details || defaultLabel}`,
-                      subtitle: `${isSupplierTx ? '🏭' : '🤝'} ${isSupplierTx ? 'सप्लायर लेनदेन' : 'पार्टी लेनदेन'} • ${tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today'}`,
+                      subtitle: `${isSupplierTx ? '🏭' : '🤝'} ${isSupplierTx ? 'सप्लायर लेनदेन' : 'पार्टी लेनदेन'} • ${tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}`,
                       amount: amt,
                       isPositive,
                       dateObj: parseAnyDate(tx.date || tx.createdAt) || new Date(),
@@ -4292,8 +4292,8 @@ function MobileVyaparAppContent() {
                       typeCategory: 'expense',
                       title: e.title || (isPersonal ? `${e.category || 'घरेलू खर्च'} ${e.familyMember ? `(${e.familyMember})` : ''}` : `${e.category || 'दुकान खर्च'}${matchedStaff ? ` (${matchedStaff.name})` : ''}`),
                       subtitle: isPersonal
-                        ? `🏡 घर खर्च • ${e.familyMember ? `[${e.familyMember}] • ` : ''}${e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today'}`
-                        : `🏢 दुकान खर्च • ${matchedStaff ? `[${matchedStaff.name} एडवांस] • ` : ''}${e.category || 'संचालन'} • ${e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today'}`,
+                        ? `🏡 घर खर्च • ${e.familyMember ? `[${e.familyMember}] • ` : ''}${e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}`
+                        : `🏢 दुकान खर्च • ${matchedStaff ? `[${matchedStaff.name} एडवांस] • ` : ''}${e.category || 'संचालन'} • ${e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}`,
                       amount: Number(e.amount || 0),
                       isPositive: false,
                       dateObj: parseAnyDate(e.date || e.createdAt) || new Date(),
@@ -6818,7 +6818,7 @@ function MobileVyaparAppContent() {
                           let included = 0;
                           for (let idx = 0; idx < filteredItems.length; idx++) {
                             const it = filteredItems[idx];
-                            const d = it.date ? new Date(it.date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' }) : '';
+                            const d = it.date ? new Date(it.date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
                             const line = `${idx + 1}. ${it.title || it.category || 'खर्च'} - ₹${Number(it.amount || 0).toLocaleString('en-IN')} (${d})\n`;
                             if (msg.length + line.length > 2800) break;
                             msg += line;
@@ -6963,7 +6963,7 @@ function MobileVyaparAppContent() {
                               <div className="text-[10px] text-slate-400 flex items-center gap-2">
                                 <span>🏷️ {exp.category || (isPersonal ? "घरेलू खर्च" : "दुकान खर्च")}</span>
                                 <span>•</span>
-                                <span>📅 {exp.date ? new Date(exp.date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short' }) : 'Today'}</span>
+                                <span>📅 {exp.date ? new Date(exp.date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}</span>
                                 <span>•</span>
                                 <span className="uppercase">{exp.paymentMethod || 'cash'}</span>
                               </div>
@@ -9042,7 +9042,7 @@ function MobileVyaparAppContent() {
                         <div className="font-bold text-slate-800 flex items-center gap-1.5">
                           <span>{t.type === 'advance' ? '💸 एडवांस' : t.type === 'overtime' ? '⏱️ ओवरटाइम' : '🎯 कमीशन'}</span>
                           <span className="text-[10px] text-slate-400 font-normal">
-                            {new Date(t.date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short' })}
+                            {new Date(t.date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' })}
                           </span>
                         </div>
                         {t.notes && <p className="text-[10px] text-slate-500 mt-0.5">{t.notes}</p>}
