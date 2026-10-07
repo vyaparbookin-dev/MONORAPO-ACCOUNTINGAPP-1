@@ -1230,22 +1230,80 @@ function MobileVyaparAppContent() {
       ? "*🏡 सम्पूर्ण फैमिली घर खर्च विवरण (All Members)*"
       : `*🏡 ${memberFilter} का व्यक्तिगत घर खर्च विवरण*`;
 
-    const lines = [
+    const appLink = typeof window !== 'undefined' ? `${window.location.origin}` : 'https://vyaparbook.in';
+
+    const headerLines = [
       titleHeader,
       `🏢 *${companyDisplayName}*`,
       `📅 *तारीख:* ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`,
-      "--------------------------------",
-      ...filtered.slice(0, 15).map(it => {
-        const dStr = it.date ? new Date(it.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'आज';
-        return `• ${dStr} | ${it.familyMember ? `[${it.familyMember}] ` : ''}${it.category || it.title || 'खर्च'} : ₹${Number(it.amount || 0).toLocaleString('en-IN')}`;
-      }),
+      "--------------------------------"
+    ];
+
+    const footerLines = [
       "--------------------------------",
       `💰 *कुल योग (Total Spent): ₹${total.toLocaleString('en-IN')}* (${filtered.length} एंट्रियां)`,
       "--------------------------------",
       "_VyaparBook सुरक्षित फैमिली लेजर_"
-    ].join(String.fromCharCode(10));
+    ];
 
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(lines)}`, '_blank');
+    // Dynamically fit maximum items within safe URL character limit (~2800 characters)
+    let currentLength = headerLines.join("\n").length + footerLines.join("\n").length + 200;
+    const itemLines = [];
+    let includedCount = 0;
+
+    for (const it of filtered) {
+      const dStr = it.date ? new Date(it.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'आज';
+      const line = `• ${dStr} | ${it.familyMember ? `[${it.familyMember}] ` : ''}${it.category || it.title || 'खर्च'} : ₹${Number(it.amount || 0).toLocaleString('en-IN')}`;
+      if (currentLength + line.length > 2800) {
+        break;
+      }
+      itemLines.push(line);
+      currentLength += line.length + 1;
+      includedCount++;
+    }
+
+    const remainingCount = filtered.length - includedCount;
+    if (remainingCount > 0) {
+      itemLines.push(`...और ${remainingCount} अन्य खर्चे बाकी हैं।`);
+      itemLines.push(`🔗 पूरा लेजर देखने व कॉपी करने हेतु ऐप खोलें: ${appLink}`);
+    }
+
+    const allLines = [...headerLines, ...itemLines, ...footerLines].join(String.fromCharCode(10));
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(allLines)}`, '_blank');
+  };
+
+  const handleCopyGharKharchAll = (memberFilter = "all", customItems = null) => {
+    const list = customItems || (memberFilter === "all"
+      ? gharKharchList
+      : (gharKharchList || []).filter(it => String(it.familyMember || 'Unassigned').toLowerCase() === String(memberFilter || 'all').toLowerCase()));
+
+    const total = list.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+    const title = memberFilter === "all"
+      ? "🏡 सम्पूर्ण फैमिली घर खर्च विवरण (All Members)"
+      : `🏡 ${memberFilter} का व्यक्तिगत घर खर्च विवरण`;
+
+    const lines = [
+      title,
+      `🏢 ${companyDisplayName}`,
+      `📅 तारीख: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+      "--------------------------------",
+      ...list.map((it, idx) => {
+        const dStr = it.date ? new Date(it.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'आज';
+        return `${idx + 1}. ${dStr} | ${it.familyMember ? `[${it.familyMember}] ` : ''}${it.category || it.title || 'खर्च'} : ₹${Number(it.amount || 0).toLocaleString('en-IN')}`;
+      }),
+      "--------------------------------",
+      `💰 कुल योग: ₹${total.toLocaleString('en-IN')} (${list.length} एंट्रियां)`,
+      "--------------------------------",
+      "VyaparBook सुरक्षित फैमिली लेजर"
+    ].join("\n");
+
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(lines)
+        .then(() => alert(`✅ सभी ${list.length} खर्चे क्लिपबोर्ड पर कॉपी हो गए हैं! आप इसे WhatsApp चैट में सीधे 'Paste' करके भेज सकते हैं।`))
+        .catch(() => alert("कॉपी करने में समस्या आई।"));
+    } else {
+      alert("आपके ब्राउज़र में क्लिपबोर्ड सपोर्ट नहीं है।");
+    }
   };
 
   const handleDeleteGharKharch = async (id) => {
@@ -6729,34 +6787,58 @@ function MobileVyaparAppContent() {
                       </select>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        let msg = `*🏡 फैमिली घर खर्च रिपोर्ट (${activeMonthLabel})*\n`;
-                        msg += `*🏢 कंपनी:* ${selectedCompany?.name || 'व्यापार'}\n`;
-                        msg += `----------------------------------\n`;
-                        msg += `*💰 कुल खर्च:* *₹${totalAmt.toLocaleString('en-IN')}*\n`;
-                        msg += `*📝 कुल प्रविष्टियां:* ${filteredItems.length}\n`;
-                        if (uniqueMembers.length > 0) {
-                          msg += `----------------------------------\n*👥 सदस्यवार खर्च:*\n`;
-                          uniqueMembers.forEach(mem => {
-                            msg += `  • ${mem}: ₹${(membersMap[mem] || 0).toLocaleString('en-IN')}\n`;
-                          });
-                        }
-                        msg += `----------------------------------\n*📋 प्रमुख खर्चे:*\n`;
-                        filteredItems.slice(0, 15).forEach((it, idx) => {
-                          const d = it.date ? new Date(it.date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' }) : '';
-                          msg += `${idx + 1}. ${it.title} - ₹${Number(it.amount || 0).toLocaleString('en-IN')} (${d})\n`;
-                        });
-                        if (filteredItems.length > 15) msg += `...और ${filteredItems.length - 15} अन्य खर्चे\n`;
-                        msg += `----------------------------------\n_Generated via Mobile Vyapar App_`;
-                        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
-                      }}
-                      className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] rounded-xl shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1 shrink-0"
-                      title="इस माह की रिपोर्ट WhatsApp पर भेजें"
-                    >
-                      <span>📲 WhatsApp शेयर</span>
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const appLink = typeof window !== 'undefined' ? `${window.location.origin}` : 'https://vyaparbook.in';
+                          let msg = `*🏡 फैमिली घर खर्च रिपोर्ट (${activeMonthLabel})*\n`;
+                          msg += `*🏢 कंपनी:* ${selectedCompany?.name || 'व्यापार'}\n`;
+                          msg += `----------------------------------\n`;
+                          msg += `*💰 कुल खर्च:* *₹${totalAmt.toLocaleString('en-IN')}*\n`;
+                          msg += `*📝 कुल प्रविष्टियां:* ${filteredItems.length}\n`;
+                          if (uniqueMembers.length > 0) {
+                            msg += `----------------------------------\n*👥 सदस्यवार खर्च:*\n`;
+                            uniqueMembers.forEach(mem => {
+                              msg += `  • ${mem}: ₹${(membersMap[mem] || 0).toLocaleString('en-IN')}\n`;
+                            });
+                          }
+                          msg += `----------------------------------\n*📋 प्रमुख खर्चे:*\n`;
+                          
+                          // Dynamically fit maximum items within safe URL character limit (~2800 characters)
+                          let included = 0;
+                          for (let idx = 0; idx < filteredItems.length; idx++) {
+                            const it = filteredItems[idx];
+                            const d = it.date ? new Date(it.date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' }) : '';
+                            const line = `${idx + 1}. ${it.title || it.category || 'खर्च'} - ₹${Number(it.amount || 0).toLocaleString('en-IN')} (${d})\n`;
+                            if (msg.length + line.length > 2800) break;
+                            msg += line;
+                            included++;
+                          }
+
+                          const leftover = filteredItems.length - included;
+                          if (leftover > 0) {
+                            msg += `...और ${leftover} अन्य खर्चे बाकी हैं।\n`;
+                            msg += `🔗 पूरा लेजर देखने व कॉपी करने हेतु ऐप खोलें: ${appLink}\n`;
+                          }
+                          msg += `----------------------------------\n_Generated via Mobile Vyapar App_`;
+                          window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+                        }}
+                        className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] rounded-xl shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1"
+                        title="अधिकतम खर्चे WhatsApp पर भेजें"
+                      >
+                        <span>📲 WhatsApp</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleCopyGharKharchAll(gharKharchMemberFilter, filteredItems)}
+                        className="px-2 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-extrabold text-[11px] rounded-xl shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1"
+                        title="सभी खर्चे 1-क्लिक में कॉपी करें"
+                      >
+                        <span>📋 पूरा कॉपी</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Total Banner */}
