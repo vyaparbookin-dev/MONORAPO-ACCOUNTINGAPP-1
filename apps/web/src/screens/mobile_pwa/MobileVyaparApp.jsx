@@ -1398,7 +1398,7 @@ function MobileVyaparAppContent() {
         const isSupplier = (p.partyType || p.type) === 'supplier';
         let bal = Number(p.currentBalance ?? p.balance ?? 0);
         const op = Math.abs(Number(p.openingBalance || 0));
-        if (isSupplier && op > 0 && (bal === 0 || (bal > 0 && Math.abs(bal) === op))) {
+        if (isSupplier && op > 0 && (bal > 0 && Math.abs(bal) === op)) {
           bal = -op;
         }
         // If party Rajkamal's balance was doubled (7.23L + 7.23L = 14.46L), reconcile back to 7.23L
@@ -1627,17 +1627,20 @@ function MobileVyaparAppContent() {
   const primaryBankAccount = bankAccounts.find(a => a.accountType === "CURRENT") || bankAccounts[0];
 
   // Robust payment mode extractors
-  const isCashPayment = (b) => {
+  const isCreditPayment = (b) => {
     const m = String(b.paymentMode || b.paymentMethod || b.type || "").toUpperCase();
-    return m === "CASH" || m === "" || m === "NAKAD";
+    const st = String(b.paymentStatus || b.status || "").toLowerCase();
+    return m === "UDHAR" || m === "CREDIT" || st === "unpaid" || st === "issued" || st === "due";
   };
   const isUpiPayment = (b) => {
+    if (isCreditPayment(b)) return false;
     const m = String(b.paymentMode || b.paymentMethod || b.type || "").toUpperCase();
     return m === "UPI" || m === "ONLINE" || m === "QR";
   };
-  const isCreditPayment = (b) => {
+  const isCashPayment = (b) => {
+    if (isCreditPayment(b) || isUpiPayment(b)) return false;
     const m = String(b.paymentMode || b.paymentMethod || b.type || "").toUpperCase();
-    return m === "UDHAR" || m === "CREDIT" || b.paymentStatus === "unpaid";
+    return m === "CASH" || m === "" || m === "NAKAD";
   };
 
   const isSameLocalDate = (d1, d2) => {
@@ -1649,6 +1652,23 @@ function MobileVyaparAppContent() {
     );
   };
 
+  // Customer udhar payment received (parties paying back their credit/udhar)
+  const isPartyPaymentReceived = (tx) => {
+    const isCredit = Number(tx.credit || 0) > 0;
+    const isSupplier = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
+    return isCredit && !isSupplier;
+  };
+
+  const getTxFilterMatch = (tx, filter) => {
+    if (filter === "all") return true;
+    const d = parseAnyDate(tx.date || tx.createdAt);
+    if (!d) return true;
+    if (filter === "today") return isSameLocalDate(d, new Date());
+    if (filter === "yesterday") return isSameLocalDate(d, new Date(Date.now() - 86400000));
+    if (filter === "week") return d >= new Date(Date.now() - 7 * 86400000);
+    return true;
+  };
+
   // Filter bills created today
   const todayBills = bills.filter(b => {
     if (String(b.date || "").toLowerCase() === "today" || String(b.date || "") === "आज") return true;
@@ -1658,10 +1678,15 @@ function MobileVyaparAppContent() {
     return isSameLocalDate(d, today);
   });
 
+  const todayUdharCollected = (allPartyTransactions || [])
+    .filter(tx => isPartyPaymentReceived(tx) && getTxFilterMatch(tx, "today"))
+    .reduce((sum, tx) => sum + Number(tx.credit || 0), 0);
+
   const todaySales = todayBills.reduce((sum, b) => sum + getBillAmount(b), 0);
-  const todayCash = todayBills.filter(isCashPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
+  const todayCash = todayBills.filter(isCashPayment).reduce((sum, b) => sum + getBillAmount(b), 0) + todayUdharCollected;
   const todayUpi = todayBills.filter(isUpiPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
-  const todayCredit = todayBills.filter(isCreditPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
+  const todayGrossCredit = todayBills.filter(isCreditPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
+  const todayCredit = Math.max(0, todayGrossCredit - todayUdharCollected);
 
   // Dynamic filter for Daily Sales Card (आज, कल, इस हफ़्ते, सभी)
   const activePeriodBills = bills.filter(b => {
@@ -1685,10 +1710,19 @@ function MobileVyaparAppContent() {
     return true;
   });
 
+  // Calculate udhar payments collected from customers during active period
+  const activePeriodUdharCollected = (allPartyTransactions || [])
+    .filter(tx => isPartyPaymentReceived(tx) && getTxFilterMatch(tx, dailySaleFilter))
+    .reduce((sum, tx) => sum + Number(tx.credit || 0), 0);
+
   const activePeriodSales = activePeriodBills.reduce((sum, b) => sum + getBillAmount(b), 0);
-  const activePeriodCash = activePeriodBills.filter(isCashPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
+  const activePeriodPureCashSales = activePeriodBills.filter(isCashPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
+  // Cash Sales includes Direct Cash Sales + Udhar Vasooli (Cash Collected from Customers)
+  const activePeriodCash = activePeriodPureCashSales + activePeriodUdharCollected;
   const activePeriodUpi = activePeriodBills.filter(isUpiPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
-  const activePeriodCredit = activePeriodBills.filter(isCreditPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
+  const activePeriodGrossCredit = activePeriodBills.filter(isCreditPayment).reduce((sum, b) => sum + getBillAmount(b), 0);
+  // Net Credit = Total Udhar - Udhar payment collected
+  const activePeriodCredit = Math.max(0, activePeriodGrossCredit - activePeriodUdharCollected);
 
   const handleShareWhatsAppBill = (bill) => {
     if (!bill) return;
@@ -2112,7 +2146,7 @@ function MobileVyaparAppContent() {
     const isSupplier = pType === "supplier" || String(pType).toLowerCase().includes("sup");
     let curBal = Number(party.currentBalance ?? party.balance ?? 0);
     const op = Math.abs(Number(party.openingBalance || 0));
-    if (isSupplier && op > 0 && (curBal === 0 || (curBal > 0 && Math.abs(curBal) === op))) {
+    if (isSupplier && op > 0 && (curBal > 0 && Math.abs(curBal) === op)) {
       curBal = -op;
     }
     setNewPartyBalance(String(Math.abs(curBal)));

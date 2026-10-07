@@ -528,9 +528,11 @@ export const getPartyStatement = async (req, res) => {
     const totalDebit = ledgerEntries.reduce((s, e) => s + (Number(e.debit) || 0), 0);
     const totalCredit = ledgerEntries.reduce((s, e) => s + (Number(e.credit) || 0), 0);
 
-    // Ground truth balance of the party is the actual running balance of all active transactions!
-    // Auto-sync party currentBalance in DB so it NEVER gets stuck on stale / out-of-sync values
-    if (party.currentBalance !== runningBal) {
+    // Auto-sync party currentBalance — BUT skip if a settlement tx exists (clearPartyBalance
+    // intentionally zeroed the balance; the recalculated runningBal should already be 0 if
+    // bills were properly marked paid.  If it isn't, we trust the settlement, not the recount).
+    const hasSettlement = txRecords.some(t => t.type === 'settlement');
+    if (!hasSettlement && party.currentBalance !== runningBal) {
       party.currentBalance = runningBal;
       party.updatedAt = new Date();
       party.save().catch(e => console.warn("Failed to auto-sync party balance:", e));
@@ -829,12 +831,23 @@ export const clearPartyBalance = async (req, res) => {
       if (t.refNo) existingRefBillIds.add(String(t.refNo));
     });
 
-    const billRecords = await Bill.find({
-      partyId: party._id,
+    const escapeRegex = (s) => (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const nameRegex = new RegExp(`^${escapeRegex(party.name)}$`, "i");
+    const billQuery = {
       companyId: req.companyId,
       isDeleted: { $ne: true },
-      status: { $ne: "cancelled" }
-    });
+      status: { $ne: "cancelled" },
+      $or: [
+        { partyId: party._id },
+        { customerName: nameRegex },
+        { partyName: nameRegex },
+        { customer: nameRegex }
+      ]
+    };
+    if (party.mobileNumber && party.mobileNumber.length >= 10) {
+      billQuery.$or.push({ customerMobile: party.mobileNumber }, { customerPhone: party.mobileNumber });
+    }
+    const billRecords = await Bill.find(billQuery);
 
     for (const b of billRecords) {
       const bNum = String(b.billNumber || b.invoiceNumber || b.id || b._id || "BILL");
@@ -878,16 +891,11 @@ export const clearPartyBalance = async (req, res) => {
       await settleTx.save();
     }
 
-    // Mark any pending credit bills as settled
-    await Bill.updateMany(
-      {
-        partyId: party._id,
-        companyId: req.companyId,
-        isDeleted: { $ne: true },
-        paymentStatus: { $in: ["unpaid", "partial"] }
-      },
-      { $set: { paymentStatus: "paid" } }
-    ).catch(() => {});
+    // Mark any pending credit bills as settled — use same broad filter as the bill fetch above
+    const paidBillFilter = { ...billQuery };
+    delete paidBillFilter.status; // remove status filter, keep isDeleted filter
+    paidBillFilter.paymentStatus = { $in: ["unpaid", "partial"] };
+    await Bill.updateMany(paidBillFilter, { $set: { paymentStatus: "paid" } }).catch(() => {});
 
     party.currentBalance = 0;
     party.openingBalance = 0;
@@ -978,8 +986,10 @@ export const listParties = async (req, res) => {
       let curBal = Number(pDoc.currentBalance || 0);
       const opBal = Math.abs(Number(pDoc.openingBalance || 0));
 
+      // Auto-heal suppliers whose openingBalance was saved with positive currentBalance
+      // Do NOT revert if curBal is 0 (which means it's settled/cleared)
       if (isSupplier && opBal > 0) {
-        if (curBal === 0 || (curBal > 0 && Math.abs(curBal) === opBal)) {
+        if (curBal > 0 && Math.abs(curBal) === opBal) {
           curBal = -opBal;
           pDoc.currentBalance = curBal;
           // Background update to persist correct negative balance in DB

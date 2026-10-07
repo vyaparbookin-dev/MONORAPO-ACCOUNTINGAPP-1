@@ -42,9 +42,9 @@ class StorageManager {
     let rawBal = Number(p.currentBalance ?? p.balance ?? p.openingBalance ?? 0);
     const opBal = Math.abs(Number(p.openingBalance || 0));
 
-    // If supplier balance is 0 or positive from opening balance, treat as payable (negative / देने हैं)
+    // If supplier balance is positive from opening balance, treat as payable (negative / देने हैं)
     if (isSupplier && opBal > 0) {
-      if (rawBal === 0 || (rawBal > 0 && Math.abs(rawBal) === opBal)) {
+      if (rawBal > 0 && Math.abs(rawBal) === opBal) {
         rawBal = -opBal;
       }
     }
