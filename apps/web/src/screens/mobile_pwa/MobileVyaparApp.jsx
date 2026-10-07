@@ -3240,6 +3240,7 @@ function MobileVyaparAppContent() {
             productId: matchedItem?._id || matchedItem?.id || null,
             name: matchedItem ? matchedItem.name : (rawName || `सामान ${itemIdx + 1}`),
             rawScannedName: rawName,
+            hsn: it.hsn || matchedItem?.hsnCode || "",
             qty: rawQty,
             unit: it.unit || (matchedItem?.unit || "Pcs"),
             price: finalPrice,
@@ -3252,12 +3253,18 @@ function MobileVyaparAppContent() {
         });
 
         const detectedParty = rawBill.partyName?.trim() || (ocrBillType === 'sale' ? (files.length > 1 ? `पर्ची ग्राहक ${billIdx + 1}` : "कच्ची पर्ची ग्राहक") : "सप्लायर");
-        const calculatedTotal = processedItems.reduce((sum, it) => sum + it.total, 0);
+        const charges = rawBill.additionalCharges || [];
+        const chargesTotal = charges.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+        const calculatedTotal = processedItems.reduce((sum, it) => sum + it.total, 0) + chargesTotal;
 
         return {
           id: `batch-bill-${Date.now()}-${billIdx}`,
           partyName: detectedParty,
           partyPhone: "",
+          gstin: rawBill.gstin || "",
+          billNumber: rawBill.invoiceNumber || "",
+          billDate: rawBill.billDate || rawBill.date || new Date().toISOString().split("T")[0],
+          additionalCharges: charges,
           billType: rawBill.billType || ocrBillType,
           paymentMode: "CASH",
           items: processedItems,
@@ -3382,21 +3389,30 @@ function MobileVyaparAppContent() {
       const createdList = [];
       for (const [idx, b] of scannedBillsBatch.entries()) {
         if (b.items.length === 0) continue;
-        const genScanBillNo = `SCAN-${Date.now().toString().slice(-6)}-${idx + 1}`;
+        const genScanBillNo = b.billNumber && b.billNumber.trim().length > 1 
+          ? b.billNumber.trim() 
+          : `SCAN-${Date.now().toString().slice(-6)}-${idx + 1}`;
         const partyTitle = b.partyName.trim() || "कच्ची पर्ची ग्राहक";
+        const extraNotes = (b.additionalCharges || []).length > 0
+          ? `[अतिरिक्त खर्च: ${(b.additionalCharges || []).map(c => `${c.name} ₹${c.amount}`).join(", ")}]`
+          : "";
+
         const payload = {
           billNumber: genScanBillNo,
           partyName: partyTitle,
           customerName: partyTitle,
           customerPhone: b.partyPhone.trim(),
           customerMobile: b.partyPhone.trim() || undefined,
+          customerGst: b.gstin ? b.gstin.trim() : undefined,
           paymentMode: b.paymentMode,
           paymentMethod: b.paymentMode === "CASH" ? "cash" : b.paymentMode === "UPI" ? "online" : "credit",
           paymentStatus: b.paymentMode === "UDHAR" ? "unpaid" : "paid",
           status: b.paymentMode === "UDHAR" ? "issued" : "paid",
+          notes: extraNotes || undefined,
           items: b.items.map(i => ({
             productId: i.matchedCatalogItem?.id || i.id,
             name: i.name,
+            hsnCode: i.hsn || undefined,
             quantity: Number(i.qty) || 1,
             price: Number(i.price) || 0,
             total: Number(i.total) || ((Number(i.price) || 0) * (Number(i.qty) || 1))
@@ -3404,7 +3420,7 @@ function MobileVyaparAppContent() {
           total: Number(b.totalAmount) || 0,
           finalAmount: Number(b.totalAmount) || 0,
           billImageUrl: b.imagePreview,
-          date: new Date()
+          date: b.billDate ? new Date(b.billDate) : new Date()
         };
 
         const res = await api.post("/api/billing", payload).catch(() => null);
@@ -5911,7 +5927,7 @@ function MobileVyaparAppContent() {
                       type="text" 
                       value={scannedBillsBatch[activeScannedIndex].partyName}
                       onChange={(e) => handleUpdateActiveBillField('partyName', e.target.value)}
-                      placeholder="पार्टी का नाम..."
+                      placeholder="पार्टी / फर्म का नाम..."
                       className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-indigo-600"
                     />
                     <input 
@@ -5922,6 +5938,53 @@ function MobileVyaparAppContent() {
                       className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
                     />
                   </div>
+
+                  {/* Bill Date, Invoice No & GSTIN extracted from bill */}
+                  <div className="grid grid-cols-3 gap-1.5 text-[10px]">
+                    <div className="bg-white p-1.5 rounded-xl border border-slate-200">
+                      <span className="text-slate-400 block font-semibold text-[9px]">📅 तारीख</span>
+                      <input 
+                        type="text" 
+                        value={scannedBillsBatch[activeScannedIndex].billDate || ''} 
+                        onChange={(e) => handleUpdateActiveBillField('billDate', e.target.value)}
+                        placeholder="DD/MM/YYYY"
+                        className="w-full font-bold text-slate-800 outline-none bg-transparent"
+                      />
+                    </div>
+                    <div className="bg-white p-1.5 rounded-xl border border-slate-200">
+                      <span className="text-slate-400 block font-semibold text-[9px]">🧾 बिल सं.</span>
+                      <input 
+                        type="text" 
+                        value={scannedBillsBatch[activeScannedIndex].billNumber || ''} 
+                        onChange={(e) => handleUpdateActiveBillField('billNumber', e.target.value)}
+                        placeholder="Inv No..."
+                        className="w-full font-bold text-slate-800 outline-none bg-transparent"
+                      />
+                    </div>
+                    <div className="bg-white p-1.5 rounded-xl border border-slate-200">
+                      <span className="text-slate-400 block font-semibold text-[9px]">🏛️ GSTIN</span>
+                      <input 
+                        type="text" 
+                        value={scannedBillsBatch[activeScannedIndex].gstin || ''} 
+                        onChange={(e) => handleUpdateActiveBillField('gstin', e.target.value)}
+                        placeholder="GST No..."
+                        className="w-full font-bold text-slate-800 outline-none bg-transparent uppercase"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Local Freight / Packaging / Hamali charges if detected */}
+                  {scannedBillsBatch[activeScannedIndex].additionalCharges?.length > 0 && (
+                    <div className="bg-amber-50 p-2 rounded-xl border border-amber-200 space-y-1">
+                      <span className="text-[10px] font-black text-amber-800">🚚 अतिरिक्त खर्च (भाड़ा / पैकेजिंग):</span>
+                      {scannedBillsBatch[activeScannedIndex].additionalCharges.map((ch, cIdx) => (
+                        <div key={cIdx} className="flex justify-between items-center text-xs font-bold text-amber-900">
+                          <span>{ch.name}</span>
+                          <span className="font-mono">₹{ch.amount}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-1.5 pt-1">
                     {["CASH", "UDHAR", "UPI"].map((m) => (
@@ -5971,17 +6034,24 @@ function MobileVyaparAppContent() {
 
                         {/* Match Status Badge & Memory Link */}
                         <div className="flex items-center justify-between gap-1 text-[10px]">
-                          {item.matchedCatalogItem ? (
-                            <div className="flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                              <CheckCircle size={10} /> 
-                              <span>दुकान से मैच्ड: <strong>{item.matchedCatalogItem.name}</strong></span>
-                              {item.confidence ? <span className="opacity-75">({item.confidence}%)</span> : null}
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1 font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                              <span>⚠️ नया सामान (दुकान में नहीं मिला)</span>
-                            </div>
-                          )}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {item.matchedCatalogItem ? (
+                              <div className="flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                <CheckCircle size={10} /> 
+                                <span>दुकान से मैच्ड: <strong>{item.matchedCatalogItem.name}</strong></span>
+                                {item.confidence ? <span className="opacity-75">({item.confidence}%)</span> : null}
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1 font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                                <span>⚠️ नया सामान (दुकान में नहीं मिला)</span>
+                              </div>
+                            )}
+                            {item.hsn ? (
+                              <span className="font-mono bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded text-[9px] font-bold">
+                                HSN: {item.hsn}
+                              </span>
+                            ) : null}
+                          </div>
 
                           {/* Quick Link/Search Dropdown to link to existing catalog item */}
                           <select

@@ -21,6 +21,7 @@ export function buildBillEntry({ matchedItems = [], billMeta = {} }) {
       productId: pId,
       name: pName,
       rawName: item.rawName,
+      hsn: item.hsn || item.product?.hsnCode || "",
       quantity: qty,
       rate: price,
       price: price,
@@ -47,20 +48,28 @@ export function buildBillEntry({ matchedItems = [], billMeta = {} }) {
     }
   }
 
+  const additionalCharges = billMeta.additionalCharges || [];
+  const additionalChargesTotal = additionalCharges.reduce((s, c) => s + Number(c.amount || 0), 0);
+
   const grandTotal = readyLines.reduce((s, it) => s + Number(it.total || 0), 0) +
                      pendingConfirmation.reduce((s, it) => s + Number(it.total || 0), 0) +
-                     unmatched.reduce((s, it) => s + Number(it.total || 0), 0);
+                     unmatched.reduce((s, it) => s + Number(it.total || 0), 0) +
+                     additionalChargesTotal;
 
   return {
     bill: {
-      date: billMeta.date || new Date().toISOString(),
+      date: billMeta.date || billMeta.billDate || new Date().toISOString(),
       partyName: billMeta.partyName || "",
+      gstin: billMeta.gstin || "",
+      invoiceNumber: billMeta.invoiceNumber || "",
+      additionalCharges: additionalCharges,
       partyType: billMeta.partyType || "customer",
       billType: billMeta.billType || "sale",
       lines: readyLines,
       status: (pendingConfirmation.length > 0 || unmatched.length > 0) ? "needs-review" : "ready",
       totalAmount: +grandTotal.toFixed(2),
     },
+    additionalCharges,
     readyLines,
     pendingConfirmation,
     unmatched,

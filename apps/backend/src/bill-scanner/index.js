@@ -1,4 +1,4 @@
-import { extractText, parseLineItems } from "./ocrExtractor.js";
+import { extractText, parseLineItems, parseBillMetadata } from "./ocrExtractor.js";
 import { matchProducts } from "./productMatcher.js";
 import { buildBillEntry } from "./billEntryBuilder.js";
 
@@ -13,9 +13,20 @@ import { buildBillEntry } from "./billEntryBuilder.js";
 export async function scanBillToEntry(filePathOrBuffer, productCatalog = [], billMeta = {}) {
   const mimeType = billMeta.mimeType || "image/png";
   const { text, method } = await extractText(filePathOrBuffer, mimeType);
+  const metadata = parseBillMetadata(text);
+  const mergedMeta = {
+    ...metadata,
+    ...billMeta,
+    partyName: billMeta.partyName || metadata.partyName || "",
+    date: billMeta.date || metadata.billDate || "",
+    billDate: metadata.billDate || billMeta.date || "",
+    invoiceNumber: metadata.invoiceNumber || "",
+    gstin: metadata.gstin || "",
+    additionalCharges: metadata.additionalCharges || []
+  };
   const rawItems = parseLineItems(text);
   const matchedItems = await matchProducts(rawItems, productCatalog);
-  const result = buildBillEntry({ matchedItems, billMeta });
+  const result = buildBillEntry({ matchedItems, billMeta: mergedMeta });
 
   return {
     success: true,
@@ -23,6 +34,11 @@ export async function scanBillToEntry(filePathOrBuffer, productCatalog = [], bil
     extractionMethod: method,
     rawText: text,
     scannedCount: rawItems.length,
+    partyName: mergedMeta.partyName,
+    gstin: mergedMeta.gstin,
+    invoiceNumber: mergedMeta.invoiceNumber,
+    billDate: mergedMeta.billDate,
+    additionalCharges: mergedMeta.additionalCharges,
     ...result
   };
 }
