@@ -447,7 +447,15 @@ function MobileVyaparAppContent() {
 
   // ==================== GHAR KHARCH (HOUSEHOLD & FAMILY EXPENSE) STATE ====================
   const [showGharKharchModal, setShowGharKharchModal] = useState(() => sessionStorage.getItem("mobile_show_gharkharch_entry") === "true");
-  const [showGharKharchLedgerModal, setShowGharKharchLedgerModal] = useState(() => sessionStorage.getItem("mobile_show_gharkharch_ledger") === "true");
+  const [showGharKharchLedgerModal, setShowGharKharchLedgerModal] = useState(() => {
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("view") === "ghar-kharch" || sp.get("tab") === "ghar-kharch" || window.location.hash.includes("ghar-kharch")) {
+        return true;
+      }
+    }
+    return sessionStorage.getItem("mobile_show_gharkharch_ledger") === "true";
+  });
   const [gharKharchType, setGharKharchType] = useState("drawings"); // 'drawings' (Ghar Kharch) or 'operating' (Dukaan Kharch)
   const [gharKharchFlow, setGharKharchFlow] = useState("given"); // 'given' (पैसा दिया / खर्च) or 'received' (पैसा लिया / उधार/कैपिटल)
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("ALL");
@@ -1230,7 +1238,7 @@ function MobileVyaparAppContent() {
       ? "*🏡 सम्पूर्ण फैमिली घर खर्च विवरण (All Members)*"
       : `*🏡 ${memberFilter} का व्यक्तिगत घर खर्च विवरण*`;
 
-    const appLink = typeof window !== 'undefined' ? `${window.location.origin}` : 'https://vyaparbook.in';
+    const appLink = typeof window !== 'undefined' ? `${window.location.origin}/mobile-app?view=ghar-kharch` : 'https://vyaparbook.in/mobile-app?view=ghar-kharch';
 
     const headerLines = [
       titleHeader,
@@ -1265,8 +1273,9 @@ function MobileVyaparAppContent() {
     const remainingCount = filtered.length - includedCount;
     if (remainingCount > 0) {
       itemLines.push(`...और ${remainingCount} अन्य खर्चे बाकी हैं।`);
-      itemLines.push(`🔗 पूरा लेजर देखने व कॉपी करने हेतु ऐप खोलें: ${appLink}`);
     }
+    // Always include direct view and copy link
+    itemLines.push(`🔗 पूरा लेजर देखने व 1-क्लिक कॉपी हेतु लिंक: ${appLink}`);
 
     const allLines = [...headerLines, ...itemLines, ...footerLines].join(String.fromCharCode(10));
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(allLines)}`, '_blank');
@@ -6791,7 +6800,7 @@ function MobileVyaparAppContent() {
                       <button
                         type="button"
                         onClick={() => {
-                          const appLink = typeof window !== 'undefined' ? `${window.location.origin}` : 'https://vyaparbook.in';
+                          const appLink = typeof window !== 'undefined' ? `${window.location.origin}/mobile-app?view=ghar-kharch` : 'https://vyaparbook.in/mobile-app?view=ghar-kharch';
                           let msg = `*🏡 फैमिली घर खर्च रिपोर्ट (${activeMonthLabel})*\n`;
                           msg += `*🏢 कंपनी:* ${selectedCompany?.name || 'व्यापार'}\n`;
                           msg += `----------------------------------\n`;
@@ -6819,8 +6828,9 @@ function MobileVyaparAppContent() {
                           const leftover = filteredItems.length - included;
                           if (leftover > 0) {
                             msg += `...और ${leftover} अन्य खर्चे बाकी हैं।\n`;
-                            msg += `🔗 पूरा लेजर देखने व कॉपी करने हेतु ऐप खोलें: ${appLink}\n`;
                           }
+                          // Always include direct link to view and copy
+                          msg += `🔗 पूरा लेजर देखने व 1-क्लिक कॉपी हेतु लिंक: ${appLink}\n`;
                           msg += `----------------------------------\n_Generated via Mobile Vyapar App_`;
                           window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
                         }}

@@ -263,7 +263,9 @@ export default function WealthTrackerExportModal({
       return;
     }
 
-    let message = "";
+    const appLink = typeof window !== 'undefined' ? `${window.location.origin}/mobile-app?view=ghar-kharch` : 'https://vyaparbook.in/mobile-app?view=ghar-kharch';
+
+    let messageHeader = "";
     if (!rawTextOnly) {
       const typeLabel =
         expenseFilterType === "drawings"
@@ -272,21 +274,41 @@ export default function WealthTrackerExportModal({
           ? "🏢 दुकान खर्च (Business Operating Expenses)"
           : "📊 सभी खर्च (All Shop + Ghar Expenses)";
 
-      message += `📊 *Wealth Tracker Expenses Export*\n`;
-      message += `🏢 ${companyName}\n`;
-      message += `📂 श्रेणी: ${typeLabel}\n`;
-      message += `📅 अवधि: ${startDate || "आरंभ"} से ${endDate || "आज"}\n`;
-      message += `💰 कुल खर्च: ₹${totalAmount.toLocaleString("en-IN")} (${structuredData.length} प्रविष्टियां)\n`;
-      message += `--------------------------------\n`;
-      message += `*Format:* Date | Amount | Category | Note | Mode\n`;
-      message += `--------------------------------\n`;
+      messageHeader += `📊 *Wealth Tracker Expenses Export*\n`;
+      messageHeader += `🏢 ${companyName}\n`;
+      messageHeader += `📂 श्रेणी: ${typeLabel}\n`;
+      messageHeader += `📅 अवधि: ${startDate || "आरंभ"} से ${endDate || "आज"}\n`;
+      messageHeader += `💰 कुल खर्च: ₹${totalAmount.toLocaleString("en-IN")} (${structuredData.length} प्रविष्टियां)\n`;
+      messageHeader += `--------------------------------\n`;
+      messageHeader += `*Format:* Date | Amount | Category | Note | Mode\n`;
+      messageHeader += `--------------------------------\n`;
     }
 
-    message += textLines.join("\n");
+    const footer = !rawTextOnly ? `\n--------------------------------\n_VyaparBook Wealth Tracker Export_` : "";
 
-    if (!rawTextOnly) {
-      message += `\n--------------------------------\n_VyaparBook Wealth Tracker Export_`;
+    // Fit maximum items within safe URL character limit (~2800 characters)
+    let currentLength = messageHeader.length + footer.length + 300;
+    const itemLines = [];
+    let includedCount = 0;
+
+    for (const line of textLines) {
+      if (currentLength + line.length > 2800) {
+        break;
+      }
+      itemLines.push(line);
+      currentLength += line.length + 1;
+      includedCount++;
     }
+
+    const remainingCount = textLines.length - includedCount;
+    if (remainingCount > 0) {
+      itemLines.push(`\n...और ${remainingCount} अन्य प्रविष्टियां बाकी हैं।`);
+    }
+
+    // Always include direct link for 1-click full view and copy
+    itemLines.push(`\n🔗 पूरा लेजर देखने व 1-क्लिक कॉपी हेतु लिंक:\n${appLink}`);
+
+    const message = messageHeader + itemLines.join("\n") + footer;
 
     const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, "_blank");
