@@ -36,8 +36,15 @@ export async function scanBillToEntry(filePathOrBuffer, productCatalog = [], bil
     scannedCount: rawItems.length,
     partyName: mergedMeta.partyName,
     gstin: mergedMeta.gstin,
+    sellerGst: metadata.sellerGst || "",
+    buyerGst: metadata.buyerGst || "",
     invoiceNumber: mergedMeta.invoiceNumber,
     billDate: mergedMeta.billDate,
+    challanNo: metadata.challanNo || "",
+    biltyNo: metadata.biltyNo || "",
+    vehicleNo: metadata.vehicleNo || "",
+    roundOff: metadata.roundOff || 0,
+    bankDetails: metadata.bankDetails || {},
     additionalCharges: mergedMeta.additionalCharges,
     ...result
   };

@@ -63,16 +63,33 @@ export function parseBillMetadata(rawText) {
   const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const meta = {
     partyName: "",
+    sellerGst: "",
+    buyerGst: "",
     gstin: "",
     billDate: "",
     invoiceNumber: "",
+    challanNo: "",
+    biltyNo: "",
+    vehicleNo: "",
+    roundOff: 0,
+    bankDetails: {
+      accountNo: "",
+      ifsc: "",
+      upiId: ""
+    },
     additionalCharges: [], // e.g. [{ name: 'लोकल भाड़ा (Freight)', amount: 250 }]
   };
 
-  // 1. GSTIN Regex (Standard 15-character Indian GSTIN)
-  const gstMatch = rawText.match(/\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b/i);
-  if (gstMatch) {
-    meta.gstin = gstMatch[0].toUpperCase();
+  // 1. Both GSTINs (Seller GSTIN vs Buyer GSTIN)
+  const gstRegex = /\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b/gi;
+  const gstMatches = [...rawText.matchAll(gstRegex)].map(m => m[0].toUpperCase());
+  const uniqueGsts = [...new Set(gstMatches)];
+  if (uniqueGsts.length > 0) {
+    meta.sellerGst = uniqueGsts[0];
+    meta.gstin = uniqueGsts[0];
+    if (uniqueGsts.length > 1) {
+      meta.buyerGst = uniqueGsts[1];
+    }
   }
 
   // 2. Invoice / Bill Number Regex
@@ -87,7 +104,45 @@ export function parseBillMetadata(rawText) {
     meta.billDate = dateMatch[1].trim();
   }
 
-  // 4. Party / Vendor Name Extraction from top header lines
+  // 4. Challan No / Bilty No (LR/GR) / Transport / Vehicle No
+  const challanMatch = rawText.match(/\b(?:challan|dc|delivery\s*note|dispatch)[\s\.\#\:\-]*([A-Za-z0-9\/\-]+)\b/i);
+  if (challanMatch && challanMatch[1] && !/^(no|date)$/i.test(challanMatch[1])) {
+    meta.challanNo = challanMatch[1].trim();
+  }
+
+  const biltyMatch = rawText.match(/\b(?:bilty|builty|lr|gr|consignment|rr|e-way|eway)[\s\.\#\:\-]*([A-Za-z0-9\/\-]+)\b/i);
+  if (biltyMatch && biltyMatch[1] && !/^(no|date)$/i.test(biltyMatch[1])) {
+    meta.biltyNo = biltyMatch[1].trim();
+  }
+
+  const vehMatch = rawText.match(/\b([A-Z]{2}[-\s]?[0-9]{1,2}[-\s]?[A-Z]{1,3}[-\s]?[0-9]{4})\b/i);
+  if (vehMatch && vehMatch[1]) {
+    meta.vehicleNo = vehMatch[1].toUpperCase().replace(/\s+/g, "-");
+  }
+
+  // 5. Round Off Amount
+  const roundMatch = rawText.match(/\b(?:round\s*off|r\/o)[\s\:\-]+([+-]?\d+(?:\.\d+)?)\b/i);
+  if (roundMatch && roundMatch[1]) {
+    meta.roundOff = parseFloat(roundMatch[1]);
+  }
+
+  // 6. Bank Details (Wholesale / Supplier Invoices)
+  const acMatch = rawText.match(/\b(?:a\/c\s*(?:no)?|account\s*(?:no)?)[\s\.\:\-]*([0-9]{9,18})\b/i);
+  if (acMatch && acMatch[1]) {
+    meta.bankDetails.accountNo = acMatch[1].trim();
+  }
+
+  const ifscMatch = rawText.match(/\b[A-Z]{4}0[A-Z0-9]{6}\b/i);
+  if (ifscMatch) {
+    meta.bankDetails.ifsc = ifscMatch[0].toUpperCase();
+  }
+
+  const upiMatch = rawText.match(/\b([a-zA-Z0-9.\-_]{2,30}@[a-zA-Z]{2,15})\b/i);
+  if (upiMatch && upiMatch[1] && !upiMatch[1].includes("gmail") && !upiMatch[1].includes("yahoo")) {
+    meta.bankDetails.upiId = upiMatch[1].trim();
+  }
+
+  // 7. Party / Vendor Name Extraction from top header lines
   for (let i = 0; i < Math.min(lines.length, 6); i++) {
     const l = lines[i];
     if (/tax\s*invoice|cash\s*memo|retail\s*invoice|bill\s*of\s*supply|estimate|quotation|original/i.test(l)) {
@@ -102,7 +157,7 @@ export function parseBillMetadata(rawText) {
     }
   }
 
-  // 5. Additional Charges (Freight / Transport / भाड़ा / Packaging / Hamali)
+  // 8. Additional Charges (Freight / Transport / भाड़ा / Packaging / Hamali)
   const chargeRegex = /\b(freight|transport|cartage|packaging|packing|bhada|भाड़ा|हमाली|loading|delivery|courier)[\s\w\.\:\-]*?(\d+(?:\.\d+)?)\b/i;
   for (const line of lines) {
     const chMatch = line.match(chargeRegex);

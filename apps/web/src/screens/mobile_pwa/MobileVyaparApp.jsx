@@ -3255,15 +3255,23 @@ function MobileVyaparAppContent() {
         const detectedParty = rawBill.partyName?.trim() || (ocrBillType === 'sale' ? (files.length > 1 ? `पर्ची ग्राहक ${billIdx + 1}` : "कच्ची पर्ची ग्राहक") : "सप्लायर");
         const charges = rawBill.additionalCharges || [];
         const chargesTotal = charges.reduce((s, c) => s + (Number(c.amount) || 0), 0);
-        const calculatedTotal = processedItems.reduce((sum, it) => sum + it.total, 0) + chargesTotal;
+        const roundOffVal = Number(rawBill.roundOff || 0);
+        const calculatedTotal = +(processedItems.reduce((sum, it) => sum + it.total, 0) + chargesTotal + roundOffVal).toFixed(2);
 
         return {
           id: `batch-bill-${Date.now()}-${billIdx}`,
           partyName: detectedParty,
           partyPhone: "",
-          gstin: rawBill.gstin || "",
+          gstin: rawBill.buyerGst || rawBill.gstin || "",
+          sellerGst: rawBill.sellerGst || "",
+          buyerGst: rawBill.buyerGst || "",
           billNumber: rawBill.invoiceNumber || "",
           billDate: rawBill.billDate || rawBill.date || new Date().toISOString().split("T")[0],
+          challanNo: rawBill.challanNo || "",
+          biltyNo: rawBill.biltyNo || "",
+          vehicleNo: rawBill.vehicleNo || "",
+          roundOff: roundOffVal,
+          bankDetails: rawBill.bankDetails || {},
           additionalCharges: charges,
           billType: rawBill.billType || ocrBillType,
           paymentMode: "CASH",
@@ -5973,6 +5981,42 @@ function MobileVyaparAppContent() {
                     </div>
                   </div>
 
+                  {/* Both GSTINs (Seller vs Buyer) */}
+                  {(scannedBillsBatch[activeScannedIndex].sellerGst || scannedBillsBatch[activeScannedIndex].buyerGst) && (
+                    <div className="flex gap-2 text-[9px] font-bold text-slate-500 pt-0.5 flex-wrap">
+                      {scannedBillsBatch[activeScannedIndex].sellerGst && (
+                        <span className="bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                          🏢 सप्लायर GST: <strong className="text-slate-800">{scannedBillsBatch[activeScannedIndex].sellerGst}</strong>
+                        </span>
+                      )}
+                      {scannedBillsBatch[activeScannedIndex].buyerGst && (
+                        <span className="bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                          🛍️ खरीदार GST: <strong className="text-slate-800">{scannedBillsBatch[activeScannedIndex].buyerGst}</strong>
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Transport, Challan & Bilty Details */}
+                  {(scannedBillsBatch[activeScannedIndex].biltyNo || scannedBillsBatch[activeScannedIndex].challanNo || scannedBillsBatch[activeScannedIndex].vehicleNo) && (
+                    <div className="bg-blue-50/70 p-2 rounded-xl border border-blue-200/80 flex flex-wrap gap-2 text-[10px] text-blue-900 font-bold">
+                      <span className="text-blue-700 font-black">🚛 ट्रांसपोर्ट:</span>
+                      {scannedBillsBatch[activeScannedIndex].biltyNo && <span>बिल्टी/LR: <strong className="text-blue-800">{scannedBillsBatch[activeScannedIndex].biltyNo}</strong></span>}
+                      {scannedBillsBatch[activeScannedIndex].challanNo && <span>चालान: <strong className="text-blue-800">{scannedBillsBatch[activeScannedIndex].challanNo}</strong></span>}
+                      {scannedBillsBatch[activeScannedIndex].vehicleNo && <span>गाड़ी: <strong className="text-blue-800">{scannedBillsBatch[activeScannedIndex].vehicleNo}</strong></span>}
+                    </div>
+                  )}
+
+                  {/* Supplier Bank Details */}
+                  {(scannedBillsBatch[activeScannedIndex].bankDetails?.accountNo || scannedBillsBatch[activeScannedIndex].bankDetails?.upiId) && (
+                    <div className="bg-emerald-50/70 p-2 rounded-xl border border-emerald-200/80 flex flex-wrap gap-2 text-[10px] text-emerald-900 font-bold">
+                      <span className="text-emerald-700 font-black">🏦 सप्लायर बैंक:</span>
+                      {scannedBillsBatch[activeScannedIndex].bankDetails.accountNo && <span>A/C: <strong className="font-mono text-emerald-800">{scannedBillsBatch[activeScannedIndex].bankDetails.accountNo}</strong></span>}
+                      {scannedBillsBatch[activeScannedIndex].bankDetails.ifsc && <span>IFSC: <strong className="font-mono text-emerald-800">{scannedBillsBatch[activeScannedIndex].bankDetails.ifsc}</strong></span>}
+                      {scannedBillsBatch[activeScannedIndex].bankDetails.upiId && <span>UPI: <strong className="font-mono text-emerald-800">{scannedBillsBatch[activeScannedIndex].bankDetails.upiId}</strong></span>}
+                    </div>
+                  )}
+
                   {/* Local Freight / Packaging / Hamali charges if detected */}
                   {scannedBillsBatch[activeScannedIndex].additionalCharges?.length > 0 && (
                     <div className="bg-amber-50 p-2 rounded-xl border border-amber-200 space-y-1">
@@ -6143,6 +6187,11 @@ function MobileVyaparAppContent() {
                     </span>
                   </div>
                   <div className="text-right">
+                    {scannedBillsBatch[activeScannedIndex].roundOff !== 0 && (
+                      <span className="text-[10px] text-slate-500 block font-semibold">
+                        राउंड ऑफ: {scannedBillsBatch[activeScannedIndex].roundOff > 0 ? '+' : ''}₹{scannedBillsBatch[activeScannedIndex].roundOff}
+                      </span>
+                    )}
                     <span className="text-[10px] text-slate-400 block">इस बिल की कुल राशि</span>
                     <span className="font-black text-xl text-[#059669]">
                       ₹ {Number(scannedBillsBatch[activeScannedIndex].totalAmount).toLocaleString('en-IN')}
