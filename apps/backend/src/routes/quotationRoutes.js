@@ -4,13 +4,15 @@ import {
   createQuotation,
   getQuotations,
   getQuotationById,
+  updateQuotation,
   updateQuotationStatus,
+  deleteQuotation,
 } from '../controllers/quotationController.js';
 
 const router = express.Router();
 
 router.route('/').post(protect, createQuotation).get(protect, getQuotations);
-router.route('/:id').get(protect, getQuotationById);
+router.route('/:id').get(protect, getQuotationById).put(protect, updateQuotation).delete(protect, deleteQuotation);
 router.route('/:id/status').patch(protect, updateQuotationStatus);
 
 export default router;

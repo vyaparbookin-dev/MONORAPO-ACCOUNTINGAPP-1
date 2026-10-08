@@ -15,13 +15,17 @@ export const createQuotation = async (req, res) => {
     const { companyId } = req;
     if (!companyId) return res.status(400).json({ success: false, message: "Company ID is missing" });
 
-    const quotationNumber = await getNextQuotationNumber(companyId);
+    const quotationNumber = req.body.quotationNumber || (await getNextQuotationNumber(companyId));
 
-    const quotation = new Quotation({
-      ...req.body,
-      companyId,
-      quotationNumber,
-    });
+    const payload = { ...req.body, companyId, quotationNumber };
+    if (!payload.partyId || String(payload.partyId).trim() === '') {
+      delete payload.partyId;
+    }
+    if (!payload.customerName) {
+      payload.customerName = payload.partyName || 'ग्राहक';
+    }
+
+    const quotation = new Quotation(payload);
 
     await quotation.save();
     res.status(201).json({ success: true, message: "Quotation created successfully", data: quotation });
@@ -34,8 +38,9 @@ export const getQuotations = async (req, res) => {
   try {
     const { companyId } = req;
     const quotations = await Quotation.find({ companyId, isDeleted: false })
-      .populate('partyId', 'name mobileNumber')
-      .sort({ date: -1 });
+      .populate('partyId', 'name mobileNumber address')
+      .populate('convertedBillId', 'billNumber invoiceNumber total')
+      .sort({ createdAt: -1 });
     res.status(200).json({ success: true, data: quotations });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -45,7 +50,8 @@ export const getQuotations = async (req, res) => {
 export const getQuotationById = async (req, res) => {
   try {
     const quotation = await Quotation.findOne({ _id: req.params.id, companyId: req.companyId })
-      .populate('partyId', 'name mobileNumber address');
+      .populate('partyId', 'name mobileNumber address')
+      .populate('convertedBillId', 'billNumber invoiceNumber total');
     if (!quotation) return res.status(404).json({ success: false, message: "Quotation not found" });
     res.status(200).json({ success: true, data: quotation });
   } catch (error) {
@@ -53,16 +59,52 @@ export const getQuotationById = async (req, res) => {
   }
 };
 
+export const updateQuotation = async (req, res) => {
+  try {
+    const updateData = { ...req.body };
+    if (!updateData.partyId || String(updateData.partyId).trim() === '') {
+      updateData.partyId = null;
+    }
+    const quotation = await Quotation.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.companyId, isDeleted: false },
+      updateData,
+      { new: true }
+    );
+    if (!quotation) return res.status(404).json({ success: false, message: "Quotation not found" });
+    res.status(200).json({ success: true, message: "Quotation updated successfully", data: quotation });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 export const updateQuotationStatus = async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status, convertedBillId } = req.body;
+    const updateFields = { status };
+    if (convertedBillId) {
+      updateFields.convertedBillId = convertedBillId;
+    }
     const quotation = await Quotation.findOneAndUpdate(
       { _id: req.params.id, companyId: req.companyId },
-      { status },
+      updateFields,
       { new: true }
     );
     if (!quotation) return res.status(404).json({ success: false, message: "Quotation not found" });
     res.status(200).json({ success: true, message: `Status updated to ${status}`, data: quotation });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const deleteQuotation = async (req, res) => {
+  try {
+    const quotation = await Quotation.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.companyId },
+      { isDeleted: true },
+      { new: true }
+    );
+    if (!quotation) return res.status(404).json({ success: false, message: "Quotation not found" });
+    res.status(200).json({ success: true, message: "Quotation deleted successfully" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

@@ -65,6 +65,7 @@ import MobileFamilyExpenseModal from "../../components/mobile/MobileFamilyExpens
 import WealthTrackerExportModal from "../../components/wealth_tracker/WealthTrackerExportModal";
 import MobileSavingsModal from "../../components/mobile/MobileSavingsModal";
 import MobileBankCCModal from "../../components/mobile/MobileBankCCModal";
+import MobileQuotationModal from "../../components/mobile/MobileQuotationModal";
 import UdharOtpVerificationModal from "../../components/modals/UdharOtpVerificationModal";
 import CreditLimitHubModal from "../../components/modals/CreditLimitHubModal";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
@@ -478,6 +479,14 @@ function MobileVyaparAppContent() {
   const [showFamilyExpenseModal, setShowFamilyExpenseModal] = useState(() => sessionStorage.getItem("mobile_show_family_expense") === "true");
   const [showSavingsModal, setShowSavingsModal] = useState(() => sessionStorage.getItem("mobile_show_savings") === "true");
   const [showBankCCModal, setShowBankCCModal] = useState(() => sessionStorage.getItem("mobile_show_bank_cc") === "true");
+  const [showQuotationModal, setShowQuotationModal] = useState(() => sessionStorage.getItem("mobile_show_quotations") === "true");
+  const [quotationsList, setQuotationsList] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("vb_local_quotations") || "[]");
+    } catch (e) {
+      return [];
+    }
+  });
   const [bankAccounts, setBankAccounts] = useState(() => {
     try {
       if (typeof localStorage !== "undefined") {
@@ -1800,6 +1809,34 @@ function MobileVyaparAppContent() {
   };
 
   // ==================== FAST BILLING CART ACTIONS ====================
+  const handleConvertQuotationToBill = async (quo) => {
+    if (!quo) return;
+    const convertedCart = (quo.items || []).map((it, idx) => ({
+      id: it.productId || `quo_it_${Date.now()}_${idx}`,
+      name: it.name || it.itemName,
+      salePrice: Number(it.rate || it.price || 0),
+      qty: Number(it.quantity || it.qty || 1),
+      unit: it.unit || 'Pcs'
+    }));
+    setBillCart(convertedCart);
+    setBillCustomer(quo.customerName || 'नकद ग्राहक');
+    setBillCustomerPhone(quo.customerPhone || '');
+    setBillCustomerAddress(quo.customerAddress || '');
+    setBillNotes(quo.notes ? `कोटेशन #${quo.quotationNumber}: ${quo.notes}` : `कोटेशन #${quo.quotationNumber}`);
+
+    // Mark quotation as converted
+    try {
+      await api.patch(`/api/quotations/${quo._id || quo.id}/status`, { status: 'converted' }).catch(() => null);
+      let local = JSON.parse(localStorage.getItem("vb_local_quotations") || "[]");
+      local = local.map(q => (q._id === quo._id || q.id === quo.id ? { ...q, status: 'converted' } : q));
+      localStorage.setItem("vb_local_quotations", JSON.stringify(local));
+      setQuotationsList(local);
+    } catch (e) {}
+
+    setShowQuotationModal(false);
+    setShowQuickBillModal(true);
+  };
+
   const handleAddToCart = (product) => {
     if (!product) return;
     const existing = billCart.find(i => i.id === product.id);
@@ -3995,6 +4032,23 @@ function MobileVyaparAppContent() {
               <ChevronRight size={16} className="text-emerald-600" />
             </div>
 
+            {/* 📝 DEDICATED QUOTATION & ESTIMATE HUB STRIP */}
+            <div 
+              onClick={() => setShowQuotationModal(true)}
+              className="p-3.5 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-blue-500/10 border border-blue-500/30 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm hover:border-blue-400 transition"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow">
+                  📝
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-xs text-blue-950">📝 कोटेशन व कच्चा एस्टीमेट (Quotation Hub)</h4>
+                  <p className="text-[10px] text-blue-800">📸 कैमरा/पर्ची से कोटेशन बनाएं • बिना स्टॉक काटे • 1-क्लिक में पक्के बिल में बदलें</p>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-blue-700" />
+            </div>
+
             {/* PagarBook Staff Strip */}
             <div 
               onClick={() => {
@@ -5414,6 +5468,54 @@ function MobileVyaparAppContent() {
                   onChange={(e) => setBillCustomerPhone(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
                 />
+
+                {/* 💡 SMART PENDING QUOTATION DETECTION */}
+                {(() => {
+                  const cName = String(billCustomer || "").trim().toLowerCase();
+                  const cPhone = String(billCustomerPhone || "").replace(/[^0-9]/g, "");
+                  if (!cName && !cPhone) return null;
+                  const allQuos = (quotationsList && quotationsList.length > 0) ? quotationsList : JSON.parse(localStorage.getItem("vb_local_quotations") || "[]");
+                  const matchQuo = allQuos.find(q => {
+                    if (q.status === "converted" || q.status === "invoiced") return false;
+                    const qPhone = String(q.customerPhone || q.partyId?.mobileNumber || "").replace(/[^0-9]/g, "");
+                    const qName = String(q.customerName || q.partyId?.name || "").trim().toLowerCase();
+                    if (cPhone.length >= 10 && qPhone.length >= 10 && (cPhone.slice(-10) === qPhone.slice(-10))) return true;
+                    if (cName && cName !== "अनाम ग्राहक" && cName !== "walk-in" && cName !== "नकद ग्राहक" && qName && (qName === cName || qName.includes(cName) || cName.includes(qName))) return true;
+                    return false;
+                  });
+                  if (!matchQuo) return null;
+                  return (
+                    <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-center justify-between gap-2 animate-in fade-in">
+                      <div className="min-w-0">
+                        <span className="font-black text-blue-950 flex items-center gap-1">
+                          💡 इस ग्राहक का पेंडिंग कोटेशन मिला!
+                        </span>
+                        <span className="text-[10px] text-blue-700 block truncate">
+                          #{matchQuo.quotationNumber} • ₹{Number(matchQuo.totalAmount || 0).toLocaleString('en-IN')} ({(matchQuo.items || []).length} सामान)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const convertedCart = (matchQuo.items || []).map((it, idx) => ({
+                            id: it.productId || `quo_it_${Date.now()}_${idx}`,
+                            name: it.name || it.itemName,
+                            salePrice: Number(it.rate || it.price || 0),
+                            qty: Number(it.quantity || it.qty || 1),
+                            unit: it.unit || 'Pcs'
+                          }));
+                          setBillCart(convertedCart);
+                          if (!billCustomer && matchQuo.customerName) setBillCustomer(matchQuo.customerName);
+                          if (!billCustomerPhone && matchQuo.customerPhone) setBillCustomerPhone(matchQuo.customerPhone);
+                          alert(`✅ कोटेशन #${matchQuo.quotationNumber} का सारा सामान बिल में लोड कर दिया गया है!`);
+                        }}
+                        className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[10px] rounded-lg shadow-xs cursor-pointer active:scale-95 transition shrink-0"
+                      >
+                        📥 बिल में लोड करें
+                      </button>
+                    </div>
+                  );
+                })()}
 
                 {/* ⭐ LIVE DIGITAL STAMP LOYALTY CARD IN MOBILE PWA */}
                 {mobileStampStatus?.cards && mobileStampStatus.cards.length > 0 && (
@@ -8901,6 +9003,16 @@ function MobileVyaparAppContent() {
             fetchBankAccounts();
           }}
           onAccountsChange={fetchBankAccounts}
+        />
+      )}
+
+      {showQuotationModal && (
+        <MobileQuotationModal
+          isOpen={showQuotationModal}
+          onClose={() => setShowQuotationModal(false)}
+          inventoryItems={items}
+          onConvertToBill={handleConvertQuotationToBill}
+          currentCompany={selectedCompany}
         />
       )}
 
