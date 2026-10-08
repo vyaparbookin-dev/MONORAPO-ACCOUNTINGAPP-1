@@ -49,12 +49,12 @@ export default function QuotationDetailPage() {
       <div className="p-4 border-b">
         <h1 className="text-2xl font-bold">Quotation</h1>
         <div className="flex justify-between mt-2 text-sm text-gray-600">
-          <p>To: <span className="font-semibold">{quotation.customerName}</span></p>
-          <p>Date: <span className="font-semibold">{new Date(quotation.date).toLocaleDateString()}</span></p>
+          <p>To: <span className="font-semibold">{quotation.customerName || quotation.partyId?.name || 'अनाम ग्राहक'}</span></p>
+          <p>Date: <span className="font-semibold">{quotation.date ? new Date(quotation.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</span></p>
         </div>
         <div className="flex justify-between mt-1 text-sm text-gray-600">
           <p>Quotation No: <span className="font-semibold">#{quotation.quotationNumber}</span></p>
-          <p>Valid Until: <span className="font-semibold">{new Date(quotation.validUntil).toLocaleDateString()}</span></p>
+          <p>Valid Until: <span className="font-semibold">{quotation.validUntil ? new Date(quotation.validUntil).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span></p>
         </div>
       </div>
 
@@ -72,7 +72,7 @@ export default function QuotationDetailPage() {
           <tbody>
             {quotation.items.map((item, index) => (
               <tr key={index} className="border-b">
-                <td className="p-2 font-medium">{item.itemName}</td>
+                <td className="p-2 font-medium">{item.name || item.itemName}</td>
                 <td className="p-2 text-right">{item.quantity}</td>
                 <td className="p-2 text-right">₹{Number(item?.rate || 0).toFixed(2)}</td>
                 <td className="p-2 text-right">₹{(item.quantity * item.rate).toFixed(2)}</td>

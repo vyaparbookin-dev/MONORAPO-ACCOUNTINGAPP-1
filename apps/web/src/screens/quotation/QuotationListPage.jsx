@@ -25,10 +25,12 @@ export default function QuotationListPage() {
     fetchQuotations();
   }, []);
 
-  const filteredQuotations = quotations.filter(q =>
-    String(q?.quotationNumber || '').toLowerCase().includes(String(searchTerm || '').toLowerCase()) ||
-    q.partyId?.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredQuotations = quotations.filter(q => {
+    const qNum = String(q?.quotationNumber || '').toLowerCase();
+    const cName = String(q?.customerName || q?.partyId?.name || '').toLowerCase();
+    const sTerm = String(searchTerm || '').toLowerCase();
+    return qNum.includes(sTerm) || cName.includes(sTerm);
+  });
 
   const updateStatus = async (id, status) => {
     if (!window.confirm(`Are you sure you want to change status to ${status}?`)) return;
@@ -86,8 +88,8 @@ export default function QuotationListPage() {
               {filteredQuotations.map((q) => (
                 <tr key={q._id} className="border-b hover:bg-gray-50">
                   <td className="p-4 font-medium">{q.quotationNumber}</td>
-                  <td className="p-4">{q.partyId?.name || 'N/A'}</td>
-                  <td className="p-4">{new Date(q.date).toLocaleDateString()}</td>
+                  <td className="p-4 font-semibold text-gray-800">{q.customerName || q.partyId?.name || 'अनाम ग्राहक'}</td>
+                  <td className="p-4">{q.date ? new Date(q.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</td>
                   <td className="p-4 text-right">₹{Number(q?.totalAmount || 0).toFixed(2)}</td>
                   <td className="p-4 text-center"><span className={`px-2 py-1 rounded-full text-xs font-bold ${q.status === 'accepted' ? 'bg-green-100 text-green-800' : q.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{q.status.toUpperCase()}</span></td>
                   <td className="p-4 text-center flex justify-center gap-2">
