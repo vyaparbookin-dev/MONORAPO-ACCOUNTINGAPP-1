@@ -12,7 +12,8 @@ import {
   deletePartyTransaction,
   updatePartyTransaction,
   clearPartyBalance,
-  syncPartyBalance
+  syncPartyBalance,
+  setPartyOpeningBalance
 } from "../controllers/partyController.js";
 import { protect, requireCompany } from "../middleware/authmiddleware.js";
 
@@ -28,6 +29,8 @@ router.get("/", listParties);
 router.post("/attach-image", attachPartyTransactionImage);
 router.delete("/transaction/:id", deletePartyTransaction);
 router.put("/transaction/:id", updatePartyTransaction);
+router.post("/:id/opening-balance", setPartyOpeningBalance);
+router.put("/:id/opening-balance", setPartyOpeningBalance);
 router.post("/:id/clear-balance", clearPartyBalance);
 router.post("/:id/sync-balance", syncPartyBalance);
 router.get("/:id/quick-summary", getPartyQuickSummary);

@@ -400,6 +400,14 @@ function MobileVyaparAppContent() {
   const [editPartyTxPaymentMode, setEditPartyTxPaymentMode] = useState('CASH');
   const [savingEditPartyTx, setSavingEditPartyTx] = useState(false);
 
+  // 📦 Party Old Hisab (Opening Balance) Dedicated States
+  const [showOldHisabModal, setShowOldHisabModal] = useState(false);
+  const [oldHisabAmount, setOldHisabAmount] = useState('');
+  const [oldHisabDirection, setOldHisabDirection] = useState('positive'); // 'positive' = लेने हैं, 'negative' = देने हैं
+  const [oldHisabDate, setOldHisabDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [oldHisabNotes, setOldHisabNotes] = useState('');
+  const [savingOldHisab, setSavingOldHisab] = useState(false);
+
   const [previewBillImage, setPreviewBillImage] = useState(null);
   const [previewImageList, setPreviewImageList] = useState([]);
   const [previewImageIndex, setPreviewImageIndex] = useState(0);
@@ -2819,6 +2827,97 @@ function MobileVyaparAppContent() {
     }
   };
 
+  const handleOpenOldHisabModal = (party) => {
+    if (!party) return;
+    const isSupplier = (party.type === 'supplier' || party.partyType === 'supplier');
+    const rawOp = Number(party.openingBalance || 0);
+    setOldHisabAmount(rawOp > 0 ? String(rawOp) : '');
+    setOldHisabDirection(isSupplier || rawOp < 0 ? 'negative' : 'positive');
+    setOldHisabDate(party.createdAt ? new Date(party.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+    setOldHisabNotes(party.notes || 'प्रारंभिक पुराना हिसाब / बहीखाता बकाया');
+    setShowOldHisabModal(true);
+  };
+
+  const handleSaveOldHisab = async () => {
+    if (!selectedPartyDetail) return;
+    const amt = Number(oldHisabAmount || 0);
+    if (isNaN(amt) || amt < 0) {
+      alert("कृपया मान्य राशि (₹) दर्ज करें!");
+      return;
+    }
+
+    setSavingOldHisab(true);
+    try {
+      const pId = selectedPartyDetail._id || selectedPartyDetail.id;
+      const payload = {
+        amount: amt,
+        direction: oldHisabDirection,
+        date: oldHisabDate ? new Date(oldHisabDate).toISOString() : new Date().toISOString(),
+        notes: oldHisabNotes.trim()
+      };
+
+      await api.post(`/api/party/${pId}/opening-balance`, payload).catch(() =>
+        api.post(`/api/parties/${pId}/opening-balance`, payload)
+      );
+
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+
+      setSelectedPartyDetail(prev => prev ? ({
+        ...prev,
+        openingBalance: amt,
+        notes: payload.notes
+      }) : prev);
+
+      setParties(prev => {
+        const updated = prev.map(p => {
+          const id = p.id || p._id;
+          if (id === pId) {
+            return {
+              ...p,
+              openingBalance: amt,
+              notes: payload.notes
+            };
+          }
+          return p;
+        });
+        if (currentCoId) {
+          try { storageManager.saveParties(currentCoId, updated); } catch (e) {}
+        }
+        return updated;
+      });
+
+      alert(amt > 0 ? `✅ पुराना हिसाब (₹${amt.toLocaleString('en-IN')}) सफलतापूर्वक दर्ज हुआ!` : "✅ पुराना हिसाब हटा दिया गया!");
+      setShowOldHisabModal(false);
+      fetchPartyStatement(pId);
+    } catch (err) {
+      console.error("Save old hisab error:", err);
+      alert("पुराना हिसाब सुरक्षित करने में त्रुटि: " + (err.response?.data?.message || err.message));
+    } finally {
+      setSavingOldHisab(false);
+    }
+  };
+
+  const handleDeleteOldHisab = async () => {
+    if (!selectedPartyDetail) return;
+    if (!window.confirm("क्या आप इस पार्टी का पुराना हिसाब हटाकर ₹0 करना चाहते हैं?")) return;
+    setOldHisabAmount('0');
+    setSavingOldHisab(true);
+    try {
+      const pId = selectedPartyDetail._id || selectedPartyDetail.id;
+      await api.delete(`/api/party/transaction/open_${pId}`).catch(() =>
+        api.delete(`/api/parties/transaction/open_${pId}`)
+      );
+      setSelectedPartyDetail(prev => prev ? ({ ...prev, openingBalance: 0 }) : prev);
+      alert("🗑️ पुराना हिसाब हटा दिया गया!");
+      setShowOldHisabModal(false);
+      fetchPartyStatement(pId);
+    } catch (err) {
+      console.error("Delete old hisab error:", err);
+      alert("त्रुटि: " + (err.response?.data?.message || err.message));
+    } finally {
+      setSavingOldHisab(false);
+    }
+  };
 
   const handleExportPartyExcel = (party, txs) => {
     if (!party) return;
@@ -7602,12 +7701,20 @@ function MobileVyaparAppContent() {
                 );
               })()}
 
-              {/* WhatsApp & Call & Clear Balance */}
-              <div className="flex gap-2">
+              {/* WhatsApp, Call, Clear Balance & Old Hisab Action Buttons */}
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => handleOpenOldHisabModal(selectedPartyDetail)}
+                  className="py-2 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition shadow-xs"
+                  title="पुराना हिसाब / ओपनिंग बैलेंस जोड़ें या बदलें"
+                >
+                  📦 पुराना हिसाब
+                </button>
                 <button
                   type="button"
                   onClick={() => handleSharePartyStatementWhatsApp(selectedPartyDetail)}
-                  className="flex-1 py-2 bg-[#25D366] hover:bg-green-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition"
+                  className="flex-1 py-2 bg-[#25D366] hover:bg-green-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition min-w-[100px]"
                 >
                   💬 WhatsApp
                 </button>
@@ -8454,6 +8561,146 @@ function MobileVyaparAppContent() {
                   );
                 })()}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📱 9.2 PARTY OLD HISAB (OPENING BALANCE) MODAL */}
+      {showOldHisabModal && selectedPartyDetail && (
+        <div className="fixed inset-0 z-[95] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-black text-lg">
+                  📦
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">पुराना हिसाब / ओपनिंग बैलेंस</h3>
+                  <p className="text-[10px] text-slate-500 font-bold truncate max-w-[180px]">{selectedPartyDetail.name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOldHisabModal(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-lg hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-2xl space-y-1">
+              <span className="text-[10px] font-black text-indigo-800 block">💡 पुराना बकाया हिसाब:</span>
+              <p className="text-[11px] text-indigo-950 font-medium leading-relaxed">
+                यदि ग्राहक या सप्लायर का कोई पुराना बकाया, डायरी का हिसाब या पिछले साल की उधारी है, तो उसे यहाँ दर्ज करें। यह लेजर में सबसे ऊपर प्रारंभिक शेष के रूप में जुड़ेगा।
+              </p>
+            </div>
+
+            {/* Direction Selection: लेने हैं vs देने हैं */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                हिसाब प्रकार (Direction) *
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOldHisabDirection('positive')}
+                  className={`py-2 px-3 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1 ${
+                    oldHisabDirection === 'positive'
+                      ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-300'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  🟢 मुझे लेने हैं (You'll Get)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOldHisabDirection('negative')}
+                  className={`py-2 px-3 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1 ${
+                    oldHisabDirection === 'negative'
+                      ? 'bg-rose-600 text-white shadow-xs ring-2 ring-rose-300'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  🔴 मुझे देने हैं (You'll Give)
+                </button>
+              </div>
+            </div>
+
+            {/* Old Balance Amount */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                पुराना बकाया राशि (Old Due Amount ₹) *
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">₹</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={oldHisabAmount}
+                  onChange={(e) => setOldHisabAmount(e.target.value)}
+                  className="w-full pl-7 pr-3 py-2.5 bg-slate-50 border-2 border-indigo-200 rounded-xl text-base font-black text-[#0F172A] outline-none focus:border-indigo-600 focus:bg-white shadow-xs"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* Date */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                <Calendar size={12} className="text-indigo-600" />
+                <span>पुराने हिसाब की तारीख (As on Date)</span>
+              </label>
+              <input
+                type="date"
+                value={oldHisabDate}
+                onChange={(e) => setOldHisabDate(e.target.value)}
+                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-600 focus:bg-white"
+              />
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                विवरण / नोट (Description / Reference)
+              </label>
+              <input
+                type="text"
+                placeholder="उदा. पुरानी डायरी से, पिछले साल का बकाया, बिल #01"
+                value={oldHisabNotes}
+                onChange={(e) => setOldHisabNotes(e.target.value)}
+                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:border-indigo-600 focus:bg-white"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="pt-2 flex items-center gap-2">
+              {Number(selectedPartyDetail.openingBalance || 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={handleDeleteOldHisab}
+                  disabled={savingOldHisab}
+                  className="py-2.5 px-3 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold cursor-pointer active:scale-95 transition"
+                >
+                  🗑️ हटाएं
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowOldHisabModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold cursor-pointer hover:bg-slate-50"
+              >
+                ✕ रद्द करें
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveOldHisab}
+                disabled={savingOldHisab}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-md cursor-pointer active:scale-95 transition"
+              >
+                {savingOldHisab ? "⏳ सहेजा जा रहा है..." : "💾 सुरक्षित करें"}
+              </button>
             </div>
           </div>
         </div>

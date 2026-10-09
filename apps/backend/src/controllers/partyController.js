@@ -815,6 +815,53 @@ export const updatePartyTransaction = async (req, res) => {
   }
 };
 
+export const setPartyOpeningBalance = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    const party = await Party.findOne({ _id: id, companyId: req.companyId });
+    if (!party) return res.status(404).json({ success: false, error: "पार्टी नहीं मिली" });
+
+    const { amount, direction, date, notes } = req.body;
+    const isSupplier = (party.partyType === "supplier");
+
+    // Old opening balance previously recorded
+    const oldOpeningRaw = Number(party.openingBalance || 0);
+    const oldOpeningSigned = isSupplier ? -Math.abs(oldOpeningRaw) : Math.abs(oldOpeningRaw);
+
+    const newOpeningVal = Number(amount || 0);
+    let newOpeningSigned = 0;
+    if (newOpeningVal > 0) {
+      if (direction === "negative") {
+        newOpeningSigned = -Math.abs(newOpeningVal);
+      } else {
+        newOpeningSigned = Math.abs(newOpeningVal);
+      }
+    }
+
+    party.openingBalance = Math.abs(newOpeningVal);
+    // Adjust currentBalance by difference between new opening and old opening
+    party.currentBalance = (Number(party.currentBalance) || 0) - oldOpeningSigned + newOpeningSigned;
+    if (notes !== undefined) party.notes = notes;
+    if (date) party.createdAt = new Date(date);
+    party.updatedAt = new Date();
+    await party.save();
+
+    res.json({
+      success: true,
+      message: newOpeningVal > 0 
+        ? `📦 पुराना हिसाब (₹${newOpeningVal.toLocaleString('en-IN')}) सफलतापूर्वक सुरक्षित हो गया!`
+        : "📦 पुराना हिसाब हटा दिया गया (₹0)!",
+      party
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 export const clearPartyBalance = async (req, res) => {
   try {
     const { id } = req.params;
