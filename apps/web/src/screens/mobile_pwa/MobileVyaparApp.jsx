@@ -2437,7 +2437,7 @@ function MobileVyaparAppContent() {
       sortedChronological.forEach(tx => {
         running += (Number(tx.debit || 0) - Number(tx.credit || 0));
       });
-      const trueBalance = res?.currentBalance !== undefined ? Number(res.currentBalance) : running;
+      const trueBalance = running;
 
       setSelectedPartyDetail(prev => prev ? ({
         ...prev,
@@ -2612,16 +2612,44 @@ function MobileVyaparAppContent() {
     if (!window.confirm(confirmMsg)) return;
 
     try {
-      await api.delete(`/api/party/transaction/${txId}`).catch(() => api.delete(`/api/parties/transaction/${txId}`));
+      const isClientLocalOnly = String(txId).startsWith("tx_") || String(txId).startsWith("ptx_") || String(txId).startsWith("pay_");
+      if (!isClientLocalOnly) {
+        await api.delete(`/api/party/transaction/${txId}`).catch((err) => {
+          console.warn("Backend delete warning:", err?.message);
+        });
+      }
 
-      // Also clean up local storage matching tx
+      // Also clean up local storage matching tx by ID or matching party, date, and amount
+      const targetPartyId = String(tx.partyId?._id || tx.partyId || selectedPartyDetail?._id || selectedPartyDetail?.id || "");
+      const txDateStr = tx.date ? new Date(tx.date).toISOString().slice(0, 10) : "";
+
       try {
         const stored = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
-        const filtered = stored.filter(t => (t._id || t.id) !== txId);
+        const filtered = stored.filter(t => {
+          const tId = t._id || t.id;
+          if (tId === txId) return false;
+          const tpId = String(t.partyId?._id || t.partyId || "");
+          const tAmt = Number(t.amount || t.debit || t.credit || 0);
+          const tDateStr = t.date ? new Date(t.date).toISOString().slice(0, 10) : "";
+          if (targetPartyId && tpId === targetPartyId && Math.abs(tAmt - amt) < 0.01 && (!txDateStr || !tDateStr || txDateStr === tDateStr)) {
+            return false;
+          }
+          return true;
+        });
         localStorage.setItem("vb_local_party_txs", JSON.stringify(filtered));
       } catch (e) {}
 
-      setAllPartyTransactions(prev => (prev || []).filter(t => (t._id || t.id) !== txId));
+      setAllPartyTransactions(prev => (prev || []).filter(t => {
+        const tId = t._id || t.id;
+        if (tId === txId) return false;
+        const tpId = String(t.partyId?._id || t.partyId || "");
+        const tAmt = Number(t.amount || t.debit || t.credit || 0);
+        if (targetPartyId && tpId === targetPartyId && Math.abs(tAmt - amt) < 0.01) {
+          return false;
+        }
+        return true;
+      }));
+
       setPartyTransactions(prev => prev.filter(t => (t._id || t.id) !== txId));
 
       alert("🗑️ प्रविष्टि सफलतापूर्वक हटा दी गई!");
@@ -2631,6 +2659,8 @@ function MobileVyaparAppContent() {
       }
     } catch (err) {
       console.error("Delete transaction error:", err);
+      // Ensure local state is updated even if an error occurred
+      setPartyTransactions(prev => prev.filter(t => (t._id || t.id) !== txId));
       alert("प्रविष्टि हटाने में त्रुटि: " + (err.response?.data?.message || err.message));
     }
   };
@@ -2659,6 +2689,7 @@ function MobileVyaparAppContent() {
     setSavingEditPartyTx(true);
     try {
       const txId = editingPartyTx._id || editingPartyTx.id;
+      const isClientLocalOnly = String(txId).startsWith("tx_") || String(txId).startsWith("ptx_");
       const payload = {
         amount: amt,
         type: editPartyTxType,
@@ -2667,13 +2698,24 @@ function MobileVyaparAppContent() {
         paymentMethod: editPartyTxPaymentMode
       };
 
-      await api.put(`/api/party/transaction/${txId}`, payload).catch(() => api.put(`/api/parties/transaction/${txId}`, payload));
+      if (!isClientLocalOnly) {
+        await api.put(`/api/party/transaction/${txId}`, payload).catch(() => api.put(`/api/parties/transaction/${txId}`, payload));
+      }
 
-      // Also update local storage
+      // Also update local storage and purge any old un-updated local duplicate
+      const oldAmt = Number(editingPartyTx.amount || editingPartyTx.debit || editingPartyTx.credit || 0);
+      const targetPartyId = String(editingPartyTx.partyId?._id || editingPartyTx.partyId || selectedPartyDetail?._id || selectedPartyDetail?.id || "");
+
       try {
         const stored = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+        let matched = false;
         const updatedList = stored.map(t => {
-          if ((t._id || t.id) === txId) {
+          const tId = t._id || t.id;
+          const tpId = String(t.partyId?._id || t.partyId || "");
+          const tAmt = Number(t.amount || t.debit || t.credit || 0);
+
+          if (tId === txId || (!matched && targetPartyId && tpId === targetPartyId && Math.abs(tAmt - oldAmt) < 0.01)) {
+            matched = true;
             return {
               ...t,
               amount: amt,
@@ -2688,6 +2730,24 @@ function MobileVyaparAppContent() {
         });
         localStorage.setItem("vb_local_party_txs", JSON.stringify(updatedList));
       } catch (e) {}
+
+      setAllPartyTransactions(prev => (prev || []).map(t => {
+        const tId = t._id || t.id;
+        const tpId = String(t.partyId?._id || t.partyId || "");
+        const tAmt = Number(t.amount || t.debit || t.credit || 0);
+        if (tId === txId || (targetPartyId && tpId === targetPartyId && Math.abs(tAmt - oldAmt) < 0.01)) {
+          return {
+            ...t,
+            amount: amt,
+            debit: editPartyTxType === 'paid' ? amt : 0,
+            credit: editPartyTxType === 'received' ? amt : 0,
+            details: payload.details,
+            date: payload.date,
+            paymentMethod: editPartyTxPaymentMode
+          };
+        }
+        return t;
+      }));
 
       alert("✅ प्रविष्टि सफलतापूर्वक अपडेट हो गई!");
       setEditingPartyTx(null);
@@ -2835,7 +2895,7 @@ function MobileVyaparAppContent() {
       const notes = partyTxNotes.trim() || (type === 'paid' ? 'मैंने दिए' : 'मुझे मिले');
       const txDate = partyTxDate ? new Date(partyTxDate) : new Date();
 
-      await api.post("/api/payment/entry", {
+      const res = await api.post("/api/payment/entry", {
         partyId,
         amount: amt,
         type,
@@ -2843,6 +2903,9 @@ function MobileVyaparAppContent() {
         paymentMethod: partyTxPaymentMode || 'CASH',
         notes
       });
+
+      const serverTx = res?.data?.transaction;
+      const actualTxId = serverTx?._id || `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
       // 'paid' increases outstanding (+amt, You'll Get), 'received' decreases outstanding (-amt)
       const diff = type === 'paid' ? amt : -amt;
@@ -2869,7 +2932,7 @@ function MobileVyaparAppContent() {
 
       // Also record local transaction so ledger updates instantly even offline
       const newTxDoc = {
-        _id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        _id: actualTxId,
         partyId,
         date: txDate.toISOString(),
         details: notes,
@@ -4710,7 +4773,7 @@ function MobileVyaparAppContent() {
                             </div>
                           )}
                         </div>
-                        <div className="text-right shrink-0 flex items-center gap-2">
+                        <div className="text-right shrink-0 flex items-center gap-1.5">
                           <div>
                             <div className={`font-black text-sm ${bal > 0 ? "text-[#059669]" : bal < 0 ? "text-[#DC2626]" : "text-slate-600"}`}>
                               {bal > 0 ? `+ ₹${bal.toLocaleString('en-IN')}` : bal < 0 ? `- ₹${Math.abs(bal).toLocaleString('en-IN')}` : "₹ 0"}
@@ -4719,6 +4782,17 @@ function MobileVyaparAppContent() {
                               {bal > 0 ? "🟢 लेने हैं" : bal < 0 ? "🔴 देने हैं" : "हिसाब चुकता"}
                             </span>
                           </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEditParty(p);
+                            }}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition active:scale-90 cursor-pointer"
+                            title="पार्टी का नाम व विवरण बदलें (Edit Party Name)"
+                          >
+                            <Edit2 size={13} />
+                          </button>
                           <ChevronRight size={16} className="text-slate-300 shrink-0" />
                         </div>
                       </div>
@@ -7351,26 +7425,31 @@ function MobileVyaparAppContent() {
             <div className="flex-1 overflow-y-auto p-4 space-y-3.5 pb-10 overscroll-contain">
               {/* Balance Card */}
               {(() => {
-                const bal = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0);
                 const isSupplier = (selectedPartyDetail.type === 'supplier' || selectedPartyDetail.partyType === 'supplier');
+                const totalDebit = (partyTransactions || []).reduce((s, t) => s + Number(t.debit || 0), 0);
+                const totalCredit = (partyTransactions || []).reduce((s, t) => s + Number(t.credit || 0), 0);
+                const rawBal = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0);
+                // When transactions exist, the net ledger balance (debit - credit) is the definitive balance
+                const bal = (partyTransactions && partyTransactions.length > 0) ? (totalDebit - totalCredit) : rawBal;
+
                 return (
                   <div className={`p-3.5 rounded-2xl border text-center transition ${
                     bal > 0 
                       ? "bg-emerald-50/70 border-emerald-200" 
                       : bal < 0 
-                        ? "bg-rose-50/70 border-rose-200" 
+                        ? (isSupplier ? "bg-rose-50/70 border-rose-200" : "bg-teal-50/80 border-teal-200") 
                         : "bg-emerald-50/60 border-emerald-300"
                   }`}>
                     <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                       {isSupplier
                         ? (bal < 0 ? "कुल बकाया राशि (आपको वेंडर को देने हैं)" : bal > 0 ? "अग्रिम जमा (वेंडर को एडवांस दिया हुआ है)" : "हिसाब-किताब स्थिति (वेंडर खाता)")
-                        : (bal > 0 ? "कुल बकाया राशि (आपको लेने हैं)" : bal < 0 ? "कुल बकाया राशि (आपको देने हैं)" : "हिसाब-किताब स्थिति")
+                        : (bal > 0 ? "कुल बकाया राशि (आपको ग्राहक से लेने हैं)" : bal < 0 ? "अग्रिम जमा (ग्राहक का ज्यादा जमा / Advance)" : "हिसाब-किताब स्थिति")
                       }
                     </div>
                     <div className={`text-2xl font-black mt-0.5 ${
                       isSupplier
                         ? (bal < 0 ? "text-rose-700" : bal > 0 ? "text-emerald-700" : "text-emerald-800")
-                        : (bal > 0 ? "text-emerald-700" : bal < 0 ? "text-rose-700" : "text-emerald-800")
+                        : (bal > 0 ? "text-emerald-700" : bal < 0 ? "text-teal-700" : "text-emerald-800")
                     }`}>
                       ₹ {Math.abs(bal).toLocaleString('en-IN')}
                     </div>
@@ -7379,13 +7458,13 @@ function MobileVyaparAppContent() {
                         bal < 0 
                           ? <span className="text-rose-700 font-extrabold">🔴 You'll Give (वेंडर को देने हैं)</span> 
                           : bal > 0 
-                            ? <span className="text-emerald-700 font-extrabold">🟢 Advance (एडवांस दिया हुआ है)</span> 
+                            ? <span className="text-emerald-700 font-extrabold">🟢 Advance (वेंडर को एडवांस दिया हुआ है)</span> 
                             : <span className="text-emerald-800 font-extrabold bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300 inline-block">✅ हिसाब पूर्णतः चुकता है (Settled / ₹0)</span>
                       ) : (
                         bal > 0 
-                          ? <span className="text-emerald-700">🟢 You'll Get (लेने हैं)</span> 
+                          ? <span className="text-emerald-700 font-extrabold">🟢 You'll Get (ग्राहक से लेने हैं)</span> 
                           : bal < 0 
-                            ? <span className="text-rose-700">🔴 You'll Give (देने हैं)</span> 
+                            ? <span className="text-teal-700 font-extrabold">🟢 Advance (ग्राहक का ₹{Math.abs(bal).toLocaleString('en-IN')} ज्यादा / अग्रिम जमा है)</span> 
                             : <span className="text-emerald-800 font-extrabold bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300 inline-block">✅ हिसाब पूर्णतः चुकता है (Settled / ₹0)</span>
                       )}
                     </div>
@@ -7398,7 +7477,8 @@ function MobileVyaparAppContent() {
                 const isSupplier = (selectedPartyDetail.type === 'supplier' || selectedPartyDetail.partyType === 'supplier');
                 const totalDebit = partyTransactions.reduce((s, t) => s + Number(t.debit || 0), 0);
                 const totalCredit = partyTransactions.reduce((s, t) => s + Number(t.credit || 0), 0);
-                const curBal = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0);
+                const netBal = totalDebit - totalCredit;
+
                 return (
                   <div className="p-3 bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-2">
                     <div className="flex items-center justify-between text-[11px] font-extrabold text-slate-700 border-b border-slate-100 pb-1.5">
@@ -7418,8 +7498,8 @@ function MobileVyaparAppContent() {
                           </div>
                           <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
                             <span className="text-[10px] text-slate-500 font-bold block">शुद्ध बाकी</span>
-                            <span className={`font-black mt-0.5 block text-xs ${curBal === 0 ? 'text-emerald-700' : curBal < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                              ₹{Math.abs(curBal).toLocaleString('en-IN')} {curBal === 0 ? '✓' : ''}
+                            <span className={`font-black mt-0.5 block text-xs ${netBal === 0 ? 'text-emerald-700' : netBal < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                              ₹{Math.abs(netBal).toLocaleString('en-IN')} {netBal === 0 ? '✓' : ''}
                             </span>
                           </div>
                         </>
@@ -7435,8 +7515,8 @@ function MobileVyaparAppContent() {
                           </div>
                           <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
                             <span className="text-[10px] text-slate-400 font-bold block">शुद्ध बाकी</span>
-                            <span className={`font-black mt-0.5 block text-xs ${curBal === 0 ? 'text-emerald-700' : curBal > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                              ₹{Math.abs(curBal).toLocaleString('en-IN')} {curBal === 0 ? '✓' : ''}
+                            <span className={`font-black mt-0.5 block text-xs ${netBal === 0 ? 'text-emerald-700' : netBal > 0 ? 'text-emerald-600' : 'text-teal-600'}`}>
+                              {netBal < 0 ? `+ ₹${Math.abs(netBal).toLocaleString('en-IN')} (Adv)` : `₹${Math.abs(netBal).toLocaleString('en-IN')}`} {netBal === 0 ? '✓' : ''}
                             </span>
                           </div>
                         </>

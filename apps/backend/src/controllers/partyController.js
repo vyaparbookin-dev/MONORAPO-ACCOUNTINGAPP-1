@@ -598,6 +598,15 @@ export const deletePartyTransaction = async (req, res) => {
       }
     }
 
+    // Guard: If ID is not a valid MongoDB ObjectId (e.g. client local ID tx_..., ptx_...)
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.json({
+        success: true,
+        message: "स्थानीय प्रविष्टि (Local Entry) हटाई गई!",
+        isLocalOnly: true
+      });
+    }
+
     // 2. Check PartyTransaction
     const tx = await PartyTransaction.findOne({ _id: id, companyId: req.companyId });
     if (tx) {
@@ -723,6 +732,14 @@ export const updatePartyTransaction = async (req, res) => {
           newBalance: party.currentBalance
         });
       }
+    }
+
+    // Guard: If ID is not a valid MongoDB ObjectId (e.g. client local ID tx_..., ptx_...)
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        error: "अमान्य या स्थानीय लेनदेन ID (Invalid ObjectId for server update)"
+      });
     }
 
     // 2. Check PartyTransaction
