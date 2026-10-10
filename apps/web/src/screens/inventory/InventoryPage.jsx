@@ -277,32 +277,8 @@ const InventoryPage = () => {
     if (catId === 'OUT_OF_STOCK') return stock <= 0;
     if (catId === 'IN_STOCK') return stock > 0;
 
-    const cat = String(item.category || '').toUpperCase();
-    const brand = String(item.brand || '').toUpperCase();
-    const subCat = String(item.subCategory || '').toUpperCase();
-    const name = String(item.name || '').toUpperCase();
-
-    if (catId === 'PLYWOOD_GROUP') {
-      return cat === 'PLYWOOD' || cat === 'BEAT' || cat.includes('PLY') || cat.includes('BEAT') || cat.includes('HARDWOOD') || subCat.includes('PLY') || name.includes('PLYWOOD') || name.includes('18MM') || name.includes('12MM') || name.includes('6MM');
-    }
-    if (catId === 'BERGER_GROUP') {
-      if (brand.includes('KAMDHENU') || cat.includes('KAMDHENU') || name.includes('KAMDHENU') || name.includes('KAMOBLASTER')) return false;
-      return brand.includes('BERGER') || cat.includes('BERGER') || name.includes('BERGER') || name.includes('BISON') || name.includes('LUXOL') || name.includes('WALMASTA') || name.includes('WEATHERCOAT') || name.includes('SILK') || name.includes('RANGOLI') || name.includes('BUTERFLY') || (cat.includes('DISTEMPER') && !brand.includes('KAMDHENU')) || (cat.includes('ACRILIC') && !brand.includes('KAMDHENU'));
-    }
-    if (catId === 'KAMDHENU_GROUP') {
-      return brand.includes('KAMDHENU') || cat.includes('KAMDHENU') || name.includes('KAMDHENU') || name.includes('KAMOBLASTER') || name.includes('KAMOCRETE') || name.includes('KAMODUR');
-    }
-    if (catId === 'ELECTRICALS_GROUP') {
-      return cat.includes('ELE') || cat.includes('ARKAYLITE') || brand.includes('ARKAYLITE') || cat.includes('MODUL') || cat.includes('SWITCH') || cat.includes('WIRE') || cat.includes('COPPER') || cat.includes('ANCHOR') || cat.includes('CONA') || cat.includes('CR') || cat.includes('VINAY') || name.includes('SWITCH') || name.includes('SOCKET') || name.includes('ELEMENT') || name.includes('MCB');
-    }
-    if (catId === 'GI_FITTING') {
-      return cat.includes('GI') || name.includes('GI ') || name.includes('PUMP') || cat.includes('MONOBLOCK') || cat.includes('PRIMING') || name.includes('ELBOW') || name.includes('NIPPLE') || name.includes('UNION') || name.includes('REDUCER');
-    }
-    if (catId === 'PIPES_GROUP') {
-      if (cat.includes('GI')) return false;
-      return cat.includes('UPVC') || cat.includes('SWR') || cat.includes('CPVC') || cat.includes('PIPE') || brand.includes('KISAN') || cat.includes('PRINCE') || cat.includes('PAPULAR') || cat.includes('GARDEN') || cat.includes('SACTION') || cat.includes('FOOTVALVE') || name.includes('UPVC') || name.includes('CPVC') || name.includes('SWR');
-    }
-    return cat.toLowerCase() === catId.toLowerCase();
+    const itemCat = String(typeof item.category === 'string' ? item.category : (item.category?.name || '')).trim().toLowerCase();
+    return itemCat === String(catId).trim().toLowerCase();
   };
 
   const filterInventory = () => {
@@ -316,7 +292,10 @@ const InventoryPage = () => {
 
     // Brand Filter
     if (selectedBrandFilter !== "ALL") {
-      filtered = filtered.filter(item => (item.brand || "").toLowerCase() === selectedBrandFilter.toLowerCase());
+      filtered = filtered.filter(item => {
+        const itemBrand = String(typeof item.brand === 'string' ? item.brand : (item.brand?.name || '')).trim().toLowerCase();
+        return itemBrand === selectedBrandFilter.trim().toLowerCase();
+      });
     }
 
     // Stock Status Sub-Filter (In Stock / Low Stock / Out of Stock)
@@ -806,33 +785,37 @@ const InventoryPage = () => {
   const filteredLowStockCount = filteredInventory.filter(item => (Number(item.currentStock) || 0) < (Number(item.minimumStock) || 10)).length;
   const filteredHighStockCount = filteredInventory.filter(item => (Number(item.currentStock) || 0) >= 50).length;
 
-  // Dynamic SaaS Multi-tenant Category Detection
-  const distinctCats = [...new Set(safeInventoryList.map(p => (p.category || '').trim()).filter(Boolean))];
-  const isHardwareStore = safeInventoryList.some(p => {
-    const c = String(p.category || '').toUpperCase();
-    const n = String(p.name || '').toUpperCase();
-    return c.includes('PLY') || c.includes('PAINT') || c.includes('PIPE') || c.includes('GI') || n.includes('PLY') || n.includes('BERGER');
+  // 100% Dynamic Category Detection from real inventory products
+  const categoryCounts = {};
+  safeInventoryList.forEach(p => {
+    const c = String(typeof p.category === 'string' ? p.category : (p.category?.name || '')).trim();
+    if (c) {
+      categoryCounts[c] = (categoryCounts[c] || 0) + 1;
+    }
   });
+  // Sort by count descending so most popular / most stocked categories appear first
+  const sortedDistinctCats = Object.keys(categoryCounts).sort((a, b) => categoryCounts[b] - categoryCounts[a]);
 
-  const categoryFilterTabs = isHardwareStore ? [
+  const categoryFilterTabs = [
     { id: "ALL", label: "All Products", icon: "📦", count: safeInventoryList.length },
-    { id: "PLYWOOD_GROUP", label: "Plywood & Beat", icon: "🪵", count: safeInventoryList.filter(p => matchCategory(p, 'PLYWOOD_GROUP')).length },
-    { id: "BERGER_GROUP", label: "Berger Paints", icon: "🎨", count: safeInventoryList.filter(p => matchCategory(p, 'BERGER_GROUP')).length },
-    { id: "KAMDHENU_GROUP", label: "Kamdhenu Paints", icon: "🎨", count: safeInventoryList.filter(p => matchCategory(p, 'KAMDHENU_GROUP')).length },
-    { id: "ELECTRICALS_GROUP", label: "Electricals", icon: "⚡", count: safeInventoryList.filter(p => matchCategory(p, 'ELECTRICALS_GROUP')).length },
-    { id: "GI_FITTING", label: "GI Fittings & Pumps", icon: "🔩", count: safeInventoryList.filter(p => matchCategory(p, 'GI_FITTING')).length },
-    { id: "PIPES_GROUP", label: "Pipes & UPVC", icon: "🚰", count: safeInventoryList.filter(p => matchCategory(p, 'PIPES_GROUP')).length },
-    { id: "IN_STOCK", label: "All In Stock", icon: "✨", count: safeInventoryList.filter(p => (Number(p.currentStock) || 0) > 0).length },
-  ] : [
-    { id: "ALL", label: "All Products", icon: "📦", count: safeInventoryList.length },
-    ...distinctCats.slice(0, 10).map(cat => ({
+    ...sortedDistinctCats.map(cat => ({
       id: cat,
       label: cat,
-      icon: "🏷️",
-      count: safeInventoryList.filter(p => (p.category || '').toLowerCase() === cat.toLowerCase()).length
+      icon: "📁",
+      count: categoryCounts[cat]
     })),
     { id: "IN_STOCK", label: "All In Stock", icon: "✨", count: safeInventoryList.filter(p => (Number(p.currentStock) || 0) > 0).length },
   ];
+
+  // Dynamic Brands detection from real products
+  const brandCounts = {};
+  safeInventoryList.forEach(p => {
+    const b = String(typeof p.brand === 'string' ? p.brand : (p.brand?.name || '')).trim();
+    if (b) {
+      brandCounts[b] = (brandCounts[b] || 0) + 1;
+    }
+  });
+  const dynamicBrandsList = Object.keys(brandCounts).sort((a, b) => brandCounts[b] - brandCounts[a]);
 
   return (
     <div className="space-y-6">
@@ -1041,9 +1024,9 @@ const InventoryPage = () => {
               onChange={(e) => setSelectedBrandFilter(e.target.value)}
               className="w-full py-2 px-3 border border-gray-300 rounded-lg text-sm bg-white text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="ALL">All Brands ({brands.length})</option>
-              {brands.map(b => (
-                <option key={b} value={b}>{b}</option>
+              <option value="ALL">All Brands ({dynamicBrandsList.length})</option>
+              {dynamicBrandsList.map(b => (
+                <option key={b} value={b}>{b} ({brandCounts[b]})</option>
               ))}
             </select>
           </div>
@@ -1520,52 +1503,40 @@ const StockAuditModal = ({ products, companyName, onClose }) => {
   const [selectedBrand, setSelectedBrand] = useState("ALL");
   const [onlyInStock, setOnlyInStock] = useState(false);
 
+  // Dynamically extract real categories from products
+  const auditCatCounts = {};
+  (products || []).forEach(p => {
+    const c = String(typeof p.category === 'string' ? p.category : (p.category?.name || '')).trim();
+    if (c) auditCatCounts[c] = (auditCatCounts[c] || 0) + 1;
+  });
+  const auditCats = Object.keys(auditCatCounts).sort((a, b) => auditCatCounts[b] - auditCatCounts[a]);
   const categories = [
-    { id: "ALL", label: "All Categories" },
-    { id: "PLYWOOD_GROUP", label: "🪵 Plywood & Beat" },
-    { id: "BERGER_GROUP", label: "🎨 Berger Paints" },
-    { id: "KAMDHENU_GROUP", label: "🎨 Kamdhenu Paints" },
-    { id: "ELECTRICALS_GROUP", label: "⚡ Electricals" },
-    { id: "GI_FITTING", label: "🔩 GI Fittings & Pumps" },
-    { id: "PIPES_GROUP", label: "🚰 Pipes & UPVC" },
+    { id: "ALL", label: `All Categories (${products.length})` },
+    ...auditCats.map(c => ({ id: c, label: `${c} (${auditCatCounts[c]})` }))
   ];
 
-  const uniqueBrands = ["ALL", ...new Set(products.map(p => p.brand).filter(Boolean))];
+  // Dynamically extract real brands from products
+  const auditBrandCounts = {};
+  (products || []).forEach(p => {
+    const b = String(typeof p.brand === 'string' ? p.brand : (p.brand?.name || '')).trim();
+    if (b) auditBrandCounts[b] = (auditBrandCounts[b] || 0) + 1;
+  });
+  const auditBrands = Object.keys(auditBrandCounts).sort((a, b) => auditBrandCounts[b] - auditBrandCounts[a]);
+  const uniqueBrands = ["ALL", ...auditBrands];
 
   const matchCategoryAudit = (item, catId) => {
     if (!item) return false;
     if (catId === 'ALL') return true;
-    const cat = String(item.category || '').toUpperCase();
-    const brand = String(item.brand || '').toUpperCase();
-    const subCat = String(item.subCategory || '').toUpperCase();
-    const name = String(item.name || '').toUpperCase();
-
-    if (catId === 'PLYWOOD_GROUP') {
-      return cat === 'PLYWOOD' || cat === 'BEAT' || cat.includes('PLY') || cat.includes('BEAT') || cat.includes('HARDWOOD') || subCat.includes('PLY') || name.includes('PLYWOOD') || name.includes('18MM') || name.includes('12MM') || name.includes('6MM');
-    }
-    if (catId === 'BERGER_GROUP') {
-      if (brand.includes('KAMDHENU') || cat.includes('KAMDHENU') || name.includes('KAMDHENU')) return false;
-      return brand.includes('BERGER') || cat.includes('BERGER') || name.includes('BERGER') || name.includes('BISON') || name.includes('LUXOL') || name.includes('WALMASTA') || name.includes('WEATHERCOAT') || name.includes('SILK') || name.includes('RANGOLI') || name.includes('BUTERFLY') || (cat.includes('DISTEMPER') && !brand.includes('KAMDHENU')) || (cat.includes('ACRILIC') && !brand.includes('KAMDHENU'));
-    }
-    if (catId === 'KAMDHENU_GROUP') {
-      return brand.includes('KAMDHENU') || cat.includes('KAMDHENU') || name.includes('KAMDHENU') || name.includes('KAMOBLASTER') || name.includes('KAMOCRETE') || name.includes('KAMODUR');
-    }
-    if (catId === 'ELECTRICALS_GROUP') {
-      return cat.includes('ELE') || cat.includes('ARKAYLITE') || brand.includes('ARKAYLITE') || cat.includes('MODUL') || cat.includes('SWITCH') || cat.includes('WIRE') || cat.includes('COPPER') || cat.includes('ANCHOR') || cat.includes('CONA') || cat.includes('CR') || cat.includes('VINAY') || name.includes('SWITCH') || name.includes('SOCKET') || name.includes('ELEMENT') || name.includes('MCB');
-    }
-    if (catId === 'GI_FITTING') {
-      return cat.includes('GI') || name.includes('GI ') || name.includes('PUMP') || cat.includes('MONOBLOCK') || cat.includes('PRIMING') || name.includes('ELBOW') || name.includes('NIPPLE') || name.includes('UNION') || name.includes('REDUCER');
-    }
-    if (catId === 'PIPES_GROUP') {
-      if (cat.includes('GI')) return false;
-      return cat.includes('UPVC') || cat.includes('SWR') || cat.includes('CPVC') || cat.includes('PIPE') || brand.includes('KISAN') || cat.includes('PRINCE') || cat.includes('PAPULAR') || cat.includes('GARDEN') || cat.includes('SACTION') || cat.includes('FOOTVALVE') || name.includes('UPVC') || name.includes('CPVC') || name.includes('SWR');
-    }
-    return cat.toLowerCase() === catId.toLowerCase();
+    const cat = String(typeof item.category === 'string' ? item.category : (item.category?.name || '')).trim().toLowerCase();
+    return cat === String(catId).trim().toLowerCase();
   };
 
   const auditItems = products.filter(item => {
     if (!matchCategoryAudit(item, selectedCat)) return false;
-    if (selectedBrand !== "ALL" && (item.brand || "").toLowerCase() !== selectedBrand.toLowerCase()) return false;
+    if (selectedBrand !== "ALL") {
+      const itemBrand = String(typeof item.brand === 'string' ? item.brand : (item.brand?.name || '')).trim().toLowerCase();
+      if (itemBrand !== selectedBrand.trim().toLowerCase()) return false;
+    }
     if (onlyInStock && (Number(item.currentStock) || 0) <= 0) return false;
     return true;
   });

@@ -4906,14 +4906,25 @@ function MobileVyaparAppContent() {
         {/* ==================== TAB 3: ITEMS ==================== */}
         {activeTab === "items" && (() => {
           // Extract unique categories and brands dynamically from items
-          const dynamicCats = [...new Set(items.map(it => (it.category || '').trim()).filter(Boolean))];
-          const dynamicBrands = [...new Set(items.map(it => (it.brand || '').trim()).filter(Boolean))];
+          const catCountMap = {};
+          items.forEach(it => {
+            const catName = String(typeof it?.category === 'string' ? it.category : (it?.category?.name || '')).trim();
+            if (catName) {
+              catCountMap[catName] = (catCountMap[catName] || 0) + 1;
+            }
+          });
+          const sortedCats = Object.keys(catCountMap).sort((a, b) => catCountMap[b] - catCountMap[a]);
+          const allAvailableCats = ["ALL", ...sortedCats];
 
-          const standardCats = ["General", "Paints", "Hardware", "Pipes & Fittings", "Electricals", "Sanitary", "Plywood & Beat", "Tools"];
-          const allAvailableCats = ["ALL", ...new Set([...standardCats, ...dynamicCats])];
-
-          const standardBrands = ["General", "Asian Paints", "Berger", "Kamdhenu", "Astral", "Supreme", "Pidilite", "Havells", "Finolex"];
-          const allAvailableBrands = ["ALL", ...new Set([...standardBrands, ...dynamicBrands])];
+          const brandCountMap = {};
+          items.forEach(it => {
+            const bName = String(typeof it?.brand === 'string' ? it.brand : (it?.brand?.name || '')).trim();
+            if (bName) {
+              brandCountMap[bName] = (brandCountMap[bName] || 0) + 1;
+            }
+          });
+          const sortedBrands = Object.keys(brandCountMap).sort((a, b) => brandCountMap[b] - brandCountMap[a]);
+          const allAvailableBrands = ["ALL", ...sortedBrands];
 
           // Filter items based on search, category, brand, and stock status
           const filteredItems = items.filter(it => {
@@ -4929,8 +4940,7 @@ function MobileVyaparAppContent() {
               (it.sku || '').toLowerCase().includes(q);
 
             const matchesCategory = selectedCategoryFilter === "ALL" || 
-              itemCat === selectedCategoryFilter.trim().toLowerCase() ||
-              (selectedCategoryFilter.toLowerCase().includes("plywood") && itemCat.includes("plywood"));
+              itemCat === selectedCategoryFilter.trim().toLowerCase();
 
             const matchesBrand = selectedBrandFilter === "ALL" || 
               itemBrand === selectedBrandFilter.trim().toLowerCase();
@@ -5023,19 +5033,25 @@ function MobileVyaparAppContent() {
                   )}
                 </div>
                 <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                  {allAvailableCats.slice(0, 10).map((cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => setSelectedCategoryFilter(cat)}
-                      className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${selectedCategoryFilter === cat ? "bg-[#4338CA] text-white shadow-sm" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"}`}
-                    >
-                      {cat === "ALL" ? "All Categories" : cat}
-                    </button>
-                  ))}
+                  {allAvailableCats.slice(0, 10).map((cat) => {
+                    const count = cat === "ALL" ? items.length : (catCountMap[cat] || 0);
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => setSelectedCategoryFilter(cat)}
+                        className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${selectedCategoryFilter === cat ? "bg-[#4338CA] text-white shadow-sm" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                      >
+                        <span>{cat === "ALL" ? "All Categories" : cat}</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${selectedCategoryFilter === cat ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"}`}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
                   {allAvailableCats.length > 10 && (
                     <button
                       onClick={() => setShowCategoryModal(true)}
-                      className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold whitespace-nowrap"
+                      className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer hover:bg-slate-200"
                     >
                       + More ({allAvailableCats.length - 10})
                     </button>
@@ -5043,29 +5059,37 @@ function MobileVyaparAppContent() {
                 </div>
               </div>
 
-              {/* Quick Horizontal Brand Filter Pills */}
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-bold text-slate-500 block">🏷️ Popular Brands:</span>
-                <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                  {allAvailableBrands.slice(0, 8).map((br) => (
-                    <button
-                      key={br}
-                      onClick={() => setSelectedBrandFilter(br)}
-                      className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap ${selectedBrandFilter === br ? "bg-amber-600 text-white shadow-sm" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"}`}
-                    >
-                      {br === "ALL" ? "All Brands" : br}
-                    </button>
-                  ))}
-                  {allAvailableBrands.length > 8 && (
-                    <button
-                      onClick={() => setShowBrandModal(true)}
-                      className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold whitespace-nowrap"
-                    >
-                      + More Brands ({allAvailableBrands.length - 8})
-                    </button>
-                  )}
+              {/* Quick Horizontal Brand Filter Pills (Only shown if real brands exist) */}
+              {sortedBrands.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-bold text-slate-500 block">🏷️ Available Brands:</span>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                    {allAvailableBrands.slice(0, 8).map((br) => {
+                      const count = br === "ALL" ? items.length : (brandCountMap[br] || 0);
+                      return (
+                        <button
+                          key={br}
+                          onClick={() => setSelectedBrandFilter(br)}
+                          className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${selectedBrandFilter === br ? "bg-amber-600 text-white shadow-sm" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                        >
+                          <span>{br === "ALL" ? "All Brands" : br}</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${selectedBrandFilter === br ? "bg-white/20 text-white" : "bg-amber-50 text-amber-800"}`}>
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {allAvailableBrands.length > 8 && (
+                      <button
+                        onClick={() => setShowBrandModal(true)}
+                        className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer hover:bg-slate-200"
+                      >
+                        + More Brands ({allAvailableBrands.length - 8})
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Stock Status Pills (All, In Stock, Low Stock, Out of Stock) */}
               <div className="flex gap-1.5 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
@@ -9212,24 +9236,33 @@ function MobileVyaparAppContent() {
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              {["ALL", "General", "Paints", "Hardware", "Pipes & Fittings", "Electricals", "Sanitary", "Plywood & Beat", "Tools", ...new Set(items.map(it => it.category).filter(Boolean))].map(cat => {
-                const count = cat === "ALL" ? items.length : items.filter(it => String(it?.category || '').toLowerCase() === String(cat || '').toLowerCase()).length;
-                return (
-                  <button
-                    key={cat}
-                    onClick={() => {
-                      setSelectedCategoryFilter(cat);
-                      setShowCategoryModal(false);
-                    }}
-                    className={`p-3 rounded-2xl border text-left font-bold text-xs flex justify-between items-center transition cursor-pointer ${selectedCategoryFilter === cat ? "bg-[#4338CA] text-white border-[#4338CA] shadow-md" : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"}`}
-                  >
-                    <span>📁 {cat === "ALL" ? "सभी कैटेगरी (All)" : cat}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${selectedCategoryFilter === cat ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"}`}>
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
+              {(() => {
+                const catCounts = {};
+                items.forEach(it => {
+                  const c = String(typeof it?.category === 'string' ? it.category : (it?.category?.name || '')).trim();
+                  if (c) catCounts[c] = (catCounts[c] || 0) + 1;
+                });
+                const sorted = Object.keys(catCounts).sort((a, b) => catCounts[b] - catCounts[a]);
+                const modalCats = ["ALL", ...sorted];
+                return modalCats.map(cat => {
+                  const count = cat === "ALL" ? items.length : (catCounts[cat] || 0);
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => {
+                        setSelectedCategoryFilter(cat);
+                        setShowCategoryModal(false);
+                      }}
+                      className={`p-3 rounded-2xl border text-left font-bold text-xs flex justify-between items-center transition cursor-pointer ${selectedCategoryFilter === cat ? "bg-[#4338CA] text-white border-[#4338CA] shadow-md" : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"}`}
+                    >
+                      <span className="truncate pr-1">📁 {cat === "ALL" ? "सभी कैटेगरी (All)" : cat}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${selectedCategoryFilter === cat ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"}`}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>
@@ -9257,24 +9290,33 @@ function MobileVyaparAppContent() {
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              {["ALL", "General", "Asian Paints", "Berger", "Kamdhenu", "Astral", "Supreme", "Pidilite", "Havells", "Finolex", ...new Set(items.map(it => it.brand).filter(Boolean))].map(br => {
-                const count = br === "ALL" ? items.length : items.filter(it => String(it?.brand || '').toLowerCase() === String(br || '').toLowerCase()).length;
-                return (
-                  <button
-                    key={br}
-                    onClick={() => {
-                      setSelectedBrandFilter(br);
-                      setShowBrandModal(false);
-                    }}
-                    className={`p-3 rounded-2xl border text-left font-bold text-xs flex justify-between items-center transition cursor-pointer ${selectedBrandFilter === br ? "bg-amber-600 text-white border-amber-600 shadow-md" : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"}`}
-                  >
-                    <span>🏷️ {br === "ALL" ? "सभी ब्रांड (All)" : br}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${selectedBrandFilter === br ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"}`}>
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
+              {(() => {
+                const bCounts = {};
+                items.forEach(it => {
+                  const b = String(typeof it?.brand === 'string' ? it.brand : (it?.brand?.name || '')).trim();
+                  if (b) bCounts[b] = (bCounts[b] || 0) + 1;
+                });
+                const sorted = Object.keys(bCounts).sort((a, b) => bCounts[b] - bCounts[a]);
+                const modalBrands = ["ALL", ...sorted];
+                return modalBrands.map(br => {
+                  const count = br === "ALL" ? items.length : (bCounts[br] || 0);
+                  return (
+                    <button
+                      key={br}
+                      onClick={() => {
+                        setSelectedBrandFilter(br);
+                        setShowBrandModal(false);
+                      }}
+                      className={`p-3 rounded-2xl border text-left font-bold text-xs flex justify-between items-center transition cursor-pointer ${selectedBrandFilter === br ? "bg-amber-600 text-white border-amber-600 shadow-md" : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"}`}
+                    >
+                      <span className="truncate pr-1">🏷️ {br === "ALL" ? "सभी ब्रांड (All)" : br}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${selectedBrandFilter === br ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"}`}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>
