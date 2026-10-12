@@ -21,14 +21,18 @@ export function deduplicateBills(bills = []) {
   });
 
   const extractDateKey = (val) => {
-    if (!val) return new Date().toISOString().slice(0, 10);
+    if (!val) return "";
     const s = String(val).trim();
-    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
     if (s.toLowerCase() === "today" || s === "आज") {
       return new Date().toISOString().slice(0, 10);
     }
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (dmy) {
+      return `${dmy[3]}-${String(dmy[2]).padStart(2, "0")}-${String(dmy[1]).padStart(2, "0")}`;
+    }
     const d = new Date(val);
-    return isNaN(d.getTime()) ? new Date().toISOString().slice(0, 10) : d.toISOString().slice(0, 10);
+    return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
   };
 
   const seenIds = new Set();
@@ -148,8 +152,8 @@ export function deduplicateBills(bills = []) {
       type: pmVal,
       paymentMode: pmVal,
       paymentMethod: pmVal === "CREDIT" || pmVal === "UDHAR" ? "credit" : "cash",
-      rawDate: bill.rawDate || bill.date || bill.createdAt || new Date().toISOString(),
-      date: bill.date && bill.date !== "Today" ? bill.date : dateKey
+      rawDate: bill.rawDate || (bill.createdAt ? new Date(bill.createdAt).toISOString() : (bill.date && bill.date !== "Today" && bill.date !== "आज" ? String(bill.date) : new Date().toISOString())),
+      date: bill.date && bill.date !== "Today" && bill.date !== "आज" ? bill.date : (dateKey || "Today")
     };
 
     if (id) seenIds.add(id);

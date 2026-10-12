@@ -161,20 +161,23 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
       let expenseUrl = "/api/expenses?limit=500";
       let purchaseUrl = "/api/purchase?limit=500";
       let partyUrl = "/api/party?limit=500";
+      let daybookUrl = "/api/daybook?period=all&limit=500";
 
       if (startDate && endDate) {
         plUrl += `&startDate=${startDate}&endDate=${endDate}`;
         billingUrl = `/api/billing?startDate=${startDate}&endDate=${endDate}&limit=500`;
         expenseUrl = `/api/expenses?startDate=${startDate}&endDate=${endDate}&limit=500`;
         purchaseUrl = `/api/purchase?startDate=${startDate}&endDate=${endDate}&limit=500`;
+        daybookUrl = `/api/daybook?startDate=${startDate}&endDate=${endDate}&limit=500`;
       }
 
-      const [res, billingRes, expenseRes, purchaseRes, partyRes] = await Promise.all([
+      const [res, billingRes, expenseRes, purchaseRes, partyRes, daybookRes] = await Promise.all([
         api.get(plUrl).catch(() => null),
         api.get(billingUrl).catch(() => null),
         api.get(expenseUrl).catch(() => null),
         api.get(purchaseUrl).catch(() => null),
-        api.get(partyUrl).catch(() => null)
+        api.get(partyUrl).catch(() => null),
+        api.get(daybookUrl).catch(() => null)
       ]);
 
       // Server Data
@@ -232,6 +235,18 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
         0
       );
 
+      // Staff Salaries from Daybook
+      const daybookSalaries = (daybookRes?.data?.salaries || daybookRes?.salaries || [])
+        .filter(s => isDateInRange(s.date || s.createdAt))
+        .reduce((sum, s) => sum + (Number(s.amount || s.debit || 0)), 0);
+
+      const salaryExpSum = operatingList
+        .filter(e => e.category === 'Salary' || String(e.title || '').includes('वेतन') || String(e.title || '').includes('एडवांस'))
+        .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+      const additionalSalary = Math.max(0, daybookSalaries - salaryExpSum);
+      const totalOperating = calcOperating + additionalSalary;
+
       const calcActualPurchases = allPurchases.reduce(
         (sum, p) => sum + (Number(p.finalAmount || p.totalAmount || p.total || p.amountPaid) || 0),
         0
@@ -244,7 +259,7 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
         .filter(b => b.isOfflineCreated && !b._id?.match(/^[0-9a-fA-F]{24}$/))
         .reduce((sum, b) => sum + Number(b.finalAmount || b.total || 0), 0);
       const finalSales = Math.max(calcSales, backendSales + unsyncedLocalSales);
-      const finalOperating = Math.max(calcOperating, Number(serverPl.businessExpenses || 0));
+      const finalOperating = Math.max(totalOperating, Number(serverPl.businessExpenses || 0));
       const finalGharKharch = Math.max(calcGharKharch, Number(serverPl.gharKharch || 0));
       const recordedPurchases = Math.max(calcActualPurchases, Number(serverPl.actualPurchases || 0));
 

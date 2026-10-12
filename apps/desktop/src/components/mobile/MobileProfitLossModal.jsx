@@ -100,13 +100,16 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
     setLoading(true);
     try {
       let plUrl = "/api/reports/profitloss";
+      let daybookUrl = "/api/daybook?period=all&limit=500";
       if (startDate && endDate) {
         plUrl += `?startDate=${startDate}&endDate=${endDate}`;
+        daybookUrl = `/api/daybook?startDate=${startDate}&endDate=${endDate}&limit=500`;
       }
-      const [res, billingRes, expenseRes] = await Promise.all([
+      const [res, billingRes, expenseRes, daybookRes] = await Promise.all([
         api.get(plUrl).catch(() => null),
         api.get("/api/billing?limit=500").catch(() => null),
-        api.get("/api/expense").catch(() => null)
+        api.get("/api/expenses?limit=500").catch(() => null),
+        api.get(daybookUrl).catch(() => null)
       ]);
 
       // Server Data
@@ -155,9 +158,21 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
         0
       );
 
+      // Staff Salaries from Daybook
+      const daybookSalaries = (daybookRes?.data?.salaries || daybookRes?.salaries || [])
+        .filter(s => isDateInRange(s.date || s.createdAt))
+        .reduce((sum, s) => sum + (Number(s.amount || s.debit || 0)), 0);
+
+      const salaryExpSum = operatingList
+        .filter(e => e.category === 'Salary' || String(e.title || '').includes('वेतन') || String(e.title || '').includes('एडवांस'))
+        .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+      const additionalSalary = Math.max(0, daybookSalaries - salaryExpSum);
+      const totalOperating = calcOperating + additionalSalary;
+
       // Prefer calculated local+server if greater, else fallback to API
       const finalSales = calcSales > 0 ? calcSales : Number(serverPl.totalSales || 0);
-      const finalOperating = calcOperating > 0 ? calcOperating : Number(serverPl.businessExpenses || 0);
+      const finalOperating = totalOperating > 0 ? totalOperating : Number(serverPl.businessExpenses || 0);
       const finalGharKharch = calcGharKharch > 0 ? calcGharKharch : Number(serverPl.gharKharch || 0);
 
       const profit = finalSales - finalOperating;

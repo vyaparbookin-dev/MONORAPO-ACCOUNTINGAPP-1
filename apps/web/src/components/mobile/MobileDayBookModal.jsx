@@ -273,7 +273,7 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
       const checkInRange = (rawDateVal) => {
         if (period === "all" || (!startDate && !endDate)) return true;
         const dStr = getLocalDayStr(rawDateVal);
-        if (!dStr) return true;
+        if (!dStr) return false;
         if (period === "today") return dStr === todayStr;
         if (period === "yesterday") return dStr === yestStr;
         if (startDate && dStr < startDate) return false;
@@ -375,7 +375,35 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
       });
 
       const serverSalaries = (Array.isArray(data?.salaries) ? data.salaries : [])
-        .filter(s => checkInRange(s.date || s.paymentDate || s.createdAt));
+        .filter(s => checkInRange(s.date || s.paymentDate || s.createdAt))
+        .map(s => ({
+          ...s,
+          amount: Number(s.amount || s.debit || 0),
+          staffName: s.staffName || s.staffId?.name || "स्टाफ सदस्य"
+        }));
+
+      // Also integrate any salary/advance expenses from mergedExpenses
+      const salaryExpenses = (mergedExpenses || [])
+        .filter(e => e.category === "Salary" || e.staffId || e.staffTransactionId || String(e.title || '').includes("वेतन") || String(e.title || '').includes("एडवांस"))
+        .map(e => ({
+          _id: e._id || e.id,
+          staffId: e.staffId || e.staffTransactionId || e._id,
+          staffName: e.title || "स्टाफ भुगतान",
+          amount: Number(e.amount || 0),
+          debit: Number(e.amount || 0),
+          date: e.date || e.createdAt,
+          type: 'payment',
+          notes: e.description || e.title
+        }));
+
+      const seenSalIds = new Set(serverSalaries.map(s => String(s._id || '')));
+      salaryExpenses.forEach(se => {
+        if (!seenSalIds.has(String(se._id))) {
+          serverSalaries.push(se);
+          seenSalIds.add(String(se._id));
+        }
+      });
+
       const serverPartyTransactions = (Array.isArray(data?.partyTransactions) ? data.partyTransactions : [])
         .filter(t => checkInRange(t.date || t.createdAt));
 
@@ -403,9 +431,12 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
 
     const isCreditBill = (b) => {
       if (!b) return false;
-      const pm = String(b.paymentMode || b.paymentMethod || b.type || "").toLowerCase();
-      const ps = String(b.paymentStatus || b.status || "").toLowerCase();
-      return pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || ps === "issued" || Boolean(b.isCredit);
+      const pm = String(b.paymentMode || b.paymentMethod || b.type || "").trim().toLowerCase();
+      const ps = String(b.paymentStatus || b.status || "").trim().toLowerCase();
+      if (pm === "cash" || pm === "nakad" || pm === "upi" || pm === "online" || pm === "bank" || pm === "cheque" || ps === "paid") {
+        return false;
+      }
+      return pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || Boolean(b.isCredit);
     };
 
     const totalBillSales = (data.bills || [])
@@ -421,7 +452,7 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
 
     const cashPurchases = (data.purchases || []).reduce((sum, p) => sum + Number(p.amountPaid || p.total || 0), 0);
     const expenses = (data.expenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
-    const salaries = (data.salaries || []).reduce((sum, s) => sum + Number(s.amount || 0), 0);
+    const salaries = (data.salaries || []).reduce((sum, s) => sum + Number(s.amount || s.debit || 0), 0);
     const partyOut = (data.partyTransactions || []).reduce((sum, t) => sum + Number(t.debit || 0), 0);
     tOut = cashPurchases + expenses + salaries + partyOut;
 
@@ -886,9 +917,10 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
                 !["out", "purchases", "expenses", "salaries", "party_out", "party_in"].includes(summaryCardFilter) &&
                 billsList
                   .filter((b) => {
-                    const pm = String(b.paymentMode || b.paymentMethod || b.type || "").toLowerCase();
-                    const ps = String(b.paymentStatus || b.status || "").toLowerCase();
-                    const isCredit = pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || ps === "issued" || Boolean(b.isCredit);
+                    const pm = String(b.paymentMode || b.paymentMethod || b.type || "").trim().toLowerCase();
+                    const ps = String(b.paymentStatus || b.status || "").trim().toLowerCase();
+                    const isCashExplicit = pm === "cash" || pm === "nakad" || pm === "upi" || pm === "online" || pm === "bank" || pm === "cheque" || ps === "paid";
+                    const isCredit = !isCashExplicit && (pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || Boolean(b.isCredit));
                     if (summaryCardFilter === "cash_sales" || summaryCardFilter === "in") return !isCredit;
                     if (summaryCardFilter === "credit_sales") return isCredit;
                     return true;
@@ -908,9 +940,10 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
                           </span>
                         </div>
                         {(() => {
-                          const pm = String(b.paymentMode || b.paymentMethod || b.type || "").toLowerCase();
-                          const ps = String(b.paymentStatus || b.status || "").toLowerCase();
-                          const isCredit = pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || ps === "issued" || Boolean(b.isCredit);
+                          const pm = String(b.paymentMode || b.paymentMethod || b.type || "").trim().toLowerCase();
+                          const ps = String(b.paymentStatus || b.status || "").trim().toLowerCase();
+                          const isCashExplicit = pm === "cash" || pm === "nakad" || pm === "upi" || pm === "online" || pm === "bank" || pm === "cheque" || ps === "paid";
+                          const isCredit = !isCashExplicit && (pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || Boolean(b.isCredit));
                           const isUpi = pm.includes("upi") || pm.includes("online");
                           return (
                             <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
@@ -932,9 +965,10 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
                           +₹{(Number(b.amount || b.finalAmount || b.total || b.totalAmount || 0)).toLocaleString("en-IN")}
                         </span>
                         {(() => {
-                          const pm = String(b.paymentMode || b.paymentMethod || b.type || "").toLowerCase();
-                          const ps = String(b.paymentStatus || b.status || "").toLowerCase();
-                          const isCredit = pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || ps === "issued" || Boolean(b.isCredit);
+                          const pm = String(b.paymentMode || b.paymentMethod || b.type || "").trim().toLowerCase();
+                          const ps = String(b.paymentStatus || b.status || "").trim().toLowerCase();
+                          const isCashExplicit = pm === "cash" || pm === "nakad" || pm === "upi" || pm === "online" || pm === "bank" || pm === "cheque" || ps === "paid";
+                          const isCredit = !isCashExplicit && (pm === "credit" || pm === "udhar" || ps === "unpaid" || ps === "partial" || Boolean(b.isCredit));
                           return (
                             <span className={`text-[10px] block font-bold uppercase ${isCredit ? 'text-amber-700' : 'text-slate-400'}`}>
                               {isCredit ? 'उधार बिक्री' : 'नकद बिक्री'}

@@ -1656,12 +1656,28 @@ function MobileVyaparAppContent() {
     return null;
   };
 
+  const getBillDateObj = (b) => {
+    if (!b) return null;
+    const raw = b.rawDate || b.createdAt;
+    if (raw) {
+      const parsed = parseAnyDate(raw);
+      if (parsed) return parsed;
+    }
+    if (b.date) {
+      const str = String(b.date).trim().toLowerCase();
+      if (str === "today" || str === "आज") {
+        return new Date();
+      }
+      return parseAnyDate(b.date);
+    }
+    return null;
+  };
+
   const recentSales = bills.reduce((sum, b) => sum + getBillAmount(b), 0);
 
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const weekBillSales = bills.filter(b => {
-    if (String(b.date || "").toLowerCase() === "today" || String(b.date || "") === "आज") return true;
-    const d = parseAnyDate(b.rawDate || b.createdAt || b.date);
+    const d = getBillDateObj(b);
     if (!d) return false;
     return d >= weekAgo;
   }).reduce((sum, b) => sum + getBillAmount(b), 0);
@@ -1713,9 +1729,13 @@ function MobileVyaparAppContent() {
 
   // Robust payment mode extractors
   const isCreditPayment = (b) => {
+    if (!b) return false;
     const m = String(b.paymentMode || b.paymentMethod || b.type || "").toUpperCase();
     const st = String(b.paymentStatus || b.status || "").toLowerCase();
-    return m === "UDHAR" || m === "CREDIT" || st === "unpaid" || st === "issued" || st === "due";
+    if (m === "CASH" || m === "NAKAD" || m === "UPI" || m === "ONLINE" || m === "QR" || m === "BANK" || m === "CHEQUE" || st === "paid") {
+      return false;
+    }
+    return m === "UDHAR" || m === "CREDIT" || st === "unpaid" || st === "due" || Boolean(b.isCredit);
   };
   const isUpiPayment = (b) => {
     if (isCreditPayment(b)) return false;
@@ -1725,7 +1745,8 @@ function MobileVyaparAppContent() {
   const isCashPayment = (b) => {
     if (isCreditPayment(b) || isUpiPayment(b)) return false;
     const m = String(b.paymentMode || b.paymentMethod || b.type || "").toUpperCase();
-    return m === "CASH" || m === "" || m === "NAKAD";
+    const st = String(b.paymentStatus || b.status || "").toLowerCase();
+    return m === "CASH" || m === "" || m === "NAKAD" || (!m && st === "paid");
   };
 
   const isSameLocalDate = (d1, d2) => {
@@ -1747,7 +1768,7 @@ function MobileVyaparAppContent() {
   const getTxFilterMatch = (tx, filter) => {
     if (filter === "all") return true;
     const d = parseAnyDate(tx.date || tx.createdAt);
-    if (!d) return true;
+    if (!d) return false;
     if (filter === "today") return isSameLocalDate(d, new Date());
     if (filter === "yesterday") return isSameLocalDate(d, new Date(Date.now() - 86400000));
     if (filter === "week") return d >= new Date(Date.now() - 7 * 86400000);
@@ -1756,8 +1777,7 @@ function MobileVyaparAppContent() {
 
   // Filter bills created today
   const todayBills = bills.filter(b => {
-    if (String(b.date || "").toLowerCase() === "today" || String(b.date || "") === "आज") return true;
-    const d = parseAnyDate(b.rawDate || b.createdAt || b.date);
+    const d = getBillDateObj(b);
     if (!d) return false;
     const today = new Date();
     return isSameLocalDate(d, today);
@@ -1776,14 +1796,11 @@ function MobileVyaparAppContent() {
   // Dynamic filter for Daily Sales Card (आज, कल, इस हफ़्ते, सभी)
   const activePeriodBills = bills.filter(b => {
     if (dailySaleFilter === "all") return true;
+    const d = getBillDateObj(b);
+    if (!d) return false;
     if (dailySaleFilter === "today") {
-      if (String(b.date || "").toLowerCase() === "today" || String(b.date || "") === "आज") return true;
-      const d = parseAnyDate(b.rawDate || b.createdAt || b.date);
-      if (!d) return false;
       return isSameLocalDate(d, new Date());
     }
-    const d = parseAnyDate(b.rawDate || b.createdAt || b.date);
-    if (!d) return false;
     if (dailySaleFilter === "yesterday") {
       const yest = new Date(Date.now() - 86400000);
       return isSameLocalDate(d, yest);
@@ -4473,7 +4490,7 @@ function MobileVyaparAppContent() {
                     subtitle: `Invoice #${b.id} • ${b.date} • ${b.paymentStatus === 'unpaid' ? 'Due (उधार)' : 'Paid'}`,
                     amount: Number(b.amount || b.finalAmount || b.total || 0),
                     isPositive: true,
-                    dateObj: parseAnyDate(b.rawDate || b.createdAt || b.date) || new Date(),
+                    dateObj: getBillDateObj(b) || parseAnyDate(b.rawDate || b.createdAt || b.date) || new Date(0),
                     original: b
                   })),
                   ...(allPartyTransactions || []).filter(tx => !isPartyTxLinkedToBill(tx, bills)).map(tx => {
@@ -4495,7 +4512,7 @@ function MobileVyaparAppContent() {
                       subtitle: `${isSupplierTx ? '🏭' : '🤝'} ${isSupplierTx ? 'सप्लायर लेनदेन' : 'पार्टी लेनदेन'} • ${tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}`,
                       amount: amt,
                       isPositive,
-                      dateObj: parseAnyDate(tx.date || tx.createdAt) || new Date(),
+                      dateObj: parseAnyDate(tx.date || tx.createdAt) || new Date(0),
                       original: tx,
                       isPartyTx: true
                     };
@@ -4512,7 +4529,7 @@ function MobileVyaparAppContent() {
                         : `🏢 दुकान खर्च • ${matchedStaff ? `[${matchedStaff.name} एडवांस] • ` : ''}${e.category || 'संचालन'} • ${e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}`,
                       amount: Number(e.amount || 0),
                       isPositive: false,
-                      dateObj: parseAnyDate(e.date || e.createdAt) || new Date(),
+                      dateObj: parseAnyDate(e.date || e.createdAt) || new Date(0),
                       original: e
                     };
                   })
@@ -4538,9 +4555,8 @@ function MobileVyaparAppContent() {
                   return true;
                 });
 
-                // Fall back to baseList if specific period yielded 0 items but baseList has items
-                const isFilteredEmpty = displayList.length === 0 && baseList.length > 0;
-                const finalDisplayList = isFilteredEmpty ? baseList : displayList;
+                // Do not fallback to baseList when user selects today/yesterday/week
+                const finalDisplayList = displayList;
 
                 if (finalDisplayList.length === 0) {
                   return (
@@ -4580,20 +4596,7 @@ function MobileVyaparAppContent() {
 
                 return (
                   <div className="space-y-2">
-                    {isFilteredEmpty ? (
-                      <div className="flex items-center justify-between bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-xs font-bold text-amber-900">
-                        <span>
-                          💡 चयनित अवधि में कोई नया लेनदेन नहीं था • सभी कुल ({finalDisplayList.length}) लेनदेन दिखाए जा रहे हैं
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setDailySaleFilter("all")}
-                          className="text-amber-700 font-black underline text-[11px] cursor-pointer"
-                        >
-                          ठीक है
-                        </button>
-                      </div>
-                    ) : dailySaleFilter !== "all" ? (
+                    {dailySaleFilter !== "all" ? (
                       <div className="flex items-center justify-between bg-indigo-50/80 border border-indigo-200 px-3 py-1.5 rounded-xl text-xs font-black text-indigo-900">
                         <span>
                           {dailySaleFilter === "week" ? "📅 इस हफ़्ते की बिक्री व लेनदेन" : dailySaleFilter === "today" ? "☀️ आज के लेनदेन" : "कल के लेनदेन"} ({finalDisplayList.length})

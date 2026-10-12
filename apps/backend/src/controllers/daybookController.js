@@ -4,6 +4,7 @@ import Purchase from "../model/purchase.js";
 import Expance from "../model/expenses.js";
 import PartyTransaction from "../model/PartyTransaction.js";
 import Salary from "../model/salary.js";
+import StaffTransaction from "../model/StaffTransaction.js";
 import Party from "../model/party.js";
 import Staff from "../model/staff.js";
 
@@ -123,6 +124,12 @@ export const getDayBook = async (req, res) => {
     };
     const partyTxQuery = { companyId: coFilter, isDeleted: { $ne: true }, ...(period === "all" ? {} : makeFieldDateQuery("date")) };
     const salaryQuery = { companyId: coFilter, isDeleted: { $ne: true }, ...makeDocDateQuery("date") };
+    const staffTxQuery = { 
+      companyId: coFilter, 
+      isDeleted: { $ne: true }, 
+      debit: { $gt: 0 }, 
+      ...makeDocDateQuery("date") 
+    };
 
     // Sabhi collections me ek sath request bhejenge (Maximum Speed)
     const [
@@ -130,7 +137,8 @@ export const getDayBook = async (req, res) => {
       purchases, totalPurchases,
       expenses, totalExpenses,
       partyTransactions, totalPartyTransactions,
-      salaries, totalSalaries
+      salariesRaw, totalSalariesRaw,
+      staffTxs, totalStaffTxs
     ] = await Promise.all([
       Bill.find(billQuery).populate("partyId", "name").skip(skip).limit(limit),
       Bill.countDocuments(billQuery),
@@ -145,8 +153,49 @@ export const getDayBook = async (req, res) => {
       PartyTransaction.countDocuments(partyTxQuery),
       
       Salary.find(salaryQuery).populate("staffId", "name").skip(skip).limit(limit),
-      Salary.countDocuments(salaryQuery)
+      Salary.countDocuments(salaryQuery),
+
+      StaffTransaction.find(staffTxQuery).populate("staffId", "name position role mobileNumber").skip(skip).limit(limit),
+      StaffTransaction.countDocuments(staffTxQuery)
     ]);
+
+    // Format all staff payments and salaries uniformly
+    const formattedStaffTxs = (staffTxs || []).map(st => ({
+      _id: st._id,
+      staffId: st.staffId?._id || st.staffId,
+      staffName: st.staffId?.name || "स्टाफ सदस्य",
+      amount: Number(st.debit || 0),
+      debit: Number(st.debit || 0),
+      date: st.date || st.createdAt,
+      type: st.type || 'payment',
+      notes: st.notes || 'स्टाफ भुगतान',
+      category: 'Salary'
+    }));
+
+    const formattedSalaries = (salariesRaw || []).map(s => ({
+      _id: s._id,
+      staffId: s.staffId?._id || s.staffId,
+      staffName: s.staffId?.name || "स्टाफ सदस्य",
+      amount: Number(s.amount || s.totalSalary || 0),
+      debit: Number(s.amount || s.totalSalary || 0),
+      date: s.date || s.paymentDate || s.createdAt,
+      type: 'salary',
+      notes: s.notes || 'मासिक वेतन',
+      category: 'Salary'
+    }));
+
+    // Deduplicate any overlapping entries by staffId + amount + date
+    const seenSalKeys = new Set();
+    const salaries = [];
+    for (const item of [...formattedStaffTxs, ...formattedSalaries]) {
+      const dStr = item.date ? new Date(item.date).toISOString().slice(0, 10) : '';
+      const key = `${item.staffId}_${item.amount}_${dStr}`;
+      if (!seenSalKeys.has(key)) {
+        seenSalKeys.add(key);
+        salaries.push(item);
+      }
+    }
+    const totalSalaries = totalSalariesRaw + totalStaffTxs;
 
     // Only include party transactions for active parties
     const activePartyTransactions = partyTransactions.filter(pt => !pt.partyId || pt.partyId.isActive !== false);

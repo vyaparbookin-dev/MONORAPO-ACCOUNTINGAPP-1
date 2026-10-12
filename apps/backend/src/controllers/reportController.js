@@ -4,6 +4,7 @@ import Product from "../model/product.js";
 import Expance from "../model/expenses.js";
 import Purchase from "../model/purchase.js";
 import Salary from "../model/salary.js";
+import StaffTransaction from "../model/StaffTransaction.js";
 import User from "../model/user.js"; // User model ko import karein
 import Staff from "../model/staff.js";
 import Party from "../model/party.js";
@@ -433,19 +434,22 @@ export const getProfitLoss = async (req, res) => {
     const expenseQuery = { companyId: coFilter, isDeleted: { $ne: true } };
     const purchaseQuery = { companyId: coFilter, isDeleted: { $ne: true } };
     const salaryQuery = { companyId: coFilter, isDeleted: { $ne: true } };
+    const staffTxQuery = { companyId: coFilter, isDeleted: { $ne: true }, debit: { $gt: 0 } };
 
     if (startDate && endDate) {
       billQuery.$or = [{ date: dateFilter }, { createdAt: dateFilter }];
       expenseQuery.$or = [{ date: dateFilter }, { createdAt: dateFilter }];
       purchaseQuery.$or = [{ date: dateFilter }, { createdAt: dateFilter }];
       salaryQuery.$or = [{ date: dateFilter }, { paymentDate: dateFilter }, { createdAt: dateFilter }];
+      staffTxQuery.$or = [{ date: dateFilter }, { createdAt: dateFilter }];
     }
 
-    const [bills, expenses, purchases, salaries, activeStaffList] = await Promise.all([
+    const [bills, expenses, purchases, salaries, staffTxs, activeStaffList] = await Promise.all([
       Bill.find(billQuery),
       Expance.find(expenseQuery),
       Purchase.find(purchaseQuery),
       Salary.find(salaryQuery),
+      StaffTransaction.find(staffTxQuery),
       Staff.find({ companyId: coFilter, isActive: true })
     ]);
 
@@ -465,7 +469,8 @@ export const getProfitLoss = async (req, res) => {
     const fixedStaffPeriodLiability = Math.round((fixedMonthlyStaffSalaries * daysCount) / 30);
 
     // Categorize Operating Expenses dynamically
-    let actualPaidSalaries = salaries.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+    let actualPaidSalaries = salaries.reduce((sum, s) => sum + (Number(s.amount) || 0), 0) +
+                             (staffTxs || []).reduce((sum, st) => sum + (Number(st.debit) || 0), 0);
     let gasAndPower = 0;
     let rentAndProperty = 0;
     let otherExpenses = 0;

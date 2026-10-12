@@ -135,7 +135,8 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
       const yestStr = getLocalDayStr(yestDate);
 
       const checkInRange = (rawDateVal) => {
-        const dStr = getLocalDayStr(rawDateVal) || todayStr;
+        const dStr = getLocalDayStr(rawDateVal);
+        if (!dStr) return false;
         if (period === "today") return dStr === todayStr;
         if (period === "yesterday") return dStr === yestStr;
         if (startDate && dStr < startDate) return false;
@@ -222,7 +223,7 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
 
     const cashPurchases = (data.purchases || []).reduce((sum, p) => sum + Number(p.amountPaid || p.total || 0), 0);
     const expenses = (data.expenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
-    const salaries = (data.salaries || []).reduce((sum, s) => sum + Number(s.amount || 0), 0);
+    const salaries = (data.salaries || []).reduce((sum, s) => sum + Number(s.amount || s.debit || 0), 0);
     const partyOut = (data.partyTransactions || []).reduce((sum, t) => sum + Number(t.debit || 0), 0);
     tOut = cashPurchases + expenses + salaries + partyOut;
 
