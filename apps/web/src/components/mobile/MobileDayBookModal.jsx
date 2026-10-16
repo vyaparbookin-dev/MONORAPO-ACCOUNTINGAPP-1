@@ -23,6 +23,7 @@ import { readLocalJson } from "@repo/shared";
 import { useCompany } from "../../contexts/CompanyContext";
 import { getBusinessMode } from "../../utils/businessMode";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
+import { storageManager } from "../../services/storageManager";
 
 const parseAnyDate = (val) => {
   if (!val) return null;
@@ -78,7 +79,7 @@ const HINDI_MONTHS = [
 ];
 const HINDI_DAYS = ["रवि", "सोम", "मंगल", "बुध", "गुरु", "शुक्र", "शनि"];
 
-export default function MobileDayBookModal({ isOpen, onClose }) {
+export default function MobileDayBookModal({ isOpen, onClose, onSelectBill }) {
   if (!isOpen) return null;
 
   const { selectedCompany } = useCompany() || {};
@@ -250,19 +251,29 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
         console.warn("Server daybook fetch err, using local data", e);
       }
 
-      // Merge local manual bills from localStorage (ensures offline / recent manual sales ALWAYS show)
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+
+      // Merge local manual bills from storageManager (ensures offline / recent manual sales ALWAYS show)
       let localBills = [];
       try {
-        const stored = readLocalJson(["vb_local_manual_bills", "bills", "manual_bills", "sales", "vb_bills"], []);
-        if (Array.isArray(stored)) localBills = stored;
-      } catch (e) {}
+        localBills = storageManager.getBills(currentCoId);
+      } catch (e) {
+        try {
+          const stored = readLocalJson(["vb_local_manual_bills", "bills", "manual_bills", "sales", "vb_bills"], []);
+          if (Array.isArray(stored)) localBills = stored;
+        } catch (err) {}
+      }
 
-      // Also merge local expenses from localStorage
+      // Also merge local expenses from storageManager
       let localExpenses = [];
       try {
-        const storedExp = readLocalJson(["vb_local_expenses", "expenses", "local_expenses"], []);
-        if (Array.isArray(storedExp)) localExpenses = storedExp;
-      } catch (e) {}
+        localExpenses = storageManager.getExpenses(currentCoId);
+      } catch (e) {
+        try {
+          const storedExp = readLocalJson(["vb_local_expenses", "expenses", "local_expenses"], []);
+          if (Array.isArray(storedExp)) localExpenses = storedExp;
+        } catch (err) {}
+      }
 
       const now = new Date();
       const todayStr = getLocalDayStr(now);
@@ -928,7 +939,9 @@ export default function MobileDayBookModal({ isOpen, onClose }) {
                   .map((b) => (
                     <div
                       key={`b-${b._id || b.id || Math.random()}`}
-                      className="p-3 bg-white rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between"
+                      onClick={() => onSelectBill && onSelectBill(b)}
+                      className="p-3 bg-white rounded-2xl border border-slate-200 hover:border-indigo-400 active:scale-98 shadow-xs flex items-center justify-between cursor-pointer transition group"
+                      title="बिल देखें या तारीख बदलें"
                     >
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-1.5">

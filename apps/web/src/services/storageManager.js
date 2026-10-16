@@ -223,6 +223,41 @@ class StorageManager {
     const pMode = (b.paymentMode || b.paymentType || b.type || "CASH").toUpperCase();
     const id = b._id || b.id || this.generateId("bill");
 
+    const parseStorageDate = (val) => {
+      if (!val) return null;
+      if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+      const str = String(val).trim();
+      if (!str) return null;
+      if (str.toLowerCase() === "today" || str === "आज") return new Date();
+
+      // Check YYYY-MM-DD
+      const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+      if (ymd) {
+        const d = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
+        if (!isNaN(d.getTime())) return d;
+      }
+      // Check DD-MM-YYYY or DD/MM/YYYY
+      const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+      if (dmy) {
+        const d = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+        if (!isNaN(d.getTime())) return d;
+      }
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        if (d.getFullYear() > 2000) return d;
+        const currentYear = new Date().getFullYear();
+        const withYear = new Date(`${str} ${currentYear}`);
+        if (!isNaN(withYear.getTime())) return withYear;
+      }
+      return null;
+    };
+
+    const parsedDateObj = parseStorageDate(b.rawDate) || parseStorageDate(b.createdAt) || parseStorageDate(b.date);
+    const resolvedRawDate = parsedDateObj ? parsedDateObj.toISOString() : (b.rawDate || b.createdAt || new Date().toISOString());
+    const resolvedDateDisplay = parsedDateObj
+      ? parsedDateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+      : (b.date || "Today");
+
     return {
       _id: id,
       id: bNo,
@@ -242,23 +277,11 @@ class StorageManager {
       paymentMode: pMode,
       paymentMethod: (pMode === "UDHAR" || pMode === "CREDIT") ? "credit" : "cash",
       paymentStatus: b.paymentStatus || (pMode === "UDHAR" ? "unpaid" : "paid"),
-      date: b.date ? (String(b.date).includes("-") || String(b.date).includes("/") ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : String(b.date)) : "Today",
-      rawDate: (() => {
-        const candidates = [b.rawDate, b.createdAt, b.date];
-        for (const c of candidates) {
-          if (!c) continue;
-          if (c instanceof Date && !isNaN(c.getTime())) return c.toISOString();
-          const str = String(c).trim();
-          if (str.includes("T") || str.match(/^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}/)) {
-            const d = new Date(str);
-            if (!isNaN(d.getTime())) return d.toISOString();
-          }
-        }
-        return b.rawDate || b.createdAt || new Date().toISOString();
-      })(),
+      date: resolvedDateDisplay,
+      rawDate: resolvedRawDate,
       items: Array.isArray(b.items) ? b.items : [],
       isOfflineCreated: Boolean(b.isOfflineCreated),
-      createdAt: b.createdAt || new Date().toISOString(),
+      createdAt: b.createdAt || resolvedRawDate,
       updatedAt: b.updatedAt || new Date().toISOString()
     };
   }
@@ -336,6 +359,45 @@ class StorageManager {
     const updated = deduplicateBills([norm, ...current]);
     this.saveBills(companyId, updated);
     return updated;
+  }
+
+  updateBill(companyId, bill) {
+    const norm = this.normalizeBill(bill);
+    if (!norm) return this.getBills(companyId);
+
+    const current = this.getBills(companyId);
+    const targetId = String(norm._id || norm.id || norm.billNumber || "").trim();
+    let found = false;
+
+    const nextList = current.map(b => {
+      const bId = String(b._id || b.id || b.billNumber || "").trim();
+      const bNum = String(b.billNumber || b.invoiceNumber || "").trim();
+      if ((targetId && bId && targetId === bId) || (norm.billNumber && bNum && norm.billNumber === bNum)) {
+        found = true;
+        return { ...b, ...norm, updatedAt: new Date().toISOString() };
+      }
+      return b;
+    });
+
+    if (!found) {
+      nextList.unshift(norm);
+    }
+
+    this.saveBills(companyId, nextList);
+    return nextList;
+  }
+
+  deleteBill(companyId, billId) {
+    if (!billId) return this.getBills(companyId);
+    const current = this.getBills(companyId);
+    const targetId = String(billId).trim();
+    const nextList = current.filter(b => {
+      const bId = String(b._id || b.id || b.billNumber || "").trim();
+      const bNum = String(b.billNumber || b.invoiceNumber || "").trim();
+      return bId !== targetId && bNum !== targetId;
+    });
+    this.saveBills(companyId, nextList);
+    return nextList;
   }
 
   mergeBills(companyId, serverBills = []) {

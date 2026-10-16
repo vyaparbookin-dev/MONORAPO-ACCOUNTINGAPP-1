@@ -217,6 +217,16 @@ function MobileVyaparAppContent() {
   const [selectedBillDetail, setSelectedBillDetail] = useState(null);
   const [selectedPartyDetail, setSelectedPartyDetail] = useState(null);
 
+  // Selected Bill Detail & Edit State
+  const [isEditingBill, setIsEditingBill] = useState(false);
+  const [editBillDate, setEditBillDate] = useState("");
+  const [editBillCustomer, setEditBillCustomer] = useState("");
+  const [editBillPhone, setEditBillPhone] = useState("");
+  const [editBillAmount, setEditBillAmount] = useState("");
+  const [editBillPaymentMode, setEditBillPaymentMode] = useState("CASH");
+  const [editBillNotes, setEditBillNotes] = useState("");
+  const [savingEditBill, setSavingEditBill] = useState(false);
+
   // Calculator State
   const [calcInput, setCalcInput] = useState("");
 
@@ -3427,6 +3437,142 @@ function MobileVyaparAppContent() {
     }
   };
 
+  // ==================== BILL DETAIL & DATE/SALE EDITING HANDLERS ====================
+  const handleOpenEditBill = (bill) => {
+    if (!bill) return;
+    const d = getBillDateObj(bill) || parseAnyDate(bill.rawDate || bill.date || bill.createdAt) || new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    setEditBillDate(`${y}-${m}-${day}`);
+    setEditBillCustomer(bill.customerName || bill.partyName || "");
+    setEditBillPhone(bill.phone || bill.customerPhone || bill.customerMobile || "");
+    setEditBillAmount(String(getBillAmount(bill) || ""));
+    const pMode = (bill.paymentMode || bill.type || (bill.paymentStatus === 'unpaid' ? 'UDHAR' : 'CASH')).toUpperCase();
+    setEditBillPaymentMode(pMode === 'CREDIT' ? 'UDHAR' : pMode);
+    const itemTitle = Array.isArray(bill.items) && bill.items.length > 0 ? (bill.items[0].name || "") : (bill.notes || "");
+    setEditBillNotes(itemTitle);
+    setIsEditingBill(true);
+  };
+
+  const handleSaveEditBill = async (e) => {
+    if (e) e.preventDefault();
+    if (!editBillAmount || Number(editBillAmount) <= 0) {
+      alert("कृपया मान्य बिक्री राशि (₹) दर्ज करें!");
+      return;
+    }
+    setSavingEditBill(true);
+    try {
+      const amt = Number(editBillAmount);
+      const isUdhar = editBillPaymentMode === "UDHAR" || editBillPaymentMode === "CREDIT";
+      const pMode = isUdhar ? "UDHAR" : editBillPaymentMode.toUpperCase();
+      const partyTitle = editBillCustomer.trim() || (pMode === 'CASH' ? "काउंटर नकद ग्राहक" : pMode === 'UPI' ? "UPI ग्राहक" : "उधारी ग्राहक");
+
+      const billDateObj = editBillDate ? new Date(editBillDate) : new Date();
+      const billDateDisplay = editBillDate
+        ? new Date(editBillDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+        : "Today";
+      const billRawDate = editBillDate ? new Date(`${editBillDate}T12:00:00+05:30`).toISOString() : new Date().toISOString();
+
+      const updatedBill = {
+        ...selectedBillDetail,
+        customerName: partyTitle,
+        customer: partyTitle,
+        partyName: partyTitle,
+        phone: editBillPhone.trim(),
+        customerPhone: editBillPhone.trim(),
+        customerMobile: editBillPhone.trim(),
+        amount: amt,
+        finalAmount: amt,
+        total: amt,
+        totalAmount: amt,
+        grandTotal: amt,
+        paymentMode: pMode,
+        type: pMode,
+        paymentMethod: isUdhar ? "credit" : (pMode === "UPI" ? "online" : "cash"),
+        paymentStatus: isUdhar ? "unpaid" : "paid",
+        status: isUdhar ? "issued" : "paid",
+        date: billDateDisplay,
+        rawDate: billRawDate,
+        createdAt: billRawDate,
+        items: [{
+          name: editBillNotes.trim() || `बिक्री (${pMode})`,
+          quantity: 1,
+          price: amt,
+          total: amt
+        }],
+        notes: editBillNotes.trim(),
+        updatedAt: new Date().toISOString()
+      };
+
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      const updatedBills = storageManager.updateBill(currentCoId, updatedBill);
+      setBills(updatedBills);
+      setSelectedBillDetail(updatedBill);
+      setIsEditingBill(false);
+
+      // Background API sync
+      const serverId = selectedBillDetail._id || selectedBillDetail.id;
+      if (serverId && !String(serverId).startsWith("bill_")) {
+        try {
+          await api.put(`/api/billing/${serverId}`, {
+            customerName: partyTitle,
+            customerMobile: editBillPhone.trim(),
+            date: billRawDate,
+            finalAmount: amt,
+            total: amt,
+            paymentMode: pMode,
+            paymentMethod: isUdhar ? "credit" : (pMode === "UPI" ? "online" : "cash"),
+            paymentStatus: isUdhar ? "unpaid" : "paid",
+            status: isUdhar ? "issued" : "paid",
+            notes: editBillNotes.trim(),
+            items: updatedBill.items
+          });
+        } catch (apiErr) {
+          console.warn("Server bill update sync warning:", apiErr);
+        }
+      }
+
+      alert("🎉 बिल और तारीख सफलतापूर्वक अपडेट कर दी गई है!");
+    } catch (err) {
+      console.error("Failed to save bill edits", err);
+      alert("बिल अपडेट करने में समस्या आई: " + err.message);
+    } finally {
+      setSavingEditBill(false);
+    }
+  };
+
+  const handleDeleteBillFromDetail = async (bill) => {
+    if (!bill) return;
+    const bNum = bill.billNumber || bill.invoiceNumber || bill.id || "001";
+    const amt = getBillAmount(bill);
+    if (!window.confirm(`क्या आप वाकई बिल #${bNum} (₹${amt.toLocaleString('en-IN')}) को हटाना चाहते हैं?`)) {
+      return;
+    }
+    try {
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      const targetId = bill._id || bill.id || bill.billNumber;
+      const updatedBills = storageManager.deleteBill(currentCoId, targetId);
+      setBills(updatedBills);
+      setSelectedBillDetail(null);
+      setIsEditingBill(false);
+
+      const serverId = bill._id || bill.id;
+      if (serverId && !String(serverId).startsWith("bill_")) {
+        try {
+          await api.delete(`/api/billing/${serverId}`);
+        } catch (apiErr) {
+          console.warn("Server bill delete sync warning:", apiErr);
+        }
+      }
+
+      alert("🗑️ बिल सफलता पूर्वक हटा दिया गया!");
+    } catch (err) {
+      console.error("Failed to delete bill", err);
+      alert("बिल हटाने में समस्या आई: " + err.message);
+    }
+  };
+
   // ==================== AI VISION MULTI-BILL PHOTO SCANNER & REVIEW ====================
   const handleProcessBillImages = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -4555,10 +4701,10 @@ function MobileVyaparAppContent() {
                   return true;
                 });
 
-                // Do not fallback to baseList when user selects today/yesterday/week
-                const finalDisplayList = displayList;
+                const isShowingFallback = dailySaleFilter !== "all" && displayList.length === 0 && baseList.length > 0;
+                const finalDisplayList = isShowingFallback ? baseList : displayList;
 
-                if (finalDisplayList.length === 0) {
+                if (baseList.length === 0) {
                   return (
                     <div className="p-6 bg-white border border-slate-100 rounded-3xl text-center space-y-3 shadow-xs">
                       <div className="w-12 h-12 bg-slate-50 text-slate-400 rounded-2xl mx-auto flex items-center justify-center text-xl">
@@ -4566,22 +4712,13 @@ function MobileVyaparAppContent() {
                       </div>
                       <div>
                         <p className="text-xs font-black text-[#0F172A]">
-                          {transactionTab === "sales" ? "इस अवधि में कोई बिक्री दर्ज नहीं है" : transactionTab === "expenses" ? "इस अवधि में कोई खर्च दर्ज नहीं है" : "कोई लेनदेन नहीं मिला"}
+                          {transactionTab === "sales" ? "कोई बिक्री दर्ज नहीं है" : transactionTab === "expenses" ? "कोई खर्च दर्ज नहीं है" : "कोई लेनदेन नहीं मिला"}
                         </p>
                         <p className="text-[11px] text-slate-400 mt-0.5">
-                          {dailySaleFilter !== "all" ? `फ़िल्टर '${dailySaleFilter === 'week' ? 'हफ़्ता' : dailySaleFilter === 'today' ? 'आज' : 'कल'}' लागू है।` : "दुकान का हिसाब-किताब रखने के लिए पहली बिक्री या खर्च दर्ज करें"}
+                          दुकान का हिसाब-किताब रखने के लिए पहली बिक्री या खर्च दर्ज करें
                         </p>
                       </div>
                       <div className="flex items-center justify-center gap-2 pt-1">
-                        {dailySaleFilter !== "all" && (
-                          <button
-                            type="button"
-                            onClick={() => setDailySaleFilter("all")}
-                            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl shadow-xs transition cursor-pointer"
-                          >
-                            🔄 सभी लेनदेन देखें
-                          </button>
-                        )}
                         <button
                           type="button"
                           onClick={() => setShowManualSaleModal(true)}
@@ -4596,7 +4733,20 @@ function MobileVyaparAppContent() {
 
                 return (
                   <div className="space-y-2">
-                    {dailySaleFilter !== "all" ? (
+                    {isShowingFallback ? (
+                      <div className="flex items-center justify-between bg-amber-50/90 border border-amber-200 px-3 py-2 rounded-xl text-xs font-bold text-amber-900">
+                        <span>
+                          ☀️ {dailySaleFilter === "today" ? "आज" : dailySaleFilter === "yesterday" ? "कल" : "इस हफ़्ते"} कोई नया लेनदेन नहीं है — आपके हालिया लेनदेन नीचे दिखाए जा रहे हैं:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setDailySaleFilter("all")}
+                          className="text-amber-800 hover:text-amber-950 font-black underline text-[11px] shrink-0 ml-2 cursor-pointer"
+                        >
+                          ✕ फ़िल्टर हटाएं
+                        </button>
+                      </div>
+                    ) : dailySaleFilter !== "all" ? (
                       <div className="flex items-center justify-between bg-indigo-50/80 border border-indigo-200 px-3 py-1.5 rounded-xl text-xs font-black text-indigo-900">
                         <span>
                           {dailySaleFilter === "week" ? "📅 इस हफ़्ते की बिक्री व लेनदेन" : dailySaleFilter === "today" ? "☀️ आज के लेनदेन" : "कल के लेनदेन"} ({finalDisplayList.length})
@@ -9332,6 +9482,7 @@ function MobileVyaparAppContent() {
         <MobileDayBookModal
           isOpen={showDayBookModal}
           onClose={() => setShowDayBookModal(false)}
+          onSelectBill={(b) => setSelectedBillDetail(b)}
         />
       )}
 
@@ -10119,6 +10270,297 @@ function MobileVyaparAppContent() {
                 <Plus size={14} /> + नई कंपनी / दुकान जोड़ें
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🧾 COMPREHENSIVE BILL DETAIL & SALE/DATE EDIT MODAL */}
+      {selectedBillDetail && (
+        <div className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-lg">
+                  🧾
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-[#0F172A]">
+                    {isEditingBill ? "✏️ बिल व तारीख में बदलाव (Edit Bill & Date)" : "बिल विवरण (Invoice Details)"}
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-mono">
+                    #{selectedBillDetail.billNumber || selectedBillDetail.invoiceNumber || selectedBillDetail.id || "001"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedBillDetail(null);
+                  setIsEditingBill(false);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl bg-slate-50 transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* EDIT MODE */}
+            {isEditingBill ? (
+              <form onSubmit={handleSaveEditBill} className="space-y-3.5">
+                {/* 1. Date Picker (Prominently Highlighted) */}
+                <div className="p-3.5 bg-amber-50/80 border-2 border-amber-300 rounded-2xl space-y-1.5 shadow-2xs">
+                  <label className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                    <Calendar size={15} className="text-amber-700" />
+                    <span>📅 बिल की तारीख बदलें (Select Bill Date) *</span>
+                  </label>
+                  <p className="text-[10px] text-amber-800 font-bold">
+                    कैलेंडर से पुरानी या आज की कोई भी तारीख चुनें:
+                  </p>
+                  <input
+                    type="date"
+                    value={editBillDate}
+                    onChange={(e) => setEditBillDate(e.target.value)}
+                    required
+                    className="w-full p-3 bg-white border-2 border-amber-400 focus:border-amber-600 rounded-xl text-sm font-black text-[#0F172A] outline-none shadow-xs cursor-pointer"
+                  />
+                </div>
+
+                {/* 2. Amount */}
+                <div>
+                  <label className="text-xs font-black text-slate-800 block mb-1">
+                    कुल बिक्री राशि (Amount ₹) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-black text-base">₹</span>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="0"
+                      value={editBillAmount}
+                      onChange={(e) => setEditBillAmount(e.target.value)}
+                      className="w-full pl-8 pr-3 py-2.5 bg-slate-50 border-2 border-slate-200 focus:border-emerald-600 rounded-xl text-base font-black text-[#0F172A] outline-none shadow-xs"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Payment Mode */}
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                    भुगतान माध्यम (Payment Mode) *
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: "CASH", label: "💵 नकद (Cash)" },
+                      { id: "UPI", label: "📱 UPI / Online" },
+                      { id: "UDHAR", label: "📒 उधार (Credit)" }
+                    ].map(pm => (
+                      <button
+                        key={pm.id}
+                        type="button"
+                        onClick={() => setEditBillPaymentMode(pm.id)}
+                        className={`py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                          editBillPaymentMode === pm.id
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs font-black'
+                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        {pm.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 4. Customer Name */}
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                    ग्राहक का नाम (Customer Name)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="ग्राहक का नाम..."
+                    value={editBillCustomer}
+                    onChange={(e) => setEditBillCustomer(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                  />
+                </div>
+
+                {/* 5. Customer Phone */}
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                    ग्राहक मोबाइल नंबर (Phone)
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="10 अंकों का मोबाइल नंबर..."
+                    value={editBillPhone}
+                    onChange={(e) => setEditBillPhone(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                  />
+                </div>
+
+                {/* 6. Notes / Items summary */}
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                    विवरण / सामान (Notes / Item Description)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="उदा. किराना सामान, पाइप फिटिंग, दैनिक बिक्री..."
+                    value={editBillNotes}
+                    onChange={(e) => setEditBillNotes(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-[#0F172A] outline-none"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingBill(false)}
+                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    रद्द करें (Cancel)
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingEditBill}
+                    className="flex-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    {savingEditBill ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                    {savingEditBill ? "सेव हो रहा है..." : "बदलाव सुरक्षित करें (Save Changes)"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              /* VIEW MODE */
+              <div className="space-y-4">
+                {/* Highlighted Amount & Status */}
+                <div className="p-4 bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl flex items-center justify-between shadow-md">
+                  <div>
+                    <span className="text-[10px] text-slate-300 font-bold uppercase tracking-wider block">
+                      कुल बिक्री राशि (Total Amount)
+                    </span>
+                    <span className="text-2xl font-black font-mono">
+                      ₹{getBillAmount(selectedBillDetail).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
+                      selectedBillDetail.paymentStatus === 'unpaid'
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                        : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    }`}>
+                      {selectedBillDetail.paymentStatus === 'unpaid' ? '🔴 उधार (Due)' : '🟢 चुकता (Paid)'}
+                    </span>
+                    <span className="text-[11px] text-slate-300 block font-bold mt-1">
+                      {selectedBillDetail.paymentMode || selectedBillDetail.type || 'CASH'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Date Row with Instant Change Date Button */}
+                <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Calendar size={18} className="text-amber-700" />
+                    <div>
+                      <span className="text-[10px] text-amber-800 font-bold block">बिल की तारीख (Bill Date)</span>
+                      <span className="text-xs font-black text-slate-900">
+                        {selectedBillDetail.date || "Today"}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditBill(selectedBillDetail)}
+                    className="px-3 py-1.5 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 font-black text-xs rounded-xl shadow-2xs transition flex items-center gap-1 cursor-pointer"
+                  >
+                    <Edit2 size={12} /> तारीख बदलें / एडिट
+                  </button>
+                </div>
+
+                {/* Details Grid */}
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2 text-xs">
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500 font-bold">ग्राहक का नाम:</span>
+                    <span className="font-black text-[#0F172A]">{selectedBillDetail.customerName || selectedBillDetail.partyName || "काउंटर नकद ग्राहक"}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500 font-bold">मोबाइल नंबर:</span>
+                    <span className="font-mono font-bold text-slate-800">{selectedBillDetail.phone || selectedBillDetail.customerPhone || selectedBillDetail.customerMobile || "उपलब्ध नहीं"}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500 font-bold">भुगतान प्रकार:</span>
+                    <span className="font-extrabold text-indigo-700">{selectedBillDetail.paymentMode || selectedBillDetail.type || "CASH"}</span>
+                  </div>
+                  {selectedBillDetail.notes && (
+                    <div className="py-1">
+                      <span className="text-slate-500 font-bold block mb-0.5">टिप्पणी / विवरण:</span>
+                      <span className="font-medium text-slate-700 bg-white p-2 rounded-lg border border-slate-200 block text-[11px]">{selectedBillDetail.notes}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Items List (if present) */}
+                {Array.isArray(selectedBillDetail.items) && selectedBillDetail.items.length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-xs font-black text-slate-700">सामान सूची ({selectedBillDetail.items.length} आइटम):</span>
+                    <div className="max-h-36 overflow-y-auto space-y-1.5 bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
+                      {selectedBillDetail.items.map((it, idx) => (
+                        <div key={idx} className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-100 shadow-2xs">
+                          <div>
+                            <span className="font-bold text-slate-800 block text-xs">{it.name || it.productName || "सामान"}</span>
+                            <span className="text-[10px] text-slate-400">मात्रा: {it.quantity || it.qty || 1} {it.unit || ''} × ₹{it.price || it.salePrice || 0}</span>
+                          </div>
+                          <span className="font-mono font-black text-slate-900">
+                            ₹{(Number(it.total || (it.quantity * it.price)) || 0).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Main Action Buttons */}
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditBill(selectedBillDetail)}
+                    className="py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Edit size={14} /> ✏️ पूरा बिल एडिट करें
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleShareWhatsAppBill(selectedBillDetail)}
+                    className="py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Share2 size={14} /> WhatsApp भेजें
+                  </button>
+                </div>
+
+                {/* Secondary Actions (Print, Delete) */}
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1"
+                  >
+                    <Printer size={13} /> प्रिंट / रसीद
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteBillFromDetail(selectedBillDetail)}
+                    className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200 transition cursor-pointer flex items-center gap-1"
+                  >
+                    <Trash2 size={13} /> 🗑️ बिल हटाएं
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

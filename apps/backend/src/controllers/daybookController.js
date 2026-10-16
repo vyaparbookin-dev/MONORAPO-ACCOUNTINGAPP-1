@@ -84,14 +84,15 @@ export const getDayBook = async (req, res) => {
     // Common time query logic supporting both BSON Date objects and ISO/YYYY-MM-DD strings
     const startIso = startOfDay.toISOString();
     const endIso = endOfDay.toISOString();
-    const startDateStr = startIso.split("T")[0];
-    const endDateStr = endIso.split("T")[0];
+    const startTargetStr = reqStartDate || (date ? (date.length === 10 ? date : new Date(date).toISOString().split("T")[0]) : todayISTDateStr);
+    const endTargetStr = reqEndDate || (date ? (date.length === 10 ? date : new Date(date).toISOString().split("T")[0]) : todayISTDateStr);
 
     const makeFieldDateQuery = (field) => ({
       $or: [
         { [field]: { $gte: startOfDay, $lte: endOfDay } },
         { [field]: { $gte: startIso, $lte: endIso } },
-        { [field]: { $gte: startDateStr, $lte: endDateStr } }
+        { [field]: { $gte: startTargetStr, $lte: endTargetStr + "T23:59:59.999Z" } },
+        { [field]: { $regex: new RegExp(`^(${startTargetStr}|${endTargetStr})`) } }
       ]
     });
 
