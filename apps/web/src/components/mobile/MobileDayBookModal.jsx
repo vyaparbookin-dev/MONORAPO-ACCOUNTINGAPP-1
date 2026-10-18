@@ -35,15 +35,24 @@ const parseAnyDate = (val) => {
   const str = String(val).trim();
   if (!str || str.toLowerCase() === "today" || str === "आज") return new Date();
 
-  const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  // 1. If it has 'T' or ISO timestamp, parse via Date constructor first to preserve timezone
+  if (str.includes("T")) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // 2. Strict YYYY-MM-DD or YYYY/MM/DD (MUST have $)
+  const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
   if (ymd) {
-    const parsed = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
+    // Use noon (12:00:00) so timezone shifts never change the calendar day
+    const parsed = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]), 12, 0, 0);
     if (!isNaN(parsed.getTime())) return parsed;
   }
 
-  const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  // 3. Strict DD/MM/YYYY or DD-MM-YYYY (MUST have $)
+  const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (dmy) {
-    const parsed = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+    const parsed = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]), 12, 0, 0);
     if (!isNaN(parsed.getTime())) return parsed;
   }
 

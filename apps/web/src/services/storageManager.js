@@ -230,16 +230,22 @@ class StorageManager {
       if (!str) return null;
       if (str.toLowerCase() === "today" || str === "आज") return new Date();
 
-      // Check YYYY-MM-DD
-      const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
-      if (ymd) {
-        const d = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
+      // If it contains T, parse directly via Date constructor so timezone is respected
+      if (str.includes("T")) {
+        const d = new Date(str);
         if (!isNaN(d.getTime())) return d;
       }
-      // Check DD-MM-YYYY or DD/MM/YYYY
-      const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+
+      // Check YYYY-MM-DD (anchored with $)
+      const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+      if (ymd) {
+        const d = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]), 12, 0, 0);
+        if (!isNaN(d.getTime())) return d;
+      }
+      // Check DD-MM-YYYY or DD/MM/YYYY (anchored with $)
+      const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
       if (dmy) {
-        const d = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+        const d = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]), 12, 0, 0);
         if (!isNaN(d.getTime())) return d;
       }
       const d = new Date(str);
@@ -253,10 +259,14 @@ class StorageManager {
     };
 
     const parsedDateObj = parseStorageDate(b.rawDate) || parseStorageDate(b.createdAt) || parseStorageDate(b.date);
-    const resolvedRawDate = parsedDateObj ? parsedDateObj.toISOString() : (b.rawDate || b.createdAt || new Date().toISOString());
-    const resolvedDateDisplay = parsedDateObj
-      ? parsedDateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-      : (b.date || "Today");
+    const resolvedRawDate = (b.rawDate && String(b.rawDate).includes("T"))
+      ? b.rawDate
+      : (parsedDateObj ? parsedDateObj.toISOString() : (b.rawDate || b.createdAt || new Date().toISOString()));
+    const resolvedDateDisplay = (b.date === "Today" || b.date === "आज")
+      ? "Today"
+      : (parsedDateObj
+          ? parsedDateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+          : (b.date || "Today"));
 
     return {
       _id: id,

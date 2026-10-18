@@ -122,6 +122,15 @@ class MobileErrorBoundary extends React.Component {
   }
 }
 
+const getLocalYmd = (dateInput = new Date()) => {
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (isNaN(d.getTime())) return new Date().toISOString().split("T")[0];
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
 function MobileVyaparAppContent() {
   const navigate = useNavigate();
   const { selectedCompany, companies, selectCompany, enterDemoModule, exitDemoModule, allDemoCompanies } = useCompany() || {};
@@ -281,7 +290,7 @@ function MobileVyaparAppContent() {
   const [manualSalePaymentMode, setManualSalePaymentMode] = useState("CASH"); // CASH, UPI, UDHAR
   const [manualSaleCustomer, setManualSaleCustomer] = useState("काउंटर नकद ग्राहक");
   const [manualSalePhone, setManualSalePhone] = useState("");
-  const [manualSaleDate, setManualSaleDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [manualSaleDate, setManualSaleDate] = useState(getLocalYmd);
   const [manualSaleNotes, setManualSaleNotes] = useState("");
   const [savingManualSale, setSavingManualSale] = useState(false);
   const [transactionTab, setTransactionTab] = useState("all"); // "all", "sales", "expenses"
@@ -1634,17 +1643,24 @@ function MobileVyaparAppContent() {
     const str = String(val).trim();
     if (!str || str.toLowerCase() === "today" || str === "आज") return new Date();
 
-    // Check for standard ISO or YYYY-MM-DD
-    const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+    // 1. If it has 'T' or ISO timestamp, parse via Date constructor first to preserve timezone
+    if (str.includes("T")) {
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) return d;
+    }
+
+    // 2. Strict YYYY-MM-DD or YYYY/MM/DD (MUST have $)
+    const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
     if (ymd) {
-      const parsed = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
+      // Use noon (12:00:00) so timezone shifts never change the calendar day
+      const parsed = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]), 12, 0, 0);
       if (!isNaN(parsed.getTime())) return parsed;
     }
 
-    // Check for DD/MM/YYYY or DD-MM-YYYY
-    const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    // 3. Strict DD/MM/YYYY or DD-MM-YYYY (MUST have $)
+    const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
     if (dmy) {
-      const parsed = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+      const parsed = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]), 12, 0, 0);
       if (!isNaN(parsed.getTime())) return parsed;
     }
 
@@ -1668,16 +1684,18 @@ function MobileVyaparAppContent() {
 
   const getBillDateObj = (b) => {
     if (!b) return null;
+    if (b.date) {
+      const str = String(b.date).trim().toLowerCase();
+      if (str === "today" || str === "आज") {
+        return new Date();
+      }
+    }
     const raw = b.rawDate || b.createdAt;
     if (raw) {
       const parsed = parseAnyDate(raw);
       if (parsed) return parsed;
     }
     if (b.date) {
-      const str = String(b.date).trim().toLowerCase();
-      if (str === "today" || str === "आज") {
-        return new Date();
-      }
       return parseAnyDate(b.date);
     }
     return null;
@@ -1761,10 +1779,13 @@ function MobileVyaparAppContent() {
 
   const isSameLocalDate = (d1, d2) => {
     if (!d1 || !d2) return false;
+    const date1 = d1 instanceof Date ? d1 : parseAnyDate(d1);
+    const date2 = d2 instanceof Date ? d2 : parseAnyDate(d2);
+    if (!date1 || !date2 || isNaN(date1.getTime()) || isNaN(date2.getTime())) return false;
     return (
-      d1.getFullYear() === d2.getFullYear() &&
-      d1.getMonth() === d2.getMonth() &&
-      d1.getDate() === d2.getDate()
+      date1.getFullYear() === date2.getFullYear() &&
+      date1.getMonth() === date2.getMonth() &&
+      date1.getDate() === date2.getDate()
     );
   };
 
@@ -3365,10 +3386,11 @@ function MobileVyaparAppContent() {
         notes: manualSaleNotes.trim()
       };
 
-      const saleDateObj = manualSaleDate ? new Date(manualSaleDate) : new Date();
-      const saleDateDisplay = manualSaleDate 
-        ? new Date(manualSaleDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-        : "Today";
+      const isTodaySale = !manualSaleDate || manualSaleDate === getLocalYmd();
+      const saleDateDisplay = isTodaySale
+        ? "Today"
+        : (manualSaleDate ? new Date(`${manualSaleDate}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "Today");
+      const rawDateStr = manualSaleDate ? `${manualSaleDate}T12:00:00+05:30` : new Date().toISOString();
 
       const localBillId = `bill_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const createdBill = {
@@ -3389,10 +3411,10 @@ function MobileVyaparAppContent() {
         paymentMethod: manualSalePaymentMode === "UDHAR" || manualSalePaymentMode === "CREDIT" ? "credit" : "cash",
         paymentStatus: payload.paymentStatus,
         date: saleDateDisplay,
-        rawDate: manualSaleDate || new Date().toISOString(),
+        rawDate: rawDateStr,
         items: payload.items,
         isOfflineCreated: true,
-        createdAt: new Date().toISOString()
+        createdAt: rawDateStr
       };
 
       // 1. Instantly persist in localStorage so it NEVER disappears (Offline-First)
@@ -3468,11 +3490,11 @@ function MobileVyaparAppContent() {
       const pMode = isUdhar ? "UDHAR" : editBillPaymentMode.toUpperCase();
       const partyTitle = editBillCustomer.trim() || (pMode === 'CASH' ? "काउंटर नकद ग्राहक" : pMode === 'UPI' ? "UPI ग्राहक" : "उधारी ग्राहक");
 
-      const billDateObj = editBillDate ? new Date(editBillDate) : new Date();
-      const billDateDisplay = editBillDate
-        ? new Date(editBillDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-        : "Today";
-      const billRawDate = editBillDate ? new Date(`${editBillDate}T12:00:00+05:30`).toISOString() : new Date().toISOString();
+      const isTodayEdit = !editBillDate || editBillDate === getLocalYmd();
+      const billDateDisplay = isTodayEdit
+        ? "Today"
+        : (editBillDate ? new Date(`${editBillDate}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "Today");
+      const billRawDate = editBillDate ? `${editBillDate}T12:00:00+05:30` : new Date().toISOString();
 
       const updatedBill = {
         ...selectedBillDetail,
