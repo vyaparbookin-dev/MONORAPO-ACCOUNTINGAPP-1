@@ -925,10 +925,14 @@ function MobileVyaparAppContent() {
         return { ...prev, staff: updatedStaff };
       });
 
+      const nowAtt = new Date();
       await api.post("/api/staff/quick-attendance", {
         staffId,
         status,
-        date: new Date()
+        date: nowAtt,
+        day: nowAtt.getDate(),
+        month: nowAtt.getMonth() + 1,
+        year: nowAtt.getFullYear()
       });
 
       // Refetch to recalculate perfect monthly stats

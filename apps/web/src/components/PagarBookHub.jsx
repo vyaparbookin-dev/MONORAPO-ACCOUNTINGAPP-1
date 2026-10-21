@@ -88,9 +88,12 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
   }, [currentMonth, currentYear]);
 
   const fetchData = async (m = currentMonth, y = currentYear) => {
-    const cached = readLocalJson(["vb_local_pagarbook_summary", "pagarbook_summary"], null);
-    if (cached && typeof cached === "object") {
-      setSummaryData({ ...defaultSummaryData, ...cached });
+    // Only load cache on cold start when no staff data is in memory yet
+    if (!summaryData.staff || summaryData.staff.length === 0) {
+      const cached = readLocalJson(["vb_local_pagarbook_summary", "pagarbook_summary"], null);
+      if (cached && typeof cached === "object" && Array.isArray(cached.staff) && cached.staff.length > 0) {
+        setSummaryData({ ...defaultSummaryData, ...cached });
+      }
     }
 
     try {
@@ -181,6 +184,8 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
   // 1-Tap Attendance Mark for any day
   const handleMarkDayAttendance = async (staffId, dayNum, status) => {
     try {
+      const targetDate = new Date(currentYear, currentMonth - 1, dayNum, 12, 0, 0);
+
       // Optimistic instant UI update
       setSummaryData(prev => {
         const updatedStaff = (prev.staff || []).map(s => {
@@ -202,15 +207,21 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
             const paidBenefit = Math.min(abCount, Number(s.paidLeavesAllowed || 0));
             const payDays = Math.round((effDays + paidBenefit) * 10) / 10;
             
-            const rate = s.wageType === 'daily' 
-              ? (s.dailyRate || s.wageAmount || 0) 
-              : ((s.monthlySalary || s.salary || 0) / (prev.daysInMonth || 30));
+            const isDaily = s.wageType === 'daily';
+            const dailyRate = Number(s.dailyRate || s.wageAmount || (s.monthlySalary ? Math.round(s.monthlySalary / (prev.daysInMonth || 30)) : 0) || 0);
+            const monthlySal = Number(s.monthlySalary || s.salary || (dailyRate * (prev.daysInMonth || 30)) || 0);
+            const rate = isDaily ? dailyRate : (monthlySal / (prev.daysInMonth || 30));
+            
             const earned = Math.round(rate * payDays);
-            const net = Math.max(0, (earned + (s.overtimeEarnings || 0) + (s.commissionEarnings || 0)) - (s.totalAdvance || 0));
+            const prevBal = Number(s.previousBalance || 0);
+            const gross = earned + Number(s.overtimeEarnings || 0) + Number(s.commissionEarnings || 0);
+            const totAdv = Number(s.totalAdvance || 0);
+            const net = Math.max(0, prevBal + gross - totAdv);
 
             return { 
               ...s, 
               dailyAttendanceMap: newMap,
+              todayStatus: dayNum === todayDay ? status : (s.todayStatus || 'present'),
               presentDays: pCount,
               presentCount: pCount,
               halfDays: hdCount,
@@ -219,23 +230,40 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
               absentCount: abCount,
               payableDays: payDays,
               earnedSalary: earned,
+              grossSalary: gross,
               netPayable: net
             };
           }
           return s;
         });
-        return { ...prev, staff: updatedStaff };
+
+        const nextEarned = updatedStaff.reduce((sum, st) => sum + (st.earnedSalary || 0), 0);
+        const nextNet = updatedStaff.reduce((sum, st) => sum + (st.netPayable || 0), 0);
+        const nextSummary = {
+          ...prev,
+          staff: updatedStaff,
+          totalCompanySalaryEarned: nextEarned,
+          totalCompanyNetPayable: nextNet
+        };
+
+        writeLocalJson(["vb_local_pagarbook_summary", "pagarbook_summary"], nextSummary);
+        return nextSummary;
       });
 
-      const targetDate = new Date(currentYear, currentMonth - 1, dayNum, 12, 0, 0);
       await api.post("/api/staff/quick-attendance", {
         staffId,
         status,
-        date: targetDate
+        date: targetDate,
+        day: dayNum,
+        month: currentMonth,
+        year: currentYear
       }).catch(() => api.post("/staff/quick-attendance", {
         staffId,
         status,
-        date: targetDate
+        date: targetDate,
+        day: dayNum,
+        month: currentMonth,
+        year: currentYear
       }));
 
       fetchData(currentMonth, currentYear);
@@ -593,7 +621,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {dailyStaffList.map((staff) => {
-                        const todayStatus = staff.dailyAttendanceMap?.[todayDay] || "absent";
+                        const todayStatus = staff.dailyAttendanceMap?.[todayDay] || staff.todayStatus || "present";
                         const statusLabel = todayStatus === "present" ? "Present" : todayStatus === "half_day" ? "Half Day" : "Absent";
 
                         return (
@@ -619,10 +647,15 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                               </div>
 
                               <div className="text-right">
-                                <div className="text-sm font-black text-[#DC2626]">
-                                  ₹ {(staff.netPayable || 0).toLocaleString('en-IN')}
+                                <div className="text-xs font-bold text-slate-700">
+                                  बनता: <span className="font-extrabold text-emerald-700">₹{(staff.earnedSalary || 0).toLocaleString('en-IN')}</span>
                                 </div>
-                                <span className="text-[10px] font-medium text-slate-400">बकाया</span>
+                                <div className="text-sm font-black text-[#DC2626] mt-0.5">
+                                  बकाया: ₹{(staff.netPayable || 0).toLocaleString('en-IN')}
+                                </div>
+                                <span className="text-[10px] font-semibold text-slate-400 block">
+                                  {staff.presentDays || staff.presentCount || 0}P • {staff.halfDays || staff.halfDayCount || 0}HD • {staff.absentDays || staff.absentCount || 0}AB
+                                </span>
                               </div>
                             </div>
 
@@ -682,7 +715,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {monthlyStaffList.map((staff) => {
-                        const todayStatus = staff.dailyAttendanceMap?.[todayDay] || "absent";
+                        const todayStatus = staff.dailyAttendanceMap?.[todayDay] || staff.todayStatus || "present";
                         const statusLabel = todayStatus === "present" ? "Present" : todayStatus === "half_day" ? "Half Day" : "Absent";
 
                         return (
@@ -708,10 +741,15 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                               </div>
 
                               <div className="text-right">
-                                <div className="text-sm font-black text-[#DC2626]">
-                                  ₹ {(staff.netPayable || 0).toLocaleString('en-IN')}
+                                <div className="text-xs font-bold text-slate-700">
+                                  बनता: <span className="font-extrabold text-emerald-700">₹{(staff.earnedSalary || 0).toLocaleString('en-IN')}</span>
                                 </div>
-                                <span className="text-[10px] font-medium text-slate-400">बकाया</span>
+                                <div className="text-sm font-black text-[#DC2626] mt-0.5">
+                                  बकाया: ₹{(staff.netPayable || 0).toLocaleString('en-IN')}
+                                </div>
+                                <span className="text-[10px] font-semibold text-slate-400 block">
+                                  {staff.presentDays || staff.presentCount || 0}P • {staff.halfDays || staff.halfDayCount || 0}HD • {staff.absentDays || staff.absentCount || 0}AB
+                                </span>
                               </div>
                             </div>
 

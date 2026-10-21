@@ -209,7 +209,7 @@ export const getPagarBookSummary = async (req, res) => {
     const attendanceRecords = await Attendance.find({
       staffId: { $in: staffIds },
       date: { $gte: startDate, $lte: endDate }
-    });
+    }).sort({ updatedAt: -1, date: -1 });
 
     // Fetch Staff Transactions (Advances, Overtime, Commission, Payments)
     const transactions = await StaffTransaction.find({
@@ -228,7 +228,7 @@ export const getPagarBookSummary = async (req, res) => {
     const priorAttendance = await Attendance.find({
       staffId: { $in: staffIds },
       date: { $lt: startDate }
-    });
+    }).sort({ updatedAt: -1, date: -1 });
 
     const todayStr = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toDateString();
 
@@ -238,7 +238,15 @@ export const getPagarBookSummary = async (req, res) => {
       const staffTx = transactions.filter(t => t.staffId.toString() === staffIdStr);
 
       // Check today's status
-      const todayRecord = staffAtt.find(a => new Date(a.date).toDateString() === todayStr);
+      const todayDayNum = now.getDate();
+      const todayMonthNum = now.getMonth() + 1;
+      const todayYearNum = now.getFullYear();
+      const todayRecord = staffAtt.find(a => {
+        const ad = new Date(a.date);
+        const matchesUtc = ad.getUTCDate() === todayDayNum && (ad.getUTCMonth() + 1) === todayMonthNum && ad.getUTCFullYear() === todayYearNum;
+        const matchesLocal = ad.getDate() === todayDayNum && (ad.getMonth() + 1) === todayMonthNum && ad.getFullYear() === todayYearNum;
+        return matchesUtc || matchesLocal;
+      });
       const todayRaw = todayRecord ? todayRecord.status : 'present';
       const todayStatus = (todayRaw === 'half-day' || todayRaw === 'halfday' || todayRaw === 'half_day') 
         ? 'half_day' 
@@ -255,7 +263,9 @@ export const getPagarBookSummary = async (req, res) => {
       for (let day = 1; day <= daysConsidered; day++) {
         const matchingRecord = staffAtt.find(a => {
           const ad = new Date(a.date);
-          return ad.getDate() === day && ad.getMonth() === (month - 1) && ad.getFullYear() === year;
+          const matchesUtc = ad.getUTCDate() === day && (ad.getUTCMonth() + 1) === month && ad.getUTCFullYear() === year;
+          const matchesLocal = ad.getDate() === day && (ad.getMonth() + 1) === month && ad.getFullYear() === year;
+          return matchesUtc || matchesLocal;
         });
 
         const rawStatus = matchingRecord ? matchingRecord.status : 'present';
@@ -486,12 +496,11 @@ export const getPagarBookSummary = async (req, res) => {
 // 1-Tap Quick Mark Attendance for ANY specific date of the month
 export const quickMarkAttendance = async (req, res) => {
   try {
-    const { staffId, status, date } = req.body;
+    const { staffId, status, date, day, month, year } = req.body;
     if (!staffId || !status) {
       return res.status(400).json({ success: false, error: "Staff ID and status are required" });
     }
 
-    const attDate = date ? new Date(date) : new Date();
     const staff = await Staff.findOne({ _id: staffId, companyId: req.companyId });
     if (!staff) return res.status(404).json({ success: false, error: "Staff not found" });
 
@@ -502,23 +511,38 @@ export const quickMarkAttendance = async (req, res) => {
       ? 'absent' 
       : 'present';
 
-    const startOfDay = new Date(attDate.getFullYear(), attDate.getMonth(), attDate.getDate(), 0, 0, 0);
-    const endOfDay = new Date(attDate.getFullYear(), attDate.getMonth(), attDate.getDate(), 23, 59, 59);
+    const attDate = date ? new Date(date) : new Date();
+    const dNum = Number(day) || attDate.getDate();
+    const mNum = Number(month) || (attDate.getMonth() + 1);
+    const yNum = Number(year) || attDate.getFullYear();
+
+    // Standard record date at noon UTC
+    const recordDate = new Date(Date.UTC(yNum, mNum - 1, dNum, 6, 30, 0));
+
+    // Match any record on this calendar day in either UTC or Local time
+    const startOfDayUtc = new Date(Date.UTC(yNum, mNum - 1, dNum, 0, 0, 0));
+    const endOfDayUtc = new Date(Date.UTC(yNum, mNum - 1, dNum, 23, 59, 59, 999));
+    const startOfDayLocal = new Date(yNum, mNum - 1, dNum, 0, 0, 0);
+    const endOfDayLocal = new Date(yNum, mNum - 1, dNum, 23, 59, 59, 999);
 
     let attendance = await Attendance.findOne({
-      staffId,
-      date: { $gte: startOfDay, $lte: endOfDay }
-    });
+      staffId: staff._id,
+      $or: [
+        { date: { $gte: startOfDayUtc, $lte: endOfDayUtc } },
+        { date: { $gte: startOfDayLocal, $lte: endOfDayLocal } }
+      ]
+    }).sort({ updatedAt: -1, date: -1 });
 
     if (attendance) {
       attendance.status = normStatus;
+      attendance.date = recordDate;
       attendance.updatedAt = new Date();
       await attendance.save();
     } else {
       attendance = new Attendance({
-        staffId,
+        staffId: staff._id,
         companyId: req.companyId,
-        date: attDate,
+        date: recordDate,
         status: normStatus
       });
       await attendance.save();
@@ -526,7 +550,7 @@ export const quickMarkAttendance = async (req, res) => {
 
     res.status(200).json({ 
       success: true, 
-      message: `तारीख ${attDate.getDate()} को हाजिरी सुरक्षित हुई: ${normStatus}`, 
+      message: `तारीख ${dNum} को हाजिरी सुरक्षित हुई: ${normStatus}`, 
       attendance 
     });
   } catch (error) {
