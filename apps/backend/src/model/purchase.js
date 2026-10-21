@@ -20,6 +20,9 @@ const purchaseSchema = new mongoose.Schema({
     },
   ],
   totalAmount: { type: Number, default: 0 },
+  vendorFreight: { type: Number, default: 0 }, // Bhada 1: Vendor dwara garage/transport tak ka bhada
+  localFreight: { type: Number, default: 0 },  // Bhada 2: Garage se dukaan tak ka local tempo/rickshaw bhada
+  landedCost: { type: Number, default: 0 },    // Maal ki asal kul lagat (totalAmount + vendorFreight + localFreight)
   tax: { type: Number, default: 0 },
   discountAmount: { type: Number, default: 0 },
   finalAmount: { type: Number, default: 0 }, // Ye total amount payable hoga

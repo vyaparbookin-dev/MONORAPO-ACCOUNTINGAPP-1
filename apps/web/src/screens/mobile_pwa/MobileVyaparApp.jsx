@@ -446,6 +446,14 @@ function MobileVyaparAppContent() {
   const [vendorBillImage, setVendorBillImage] = useState('');
   const [savingVendorAction, setSavingVendorAction] = useState(false);
 
+  // 🚚 TWO TYPES OF FREIGHT (भाड़ा 1: वेंडर गैरेज तक, भाड़ा 2: गैरेज से दुकान तक लोकल)
+  const [vendorFreight, setVendorFreight] = useState(''); // भाड़ा 1: वेंडर बिल में शामिल (गैरेज/ट्रांसपोर्ट तक)
+  const [localFreight, setLocalFreight] = useState('');   // भाड़ा 2: गल्ले से तुरंत नकद/UPI दिया (गैरेज से दुकान तक)
+  const [localFreightMode, setLocalFreightMode] = useState('CASH'); // 'CASH' | 'UPI'
+  const [vendorPurchaseMode, setVendorPurchaseMode] = useState('quick'); // 'quick' (लम्पसम) | 'items' (सामान दर सामान)
+  const [vendorPurchaseItems, setVendorPurchaseItems] = useState([]); // [{ id, name: '', quantity: 1, rate: '', total: '' }]
+  const [isAiScanningBill, setIsAiScanningBill] = useState(false);
+
   // 📖 Party Ledger & Passbook Filters: मैंने दिए, मुझे मिले, Month-wise, Site-wise
   const [partyPassbookFilter, setPartyPassbookFilter] = useState('all'); // 'all', 'received' (मुझे मिले / जमा), 'given' (मैंने दिए / बिक्री)
   const [partyMonthFilter, setPartyMonthFilter] = useState('all'); // 'all', 'YYYY-MM'
@@ -3129,52 +3137,189 @@ function MobileVyaparAppContent() {
     reader.readAsDataURL(file);
   };
 
+  const handleVendorAiScanBill = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsAiScanningBill(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64Data = reader.result;
+        setVendorBillImage(base64Data);
+        try {
+          const res = await api.post('/api/billing/parse-image', {
+            images: [base64Data]
+          }).catch(err => {
+            console.warn('AI bill scan error:', err);
+            return null;
+          });
+
+          const billData = res?.data?.batch && Array.isArray(res?.data?.bills)
+            ? res.data.bills[0]
+            : (res?.data?.parsedItems ? res.data : null);
+
+          if (billData && Array.isArray(billData.parsedItems) && billData.parsedItems.length > 0) {
+            let extractedFreight1 = 0;
+            const cleanItems = [];
+
+            billData.parsedItems.forEach((it, idx) => {
+              const nameLower = String(it.name || '').toLowerCase();
+              const isFreight = nameLower.includes('bhada') || nameLower.includes('भाड़ा') ||
+                                nameLower.includes('freight') || nameLower.includes('transport') ||
+                                nameLower.includes('cartage') || nameLower.includes('bhadha');
+              if (isFreight) {
+                extractedFreight1 += Number(it.total || it.price || 0);
+              } else {
+                const q = Number(it.quantity) || 1;
+                const r = Number(it.price || it.rate) || 0;
+                const tot = Number(it.total) || (q * r);
+                cleanItems.push({
+                  id: `it_${Date.now()}_${idx}`,
+                  name: it.name || `सामान ${idx + 1}`,
+                  quantity: q,
+                  rate: r,
+                  total: tot
+                });
+              }
+            });
+
+            if (cleanItems.length > 0) {
+              setVendorPurchaseItems(cleanItems);
+              setVendorPurchaseMode('items');
+              const goodsSum = cleanItems.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+              setVendorBillAmount(String(goodsSum));
+            }
+
+            if (extractedFreight1 > 0) {
+              setVendorFreight(String(extractedFreight1));
+            }
+
+            if (billData.billNumber || billData.invoiceNumber) {
+              setVendorBillNo(billData.billNumber || billData.invoiceNumber);
+            }
+            if (billData.date) {
+              try {
+                const parsedD = new Date(billData.date).toISOString().split('T')[0];
+                setVendorBillDate(parsedD);
+              } catch (e) {}
+            }
+
+            alert(`🎉 AI ने बिल सफलतापूर्वक स्कैन किया!\n• ${cleanItems.length} सामान पढ़े गए\n• कुल माल मूल्य: ₹${cleanItems.reduce((s, it) => s + it.total, 0).toLocaleString('en-IN')}${extractedFreight1 > 0 ? `\n• वेंडर भाड़ा पहचाना: ₹${extractedFreight1}` : ''}`);
+          } else {
+            alert('📷 बिल की फोटो लोड हो गई है। आप सामान का नाम व रेट नीचे लिख सकते हैं।');
+          }
+        } catch (apiErr) {
+          console.warn('AI parse error:', apiErr);
+          alert('📷 बिल की फोटो लोड हो गई है। आप सामान का नाम व रेट नीचे लिख सकते हैं।');
+        } finally {
+          setIsAiScanningBill(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('AI Scan File read error:', err);
+      setIsAiScanningBill(false);
+    }
+  };
+
+  const handleAddVendorItemRow = () => {
+    setVendorPurchaseItems(prev => [
+      ...prev,
+      { id: `it_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name: '', quantity: 1, rate: '', total: '' }
+    ]);
+  };
+
+  const handleUpdateVendorItemRow = (id, field, value) => {
+    setVendorPurchaseItems(prev => prev.map(it => {
+      if (it.id !== id) return it;
+      const updated = { ...it, [field]: value };
+      if (field === 'quantity' || field === 'rate') {
+        const q = field === 'quantity' ? Number(value || 0) : Number(it.quantity || 0);
+        const r = field === 'rate' ? Number(value || 0) : Number(it.rate || 0);
+        updated.total = (q * r) > 0 ? (q * r) : '';
+      }
+      return updated;
+    }));
+  };
+
+  const handleRemoveVendorItemRow = (id) => {
+    setVendorPurchaseItems(prev => prev.filter(it => it.id !== id));
+  };
+
   const handleSaveVendorPurchase = async () => {
     if (!selectedPartyDetail) return;
-    const amt = Number(vendorBillAmount);
-    if (!vendorBillAmount || isNaN(amt) || amt <= 0) {
-      alert("कृपया मान्य खरीद बिल राशि (₹) दर्ज करें!");
+
+    const isItemMode = vendorPurchaseMode === 'items' && vendorPurchaseItems.length > 0;
+    const itemsTotal = isItemMode
+      ? vendorPurchaseItems.reduce((sum, it) => sum + (Number(it.total) || ((Number(it.quantity) || 0) * (Number(it.rate) || 0))), 0)
+      : 0;
+    const goodsAmt = isItemMode ? itemsTotal : Number(vendorBillAmount);
+
+    if (isNaN(goodsAmt) || goodsAmt <= 0) {
+      alert('कृपया मान्य खरीद माल राशि (₹) या कम से कम एक सामान जोड़ें!');
       return;
     }
+
+    const f1 = Number(vendorFreight || 0);
+    const f2 = Number(localFreight || 0);
+    const supplierTotal = goodsAmt + f1; // Total invoice from vendor (Payable)
+    const totalLandedCost = goodsAmt + f1 + f2; // Real cost of acquisition
+
     const paidAmt = vendorIsPaidNow ? Number(vendorPaidAmount || 0) : 0;
-    if (paidAmt > amt) {
-      alert("भुगतान राशि कुल बिल राशि से अधिक नहीं हो सकती!");
+    if (paidAmt > supplierTotal) {
+      alert(`सप्लायर भुगतान राशि कुल बिल राशि (₹${supplierTotal.toLocaleString('en-IN')}) से अधिक नहीं हो सकती!`);
       return;
     }
 
     setSavingVendorAction(true);
     try {
       const partyId = selectedPartyDetail.id || selectedPartyDetail._id;
-      const pName = selectedPartyDetail.name || "वेंडर";
+      const pName = selectedPartyDetail.name || 'वेंडर';
       const genPurNo = vendorBillNo.trim() || `PUR-${Date.now().toString().slice(-6)}`;
       const pDate = vendorBillDate ? new Date(vendorBillDate) : new Date();
+
+      const itemsList = isItemMode
+        ? vendorPurchaseItems.filter(it => it.name && it.name.trim()).map(it => ({
+            name: it.name.trim(),
+            quantity: Number(it.quantity) || 1,
+            rate: Number(it.rate) || 0,
+            price: Number(it.rate) || 0,
+            total: Number(it.total) || ((Number(it.quantity) || 1) * (Number(it.rate) || 0))
+          }))
+        : [{
+            name: vendorItemDesc.trim() || 'सप्लायर से माल खरीद',
+            quantity: 1,
+            rate: goodsAmt,
+            price: goodsAmt,
+            total: goodsAmt
+          }];
 
       const payload = {
         partyId,
         supplierName: pName,
         purchaseNumber: genPurNo,
-        items: [{
-          name: vendorItemDesc.trim() || "सप्लायर से माल खरीद",
-          quantity: 1,
-          price: amt,
-          total: amt
-        }],
-        finalAmount: amt,
+        items: itemsList,
+        totalAmount: goodsAmt,
+        vendorFreight: f1,
+        localFreight: f2,
+        landedCost: totalLandedCost,
+        finalAmount: supplierTotal,
         amountPaid: paidAmt,
         paymentMethod: paidAmt > 0 ? (vendorPaymentMode || 'CASH') : 'credit',
         date: pDate.toISOString(),
-        billImageUrl: vendorBillImage || ""
+        billImageUrl: vendorBillImage || '',
+        notes: `माल मूल्य: ₹${goodsAmt.toLocaleString('en-IN')}${f1 > 0 ? ` | भाड़ा 1 (वेंडर गैरेज): ₹${f1.toLocaleString('en-IN')}` : ''}${f2 > 0 ? ` | भाड़ा 2 (लोकल गल्ला): ₹${f2.toLocaleString('en-IN')}` : ''} | असल कुल लागत: ₹${totalLandedCost.toLocaleString('en-IN')}`
       };
 
       // 1. Sync to backend purchase API
       try {
-        await api.post("/api/purchase", payload);
+        await api.post('/api/purchase', payload);
       } catch (apiErr) {
-        console.warn("Purchase backend sync deferred or error:", apiErr);
+        console.warn('Purchase backend sync deferred or error:', apiErr);
       }
 
-      // 2. Update local Party balance (Payable decreases/becomes more negative by netDue)
-      const netDue = amt - paidAmt;
+      // 2. Update local Party balance (Payable increases by supplierTotal - paidAmt)
+      const netDue = supplierTotal - paidAmt;
       const currentBal = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0);
       const updatedBalance = currentBal - netDue;
 
@@ -3184,7 +3329,7 @@ function MobileVyaparAppContent() {
         currentBalance: updatedBalance
       }));
 
-      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem('companyId') || '').trim();
       setParties(prev => {
         const updated = prev.map(p => {
           const id = p.id || p._id;
@@ -3197,19 +3342,19 @@ function MobileVyaparAppContent() {
         return updated;
       });
 
-      // 3. Record in local ledger
+      // 3. Record in local supplier ledger (PartyTransaction)
       const purchaseTxDoc = {
         _id: `pur_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         partyId,
         date: pDate.toISOString(),
-        details: `📦 माल खरीद #${genPurNo}${vendorItemDesc.trim() ? ` - ${vendorItemDesc.trim()}` : ''}`,
+        details: `📦 माल खरीद #${genPurNo}${f1 > 0 ? ` (सहित वेंडर भाड़ा ₹${f1})` : ''}${vendorItemDesc.trim() ? ` - ${vendorItemDesc.trim()}` : ''}`,
         debit: 0,
-        credit: amt,
-        amount: amt,
+        credit: supplierTotal,
+        amount: supplierTotal,
         type: 'purchase',
         source: 'Purchase',
         billNumber: genPurNo,
-        billImageUrl: vendorBillImage || ""
+        billImageUrl: vendorBillImage || ''
       };
 
       const newTxs = [purchaseTxDoc];
@@ -3231,25 +3376,86 @@ function MobileVyaparAppContent() {
 
       setAllPartyTransactions(prev => [...newTxs, ...(prev || [])]);
       try {
-        const storedTxs = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
-        localStorage.setItem("vb_local_party_txs", JSON.stringify([...newTxs, ...storedTxs]));
+        const storedTxs = JSON.parse(localStorage.getItem('vb_local_party_txs') || '[]');
+        localStorage.setItem('vb_local_party_txs', JSON.stringify([...newTxs, ...storedTxs]));
       } catch (e) {}
+
+      // 4. CRITICAL: RECORD LOCAL FREIGHT (भाड़ा 2) AS OPERATING EXPENSE
+      if (f2 > 0) {
+        const freightExpDoc = {
+          _id: `exp_freight_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          title: `लोकल भाड़ा (गैरेज से दुकान) - ${pName} Bill #${genPurNo}`,
+          amount: f2,
+          category: 'माल ढुलाई / लोकल भाड़ा (Freight Inward)',
+          date: pDate.toISOString(),
+          paymentMethod: localFreightMode === 'UPI' ? 'online' : 'cash',
+          paymentMode: localFreightMode,
+          expenseType: 'operating',
+          familyMember: 'व्यापार/दुकान',
+          notes: `गैरेज/ट्रांसपोर्ट से दुकान तक माल लाने का लोकल भाड़ा (खरीद बिल #${genPurNo}, कुल लैंडिंग लागत ₹${totalLandedCost})`
+        };
+
+        try {
+          await api.post('/api/expenses', freightExpDoc).catch(e => console.warn('Freight expense defer:', e));
+        } catch (e) {}
+
+        setGharKharchList(prev => [freightExpDoc, ...(prev || [])]);
+        try {
+          const storedExps = JSON.parse(localStorage.getItem('vb_local_expenses') || '[]');
+          localStorage.setItem('vb_local_expenses', JSON.stringify([freightExpDoc, ...storedExps]));
+        } catch (e) {}
+      }
+
+      // 5. UPDATE INVENTORY STOCK IF ITEMS WERE ADDED
+      if (isItemMode && itemsList.length > 0) {
+        setItems(prevItems => {
+          let hasChange = false;
+          const updated = (prevItems || []).map(prod => {
+            const matched = itemsList.find(it =>
+              it.name.trim().toLowerCase() === (prod.name || '').trim().toLowerCase()
+            );
+            if (matched) {
+              hasChange = true;
+              const newStock = Number(prod.currentStock || prod.stock || 0) + Number(matched.quantity || 0);
+              return {
+                ...prod,
+                currentStock: newStock,
+                stock: newStock,
+                costPrice: Number(matched.rate || prod.costPrice || 0)
+              };
+            }
+            return prod;
+          });
+          if (hasChange) {
+            try {
+              localStorage.setItem('vb_local_products', JSON.stringify(updated));
+              localStorage.setItem('products', JSON.stringify(updated));
+            } catch (e) {}
+          }
+          return updated;
+        });
+      }
 
       // Reset form
       setShowVendorForm(false);
       setVendorBillAmount('');
       setVendorItemDesc('');
       setVendorBillNo('');
+      setVendorFreight('');
+      setLocalFreight('');
+      setLocalFreightMode('CASH');
+      setVendorPurchaseMode('quick');
+      setVendorPurchaseItems([]);
       setVendorIsPaidNow(false);
       setVendorPaidAmount('');
       setVendorBillImage('');
       setVendorBillDate(new Date().toISOString().split('T')[0]);
       fetchPartyStatement(partyId);
 
-      alert(`🎉 वेंडर ${pName} से ₹${amt.toLocaleString('en-IN')} का माल (खरीद बिल #${genPurNo}) सफलता से दर्ज हुआ!${paidAmt > 0 ? ` (₹${paidAmt.toLocaleString('en-IN')} तुरंत भुगतान किया गया)` : ''}`);
+      alert(`🎉 वेंडर ${pName} से माल (खरीद बिल #${genPurNo}) सफलता से दर्ज हुआ!\n\n• सप्लायर कुल बिल: ₹${supplierTotal.toLocaleString('en-IN')}${f1 > 0 ? ` (सहित वेंडर भाड़ा ₹${f1.toLocaleString('en-IN')})` : ''}${f2 > 0 ? `\n• लोकल भाड़ा गल्ले से दर्ज: ₹${f2.toLocaleString('en-IN')} (${localFreightMode === 'CASH' ? 'नकद' : 'UPI'})` : ''}\n• माल की असल कुल लागत (Landed Cost): ₹${totalLandedCost.toLocaleString('en-IN')}`);
     } catch (err) {
-      console.error("Vendor purchase error:", err);
-      alert("माल खरीद दर्ज करने में त्रुटि आई।");
+      console.error('Vendor purchase error:', err);
+      alert('माल खरीद दर्ज करने में त्रुटि आई।');
     } finally {
       setSavingVendorAction(false);
     }
@@ -7961,41 +8167,301 @@ function MobileVyaparAppContent() {
                   {vendorActionType === 'purchase' ? (
                     /* ====== VENDOR PURCHASE FORM ====== */
                     <div className="space-y-3">
-                      {/* Amount */}
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
-                          खरीद बिल कुल राशि (Total Bill Amount ₹) *
-                        </label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">₹</span>
-                          <input 
-                            type="number"
-                            inputMode="decimal"
-                            placeholder="0.00"
-                            value={vendorBillAmount}
-                            onChange={(e) => setVendorBillAmount(e.target.value)}
-                            className="w-full pl-7 pr-3 py-2.5 bg-white border-2 border-indigo-200 rounded-xl text-base font-black text-[#0F172A] outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-xs"
-                            autoFocus
+                      {/* ⚡ AI Camera Scanner Banner */}
+                      <div className="bg-gradient-to-r from-indigo-900 to-indigo-700 p-3 rounded-2xl text-white shadow-sm flex items-center justify-between">
+                        <div>
+                          <div className="text-xs font-black flex items-center gap-1.5">
+                            <Sparkles size={14} className="text-amber-300" />
+                            <span>AI बिल ऑटो-स्कैनर (कैमरा)</span>
+                          </div>
+                          <p className="text-[10px] text-indigo-200 mt-0.5">कंप्यूटर बिल या कच्चा पर्चा तुरंत पढ़ें</p>
+                        </div>
+                        <label className={`px-3 py-2 rounded-xl text-xs font-black cursor-pointer shadow-md flex items-center gap-1.5 transition active:scale-95 ${
+                          isAiScanningBill ? 'bg-indigo-400 text-white cursor-wait' : 'bg-amber-400 hover:bg-amber-300 text-slate-900'
+                        }`}>
+                          {isAiScanningBill ? (
+                            <>
+                              <RefreshCw size={13} className="animate-spin" />
+                              <span>स्कैन हो रहा है...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Camera size={13} />
+                              <span>📸 फोटो लें</span>
+                            </>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            disabled={isAiScanningBill}
+                            onChange={handleVendorAiScanBill}
+                            className="hidden"
                           />
+                        </label>
+                      </div>
+
+                      {/* Entry Mode Selector */}
+                      <div className="grid grid-cols-2 gap-2 bg-slate-200/70 p-1 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => setVendorPurchaseMode('quick')}
+                          className={`py-1.5 text-xs font-black rounded-lg transition cursor-pointer ${
+                            vendorPurchaseMode === 'quick' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          📝 सरल बिल (Lump sum)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVendorPurchaseMode('items');
+                            if (vendorPurchaseItems.length === 0) handleAddVendorItemRow();
+                          }}
+                          className={`py-1.5 text-xs font-black rounded-lg transition cursor-pointer ${
+                            vendorPurchaseMode === 'items' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          📦 सामान दर सामान ({vendorPurchaseItems.length})
+                        </button>
+                      </div>
+
+                      {/* Mode: Itemized Breakdown */}
+                      {vendorPurchaseMode === 'items' ? (
+                        <div className="space-y-2 bg-white p-3 rounded-2xl border border-indigo-100 shadow-2xs">
+                          <div className="flex justify-between items-center pb-1 border-b border-slate-100">
+                            <span className="text-[11px] font-black text-slate-700">सामान सूची (Items List)</span>
+                            <button
+                              type="button"
+                              onClick={handleAddVendorItemRow}
+                              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer bg-indigo-50 px-2 py-0.5 rounded-lg active:scale-95"
+                            >
+                              <Plus size={12} /> सामान जोड़ें
+                            </button>
+                          </div>
+
+                          {vendorPurchaseItems.map((it, idx) => (
+                            <div key={it.id || idx} className="p-2 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black text-slate-400 w-4">{idx + 1}.</span>
+                                <input
+                                  type="text"
+                                  placeholder="सामान का नाम (Product Name)"
+                                  value={it.name}
+                                  onChange={(e) => handleUpdateVendorItemRow(it.id, 'name', e.target.value)}
+                                  className="flex-1 p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none focus:border-indigo-400"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveVendorItemRow(it.id)}
+                                  className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer"
+                                  title="हटाएं"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2 pl-6">
+                                <div>
+                                  <label className="text-[9px] font-bold text-slate-500 block">मात्रा (Qty)</label>
+                                  <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    placeholder="1"
+                                    value={it.quantity}
+                                    onChange={(e) => handleUpdateVendorItemRow(it.id, 'quantity', e.target.value)}
+                                    className="w-full p-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-800 outline-none"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[9px] font-bold text-slate-500 block">खरीद रेट (₹)</label>
+                                  <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    placeholder="0.00"
+                                    value={it.rate}
+                                    onChange={(e) => handleUpdateVendorItemRow(it.id, 'rate', e.target.value)}
+                                    className="w-full p-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-800 outline-none"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[9px] font-bold text-slate-500 block">कुल (₹)</label>
+                                  <div className="p-1 bg-slate-100 rounded-lg text-xs font-black text-indigo-700 truncate">
+                                    ₹{(Number(it.total) || ((Number(it.quantity) || 0) * (Number(it.rate) || 0))).toLocaleString('en-IN')}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+
+                          <div className="flex justify-between items-center pt-1 text-xs font-black text-indigo-900 border-t border-indigo-100">
+                            <span>माल कुल मूल्य (Subtotal):</span>
+                            <span>₹{vendorPurchaseItems.reduce((s, it) => s + (Number(it.total) || ((Number(it.quantity) || 0) * (Number(it.rate) || 0))), 0).toLocaleString('en-IN')}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Mode: Lump sum */
+                        <div className="space-y-2">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                              माल का कुल मूल्य / Subtotal (₹) *
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">₹</span>
+                              <input 
+                                type="number"
+                                inputMode="decimal"
+                                placeholder="0.00"
+                                value={vendorBillAmount}
+                                onChange={(e) => setVendorBillAmount(e.target.value)}
+                                className="w-full pl-7 pr-3 py-2.5 bg-white border-2 border-indigo-200 rounded-xl text-base font-black text-[#0F172A] outline-none focus:border-indigo-500 shadow-xs"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                              सामान का विवरण / माल (Goods Description)
+                            </label>
+                            <input 
+                              type="text"
+                              placeholder="उदा. 20 बोरी सीमेंट, 5 पेटी तेल, हार्डवेयर सामान"
+                              value={vendorItemDesc}
+                              onChange={(e) => setVendorItemDesc(e.target.value)}
+                              className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-indigo-500 shadow-xs"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 🚚 TWO TYPES OF FREIGHT (भाड़ा 1 और भाड़ा 2) */}
+                      <div className="p-3 bg-gradient-to-br from-indigo-50/70 to-blue-50/50 rounded-2xl border border-indigo-200 space-y-2.5">
+                        <div className="flex items-center gap-1.5 text-xs font-black text-indigo-950 pb-1 border-b border-indigo-100">
+                          <Truck size={14} className="text-indigo-600" />
+                          <span>माल ढुलाई / भाड़ा (Freight & Carriage Setup)</span>
+                        </div>
+
+                        {/* भाड़ा 1: वेंडर द्वारा गैरेज/ट्रांसपोर्ट तक का भाड़ा */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[10px] font-black text-indigo-900 uppercase">
+                              भाड़ा 1: वेंडर गैरेज तक का भाड़ा (₹)
+                            </label>
+                            <span className="text-[9px] font-bold text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded">
+                              बिल में शामिल (सप्लायर बकाया)
+                            </span>
+                          </div>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">₹</span>
+                            <input 
+                              type="number"
+                              inputMode="decimal"
+                              placeholder="0.00 (वेंडर के इनवॉइस में जुड़ा भाड़ा)"
+                              value={vendorFreight}
+                              onChange={(e) => setVendorFreight(e.target.value)}
+                              className="w-full pl-7 pr-3 py-2 bg-white border border-indigo-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:border-indigo-500"
+                            />
+                          </div>
+                          <p className="text-[9px] text-slate-500">वेंडर ने अपने बिल में जो भाड़ा लगाया (यह सप्लायर को देय होगा)।</p>
+                        </div>
+
+                        {/* भाड़ा 2: गैरेज से दुकान तक का लोकल भाड़ा */}
+                        <div className="space-y-1 pt-1 border-t border-indigo-100/70">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[10px] font-black text-amber-900 uppercase">
+                              भाड़ा 2: गैरेज से दुकान तक लोकल भाड़ा (₹)
+                            </label>
+                            <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                              गल्ले से तुरंत खर्च
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="col-span-2 relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">₹</span>
+                              <input 
+                                type="number"
+                                inputMode="decimal"
+                                placeholder="0.00 (टेम्पो/रिक्शा/पल्लेदार)"
+                                value={localFreight}
+                                onChange={(e) => setLocalFreight(e.target.value)}
+                                className="w-full pl-7 pr-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:border-amber-500"
+                              />
+                            </div>
+                            <select
+                              value={localFreightMode}
+                              onChange={(e) => setLocalFreightMode(e.target.value)}
+                              className="p-1.5 bg-white border border-amber-200 rounded-xl text-[11px] font-bold text-slate-800 outline-none"
+                            >
+                              <option value="CASH">💵 गल्ला नकद</option>
+                              <option value="UPI">📱 UPI</option>
+                            </select>
+                          </div>
+                          <p className="text-[9px] text-slate-500">गैरेज से दुकान तक माल लाने का टेम्पो/ठेला भाड़ा (दुकान खर्च में दर्ज होगा)।</p>
                         </div>
                       </div>
 
-                      {/* Items / Goods Description */}
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
-                          सामान का विवरण / माल (Goods Description)
-                        </label>
-                        <input 
-                          type="text"
-                          placeholder="उदा. 20 बोरी सीमेंट, 5 पेटी तेल, हार्डवेयर सामान"
-                          value={vendorItemDesc}
-                          onChange={(e) => setVendorItemDesc(e.target.value)}
-                          className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-indigo-500 shadow-xs"
-                        />
-                      </div>
+                      {/* 📊 LIVE CALCULATION & ACCOUNTING IMPACT */}
+                      {(() => {
+                        const isItemMode = vendorPurchaseMode === 'items' && vendorPurchaseItems.length > 0;
+                        const itemsTotal = isItemMode 
+                          ? vendorPurchaseItems.reduce((sum, it) => sum + (Number(it.total) || ((Number(it.quantity) || 0) * (Number(it.rate) || 0))), 0)
+                          : 0;
+                        const goodsVal = isItemMode ? itemsTotal : (Number(vendorBillAmount) || 0);
+                        const f1Val = Number(vendorFreight || 0);
+                        const f2Val = Number(localFreight || 0);
+                        const suppTotal = goodsVal + f1Val;
+                        const landedTotal = goodsVal + f1Val + f2Val;
 
+                        return (
+                          <div className="p-3 bg-slate-900 text-white rounded-2xl space-y-1.5 shadow-md">
+                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center justify-between pb-1 border-b border-slate-800">
+                              <span>📊 बिल व असल लागत हिसाब (Calculation)</span>
+                              <span className="text-amber-400 font-bold">{isItemMode ? `${vendorPurchaseItems.length} सामान` : 'सरल बिल'}</span>
+                            </div>
+
+                            <div className="space-y-1 text-xs">
+                              <div className="flex justify-between text-slate-300">
+                                <span>माल का मूल्य (Goods Subtotal):</span>
+                                <span className="font-bold">₹{goodsVal.toLocaleString('en-IN')}</span>
+                              </div>
+                              {f1Val > 0 && (
+                                <div className="flex justify-between text-indigo-300">
+                                  <span>+ भाड़ा 1 (वेंडर गैरेज तक):</span>
+                                  <span className="font-bold">+₹{f1Val.toLocaleString('en-IN')}</span>
+                                </div>
+                              )}
+                              <div className="flex justify-between text-amber-300 pt-1 border-t border-slate-800 font-black">
+                                <span>🧾 सप्लायर कुल बिल (देय राशि):</span>
+                                <span className="text-sm">₹{suppTotal.toLocaleString('en-IN')}</span>
+                              </div>
+
+                              {f2Val > 0 && (
+                                <div className="flex justify-between text-emerald-300">
+                                  <span>+ भाड़ा 2 (लोकल गल्ले से खर्च):</span>
+                                  <span className="font-bold">+₹{f2Val.toLocaleString('en-IN')} ({localFreightMode === 'CASH' ? 'नकद' : 'UPI'})</span>
+                                </div>
+                              )}
+
+                              <div className="flex justify-between text-emerald-400 pt-1.5 border-t border-slate-700 font-black text-sm">
+                                <span>📦 माल की असल कुल लागत (Landed Cost):</span>
+                                <span className="text-base">₹{landedTotal.toLocaleString('en-IN')}</span>
+                              </div>
+                            </div>
+
+                            <div className="pt-1.5 border-t border-slate-800/80 text-[10px] text-slate-300 flex flex-wrap gap-2">
+                              <span className="bg-indigo-950/80 text-indigo-300 px-2 py-0.5 rounded-md border border-indigo-800/50">
+                                ✓ सप्लायर खाते में ₹{suppTotal.toLocaleString('en-IN')} जमा
+                              </span>
+                              {f2Val > 0 && (
+                                <span className="bg-emerald-950/80 text-emerald-300 px-2 py-0.5 rounded-md border border-emerald-800/50">
+                                  ✓ गल्ले से ₹{f2Val.toLocaleString('en-IN')} खर्च
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Bill / Invoice Number & Date */}
                       <div className="grid grid-cols-2 gap-2">
-                        {/* Bill / Invoice Number */}
                         <div className="space-y-1">
                           <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
                             बिल / पर्ची नं. (Bill No.)
@@ -8009,7 +8475,6 @@ function MobileVyaparAppContent() {
                           />
                         </div>
 
-                        {/* Date */}
                         <div className="space-y-1">
                           <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider flex items-center gap-1">
                             <Calendar size={12} className="text-indigo-600" />
@@ -8071,7 +8536,7 @@ function MobileVyaparAppContent() {
                       {/* Bill Photo Attachment */}
                       <div className="space-y-1">
                         <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider flex items-center justify-between">
-                          <span>📸 सप्लायर के बिल की फोटो खींचें / अपलोड करें</span>
+                          <span>📸 सप्लायर के बिल की फोटो</span>
                           {vendorBillImage && (
                             <button
                               type="button"
@@ -8115,7 +8580,17 @@ function MobileVyaparAppContent() {
                         {savingVendorAction ? (
                           <span>⏳ खरीद दर्ज हो रही है...</span>
                         ) : (
-                          <span>💾 माल खरीद दर्ज करें {vendorBillAmount ? `(₹${Number(vendorBillAmount).toLocaleString('en-IN')})` : ''}</span>
+                          <span>
+                            💾 माल खरीद दर्ज करें {(() => {
+                              const isItemMode = vendorPurchaseMode === 'items' && vendorPurchaseItems.length > 0;
+                              const itemsTotal = isItemMode 
+                                ? vendorPurchaseItems.reduce((sum, it) => sum + (Number(it.total) || ((Number(it.quantity) || 0) * (Number(it.rate) || 0))), 0)
+                                : 0;
+                              const gVal = isItemMode ? itemsTotal : (Number(vendorBillAmount) || 0);
+                              const sTot = gVal + Number(vendorFreight || 0);
+                              return sTot > 0 ? `(सप्लायर बिल ₹${sTot.toLocaleString('en-IN')})` : '';
+                            })()}
+                          </span>
                         )}
                       </button>
                     </div>

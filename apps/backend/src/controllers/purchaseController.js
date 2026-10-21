@@ -31,12 +31,22 @@ export const createPurchase = async (req, res) => {
 
     await purchase.save();
 
-    // 2. UPDATE INVENTORY (Increase Stock)
+    // 2. UPDATE INVENTORY (Increase Stock & update latest purchase cost price)
     for (const item of items) {
+      const itemRate = Number(item.rate || item.price || 0);
+      const qty = Number(item.quantity || 1);
       if (item.productId) {
-        await Product.findByIdAndUpdate(
-          item.productId,
-          { $inc: { currentStock: item.quantity } } // Stock Badha diya
+        const updateFields = { $inc: { currentStock: qty } };
+        if (itemRate > 0) updateFields.$set = { costPrice: itemRate };
+        await Product.findByIdAndUpdate(item.productId, updateFields);
+      } else if (item.name && item.name.trim()) {
+        const trimmedName = item.name.trim();
+        const updateFields = { $inc: { currentStock: qty } };
+        if (itemRate > 0) updateFields.$set = { costPrice: itemRate };
+        const escapedName = trimmedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        await Product.findOneAndUpdate(
+          { companyId, name: { $regex: new RegExp("^" + escapedName + "$", "i") } },
+          updateFields
         );
       }
     }
