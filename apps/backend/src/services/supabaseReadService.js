@@ -120,21 +120,45 @@ export const mapSupabaseProductToProduct = (row) => ({
   updatedAt: row.updated_at
 });
 
-export const mapSupabaseExpenseToExpense = (row) => ({
-  _id: row.id,
-  id: row.id,
-  companyId: row.company_id,
-  title: row.title || "खर्च",
-  amount: Number(row.amount || 0),
-  category: row.category || "General",
-  date: row.date,
-  description: row.description || "",
-  status: row.status || "approved",
-  expenseType: "operating",
-  isDeleted: Boolean(row.is_deleted),
-  createdAt: row.created_at,
-  updatedAt: row.updated_at
-});
+export const mapSupabaseExpenseToExpense = (row) => {
+  let meta = {};
+  let cleanDesc = row.description || "";
+  const match = cleanDesc.match(/\[VB_META:([^\]]+)\]/);
+  if (match) {
+    try {
+      meta = JSON.parse(match[1]);
+      cleanDesc = cleanDesc.replace(match[0], "").trim();
+    } catch (e) {}
+  }
+
+  // Heuristic fallbacks if meta is not present
+  const isDrawingsCategory = /घर खर्च|personal|family|राशन|किराना|सब्जी|दवाई|अस्पताल|फीस|कपड़े|drawings/i.test(row.category || "") ||
+                             /घरेलू खर्च|राशन|किराना|दवाई|स्कूल|कॉलेज फीस|drawings/i.test(row.title || "");
+  const familyMemberMatch = (row.title || "").match(/-\s*(Mummy|Wife|Papa|Self|Brother|Sister|Children|Family|अन्य)/i);
+  const inferredFamilyMember = familyMemberMatch ? familyMemberMatch[1] : (isDrawingsCategory ? "Family" : "");
+  const inferredExpenseType = isDrawingsCategory || Boolean(inferredFamilyMember) ? "drawings" : "operating";
+
+  return {
+    _id: row.id,
+    id: row.id,
+    companyId: row.company_id,
+    title: row.title || "खर्च",
+    amount: Number(row.amount || 0),
+    category: row.category || "General",
+    date: row.date,
+    description: cleanDesc,
+    status: row.status || "approved",
+    expenseType: meta.expenseType || inferredExpenseType,
+    familyMember: meta.familyMember !== undefined ? meta.familyMember : inferredFamilyMember,
+    paymentMethod: meta.paymentMethod || "cash",
+    transactionFlow: meta.transactionFlow || "given",
+    staffId: meta.staffId || null,
+    staffTransactionId: meta.staffTransactionId || null,
+    isDeleted: Boolean(row.is_deleted),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+};
 
 export const mapSupabaseEmployeeToStaff = (row) => ({
   _id: row.id,
@@ -358,7 +382,7 @@ export const getPartyTransactionsFromSupabase = async ({ partyId, companyId, sta
 /**
  * 6. Fetch Expenses from Supabase
  */
-export const getExpensesFromSupabase = async ({ companyId, category, startDate, endDate, limit = 200 }) => {
+export const getExpensesFromSupabase = async ({ companyId, category, expenseType, familyMember, startDate, endDate, limit = 200 }) => {
   if (!isSupabaseConfigured || !companyId) return null;
   try {
     const cUuid = mongoIdToUuid(companyId);
@@ -369,7 +393,7 @@ export const getExpensesFromSupabase = async ({ companyId, category, startDate, 
       .eq("company_id", cUuid)
       .order("date", { ascending: false });
 
-    if (category) {
+    if (category && category !== "all") {
       q = q.eq("category", category);
     }
 
@@ -387,7 +411,16 @@ export const getExpensesFromSupabase = async ({ companyId, category, startDate, 
       return null;
     }
 
-    return (data || []).map(mapSupabaseExpenseToExpense);
+    let mapped = (data || []).map(mapSupabaseExpenseToExpense);
+
+    if (expenseType && expenseType !== "all") {
+      mapped = mapped.filter(e => e.expenseType === expenseType);
+    }
+    if (familyMember && familyMember !== "all") {
+      mapped = mapped.filter(e => e.familyMember === familyMember);
+    }
+
+    return mapped;
   } catch (err) {
     console.warn("[Supabase Read] getExpenses exception:", err.message);
     return null;

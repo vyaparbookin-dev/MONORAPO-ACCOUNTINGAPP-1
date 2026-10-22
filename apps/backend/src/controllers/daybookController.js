@@ -92,7 +92,6 @@ export const getDayBook = async (req, res) => {
         { [field]: { $gte: startOfDay, $lte: endOfDay } },
         { [field]: { $gte: startIso, $lte: endIso } },
         { [field]: { $gte: startTargetStr, $lte: endTargetStr + "T23:59:59.999Z" } },
-        { [field]: { $regex: new RegExp(`^(${startTargetStr}|${endTargetStr})`) } }
       ]
     });
 

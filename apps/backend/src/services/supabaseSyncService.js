@@ -162,6 +162,17 @@ export const syncExpenseToSupabase = async (expense) => {
   if (!supabase || !expense) return;
   try {
     const eUuid = mongoIdToUuid(expense._id || expense.id);
+    const meta = {
+      expenseType: expense.expenseType || (expense.familyMember ? 'drawings' : 'operating'),
+      familyMember: expense.familyMember || '',
+      paymentMethod: expense.paymentMethod || 'cash',
+      transactionFlow: expense.transactionFlow || 'given',
+      staffId: expense.staffId ? String(expense.staffId) : undefined,
+      staffTransactionId: expense.staffTransactionId ? String(expense.staffTransactionId) : undefined
+    };
+    const cleanDesc = (expense.description || expense.notes || '').replace(/\[VB_META:[^\]]+\]\s*/g, '').trim();
+    const encodedDescription = `[VB_META:${JSON.stringify(meta)}] ${cleanDesc}`.trim();
+
     const payload = {
       id: eUuid,
       company_id: mongoIdToUuid(expense.companyId),
@@ -169,7 +180,7 @@ export const syncExpenseToSupabase = async (expense) => {
       amount: Number(expense.amount || 0),
       category: expense.category || "General",
       date: expense.date ? new Date(expense.date).toISOString() : new Date().toISOString(),
-      description: expense.description || expense.notes || expense.title || "",
+      description: encodedDescription,
       status: expense.status || "approved",
       is_deleted: Boolean(expense.isDeleted),
       created_at: expense.createdAt ? new Date(expense.createdAt).toISOString() : new Date().toISOString(),
