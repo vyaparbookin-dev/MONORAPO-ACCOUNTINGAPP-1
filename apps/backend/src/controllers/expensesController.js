@@ -4,6 +4,7 @@ import BankAccount from "../model/bankAccount.js";
 import Staff from "../model/staff.js";
 import StaffTransaction from "../model/StaffTransaction.js";
 import { logActivity } from "../utils/logger.js";
+import { syncExpenseToSupabase } from "../services/supabaseSyncService.js";
 
 export const addExpense = async (req, res) => {
   try {
@@ -76,24 +77,9 @@ export const addExpense = async (req, res) => {
     }
 
     // --- ASYNC DUAL-WRITE SYNC TO SUPABASE ---
-    (async () => {
-      try {
-        const { supabase } = await import("../config/supabase.js");
-        if (supabase) {
-          await supabase.from('expenses').upsert({
-            title: expense.title || "खर्च",
-            amount: Number(expense.amount || 0),
-            category: expense.category || "अन्य",
-            description: expense.description || expense.notes || expense.title || "",
-            status: expense.status || "approved",
-            date: expense.date ? new Date(expense.date).toISOString() : new Date().toISOString(),
-            is_deleted: false
-          });
-        }
-      } catch (sbErr) {
-        console.warn("[Supabase Dual-Write] expense sync note:", sbErr.message);
-      }
-    })();
+    syncExpenseToSupabase(expense).catch(sbErr => {
+      console.warn("[Supabase Dual-Write] expense sync note:", sbErr.message);
+    });
 
     // If target bank found and amount > 0, post withdrawal transaction
     if (targetBank && amountNum > 0) {
@@ -126,6 +112,7 @@ export const getExpenseById = async (req, res) => {
   try {
     const expense = await Expense.findOne({ _id: req.params.id, companyId: req.companyId, isDeleted: false });
     if (!expense) return res.status(404).json({ success: false, error: "Expense not found" });
+    syncExpenseToSupabase(expense).catch(sbErr => console.warn("[Supabase Dual-Write] expense sync note:", sbErr.message));
     res.json({ success: true, expense });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -210,6 +197,7 @@ export const updateExpense = async (req, res) => {
       }
     }
 
+    syncExpenseToSupabase(expense).catch(sbErr => console.warn("[Supabase Dual-Write] expense sync note:", sbErr.message));
     res.json({ success: true, expense });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -419,6 +407,9 @@ export const deleteExpense = async (req, res) => {
        }
      }
      
+     if (expense) {
+       syncExpenseToSupabase(expense).catch(sbErr => console.warn("[Supabase Dual-Write] expense sync note:", sbErr.message));
+     }
      res.json({ success: true, message: "Expense deleted successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

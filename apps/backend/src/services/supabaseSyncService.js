@@ -1,9 +1,28 @@
+import dns from 'dns';
+dns.setDefaultResultOrder('ipv4first');
+
+import crypto from 'crypto';
 import { supabase } from "../config/supabase.js";
 
 /**
  * Universal Supabase Dual-Write & Schema Sync Service
- * Ensures Mongoose and Supabase databases stay 100% matched and up-to-date.
+ * Ensures Mongoose (MongoDB) and Supabase databases stay 100% matched in real-time.
  */
+
+export function mongoIdToUuid(mongoId) {
+  if (!mongoId) return null;
+  const str = String(mongoId);
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str)) {
+    return str;
+  }
+  const hash = crypto.createHash('md5').update(str).digest('hex');
+  const p1 = hash.slice(0, 8);
+  const p2 = hash.slice(8, 12);
+  const p3 = '4' + hash.slice(13, 16);
+  const p4 = 'a' + hash.slice(17, 20);
+  const p5 = hash.slice(20, 32);
+  return [p1, p2, p3, p4, p5].join('-');
+}
 
 /**
  * Dual-write / Upsert a Sales Bill to Supabase
@@ -11,56 +30,43 @@ import { supabase } from "../config/supabase.js";
 export const syncBillToSupabase = async (bill) => {
   if (!supabase || !bill || !bill.billNumber) return;
 
-  const fullPayload = {
-    bill_number: bill.billNumber,
-    customer_name: bill.customerName || "काउंटर नकद ग्राहक",
-    customer_mobile: bill.customerMobile || bill.customerPhone || "9876543210",
-    customer_address: bill.customerAddress || "",
-    customer_gst: bill.customerGst || "",
-    site_name: bill.siteName || "",
-    items: Array.isArray(bill.items) ? bill.items : [],
-    sub_total: Number(bill.total || bill.finalAmount || 0),
-    tax: Number(bill.tax || 0),
-    discount_amount: Number(bill.discountAmount || 0),
-    discount_percent: Number(bill.discountPercent || 0),
-    final_amount: Number(bill.finalAmount || bill.total || 0),
-    amount_received: Number(bill.finalAmount || bill.total || 0),
-    payment_status: bill.paymentStatus || "paid",
-    payment_method: bill.paymentMode || bill.paymentMethod || "Cash",
-    notes: bill.notes || "",
-    status: bill.status || "complete",
-    date: bill.date ? new Date(bill.date).toISOString() : new Date().toISOString(),
-    due_date: bill.dueDate ? new Date(bill.dueDate).toISOString() : null,
-    bill_image_url: bill.billImageUrl || (Array.isArray(bill.billImageUrls) && bill.billImageUrls[0]) || "",
-    bill_image_urls: Array.isArray(bill.billImageUrls) ? bill.billImageUrls : (bill.billImageUrl ? [bill.billImageUrl] : []),
-    order_type: bill.orderType || "dine_in",
-    table_no: bill.tableNo || "",
-    company_id: bill.companyId ? String(bill.companyId) : null,
-    party_id: bill.partyId ? String(bill.partyId) : null,
-    is_deleted: Boolean(bill.isDeleted)
-  };
-
   try {
-    const { error } = await supabase.from("sales").upsert(fullPayload, { onConflict: "bill_number" });
+    const bUuid = mongoIdToUuid(bill._id || bill.id);
+    const finalAmt = Number(bill.totalAmount || bill.finalAmount || bill.total || 0);
+    const subTot = Number(bill.total || (finalAmt - Number(bill.tax || 0)));
+    const partyUuid = bill.partyId ? mongoIdToUuid(bill.partyId) : null;
+
+    const payload = {
+      id: bUuid,
+      company_id: mongoIdToUuid(bill.companyId),
+      party_id: partyUuid,
+      bill_number: bill.billNumber,
+      customer_name: bill.customerName || "काउंटर नकद ग्राहक",
+      customer_mobile: bill.customerMobile || bill.customerPhone || "",
+      customer_address: bill.customerAddress || null,
+      customer_gst: bill.customerGst || null,
+      site_name: bill.siteName || null,
+      date: bill.date ? new Date(bill.date).toISOString() : (bill.createdAt ? new Date(bill.createdAt).toISOString() : new Date().toISOString()),
+      items: Array.isArray(bill.items) ? bill.items : [],
+      sub_total: subTot,
+      tax_amount: Number(bill.tax || 0),
+      discount_amount: Number(bill.discountAmount || 0),
+      discount_percent: Number(bill.discountPercent || 0),
+      final_amount: finalAmt,
+      amount_received: bill.paymentStatus === 'unpaid' ? 0 : (bill.paymentStatus === 'paid' ? finalAmt : Number(bill.amountReceived || bill.paidAmount || 0)),
+      payment_status: bill.paymentStatus || bill.status || "paid",
+      payment_method: bill.paymentMode || bill.paymentMethod || "cash",
+      notes: bill.notes || "",
+      status: bill.status || "complete",
+      bill_image_url: bill.billImageUrl || (Array.isArray(bill.billImageUrls) && bill.billImageUrls[0]) || null,
+      is_deleted: Boolean(bill.isDeleted),
+      created_at: bill.createdAt ? new Date(bill.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase.from("sales").upsert(payload, { onConflict: "id" });
     if (error) {
-      // If error is caused by a missing optional column in user's Supabase schema, fallback to core columns
-      console.warn("[Supabase Sync] Sales upsert note with full payload, trying core fields:", error.message);
-      const corePayload = {
-        bill_number: fullPayload.bill_number,
-        customer_name: fullPayload.customer_name,
-        customer_mobile: fullPayload.customer_mobile,
-        items: fullPayload.items,
-        sub_total: fullPayload.sub_total,
-        final_amount: fullPayload.final_amount,
-        amount_received: fullPayload.amount_received,
-        payment_status: fullPayload.payment_status,
-        payment_method: fullPayload.payment_method,
-        notes: fullPayload.notes,
-        status: fullPayload.status,
-        date: fullPayload.date,
-        is_deleted: fullPayload.is_deleted
-      };
-      await supabase.from("sales").upsert(corePayload, { onConflict: "bill_number" });
+      console.warn("[Supabase Sync] Sales upsert warning:", error.message);
     }
   } catch (err) {
     console.warn("[Supabase Sync] Sales dual-write warning:", err.message);
@@ -70,10 +76,15 @@ export const syncBillToSupabase = async (bill) => {
 /**
  * Mark a bill as deleted in Supabase
  */
-export const syncBillDeleteToSupabase = async (billNumber) => {
-  if (!supabase || !billNumber) return;
+export const syncBillDeleteToSupabase = async (billNumber, billId) => {
+  if (!supabase || (!billNumber && !billId)) return;
   try {
-    await supabase.from("sales").update({ is_deleted: true }).eq("bill_number", billNumber);
+    if (billId) {
+      const bUuid = mongoIdToUuid(billId);
+      await supabase.from("sales").update({ is_deleted: true }).eq("id", bUuid);
+    } else {
+      await supabase.from("sales").update({ is_deleted: true }).eq("bill_number", String(billNumber));
+    }
   } catch (err) {
     console.warn("[Supabase Sync] Sales delete note:", err.message);
   }
@@ -82,25 +93,10 @@ export const syncBillDeleteToSupabase = async (billNumber) => {
 /**
  * Sync bill photo attachment to Supabase
  */
-export const syncBillPhotoToSupabase = async (billNumberOrId, imageUrl, urls = []) => {
+export const syncBillPhotoToSupabase = async (billNumberOrId, imageUrl) => {
   if (!supabase || !billNumberOrId) return;
   try {
-    const updateObj = {
-      bill_image_url: imageUrl,
-      bill_image_urls: urls.length > 0 ? urls : [imageUrl]
-    };
-    const { error } = await supabase
-      .from("sales")
-      .update(updateObj)
-      .eq("bill_number", String(billNumberOrId));
-
-    if (error) {
-      // Fallback if bill_image_urls column doesn't exist yet
-      await supabase
-        .from("sales")
-        .update({ bill_image_url: imageUrl })
-        .eq("bill_number", String(billNumberOrId));
-    }
+    await supabase.from("sales").update({ bill_image_url: imageUrl }).eq("bill_number", String(billNumberOrId));
   } catch (err) {
     console.warn("[Supabase Sync] Bill photo sync note:", err.message);
   }
@@ -112,19 +108,25 @@ export const syncBillPhotoToSupabase = async (billNumberOrId, imageUrl, urls = [
 export const syncPartyToSupabase = async (party) => {
   if (!supabase || !party || !party.name) return;
   try {
+    const pUuid = mongoIdToUuid(party._id || party.id);
     const partyPayload = {
+      id: pUuid,
+      company_id: mongoIdToUuid(party.companyId),
       name: party.name,
+      party_type: (party.type === 'supplier' || party.partyType === 'supplier') ? 'supplier' : 'customer',
       mobile_number: party.mobileNumber || party.phone || "",
-      address: party.address || "",
-      party_type: party.partyType || party.type || "both",
+      billing_address: party.address || "",
+      gst_number: party.gstin || party.gstNumber || null,
+      pan_number: party.pan || null,
       opening_balance: Number(party.openingBalance || 0),
-      current_balance: Number(party.currentBalance || party.balance || 0),
+      current_balance: Number(party.currentBalance ?? party.balance ?? 0),
       credit_limit: Number(party.creditLimit || 0),
-      company_id: party.companyId ? String(party.companyId) : null,
       is_active: party.isActive !== false,
-      is_deleted: Boolean(party.isDeleted)
+      created_at: party.createdAt ? new Date(party.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
-    await supabase.from("parties").upsert(partyPayload);
+    const { error } = await supabase.from("parties").upsert(partyPayload, { onConflict: "id" });
+    if (error) console.warn("[Supabase Sync] Party sync error:", error.message);
   } catch (err) {
     console.warn("[Supabase Sync] Party sync note:", err.message);
   }
@@ -137,49 +139,182 @@ export const syncPartyTxToSupabase = async (tx) => {
   if (!supabase || !tx) return;
   try {
     const txPayload = {
-      party_id: tx.partyId ? String(tx.partyId) : null,
-      company_id: tx.companyId ? String(tx.companyId) : null,
+      company_id: mongoIdToUuid(tx.companyId),
+      party_id: mongoIdToUuid(tx.partyId),
       date: tx.date ? new Date(tx.date).toISOString() : new Date().toISOString(),
-      details: tx.details || tx.description || "",
+      details: tx.details || tx.description || "पार्टी खाता लेन-देन",
       debit: Number(tx.debit || 0),
       credit: Number(tx.credit || 0),
-      amount: Number(tx.amount || tx.debit || tx.credit || 0),
       type: tx.type || "manual",
-      bill_number: tx.billNumber || "",
-      bill_image_url: tx.billImageUrl || (Array.isArray(tx.billImageUrls) && tx.billImageUrls[0]) || "",
-      bill_image_urls: Array.isArray(tx.billImageUrls) ? tx.billImageUrls : (tx.billImageUrl ? [tx.billImageUrl] : []),
-      site_name: tx.siteName || "",
-      is_deleted: Boolean(tx.isDeleted)
+      created_at: tx.createdAt ? new Date(tx.createdAt).toISOString() : new Date().toISOString()
     };
-    await supabase.from("party_transactions").upsert(txPayload);
+    const { error } = await supabase.from("party_transactions").insert(txPayload);
+    if (error) console.warn("[Supabase Sync] Party Tx sync error:", error.message);
   } catch (err) {
     console.warn("[Supabase Sync] Party Transaction sync note:", err.message);
   }
 };
 
 /**
- * Sync Bank Account to Supabase
+ * Sync Expense to Supabase
  */
-export const syncBankAccountToSupabase = async (acc) => {
-  if (!supabase || !acc || !acc.accountName) return;
+export const syncExpenseToSupabase = async (expense) => {
+  if (!supabase || !expense) return;
   try {
-    const accPayload = {
-      account_name: acc.accountName,
-      bank_name: acc.bankName || "",
-      account_number: acc.accountNumber || "",
-      ifsc_code: acc.ifscCode || "",
-      upi_id: acc.upiId || "",
-      account_type: acc.accountType || "CURRENT",
-      sanctioned_limit: Number(acc.sanctionedLimit || 0),
-      current_outstanding: Number(acc.currentOutstanding || 0),
-      opening_balance: Number(acc.openingBalance || 0),
-      current_balance: Number(acc.currentBalance || acc.balance || 0),
-      interest_rate: Number(acc.interestRate || 0),
-      company_id: acc.companyId ? String(acc.companyId) : null,
-      is_deleted: Boolean(acc.isDeleted)
+    const eUuid = mongoIdToUuid(expense._id || expense.id);
+    const payload = {
+      id: eUuid,
+      company_id: mongoIdToUuid(expense.companyId),
+      title: expense.title || "खर्च",
+      amount: Number(expense.amount || 0),
+      category: expense.category || "General",
+      date: expense.date ? new Date(expense.date).toISOString() : new Date().toISOString(),
+      description: expense.description || expense.notes || expense.title || "",
+      status: expense.status || "approved",
+      is_deleted: Boolean(expense.isDeleted),
+      created_at: expense.createdAt ? new Date(expense.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
-    await supabase.from("bank_accounts").upsert(accPayload);
+    const { error } = await supabase.from("expenses").upsert(payload, { onConflict: "id" });
+    if (error) console.warn("[Supabase Sync] Expense sync error:", error.message);
   } catch (err) {
-    console.warn("[Supabase Sync] Bank Account sync note:", err.message);
+    console.warn("[Supabase Sync] Expense sync note:", err.message);
   }
+};
+
+/**
+ * Sync Staff / Employee to Supabase
+ */
+export const syncStaffToSupabase = async (staff) => {
+  if (!supabase || !staff || !staff.name) return;
+  try {
+    const eUuid = mongoIdToUuid(staff._id || staff.id);
+    const wageVal = Number(staff.dailyRate || staff.wageAmount || staff.salary || 0);
+    const payload = {
+      id: eUuid,
+      company_id: mongoIdToUuid(staff.companyId),
+      full_name: staff.name || staff.fullName || "Staff Member",
+      phone_number: staff.mobileNumber || staff.phone || "",
+      designation: staff.position || staff.role || "Staff",
+      role: staff.role || "salesman",
+      wage_type: staff.wageType || "daily",
+      salary: wageVal,
+      balance: Number(staff.balance || 0),
+      joining_date: staff.dateOfJoining ? new Date(staff.dateOfJoining).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      is_active: staff.isActive !== false,
+      created_at: staff.createdAt ? new Date(staff.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await supabase.from("employees").upsert(payload, { onConflict: "id" });
+    if (error) console.warn("[Supabase Sync] Employee sync error:", error.message);
+  } catch (err) {
+    console.warn("[Supabase Sync] Employee sync note:", err.message);
+  }
+};
+
+/**
+ * Sync Attendance to Supabase
+ */
+export const syncAttendanceToSupabase = async (attendance) => {
+  if (!supabase || !attendance || !attendance.staffId) return;
+  try {
+    const aUuid = mongoIdToUuid(attendance._id || attendance.id);
+    const eUuid = mongoIdToUuid(attendance.staffId);
+    const normStatus = (attendance.status === 'half-day' || attendance.status === 'halfday' || attendance.status === 'half_day')
+      ? 'half_day'
+      : (attendance.status === 'absent' || attendance.status === 'leave')
+      ? 'absent'
+      : 'present';
+
+    const payload = {
+      id: aUuid,
+      company_id: mongoIdToUuid(attendance.companyId),
+      employee_id: eUuid,
+      date: attendance.date ? new Date(attendance.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      status: normStatus,
+      notes: attendance.notes || `Synced status: ${normStatus}`,
+      created_at: attendance.createdAt ? new Date(attendance.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase.from("attendance").upsert(payload, { onConflict: "employee_id,date" });
+    if (error) console.warn("[Supabase Sync] Attendance sync error:", error.message);
+  } catch (err) {
+    console.warn("[Supabase Sync] Attendance sync note:", err.message);
+  }
+};
+
+/**
+ * Sync Staff Transaction (Advance / Settlement) to Supabase
+ */
+export const syncStaffTxToSupabase = async (tx) => {
+  if (!supabase || !tx || !tx.staffId) return;
+  try {
+    const payload = {
+      company_id: mongoIdToUuid(tx.companyId),
+      employee_id: mongoIdToUuid(tx.staffId),
+      date: tx.date ? new Date(tx.date).toISOString() : new Date().toISOString(),
+      type: tx.type || "advance",
+      status: "completed",
+      debit: Number(tx.debit || 0),
+      credit: Number(tx.credit || 0),
+      notes: tx.notes || (tx.forMonth ? `For ${tx.forMonth}` : "Staff payment"),
+      is_deleted: Boolean(tx.isDeleted),
+      created_at: tx.createdAt ? new Date(tx.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await supabase.from("staff_transactions").insert(payload);
+    if (error) console.warn("[Supabase Sync] Staff Tx sync error:", error.message);
+  } catch (err) {
+    console.warn("[Supabase Sync] Staff Transaction sync note:", err.message);
+  }
+};
+
+/**
+ * Sync Purchase to Supabase
+ */
+export const syncPurchaseToSupabase = async (pr) => {
+  if (!supabase || !pr) return;
+  try {
+    const pUuid = mongoIdToUuid(pr._id || pr.id);
+    const suppUuid = pr.supplierId || pr.partyId ? mongoIdToUuid(pr.supplierId || pr.partyId) : null;
+
+    const payload = {
+      id: pUuid,
+      company_id: mongoIdToUuid(pr.companyId),
+      party_id: suppUuid,
+      purchase_number: pr.billNumber || pr.purchaseNumber || ("PO-" + pUuid.slice(0, 8)),
+      date: pr.date ? new Date(pr.date).toISOString() : new Date().toISOString(),
+      items: Array.isArray(pr.items) ? pr.items : [],
+      sub_total: Number(pr.subTotal || pr.total || 0),
+      discount_amount: Number(pr.discount || 0),
+      tax_amount: Number(pr.tax || 0),
+      final_amount: Number(pr.finalAmount || pr.total || 0),
+      amount_paid: Number(pr.amountPaid || pr.paidAmount || 0),
+      payment_status: pr.paymentStatus || "paid",
+      payment_method: pr.paymentMethod || "cash",
+      supplier_name: pr.supplierName || "सप्लायर",
+      is_deleted: Boolean(pr.isDeleted),
+      created_at: pr.createdAt ? new Date(pr.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await supabase.from("purchases").upsert(payload, { onConflict: "id" });
+    if (error) console.warn("[Supabase Sync] Purchase sync error:", error.message);
+  } catch (err) {
+    console.warn("[Supabase Sync] Purchase sync note:", err.message);
+  }
+};
+
+export default {
+  syncBillToSupabase,
+  syncBillDeleteToSupabase,
+  syncBillPhotoToSupabase,
+  syncPartyToSupabase,
+  syncPartyTxToSupabase,
+  syncExpenseToSupabase,
+  syncStaffToSupabase,
+  syncAttendanceToSupabase,
+  syncStaffTxToSupabase,
+  syncPurchaseToSupabase,
+  mongoIdToUuid
 };

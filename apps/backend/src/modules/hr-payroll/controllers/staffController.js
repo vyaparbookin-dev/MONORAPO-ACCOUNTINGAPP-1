@@ -4,6 +4,7 @@ import StaffTransaction from "../models/StaffTransaction.js";
 import Attendance from "../models/attendance.js";
 import User from "../../../model/user.js";
 import bcryptjs from "bcryptjs";
+import { syncStaffToSupabase, syncAttendanceToSupabase, syncStaffTxToSupabase } from "../../../services/supabaseSyncService.js";
 
 export const createStaff = async (req, res) => {
   try {
@@ -96,6 +97,7 @@ export const createStaff = async (req, res) => {
       }
     }
 
+    syncStaffToSupabase(staff).catch(sbErr => console.warn("[Supabase Dual-Write] Staff sync note:", sbErr.message));
     res.status(201).json({ success: true, staff, message: `Staff ${name} added successfully!` });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -584,6 +586,9 @@ export const quickMarkAttendance = async (req, res) => {
       await attendance.save();
     }
 
+    // Async Supabase Dual-Write
+    syncAttendanceToSupabase(attendance).catch(sbErr => console.warn("[Supabase Dual-Write] Attendance sync note:", sbErr.message));
+
     res.status(200).json({ 
       success: true, 
       message: `तारीख ${dNum} को हाजिरी सुरक्षित हुई: ${normStatus}`, 
@@ -663,6 +668,10 @@ export const addStaffAdvance = async (req, res) => {
     staff.updatedAt = new Date();
     await staff.save();
 
+    // Async Supabase Dual-Write
+    syncStaffTxToSupabase(advanceTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
+    syncStaffToSupabase(staff).catch(e => console.warn("[Supabase Dual-Write] Staff sync note:", e.message));
+
     res.status(201).json({ 
       success: true, 
       message: `₹${amount} ${isSalarySettlement ? 'वेतन भुगतान' : 'एडवांस'} सफलतापूर्वक दर्ज हुआ!`, 
@@ -703,6 +712,10 @@ export const addStaffOvertime = async (req, res) => {
     staff.updatedAt = new Date();
     await staff.save();
 
+    // Async Supabase Dual-Write
+    syncStaffTxToSupabase(advanceTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
+    syncStaffToSupabase(staff).catch(e => console.warn("[Supabase Dual-Write] Staff sync note:", e.message));
+
     res.status(201).json({ success: true, message: `₹${Math.round(totalOtPay)} ओवरटाइम दर्ज हुआ!`, transaction: otTx });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -736,6 +749,10 @@ export const addStaffCommission = async (req, res) => {
     staff.balance = (Number(staff.balance) || 0) + Number(amount);
     staff.updatedAt = new Date();
     await staff.save();
+
+    // Async Supabase Dual-Write
+    syncStaffTxToSupabase(advanceTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
+    syncStaffToSupabase(staff).catch(e => console.warn("[Supabase Dual-Write] Staff sync note:", e.message));
 
     res.status(201).json({ success: true, message: `₹${amount} कमीशन दर्ज हुआ!`, transaction: commTx });
   } catch (error) {
@@ -947,6 +964,7 @@ export const updateStaff = async (req, res) => {
       }
     }
 
+    syncStaffToSupabase(staff).catch(sbErr => console.warn("[Supabase Dual-Write] Staff sync note:", sbErr.message));
     res.json({ success: true, staff, message: "Staff updated successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

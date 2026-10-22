@@ -4,6 +4,7 @@ import Party from "../model/party.js";
 import PartyTransaction from "../model/PartyTransaction.js";
 import { Parser } from "json2csv";
 import { logActivity } from "../utils/logger.js";
+import { syncPurchaseToSupabase } from "../services/supabaseSyncService.js";
 
 // Create a new Purchase Bill (Stock Inward)
 export const createPurchase = async (req, res) => {
@@ -90,6 +91,9 @@ export const createPurchase = async (req, res) => {
 
     // Audit Trail: Log this action
     await logActivity(req, `Recorded new Purchase #${purchase.purchaseNumber || purchase._id} for amount ₹${finalAmount}`);
+
+    // Async Supabase Dual-Write
+    syncPurchaseToSupabase(purchase).catch(sbErr => console.warn("[Supabase Dual-Write] Purchase sync note:", sbErr.message));
 
     res.status(201).json({ success: true, message: "Purchase recorded and stock updated successfully!", purchase });
   } catch (error) {

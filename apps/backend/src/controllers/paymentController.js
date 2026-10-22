@@ -8,6 +8,7 @@ import Company from "../model/company.js"; // Import Company model
 import path from "path";
 import os from "os";
 import { createWorker } from "tesseract.js";
+import { syncPartyTxToSupabase, syncPartyToSupabase } from "../services/supabaseSyncService.js";
 
 let razorpay;
 const getRazorpayInstance = () => {
@@ -128,6 +129,10 @@ export const addPaymentEntry = async (req, res) => {
 
     await transaction.save();
     await party.save();
+
+    // Async Supabase Dual-Write
+    syncPartyTxToSupabase(transaction).catch(e => console.warn("[Supabase Sync] Party Tx dual-write note:", e.message));
+    syncPartyToSupabase(party).catch(e => console.warn("[Supabase Sync] Party dual-write note:", e.message));
 
     const availableLimit = party.creditLimit ? Math.max(0, party.creditLimit - party.currentBalance) : 0;
 

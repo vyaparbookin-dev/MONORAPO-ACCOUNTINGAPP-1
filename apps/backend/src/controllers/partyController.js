@@ -4,6 +4,7 @@ import Purchase from "../model/purchase.js";
 import PartyTransaction from "../model/PartyTransaction.js";
 import Product from "../model/product.js";
 import mongoose from "mongoose";
+import { syncPartyToSupabase, syncPartyTxToSupabase } from "../services/supabaseSyncService.js";
 
 export const createParty = async (req, res) => {
   try {
@@ -88,6 +89,7 @@ export const createParty = async (req, res) => {
       inactiveParty.isActive = true;
       inactiveParty.updatedAt = new Date();
       await inactiveParty.save();
+      syncPartyToSupabase(inactiveParty).catch(e => console.warn("[Supabase Sync] Party dual-write note:", e.message));
       return res.status(201).json({ success: true, party: inactiveParty, message: `Party ${name} created successfully!` });
     }
 
@@ -99,6 +101,7 @@ export const createParty = async (req, res) => {
       currentBalance: finalBalance
     });
     await party.save();
+    syncPartyToSupabase(party).catch(e => console.warn("[Supabase Sync] Party dual-write note:", e.message));
     res.status(201).json({ success: true, party, message: `Party ${name} created successfully!` });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -953,6 +956,8 @@ export const clearPartyBalance = async (req, res) => {
         type: "settlement"
       });
       await settleTx.save();
+      syncPartyTxToSupabase(settleTx).catch(e => console.warn("[Supabase Sync] Party Tx dual-write note:", e.message));
+      syncPartyToSupabase(party).catch(e => console.warn("[Supabase Sync] Party dual-write note:", e.message));
     }
 
     // Mark any pending credit bills as settled — use same broad filter as the bill fetch above
@@ -1116,6 +1121,7 @@ export const updateParty = async (req, res) => {
       { new: true }
     );
     if (!party) return res.status(404).json({ success: false, error: "Party not found" });
+    syncPartyToSupabase(party).catch(e => console.warn("[Supabase Sync] Party dual-write note:", e.message));
     res.json({ success: true, party, message: "Party updated successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
