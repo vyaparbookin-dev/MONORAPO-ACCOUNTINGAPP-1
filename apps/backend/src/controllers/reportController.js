@@ -508,20 +508,23 @@ export const getProfitLoss = async (req, res) => {
       }
     }
 
-    // Dynamic Margin & Cost of Goods Sold (COGS) Configuration
+    // Dynamic Margin & Cost of Goods Sold (COGS) Configuration (15% System)
     const marginParam = req.query.marginPercent !== undefined && req.query.marginPercent !== ""
       ? parseFloat(req.query.marginPercent)
       : null;
     const recordedTotalPurchases = directPurchases + directExpensePurchases;
-    const costMode = req.query.costMode || (recordedTotalPurchases > 0 ? "actual" : "margin");
 
-    let estimatedCOGS = 0;
-    if (marginParam !== null && !isNaN(marginParam)) {
-      const marginFrac = Math.max(0, Math.min(100, marginParam)) / 100;
-      estimatedCOGS = Math.round(totalSales * (1 - marginFrac));
-    } else {
-      estimatedCOGS = Math.round(totalSales * 0.85); // 15% default gross margin
-    }
+    // In auto mode, if recorded purchases are unrealistically low (< 50% of sales),
+    // purchases are incomplete. Default to the 15% profit margin system!
+    const isActualRealistic = recordedTotalPurchases >= (totalSales * 0.5);
+    const requestedMode = req.query.costMode;
+    const costMode = requestedMode === "actual"
+      ? "actual"
+      : (requestedMode === "margin" ? "margin" : (isActualRealistic ? "actual" : "margin"));
+
+    const effectiveMarginPercent = (marginParam !== null && !isNaN(marginParam)) ? marginParam : 15;
+    const marginFrac = Math.max(0, Math.min(100, effectiveMarginPercent)) / 100;
+    const estimatedCOGS = Math.round(totalSales * (1 - marginFrac));
 
     const effectivePurchases = (costMode === "actual" && recordedTotalPurchases > 0)
       ? recordedTotalPurchases
@@ -558,6 +561,8 @@ export const getProfitLoss = async (req, res) => {
         netProfit,
         costMode,
         marginPercent: marginParam !== null ? marginParam : (totalSales > 0 ? Math.round(((totalSales - effectivePurchases) / totalSales) * 100) : 15),
+        grossMarginPercent: totalSales > 0 ? Math.round((grossProfit / totalSales) * 100) : 15,
+        netMarginPercent: totalSales > 0 ? Math.round((netProfit / totalSales) * 100) : 12,
         daysCount,
         dailyAvgSales,
         dailyAvgExpenses,

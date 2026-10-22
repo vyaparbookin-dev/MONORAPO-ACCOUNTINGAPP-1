@@ -270,9 +270,16 @@ export default function MobileProfitLossModal({ isOpen, onClose }) {
       const effectiveMarginFrac = Math.max(0, Math.min(100, Number(marginPercent) || 15)) / 100;
       const estimatedCOGS = Math.round(finalSales * (1 - effectiveMarginFrac));
 
-      const effectiveCOGS = (costMode === "actual" && actualExists)
+      const isActualRealistic = actualExists && recordedPurchases >= (finalSales * 0.5);
+      const activeMode = costMode === "margin"
+        ? "margin"
+        : costMode === "actual"
+        ? "actual"
+        : (isActualRealistic ? "actual" : "margin");
+
+      const effectiveCOGS = (activeMode === "actual" && actualExists)
         ? recordedPurchases
-        : (costMode === "margin" ? estimatedCOGS : (actualExists ? recordedPurchases : estimatedCOGS));
+        : (estimatedCOGS > 0 ? estimatedCOGS : recordedPurchases);
 
       const grossProfit = Math.max(0, finalSales - effectiveCOGS);
       const netProfit = grossProfit - finalOperating;

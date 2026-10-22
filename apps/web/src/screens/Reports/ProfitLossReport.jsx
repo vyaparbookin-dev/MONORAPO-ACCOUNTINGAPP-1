@@ -289,12 +289,13 @@ const ProfitLossReportPage = () => {
       const recordedPurchases = calcActualPurchases > 0 ? calcActualPurchases : (Number(plData.actualPurchases) || 0);
       const hasActualPurchases = recordedPurchases > 0;
 
-      // Active Cost of Goods (COGS) Mode Decision
+      // Active Cost of Goods (COGS) Mode Decision (15% System)
+      const isActualRealistic = hasActualPurchases && recordedPurchases >= (finalSales * 0.5);
       const activeMode = costMode === "margin"
         ? "margin"
         : costMode === "actual"
         ? "actual"
-        : hasActualPurchases
+        : isActualRealistic
         ? "actual"
         : "margin";
 
