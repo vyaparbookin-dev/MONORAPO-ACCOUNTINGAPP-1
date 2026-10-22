@@ -55,8 +55,8 @@ export async function extractText(filePathOrBuffer, mimeType = "image/png") {
 }
 
 /**
- * Printed POS bills are tabular:
- * Examples:
+ * 2. PARSE BILL METADATA (GSTINs, Invoice No, Date, Bank, Freight)
+ */
 export function parseBillMetadata(rawText) {
   if (!rawText || typeof rawText !== "string") return {};
 
@@ -127,7 +127,7 @@ export function parseBillMetadata(rawText) {
   }
 
   // 6. Bank Details (Wholesale / Supplier Invoices)
-  const acMatch = rawText.match(/\b(?:a\/c\s*(?:no)?|account\s*(?:no)?)[\s\.\:\-]*([0-9]{9,18})\b/i);
+  const acMatch = rawText.match(/\b(?:a\/c\s*(?:no)?|account\s*(?:no)?|(?:ubi|sbi|pnb|hdfc|icici|bob|axis|bank)\s*(?:no|a\/c)?|no\.)[\s\.\:\-]*([0-9]{9,18})\b/i);
   if (acMatch && acMatch[1]) {
     meta.bankDetails.accountNo = acMatch[1].trim();
   }
@@ -142,7 +142,14 @@ export function parseBillMetadata(rawText) {
     meta.bankDetails.upiId = upiMatch[1].trim();
   }
 
-  // 7. Party / Vendor Name Extraction from top header lines
+  // 7. Buyer / Customer Name and Seller / Vendor Name Extraction
+  // Look for explicit Buyer / Billed to / Consignee fields in GST invoices
+  const buyerMatch = rawText.match(/\b(?:buyer\s*(?:\(bill\s*to\))?|billed\s*to|consignee|customer)[\s\.\:\-]+([A-Za-z0-9\s,\.\-&]+?)(?:\r?\n|gstin|state|pan|mob|phone|address|$)/i);
+  if (buyerMatch && buyerMatch[1] && buyerMatch[1].trim().length >= 3) {
+    meta.buyerName = buyerMatch[1].replace(/^(m\/s\.?|shree|sri)\s*/i, "").trim();
+  }
+
+  // Header party (usually Seller in purchase bills, or Customer in retail bills)
   for (let i = 0; i < Math.min(lines.length, 6); i++) {
     const l = lines[i];
     if (/tax\s*invoice|cash\s*memo|retail\s*invoice|bill\s*of\s*supply|estimate|quotation|original/i.test(l)) {
@@ -152,18 +159,22 @@ export function parseBillMetadata(rawText) {
     if (meta.invoiceNumber && l.includes(meta.invoiceNumber)) continue;
     if (/^(gstin|ph|phone|mob|tel|date|pan|fssai|email)/i.test(l)) continue;
     if (l.length >= 3 && l.length <= 60 && !/^\d+$/.test(l)) {
-      meta.partyName = l.replace(/^(m\/s\.?|shree|sri)\s*/i, "").trim();
+      meta.sellerName = l.replace(/^(m\/s\.?|shree|sri)\s*/i, "").trim();
+      if (!meta.partyName) {
+        meta.partyName = meta.sellerName;
+      }
       break;
     }
   }
 
-  // 8. Additional Charges (Freight / Transport / भाड़ा / Packaging / Hamali)
-  const chargeRegex = /\b(freight|transport|cartage|packaging|packing|bhada|भाड़ा|हमाली|loading|delivery|courier)[\s\w\.\:\-]*?(\d+(?:\.\d+)?)\b/i;
+  // 8. Additional Charges (Freight / Carriage / Transport / भाड़ा / Packaging / Hamali)
+  const chargeRegex = /\b(carriage|freight|transport|cartage|packaging|packing|bhada|भाड़ा|हमाली|loading|delivery|courier)[\s\w\.\:\-\(\)\%]*?(\d+(?:\.\d+)?)\b/i;
   for (const line of lines) {
     const chMatch = line.match(chargeRegex);
     if (chMatch) {
-      const label = chMatch[1].toLowerCase().includes("bhada") || chMatch[1].includes("भाड़ा")
-        ? "लोकल भाड़ा (Freight)"
+      const isCarriageOrFreight = /carriage|freight|bhada|भाड़ा|cartage/i.test(chMatch[1]);
+      const label = isCarriageOrFreight
+        ? "लोकल भाड़ा / Carriage (Freight)"
         : chMatch[1].toLowerCase().includes("pack")
         ? "पैकेजिंग खर्च (Packaging)"
         : `${chMatch[1]} खर्च`;
@@ -190,6 +201,10 @@ export function parseLineItems(rawText) {
 
   const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   
+  // Regex 6: Matches 6-part line: [Name] [HSN] [Qty] [Unit] [Rate] [Total]
+  const itemLineRegex6 = /^(.+?)\s+(\d{4,8})\s+(\d+(?:\.\d+)?)\s+([A-Za-z]{2,6})\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)$/;
+  // Regex 5 with Unit: Matches 5-part line: [Name] [Qty] [Unit] [Rate] [Total]
+  const itemLineRegex5Unit = /^(.+?)\s+(\d+(?:\.\d+)?)\s+([A-Za-z]{2,6})\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)$/;
   // Regex 5: Matches 5-part tabular line with HSN: [Name] [HSN] [Qty] [Rate] [Total]
   const itemLineRegex5 = /^(.+?)\s+(\d{4,8})\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)$/;
   // Regex 4: Matches standard 4-part tabular line: [Name] [Qty] [Rate] [Total]
@@ -202,6 +217,40 @@ export function parseLineItems(rawText) {
 
   for (const line of lines) {
     if (skipWords.test(line)) continue;
+
+    // Check 6 columns: Name, HSN, Qty, Unit, Rate, Amount
+    const match6 = line.match(itemLineRegex6);
+    if (match6) {
+      const rawName = match6[1].trim();
+      if (rawName.length >= 2 && !/^\d+$/.test(rawName)) {
+        items.push({
+          rawName,
+          hsn: match6[2].trim(),
+          qty: parseFloat(match6[3]) || 1,
+          unit: match6[4].trim(),
+          rate: parseFloat(match6[5]) || 0,
+          amount: parseFloat(match6[6]) || 0,
+        });
+        continue;
+      }
+    }
+
+    // Check 5 columns with Unit: Name, Qty, Unit, Rate, Amount
+    const match5Unit = line.match(itemLineRegex5Unit);
+    if (match5Unit) {
+      const rawName = match5Unit[1].trim();
+      if (rawName.length >= 2 && !/^\d+$/.test(rawName)) {
+        items.push({
+          rawName,
+          hsn: "",
+          qty: parseFloat(match5Unit[2]) || 1,
+          unit: match5Unit[3].trim(),
+          rate: parseFloat(match5Unit[4]) || 0,
+          amount: parseFloat(match5Unit[5]) || 0,
+        });
+        continue;
+      }
+    }
 
     // Check 5 columns: Name, HSN, Qty, Rate, Amount
     const match5 = line.match(itemLineRegex5);

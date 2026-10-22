@@ -2266,39 +2266,41 @@ function MobileVyaparAppContent() {
       } else if (res?.data?.success && res.data.parsedItems) {
         rawResults = [res.data];
       } else {
-        // Fallback for each file
+        // STRICT ZERO-GUESSING: If scan failed or unreadable, NEVER generate fake items or dummy party!
         rawResults = base64List.map((b64, idx) => ({
-          success: true,
-          partyName: ocrBillType === 'sale' ? `कच्ची पर्ची ग्राहक ${idx + 1}` : "सप्लायर",
+          success: false,
+          partyName: "",
           billType: ocrBillType,
-          parsedItems: [{ name: "सामान (Item)", quantity: 1, unit: "Pcs", price: 100, total: 100 }],
-          totalAmount: 100
+          parsedItems: [],
+          totalAmount: 0,
+          needsReview: true,
+          reviewReasons: ["बिल से सामान नहीं पढ़ा जा सका।"]
         }));
       }
 
-      // Process each bill with 1600+ Inventory Catalog Fuzzy Matching
+      // Process each bill with STRICT Zero-Hallucination & Exact/Alias Matching ONLY
       const processedBatch = rawResults.map((rawBill, billIdx) => {
         const extractedItems = rawBill.parsedItems || [];
         const processedItems = extractedItems.map((it, itemIdx) => {
           const rawName = (it.name || '').trim();
-          const rawPrice = Number(it.price || it.rate) || 0;
-          const rawQty = Number(it.quantity || it.qty) || 1;
+          const rawPrice = (it.price !== null && it.price !== undefined && !isNaN(it.price)) ? Number(it.price) : 0;
+          const rawQty = (it.quantity !== null && it.quantity !== undefined && !isNaN(it.quantity)) ? Number(it.quantity) : 1;
 
-          // Fuzzy Match with 1600+ Catalog
+          // Strict match: Exact name or alias ONLY
           const matchedItem = items.find(catItem => {
-            const catName = (catItem.name || '').toLowerCase();
-            const pName = rawName.toLowerCase();
+            const catName = (catItem.name || '').toLowerCase().trim();
+            const pName = rawName.toLowerCase().trim();
             if (catName === pName) return true;
-            const tokens = pName.split(/\s+/).filter(t => t.length >= 3);
-            return tokens.some(t => catName.includes(t));
+            if (Array.isArray(catItem.aliases) && catItem.aliases.some(a => String(a).toLowerCase().trim() === pName)) return true;
+            return false;
           });
 
-          const finalPrice = rawPrice > 0 ? rawPrice : (matchedItem ? matchedItem.salePrice : 100);
+          const finalPrice = rawPrice > 0 ? rawPrice : (matchedItem ? (matchedItem.salePrice || matchedItem.sellingPrice || 0) : 0);
           const finalTotal = +(rawQty * finalPrice).toFixed(2);
 
           return {
             id: matchedItem?.id || `scanned-${Date.now()}-${billIdx}-${itemIdx}`,
-            name: rawName || (matchedItem?.name || `सामान ${itemIdx + 1}`),
+            name: rawName || (matchedItem?.name || ""),
             qty: rawQty,
             unit: it.unit || (matchedItem?.unit || "Pcs"),
             price: finalPrice,
@@ -2307,7 +2309,7 @@ function MobileVyaparAppContent() {
           };
         });
 
-        const detectedParty = rawBill.partyName?.trim() || (ocrBillType === 'sale' ? (files.length > 1 ? `पर्ची ग्राहक ${billIdx + 1}` : "कच्ची पर्ची ग्राहक") : "सप्लायर");
+        const detectedParty = (rawBill.partyName || "").trim();
         const calculatedTotal = processedItems.reduce((sum, it) => sum + it.total, 0);
 
         return {

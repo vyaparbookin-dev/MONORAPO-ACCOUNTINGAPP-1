@@ -19,6 +19,7 @@ import { sendAutoWhatsappMessage } from "../services/whatsappService.js";
 import { processStampAwardOnBill } from "./stampController.js";
 import { syncBillToSupabase, syncBillDeleteToSupabase } from "../services/supabaseSyncService.js";
 import { scanBillToEntry } from "../bill-scanner/index.js";
+import { parseBillMetadata, parseLineItems } from "../bill-scanner/ocrExtractor.js";
 
 export const createBill = async (req, res) => {
   try {
@@ -633,7 +634,147 @@ export const deleteBill = async (req, res) => {
   }
 };
 
-// ==================== INTELLIGENT AUTO AI VISION BILL SCANNER (OpenAI GPT-4o Mini + Gemini 2.5/2.0 Flash) ====================
+// ==================== BILL EXTRACTION VALIDATION LAYER (Zero Guessing / Anti-Hallucination) ====================
+export const validateExtractedBill = (billData = {}) => {
+  const flags = {
+    needsReview: false,
+    reviewReasons: [],
+    fieldSources: {},
+    itemValidations: [],
+    isMathValid: true
+  };
+
+  // 1. Party / Customer / Vendor Name Validation
+  const partyName = (billData.partyName || "").trim();
+  if (partyName && partyName.length >= 2 && !/^(सामान|customer|supplier|पर्ची|कच्ची|ग्राहक)/i.test(partyName)) {
+    flags.fieldSources.partyName = { source: "extracted", value: partyName, isMissing: false };
+  } else {
+    flags.fieldSources.partyName = { source: "missing", value: "", isMissing: true };
+    flags.needsReview = true;
+    flags.reviewReasons.push("पार्टी / ग्राहक का नाम बिल में नहीं मिला (मैन्युअल दर्ज करें)");
+  }
+
+  // 2. GSTIN Format Validation (15 alphanumeric characters)
+  const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+  const checkGst = (gstVal, fieldName, label) => {
+    if (!gstVal) {
+      flags.fieldSources[fieldName] = { source: "missing", value: "", isMissing: true };
+      return;
+    }
+    const clean = String(gstVal).replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    if (gstRegex.test(clean)) {
+      flags.fieldSources[fieldName] = { source: "extracted", value: clean, isValid: true };
+    } else {
+      flags.fieldSources[fieldName] = { source: "invalid", value: gstVal, isValid: false };
+      flags.needsReview = true;
+      flags.reviewReasons.push(`${label} अमान्य GST प्रारूप में है: ${gstVal}`);
+    }
+  };
+  checkGst(billData.gstin || billData.buyerGst, "gstin", "GSTIN");
+  if (billData.sellerGst) checkGst(billData.sellerGst, "sellerGst", "सप्लायर GST");
+  if (billData.buyerGst) checkGst(billData.buyerGst, "buyerGst", "खरीदार GST");
+
+  // 3. Bill Date Validation
+  const rawDate = billData.date || billData.billDate;
+  if (rawDate) {
+    const dObj = new Date(rawDate);
+    if (!isNaN(dObj.getTime())) {
+      flags.fieldSources.billDate = { source: "extracted", value: rawDate, isValid: true };
+    } else {
+      flags.fieldSources.billDate = { source: "invalid", value: rawDate, isValid: false };
+      flags.needsReview = true;
+      flags.reviewReasons.push(`तारीख अमान्य है: ${rawDate}`);
+    }
+  } else {
+    flags.fieldSources.billDate = { source: "missing", value: "", isMissing: true };
+  }
+
+  // 4. Invoice Number Validation
+  const invNo = (billData.invoiceNumber || "").trim();
+  if (invNo && invNo.length >= 2) {
+    flags.fieldSources.invoiceNumber = { source: "extracted", value: invNo, isMissing: false };
+  } else {
+    flags.fieldSources.invoiceNumber = { source: "missing", value: "", isMissing: true };
+  }
+
+  // 5. Line Items & Line-Level Mathematical Cross-Check (Quantity × Rate = Line Total)
+  const items = billData.parsedItems || billData.items || [];
+  let calculatedItemsSum = 0;
+
+  if (items.length === 0) {
+    flags.needsReview = true;
+    flags.reviewReasons.push("बिल में कोई भी सामान स्पष्ट रूप से नहीं मिला");
+  }
+
+  flags.itemValidations = items.map((it, idx) => {
+    const itName = (it.name || "").trim();
+    const qty = (it.quantity !== null && it.quantity !== undefined && !isNaN(it.quantity)) ? Number(it.quantity) : null;
+    const price = (it.price !== null && it.price !== undefined && !isNaN(it.price)) ? Number(it.price) : null;
+    const lineTotal = (it.total !== null && it.total !== undefined && !isNaN(it.total)) ? Number(it.total) : null;
+
+    let isMathValid = true;
+    let mathDiff = 0;
+    let expectedTotal = null;
+
+    if (qty !== null && price !== null && lineTotal !== null) {
+      expectedTotal = +(qty * price).toFixed(2);
+      mathDiff = Math.abs(expectedTotal - lineTotal);
+      if (mathDiff > 1.05) {
+        isMathValid = false;
+        flags.isMathValid = false;
+        flags.needsReview = true;
+        flags.reviewReasons.push(
+          `आइटम #${idx + 1} (${itName || "सामान"}): मात्रा (${qty}) × दर (₹${price}) = ₹${expectedTotal}, लेकिन बिल में ₹${lineTotal} लिखा है`
+        );
+      }
+    }
+
+    if (price === null || price === 0) {
+      flags.needsReview = true;
+      flags.reviewReasons.push(`आइटम #${idx + 1} (${itName || "सामान"}): दर (रेट) गायब है - मैन्युअल भरें`);
+    }
+
+    if (lineTotal !== null) {
+      calculatedItemsSum += lineTotal;
+    } else if (expectedTotal !== null) {
+      calculatedItemsSum += expectedTotal;
+    }
+
+    return {
+      index: idx,
+      name: itName,
+      source: itName ? "extracted" : "missing",
+      quantity: qty,
+      price: price,
+      total: lineTotal,
+      expectedTotal,
+      isMathValid,
+      mathDiff: +mathDiff.toFixed(2),
+      isPriceMissing: (price === null || price === 0)
+    };
+  });
+
+  // 6. Grand Total Reconciliation
+  const charges = billData.additionalCharges || [];
+  const chargesTotal = charges.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const roundOff = Number(billData.roundOff || 0);
+  const statedTotal = Number(billData.totalAmount || 0);
+
+  const subTotalBeforeTax = +(calculatedItemsSum + chargesTotal + roundOff).toFixed(2);
+  if (statedTotal > 0 && calculatedItemsSum > 0) {
+    const totalDiff = Math.abs(subTotalBeforeTax - statedTotal);
+    if (totalDiff > 2.05) {
+      flags.totalsMismatch = true;
+      flags.calculatedSubTotal = subTotalBeforeTax;
+      flags.statedTotal = statedTotal;
+      flags.grandTotalDifference = +totalDiff.toFixed(2);
+    }
+  }
+
+  return flags;
+};
+
+// ==================== INTELLIGENT AUTO AI VISION BILL SCANNER (Zero-Hallucination 2-Step Pipeline) ====================
 export const parseBillImage = async (req, res) => {
   try {
     const images = req.body?.images || (req.body?.image ? [req.body.image] : []);
@@ -667,28 +808,47 @@ export const parseBillImage = async (req, res) => {
     const openAiKey = req.body?.openaiApiKey || process.env.OPENAI_API_KEY;
     const geminiKey = req.body?.geminiApiKey || process.env.GEMINI_API_KEY;
 
-    const promptSystem = `You are a world-class AI retail invoice and handwritten slip (कच्ची पर्ची) parser specialized in Indian retail and wholesale shops.
-Extract every line item, quantity, unit, price, and party name with 100% precision.
-Decipher handwritten Hindi/English terms and exact product names (e.g., 'Emulsion 10 ltr', 'Apex Ultima 20L', 'Asian Paints Tractor', 'White Cement 50kg', 'Nut Bolt 8mm').
-Do NOT skip any line item. Calculate total accurately.
-
-Return STRICTLY a JSON object without markdown formatting:
+    // STRICT ZERO-HALLUCINATION SYSTEM PROMPT:
+    // AI MUST ONLY EXTRACT VALUES LITERALLY READABLE. NO GUESSING, NO PLACEHOLDERS, NO INVENTED PRODUCTS.
+    const promptSystem = `You are a literal, zero-hallucination OCR parser specialized in Indian retail and wholesale bills, tax invoices, and receipts.
+CRITICAL ZERO-HALLUCINATION RULES:
+1. ONLY extract values that are LITERALLY VISIBLE and readable in the provided image and grounded in the raw OCR text.
+2. If any field (partyName, invoiceNumber, date, price, quantity, HSN, bank details, carriage/freight) is missing, unclear, blurry, or unreadable, leave it null or empty string ("").
+3. NEVER infer, estimate, predict, guess, or invent a plausible value under any circumstance.
+4. Do NOT use outside training data to invent products (never invent paint, cement, or random hardware names).
+5. For line items: ONLY return items that are visibly printed/written on the bill. If no items are legible, return an empty array: "items": [].
+6. Every line item's price must be the literal rate printed. If missing, leave price as null.
+7. Return STRICTLY a valid JSON object without markdown fences:
 {
-  "partyName": "Customer or supplier name if mentioned, else ''",
-  "partyType": "customer" or "supplier",
-  "billType": "sale" or "purchase",
-  "date": "YYYY-MM-DD or readable date",
+  "partyName": string or null,
+  "partyType": "customer" | "supplier",
+  "billType": "sale" | "purchase",
+  "invoiceNumber": string or null,
+  "date": "YYYY-MM-DD or readable date" or null,
+  "gstin": string or null,
+  "sellerGst": string or null,
+  "buyerGst": string or null,
   "items": [
     {
-      "name": "Exact item name and specification as written",
-      "quantity": 1,
-      "unit": "Pcs",
-      "price": 2850,
-      "total": 2850
+      "name": string,
+      "hsn": string or null,
+      "quantity": number or null,
+      "unit": string or null,
+      "price": number or null,
+      "total": number or null
     }
   ],
-  "totalAmount": 2850,
-  "rawText": "Transcribed text"
+  "additionalCharges": [
+    { "name": string, "amount": number }
+  ],
+  "roundOff": number or null,
+  "totalAmount": number or null,
+  "bankDetails": {
+    "accountNo": string or null,
+    "ifsc": string or null,
+    "upiId": string or null
+  },
+  "rawText": string
 }`;
 
     // Fetch product catalog for tenant once to enable smart product matching & alias memory
@@ -728,7 +888,7 @@ Return STRICTLY a JSON object without markdown formatting:
           });
 
           if (scanRes && scanRes.scannedCount > 0) {
-            return {
+            const billResult = {
               ...scanRes,
               parsedItems: [
                 ...(scanRes.readyLines || []),
@@ -740,6 +900,14 @@ Return STRICTLY a JSON object without markdown formatting:
               partyType: scanRes.bill?.partyType || "customer",
               billType: scanRes.bill?.billType || "sale",
             };
+            const validation = validateExtractedBill(billResult);
+            return {
+              ...billResult,
+              fieldSources: validation.fieldSources,
+              validation,
+              needsReview: validation.needsReview,
+              reviewReasons: validation.reviewReasons
+            };
           }
         } catch (scanErr) {
           console.warn("[parseBillImage] Computer bill pipeline fallback:", scanErr.message);
@@ -747,8 +915,40 @@ Return STRICTLY a JSON object without markdown formatting:
       }
 
       // -------------------------------------------------------------
-      // PIPELINE B: HANDWRITTEN / KACHHI PARCHI (OpenAI + Gemini AI Vision)
+      // STEP 1: RAW OCR GROUNDING ENGINE (Extract Raw Text from Image)
+      // Extracts raw text tokens to ground AI Vision model & prevent hallucination
       // -------------------------------------------------------------
+      let rawOcrText = "";
+      try {
+        const buffer = Buffer.from(pureB64, "base64");
+        const tmpDir = os.tmpdir();
+        const filename = `ocr_ground_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.png`;
+        const filepath = path.join(tmpDir, filename);
+        fs.writeFileSync(filepath, buffer);
+        const worker = await createWorker("eng");
+        const { data: { text } } = await worker.recognize(filepath);
+        await worker.terminate();
+        try { fs.unlinkSync(filepath); } catch (e) {}
+        rawOcrText = text || "";
+      } catch (ocrErr) {
+        console.warn("[parseBillImage] Step 1 OCR Grounding note:", ocrErr.message);
+      }
+
+      // Parse metadata & tabular items from raw OCR text
+      const metaFromOcr = parseBillMetadata(rawOcrText);
+      const itemsFromOcr = parseLineItems(rawOcrText);
+
+      // -------------------------------------------------------------
+      // STEP 2: AI VISION MODEL WITH OCR GROUNDING CONTEXT
+      // -------------------------------------------------------------
+      const ocrContextSnippet = rawOcrText && rawOcrText.trim().length > 5
+        ? `\n\n[VERBATIM OCR GROUNDING TEXT FROM IMAGE - USE ONLY THESE TOKENS AND VISIBLE DETAILS]:\n${rawOcrText.trim()}\n[END OCR GROUNDING TEXT]`
+        : "";
+
+      const userPromptText = `Parse this bill/receipt image into structured JSON according to the strict zero-hallucination rules.
+Extract ONLY values that are literally visible in the image or grounded in the OCR text below.
+If any field is missing, unclear, or unreadable, leave it null or empty string ("").
+NEVER infer, guess, or invent products or prices.${ocrContextSnippet}`;
 
       // 1. Try OpenAI GPT-4o Mini First
       if (openAiKey) {
@@ -763,7 +963,7 @@ Return STRICTLY a JSON object without markdown formatting:
                 {
                   role: "user",
                   content: [
-                    { type: "text", text: "Parse this bill/receipt image into structured JSON items list:" },
+                    { type: "text", text: userPromptText },
                     { type: "image_url", image_url: { url: fullDataUri } }
                   ]
                 }
@@ -778,23 +978,61 @@ Return STRICTLY a JSON object without markdown formatting:
           const content = openAiRes.data?.choices?.[0]?.message?.content;
           if (content) {
             const parsed = JSON.parse(content);
-            const itemsList = (parsed.items || []).map(it => ({
-              name: it.name || "सामान (Item)",
-              quantity: Number(it.quantity) || 1,
-              unit: it.unit || "Pcs",
-              price: Number(it.price || it.rate) || 0,
-              total: Number(it.total) || +((Number(it.quantity) || 1) * (Number(it.price || it.rate) || 0)).toFixed(2)
-            }));
-            return {
+            const itemsList = (parsed.items || [])
+              .filter(it => it && it.name && typeof it.name === "string" && it.name.trim().length > 1)
+              .map(it => {
+                const qty = (it.quantity !== null && it.quantity !== undefined && !isNaN(it.quantity)) ? Number(it.quantity) : null;
+                const price = (it.price !== null && it.price !== undefined && !isNaN(it.price)) ? Number(it.price) : null;
+                const total = (it.total !== null && it.total !== undefined && !isNaN(it.total))
+                  ? Number(it.total)
+                  : (qty !== null && price !== null ? +(qty * price).toFixed(2) : null);
+                return {
+                  name: it.name.trim(),
+                  hsn: it.hsn ? String(it.hsn).trim() : (metaFromOcr.hsn || ""),
+                  quantity: qty,
+                  unit: it.unit || "Pcs",
+                  price: price,
+                  total: total,
+                  source: "extracted"
+                };
+              });
+
+            const mergedCharges = Array.isArray(parsed.additionalCharges) && parsed.additionalCharges.length > 0
+              ? parsed.additionalCharges
+              : (metaFromOcr.additionalCharges || []);
+
+            const extractedObj = {
               success: true,
               source: "openai-gpt-4o-mini",
-              partyName: parsed.partyName || "",
+              partyName: (parsed.partyName || metaFromOcr.partyName || "").trim(),
               partyType: parsed.partyType || "customer",
               billType: parsed.billType || "sale",
-              date: parsed.date || "",
+              date: parsed.date || metaFromOcr.billDate || "",
+              billDate: parsed.date || metaFromOcr.billDate || "",
+              invoiceNumber: parsed.invoiceNumber || metaFromOcr.invoiceNumber || "",
+              gstin: parsed.gstin || metaFromOcr.gstin || "",
+              sellerGst: parsed.sellerGst || metaFromOcr.sellerGst || "",
+              buyerGst: parsed.buyerGst || metaFromOcr.buyerGst || "",
+              challanNo: metaFromOcr.challanNo || "",
+              biltyNo: metaFromOcr.biltyNo || "",
+              vehicleNo: metaFromOcr.vehicleNo || "",
+              roundOff: parsed.roundOff !== null && parsed.roundOff !== undefined ? Number(parsed.roundOff) : (metaFromOcr.roundOff || 0),
+              bankDetails: parsed.bankDetails && Object.keys(parsed.bankDetails).length > 0 ? parsed.bankDetails : (metaFromOcr.bankDetails || {}),
+              additionalCharges: mergedCharges,
               parsedItems: itemsList,
-              totalAmount: Number(parsed.totalAmount) || itemsList.reduce((s, it) => s + it.total, 0),
-              rawText: parsed.rawText || content
+              totalAmount: parsed.totalAmount !== null && parsed.totalAmount !== undefined
+                ? Number(parsed.totalAmount)
+                : itemsList.reduce((s, it) => s + (Number(it.total) || 0), 0),
+              rawText: rawOcrText || (parsed.rawText || content)
+            };
+
+            const validation = validateExtractedBill(extractedObj);
+            return {
+              ...extractedObj,
+              fieldSources: validation.fieldSources,
+              validation,
+              needsReview: validation.needsReview,
+              reviewReasons: validation.reviewReasons
             };
           }
         } catch (oErr) {
@@ -810,27 +1048,69 @@ Return STRICTLY a JSON object without markdown formatting:
           try {
             const model = genAI.getGenerativeModel({ model: modelName });
             const imagePart = { inlineData: { data: pureB64, mimeType: mimeType } };
-            const result = await model.generateContent([promptSystem, imagePart]);
+            const result = await model.generateContent([
+              promptSystem,
+              userPromptText,
+              imagePart
+            ]);
             const respText = result.response.text();
             const cleanJson = respText.replace(/```json/gi, "").replace(/```/g, "").trim();
             const parsed = JSON.parse(cleanJson);
-            const itemsList = (parsed.items || []).map(it => ({
-              name: it.name || "सामान (Item)",
-              quantity: Number(it.quantity) || 1,
-              unit: it.unit || "Pcs",
-              price: Number(it.price || it.rate) || 0,
-              total: Number(it.total) || +((Number(it.quantity) || 1) * (Number(it.price || it.rate) || 0)).toFixed(2)
-            }));
-            return {
+            const itemsList = (parsed.items || [])
+              .filter(it => it && it.name && typeof it.name === "string" && it.name.trim().length > 1)
+              .map(it => {
+                const qty = (it.quantity !== null && it.quantity !== undefined && !isNaN(it.quantity)) ? Number(it.quantity) : null;
+                const price = (it.price !== null && it.price !== undefined && !isNaN(it.price)) ? Number(it.price) : null;
+                const total = (it.total !== null && it.total !== undefined && !isNaN(it.total))
+                  ? Number(it.total)
+                  : (qty !== null && price !== null ? +(qty * price).toFixed(2) : null);
+                return {
+                  name: it.name.trim(),
+                  hsn: it.hsn ? String(it.hsn).trim() : (metaFromOcr.hsn || ""),
+                  quantity: qty,
+                  unit: it.unit || "Pcs",
+                  price: price,
+                  total: total,
+                  source: "extracted"
+                };
+              });
+
+            const mergedCharges = Array.isArray(parsed.additionalCharges) && parsed.additionalCharges.length > 0
+              ? parsed.additionalCharges
+              : (metaFromOcr.additionalCharges || []);
+
+            const extractedObj = {
               success: true,
               source: modelName,
-              partyName: parsed.partyName || "",
+              partyName: (parsed.partyName || metaFromOcr.partyName || "").trim(),
               partyType: parsed.partyType || "customer",
               billType: parsed.billType || "sale",
-              date: parsed.date || "",
+              date: parsed.date || metaFromOcr.billDate || "",
+              billDate: parsed.date || metaFromOcr.billDate || "",
+              invoiceNumber: parsed.invoiceNumber || metaFromOcr.invoiceNumber || "",
+              gstin: parsed.gstin || metaFromOcr.gstin || "",
+              sellerGst: parsed.sellerGst || metaFromOcr.sellerGst || "",
+              buyerGst: parsed.buyerGst || metaFromOcr.buyerGst || "",
+              challanNo: metaFromOcr.challanNo || "",
+              biltyNo: metaFromOcr.biltyNo || "",
+              vehicleNo: metaFromOcr.vehicleNo || "",
+              roundOff: parsed.roundOff !== null && parsed.roundOff !== undefined ? Number(parsed.roundOff) : (metaFromOcr.roundOff || 0),
+              bankDetails: parsed.bankDetails && Object.keys(parsed.bankDetails).length > 0 ? parsed.bankDetails : (metaFromOcr.bankDetails || {}),
+              additionalCharges: mergedCharges,
               parsedItems: itemsList,
-              totalAmount: Number(parsed.totalAmount) || itemsList.reduce((s, it) => s + it.total, 0),
-              rawText: parsed.rawText || respText
+              totalAmount: parsed.totalAmount !== null && parsed.totalAmount !== undefined
+                ? Number(parsed.totalAmount)
+                : itemsList.reduce((s, it) => s + (Number(it.total) || 0), 0),
+              rawText: rawOcrText || (parsed.rawText || respText)
+            };
+
+            const validation = validateExtractedBill(extractedObj);
+            return {
+              ...extractedObj,
+              fieldSources: validation.fieldSources,
+              validation,
+              needsReview: validation.needsReview,
+              reviewReasons: validation.reviewReasons
             };
           } catch (gErr) {
             console.warn(`Gemini ${modelName} failed:`, gErr.message);
@@ -838,41 +1118,49 @@ Return STRICTLY a JSON object without markdown formatting:
         }
       }
 
-      // 3. Fallback Tesseract
-      const buffer = Buffer.from(pureB64, "base64");
-      const tmpDir = os.tmpdir();
-      const filename = `bill_${Date.now()}_${Math.random().toString(36).slice(2,6)}.png`;
-      const filepath = path.join(tmpDir, filename);
-      fs.writeFileSync(filepath, buffer);
-      const worker = await createWorker("eng");
-      const { data: { text } } = await worker.recognize(filepath);
-      await worker.terminate();
-      try { fs.unlinkSync(filepath); } catch(e){}
+      // -------------------------------------------------------------
+      // STEP 3: STRICT OCR-GROUNDED EXTRACTION (NO FAKE / DUMMY FALLBACKS)
+      // -------------------------------------------------------------
+      const fallbackItems = itemsFromOcr.map(it => ({
+        name: it.rawName,
+        hsn: it.hsn || "",
+        quantity: it.qty,
+        unit: it.unit || "Pcs",
+        price: it.rate,
+        total: it.amount,
+        source: "extracted"
+      }));
 
-      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      const itemsList = [];
-      let partyName = "";
-      for (const line of lines) {
-        if (/invoice|bill|date|total|tax|gstin/i.test(line)) continue;
-        const nums = line.match(/\d+[.,]?\d*/g) || [];
-        if (nums.length >= 1) {
-          const price = parseFloat(nums[nums.length - 1].replace(/,/g, "")) || 0;
-          const qty = nums.length >= 2 ? (parseFloat(nums[0]) || 1) : 1;
-          const name = line.replace(nums[nums.length - 1], "").replace(/\s+/g, " ").replace(/[^a-zA-Z0-9 \-]/g, "").trim();
-          if (name.length >= 2) {
-            itemsList.push({ name, quantity: qty, unit: "Pcs", price, total: +(qty * price).toFixed(2) });
-          }
-        }
-      }
-      return {
+      const finalObj = {
         success: true,
-        source: "tesseract-ocr",
-        partyName: partyName,
+        source: "tesseract-ocr-grounded",
+        partyName: (metaFromOcr.partyName || "").trim(),
         partyType: "customer",
         billType: "sale",
-        parsedItems: itemsList.length > 0 ? itemsList : [{ name: "हस्तलिखित सामान", quantity: 1, unit: "Pcs", price: 100, total: 100 }],
-        totalAmount: itemsList.reduce((s, it) => s + it.total, 0),
-        rawText: text
+        date: metaFromOcr.billDate || "",
+        billDate: metaFromOcr.billDate || "",
+        invoiceNumber: metaFromOcr.invoiceNumber || "",
+        gstin: metaFromOcr.gstin || "",
+        sellerGst: metaFromOcr.sellerGst || "",
+        buyerGst: metaFromOcr.buyerGst || "",
+        challanNo: metaFromOcr.challanNo || "",
+        biltyNo: metaFromOcr.biltyNo || "",
+        vehicleNo: metaFromOcr.vehicleNo || "",
+        roundOff: metaFromOcr.roundOff || 0,
+        bankDetails: metaFromOcr.bankDetails || {},
+        additionalCharges: metaFromOcr.additionalCharges || [],
+        parsedItems: fallbackItems, // STRICT: Empty array if unreadable! NO fake items!
+        totalAmount: fallbackItems.reduce((s, it) => s + it.total, 0),
+        rawText: rawOcrText
+      };
+
+      const validation = validateExtractedBill(finalObj);
+      return {
+        ...finalObj,
+        fieldSources: validation.fieldSources,
+        validation,
+        needsReview: validation.needsReview,
+        reviewReasons: validation.reviewReasons
       };
     };
 

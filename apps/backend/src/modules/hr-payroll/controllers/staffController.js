@@ -205,39 +205,37 @@ export const getPagarBookSummary = async (req, res) => {
     const allStaff = await Staff.find({ companyId: req.companyId, isActive: true }).sort({ name: 1 });
     const staffIds = allStaff.map(s => s._id);
 
-    // Fetch Attendance records for this month
-    const attendanceRecords = await Attendance.find({
-      staffId: { $in: staffIds },
-      date: { $gte: startDate, $lte: endDate }
-    }).sort({ updatedAt: -1, date: -1 });
-
-    // Fetch Staff Transactions (Advances, Overtime, Commission, Payments)
-    const transactions = await StaffTransaction.find({
+    // Fetch all active transactions for company
+    const allTransactions = await StaffTransaction.find({
       companyId: req.companyId,
-      date: { $gte: startDate, $lte: endDate },
       isDeleted: false
     }).sort({ date: -1 });
 
-    // Fetch prior transactions & attendance before this month to calculate cumulative previous balance
-    const priorTransactions = await StaffTransaction.find({
-      companyId: req.companyId,
-      date: { $lt: startDate },
-      isDeleted: false
-    }).sort({ date: -1 });
-
-    const priorAttendance = await Attendance.find({
-      staffId: { $in: staffIds },
-      date: { $lt: startDate }
+    // Fetch all attendance records for company staff
+    const allAttendance = await Attendance.find({
+      staffId: { $in: staffIds }
     }).sort({ updatedAt: -1, date: -1 });
 
+    const getTxMonthStr = (t) => {
+      if (t.forMonth && /^\d{4}-\d{2}$/.test(t.forMonth)) return t.forMonth;
+      const d = new Date(t.date || t.createdAt);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    };
+
+    const targetMonthStr = `${year}-${String(month).padStart(2, '0')}`;
     const todayStr = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toDateString();
 
     const staffSummaries = allStaff.map(s => {
       const staffIdStr = s._id.toString();
-      const staffAtt = attendanceRecords.filter(a => a.staffId.toString() === staffIdStr);
-      const staffTx = transactions.filter(t => t.staffId.toString() === staffIdStr);
+      const staffAtt = allAttendance.filter(a => a.staffId.toString() === staffIdStr);
+      const staffTx = allTransactions.filter(t => 
+        t.staffId.toString() === staffIdStr && getTxMonthStr(t) === targetMonthStr
+      );
+      const priorStaffTx = allTransactions.filter(t => 
+        t.staffId.toString() === staffIdStr && getTxMonthStr(t) < targetMonthStr
+      );
 
-      // Check today's status
+      // Check today status
       const todayDayNum = now.getDate();
       const todayMonthNum = now.getMonth() + 1;
       const todayYearNum = now.getFullYear();
@@ -312,12 +310,8 @@ export const getPagarBookSummary = async (req, res) => {
         monthlyEquivalent = monthlySalaryVal;
       }
 
-      // Cumulative Previous Balance (from all months prior to current month)
-      const priorStaffTx = priorTransactions.filter(t => t.staffId.toString() === staffIdStr);
-      const priorStaffAtt = priorAttendance.filter(a => a.staffId.toString() === staffIdStr);
-
-      let totalPriorEarned = 0;
-      // Loop through each prior month from joining date (or up to 12 months back)
+      // Cumulative Previous Balance (Month-by-Month Settlement from prior months)
+      let cumulativePreviousDue = 0;
       const joinDate = s.dateOfJoining ? new Date(s.dateOfJoining) : new Date(year, month - 2, 1);
       let curY = joinDate.getFullYear();
       let curM = joinDate.getMonth(); // 0-11
@@ -330,37 +324,69 @@ export const getPagarBookSummary = async (req, res) => {
       }
 
       while (curY < year || (curY === year && curM < (month - 1))) {
+        const pmMonthStr = `${curY}-${String(curM + 1).padStart(2, '0')}`;
         const pmDaysInMonth = new Date(curY, curM + 1, 0).getDate();
-        let pmPresent = 0;
-        let pmHalfDay = 0;
-        let pmAbsent = 0;
 
-        for (let day = 1; day <= pmDaysInMonth; day++) {
-          const match = priorStaffAtt.find(a => {
-            const ad = new Date(a.date);
-            return ad.getDate() === day && ad.getMonth() === curM && ad.getFullYear() === curY;
-          });
-          const rawSt = match ? match.status : 'present';
-          const st = (rawSt === 'half-day' || rawSt === 'halfday' || rawSt === 'half_day')
-            ? 'half_day'
-            : (rawSt === 'absent' || rawSt === 'leave')
-            ? 'absent'
-            : 'present';
+        const pmMonthAtt = staffAtt.filter(a => {
+          const ad = new Date(a.date);
+          return ad.getMonth() === curM && ad.getFullYear() === curY;
+        });
 
-          if (st === 'absent') pmAbsent++;
-          else if (st === 'half_day') pmHalfDay++;
-          else pmPresent++;
-        }
+        const pmTx = priorStaffTx.filter(t => getTxMonthStr(t) === pmMonthStr);
 
-        const pmWorked = pmPresent + (pmHalfDay * 0.5);
-        const pmPaidLeaves = Math.min(pmAbsent, allowedPaidLeaves);
-        const pmPayable = pmWorked + pmPaidLeaves;
+        // Only calculate if staff had attendance or transactions in this month
+        if (pmMonthAtt.length > 0 || pmTx.length > 0) {
+          let pmPresent = 0;
+          let pmHalfDay = 0;
+          let pmAbsent = 0;
 
-        if (isDaily) {
-          totalPriorEarned += Math.round(dailyRateVal * pmPayable);
-        } else {
-          const pmPerDay = pmDaysInMonth > 0 ? (monthlySalaryVal / pmDaysInMonth) : 0;
-          totalPriorEarned += Math.round(pmPerDay * pmPayable);
+          for (let day = 1; day <= pmDaysInMonth; day++) {
+            const match = pmMonthAtt.find(a => {
+              const ad = new Date(a.date);
+              const matchesUtc = ad.getUTCDate() === day && ad.getUTCMonth() === curM && ad.getUTCFullYear() === curY;
+              const matchesLocal = ad.getDate() === day && ad.getMonth() === curM && ad.getFullYear() === curY;
+              return matchesUtc || matchesLocal;
+            });
+            const rawSt = match ? match.status : (pmMonthAtt.length > 0 ? 'present' : 'absent');
+            const st = (rawSt === 'half-day' || rawSt === 'halfday' || rawSt === 'half_day')
+              ? 'half_day'
+              : (rawSt === 'absent' || rawSt === 'leave')
+              ? 'absent'
+              : 'present';
+
+            if (st === 'absent') pmAbsent++;
+            else if (st === 'half_day') pmHalfDay++;
+            else pmPresent++;
+          }
+
+          const pmWorked = pmPresent + (pmHalfDay * 0.5);
+          const pmPaidLeaves = Math.min(pmAbsent, allowedPaidLeaves);
+          const pmPayable = pmWorked + pmPaidLeaves;
+          const pmEarned = isDaily ? Math.round(dailyRateVal * pmPayable) : (pmDaysInMonth > 0 ? Math.round((monthlySalaryVal / pmDaysInMonth) * pmPayable) : 0);
+
+          const pmCredits = pmTx.filter(t => ['overtime', 'commission', 'incentive'].includes(t.type))
+            .reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
+
+          const seenPmDebits = new Set();
+          const pmDebits = pmTx
+            .filter(t => ['advance', 'salary_settlement', 'deduction', 'loan_emi', 'payment'].includes(t.type))
+            .reduce((sum, t) => {
+              const amt = Number(t.debit) || Number(t.amount) || 0;
+              const dStr = t.date ? new Date(t.date).toISOString().slice(0, 16) : '';
+              const key = `${amt}_${dStr}`;
+              if (seenPmDebits.has(key)) return sum;
+              seenPmDebits.add(key);
+              return sum + amt;
+            }, 0);
+
+          const pmNetDue = (pmEarned + pmCredits) - pmDebits;
+          // If month was settled or paid down, previous balance resets to NIL (0)
+          const isPmSettled = pmTx.some(t => t.type === 'salary_settlement' || t.salarySettlement) || pmNetDue <= 0;
+          if (isPmSettled) {
+            cumulativePreviousDue = 0;
+          } else {
+            cumulativePreviousDue = Math.max(0, cumulativePreviousDue + pmNetDue);
+          }
         }
 
         curM++;
@@ -370,25 +396,7 @@ export const getPagarBookSummary = async (req, res) => {
         }
       }
 
-      // Prior credits (overtime, commission, incentives)
-      const priorCredits = priorStaffTx
-        .filter(t => ['overtime', 'commission', 'incentive'].includes(t.type))
-        .reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
-
-      // Deduplicate identical prior debits (e.g. twin auto-sync entries)
-      const seenPriorDebits = new Set();
-      const priorDebits = priorStaffTx
-        .filter(t => ['advance', 'salary_settlement', 'deduction', 'loan_emi', 'payment'].includes(t.type))
-        .reduce((sum, t) => {
-          const amt = Number(t.debit) || Number(t.amount) || 0;
-          const dStr = t.date ? new Date(t.date).toISOString().slice(0, 16) : '';
-          const key = `${amt}_${dStr}`;
-          if (seenPriorDebits.has(key)) return sum;
-          seenPriorDebits.add(key);
-          return sum + amt;
-        }, 0);
-
-      const previousBalance = (totalPriorEarned + priorCredits) - priorDebits;
+      const previousBalance = cumulativePreviousDue;
 
       // Overtime & Commission for current month
       const otTransactions = staffTx.filter(t => t.type === 'overtime');
@@ -398,9 +406,10 @@ export const getPagarBookSummary = async (req, res) => {
       const commTransactions = staffTx.filter(t => t.type === 'commission' || t.type === 'incentive');
       const commEarnings = commTransactions.reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
 
-      // Advances & Payments Given in current month (deduplicating identical timestamp entries)
+      // Debits in current month (deduplicating identical timestamp entries)
       const seenCurDebits = new Set();
-      const advanceTransactions = staffTx.filter(t => ['advance', 'salary_settlement', 'deduction', 'loan_emi', 'payment'].includes(t.type))
+      const uniqueDebits = staffTx
+        .filter(t => ['advance', 'salary_settlement', 'deduction', 'loan_emi', 'payment'].includes(t.type))
         .filter(t => {
           const amt = Number(t.debit) || Number(t.amount) || 0;
           const dStr = t.date ? new Date(t.date).toISOString().slice(0, 16) : '';
@@ -409,11 +418,24 @@ export const getPagarBookSummary = async (req, res) => {
           seenCurDebits.add(key);
           return true;
         });
+
+      // Split debits into Advances/Loans vs Salary Payments (Settlements)
+      const advanceTransactions = uniqueDebits.filter(t => 
+        t.type === 'advance' || t.type === 'loan_emi' || t.type === 'deduction'
+      );
+      const salaryPaymentTransactions = uniqueDebits.filter(t => 
+        t.type === 'salary_settlement' || t.type === 'payment' || t.salarySettlement
+      );
+
       const totalAdvance = advanceTransactions.reduce((sum, t) => sum + (Number(t.debit) || Number(t.amount) || 0), 0);
+      const totalSalaryPaid = salaryPaymentTransactions.reduce((sum, t) => sum + (Number(t.debit) || Number(t.amount) || 0), 0);
+      const totalPaid = totalAdvance + totalSalaryPaid;
 
       const grossSalary = earnedSalary + otEarnings + commEarnings;
-      // Net payable carries forward previous balance, adds current earnings, subtracts current payments/advances
-      const netPayable = Math.max(0, previousBalance + grossSalary - totalAdvance);
+      // Net payable carries forward previous balance, adds current earnings, subtracts advances and salary payments
+      const totalDueBeforePayments = previousBalance + grossSalary - totalAdvance;
+      const netPayable = Math.max(0, totalDueBeforePayments - totalSalaryPaid);
+      const isSettled = (totalPaid > 0 && netPayable === 0) || (salaryPaymentTransactions.length > 0 && netPayable === 0);
 
       return {
         _id: s._id,
@@ -452,15 +474,28 @@ export const getPagarBookSummary = async (req, res) => {
         commissionEarnings: commEarnings,
         grossSalary,
         totalAdvance,
+        totalSalaryPaid,
+        totalPaid,
         previousBalance,
         netPayable,
+        isSettled,
         advancesList: advanceTransactions.map(t => ({
           _id: t._id,
           amount: t.debit || t.amount,
           date: t.date,
           paymentMode: t.paymentMode || 'cash',
           type: t.type,
-          notes: t.notes || 'Advance'
+          notes: t.notes || 'Advance',
+          forMonth: t.forMonth
+        })),
+        paymentsList: salaryPaymentTransactions.map(t => ({
+          _id: t._id,
+          amount: t.debit || t.amount,
+          date: t.date,
+          paymentMode: t.paymentMode || 'cash',
+          type: t.type || 'salary_settlement',
+          notes: t.notes || 'वेतन भुगतान',
+          forMonth: t.forMonth
         })),
         salesTarget: Number(s.salesTarget || 0),
         commissionPercent: Number(s.commissionPercent || 0),
@@ -472,9 +507,9 @@ export const getPagarBookSummary = async (req, res) => {
     const totalStaffCount = staffSummaries.length;
     const totalCompanySalaryEarned = staffSummaries.reduce((sum, s) => sum + s.earnedSalary, 0);
     const totalCompanyAdvanceGiven = staffSummaries.reduce((sum, s) => sum + s.totalAdvance, 0);
+    const totalCompanySalaryPaid = staffSummaries.reduce((sum, s) => sum + (s.totalSalaryPaid || 0), 0);
     const totalCompanyPreviousBalance = staffSummaries.reduce((sum, s) => sum + (s.previousBalance || 0), 0);
     const totalCompanyNetPayable = staffSummaries.reduce((sum, s) => sum + s.netPayable, 0);
-
     res.json({
       success: true,
       month,
@@ -484,6 +519,7 @@ export const getPagarBookSummary = async (req, res) => {
       totalStaffCount,
       totalCompanySalaryEarned,
       totalCompanyAdvanceGiven,
+      totalCompanySalaryPaid,
       totalCompanyPreviousBalance,
       totalCompanyNetPayable,
       staff: staffSummaries
@@ -559,10 +595,10 @@ export const quickMarkAttendance = async (req, res) => {
   }
 };
 
-// 1-Tap Record Staff Advance
+// 1-Tap Record Staff Advance or Salary Settlement
 export const addStaffAdvance = async (req, res) => {
   try {
-    const { staffId, amount, notes, date } = req.body;
+    const { staffId, amount, notes, date, type, forMonth, paymentMode, isSettlement } = req.body;
     if (!staffId || !amount || Number(amount) <= 0) {
       return res.status(400).json({ success: false, error: "Valid staff ID and amount are required" });
     }
@@ -570,37 +606,56 @@ export const addStaffAdvance = async (req, res) => {
     const staff = await Staff.findOne({ _id: staffId, companyId: req.companyId });
     if (!staff) return res.status(404).json({ success: false, error: "Staff not found" });
 
+    const isSalarySettlement = (type === 'salary_settlement' || isSettlement === true);
+    const txType = isSalarySettlement ? 'salary_settlement' : (type || 'advance');
+
+    const txDate = date ? new Date(date) : new Date();
+    const effectiveForMonth = forMonth && /^\d{4}-\d{2}$/.test(forMonth)
+      ? forMonth
+      : `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}`;
+
+    const defaultNotes = isSalarySettlement 
+      ? `वेतन भुगतान (${effectiveForMonth})` 
+      : (type === 'loan' ? 'स्टाफ लोन' : 'Advance Payment');
+
     const advanceTx = new StaffTransaction({
       staffId,
       companyId: req.companyId,
-      type: 'advance',
-      date: date ? new Date(date) : new Date(),
+      type: txType,
+      date: txDate,
       debit: Number(amount),
       credit: 0,
-      notes: (notes || 'Advance Payment').trim()
+      notes: (notes || defaultNotes).trim(),
+      forMonth: effectiveForMonth,
+      paymentMode: (paymentMode || 'cash').toLowerCase(),
+      salarySettlement: isSalarySettlement
     });
 
     await advanceTx.save();
 
     // Auto-record as Shop Expense (Operating) under Salary category for 2-way sync
     try {
+      const expTitle = isSalarySettlement 
+        ? `वेतन भुगतान - ${staff.name}` 
+        : `स्टाफ एडवांस - ${staff.name}`;
+
       const linkedExpense = await Expense.create({
         companyId: req.companyId,
-        title: `स्टाफ एडवांस - ${staff.name}`,
+        title: expTitle,
         amount: Number(amount),
         category: "Salary",
         expenseType: "operating",
         familyMember: "",
-        date: date ? new Date(date) : new Date(),
-        paymentMethod: (req.body.paymentMode || 'cash').toLowerCase(),
-        description: `PagarBook से दर्ज एडवांस: ${staff.name} (${(notes || 'एडवांस भुगतान').trim()})`,
+        date: txDate,
+        paymentMethod: (paymentMode || 'cash').toLowerCase(),
+        description: `PagarBook से दर्ज ${isSalarySettlement ? 'वेतन भुगतान' : 'एडवांस'}: ${staff.name} (${(notes || defaultNotes).trim()}) [माह: ${effectiveForMonth}]`,
         staffId: staff._id,
         staffTransactionId: advanceTx._id
       });
       advanceTx.expenseId = linkedExpense._id;
       await advanceTx.save();
     } catch (expErr) {
-      console.warn("Auto shop expense creation warning for staff advance:", expErr.message);
+      console.warn("Auto shop expense creation warning for staff advance/settlement:", expErr.message);
     }
 
     // Update staff balance (Advance reduces net payable)
@@ -608,7 +663,11 @@ export const addStaffAdvance = async (req, res) => {
     staff.updatedAt = new Date();
     await staff.save();
 
-    res.status(201).json({ success: true, message: `₹${amount} एडवांस सफलतापूर्वक दर्ज हुआ!`, transaction: advanceTx });
+    res.status(201).json({ 
+      success: true, 
+      message: `₹${amount} ${isSalarySettlement ? 'वेतन भुगतान' : 'एडवांस'} सफलतापूर्वक दर्ज हुआ!`, 
+      transaction: advanceTx 
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -686,28 +745,46 @@ export const addStaffCommission = async (req, res) => {
 
 export const addPayment = async (req, res) => {
   try {
-    const { staffId, amount, paymentType, notes } = req.body;
-    const staff = await Staff.findById(staffId);
+    const { staffId, amount, paymentType, notes, forMonth, paymentMode, date } = req.body;
+    const staff = await Staff.findOne({ _id: staffId, companyId: req.companyId });
     if (!staff) return res.status(404).json({ message: "Staff not found" });
 
     let debit = 0, credit = 0;
-    if (['advance', 'salary_settlement', 'deduction'].includes(paymentType)) {
-      debit = amount;
-      staff.balance -= amount;
-    } else if (paymentType === 'incentive' || paymentType === 'commission') {
-      credit = amount;
-      staff.balance += amount;
+    if (['advance', 'salary_settlement', 'deduction', 'loan_emi', 'payment'].includes(paymentType)) {
+      debit = Number(amount);
+      staff.balance -= debit;
+    } else if (paymentType === 'incentive' || paymentType === 'commission' || paymentType === 'overtime') {
+      credit = Number(amount);
+      staff.balance += credit;
     }
 
-    const transaction = new StaffTransaction({ staffId, companyId: req.companyId, type: paymentType, date: new Date(), debit, credit, notes });
+    const txDate = date ? new Date(date) : new Date();
+    const isSalarySettlement = (paymentType === 'salary_settlement' || req.body.salarySettlement === true);
+    const effectiveForMonth = forMonth && /^\d{4}-\d{2}$/.test(forMonth)
+      ? forMonth
+      : `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}`;
+
+    const transaction = new StaffTransaction({ 
+      staffId, 
+      companyId: req.companyId, 
+      type: paymentType, 
+      date: txDate, 
+      debit, 
+      credit, 
+      notes,
+      forMonth: effectiveForMonth,
+      paymentMode: (paymentMode || req.body.paymentMode || 'cash').toLowerCase(),
+      salarySettlement: isSalarySettlement
+    });
     await transaction.save();
 
-    // 2-Way Sync: Create linked Expense for debit transactions (advance/salary/deduction)
+    // 2-Way Sync: Create linked Expense for debit transactions
     if (debit > 0) {
       try {
         const typeLabels = {
           advance: 'स्टाफ एडवांस',
           salary_settlement: 'वेतन भुगतान',
+          payment: 'वेतन भुगतान',
           deduction: 'स्टाफ कटौती'
         };
         const linkedExpense = await Expense.create({
@@ -717,9 +794,9 @@ export const addPayment = async (req, res) => {
           category: "Salary",
           expenseType: "operating",
           familyMember: "",
-          date: new Date(),
-          paymentMethod: (req.body.paymentMode || 'cash').toLowerCase(),
-          description: `PagarBook भुगतान: ${staff.name} (${(notes || paymentType).trim()})`,
+          date: txDate,
+          paymentMethod: (paymentMode || req.body.paymentMode || 'cash').toLowerCase(),
+          description: `PagarBook भुगतान: ${staff.name} (${(notes || paymentType).trim()}) [माह: ${effectiveForMonth}]`,
           staffId: staff._id,
           staffTransactionId: transaction._id
         });

@@ -3848,76 +3848,105 @@ function MobileVyaparAppContent() {
       } else if (res?.data?.success && res.data.parsedItems) {
         rawResults = [res.data];
       } else {
-        // Fallback for each file
+        // STRICT ZERO-GUESSING: If scan failed or unreadable, NEVER generate fake items or dummy party!
         rawResults = base64List.map((b64, idx) => ({
-          success: true,
-          partyName: ocrBillType === 'sale' ? `कच्ची पर्ची ग्राहक ${idx + 1}` : "सप्लायर",
+          success: false,
+          partyName: "",
           billType: ocrBillType,
-          parsedItems: [{ name: "सामान (Item)", quantity: 1, unit: "Pcs", price: 100, total: 100 }],
-          totalAmount: 100
+          parsedItems: [],
+          totalAmount: 0,
+          needsReview: true,
+          reviewReasons: ["बिल से सामान या पार्टी का विवरण नहीं पढ़ा जा सका। कृपया स्पष्ट फोटो दोबारा अपलोड करें या विवरण मैन्युअल दर्ज करें।"],
+          fieldSources: {
+            partyName: { source: "missing", value: "", isMissing: true },
+            billDate: { source: "missing", value: "", isMissing: true },
+            invoiceNumber: { source: "missing", value: "", isMissing: true }
+          }
         }));
       }
 
-      // Process each bill with 1600+ Inventory Catalog Fuzzy Matching
+      // Process each bill with STRICT Zero-Hallucination & Exact/Alias Matching ONLY
       const processedBatch = rawResults.map((rawBill, billIdx) => {
         const extractedItems = rawBill.parsedItems || [];
         const processedItems = extractedItems.map((it, itemIdx) => {
           const rawName = (it.name || '').trim();
-          const rawPrice = Number(it.price || it.rate) || 0;
-          const rawQty = Number(it.quantity || it.qty) || 1;
+          const rawPrice = (it.price !== null && it.price !== undefined && !isNaN(it.price)) ? Number(it.price) : 0;
+          const rawQty = (it.quantity !== null && it.quantity !== undefined && !isNaN(it.quantity)) ? Number(it.quantity) : 1;
+          const rawTotal = (it.total !== null && it.total !== undefined && !isNaN(it.total)) ? Number(it.total) : null;
 
-          // 1. Check if backend scanner pipeline already matched an item with high confidence
+          // 1. Backend scanner matched item
           let matchedItem = null;
           if (it.productId) {
             matchedItem = items.find(ci => String(ci._id || ci.id) === String(it.productId));
           }
 
-          // 2. Exact or Alias match from local catalog
-          if (!matchedItem) {
+          // 2. Strict Exact or Saved Alias match from local catalog ONLY (NO loose 3-letter token guessing)
+          if (!matchedItem && rawName) {
             matchedItem = items.find(catItem => {
-              const catName = (catItem.name || '').toLowerCase();
-              const pName = rawName.toLowerCase();
+              const catName = (catItem.name || '').toLowerCase().trim();
+              const pName = rawName.toLowerCase().trim();
               if (catName === pName) return true;
-              if (Array.isArray(catItem.aliases) && catItem.aliases.some(a => String(a).toLowerCase() === pName)) return true;
+              if (Array.isArray(catItem.aliases) && catItem.aliases.some(a => String(a).toLowerCase().trim() === pName)) return true;
               return false;
             });
           }
 
-          // 3. Fallback token-based match
-          if (!matchedItem) {
-            matchedItem = items.find(catItem => {
-              const catName = (catItem.name || '').toLowerCase();
-              const pName = rawName.toLowerCase();
-              const tokens = pName.split(/\s+/).filter(t => t.length >= 3);
-              return tokens.length > 0 && tokens.some(t => catName.includes(t));
-            });
-          }
+          // STRICT ZERO-GUESSING: Never fabricate 100 as price! If price not in bill, leave 0 or catalog price
+          const finalPrice = rawPrice > 0 ? rawPrice : (matchedItem ? (matchedItem.sellingPrice || matchedItem.salePrice || 0) : 0);
+          const finalTotal = rawTotal !== null && rawTotal > 0 ? rawTotal : +(rawQty * finalPrice).toFixed(2);
 
-          const finalPrice = rawPrice > 0 ? rawPrice : (matchedItem ? (matchedItem.sellingPrice || matchedItem.salePrice) : 100);
-          const finalTotal = +(rawQty * finalPrice).toFixed(2);
+          // Mathematical cross-check: Qty × Rate = Total
+          const expectedLineTotal = +(rawQty * finalPrice).toFixed(2);
+          const isMathValid = (rawQty > 0 && finalPrice > 0 && finalTotal > 0)
+            ? Math.abs(expectedLineTotal - finalTotal) <= 1.05
+            : true;
 
           return {
             id: matchedItem?.id || matchedItem?._id || `scanned-${Date.now()}-${billIdx}-${itemIdx}`,
             productId: matchedItem?._id || matchedItem?.id || null,
-            name: matchedItem ? matchedItem.name : (rawName || `सामान ${itemIdx + 1}`),
+            // STRICT: Keep verbatim name printed on the bill, never overwrite with random catalog item
+            name: rawName || (matchedItem ? matchedItem.name : ""),
             rawScannedName: rawName,
             hsn: it.hsn || matchedItem?.hsnCode || "",
             qty: rawQty,
             unit: it.unit || (matchedItem?.unit || "Pcs"),
             price: finalPrice,
             total: finalTotal,
-            confidence: it.confidence || (matchedItem ? 90 : 0),
-            matchType: it.matchType || (matchedItem ? 'catalog-match' : 'no-match'),
+            expectedLineTotal,
+            isMathValid,
+            isPriceMissing: (finalPrice === 0),
+            source: it.source || (rawName ? 'extracted' : 'missing'),
+            confidence: it.confidence || (matchedItem ? 95 : 80),
+            matchType: it.matchType || (matchedItem ? 'catalog-match' : 'verbatim-scanned'),
             candidates: it.candidates || [],
             matchedCatalogItem: matchedItem || null
           };
         });
 
-        const detectedParty = rawBill.partyName?.trim() || (ocrBillType === 'sale' ? (files.length > 1 ? `पर्ची ग्राहक ${billIdx + 1}` : "कच्ची पर्ची ग्राहक") : "सप्लायर");
+        // STRICT: Never fabricate "कच्ची पर्ची ग्राहक" or "सप्लायर" - leave empty if not on bill!
+        const detectedParty = (rawBill.partyName || "").trim();
         const charges = rawBill.additionalCharges || [];
         const chargesTotal = charges.reduce((s, c) => s + (Number(c.amount) || 0), 0);
         const roundOffVal = Number(rawBill.roundOff || 0);
-        const calculatedTotal = +(processedItems.reduce((sum, it) => sum + it.total, 0) + chargesTotal + roundOffVal).toFixed(2);
+        const calculatedTotal = rawBill.totalAmount > 0
+          ? Number(rawBill.totalAmount)
+          : +(processedItems.reduce((sum, it) => sum + it.total, 0) + chargesTotal + roundOffVal).toFixed(2);
+
+        // Validation review reasons aggregation
+        const reviewReasons = Array.isArray(rawBill.reviewReasons) ? [...rawBill.reviewReasons] : [];
+        if (!detectedParty) {
+          reviewReasons.unshift("पार्टी / ग्राहक का नाम बिल में नहीं मिला (मैन्युअल दर्ज करें)");
+        }
+        processedItems.forEach((it, idx) => {
+          if (it.isPriceMissing) {
+            reviewReasons.push(`आइटम #${idx + 1} (${it.name || "सामान"}): दर (रेट) दर्ज करें`);
+          }
+          if (!it.isMathValid) {
+            reviewReasons.push(`आइटम #${idx + 1} (${it.name}): मात्रा (${it.qty}) × दर (₹${it.price}) = ₹${it.expectedLineTotal} ≠ कुल (₹${it.total})`);
+          }
+        });
+
+        const needsReview = Boolean(rawBill.needsReview || reviewReasons.length > 0 || processedItems.length === 0);
 
         return {
           id: `batch-bill-${Date.now()}-${billIdx}`,
@@ -3938,7 +3967,11 @@ function MobileVyaparAppContent() {
           paymentMode: "CASH",
           items: processedItems,
           imagePreview: base64List[billIdx] || null,
-          totalAmount: calculatedTotal
+          totalAmount: calculatedTotal,
+          fieldSources: rawBill.fieldSources || {},
+          validation: rawBill.validation || {},
+          needsReview,
+          reviewReasons
         };
       });
 
@@ -6661,10 +6694,35 @@ function MobileVyaparAppContent() {
             {/* ACTIVE BILL EDIT FORM */}
             {scannedBillsBatch[activeScannedIndex] && (
               <div className="space-y-3">
+                {/* REVIEW VERIFICATION CHECKLIST (Alerts if fields were missing or math discrepancy) */}
+                {scannedBillsBatch[activeScannedIndex].reviewReasons?.length > 0 && (
+                  <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-2xl space-y-1">
+                    <span className="text-[11px] font-black text-amber-900 flex items-center gap-1.5">
+                      ⚠️ बिल सत्यापन सूचना ({scannedBillsBatch[activeScannedIndex].reviewReasons.length} जांच बाकी):
+                    </span>
+                    <ul className="text-[10px] text-amber-800 space-y-0.5 list-disc pl-4 font-semibold">
+                      {scannedBillsBatch[activeScannedIndex].reviewReasons.map((reason, rIdx) => (
+                        <li key={rIdx}>{reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 {/* Party & Payment Details Card */}
                 <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-600">पार्टी / ग्राहक का नाम:</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-slate-600">पार्टी / ग्राहक का नाम:</span>
+                      {scannedBillsBatch[activeScannedIndex].partyName ? (
+                        <span className="text-[9px] font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                          ✓ बिल से पढ़ा
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-extrabold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                          ⚠️ बिल में नहीं मिला (मैन्युअल भरें)
+                        </span>
+                      )}
+                    </div>
                     <div className="flex gap-1.5 text-[10px] font-bold">
                       <button 
                         onClick={() => handleUpdateActiveBillField('billType', 'sale')}
@@ -6686,8 +6744,10 @@ function MobileVyaparAppContent() {
                       type="text" 
                       value={scannedBillsBatch[activeScannedIndex].partyName}
                       onChange={(e) => handleUpdateActiveBillField('partyName', e.target.value)}
-                      placeholder="पार्टी / फर्म का नाम..."
-                      className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-indigo-600"
+                      placeholder="पार्टी / फर्म का नाम (अनिवार्य)..."
+                      className={`w-full p-2 bg-white border rounded-xl text-xs font-bold text-[#0F172A] outline-none ${
+                        !scannedBillsBatch[activeScannedIndex].partyName ? 'border-amber-400 bg-amber-50/20 focus:border-amber-600' : 'border-slate-200 focus:border-indigo-600'
+                      }`}
                     />
                     <input 
                       type="tel" 
@@ -6698,10 +6758,17 @@ function MobileVyaparAppContent() {
                     />
                   </div>
 
-                  {/* Bill Date, Invoice No & GSTIN extracted from bill */}
+                  {/* Bill Date, Invoice No & GSTIN extracted from bill with Provenance Badges */}
                   <div className="grid grid-cols-3 gap-1.5 text-[10px]">
                     <div className="bg-white p-1.5 rounded-xl border border-slate-200">
-                      <span className="text-slate-400 block font-semibold text-[9px]">📅 तारीख</span>
+                      <div className="flex items-center justify-between pb-0.5">
+                        <span className="text-slate-400 font-semibold text-[9px]">📅 तारीख</span>
+                        {scannedBillsBatch[activeScannedIndex].billDate ? (
+                          <span className="text-[8px] font-bold text-emerald-600">✓ बिल</span>
+                        ) : (
+                          <span className="text-[8px] font-bold text-amber-600">⚠️ रिक्त</span>
+                        )}
+                      </div>
                       <input 
                         type="text" 
                         value={scannedBillsBatch[activeScannedIndex].billDate || ''} 
@@ -6711,7 +6778,14 @@ function MobileVyaparAppContent() {
                       />
                     </div>
                     <div className="bg-white p-1.5 rounded-xl border border-slate-200">
-                      <span className="text-slate-400 block font-semibold text-[9px]">🧾 बिल सं.</span>
+                      <div className="flex items-center justify-between pb-0.5">
+                        <span className="text-slate-400 font-semibold text-[9px]">🧾 बिल सं.</span>
+                        {scannedBillsBatch[activeScannedIndex].billNumber ? (
+                          <span className="text-[8px] font-bold text-emerald-600">✓ बिल</span>
+                        ) : (
+                          <span className="text-[8px] font-bold text-amber-600">⚠️ रिक्त</span>
+                        )}
+                      </div>
                       <input 
                         type="text" 
                         value={scannedBillsBatch[activeScannedIndex].billNumber || ''} 
@@ -6721,7 +6795,14 @@ function MobileVyaparAppContent() {
                       />
                     </div>
                     <div className="bg-white p-1.5 rounded-xl border border-slate-200">
-                      <span className="text-slate-400 block font-semibold text-[9px]">🏛️ GSTIN</span>
+                      <div className="flex items-center justify-between pb-0.5">
+                        <span className="text-slate-400 font-semibold text-[9px]">🏛️ GSTIN</span>
+                        {scannedBillsBatch[activeScannedIndex].gstin ? (
+                          <span className="text-[8px] font-bold text-emerald-600">✓ बिल</span>
+                        ) : (
+                          <span className="text-[8px] font-bold text-slate-400">वैकल्पिक</span>
+                        )}
+                      </div>
                       <input 
                         type="text" 
                         value={scannedBillsBatch[activeScannedIndex].gstin || ''} 
@@ -6809,124 +6890,156 @@ function MobileVyaparAppContent() {
                   </div>
 
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                    {scannedBillsBatch[activeScannedIndex].items.map((item, itemIdx) => (
-                      <div key={item.id || itemIdx} className="p-2.5 bg-slate-50 hover:bg-slate-100/80 rounded-2xl border border-slate-200 space-y-1.5 transition">
-                        <div className="flex items-center justify-between gap-2">
-                          <input 
-                            type="text"
-                            value={item.name}
-                            onChange={(e) => handleUpdateActiveBillItem(itemIdx, 'name', e.target.value)}
-                            placeholder="सामान का नाम..."
-                            className="flex-1 bg-white px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-[#0F172A] outline-none"
-                          />
-                          <button 
-                            onClick={() => handleRemoveActiveBillItem(itemIdx)}
-                            className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-
-                        {/* Match Status Badge & Memory Link */}
-                        <div className="flex items-center justify-between gap-1 text-[10px]">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {item.matchedCatalogItem ? (
-                              <div className="flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                                <CheckCircle size={10} /> 
-                                <span>दुकान से मैच्ड: <strong>{item.matchedCatalogItem.name}</strong></span>
-                                {item.confidence ? <span className="opacity-75">({item.confidence}%)</span> : null}
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1 font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                                <span>⚠️ नया सामान (दुकान में नहीं मिला)</span>
-                              </div>
-                            )}
-                            {item.hsn ? (
-                              <span className="font-mono bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded text-[9px] font-bold">
-                                HSN: {item.hsn}
-                              </span>
-                            ) : null}
+                    {scannedBillsBatch[activeScannedIndex].items.length === 0 ? (
+                      <div className="p-4 bg-amber-50 border border-dashed border-amber-300 rounded-2xl text-center space-y-1">
+                        <p className="text-xs font-bold text-amber-900">⚠️ बिल से कोई सामान नहीं पढ़ा जा सका</p>
+                        <p className="text-[10px] text-amber-700">फोटो धुंधली या बहुत छोटी हो सकती है। कृपया ऊपर "+ सामान जोड़ें" बटन दबाकर सामान दर्ज करें।</p>
+                      </div>
+                    ) : (
+                      scannedBillsBatch[activeScannedIndex].items.map((item, itemIdx) => (
+                        <div key={item.id || itemIdx} className={`p-2.5 rounded-2xl border space-y-1.5 transition ${
+                          !item.isMathValid || item.isPriceMissing ? 'bg-rose-50/40 border-rose-200' : 'bg-slate-50 hover:bg-slate-100/80 border-slate-200'
+                        }`}>
+                          <div className="flex items-center justify-between gap-2">
+                            <input 
+                              type="text"
+                              value={item.name}
+                              onChange={(e) => handleUpdateActiveBillItem(itemIdx, 'name', e.target.value)}
+                              placeholder="सामान का नाम..."
+                              className="flex-1 bg-white px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-[#0F172A] outline-none"
+                            />
+                            <button 
+                              onClick={() => handleRemoveActiveBillItem(itemIdx)}
+                              className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer"
+                            >
+                              <Trash2 size={14} />
+                            </button>
                           </div>
 
-                          {/* Quick Link/Search Dropdown to link to existing catalog item */}
-                          <select
-                            value={item.matchedCatalogItem?._id || item.matchedCatalogItem?.id || ""}
-                            onChange={async (e) => {
-                              const chosenId = e.target.value;
-                              if (!chosenId) return;
-                              const chosenProduct = items.find(ci => String(ci._id || ci.id) === String(chosenId));
-                              if (chosenProduct) {
-                                handleUpdateActiveBillItem(itemIdx, 'name', chosenProduct.name);
-                                handleUpdateActiveBillItem(itemIdx, 'price', chosenProduct.sellingPrice || chosenProduct.salePrice || item.price);
-                                
-                                // Auto-learn Alias memory in backend!
-                                const scannedAlias = item.rawScannedName || item.name;
-                                if (scannedAlias && scannedAlias !== chosenProduct.name) {
-                                  try {
-                                    await api.post('/api/billing/link-item-alias', {
-                                      productId: chosenProduct._id || chosenProduct.id,
-                                      alias: scannedAlias,
-                                      keepName: "old"
-                                    });
-                                  } catch (aliasErr) {
-                                    console.warn("Alias learning note:", aliasErr.message);
+                          {/* Match Status Badge, Math Verification & Provenance */}
+                          <div className="flex items-center justify-between gap-1 text-[10px] flex-wrap">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {/* Provenance Badge */}
+                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-0.5">
+                                ✓ बिल से पढ़ा
+                              </span>
+
+                              {/* Price Missing Alert */}
+                              {item.isPriceMissing && (
+                                <span className="text-[9px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-300">
+                                  ⚠️ दर (रेट) भरें
+                                </span>
+                              )}
+
+                              {/* Math Discrepancy Alert */}
+                              {!item.isMathValid && (
+                                <span className="text-[9px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-300">
+                                  ❌ मात्रा × दर (₹{item.expectedLineTotal}) ≠ कुल (₹{item.total})
+                                </span>
+                              )}
+
+                              {item.matchedCatalogItem ? (
+                                <div className="flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                  <CheckCircle size={10} /> 
+                                  <span>मैच्ड: <strong>{item.matchedCatalogItem.name}</strong></span>
+                                  {item.confidence ? <span className="opacity-75">({item.confidence}%)</span> : null}
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1 font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-[9px]">
+                                  <span>बिल का मूल नाम</span>
+                                </div>
+                              )}
+                              {item.hsn ? (
+                                <span className="font-mono bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded text-[9px] font-bold">
+                                  HSN: {item.hsn}
+                                </span>
+                              ) : null}
+                            </div>
+
+                            {/* Quick Link Dropdown */}
+                            <select
+                              value={item.matchedCatalogItem?._id || item.matchedCatalogItem?.id || ""}
+                              onChange={async (e) => {
+                                const chosenId = e.target.value;
+                                if (!chosenId) return;
+                                const chosenProduct = items.find(ci => String(ci._id || ci.id) === String(chosenId));
+                                if (chosenProduct) {
+                                  handleUpdateActiveBillItem(itemIdx, 'name', chosenProduct.name);
+                                  handleUpdateActiveBillItem(itemIdx, 'price', chosenProduct.sellingPrice || chosenProduct.salePrice || item.price);
+                                  
+                                  const scannedAlias = item.rawScannedName || item.name;
+                                  if (scannedAlias && scannedAlias !== chosenProduct.name) {
+                                    try {
+                                      await api.post('/api/billing/link-item-alias', {
+                                        productId: chosenProduct._id || chosenProduct.id,
+                                        alias: scannedAlias,
+                                        keepName: "old"
+                                      });
+                                    } catch (aliasErr) {
+                                      console.warn("Alias learning note:", aliasErr.message);
+                                    }
                                   }
                                 }
-                              }
-                            }}
-                            className="text-[10px] bg-white border border-slate-200 text-slate-700 font-bold px-1.5 py-0.5 rounded outline-none max-w-[170px] truncate"
-                          >
-                            <option value="">🔗 दुकान के सामान से जोड़ें...</option>
-                            {items.slice(0, 50).map(catIt => (
-                              <option key={catIt._id || catIt.id} value={catIt._id || catIt.id}>
-                                {catIt.name} (₹{catIt.sellingPrice || catIt.salePrice || 0})
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="flex items-center justify-between gap-2">
-                          {/* Qty Stepper */}
-                          <div className="flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden">
-                            <button 
-                              onClick={() => handleUpdateActiveBillItem(itemIdx, 'qty', Math.max(1, item.qty - 1))}
-                              className="w-7 h-7 flex items-center justify-center font-bold text-xs text-slate-600 hover:bg-slate-100 cursor-pointer"
+                              }}
+                              className="text-[10px] bg-white border border-slate-200 text-slate-700 font-bold px-1.5 py-0.5 rounded outline-none max-w-[150px] truncate"
                             >
-                              -
-                            </button>
-                            <input 
-                              type="number" 
-                              value={item.qty}
-                              onChange={(e) => handleUpdateActiveBillItem(itemIdx, 'qty', e.target.value)}
-                              className="w-10 text-center font-bold text-xs text-[#0F172A] outline-none bg-transparent"
-                            />
-                            <button 
-                              onClick={() => handleUpdateActiveBillItem(itemIdx, 'qty', item.qty + 1)}
-                              className="w-7 h-7 flex items-center justify-center font-bold text-xs text-slate-600 hover:bg-slate-100 cursor-pointer"
-                            >
-                              +
-                            </button>
+                              <option value="">🔗 दुकान आइटम से जोड़ें...</option>
+                              {items.slice(0, 50).map(catIt => (
+                                <option key={catIt._id || catIt.id} value={catIt._id || catIt.id}>
+                                  {catIt.name} (₹{catIt.sellingPrice || catIt.salePrice || 0})
+                                </option>
+                              ))}
+                            </select>
                           </div>
 
-                          {/* Unit Price */}
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-500">दर ₹</span>
-                            <input 
-                              type="number" 
-                              value={item.price}
-                              onChange={(e) => handleUpdateActiveBillItem(itemIdx, 'price', e.target.value)}
-                              className="w-20 bg-white px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-[#0F172A] outline-none text-right"
-                            />
-                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            {/* Qty Stepper */}
+                            <div className="flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden">
+                              <button 
+                                onClick={() => handleUpdateActiveBillItem(itemIdx, 'qty', Math.max(1, item.qty - 1))}
+                                className="w-7 h-7 flex items-center justify-center font-bold text-xs text-slate-600 hover:bg-slate-100 cursor-pointer"
+                              >
+                                -
+                              </button>
+                              <input 
+                                type="number" 
+                                value={item.qty}
+                                onChange={(e) => handleUpdateActiveBillItem(itemIdx, 'qty', e.target.value)}
+                                className="w-10 text-center font-bold text-xs text-[#0F172A] outline-none bg-transparent"
+                              />
+                              <button 
+                                onClick={() => handleUpdateActiveBillItem(itemIdx, 'qty', item.qty + 1)}
+                                className="w-7 h-7 flex items-center justify-center font-bold text-xs text-slate-600 hover:bg-slate-100 cursor-pointer"
+                              >
+                                +
+                              </button>
+                            </div>
 
-                          {/* Line Total */}
-                          <div className="text-right min-w-[70px]">
-                            <span className="text-[10px] text-slate-400 block">कुल</span>
-                            <span className="text-xs font-black text-emerald-600">₹ {Number(item.total).toLocaleString('en-IN')}</span>
+                            {/* Unit Price */}
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-500">दर ₹</span>
+                              <input 
+                                type="number" 
+                                value={item.price}
+                                onChange={(e) => handleUpdateActiveBillItem(itemIdx, 'price', e.target.value)}
+                                placeholder="0"
+                                className={`w-20 bg-white px-2 py-1 border rounded-lg text-xs font-bold text-[#0F172A] outline-none text-right ${
+                                  item.isPriceMissing ? 'border-rose-400 bg-rose-50/30' : 'border-slate-200'
+                                }`}
+                              />
+                            </div>
+
+                            {/* Line Total */}
+                            <div className="text-right min-w-[70px]">
+                              <span className="text-[10px] text-slate-400 block">कुल</span>
+                              <span className={`text-xs font-black ${!item.isMathValid ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                ₹ {Number(item.total).toLocaleString('en-IN')}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
                 </div>
 

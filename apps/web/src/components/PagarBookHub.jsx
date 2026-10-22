@@ -49,12 +49,14 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
 
   // Dedicated Loan & Advance Modal State (Advance vs Loan)
   const [showLoanAdvanceModal, setShowLoanAdvanceModal] = useState(false);
-  const [loanAdvanceTab, setLoanAdvanceTab] = useState("advance"); // 'advance' or 'loan'
+  const [loanAdvanceTab, setLoanAdvanceTab] = useState("settlement"); // 'settlement', 'advance' or 'loan'
   const [advanceAmount, setAdvanceAmount] = useState("");
   const [advancePaymentMode, setAdvancePaymentMode] = useState("cash");
   const [advanceNotes, setAdvanceNotes] = useState("");
   const [loanEmiMonths, setLoanEmiMonths] = useState("3");
   const [savingAdvance, setSavingAdvance] = useState(false);
+  const [settlementMonth, setSettlementMonth] = useState("");
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
 
   // Add / Edit Staff Modal State
   const [showStaffModal, setShowStaffModal] = useState(false);
@@ -400,25 +402,37 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     }
     setSavingAdvance(true);
     try {
-      const finalNotes = loanAdvanceTab === "loan" 
-        ? `स्टाफ लोन (${loanEmiMonths} माह ईएमआई) - ${advanceNotes || 'व्यक्तिगत जरूरत'}`
+      const isSettlement = (loanAdvanceTab === "settlement");
+      const isLoan = (loanAdvanceTab === "loan");
+      
+      const targetMonthStr = isSettlement 
+        ? (settlementMonth || `${currentYear}-${String(currentMonth).padStart(2, "0")}`)
+        : `${currentYear}-${String(currentMonth).padStart(2, "0")}`;
+
+      const [ty, tm] = targetMonthStr.split("-");
+      const targetMonthName = new Date(Number(ty), Number(tm) - 1).toLocaleString("hi-IN", { month: "long", year: "numeric" });
+
+      const finalNotes = isSettlement
+        ? (advanceNotes.trim() || `${targetMonthName} वेतन भुगतान`)
+        : isLoan
+        ? `स्टाफ लोन (${loanEmiMonths} माह ईएमआई) - ${advanceNotes || "व्यक्तिगत जरूरत"}`
         : (advanceNotes.trim() || "बीच में लिया गया एडवांस");
 
-      await api.post("/api/staff/advance", {
+      const payload = {
         staffId: selectedStaffId,
         amount: Number(advanceAmount),
         paymentMode: advancePaymentMode,
+        type: isSettlement ? "salary_settlement" : (isLoan ? "loan" : "advance"),
+        isSettlement,
+        forMonth: targetMonthStr,
         notes: finalNotes,
-        date: new Date()
-      }).catch(() => api.post("/staff/advance", {
-        staffId: selectedStaffId,
-        amount: Number(advanceAmount),
-        paymentMode: advancePaymentMode,
-        notes: finalNotes,
-        date: new Date()
-      }));
+        date: paymentDate ? new Date(paymentDate) : new Date()
+      };
 
-      alert(`✅ ${loanAdvanceTab === 'loan' ? 'लोन' : 'एडवांस'} ₹${advanceAmount} सफलतापूर्वक दर्ज हो गया!`);
+      await api.post("/api/staff/advance", payload).catch(() => api.post("/staff/advance", payload));
+
+      const typeLabel = isSettlement ? "वेतन भुगतान (Salary Payment)" : (isLoan ? "लोन" : "एडवांस");
+      alert(`✅ ${typeLabel} ₹${advanceAmount} सफलतापूर्वक दर्ज हो गया!`);
       setAdvanceAmount("");
       setAdvanceNotes("");
       setShowLoanAdvanceModal(false);
@@ -460,16 +474,24 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
       `  🟡 हाफ डे (HD): ${staff.halfDays || staff.halfDayCount || 0} दिन`,
       `  🔴 अनुपस्थित (AB): ${staff.absentDays || staff.absentCount || 0} दिन`,
       `  🎁 सवेतन छुट्टी: ${staff.paidLeavesCount || 0} दिन`,
-      `  ✅ कुल वेतन योग्य दिन: ${staff.payableDays || 0} दिन`,
+      `  ✅ कुल काम के दिन: ${staff.payableDays || 0} दिन`,
       `━━━━━━━━━━━━━━━━━━━━`,
       `💰 *वेतन गणना:*`,
       staff.previousBalance ? `  ⏳ पिछला बकाया (Previous Due): ${staff.previousBalance > 0 ? '+' : ''}₹${(staff.previousBalance || 0).toLocaleString('en-IN')}` : null,
-      `  💵 अर्जित मूल वेतन: ₹${(staff.earnedSalary || 0).toLocaleString('en-IN')}`,
+      `  💵 बना मूल वेतन: ₹${(staff.earnedSalary || 0).toLocaleString('en-IN')}`,
       staff.overtimeEarnings > 0 ? `  ⏱️ ओवर-टाइम कमाई: +₹${(staff.overtimeEarnings || 0).toLocaleString('en-IN')}` : null,
       `  ✨ कुल ग्रॉस वेतन: ₹${(staff.grossSalary || staff.earnedSalary || 0).toLocaleString('en-IN')}`,
-      `  💸 बीच में लिया एडवांस: -₹${(staff.totalAdvance || 0).toLocaleString('en-IN')}`,
+      staff.totalAdvance > 0 ? `  💸 बीच में लिया एडवांस: -₹${(staff.totalAdvance || 0).toLocaleString('en-IN')}` : null,
+      ...(staff.paymentsList && staff.paymentsList.length > 0 ? [
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `💵 *प्राप्त वेतन भुगतान (Payments Made):*`,
+        ...staff.paymentsList.map(p => `  • ${new Date(p.date).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short' })}: ₹${(p.amount || 0).toLocaleString('en-IN')} (${p.paymentMode === 'cash' ? 'नकद' : (p.paymentMode || 'Online')})`),
+        `  कुल वेतन भुगतान: -₹${(staff.totalSalaryPaid || 0).toLocaleString('en-IN')}`
+      ] : []),
       `━━━━━━━━━━━━━━━━━━━━`,
-      `*💳 कुल शुद्ध बाकी (Net Due): ₹${(staff.netPayable || 0).toLocaleString('en-IN')}*`,
+      (staff.netPayable || 0) === 0 && ((staff.totalPaid || 0) > 0 || (staff.totalSalaryPaid || 0) > 0)
+        ? `*💳 कुल शुद्ध बाकी (Net Due): ₹0 (NIL / हिसाब चुकता ✅)*`
+        : `*💳 कुल शुद्ध बाकी (Net Due): ₹${(staff.netPayable || 0).toLocaleString('en-IN')}*`,
       `━━━━━━━━━━━━━━━━━━━━`,
       `_डिजिटल पगार बुक द्वारा सत्यापित_`
     ].filter(Boolean);
@@ -650,9 +672,15 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                                 <div className="text-xs font-bold text-slate-700">
                                   बनता: <span className="font-extrabold text-emerald-700">₹{(staff.earnedSalary || 0).toLocaleString('en-IN')}</span>
                                 </div>
-                                <div className="text-sm font-black text-[#DC2626] mt-0.5">
-                                  बकाया: ₹{(staff.netPayable || 0).toLocaleString('en-IN')}
-                                </div>
+                                {staff.netPayable === 0 && ((staff.totalPaid || 0) > 0 || (staff.totalSalaryPaid || 0) > 0) ? (
+                                  <div className="text-xs font-black text-emerald-700 mt-0.5 bg-emerald-50 px-2 py-0.5 rounded-full inline-block">
+                                    ✅ चुकता (NIL)
+                                  </div>
+                                ) : (
+                                  <div className="text-sm font-black text-[#DC2626] mt-0.5">
+                                    बकाया: ₹{(staff.netPayable || 0).toLocaleString('en-IN')}
+                                  </div>
+                                )}
                                 <span className="text-[10px] font-semibold text-slate-400 block">
                                   {staff.presentDays || staff.presentCount || 0}P • {staff.halfDays || staff.halfDayCount || 0}HD • {staff.absentDays || staff.absentCount || 0}AB
                                 </span>
@@ -744,9 +772,15 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                                 <div className="text-xs font-bold text-slate-700">
                                   बनता: <span className="font-extrabold text-emerald-700">₹{(staff.earnedSalary || 0).toLocaleString('en-IN')}</span>
                                 </div>
-                                <div className="text-sm font-black text-[#DC2626] mt-0.5">
-                                  बकाया: ₹{(staff.netPayable || 0).toLocaleString('en-IN')}
-                                </div>
+                                {staff.netPayable === 0 && ((staff.totalPaid || 0) > 0 || (staff.totalSalaryPaid || 0) > 0) ? (
+                                  <div className="text-xs font-black text-emerald-700 mt-0.5 bg-emerald-50 px-2 py-0.5 rounded-full inline-block">
+                                    ✅ चुकता (NIL)
+                                  </div>
+                                ) : (
+                                  <div className="text-sm font-black text-[#DC2626] mt-0.5">
+                                    बकाया: ₹{(staff.netPayable || 0).toLocaleString('en-IN')}
+                                  </div>
+                                )}
                                 <span className="text-[10px] font-semibold text-slate-400 block">
                                   {staff.presentDays || staff.presentCount || 0}P • {staff.halfDays || staff.halfDayCount || 0}HD • {staff.absentDays || staff.absentCount || 0}AB
                                 </span>
@@ -930,9 +964,18 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <span className="text-xs text-slate-400 block font-medium">Due Amount</span>
-                      <div className="text-xl font-extrabold text-slate-900 mt-0.5">
-                        ₹ {(currentStaff.netPayable || 0).toLocaleString('en-IN')}
-                      </div>
+                      {currentStaff.isSettled || (currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)) ? (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-xl font-extrabold text-emerald-600">₹ 0</span>
+                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-extrabold rounded-full">
+                            ✅ चुकता (NIL)
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="text-xl font-extrabold text-slate-900 mt-0.5">
+                          ₹ {(currentStaff.netPayable || 0).toLocaleString('en-IN')}
+                        </div>
+                      )}
                       <button 
                         onClick={() => handleOpenEditStaff(currentStaff)}
                         className="text-xs font-bold text-blue-600 mt-2 block hover:underline cursor-pointer"
@@ -988,59 +1031,113 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                         {currentStaff.totalAdvance > 0 && (
                           <div className="flex justify-between text-amber-600">
                             <span>बीच में लिया एडवांस कटौती:</span>
-                            <span className="font-bold">-₹{currentStaff.totalAdvance}</span>
+                            <span className="font-bold">-₹{currentStaff.totalAdvance.toLocaleString('en-IN')}</span>
+                          </div>
+                        )}
+                        {currentStaff.totalSalaryPaid > 0 && (
+                          <div className="flex justify-between text-emerald-700">
+                            <span>वेतन भुगतान (Salary Paid):</span>
+                            <span className="font-bold">-₹{currentStaff.totalSalaryPaid.toLocaleString('en-IN')}</span>
                           </div>
                         )}
                         <div className="flex justify-between pt-1 border-t border-slate-200 font-extrabold text-emerald-700">
                           <span>शुद्ध बाकी (Net Payable):</span>
-                          <span>₹{(currentStaff.netPayable || 0).toLocaleString('en-IN')}</span>
+                          <span>
+                            {currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
+                              ? '₹0 (हिसाब चुकता ✅)'
+                              : `₹${(currentStaff.netPayable || 0).toLocaleString('en-IN')}`}
+                          </span>
                         </div>
                       </div>
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 pt-2">
+                  <div className="grid grid-cols-3 gap-2 pt-2">
                     <button
-                      onClick={() => setShowSalarySlipModal(true)}
-                      className="py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border border-indigo-200 shadow-xs transition cursor-pointer"
+                      onClick={() => {
+                        setLoanAdvanceTab("settlement");
+                        setSettlementMonth(`${currentYear}-${String(currentMonth).padStart(2, "0")}`);
+                        setAdvanceAmount(currentStaff.netPayable > 0 ? String(currentStaff.netPayable) : "");
+                        setShowLoanAdvanceModal(true);
+                      }}
+                      className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
                     >
-                      <FileText className="w-3.5 h-3.5" />
-                      <span>वेतन पर्ची खोलें</span>
+                      <DollarSign className="w-3.5 h-3.5" />
+                      <span>💵 वेतन भुगतान</span>
                     </button>
 
                     <button
                       onClick={() => {
                         setLoanAdvanceTab("advance");
+                        setAdvanceAmount("");
                         setShowLoanAdvanceModal(true);
                       }}
-                      className="py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer"
+                      className="py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
                     >
-                      <DollarSign className="w-3.5 h-3.5" />
-                      <span>+ एडवांस / लोन दें</span>
+                      <CreditCard className="w-3.5 h-3.5" />
+                      <span>+ एडवांस दें</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowSalarySlipModal(true)}
+                      className="py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1 border border-indigo-200 shadow-xs transition cursor-pointer"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>वेतन पर्ची</span>
                     </button>
                   </div>
                 </div>
 
-                {/* Advance & Loan Passbook Table */}
-                {currentStaff.advancesList && currentStaff.advancesList.length > 0 && (
+                {/* Advance & Salary Payment Passbook Table */}
+                {((currentStaff.paymentsList && currentStaff.paymentsList.length > 0) || (currentStaff.advancesList && currentStaff.advancesList.length > 0)) && (
                   <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs space-y-3 mt-4">
                     <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                      <span className="text-xs font-bold text-slate-800">एडवांस व लोन लेजर</span>
-                      <span className="text-xs font-extrabold text-amber-600">कुल एडवांस: ₹{currentStaff.totalAdvance}</span>
+                      <span className="text-xs font-bold text-slate-800">भुगतान व एडवांस लेजर ({monthShortName} {currentYear})</span>
+                      <div className="flex items-center gap-2 text-xs">
+                        {currentStaff.totalSalaryPaid > 0 && <span className="font-extrabold text-emerald-700">वेतन: ₹{currentStaff.totalSalaryPaid}</span>}
+                        {currentStaff.totalAdvance > 0 && <span className="font-extrabold text-amber-600">एडवांस: ₹{currentStaff.totalAdvance}</span>}
+                      </div>
                     </div>
                     <div className="space-y-2">
-                      {currentStaff.advancesList.map((adv, idx) => (
-                        <div key={adv._id || idx} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-50 last:border-0">
+                      {/* Salary Payments */}
+                      {(currentStaff.paymentsList || []).map((p, idx) => (
+                        <div key={p._id || `pmt_${idx}`} className="flex items-center justify-between text-xs py-2 px-2.5 bg-emerald-50/60 rounded-xl border border-emerald-100">
                           <div>
-                            <span className="font-bold text-slate-800 block">
-                              {new Date(adv.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
-                            </span>
-                            <span className="text-[11px] text-slate-400">{adv.notes || "Advance"}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-extrabold">💵 वेतन भुगतान</span>
+                              <span className="font-bold text-slate-800">
+                                {new Date(p.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-slate-500 block mt-0.5">{p.notes || "मासिक वेतन भुगतान"} ({p.paymentMode === 'cash' ? 'नकद' : p.paymentMode})</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-amber-600">-₹{adv.amount}</span>
+                            <span className="font-extrabold text-emerald-700 text-sm">₹{p.amount}</span>
+                            {p._id && (
+                              <button onClick={() => handleDeleteAdvance(p._id)} title="हटाएं" className="text-slate-300 hover:text-rose-500 p-1 cursor-pointer">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Advances & Loans */}
+                      {(currentStaff.advancesList || []).map((adv, idx) => (
+                        <div key={adv._id || `adv_${idx}`} className="flex items-center justify-between text-xs py-2 px-2.5 bg-amber-50/50 rounded-xl border border-amber-100">
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 bg-amber-500 text-white rounded text-[10px] font-extrabold">💳 एडवांस</span>
+                              <span className="font-bold text-slate-800">
+                                {new Date(adv.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-slate-500 block mt-0.5">{adv.notes || "Advance"} ({adv.paymentMode === 'cash' ? 'नकद' : adv.paymentMode})</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-extrabold text-amber-700 text-sm">-₹{adv.amount}</span>
                             {adv._id && (
-                              <button onClick={() => handleDeleteAdvance(adv._id)} className="text-slate-300 hover:text-rose-500 p-1 cursor-pointer">
+                              <button onClick={() => handleDeleteAdvance(adv._id)} title="हटाएं" className="text-slate-300 hover:text-rose-500 p-1 cursor-pointer">
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             )}
@@ -1321,13 +1418,36 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                     <span>+₹ {currentStaff.overtimeEarnings}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-rose-600 font-bold border-t border-slate-200 pt-1.5">
-                  <span>💸 बीच में लिया गया एडवांस (Deduction):</span>
-                  <span>-₹ {(currentStaff.totalAdvance || 0).toLocaleString('en-IN')}</span>
-                </div>
-                <div className="flex justify-between items-center bg-emerald-600 text-white p-3 rounded-xl font-extrabold text-sm mt-2 shadow-sm">
+                {currentStaff.totalAdvance > 0 && (
+                  <div className="flex justify-between text-rose-600 font-bold border-t border-slate-200 pt-1.5">
+                    <span>💸 बीच में लिया गया एडवांस (Deduction):</span>
+                    <span>-₹ {(currentStaff.totalAdvance || 0).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+
+                {/* Salary Payments in Slip */}
+                {currentStaff.paymentsList && currentStaff.paymentsList.length > 0 && (
+                  <div className="border-t border-slate-200 pt-1.5 space-y-1">
+                    <div className="flex justify-between text-emerald-800 font-bold">
+                      <span>💵 प्राप्त वेतन भुगतान:</span>
+                      <span>-₹ {(currentStaff.totalSalaryPaid || 0).toLocaleString('en-IN')}</span>
+                    </div>
+                    {currentStaff.paymentsList.map((p, idx) => (
+                      <div key={idx} className="flex justify-between text-[11px] text-emerald-600 pl-2">
+                        <span>• {new Date(p.date).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short' })} ({p.paymentMode === 'cash' ? 'नकद' : p.paymentMode}):</span>
+                        <span className="font-semibold">₹{(p.amount || 0).toLocaleString('en-IN')}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className={`flex justify-between items-center ${currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0) ? 'bg-emerald-600' : 'bg-slate-900'} text-white p-3 rounded-xl font-extrabold text-sm mt-2 shadow-sm`}>
                   <span>💳 कुल शुद्ध बाकी (Net Payable):</span>
-                  <span className="text-base">₹ {(currentStaff.netPayable || 0).toLocaleString('en-IN')}</span>
+                  <span className="text-base">
+                    {currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
+                      ? '₹0 (हिसाब चुकता ✅)'
+                      : `₹ ${(currentStaff.netPayable || 0).toLocaleString('en-IN')}`}
+                  </span>
                 </div>
               </div>
 
@@ -1354,54 +1474,112 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
         )}
 
         {/* ========================================================================= */}
-        {/* MODAL 2: LOANS & ADVANCES (Advance vs Long-Term Loan)                     */}
+        {/* MODAL 2: SALARY SETTLEMENT, ADVANCE & LOAN                                */}
         {/* ========================================================================= */}
         {showLoanAdvanceModal && currentStaff && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
             <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-100 space-y-4">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <h3 className="text-base font-extrabold text-slate-900">एडवांस व लोन एंट्री</h3>
-              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2 text-xs text-blue-900 font-semibold">
-                <span>⚡</span>
-                <span>यह भुगतान <b>दुकान के बिजनेस खर्च (Shop Expense)</b> में भी अपने आप दर्ज होगा (2 जगह डालने की जरूरत नहीं)।</span>
-              </div>
-              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2 text-xs text-blue-900 font-semibold">
-                <span>⚡</span>
-                <span>यह भुगतान <b>दुकान के बिजनेस खर्च (Shop Expense)</b> में भी अपने आप दर्ज होगा (2 जगह डालने की जरूरत नहीं)।</span>
-              </div>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  {loanAdvanceTab === "settlement" ? "वेतन भुगतान (Salary Settle)" : "एडवांस व लोन एंट्री"}
+                </h3>
                 <button onClick={() => setShowLoanAdvanceModal(false)} className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Tab Switcher: Advance vs Loan */}
-              <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold">
+              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2 text-xs text-blue-900 font-semibold">
+                <span>⚡</span>
+                <span>यह भुगतान <b>दुकान के बिजनेस खर्च (Shop Expense / Salary)</b> में भी अपने आप दर्ज होगा (2 जगह डालने की जरूरत नहीं)।</span>
+              </div>
+
+              {/* 3-Tab Switcher: Settlement vs Advance vs Loan */}
+              <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold gap-1">
                 <button
+                  type="button"
+                  onClick={() => {
+                    setLoanAdvanceTab("settlement");
+                    if (currentStaff.netPayable > 0) setAdvanceAmount(String(currentStaff.netPayable));
+                  }}
+                  className={`flex-1 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 ${loanAdvanceTab === "settlement" ? "bg-white text-emerald-700 shadow-xs font-extrabold" : "text-slate-500"}`}
+                >
+                  <DollarSign className="w-3.5 h-3.5" />
+                  <span>1. वेतन भुगतान</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setLoanAdvanceTab("advance")}
                   className={`flex-1 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 ${loanAdvanceTab === "advance" ? "bg-white text-indigo-700 shadow-xs font-extrabold" : "text-slate-500"}`}
                 >
                   <CreditCard className="w-3.5 h-3.5" />
-                  <span>1. बीच में एडवांस</span>
+                  <span>2. एडवांस</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => setLoanAdvanceTab("loan")}
                   className={`flex-1 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 ${loanAdvanceTab === "loan" ? "bg-white text-indigo-700 shadow-xs font-extrabold" : "text-slate-500"}`}
                 >
                   <Landmark className="w-3.5 h-3.5" />
-                  <span>2. स्टाफ लोन (EMI)</span>
+                  <span>3. लोन</span>
                 </button>
               </div>
 
               <form onSubmit={handleSaveLoanOrAdvance} className="space-y-3.5 text-xs font-bold text-slate-700">
+                {/* Month Selector for Salary Settlement */}
+                {loanAdvanceTab === "settlement" && (
+                  <div>
+                    <label className="block mb-1">किस माह का वेतन चुकता कर रहे हैं? (Salary Month)</label>
+                    <select
+                      value={settlementMonth || `${currentYear}-${String(currentMonth).padStart(2, "0")}`}
+                      onChange={(e) => setSettlementMonth(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                    >
+                      <option value={`${currentYear}-${String(currentMonth).padStart(2, "0")}`}>
+                        📅 चयनित माह: {new Date(currentYear, currentMonth - 1).toLocaleString("hi-IN", { month: "long", year: "numeric" })}
+                      </option>
+                      <option value={`${currentMonth === 1 ? currentYear - 1 : currentYear}-${String(currentMonth === 1 ? 12 : currentMonth - 1).padStart(2, "0")}`}>
+                        📅 पिछला माह: {new Date(currentMonth === 1 ? currentYear - 1 : currentYear, currentMonth === 1 ? 11 : currentMonth - 2).toLocaleString("hi-IN", { month: "long", year: "numeric" })}
+                      </option>
+                      <option value={`${currentMonth === 12 ? currentYear + 1 : currentYear}-${String(currentMonth === 12 ? 1 : currentMonth + 1).padStart(2, "0")}`}>
+                        📅 अगला माह: {new Date(currentMonth === 12 ? currentYear + 1 : currentYear, currentMonth === 12 ? 0 : currentMonth).toLocaleString("hi-IN", { month: "long", year: "numeric" })}
+                      </option>
+                    </select>
+                  </div>
+                )}
+
                 <div>
-                  <label className="block mb-1">{loanAdvanceTab === 'loan' ? 'लोन राशि (Loan Amount ₹) *' : 'एडवांस राशि (Advance ₹) *'}</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label>
+                      {loanAdvanceTab === 'settlement' ? 'वेतन भुगतान राशि (Payment ₹) *' : loanAdvanceTab === 'loan' ? 'लोन राशि (Loan Amount ₹) *' : 'एडवांस राशि (Advance ₹) *'}
+                    </label>
+                    {loanAdvanceTab === 'settlement' && currentStaff.netPayable > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setAdvanceAmount(String(currentStaff.netPayable))}
+                        className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md hover:bg-emerald-100 cursor-pointer font-extrabold"
+                      >
+                        ⚡ पूरा बाकी भरें (₹{currentStaff.netPayable})
+                      </button>
+                    )}
+                  </div>
                   <input 
                     type="number"
                     placeholder="उदा. 2000"
                     value={advanceAmount}
                     onChange={(e) => setAdvanceAmount(e.target.value)}
                     required
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block mb-1">भुगतान की तारीख (Date)</label>
+                  <input 
+                    type="date"
+                    value={paymentDate}
+                    onChange={(e) => setPaymentDate(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
                   />
                 </div>
 
@@ -1438,7 +1616,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                   <label className="block mb-1">विवरण / टिप्पणी (Notes)</label>
                   <input 
                     type="text"
-                    placeholder="उदा. त्योहार खर्च / राशन"
+                    placeholder={loanAdvanceTab === 'settlement' ? "उदा. सितंबर वेतन चुकता किया" : "उदा. त्योहार खर्च / राशन"}
                     value={advanceNotes}
                     onChange={(e) => setAdvanceNotes(e.target.value)}
                     className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
@@ -1448,9 +1626,15 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                 <button
                   type="submit"
                   disabled={savingAdvance}
-                  className="w-full py-3 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white rounded-xl font-bold text-sm shadow-md transition disabled:opacity-50 cursor-pointer"
+                  className={`w-full py-3 text-white rounded-xl font-bold text-sm shadow-md transition disabled:opacity-50 cursor-pointer ${loanAdvanceTab === 'settlement' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}`}
                 >
-                  {savingAdvance ? "सुरक्षित हो रहा है..." : loanAdvanceTab === 'loan' ? "लोन सुरक्षित करें" : "एडवांस सुरक्षित करें"}
+                  {savingAdvance 
+                    ? "सुरक्षित हो रहा है..." 
+                    : loanAdvanceTab === 'settlement' 
+                    ? "💵 वेतन भुगतान सुरक्षित करें (Settle)" 
+                    : loanAdvanceTab === 'loan' 
+                    ? "लोन सुरक्षित करें" 
+                    : "एडवांस सुरक्षित करें"}
                 </button>
               </form>
             </div>

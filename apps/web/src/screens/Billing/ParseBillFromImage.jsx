@@ -55,11 +55,14 @@ export default function ParseBillFromImage() {
       } else if (res?.data?.success && res.data.parsedItems) {
         results = [res.data];
       } else {
+        // STRICT ZERO-GUESSING: Never fabricate fake items or dummy party names
         results = base64List.map((_, i) => ({
-          partyName: `ग्राहक ${i + 1}`,
+          partyName: "",
           billType: "sale",
-          parsedItems: [{ name: "सामान (Item)", quantity: 1, unit: "Pcs", price: 100, total: 100 }],
-          totalAmount: 100
+          parsedItems: [],
+          totalAmount: 0,
+          needsReview: true,
+          reviewReasons: ["बिल से सामान नहीं पढ़ा जा सका। कृपया स्पष्ट फोटो दोबारा अपलोड करें।"]
         }));
       }
 
