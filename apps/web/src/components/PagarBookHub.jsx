@@ -218,7 +218,8 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
             const prevBal = Number(s.previousBalance || 0);
             const gross = earned + Number(s.overtimeEarnings || 0) + Number(s.commissionEarnings || 0);
             const totAdv = Number(s.totalAdvance || 0);
-            const net = Math.max(0, prevBal + gross - totAdv);
+            const totPaid = Number(s.totalSalaryPaid || 0);
+            const net = Math.max(0, prevBal + gross - totAdv - totPaid);
 
             return { 
               ...s, 
@@ -233,7 +234,8 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
               payableDays: payDays,
               earnedSalary: earned,
               grossSalary: gross,
-              netPayable: net
+              netPayable: net,
+              isSettled: (net === 0 && (Number(s.totalPaid || 0) > 0 || totPaid > 0))
             };
           }
           return s;
