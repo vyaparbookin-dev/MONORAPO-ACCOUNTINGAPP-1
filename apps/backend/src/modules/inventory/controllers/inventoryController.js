@@ -9,6 +9,7 @@ import SubCategory from "../models/subCategory.js";
 import Brand from "../models/brand.js";
 import Unit from "../models/unit.js";
 import { supabase } from "../../../config/supabase.js";
+import { getProductsFromSupabase, getProductByIdFromSupabase } from "../../../services/supabaseReadService.js";
 
 // Zod schema for robust validation
 const productSchema = z.object({
@@ -667,6 +668,21 @@ export const listProducts = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
+    // --- PHASE 2: SUPABASE PRIMARY READ ---
+    try {
+      const sbProducts = await getProductsFromSupabase({
+        companyId: req.companyId,
+        category: req.query.category,
+        search: req.query.search,
+        limit: req.query.limit || "all"
+      });
+      if (sbProducts && sbProducts.length > 0) {
+        return res.json({ success: true, products: sbProducts, source: "supabase" });
+      }
+    } catch (sbErr) {
+      console.warn("[Inventory Controller] listProducts fallback to Mongo:", sbErr.message);
+    }
+
     // Removed .select() so the frontend receives all fields (subCategory, costPrice, margins, etc.) for Editing
     const products = await Product.find({ isActive: true, companyId: req.companyId }).sort({ createdAt: -1 });
     res.json({ success: true, products });
@@ -679,6 +695,16 @@ export const getProductById = async (req, res) => {
   try {
     if (!req.companyId) {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    // --- PHASE 2: SUPABASE PRIMARY READ ---
+    try {
+      const sbProduct = await getProductByIdFromSupabase(req.params.id, req.companyId);
+      if (sbProduct) {
+        return res.json({ success: true, product: sbProduct, source: "supabase" });
+      }
+    } catch (sbErr) {
+      console.warn("[Inventory Controller] getProductById fallback to Mongo:", sbErr.message);
     }
 
     const product = await Product.findOne({ _id: req.params.id, companyId: req.companyId });

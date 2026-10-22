@@ -18,6 +18,7 @@ import { logActivity } from "../utils/logger.js";
 import { sendAutoWhatsappMessage } from "../services/whatsappService.js";
 import { processStampAwardOnBill } from "./stampController.js";
 import { syncBillToSupabase, syncBillDeleteToSupabase } from "../services/supabaseSyncService.js";
+import { getBillsFromSupabase, getBillByIdFromSupabase } from "../services/supabaseReadService.js";
 import { scanBillToEntry } from "../bill-scanner/index.js";
 import { parseBillMetadata, parseLineItems } from "../bill-scanner/ocrExtractor.js";
 
@@ -412,6 +413,24 @@ export const listBills = async (req, res) => {
     }
     const { page = 1, limit, search = "", startDate, endDate, partyId, status } = req.query;
 
+    // --- PHASE 2: SUPABASE PRIMARY READ ---
+    try {
+      const sbResult = await getBillsFromSupabase({ companyId, search, startDate, endDate, partyId, status, page, limit });
+      if (sbResult && Array.isArray(sbResult.bills) && sbResult.bills.length > 0) {
+        return res.json({
+          success: true,
+          data: sbResult.bills,
+          bills: sbResult.bills,
+          total: sbResult.total,
+          page: sbResult.page,
+          pages: sbResult.pages,
+          source: "supabase"
+        });
+      }
+    } catch (sbErr) {
+      console.warn("[Supabase Read] listBills error, falling back to Mongo:", sbErr.message);
+    }
+
     const cidStr = String(companyId);
     const companyQuery = [cidStr];
     if (mongoose.Types.ObjectId.isValid(cidStr)) {
@@ -468,6 +487,17 @@ export const getBillById = async (req, res) => {
     if (!companyId) {
       return res.status(400).json({ success: false, message: "Company ID is missing. Please provide 'x-company-id' header." });
     }
+
+    // --- PHASE 2: SUPABASE PRIMARY READ ---
+    try {
+      const sbBill = await getBillByIdFromSupabase(req.params.id, companyId);
+      if (sbBill) {
+        return res.json({ success: true, data: sbBill, bill: sbBill, source: "supabase" });
+      }
+    } catch (sbErr) {
+      console.warn("[Supabase Read] getBillById error, falling back to Mongo:", sbErr.message);
+    }
+
     const bill = await Bill.findOne({ _id: req.params.id, companyId });
     if (!bill) return res.status(404).json({ success: false, error: "Bill not found" });
     res.json({ success: true, data: bill });

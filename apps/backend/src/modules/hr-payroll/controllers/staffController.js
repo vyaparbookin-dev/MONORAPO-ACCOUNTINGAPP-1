@@ -5,6 +5,7 @@ import Attendance from "../models/attendance.js";
 import User from "../../../model/user.js";
 import bcryptjs from "bcryptjs";
 import { syncStaffToSupabase, syncAttendanceToSupabase, syncStaffTxToSupabase } from "../../../services/supabaseSyncService.js";
+import { getStaffFromSupabase, getStaffByIdFromSupabase, getStaffTransactionsFromSupabase } from "../../../services/supabaseReadService.js";
 
 export const createStaff = async (req, res) => {
   try {
@@ -856,6 +857,16 @@ export const markAttendance = async (req, res) => {
 
 export const getStaffStatement = async (req, res) => {
   try {
+    // --- PHASE 2: SUPABASE PRIMARY READ ---
+    try {
+      const sbTransactions = await getStaffTransactionsFromSupabase({ staffId: req.params.id, companyId: req.companyId });
+      if (sbTransactions && sbTransactions.length > 0) {
+        return res.status(200).json({ success: true, transactions: sbTransactions, source: "supabase" });
+      }
+    } catch (sbErr) {
+      console.warn("[Staff Controller] getStaffStatement fallback to Mongo:", sbErr.message);
+    }
+
     const transactions = await StaffTransaction.find({ staffId: req.params.id, companyId: req.companyId, isDeleted: { $ne: true } }).sort({ date: -1 });
     res.status(200).json({ success: true, transactions });
   } catch (error) {
@@ -869,7 +880,17 @@ export const listStaff = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    // Auto-sync unlinked historical expenses before returning staff
+    // --- PHASE 2: SUPABASE PRIMARY READ (Instant & High Speed) ---
+    try {
+      const sbStaff = await getStaffFromSupabase({ companyId: req.companyId });
+      if (sbStaff && sbStaff.length > 0) {
+        return res.json({ success: true, staff: sbStaff, source: "supabase" });
+      }
+    } catch (sbErr) {
+      console.warn("[Staff Controller] Supabase read fallback to Mongo:", sbErr.message);
+    }
+
+    // Auto-sync unlinked historical expenses before returning Mongo staff
     await autoBackfillStaffExpenses(req.companyId);
 
     const staff = await Staff.find({ isActive: true, companyId: req.companyId }).select("-bankDetails -aadharNumber").sort({ name: 1 });
@@ -883,6 +904,16 @@ export const getStaffById = async (req, res) => {
   try {
     if (!req.companyId) {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    // --- PHASE 2: SUPABASE PRIMARY READ ---
+    try {
+      const sbStaff = await getStaffByIdFromSupabase(req.params.id, req.companyId);
+      if (sbStaff) {
+        return res.json({ success: true, staff: sbStaff, source: "supabase" });
+      }
+    } catch (sbErr) {
+      console.warn("[Staff Controller] getStaffById fallback to Mongo:", sbErr.message);
     }
 
     const staff = await Staff.findOne({ _id: req.params.id, companyId: req.companyId });

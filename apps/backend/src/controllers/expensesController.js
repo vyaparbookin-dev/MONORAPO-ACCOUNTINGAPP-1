@@ -5,6 +5,7 @@ import Staff from "../model/staff.js";
 import StaffTransaction from "../model/StaffTransaction.js";
 import { logActivity } from "../utils/logger.js";
 import { syncExpenseToSupabase } from "../services/supabaseSyncService.js";
+import { getExpensesFromSupabase, getExpenseByIdFromSupabase } from "../services/supabaseReadService.js";
 
 export const addExpense = async (req, res) => {
   try {
@@ -110,6 +111,16 @@ export const addExpense = async (req, res) => {
 
 export const getExpenseById = async (req, res) => {
   try {
+    // --- PHASE 2: SUPABASE PRIMARY READ ---
+    try {
+      const sbExpense = await getExpenseByIdFromSupabase(req.params.id, req.companyId);
+      if (sbExpense) {
+        return res.json({ success: true, expense: sbExpense, source: "supabase" });
+      }
+    } catch (sbErr) {
+      console.warn("[Supabase Read] getExpenseById error, fallback to Mongo:", sbErr.message);
+    }
+
     const expense = await Expense.findOne({ _id: req.params.id, companyId: req.companyId, isDeleted: false });
     if (!expense) return res.status(404).json({ success: false, error: "Expense not found" });
     syncExpenseToSupabase(expense).catch(sbErr => console.warn("[Supabase Dual-Write] expense sync note:", sbErr.message));
@@ -208,6 +219,39 @@ export const listExpenses = async (req, res) => {
   try {
     if (!req.companyId) {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    // --- PHASE 2: SUPABASE PRIMARY READ ---
+    try {
+      const sbExpenses = await getExpensesFromSupabase({
+        companyId: req.companyId,
+        category: req.query.category && req.query.category !== 'all' ? req.query.category : undefined,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+        limit: req.query.limit || 200
+      });
+
+      if (sbExpenses && sbExpenses.length > 0) {
+        let filtered = sbExpenses;
+        if (req.query.expenseType && req.query.expenseType !== 'all') {
+          filtered = filtered.filter(e => e.expenseType === req.query.expenseType);
+        }
+        if (req.query.familyMember && req.query.familyMember !== 'all') {
+          filtered = filtered.filter(e => e.familyMember === req.query.familyMember);
+        }
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 100;
+        const total = filtered.length;
+        const paged = limit === 'all' ? filtered : filtered.slice((page - 1) * limit, page * limit);
+        return res.json({
+          success: true,
+          expenses: paged,
+          pagination: { total, page, limit, totalPages: Math.ceil(total / limit) || 1 },
+          source: "supabase"
+        });
+      }
+    } catch (sbErr) {
+      console.warn("[Expenses Controller] Supabase read fallback to Mongo:", sbErr.message);
     }
     
     const page = parseInt(req.query.page) || 1;

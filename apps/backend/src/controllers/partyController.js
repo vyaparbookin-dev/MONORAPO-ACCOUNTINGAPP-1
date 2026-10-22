@@ -5,6 +5,7 @@ import PartyTransaction from "../model/PartyTransaction.js";
 import Product from "../model/product.js";
 import mongoose from "mongoose";
 import { syncPartyToSupabase, syncPartyTxToSupabase } from "../services/supabaseSyncService.js";
+import { getPartiesFromSupabase, getPartyByIdFromSupabase, getPartyTransactionsFromSupabase } from "../services/supabaseReadService.js";
 
 export const createParty = async (req, res) => {
   try {
@@ -1031,6 +1032,16 @@ export const listParties = async (req, res) => {
     }
 
     const { type } = req.query;
+
+    // --- PHASE 2: SUPABASE PRIMARY READ ---
+    try {
+      const sbParties = await getPartiesFromSupabase({ companyId: req.companyId, partyType: type });
+      if (sbParties && sbParties.length > 0) {
+        return res.json({ success: true, parties: sbParties, source: "supabase" });
+      }
+    } catch (sbErr) {
+      console.warn("[Supabase Read] listParties error, falling back to Mongo:", sbErr.message);
+    }
     const filter = { isActive: true, companyId: req.companyId };
 
     // FIXED: When filtering by type, don't exclude personal parties via this filter.
@@ -1079,6 +1090,16 @@ export const getPartyById = async (req, res) => {
   try {
     if (!req.companyId) {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    // --- PHASE 2: SUPABASE PRIMARY READ ---
+    try {
+      const sbParty = await getPartyByIdFromSupabase(req.params.id, req.companyId);
+      if (sbParty) {
+        return res.json({ success: true, party: sbParty, source: "supabase" });
+      }
+    } catch (sbErr) {
+      console.warn("[Supabase Read] getPartyById error, falling back to Mongo:", sbErr.message);
     }
 
     const party = await Party.findOne({ _id: req.params.id, companyId: req.companyId });

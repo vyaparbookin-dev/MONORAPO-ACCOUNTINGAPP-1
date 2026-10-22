@@ -5,6 +5,7 @@ import PartyTransaction from "../model/PartyTransaction.js";
 import { Parser } from "json2csv";
 import { logActivity } from "../utils/logger.js";
 import { syncPurchaseToSupabase } from "../services/supabaseSyncService.js";
+import { getPurchasesFromSupabase, getPurchaseByIdFromSupabase } from "../services/supabaseReadService.js";
 
 // Create a new Purchase Bill (Stock Inward)
 export const createPurchase = async (req, res) => {
@@ -202,6 +203,23 @@ export const getPurchases = async (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
     const skip = (page - 1) * limit;
 
+    // --- PHASE 2: SUPABASE PRIMARY READ ---
+    try {
+      const sbPurchases = await getPurchasesFromSupabase({ companyId: req.companyId, limit: req.query.limit || 100 });
+      if (sbPurchases && sbPurchases.length > 0) {
+        const total = sbPurchases.length;
+        const paged = limit === 'all' ? sbPurchases : sbPurchases.slice(skip, skip + limit);
+        return res.status(200).json({ 
+          success: true, 
+          purchases: paged,
+          pagination: { total, page, limit, totalPages: Math.ceil(total / limit) || 1 },
+          source: "supabase"
+        });
+      }
+    } catch (sbErr) {
+      console.warn("[Purchase Controller] getPurchases fallback to Mongo:", sbErr.message);
+    }
+
     const filter = { companyId: req.companyId, isDeleted: false };
 
     // Promise.all se data aur count dono ek saath fetch honge (Speed double ho jayegi)
@@ -227,6 +245,16 @@ export const getPurchases = async (req, res) => {
 // Get single Purchase details
 export const getPurchaseById = async (req, res) => {
   try {
+    // --- PHASE 2: SUPABASE PRIMARY READ ---
+    try {
+      const sbPurchase = await getPurchaseByIdFromSupabase(req.params.id, req.companyId);
+      if (sbPurchase) {
+        return res.status(200).json({ success: true, purchase: sbPurchase, source: "supabase" });
+      }
+    } catch (sbErr) {
+      console.warn("[Purchase Controller] getPurchaseById fallback to Mongo:", sbErr.message);
+    }
+
     const purchase = await Purchase.findOne({ _id: req.params.id, companyId: req.companyId })
                                    .populate("partyId", "name address gstNumber");
     if (!purchase) return res.status(404).json({ success: false, message: "Purchase not found" });
