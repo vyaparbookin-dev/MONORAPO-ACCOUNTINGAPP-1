@@ -316,6 +316,56 @@ export const syncPurchaseToSupabase = async (pr) => {
   }
 };
 
+/**
+ * Sync Product to Supabase
+ */
+export const syncProductToSupabase = async (product) => {
+  if (!supabase || !product || !product.name) return;
+  try {
+    const pUuid = mongoIdToUuid(product._id || product.id);
+    const payload = {
+      id: pUuid,
+      company_id: mongoIdToUuid(product.companyId),
+      name: product.name,
+      category: product.category || 'General',
+      sub_category: product.subCategory || null,
+      brand: product.brand || null,
+      unit: product.unit || 'pc',
+      sku: product.sku || null,
+      barcode: product.barcode || null,
+      hsn_code: product.hsnCode || null,
+      cost_price: Number(product.costPrice) || 0,
+      selling_price: Number(product.sellingPrice) || 0,
+      mrp: Number(product.mrp) || Number(product.sellingPrice) || 0,
+      wholesale_price: Number(product.wholesalePrice) || 0,
+      dealer_price: Number(product.dealerPrice) || 0,
+      current_stock: Number(product.currentStock) || Number(product.stock) || 0,
+      minimum_stock: Number(product.minimumStock) || 0,
+      is_active: product.isActive !== false,
+      created_at: product.createdAt ? new Date(product.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await supabase.from("products").upsert(payload, { onConflict: "id" });
+    if (error) console.warn("[Supabase Sync] Product sync error:", error.message);
+  } catch (err) {
+    console.warn("[Supabase Sync] Product sync note:", err.message);
+  }
+};
+
+/**
+ * Sync Product Deletion to Supabase
+ */
+export const syncProductDeleteToSupabase = async (productId) => {
+  if (!supabase || !productId) return;
+  try {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(productId));
+    const pUuid = isUuid ? productId : mongoIdToUuid(productId);
+    await supabase.from("products").update({ is_active: false }).eq("id", pUuid);
+  } catch (err) {
+    console.warn("[Supabase Sync] Product delete note:", err.message);
+  }
+};
+
 export default {
   syncBillToSupabase,
   syncBillDeleteToSupabase,
@@ -327,5 +377,7 @@ export default {
   syncAttendanceToSupabase,
   syncStaffTxToSupabase,
   syncPurchaseToSupabase,
+  syncProductToSupabase,
+  syncProductDeleteToSupabase,
   mongoIdToUuid
 };

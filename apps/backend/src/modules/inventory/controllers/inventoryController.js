@@ -10,6 +10,7 @@ import Brand from "../models/brand.js";
 import Unit from "../models/unit.js";
 import { supabase } from "../../../config/supabase.js";
 import { getProductsFromSupabase, getProductByIdFromSupabase } from "../../../services/supabaseReadService.js";
+import { syncProductToSupabase, syncProductDeleteToSupabase } from "../../../services/supabaseSyncService.js";
 
 // Zod schema for robust validation
 const productSchema = z.object({
@@ -40,9 +41,12 @@ export const addPurchaseEntry = async (req, res) => {
     
     // Loop through purchased items and increase their current stock
     for (const item of items) {
-      await Product.findByIdAndUpdate(item.productId, {
+      const prod = await Product.findByIdAndUpdate(item.productId, {
         $inc: { currentStock: Number(item.quantity) }
-      });
+      }, { new: true });
+      if (prod) {
+        await syncProductToSupabase(prod);
+      }
     }
 
     res.status(201).json({ success: true, message: "Purchase saved & stock updated successfully!" });
@@ -136,29 +140,8 @@ export const addProduct = async (req, res) => {
       currentStock: Number(currentStock) || Number(stock) || Number(req.body.stock) || 0,
     });
 
-    // --- SYNC TO SUPABASE ---
-    try {
-      const { data: compList } = await supabase.from('companies').select('id').limit(1);
-      const sbCompanyId = compList?.[0]?.id;
-      if (sbCompanyId) {
-        await supabase.from('products').insert([{
-          company_id: sbCompanyId,
-          name: product.name,
-          sku: product.sku || null,
-          barcode: product.barcode || null,
-          category: product.category || 'General',
-          brand: product.brand || null,
-          unit: product.unit || 'pc',
-          hsn_code: product.hsnCode || '0000',
-          cost_price: Number(product.costPrice) || 0,
-          selling_price: Number(product.sellingPrice) || 0,
-          current_stock: Number(product.currentStock) || 0,
-          is_active: true,
-        }]);
-      }
-    } catch (sbErr) {
-      console.error('[Supabase Sync Product Error]:', sbErr.message);
-    }
+    // --- DUAL-WRITE TO SUPABASE ---
+    await syncProductToSupabase(product);
 
     res.status(201).json({ 
       success: true, 
@@ -641,6 +624,9 @@ export const bulkDeleteProducts = async (req, res) => {
       result = await Product.deleteMany({ companyId: req.companyId, importBatchId: batchId });
     } else if (Array.isArray(productIds) && productIds.length > 0) {
       result = await Product.deleteMany({ _id: { $in: productIds }, companyId: req.companyId });
+      for (const pid of productIds) {
+        syncProductDeleteToSupabase(pid).catch(() => {});
+      }
     } else {
       return res.status(400).json({ success: false, message: "Provide valid delete parameters" });
     }
@@ -731,6 +717,10 @@ export const updateProduct = async (req, res) => {
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
+
+    // --- DUAL-WRITE TO SUPABASE ---
+    await syncProductToSupabase(product);
+
     res.json({ success: true, product });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -753,6 +743,13 @@ export const updateStock = async (req, res) => {
       { currentStock: quantity },
       { new: true }
     );
+
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    // --- DUAL-WRITE TO SUPABASE ---
+    await syncProductToSupabase(product);
     
     res.json({ 
       success: true, 
@@ -812,11 +809,13 @@ export const deleteProduct = async (req, res) => {
         { new: true }
       );
       if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+      await syncProductDeleteToSupabase(productId);
       return res.json({ success: true, message: "Product is linked to bills. Soft-deleted safely." });
     } else {
       // HARD DELETE: Koi bill nahi bana, toh DB se permanently saaf
       const product = await Product.findOneAndDelete({ _id: productId, companyId: req.companyId });
       if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+      await syncProductDeleteToSupabase(productId);
       return res.json({ success: true, message: "Unused product permanently deleted." });
     }
   } catch (err) {
