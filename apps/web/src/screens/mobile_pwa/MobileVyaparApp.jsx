@@ -1869,6 +1869,77 @@ function MobileVyaparAppContent() {
   // Net Credit = Total Udhar - Udhar payment collected
   const activePeriodCredit = Math.max(0, activePeriodGrossCredit - activePeriodUdharCollected);
 
+  // 💸 EXPENSES & OUTFLOW FOR ACTIVE PERIOD (दुकान खर्च + घर खर्च + सप्लायर भुगतान)
+  const activePeriodExpensesList = (gharKharchList || []).filter(e => {
+    if (dailySaleFilter === "all") return true;
+    const d = parseAnyDate(e.date || e.createdAt);
+    if (!d) return false;
+    if (dailySaleFilter === "today") return isSameLocalDate(d, new Date());
+    if (dailySaleFilter === "yesterday") return isSameLocalDate(d, new Date(Date.now() - 86400000));
+    if (dailySaleFilter === "week") return d >= new Date(Date.now() - 7 * 86400000);
+    return true;
+  });
+
+  const activePeriodGharKharch = activePeriodExpensesList
+    .filter(e => isPersonalExpense(e) && e.transactionFlow !== 'received')
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+  const activePeriodShopExpense = activePeriodExpensesList
+    .filter(e => !isPersonalExpense(e) && e.transactionFlow !== 'received')
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+  const activePeriodDirectExpenses = activePeriodExpensesList
+    .reduce((sum, e) => sum + (e.transactionFlow === 'received' ? 0 : (Number(e.amount) || 0)), 0);
+
+  const activePeriodSupplierPaid = (allPartyTransactions || []).filter(tx => {
+    const isDebit = Number(tx.debit || 0) > 0;
+    const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
+    if (!isDebit || !isSupplierTx) return false;
+    return getTxFilterMatch(tx, dailySaleFilter);
+  }).reduce((sum, tx) => sum + Number(tx.debit || 0), 0);
+
+  const activePeriodTotalExpenses = activePeriodDirectExpenses + activePeriodSupplierPaid;
+  // Net in-hand cash surplus (Cash Inflow - All Outflows)
+  const activePeriodNetCash = activePeriodCash - activePeriodTotalExpenses;
+
+  // Active period date & duration descriptor helper
+  const getPeriodDateLabel = (filter) => {
+    const today = new Date();
+    const formatD = (d) => d.toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    if (filter === "today") {
+      return {
+        daysCountText: "1 दिन का हिसाब",
+        dateDetailText: `आज • ${formatD(today)}`,
+        badgeText: `आज (1 दिन • ${today.toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' })})`,
+        heroBadge: `📅 1 दिन (आज • ${formatD(today)})`
+      };
+    }
+    if (filter === "yesterday") {
+      const yest = new Date(Date.now() - 86400000);
+      return {
+        daysCountText: "1 दिन का हिसाब",
+        dateDetailText: `कल • ${formatD(yest)}`,
+        badgeText: `कल (1 दिन • ${yest.toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' })})`,
+        heroBadge: `📅 1 दिन (कल • ${formatD(yest)})`
+      };
+    }
+    if (filter === "week") {
+      const weekAgo = new Date(Date.now() - 7 * 86400000);
+      return {
+        daysCountText: "पिछले 7 दिनों का हिसाब",
+        dateDetailText: `${weekAgo.toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' })} से ${formatD(today)}`,
+        badgeText: `हफ़्ता (7 दिन • ${weekAgo.toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' })} - ${today.toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' })})`,
+        heroBadge: `📅 7 दिन (${weekAgo.toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' })} - ${formatD(today)})`
+      };
+    }
+    return {
+      daysCountText: "सभी दिनों का हिसाब",
+      dateDetailText: "शुरुआत से अब तक की कुल बिक्री व खर्च",
+      badgeText: "सभी दिन (All-Time Record)",
+      heroBadge: "📅 सभी दिन (All-Time Record)"
+    };
+  };
+
   const handleShareWhatsAppBill = (bill) => {
     if (!bill) return;
     const itemsList = (bill.items || []).map(i => `• ${i.name || 'Item'} (x${i.qty || i.quantity || 1}) - ₹${(i.price || i.salePrice || 0) * (i.qty || i.quantity || 1)}`).join("\n");
@@ -4314,12 +4385,17 @@ function MobileVyaparAppContent() {
           <div className="space-y-3.5 animate-in fade-in">
             {/* 💰 DEDICATED PROMINENT DAILY SALES CARD (दैनिक / अवधि बिक्री) */}
             <div className="p-4 bg-gradient-to-br from-[#1E1B4B] via-[#312E81] to-[#4338CA] text-white rounded-3xl shadow-xl space-y-3 border border-indigo-500/40">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-start flex-wrap gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-xs font-black text-indigo-200 uppercase tracking-wider">
-                    {dailySaleFilter === "today" ? "आज की कुल बिक्री (Today's Sale)" : dailySaleFilter === "yesterday" ? "कल की बिक्री (Yesterday's Sale)" : dailySaleFilter === "week" ? "इस हफ़्ते की बिक्री (7 Days Sale)" : "कुल बिक्री (All Time Sales)"}
-                  </span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse mt-0.5 shrink-0" />
+                  <div>
+                    <span className="text-xs font-black text-indigo-200 uppercase tracking-wider block">
+                      {dailySaleFilter === "today" ? "आज की कुल बिक्री (Today's Sale)" : dailySaleFilter === "yesterday" ? "कल की बिक्री (Yesterday's Sale)" : dailySaleFilter === "week" ? "इस हफ़्ते की बिक्री (7 Days Sale)" : "कुल बिक्री (All Time Sales)"}
+                    </span>
+                    <span className="text-[10px] text-indigo-300 font-semibold flex items-center gap-1 mt-0.5">
+                      {getPeriodDateLabel(dailySaleFilter).heroBadge}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-1 bg-white/10 p-0.5 rounded-lg border border-indigo-400/30 text-[10px] font-bold">
                   {[
@@ -4369,8 +4445,8 @@ function MobileVyaparAppContent() {
                 </button>
               </div>
 
-              {/* 3 Breakdown Pills: Cash, UPI, Udhar */}
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-indigo-400/30 text-center">
+              {/* 4 Breakdown Pills: Cash, UPI, Udhar, Kharch (Expense) */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-indigo-400/30 text-center">
                 <div className="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
                   <span className="text-[10px] text-emerald-300 font-bold block">💵 नकद (Cash)</span>
                   <span className="font-extrabold text-xs text-white">₹{activePeriodCash.toLocaleString('en-IN')}</span>
@@ -4383,6 +4459,24 @@ function MobileVyaparAppContent() {
                   <span className="text-[10px] text-rose-300 font-bold block">📒 उधारी (Udhar)</span>
                   <span className="font-extrabold text-xs text-white">₹{activePeriodCredit.toLocaleString('en-IN')}</span>
                 </div>
+                <div 
+                  onClick={() => handleToggleGharKharchLedger(true)}
+                  className="bg-amber-500/20 p-2 rounded-xl backdrop-blur-xs cursor-pointer hover:bg-amber-500/30 transition border border-amber-400/30"
+                  title="दुकान व घर खर्च विवरण देखें"
+                >
+                  <span className="text-[10px] text-amber-300 font-bold block flex items-center justify-center gap-0.5">
+                    💸 कुल खर्च <span className="text-[9px]">→</span>
+                  </span>
+                  <span className="font-extrabold text-xs text-amber-200">₹{activePeriodTotalExpenses.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+
+              {/* In-Hand Cash Surplus / Net Shuddh Munafa Strip */}
+              <div className="pt-2 border-t border-indigo-400/20 flex items-center justify-between text-[11px] bg-black/20 px-3 py-1.5 rounded-xl">
+                <span className="text-indigo-200 font-medium">💰 शुद्ध गल्ला (नकद आवक - खर्च):</span>
+                <span className={`font-black font-mono ${activePeriodNetCash >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                  ₹ {activePeriodNetCash.toLocaleString('en-IN')}
+                </span>
               </div>
             </div>
 
@@ -4785,11 +4879,14 @@ function MobileVyaparAppContent() {
                      dailySaleFilter === "week" ? "इस हफ़्ते का व्यापार सारांश (This Week's Sales)" :
                      "कुल व्यापार सारांश (All-Time Sales)"}
                   </span>
-                  <span className="text-[10px] text-slate-400">
-                    {dailySaleFilter === "today" ? new Date().toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' }) :
-                     dailySaleFilter === "week" ? "पिछले 7 दिनों की कुल बिक्री व उधारी" :
-                     dailySaleFilter === "yesterday" ? "कल की तारीख का हिसाब" : "शुरुआत से अब तक की कुल बिक्री"}
-                  </span>
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-extrabold text-[10px]">
+                      {getPeriodDateLabel(dailySaleFilter).badgeText}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      {getPeriodDateLabel(dailySaleFilter).dateDetailText}
+                    </span>
+                  </div>
                 </div>
 
                 {/* 4 Period Toggle Buttons */}
@@ -4804,7 +4901,7 @@ function MobileVyaparAppContent() {
                       key={f.id}
                       type="button"
                       onClick={() => setDailySaleFilter(f.id)}
-                      className={`px-2 py-1 rounded-lg transition cursor-pointer ${
+                      className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
                         dailySaleFilter === f.id
                           ? "bg-indigo-600 text-white shadow-xs font-black"
                           : "text-slate-600 hover:text-slate-900"
@@ -4816,20 +4913,55 @@ function MobileVyaparAppContent() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 divide-x divide-slate-100 text-center pt-1">
-                <div className="px-1">
-                  <div className="text-[10px] font-bold text-slate-400">
-                    {dailySaleFilter === "today" ? "Today's Sales" : dailySaleFilter === "week" ? "This Week" : "Total Sales"}
+              {/* 4 Core Metrics Grid: Sales, Cash Inflow, Udhar, Total Expenses */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <div className="text-[10px] font-bold text-slate-500">कुल बिक्री (Sales)</div>
+                  <div className="font-black text-sm text-[#0F172A] mt-0.5 font-mono">₹ {activePeriodSales.toLocaleString('en-IN')}</div>
+                  <div className="text-[9px] text-slate-400 mt-0.5">{activePeriodBills.length} बिल दर्ज</div>
+                </div>
+                <div className="bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-100">
+                  <div className="text-[10px] font-bold text-emerald-700">नकद आवक (Cash)</div>
+                  <div className="font-black text-sm text-[#059669] mt-0.5 font-mono">₹ {activePeriodCash.toLocaleString('en-IN')}</div>
+                  <div className="text-[9px] text-emerald-600/80 mt-0.5">सेल + उधारी वसूली</div>
+                </div>
+                <div className="bg-rose-50/60 p-2.5 rounded-xl border border-rose-100">
+                  <div className="text-[10px] font-bold text-rose-700">बाकी उधारी (Udhar)</div>
+                  <div className="font-black text-sm text-[#DC2626] mt-0.5 font-mono">₹ {activePeriodCredit.toLocaleString('en-IN')}</div>
+                  <div className="text-[9px] text-rose-600/80 mt-0.5">क्रेडिट बाकी</div>
+                </div>
+                <div 
+                  onClick={() => handleToggleGharKharchLedger(true)}
+                  className="bg-amber-50/70 p-2.5 rounded-xl border border-amber-200 cursor-pointer hover:bg-amber-100/60 transition active:scale-95"
+                  title="दुकान व घर खर्च विवरण देखें"
+                >
+                  <div className="text-[10px] font-bold text-amber-800 flex items-center justify-center gap-1">
+                    <span>कुल खर्च (Kharch)</span>
+                    <span className="text-[9px]">→</span>
                   </div>
-                  <div className="font-black text-xs text-[#0F172A] mt-0.5">₹ {activePeriodSales.toLocaleString('en-IN')}</div>
+                  <div className="font-black text-sm text-amber-700 mt-0.5 font-mono">₹ {activePeriodTotalExpenses.toLocaleString('en-IN')}</div>
+                  <div className="text-[9px] text-amber-600 mt-0.5">{activePeriodExpensesList.length} खर्चे दर्ज</div>
                 </div>
-                <div className="px-1">
-                  <div className="text-[10px] font-bold text-slate-400">Cash Sales</div>
-                  <div className="font-black text-xs text-[#059669] mt-0.5">₹ {activePeriodCash.toLocaleString('en-IN')}</div>
+              </div>
+
+              {/* Shuddh In-Hand Cash Surplus Strip (Cash In - Total Expenses) */}
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2 text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-slate-700">💰 शुद्ध गल्ला (नकद आवक - कुल खर्च):</span>
+                  <span className={`font-black font-mono text-sm ${activePeriodNetCash >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
+                    ₹ {activePeriodNetCash.toLocaleString('en-IN')}
+                  </span>
                 </div>
-                <div className="px-1">
-                  <div className="text-[10px] font-bold text-slate-400">Credit (Udhar)</div>
-                  <div className="font-black text-xs text-[#DC2626] mt-0.5">₹ {activePeriodCredit.toLocaleString('en-IN')}</div>
+                <div className="text-[10px] text-slate-500 font-medium flex items-center gap-2">
+                  <span>दुकान: ₹{activePeriodShopExpense.toLocaleString('en-IN')}</span>
+                  <span>•</span>
+                  <span>घर: ₹{activePeriodGharKharch.toLocaleString('en-IN')}</span>
+                  {activePeriodSupplierPaid > 0 && (
+                    <>
+                      <span>•</span>
+                      <span>सप्लायर: ₹{activePeriodSupplierPaid.toLocaleString('en-IN')}</span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
