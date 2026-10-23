@@ -31,8 +31,24 @@ export const uploadBillPhoto = async (req, res) => {
     // 2. If targetId is provided, link directly to database document
     let updatedRecord = null;
     if (targetId) {
-      const isValidOid = mongoose.Types.ObjectId.isValid(targetId);
-      const query = isValidOid ? { _id: targetId } : { $or: [{ billNumber: targetId }, { purchaseNumber: targetId }, { refNo: targetId }] };
+      const cleanId = String(targetId).replace(/^(pay_|open_)/, "").trim();
+      const isValidOid = mongoose.Types.ObjectId.isValid(cleanId) && cleanId.length === 24;
+
+      const orConditions = [
+        { billNumber: cleanId },
+        { invoiceNumber: cleanId },
+        { purchaseNumber: cleanId },
+        { refNo: cleanId },
+        { refNo: targetId }
+      ];
+      if (isValidOid) {
+        orConditions.push({ _id: cleanId });
+      }
+      if (targetId !== cleanId && mongoose.Types.ObjectId.isValid(targetId) && targetId.length === 24) {
+        orConditions.push({ _id: targetId });
+      }
+
+      const query = { $or: orConditions };
       const updateData = {
         billImageUrl: imageUrl,
         $addToSet: { billImageUrls: imageUrl }
@@ -40,25 +56,36 @@ export const uploadBillPhoto = async (req, res) => {
 
       if (targetType === "purchase") {
         updatedRecord = await Purchase.findOneAndUpdate(query, updateData, { new: true });
-      } else if (targetType === "party_tx") {
+        if (!updatedRecord) updatedRecord = await Bill.findOneAndUpdate(query, updateData, { new: true });
+        if (!updatedRecord) updatedRecord = await PartyTransaction.findOneAndUpdate(query, updateData, { new: true });
+      } else if (targetType === "party_tx" || targetType === "payment" || targetType === "receipt") {
         updatedRecord = await PartyTransaction.findOneAndUpdate(query, updateData, { new: true });
+        if (!updatedRecord) updatedRecord = await Bill.findOneAndUpdate(query, updateData, { new: true });
+        if (!updatedRecord) updatedRecord = await Purchase.findOneAndUpdate(query, updateData, { new: true });
       } else {
-        // Default try PartyTransaction first if it's party tx or Bill
-        updatedRecord = await PartyTransaction.findOneAndUpdate(query, updateData, { new: true });
+        // Default: try Bill first, then PartyTransaction, then Purchase
+        updatedRecord = await Bill.findOneAndUpdate(query, updateData, { new: true });
         if (!updatedRecord) {
-          updatedRecord = await Bill.findOneAndUpdate(query, updateData, { new: true });
+          updatedRecord = await PartyTransaction.findOneAndUpdate(query, updateData, { new: true });
         }
         if (!updatedRecord) {
           updatedRecord = await Purchase.findOneAndUpdate(query, updateData, { new: true });
         }
       }
 
-      if (updatedRecord) {
-        if (updatedRecord.billNumber) {
-          syncBillPhotoToSupabase(updatedRecord.billNumber, imageUrl, updatedRecord.billImageUrls).catch(() => {});
-        } else if (targetType === "party_tx") {
-          syncPartyTxToSupabase(updatedRecord).catch(() => {});
-        }
+      // Sync with Supabase (Sales and Purchases)
+      const allUrls = updatedRecord?.billImageUrls && updatedRecord.billImageUrls.length > 0 
+        ? updatedRecord.billImageUrls 
+        : [imageUrl];
+
+      const refToSync = updatedRecord?.billNumber || updatedRecord?.invoiceNumber || updatedRecord?.purchaseNumber || cleanId;
+      syncBillPhotoToSupabase(refToSync, imageUrl).catch(() => {});
+      if (cleanId !== refToSync) {
+        syncBillPhotoToSupabase(cleanId, imageUrl).catch(() => {});
+      }
+
+      if (updatedRecord && (targetType === "party_tx" || updatedRecord.partyId)) {
+        syncPartyTxToSupabase(updatedRecord).catch(() => {});
       }
     }
 
@@ -88,8 +115,24 @@ export const deleteBillPhoto = async (req, res) => {
       return res.status(400).json({ success: false, message: "targetId and imageUrl are required" });
     }
 
-    const isValidOid = mongoose.Types.ObjectId.isValid(targetId);
-    const query = isValidOid ? { _id: targetId } : { $or: [{ billNumber: targetId }, { purchaseNumber: targetId }, { refNo: targetId }] };
+    const cleanId = String(targetId).replace(/^(pay_|open_)/, "").trim();
+    const isValidOid = mongoose.Types.ObjectId.isValid(cleanId) && cleanId.length === 24;
+
+    const orConditions = [
+      { billNumber: cleanId },
+      { invoiceNumber: cleanId },
+      { purchaseNumber: cleanId },
+      { refNo: cleanId },
+      { refNo: targetId }
+    ];
+    if (isValidOid) {
+      orConditions.push({ _id: cleanId });
+    }
+    if (targetId !== cleanId && mongoose.Types.ObjectId.isValid(targetId) && targetId.length === 24) {
+      orConditions.push({ _id: targetId });
+    }
+
+    const query = { $or: orConditions };
 
     let updatedRecord = null;
     const ModelToUse = targetType === "purchase" ? Purchase : (targetType === "bill" ? Bill : PartyTransaction);
@@ -108,6 +151,13 @@ export const deleteBillPhoto = async (req, res) => {
         { new: true }
       );
     }
+    if (!updatedRecord) {
+      updatedRecord = await Purchase.findOneAndUpdate(
+        query,
+        { $pull: { billImageUrls: imageUrl } },
+        { new: true }
+      );
+    }
 
     if (updatedRecord) {
       // If the primary billImageUrl was the deleted one, fallback to remaining or empty
@@ -117,13 +167,19 @@ export const deleteBillPhoto = async (req, res) => {
         await updatedRecord.save();
       }
 
-      if (updatedRecord.billNumber) {
-        const remainingUrls = updatedRecord.billImageUrls || [];
-        const primUrl = updatedRecord.billImageUrl || "";
-        syncBillPhotoToSupabase(updatedRecord.billNumber, primUrl, remainingUrls).catch(() => {});
-      } else if (targetType === "party_tx") {
+      const remainingUrls = updatedRecord.billImageUrls || [];
+      const primUrl = updatedRecord.billImageUrl || (remainingUrls[0] || "");
+      const refToSync = updatedRecord.billNumber || updatedRecord.invoiceNumber || updatedRecord.purchaseNumber || cleanId;
+      syncBillPhotoToSupabase(refToSync, primUrl).catch(() => {});
+      if (cleanId !== refToSync) {
+        syncBillPhotoToSupabase(cleanId, primUrl).catch(() => {});
+      }
+
+      if (targetType === "party_tx" || updatedRecord.partyId) {
         syncPartyTxToSupabase(updatedRecord).catch(() => {});
       }
+    } else {
+      syncBillPhotoToSupabase(cleanId, "").catch(() => {});
     }
 
     res.status(200).json({

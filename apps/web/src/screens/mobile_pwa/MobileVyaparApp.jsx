@@ -2458,6 +2458,45 @@ function MobileVyaparAppContent() {
         return tPartyId && tPartyId === String(partyId);
       });
 
+      // Merge attached photos from matching local transactions and local bills into server transactions so photos never vanish
+      combinedTxs = combinedTxs.map(st => {
+        let imgUrl = st.billImageUrl || '';
+        let imgUrls = (st.billImageUrls && st.billImageUrls.length > 0) ? [...st.billImageUrls] : (imgUrl ? [imgUrl] : []);
+
+        const stId = String(st._id || st.id || '').replace(/^pay_/, '').trim();
+        const stRef = String(st.refNo || st.billNumber || '').trim().toLowerCase();
+
+        const localMatch = matchingLocalTxs.find(lt => {
+          const ltId = String(lt._id || lt.id || '').replace(/^pay_/, '').trim();
+          const ltRef = String(lt.refNo || lt.billNumber || '').trim().toLowerCase();
+          return (ltId && stId && ltId === stId) || (ltRef && stRef && ltRef === stRef);
+        });
+        if (localMatch) {
+          const localUrls = localMatch.billImageUrls || (localMatch.billImageUrl ? [localMatch.billImageUrl] : []);
+          imgUrls = Array.from(new Set([...imgUrls, ...localUrls].filter(Boolean)));
+          if (!imgUrl && localMatch.billImageUrl) imgUrl = localMatch.billImageUrl;
+        }
+
+        const billMatch = (bills || []).find(b => {
+          const bId = String(b._id || b.id || '').trim();
+          const bNum = String(b.billNumber || b.invoiceNumber || '').trim().toLowerCase();
+          return (bId && stId && bId === stId) || (bNum && stRef && (bNum === stRef || stRef.includes(bNum)));
+        });
+        if (billMatch) {
+          const bUrls = billMatch.billImageUrls || (billMatch.billImageUrl ? [billMatch.billImageUrl] : []);
+          imgUrls = Array.from(new Set([...imgUrls, ...bUrls].filter(Boolean)));
+          if (!imgUrl && billMatch.billImageUrl) imgUrl = billMatch.billImageUrl;
+        }
+
+        if (!imgUrl && imgUrls.length > 0) imgUrl = imgUrls[0];
+
+        return {
+          ...st,
+          billImageUrl: imgUrl,
+          billImageUrls: imgUrls
+        };
+      });
+
       matchingLocalTxs.forEach(lt => {
         const ltId = String(lt._id || lt.id || "").trim();
         const exists = combinedTxs.some(t => {
@@ -2482,6 +2521,7 @@ function MobileVyaparAppContent() {
         if (!exists) {
           const isPaid = lt.type === 'paid' || (Number(lt.debit || 0) > 0 && lt.source === 'PartyTransaction');
           const amt = Number(lt.amount || lt.debit || lt.credit || 0);
+          const rawImgs = lt.billImageUrls || (lt.billImageUrl ? [lt.billImageUrl] : []);
           combinedTxs.push({
             _id: lt._id || lt.id,
             date: lt.date || lt.createdAt || new Date().toISOString(),
@@ -2492,6 +2532,8 @@ function MobileVyaparAppContent() {
             debit: lt.debit !== undefined ? Number(lt.debit) : (isPaid ? amt : 0),
             credit: lt.credit !== undefined ? Number(lt.credit) : (isPaid ? 0 : amt),
             amount: amt,
+            billImageUrl: lt.billImageUrl || (rawImgs[0] || ''),
+            billImageUrls: rawImgs,
             source: 'PartyTransaction',
             paymentMethod: lt.paymentMethod || 'CASH'
           });
@@ -2533,6 +2575,7 @@ function MobileVyaparAppContent() {
 
         const isPaid = String(b.paymentStatus || b.status || '').toLowerCase() === 'paid';
         const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
+        const bImgs = b.billImageUrls || (b.billImageUrl ? [b.billImageUrl] : []);
 
         combinedTxs.push({
           _id: b._id || b.id,
@@ -2546,7 +2589,8 @@ function MobileVyaparAppContent() {
           items: b.items || [],
           debit: isSupplier ? 0 : finalAmt,
           credit: isSupplier ? finalAmt : 0,
-          billImageUrl: b.billImageUrl || '',
+          billImageUrl: b.billImageUrl || (bImgs[0] || ''),
+          billImageUrls: bImgs,
           paymentMethod: b.paymentMode || b.paymentMethod || 'CASH'
         });
 
@@ -2560,7 +2604,8 @@ function MobileVyaparAppContent() {
             details: `बिल #${bNum} पर नकद/UPI जमा (Payment Received)`,
             debit: isSupplier ? paidAmt : 0,
             credit: isSupplier ? 0 : paidAmt,
-            billImageUrl: b.billImageUrl || '',
+            billImageUrl: b.billImageUrl || (bImgs[0] || ''),
+            billImageUrls: bImgs,
             paymentMethod: b.paymentMode || b.paymentMethod || 'CASH'
           });
         }
@@ -2675,6 +2720,49 @@ function MobileVyaparAppContent() {
           } catch (e) {}
           return next;
         });
+
+        // Also update bills state and localStorage so bills list has the image
+        setBills(prev => {
+          const cleanTargetId = String(txId).replace(/^(pay_|open_)/, '').trim().toLowerCase();
+          const next = prev.map(b => {
+            const bId = String(b._id || b.id || '').trim().toLowerCase();
+            const bNum = String(b.billNumber || b.invoiceNumber || '').trim().toLowerCase();
+            if (bId === cleanTargetId || bNum === cleanTargetId || bId === String(txId).toLowerCase() || bNum === String(txId).toLowerCase()) {
+              const currentList = b.billImageUrls || (b.billImageUrl ? [b.billImageUrl] : []);
+              const merged = Array.from(new Set([...currentList, ...latestUrls, latestPrimaryUrl].filter(Boolean)));
+              const updatedBill = {
+                ...b,
+                billImageUrl: latestPrimaryUrl || merged[0],
+                billImageUrls: merged
+              };
+              try {
+                const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+                if (currentCoId) storageManager.saveBill(currentCoId, updatedBill);
+              } catch (e) {}
+              return updatedBill;
+            }
+            return b;
+          });
+          return next;
+        });
+
+        // Also update selectedBillDetail if open
+        setSelectedBillDetail(prev => {
+          if (!prev) return prev;
+          const cleanTargetId = String(txId).replace(/^(pay_|open_)/, '').trim().toLowerCase();
+          const bId = String(prev._id || prev.id || '').trim().toLowerCase();
+          const bNum = String(prev.billNumber || prev.invoiceNumber || '').trim().toLowerCase();
+          if (bId === cleanTargetId || bNum === cleanTargetId || bId === String(txId).toLowerCase() || bNum === String(txId).toLowerCase()) {
+            const currentList = prev.billImageUrls || (prev.billImageUrl ? [prev.billImageUrl] : []);
+            const merged = Array.from(new Set([...currentList, ...latestUrls, latestPrimaryUrl].filter(Boolean)));
+            return {
+              ...prev,
+              billImageUrl: latestPrimaryUrl || merged[0],
+              billImageUrls: merged
+            };
+          }
+          return prev;
+        });
       }
 
       alert(`✅ ${validFiles.length} बिल फोटो सफलतापूर्वक सुरक्षित व लिंक हो गईं!`);
@@ -2719,6 +2807,40 @@ function MobileVyaparAppContent() {
         return next;
       });
 
+      // Also update bills state and localStorage
+      setBills(prev => {
+        const cleanTargetId = String(txId).replace(/^(pay_|open_)/, '').trim().toLowerCase();
+        return prev.map(b => {
+          const bId = String(b._id || b.id || '').trim().toLowerCase();
+          const bNum = String(b.billNumber || b.invoiceNumber || '').trim().toLowerCase();
+          if (bId === cleanTargetId || bNum === cleanTargetId || bId === String(txId).toLowerCase() || bNum === String(txId).toLowerCase()) {
+            const updatedBill = { ...b, billImageUrl: primaryUrl, billImageUrls: updatedUrls };
+            try {
+              const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+              if (currentCoId) storageManager.saveBill(currentCoId, updatedBill);
+            } catch (e) {}
+            return updatedBill;
+          }
+          return b;
+        });
+      });
+
+      // Also update selectedBillDetail if open
+      setSelectedBillDetail(prev => {
+        if (!prev) return prev;
+        const cleanTargetId = String(txId).replace(/^(pay_|open_)/, '').trim().toLowerCase();
+        const bId = String(prev._id || prev.id || '').trim().toLowerCase();
+        const bNum = String(prev.billNumber || prev.invoiceNumber || '').trim().toLowerCase();
+        if (bId === cleanTargetId || bNum === cleanTargetId || bId === String(txId).toLowerCase() || bNum === String(txId).toLowerCase()) {
+          return {
+            ...prev,
+            billImageUrl: primaryUrl,
+            billImageUrls: updatedUrls
+          };
+        }
+        return prev;
+      });
+
       if (previewBillImage === imageUrl) {
         if (updatedUrls.length > 0) {
           setPreviewBillImage(updatedUrls[0]);
@@ -2739,6 +2861,154 @@ function MobileVyaparAppContent() {
       }
     } catch (err) {
       console.error("Delete photo error:", err);
+      alert("फोटो हटाने में त्रुटि: " + (err.response?.data?.message || err.message));
+    }
+  };
+
+  // Direct Photo Upload & Delete Handlers for Bill Detail Modal
+  const handleAttachBillImage = async (billOrId, filesInput) => {
+    if (!filesInput) return;
+    const files = filesInput instanceof FileList || Array.isArray(filesInput)
+      ? Array.from(filesInput)
+      : [filesInput];
+    if (files.length === 0) return;
+
+    const validFiles = files.slice(0, 5);
+    const targetId = typeof billOrId === "object" ? (billOrId._id || billOrId.id || billOrId.billNumber) : billOrId;
+
+    try {
+      let latestUrls = [];
+      let latestPrimaryUrl = "";
+
+      for (let i = 0; i < validFiles.length; i++) {
+        const file = validFiles[i];
+        const base64Data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        const res = await api.post('/api/upload/bill-image', {
+          fileData: base64Data,
+          fileName: file.name,
+          targetId: targetId,
+          targetType: "bill"
+        });
+
+        if (res.data?.url) {
+          latestPrimaryUrl = res.data.url;
+          latestUrls = res.data.urls || [...latestUrls, res.data.url];
+        }
+      }
+
+      if (latestUrls.length > 0 || latestPrimaryUrl) {
+        setSelectedBillDetail(prev => {
+          if (!prev) return prev;
+          const currentList = prev.billImageUrls || (prev.billImageUrl ? [prev.billImageUrl] : []);
+          const merged = Array.from(new Set([...currentList, ...latestUrls, latestPrimaryUrl].filter(Boolean)));
+          return {
+            ...prev,
+            billImageUrl: latestPrimaryUrl || merged[0],
+            billImageUrls: merged
+          };
+        });
+
+        setBills(prev => prev.map(b => {
+          const bId = String(b._id || b.id || '').trim();
+          const bNum = String(b.billNumber || b.invoiceNumber || '').trim();
+          const tId = String(targetId).trim();
+          if (bId === tId || bNum === tId) {
+            const currentList = b.billImageUrls || (b.billImageUrl ? [b.billImageUrl] : []);
+            const merged = Array.from(new Set([...currentList, ...latestUrls, latestPrimaryUrl].filter(Boolean)));
+            const updatedBill = {
+              ...b,
+              billImageUrl: latestPrimaryUrl || merged[0],
+              billImageUrls: merged
+            };
+            try {
+              const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+              if (currentCoId) storageManager.saveBill(currentCoId, updatedBill);
+            } catch (e) {}
+            return updatedBill;
+          }
+          return b;
+        }));
+
+        setPartyTransactions(prev => prev.map(t => {
+          const tId = String(t._id || t.id || '').replace(/^pay_/, '').trim();
+          const tRef = String(t.refNo || t.billNumber || '').trim();
+          const tTarget = String(targetId).trim();
+          if (tId === tTarget || tRef === tTarget) {
+            const currentList = t.billImageUrls || (t.billImageUrl ? [t.billImageUrl] : []);
+            const merged = Array.from(new Set([...currentList, ...latestUrls, latestPrimaryUrl].filter(Boolean)));
+            return {
+              ...t,
+              billImageUrl: latestPrimaryUrl || merged[0],
+              billImageUrls: merged
+            };
+          }
+          return t;
+        }));
+      }
+
+      alert(`✅ ${validFiles.length} बिल फोटो सफलतापूर्वक सुरक्षित हो गई!`);
+    } catch (err) {
+      console.error("handleAttachBillImage error:", err);
+      alert("फोटो अपलोड करने में त्रुटि: " + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const handleDeleteBillImage = async (bill, imageUrl) => {
+    if (!imageUrl) return;
+    if (!window.confirm("क्या आप वाकई यह बिल फोटो हटाना चाहते हैं?")) return;
+    const targetId = bill._id || bill.id || bill.billNumber;
+    try {
+      const res = await api.post('/api/upload/delete-bill-image', {
+        targetId,
+        targetType: "bill",
+        imageUrl
+      });
+      const updatedUrls = res.data?.urls || [];
+      const primaryUrl = res.data?.primaryUrl || (updatedUrls[0] || "");
+
+      setSelectedBillDetail(prev => prev ? ({
+        ...prev,
+        billImageUrl: primaryUrl,
+        billImageUrls: updatedUrls
+      }) : prev);
+
+      setBills(prev => prev.map(b => {
+        const bId = String(b._id || b.id || '').trim();
+        const bNum = String(b.billNumber || b.invoiceNumber || '').trim();
+        const tId = String(targetId).trim();
+        if (bId === tId || bNum === tId) {
+          const updatedBill = { ...b, billImageUrl: primaryUrl, billImageUrls: updatedUrls };
+          try {
+            const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+            if (currentCoId) storageManager.saveBill(currentCoId, updatedBill);
+          } catch (e) {}
+          return updatedBill;
+        }
+        return b;
+      }));
+
+      if (previewBillImage === imageUrl) {
+        if (updatedUrls.length > 0) {
+          setPreviewBillImage(updatedUrls[0]);
+          setPreviewImageList(updatedUrls);
+          setPreviewImageIndex(0);
+        } else {
+          setPreviewBillImage(null);
+          setPreviewImageList([]);
+          setPreviewImageIndex(0);
+          setPreviewTargetTxId(null);
+        }
+      }
+
+      alert("🗑️ बिल फोटो सफलतापूर्वक हटा दी गई!");
+    } catch (err) {
+      console.error("handleDeleteBillImage error:", err);
       alert("फोटो हटाने में त्रुटि: " + (err.response?.data?.message || err.message));
     }
   };
@@ -4206,7 +4476,9 @@ function MobileVyaparAppContent() {
           amount: b.totalAmount,
           type: b.paymentMode,
           paymentStatus: b.paymentMode === "UDHAR" ? "unpaid" : "paid",
-          items: b.items.map(i => ({ id: i.id, name: i.name, salePrice: i.price, qty: i.qty }))
+          items: b.items.map(i => ({ id: i.id, name: i.name, salePrice: i.price, qty: i.qty })),
+          billImageUrl: b.imagePreview || "",
+          billImageUrls: b.imagePreview ? [b.imagePreview] : []
         };
         createdList.push(createdBill);
       }
@@ -11267,6 +11539,90 @@ function MobileVyaparAppContent() {
                     </div>
                   </div>
                 )}
+
+                {/* 📷 Attached Bill Photos / Paper Slips */}
+                <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                      📷 बिल / पर्ची की फोटो (Receipt Photos)
+                    </span>
+                    {(() => {
+                      const rawImages = (selectedBillDetail.billImageUrls && selectedBillDetail.billImageUrls.length > 0)
+                        ? selectedBillDetail.billImageUrls
+                        : (selectedBillDetail.billImageUrl ? [selectedBillDetail.billImageUrl] : []);
+                      const uniqueImages = Array.from(new Set(rawImages.filter(Boolean)));
+                      return uniqueImages.length < 5 ? (
+                        <label className="text-[11px] font-bold text-indigo-700 hover:text-indigo-900 bg-white px-2.5 py-1 rounded-lg border border-indigo-200 shadow-2xs cursor-pointer flex items-center gap-1 transition active:scale-95">
+                          <span>+ फोटो जोड़ें</span>
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => handleAttachBillImage(selectedBillDetail, e.target.files)}
+                          />
+                        </label>
+                      ) : null;
+                    })()}
+                  </div>
+
+                  {(() => {
+                    const rawImages = (selectedBillDetail.billImageUrls && selectedBillDetail.billImageUrls.length > 0)
+                      ? selectedBillDetail.billImageUrls
+                      : (selectedBillDetail.billImageUrl ? [selectedBillDetail.billImageUrl] : []);
+                    const uniqueImages = Array.from(new Set(rawImages.filter(Boolean)));
+
+                    if (uniqueImages.length === 0) {
+                      return (
+                        <label className="flex items-center justify-center gap-2 p-3 bg-white rounded-xl border border-dashed border-indigo-300 text-xs font-bold text-indigo-600 hover:bg-indigo-50 cursor-pointer transition">
+                          <Camera size={16} />
+                          <span>पर्चे / बिल की फोटो खींचें या अपलोड करें (0/5)</span>
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => handleAttachBillImage(selectedBillDetail, e.target.files)}
+                          />
+                        </label>
+                      );
+                    }
+
+                    return (
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {uniqueImages.map((imgUrl, imgIdx) => (
+                          <div key={imgIdx} className="relative group shrink-0">
+                            <img
+                              src={imgUrl}
+                              alt={`Bill Photo ${imgIdx + 1}`}
+                              onClick={() => {
+                                setPreviewBillImage(imgUrl);
+                                setPreviewImageList(uniqueImages);
+                                setPreviewImageIndex(imgIdx);
+                                setPreviewTargetTxId(selectedBillDetail._id || selectedBillDetail.id || selectedBillDetail.billNumber);
+                              }}
+                              className="w-14 h-14 rounded-xl object-cover border-2 border-indigo-300 cursor-pointer shadow-sm active:scale-95 hover:opacity-90 transition"
+                            />
+                            <button
+                              type="button"
+                              title="यह फोटो हटाएं"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteBillImage(selectedBillDetail, imgUrl);
+                              }}
+                              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center text-[11px] font-black shadow hover:bg-rose-700 cursor-pointer transition active:scale-90"
+                            >
+                              ✕
+                            </button>
+                            <span className="absolute bottom-0 left-0 bg-black/60 text-[9px] text-white px-1.5 rounded-bl-xl font-mono">
+                              #{imgIdx + 1}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
 
                 {/* Main Action Buttons */}
                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">

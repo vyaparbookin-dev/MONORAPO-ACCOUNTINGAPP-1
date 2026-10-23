@@ -85,9 +85,18 @@ export const uploadBillImage = async ({ fileData, fileName = "bill.jpg", company
       const buffer = Buffer.from(base64Data, "base64");
       const contentType = fileData.match(/^data:(image\/\w+);base64,/)?.[1] || "image/jpeg";
 
-      const { data, error } = await supabase.storage
+      let { data, error } = await supabase.storage
         .from("bills")
         .upload(cleanName, buffer, { contentType, upsert: true });
+
+      if (error && (error.message?.toLowerCase().includes("bucket") || error.statusCode === "404" || error.status === 404)) {
+        await supabase.storage.createBucket("bills", { public: true }).catch(() => {});
+        const retry = await supabase.storage
+          .from("bills")
+          .upload(cleanName, buffer, { contentType, upsert: true });
+        data = retry.data;
+        error = retry.error;
+      }
 
       if (!error && data) {
         const { data: pubData } = supabase.storage.from("bills").getPublicUrl(cleanName);

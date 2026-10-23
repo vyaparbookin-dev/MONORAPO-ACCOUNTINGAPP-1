@@ -6,6 +6,7 @@ const purchaseSchema = new mongoose.Schema({
   partyId: { type: mongoose.Schema.Types.ObjectId, ref: "Party", required: true }, // Supplier
   supplierName: { type: String, required: true },
   billImageUrl: { type: String }, // Agar purchase bill ki photo upload karni ho
+  billImageUrls: [{ type: String }], // Multiple purchase bill photos (up to 5 slips)
   date: { type: Date, default: Date.now },
   dueDate: Date,
   items: [

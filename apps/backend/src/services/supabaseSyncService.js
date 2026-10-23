@@ -91,12 +91,30 @@ export const syncBillDeleteToSupabase = async (billNumber, billId) => {
 };
 
 /**
- * Sync bill photo attachment to Supabase
+ * Sync bill photo attachment to Supabase (Sales and Purchases)
  */
 export const syncBillPhotoToSupabase = async (billNumberOrId, imageUrl) => {
   if (!supabase || !billNumberOrId) return;
   try {
-    await supabase.from("sales").update({ bill_image_url: imageUrl }).eq("bill_number", String(billNumberOrId));
+    const raw = String(billNumberOrId).trim();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw);
+
+    if (isUuid) {
+      await supabase.from("sales").update({ bill_image_url: imageUrl }).eq("id", raw);
+      await supabase.from("purchases").update({ bill_image_url: imageUrl }).eq("id", raw);
+    } else {
+      try {
+        const uId = mongoIdToUuid(raw);
+        if (uId) {
+          await supabase.from("sales").update({ bill_image_url: imageUrl }).eq("id", uId);
+          await supabase.from("purchases").update({ bill_image_url: imageUrl }).eq("id", uId);
+        }
+      } catch (e) {}
+    }
+
+    // Also update by bill_number / purchase_number / invoice_number
+    await supabase.from("sales").update({ bill_image_url: imageUrl }).eq("bill_number", raw);
+    await supabase.from("purchases").update({ bill_image_url: imageUrl }).eq("purchase_number", raw);
   } catch (err) {
     console.warn("[Supabase Sync] Bill photo sync note:", err.message);
   }

@@ -4,7 +4,8 @@ import Purchase from "../model/purchase.js";
 import PartyTransaction from "../model/PartyTransaction.js";
 import Product from "../model/product.js";
 import mongoose from "mongoose";
-import { syncPartyToSupabase, syncPartyTxToSupabase } from "../services/supabaseSyncService.js";
+import { syncPartyToSupabase, syncPartyTxToSupabase, syncBillPhotoToSupabase } from "../services/supabaseSyncService.js";
+import { uploadBillImage } from "../services/storageService.js";
 import { getPartiesFromSupabase, getPartyByIdFromSupabase, getPartyTransactionsFromSupabase } from "../services/supabaseReadService.js";
 
 export const createParty = async (req, res) => {
@@ -402,7 +403,8 @@ export const getPartyStatement = async (req, res) => {
         siteName: tx.siteName || "",
         debit: Number(tx.debit || 0),
         credit: Number(tx.credit || 0),
-        billImageUrl: tx.billImageUrl || "",
+        billImageUrl: tx.billImageUrl || (tx.billImageUrls && tx.billImageUrls[0]) || "",
+        billImageUrls: (tx.billImageUrls && tx.billImageUrls.length > 0) ? tx.billImageUrls : (tx.billImageUrl ? [tx.billImageUrl] : []),
         source: "PartyTransaction"
       });
     }
@@ -441,7 +443,8 @@ export const getPartyStatement = async (req, res) => {
           siteName: b.siteName || "",
           debit: finalAmt,
           credit: 0,
-          billImageUrl: b.billImageUrl || "",
+          billImageUrl: b.billImageUrl || (b.billImageUrls && b.billImageUrls[0]) || "",
+          billImageUrls: (b.billImageUrls && b.billImageUrls.length > 0) ? b.billImageUrls : (b.billImageUrl ? [b.billImageUrl] : []),
           paymentMethod: isCreditBill ? "UDHAR" : (b.paymentMode || b.paymentMethod || "CASH"),
           source: "Bill"
         });
@@ -460,7 +463,8 @@ export const getPartyStatement = async (req, res) => {
           siteName: b.siteName || "",
           debit: 0,
           credit: paidAmt,
-          billImageUrl: b.billImageUrl || "",
+          billImageUrl: b.billImageUrl || (b.billImageUrls && b.billImageUrls[0]) || "",
+          billImageUrls: (b.billImageUrls && b.billImageUrls.length > 0) ? b.billImageUrls : (b.billImageUrl ? [b.billImageUrl] : []),
           paymentMethod: b.paymentMode || b.paymentMethod || "CASH",
           source: "BillPayment"
         });
@@ -482,7 +486,8 @@ export const getPartyStatement = async (req, res) => {
         details: `खरीद इनवॉइस #${pNum}`,
         debit: 0,
         credit: totalAmt,
-        billImageUrl: p.billImageUrl || p.receiptUrl || "",
+        billImageUrl: p.billImageUrl || p.receiptUrl || (p.billImageUrls && p.billImageUrls[0]) || "",
+        billImageUrls: (p.billImageUrls && p.billImageUrls.length > 0) ? p.billImageUrls : (p.billImageUrl ? [p.billImageUrl] : (p.receiptUrl ? [p.receiptUrl] : [])),
         source: "Purchase"
       });
     }
@@ -565,11 +570,61 @@ export const attachPartyTransactionImage = async (req, res) => {
     if (!txId || !imageUrl) {
       return res.status(400).json({ success: false, error: "Transaction ID and Image URL are required" });
     }
-    let updated = await PartyTransaction.findByIdAndUpdate(txId, { billImageUrl: imageUrl }, { new: true });
-    if (!updated) {
-      updated = await Bill.findByIdAndUpdate(txId, { billImageUrl: imageUrl }, { new: true });
+
+    let finalUrl = imageUrl;
+    // If it's a raw base64 string, upload to Cloudinary/Supabase CDN first
+    if (imageUrl.startsWith("data:image/")) {
+      const uploadRes = await uploadBillImage({
+        fileData: imageUrl,
+        fileName: `tx_${Date.now()}.jpg`,
+        companyId: req.companyId ? req.companyId.toString() : "common"
+      });
+      finalUrl = uploadRes.url || imageUrl;
     }
-    res.json({ success: true, message: "बिल फोटो सफलतापूर्वक सेव हो गया!", data: updated });
+
+    const cleanId = String(txId).replace(/^(pay_|open_)/, "").trim();
+    const isValidOid = mongoose.Types.ObjectId.isValid(cleanId) && cleanId.length === 24;
+
+    const orConditions = [
+      { billNumber: cleanId },
+      { invoiceNumber: cleanId },
+      { purchaseNumber: cleanId },
+      { refNo: cleanId },
+      { refNo: txId }
+    ];
+    if (isValidOid) orConditions.push({ _id: cleanId });
+    if (txId !== cleanId && mongoose.Types.ObjectId.isValid(txId) && txId.length === 24) {
+      orConditions.push({ _id: txId });
+    }
+
+    const query = { $or: orConditions };
+    const updateData = {
+      billImageUrl: finalUrl,
+      $addToSet: { billImageUrls: finalUrl }
+    };
+
+    let updated = await PartyTransaction.findOneAndUpdate(query, updateData, { new: true });
+    if (!updated) {
+      updated = await Bill.findOneAndUpdate(query, updateData, { new: true });
+    }
+    if (!updated) {
+      updated = await Purchase.findOneAndUpdate(query, updateData, { new: true });
+    }
+
+    // Sync to Supabase sales / purchases
+    const refToSync = updated?.billNumber || updated?.invoiceNumber || updated?.purchaseNumber || cleanId;
+    syncBillPhotoToSupabase(refToSync, finalUrl).catch(() => {});
+    if (cleanId !== refToSync) {
+      syncBillPhotoToSupabase(cleanId, finalUrl).catch(() => {});
+    }
+
+    res.json({
+      success: true,
+      message: "बिल फोटो सफलतापूर्वक सेव हो गया!",
+      data: updated,
+      url: finalUrl,
+      urls: updated?.billImageUrls || [finalUrl]
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
