@@ -41,6 +41,14 @@ jobs:
       - name: 🩹 Patch Expo Native Modules
         run: node scripts/patch-expo-modules.cjs
 
+      - name: ⚙️ Setup Production Environment File
+        working-directory: apps/mobile
+        run: |
+          echo "EXPO_PUBLIC_API_URL=https://monorapo-accountingapp-1.onrender.com/api" > .env
+          echo "EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB=673101118579-pcoot5sm15h07bu82iiespljhrnqmnfq.apps.googleusercontent.com" >> .env
+          echo "EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID=673101118579-pcoot5sm15h07bu82iiespljhrnqmnfq.apps.googleusercontent.com" >> .env
+          echo "EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS=673101118579-pcoot5sm15h07bu82iiespljhrnqmnfq.apps.googleusercontent.com" >> .env
+
       - name: 📦 Pre-bundle Production JavaScript Assets
         working-directory: apps/mobile
         run: |
