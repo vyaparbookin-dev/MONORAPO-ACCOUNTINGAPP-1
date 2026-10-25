@@ -302,8 +302,10 @@ const startServer = () => {
           const existingTx = await StaffTransaction.findOne({ referenceExpenseId: exp._id });
           if (!existingTx) {
             const staffDoc = await Staff.findById(exp.staffId);
-            if (staffDoc) {
+            const resolvedCompanyId = exp.companyId || staffDoc?.companyId;
+            if (staffDoc && resolvedCompanyId) {
               await StaffTransaction.create({
+                companyId: resolvedCompanyId,
                 staffId: exp.staffId,
                 type: "advance",
                 amount: Number(exp.amount || 0),

@@ -97,7 +97,19 @@ export const addPaymentEntry = async (req, res) => {
     const { partyId, amount, type, date, notes, paymentMethod } = req.body;
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID is missing" });
 
-    const party = await Party.findOne({ _id: partyId, companyId: req.companyId });
+    let party = null;
+    if (mongoose.Types.ObjectId.isValid(partyId)) {
+      party = await Party.findOne({ _id: partyId, companyId: req.companyId });
+    }
+    if (!party) {
+      party = await Party.findOne({
+        companyId: req.companyId,
+        $or: [
+          { id: partyId },
+          { name: partyId }
+        ]
+      });
+    }
     if (!party) return res.status(404).json({ success: false, message: "Party not found" });
 
     let debit = 0, credit = 0;

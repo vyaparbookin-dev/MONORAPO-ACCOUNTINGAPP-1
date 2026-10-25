@@ -72,9 +72,29 @@ export const createBill = async (req, res) => {
     if (!matchedParty && pMobile) {
       matchedParty = await Party.findOne({ mobileNumber: pMobile, companyId: req.companyId });
     }
-    if (!matchedParty && pName && pName !== "नकद ग्राहक" && pName !== "Walk-in Customer") {
-      matchedParty = await Party.findOne({ name: new RegExp(`^${pName}$`, "i"), companyId: req.companyId });
+    if (!matchedParty && pName && !["नकद ग्राहक", "walk-in customer", "walk-in guest", "नकद ग्राहक (walk-in)"].includes(pName.toLowerCase())) {
+      const escapedPName = pName.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+      matchedParty = await Party.findOne({ name: new RegExp(`^${escapedPName}$`, "i"), companyId: req.companyId });
     }
+    // If not found and party name is provided for Udhar sale, auto-create customer upfront so partyId links properly
+    if (!matchedParty && pName && isUdhar && !["नकद ग्राहक", "walk-in customer", "walk-in guest", "नकद ग्राहक (walk-in)"].includes(pName.toLowerCase())) {
+      try {
+        const dummyPhone = pMobile || `9${Math.floor(100000000 + Math.random() * 900000000)}`;
+        matchedParty = await Party.create({
+          companyId: req.companyId,
+          name: pName,
+          mobileNumber: dummyPhone,
+          address: customerAddress || "Local",
+          partyType: "customer",
+          openingBalance: 0,
+          currentBalance: 0
+        });
+      } catch (pErr) {
+        console.warn("Auto-create party upfront warning:", pErr.message);
+      }
+    }
+
+    const resolvedPartyId = matchedParty?._id || (partyId && mongoose.Types.ObjectId.isValid(partyId) ? partyId : undefined);
 
     const isCreditLineActive = Boolean(matchedParty && matchedParty.isCreditLimitActive && matchedParty.creditLimit > 0);
 
@@ -182,6 +202,10 @@ _(कृपया यह OTP दुकानदार को तभी बता
     const bill = new Bill({
       ...req.body,
       companyId: req.companyId,
+      partyId: resolvedPartyId,
+      customerName: pName || req.body.customerName || "नकद ग्राहक",
+      customerMobile: pMobile || req.body.customerMobile || req.body.customerPhone || "",
+      customerPhone: pMobile || req.body.customerPhone || req.body.customerMobile || "",
       paymentMode: pMode,
       paymentMethod: normalizedMethod,
       paymentStatus: isUdhar ? "unpaid" : "paid",
@@ -207,28 +231,32 @@ _(कृपया यह OTP दुकानदार को तभी बता
 
     // --- AUTO-UPDATE PARTY UDHAR (CREDIT) BALANCE & PENDING GATEKEEPER ---
     try {
-      if (isUdhar && pName && pName !== "नकद ग्राहक" && pName !== "Walk-in Customer") {
-        if (matchedParty) {
-          matchedParty.currentBalance = (Number(matchedParty.currentBalance) || 0) + finalBillAmount;
-          matchedParty.updatedAt = new Date();
-          if (isCreditLineActive && shouldProtectWithOtp) {
-            matchedParty.hasPendingBillApproval = true;
-            matchedParty.pendingApprovalBillId = bill._id;
-            matchedParty.creditLimitLockedReason = `बिल #${bill.billNumber} स्वीकृति पेंडिंग`;
-          }
-          await matchedParty.save();
-        } else {
-          // Auto-create new customer with the Udhar balance
-          const dummyPhone = pMobile || `9${Math.floor(100000000 + Math.random() * 900000000)}`;
-          await Party.create({
-            companyId: req.companyId,
-            name: pName,
-            mobileNumber: dummyPhone,
-            address: customerAddress || "Local",
-            partyType: "customer",
-            openingBalance: 0,
-            currentBalance: finalBillAmount
-          }).catch(pErr => console.warn("Auto-create party warning:", pErr.message));
+      if (isUdhar && matchedParty) {
+        matchedParty.currentBalance = (Number(matchedParty.currentBalance) || 0) + finalBillAmount;
+        matchedParty.updatedAt = new Date();
+        if (isCreditLineActive && shouldProtectWithOtp) {
+          matchedParty.hasPendingBillApproval = true;
+          matchedParty.pendingApprovalBillId = bill._id;
+          matchedParty.creditLimitLockedReason = `बिल #${bill.billNumber} स्वीकृति पेंडिंग`;
+        }
+        await matchedParty.save();
+      } else if (isUdhar && pName && !["नकद ग्राहक", "walk-in customer", "walk-in guest"].includes(pName.toLowerCase())) {
+        const dummyPhone = pMobile || `9${Math.floor(100000000 + Math.random() * 900000000)}`;
+        const autoP = await Party.create({
+          companyId: req.companyId,
+          name: pName,
+          mobileNumber: dummyPhone,
+          address: customerAddress || "Local",
+          partyType: "customer",
+          openingBalance: 0,
+          currentBalance: finalBillAmount
+        }).catch(pErr => {
+          console.warn("Auto-create party warning:", pErr.message);
+          return null;
+        });
+        if (autoP && !bill.partyId) {
+          bill.partyId = autoP._id;
+          await bill.save().catch(() => null);
         }
       }
     } catch (partySyncErr) {

@@ -1470,7 +1470,9 @@ function MobileVyaparAppContent() {
           party: b.party || b.partyId || "",
           partyId: b.partyId || (b.party && typeof b.party === 'object' ? b.party._id : b.party) || "",
           partyName: b.partyName || b.customerName || b.customer || "Walk-in Customer",
-          phone: b.customerPhone || b.phone || b.mobileNumber || "",
+          phone: b.customerPhone || b.customerMobile || b.phone || b.mobileNumber || "",
+          customerPhone: b.customerPhone || b.customerMobile || b.phone || b.mobileNumber || "",
+          customerMobile: b.customerMobile || b.customerPhone || b.phone || b.mobileNumber || "",
           amount: bAmt,
           finalAmount: bAmt,
           total: bAmt,
@@ -1480,9 +1482,13 @@ function MobileVyaparAppContent() {
           paymentMode: pMode,
           paymentMethod: (pMode === "UDHAR" || pMode === "CREDIT") ? "credit" : "cash",
           paymentStatus: b.paymentStatus || (pMode === "UDHAR" ? "unpaid" : "paid"),
+          status: b.status || (pMode === "UDHAR" ? "issued" : "paid"),
           date: b.date ? (String(b.date).includes("-") || String(b.date).includes("/") ? new Date(b.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : String(b.date)) : "Today",
           rawDate: b.rawDate || b.date || b.createdAt || new Date().toISOString(),
           items: b.items || [],
+          notes: b.notes || "",
+          billImageUrl: b.billImageUrl || (Array.isArray(b.billImageUrls) && b.billImageUrls[0]) || "",
+          billImageUrls: Array.isArray(b.billImageUrls) ? b.billImageUrls : (b.billImageUrl ? [b.billImageUrl] : []),
           isOfflineCreated: Boolean(b.isOfflineCreated)
         };
       });
@@ -2024,6 +2030,16 @@ function MobileVyaparAppContent() {
     const finalPhone = billCustomerPhone.trim();
     const finalAddress = billCustomerAddress.trim() || "Local";
 
+    // Auto-resolve matching party if selectedPartyObject was not explicitly clicked
+    const existingParty = selectedPartyObject || (parties || []).find(p => {
+      const pName = String(p?.name || '').trim().toLowerCase();
+      const pPhone = String(p?.phone || p?.mobileNumber || '').trim();
+      if (finalCustomer && finalCustomer !== "नकद ग्राहक (Walk-in)" && pName === finalCustomer.toLowerCase()) return true;
+      if (finalPhone && pPhone && pPhone === finalPhone) return true;
+      return false;
+    });
+    const resolvedPartyId = existingParty?._id || existingParty?.id || undefined;
+
     const genBillNo = `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
     const billPayload = {
       billNumber: genBillNo,
@@ -2040,7 +2056,7 @@ function MobileVyaparAppContent() {
       lateInterestPercent: billPaymentMode === "UDHAR" ? (Number(billLateInterest) || 2) : 0,
       isUdharProtected: billPaymentMode === "UDHAR" ? isUdharProtectionChecked : false,
       udharOtpThreshold: udharOtpThreshold,
-      partyId: selectedPartyObject?._id || selectedPartyObject?.id || undefined,
+      partyId: resolvedPartyId,
       bypassPendingLock: Boolean(bypassCreditLock),
       items: billCart.map(i => ({ 
         productId: i.id, 
@@ -2092,9 +2108,14 @@ function MobileVyaparAppContent() {
       id: genBillNo,
       billNumber: genBillNo,
       invoiceNumber: genBillNo,
+      partyId: resolvedPartyId,
+      party: resolvedPartyId,
+      partyName: finalCustomer,
       customerName: finalCustomer,
       customer: finalCustomer,
-      phone: billCustomerPhone.trim(),
+      phone: finalPhone,
+      customerPhone: finalPhone,
+      customerMobile: finalPhone,
       date: "Today",
       rawDate: new Date().toISOString(),
       amount: billPayload.finalAmount || totalBillAmount,
@@ -2104,6 +2125,7 @@ function MobileVyaparAppContent() {
       paymentMode: billPaymentMode,
       paymentMethod: billPaymentMode === "UDHAR" ? "credit" : "cash",
       paymentStatus: billPaymentMode === "UDHAR" ? "unpaid" : "paid",
+      status: billPaymentMode === "UDHAR" ? "issued" : "paid",
       items: billCart,
       isOfflineCreated: true,
       createdAt: new Date().toISOString()
@@ -2120,6 +2142,12 @@ function MobileVyaparAppContent() {
     setMobileStampStatus(null);
     setShowQuickBillModal(false);
     setSelectedBillDetail(createdBill);
+
+    if (resolvedPartyId) {
+      if (selectedPartyDetail && ((selectedPartyDetail._id || selectedPartyDetail.id) === resolvedPartyId)) {
+        fetchPartyStatement(resolvedPartyId);
+      }
+    }
 
     if (billPaymentMode === "UPI" || billPaymentMode === "ONLINE") {
       speakUpiPayment(billPayload.finalAmount || totalBillAmount, "व्यापार");
@@ -2418,11 +2446,16 @@ function MobileVyaparAppContent() {
     if (!partyId) return;
     setPartyStatementLoading(true);
     try {
-      const res = await api.get(`/api/party/${partyId}/statement`).catch(() => api.get(`/api/parties/${partyId}/statement`));
-      const serverTxs = res?.transactions || res?.data?.transactions || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+      let serverTxs = [];
+      try {
+        const res = await api.get(`/api/party/${partyId}/statement`).catch(() => api.get(`/api/parties/${partyId}/statement`));
+        serverTxs = res?.transactions || res?.data?.transactions || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+      } catch (netErr) {
+        console.warn("Server statement fetch failed or offline, continuing with local data:", netErr);
+      }
       
       const pObj = (parties || []).find(p => (p._id === partyId || p.id === partyId)) || selectedPartyDetail;
-      const opBal = Number(pObj?.openingBalance ?? res?.openingBalance ?? 0);
+      const opBal = Number(pObj?.openingBalance ?? 0);
       const isSupplier = (pObj?.type === "supplier" || pObj?.partyType === "supplier") || opBal < 0;
 
       let combinedTxs = Array.isArray(serverTxs) ? [...serverTxs] : [];
@@ -2544,24 +2577,21 @@ function MobileVyaparAppContent() {
       const pNameNorm = String(pObj?.name || '').trim().toLowerCase();
       const pPhoneNorm = String(pObj?.phone || pObj?.mobileNumber || '').trim();
       const existingRefNos = new Set();
-      const existingSignatures = new Set();
       combinedTxs.forEach(t => {
         if (t.billNumber) existingRefNos.add(String(t.billNumber).trim().toLowerCase());
         if (t.refNo) existingRefNos.add(String(t.refNo).trim().toLowerCase());
         if (t._id) existingRefNos.add(String(t._id).trim().toLowerCase());
         if (t.id) existingRefNos.add(String(t.id).trim().toLowerCase());
-        const dStr = t.date ? new Date(t.date).toISOString().slice(0, 10) : "";
-        const amt = Number(t.billAmount || t.debit || t.credit || 0);
-        if (dStr && amt > 0) {
-          existingSignatures.add(`${dStr}_${amt}`);
-        }
       });
 
       const localBills = (bills || []).filter(b => {
         const bPartyId = String(b.partyId || '');
-        const bCust = String(b.customerName || b.partyName || '').trim().toLowerCase();
-        const bPhone = String(b.customerMobile || b.customerPhone || '').trim();
-        return (bPartyId && bPartyId === String(partyId)) || (bCust && bCust === pNameNorm) || (bPhone && pPhoneNorm && bPhone === pPhoneNorm);
+        const bCust = String(b.customerName || b.partyName || b.customer || '').trim().toLowerCase();
+        const bPhone = String(b.customerMobile || b.customerPhone || b.phone || '').trim();
+        const pIdMatch = bPartyId && (bPartyId === String(partyId) || (pObj?._id && bPartyId === String(pObj._id)) || (pObj?.id && bPartyId === String(pObj.id)));
+        const pNameMatch = Boolean(bCust && pNameNorm && (bCust === pNameNorm || bCust.includes(pNameNorm) || pNameNorm.includes(bCust)));
+        const pPhoneMatch = Boolean(pPhoneNorm && bPhone && (bPhone === pPhoneNorm || bPhone.slice(-10) === pPhoneNorm.slice(-10)));
+        return pIdMatch || pNameMatch || pPhoneMatch;
       });
 
       for (const b of localBills) {
@@ -2569,9 +2599,7 @@ function MobileVyaparAppContent() {
         const bId = String(b._id || b.id || '').trim();
         if (existingRefNos.has(bNum.toLowerCase()) || existingRefNos.has(bId.toLowerCase())) continue;
 
-        const bDateStr = (b.rawDate || b.date) ? new Date(b.rawDate || b.date).toISOString().slice(0, 10) : "";
         const finalAmt = Number(b.finalAmount ?? b.total ?? b.amount ?? 0);
-        if (bDateStr && finalAmt > 0 && existingSignatures.has(`${bDateStr}_${finalAmt}`)) continue;
 
         const isPaid = String(b.paymentStatus || b.status || '').toLowerCase() === 'paid';
         const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
@@ -3913,8 +3941,18 @@ function MobileVyaparAppContent() {
       const partyTitle = manualSaleCustomer.trim() || (manualSalePaymentMode === 'CASH' ? "काउंटर नकद बिक्री" : manualSalePaymentMode === 'UPI' ? "UPI ऑनलाइन बिक्री" : "उधारी ग्राहक");
       const genBillNo = `SALE-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
       
+      const foundParty = (parties || []).find(p => {
+        const pName = String(p?.name || '').trim().toLowerCase();
+        const pPhone = String(p?.phone || p?.mobileNumber || '').trim();
+        if (partyTitle && pName === partyTitle.toLowerCase()) return true;
+        if (manualSalePhone.trim() && pPhone && pPhone === manualSalePhone.trim()) return true;
+        return false;
+      });
+      const resolvedManualPartyId = foundParty?._id || foundParty?.id || undefined;
+
       const payload = {
         billNumber: genBillNo,
+        partyId: resolvedManualPartyId,
         partyName: partyTitle,
         customerName: partyTitle,
         customerPhone: manualSalePhone.trim(),
@@ -3949,9 +3987,14 @@ function MobileVyaparAppContent() {
         id: genBillNo,
         billNumber: genBillNo,
         invoiceNumber: genBillNo,
+        partyId: resolvedManualPartyId,
+        party: resolvedManualPartyId,
+        partyName: partyTitle,
         customerName: partyTitle,
         customer: partyTitle,
         phone: payload.customerPhone,
+        customerPhone: payload.customerPhone,
+        customerMobile: payload.customerPhone,
         amount: saleAmt,
         finalAmount: saleAmt,
         total: saleAmt,
@@ -3961,9 +4004,11 @@ function MobileVyaparAppContent() {
         paymentMode: manualSalePaymentMode,
         paymentMethod: manualSalePaymentMode === "UDHAR" || manualSalePaymentMode === "CREDIT" ? "credit" : "cash",
         paymentStatus: payload.paymentStatus,
+        status: payload.status,
         date: saleDateDisplay,
         rawDate: rawDateStr,
         items: payload.items,
+        notes: payload.notes,
         isOfflineCreated: true,
         createdAt: rawDateStr
       };
@@ -8629,6 +8674,21 @@ function MobileVyaparAppContent() {
 
               {/* WhatsApp, Call, Clear Balance & Old Hisab Action Buttons */}
               <div className="flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBillCustomer(selectedPartyDetail.name || '');
+                    setBillCustomerPhone(selectedPartyDetail.phone || selectedPartyDetail.mobileNumber || '');
+                    setBillCustomerAddress(selectedPartyDetail.address || '');
+                    setSelectedPartyObject(selectedPartyDetail);
+                    setBillPaymentMode("UDHAR");
+                    setShowQuickBillModal(true);
+                  }}
+                  className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition shadow-xs"
+                  title="इस पार्टी का नया बिल बनाएं"
+                >
+                  🧾 + नया बिल बनाएं
+                </button>
                 <button
                   type="button"
                   onClick={() => handleOpenOldHisabModal(selectedPartyDetail)}
