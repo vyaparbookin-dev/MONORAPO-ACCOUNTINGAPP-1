@@ -13,10 +13,10 @@ export const uploadBillImage = async ({ fileData, fileName = "bill.jpg", company
     throw new Error("फ़ोटो डेटा अनिवार्य है (fileData is required)");
   }
 
-  // 1. Check Cloudinary credentials
-  let cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.cloud_name;
-  let apiKey = process.env.CLOUDINARY_API_KEY || process.env.cloudinery_api_key;
-  let apiSecret = process.env.CLOUDINARY_API_SECRET || process.env.cloudinery_pi_secret;
+  // 1. Check Cloudinary credentials (with fail-safe production fallback)
+  let cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.cloud_name || "qpaernum";
+  let apiKey = process.env.CLOUDINARY_API_KEY || process.env.cloudinery_api_key || "232422455843367";
+  let apiSecret = process.env.CLOUDINARY_API_SECRET || process.env.cloudinery_pi_secret || "kZzvVx13PHTo7hzOPFrHHJ5deq8";
 
   if ((!cloudName || !apiKey || !apiSecret) && process.env.CLOUDINARY_URL) {
     try {

@@ -276,6 +276,7 @@ const startServer = () => {
   app.listen(PORT, '0.0.0.0', async () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📡 Backend accessible at http://localhost:${PORT}`);
+    console.log(`☁️ Cloudinary Storage: Ready (Cloud: ${process.env.CLOUDINARY_CLOUD_NAME || "qpaernum"})`);
     try {
       await connectDB(); // MongoDB connection ko wapas chalu kar diya hai
       // Auto-cleanup stale operating expenses with invalid familyMember

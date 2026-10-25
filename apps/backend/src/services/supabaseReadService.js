@@ -200,6 +200,7 @@ export const mapSupabasePurchaseToPurchase = (row) => ({
   paymentStatus: row.payment_status || "paid",
   paymentMethod: row.payment_method || "cash",
   supplierName: row.supplier_name || "सप्लायर",
+  billImageUrl: row.bill_image_url || null,
   isDeleted: Boolean(row.is_deleted),
   createdAt: row.created_at,
   updatedAt: row.updated_at
