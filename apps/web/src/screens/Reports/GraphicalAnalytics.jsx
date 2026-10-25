@@ -12,14 +12,16 @@ export default function GraphicalAnalytics() {
     const generateReport = async () => {
       setLoading(true);
       try {
-        // Fetch from Cloud API for Web
-        const [billsRes, expRes] = await Promise.all([
+        // Fetch from Cloud API for Web (Including Purchases for COGS)
+        const [billsRes, expRes, purRes] = await Promise.all([
           api.get("/api/billing?limit=10000").catch(() => ({ data: [] })),
-          api.get("/api/expenses").catch(() => ({ data: [] }))
+          api.get("/api/expenses").catch(() => ({ data: [] })),
+          api.get("/api/purchase?limit=10000").catch(() => ({ data: [] }))
         ]);
 
-        const bills = billsRes?.bills || [];
-        const expenses = expRes?.expenses || [];
+        const bills = billsRes?.bills || billsRes?.data?.bills || (Array.isArray(billsRes?.data) ? billsRes.data : []) || [];
+        const expenses = expRes?.expenses || expRes?.data?.expenses || (Array.isArray(expRes?.data) ? expRes.data : []) || [];
+        const purchases = purRes?.purchases || purRes?.data?.purchases || (Array.isArray(purRes?.data) ? purRes.data : []) || [];
 
         const months = [];
         const today = new Date();
@@ -31,6 +33,7 @@ export default function GraphicalAnalytics() {
             month: d.getMonth(),
             sales: 0,
             expenses: 0,
+            purchases: 0,
           });
         }
 
@@ -45,19 +48,32 @@ export default function GraphicalAnalytics() {
           const monthEntry = months.find(m => m.month === d.getMonth() && m.year === d.getFullYear());
           if (monthEntry) monthEntry.expenses += (Number(exp.amount) || 0);
         });
+
+        purchases.forEach(pur => {
+          const d = new Date(pur.date || pur.createdAt);
+          const monthEntry = months.find(m => m.month === d.getMonth() && m.year === d.getFullYear());
+          if (monthEntry) monthEntry.purchases += (Number(pur.finalAmount) || Number(pur.totalAmount) || Number(pur.total) || 0);
+        });
         
-        const finalChartData = months.map(m => ({
+        const finalChartData = months.map(m => {
+          const cogs = m.purchases > 0 ? m.purchases : Math.round(m.sales * 0.85);
+          return {
             month: m.name,
             sales: m.sales,
             expenses: m.expenses,
-            profit: m.sales - m.expenses
-        }));
+            purchases: m.purchases,
+            cogs,
+            profit: Math.max(0, m.sales - cogs) - m.expenses
+          };
+        });
 
         setChartData(finalChartData);
 
         const totalSales = finalChartData.reduce((sum, m) => sum + m.sales, 0);
         const totalExpenses = finalChartData.reduce((sum, m) => sum + m.expenses, 0);
-        setSummary({ totalSales, totalExpenses, netProfit: totalSales - totalExpenses });
+        const totalCOGS = finalChartData.reduce((sum, m) => sum + m.cogs, 0);
+        const netProfit = Math.max(0, totalSales - totalCOGS) - totalExpenses;
+        setSummary({ totalSales, totalExpenses, totalCOGS, netProfit });
 
       } catch (err) {
         console.error("Failed to generate graphical report:", err);

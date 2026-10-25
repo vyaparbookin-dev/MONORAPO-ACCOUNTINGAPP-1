@@ -311,6 +311,16 @@ const ReportsPage = () => {
       } catch (e) {
         console.log("Expenses API not available");
       }
+
+      // Fetch purchases for Cost of Goods Sold (COGS)
+      let purchasesData = [];
+      try {
+        const purchasesResponse = await api.get("/api/purchase?limit=1000");
+        const pData = purchasesResponse.data || purchasesResponse;
+        purchasesData = Array.isArray(pData.purchases) ? pData.purchases : (Array.isArray(pData.data?.purchases) ? pData.data.purchases : (Array.isArray(pData.data) ? pData.data : (Array.isArray(pData) ? pData : [])));
+      } catch (e) {
+        console.log("Purchases API not available");
+      }
       
       // Filter bills by date range
       const filteredBills = allBills.filter(bill => {
@@ -358,8 +368,13 @@ const ReportsPage = () => {
           sum + (exp.amount || 0), 0);
         expensesByMonth.push(monthExpense);
         
-        // Calculate profit
-        profitByMonth.push(monthIncome - monthExpense);
+        // Calculate COGS and profit for this month (सामान खरीद लागत घटाकर)
+        const monthPurchases = purchasesData.filter(pur => {
+          const purDate = new Date(pur.date || pur.createdAt);
+          return purDate.getMonth() === monthDate.getMonth() && purDate.getFullYear() === year;
+        }).reduce((sum, p) => sum + (Number(p.finalAmount || p.totalAmount || p.total) || 0), 0);
+        const monthCOGS = monthPurchases > 0 ? monthPurchases : Math.round(monthIncome * 0.85);
+        profitByMonth.push(Math.max(0, monthIncome - monthCOGS) - monthExpense);
       }
       
       // Calculate totals
@@ -367,7 +382,17 @@ const ReportsPage = () => {
         sum + (bill.finalAmount || bill.totalAmount || bill.total || 0), 0);
       const totalExpenses = filteredExpenses.reduce((sum, exp) => 
         sum + (exp.amount || 0), 0);
-      const totalProfit = totalIncome - totalExpenses;
+
+      // Deduct Cost of Goods Sold (COGS) so profit is not artificially high
+      const filteredPurchases = purchasesData.filter(pur => {
+        const purDate = new Date(pur.date || pur.createdAt);
+        return purDate >= startDate && purDate <= endDate;
+      });
+      const totalRecordedPurchases = filteredPurchases.reduce((sum, p) => 
+        sum + (Number(p.finalAmount || p.totalAmount || p.total) || 0), 0);
+      const totalCOGS = totalRecordedPurchases > 0 ? totalRecordedPurchases : Math.round(totalIncome * 0.85);
+      const grossProfit = Math.max(0, totalIncome - totalCOGS);
+      const totalProfit = grossProfit - totalExpenses;
       const profitMargin = totalIncome > 0 ? ((totalProfit / totalIncome) * 100).toFixed(1) : 0;
       
       // Expense breakdown by category

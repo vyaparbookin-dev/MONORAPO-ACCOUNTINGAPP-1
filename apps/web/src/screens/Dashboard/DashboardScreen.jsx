@@ -4,12 +4,18 @@ import api from "../../services/api";
 import { readCompanyScopedBills } from "../../utils/companyScopedStorage";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
+import { deduplicatePurchases } from "../../utils/deduplicatePurchases";
 
 export default function DashboardScreen() {
   const [stats, setStats] = useState({
     totalRevenue: 0,
     totalExpenses: 0,
+    totalCOGS: 0,
+    cogsSource: 'estimated',
+    grossProfit: 0,
+    netProfit: 0,
     pendingPayments: 0,
+    pendingAmount: 0,
     completedPayments: 0,
     activeProducts: 0,
     monthlyData: [],
@@ -33,11 +39,13 @@ export default function DashboardScreen() {
       else setLoading(true);
 
       // Parallel API calls for faster loading
-      const [billsRes, expensesRes, invSummaryRes, approvalsRes] = await Promise.all([
+      const [billsRes, expensesRes, invSummaryRes, approvalsRes, purchasesRes, plRes] = await Promise.all([
         api.get("/api/billing?limit=500").catch(() => ({ data: { bills: [] } })),
         api.get("/api/expenses").catch(() => ({ data: { expenses: [] } })),
         api.get("/api/inventory/summary").catch(() => ({ data: { summary: {} } })),
-        api.get("/api/approvals").catch(() => ({ data: { data: {} } }))
+        api.get("/api/approvals").catch(() => ({ data: { data: {} } })),
+        api.get("/api/purchase?limit=500").catch(() => ({ data: { purchases: [] } })),
+        api.get("/api/reports/profit-loss").catch(() => ({ data: { data: {} } }))
       ]);
 
       const companyId = localStorage.getItem("companyId") || localStorage.getItem("selectedCompany") || "";
@@ -50,14 +58,25 @@ export default function DashboardScreen() {
       const resData = billsRes?.data || billsRes || {};
       const serverBillsList = Array.isArray(resData.bills) ? resData.bills : (Array.isArray(resData.data?.bills) ? resData.data.bills : (Array.isArray(resData.data) ? resData.data : (Array.isArray(resData) ? resData : [])));
       const billsData = deduplicateBills([...serverBillsList, ...localBills]);
+      
       const serverExpenses = (Array.isArray(expensesRes?.expenses) && expensesRes.expenses.length > 0) ? expensesRes.expenses : (Array.isArray(expensesRes?.data?.expenses) && expensesRes.data.expenses.length > 0) ? expensesRes.data.expenses : (Array.isArray(expensesRes?.data) ? expensesRes.data : []);
-      // BUG-18: Merge local offline expenses with server expenses
       let localExpenses = [];
       try {
         const storedExp = localStorage.getItem("vb_local_expenses");
         if (storedExp) localExpenses = JSON.parse(storedExp);
       } catch(e) {}
       const expensesData = deduplicateExpenses([...serverExpenses, ...localExpenses]);
+
+      // Purchases & COGS Data
+      const purData = purchasesRes?.data || purchasesRes || {};
+      const serverPurchasesList = Array.isArray(purData.purchases) ? purData.purchases : (Array.isArray(purData.data?.purchases) ? purData.data.purchases : (Array.isArray(purData.data) ? purData.data : (Array.isArray(purData) ? purData : [])));
+      let localPurchases = [];
+      try {
+        const storedPur = localStorage.getItem("vb_local_purchases") || localStorage.getItem("purchases");
+        if (storedPur) localPurchases = JSON.parse(storedPur);
+      } catch(e) {}
+      const purchasesData = deduplicatePurchases([...serverPurchasesList, ...(Array.isArray(localPurchases) ? localPurchases : [])]);
+
       const invSummary = invSummaryRes?.data?.summary || invSummaryRes?.summary || {};
       const approvalsData = approvalsRes?.data?.data || approvalsRes?.data || {};
 
@@ -65,14 +84,64 @@ export default function DashboardScreen() {
       const dateFilteredBills = filterBillsByDate(billsData, dateRange);
       const filteredBills = dateFilteredBills;
       const filteredExpenses = filterBillsByDate(expensesData, dateRange);
+      const filteredPurchases = filterBillsByDate(purchasesData, dateRange);
       setBills(filteredBills.slice(0, 8));
 
       // Calculate stats from filtered data
       const totalRevenue = filteredBills.reduce((sum, b) => 
         sum + Number(b.finalAmount || b.totalAmount || b.total || b.grandTotal || b.amount || 0), 0);
-      const totalExpenses = filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-      const pendingPayments = filteredBills.filter((b) => b.status !== "paid").length;
-      const completedPayments = filteredBills.filter((b) => b.status === "paid").length;
+      const totalExpenses = filteredExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+      // --- ACCURATE COGS (सामान की खरीद लागत) CALCULATION ---
+      // 1. Line items cost if costPrice is recorded on bill items
+      const itemsCOGS = filteredBills.reduce((sum, b) => {
+        if (!Array.isArray(b.items)) return sum;
+        return sum + b.items.reduce((iSum, it) => {
+          const q = Number(it.quantity || it.qty || 1);
+          const cp = Number(it.costPrice || it.purchasePrice || 0);
+          return iSum + (cp > 0 ? cp * q : 0);
+        }, 0);
+      }, 0);
+
+      // 2. Direct supplier purchases in this period
+      const recordedPurchases = filteredPurchases.reduce((sum, p) => 
+        sum + Number(p.finalAmount || p.totalAmount || p.total || p.amountPaid || 0), 0);
+
+      const serverCOGS = Number(plRes?.data?.data?.totalPurchase || plRes?.data?.data?.effectivePurchases || 0);
+
+      // 3. Realistic retail margin fallback (15% margin -> COGS = 85% of sales)
+      const estimatedCOGS = Math.round(totalRevenue * 0.85);
+
+      let totalCOGS = 0;
+      let cogsSource = "estimated";
+      if (itemsCOGS > 0 && itemsCOGS >= totalRevenue * 0.3) {
+        totalCOGS = itemsCOGS;
+        cogsSource = "item_cost";
+      } else if (recordedPurchases > 0 && recordedPurchases >= totalRevenue * 0.3) {
+        totalCOGS = recordedPurchases;
+        cogsSource = "purchases";
+      } else if (serverCOGS > 0 && serverCOGS >= totalRevenue * 0.3) {
+        totalCOGS = serverCOGS;
+        cogsSource = "purchases";
+      } else if (recordedPurchases > 0) {
+        totalCOGS = recordedPurchases;
+        cogsSource = "purchases";
+      } else if (itemsCOGS > 0) {
+        totalCOGS = itemsCOGS;
+        cogsSource = "item_cost";
+      } else {
+        totalCOGS = estimatedCOGS;
+        cogsSource = "estimated";
+      }
+
+      const grossProfit = Math.max(0, totalRevenue - totalCOGS);
+      const netProfit = grossProfit - totalExpenses;
+
+      const pendingBills = filteredBills.filter((b) => b.status !== "paid" && b.paymentStatus !== "paid");
+      const pendingPayments = pendingBills.length;
+      const pendingAmount = pendingBills.reduce((sum, b) => 
+        sum + Number(b.finalAmount || b.totalAmount || b.total || 0), 0);
+      const completedPayments = filteredBills.filter((b) => b.status === "paid" || b.paymentStatus === "paid").length;
       const activeProducts = invSummary.totalProducts || 0;
       const lowStockItems = invSummary.lowStockItems || 0;
       const pendingBillsCount = (approvalsData.bills || []).length;
@@ -94,14 +163,19 @@ export default function DashboardScreen() {
       }
 
       // Generate monthly data for chart
-      const monthlyData = generateMonthlyData(filteredBills);
+      const monthlyData = generateMonthlyData(filteredBills, filteredPurchases, filteredExpenses);
 
       setStats({
         totalRevenue,
         totalExpenses,
+        totalCOGS,
+        cogsSource,
+        grossProfit,
+        netProfit,
         revenueGrowthPercent,
         isRevenuePositive,
         pendingPayments,
+        pendingAmount,
         completedPayments,
         activeProducts,
         monthlyData,
@@ -165,7 +239,7 @@ export default function DashboardScreen() {
     });
   };
 
-  const generateMonthlyData = (items) => {
+  const generateMonthlyData = (items, purchasesList = [], expensesList = []) => {
     if (!Array.isArray(items)) return [];
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const currentMonth = new Date().getMonth();
@@ -179,7 +253,30 @@ export default function DashboardScreen() {
         return billMonth === monthIndex;
       });
       const total = monthBills.reduce((sum, b) => sum + (b.finalAmount || b.totalAmount || b.total || 0), 0);
-      data.push({ month: months[monthIndex], amount: total });
+
+      const monthExpenses = (expensesList || []).filter(e => {
+        if (!e) return false;
+        const d = new Date(e.date || e.createdAt);
+        return d.getMonth() === monthIndex;
+      }).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+      const monthPurchases = (purchasesList || []).filter(p => {
+        if (!p) return false;
+        const d = new Date(p.date || p.createdAt);
+        return d.getMonth() === monthIndex;
+      }).reduce((sum, p) => sum + Number(p.finalAmount || p.total || 0), 0);
+
+      const monthCOGS = monthPurchases > 0 ? monthPurchases : Math.round(total * 0.85);
+      const monthProfit = Math.max(0, total - monthCOGS) - monthExpenses;
+
+      data.push({ 
+        month: months[monthIndex], 
+        amount: total,
+        revenue: total,
+        expenses: monthExpenses,
+        cogs: monthCOGS,
+        profit: monthProfit
+      });
     }
     return data;
   };
@@ -203,7 +300,8 @@ export default function DashboardScreen() {
     );
   }
 
-  const netProfit = stats.totalRevenue - stats.totalExpenses;
+  const netProfit = stats.netProfit !== undefined ? stats.netProfit : (stats.totalRevenue - (stats.totalCOGS || 0) - stats.totalExpenses);
+  const grossProfit = stats.grossProfit !== undefined ? stats.grossProfit : Math.max(0, stats.totalRevenue - (stats.totalCOGS || 0));
   const maxRevenue = Math.max(...stats.monthlyData.map(d => d.amount), 1);
 
   return (
@@ -257,10 +355,10 @@ export default function DashboardScreen() {
       )}
 
       {/* KPI Cards - Enhanced */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <KPICard
           label="Total Revenue"
-          value={`₹${stats.totalRevenue.toLocaleString()}`}
+          value={`₹${stats.totalRevenue.toLocaleString('en-IN')}`}
           change={`${(stats.revenueGrowthPercent ?? 12.5) >= 0 ? '+' : ''}${(stats.revenueGrowthPercent ?? 12.5).toFixed(1)}%`}
           changeType={(stats.revenueGrowthPercent ?? 0) >= 0 ? "positive" : "negative"}
           icon={(stats.revenueGrowthPercent ?? 0) >= 0 ? <ArrowUpRight className="text-emerald-600" size={20} /> : <ArrowDownLeft className="text-rose-600" size={20} />}
@@ -270,8 +368,19 @@ export default function DashboardScreen() {
         />
 
         <KPICard
+          label="Goods Cost (COGS)"
+          value={`₹${(stats.totalCOGS || 0).toLocaleString('en-IN')}`}
+          subtext={stats.cogsSource === 'item_cost' ? 'Item Cost Price' : stats.cogsSource === 'purchases' ? 'Purchase Invoices' : 'सामान खरीद लागत (85%)'}
+          icon={<Package className="text-amber-600" size={20} />}
+          bgColor="bg-gradient-to-br from-amber-50 to-amber-100"
+          borderColor="border-amber-200"
+          iconBg="bg-amber-100"
+        />
+
+        <KPICard
           label="Total Expenses"
-          value={`₹${stats.totalExpenses.toLocaleString()}`}
+          value={`₹${stats.totalExpenses.toLocaleString('en-IN')}`}
+          subtext="दुकान खर्च (खर्चा)"
           change="+8.2%"
           changeType="negative"
           icon={<ArrowDownLeft className="text-rose-600" size={20} />}
@@ -282,19 +391,20 @@ export default function DashboardScreen() {
 
         <KPICard
           label="Net Profit"
-          value={`₹${netProfit.toLocaleString()}`}
+          value={`₹${netProfit.toLocaleString('en-IN')}`}
+          subtext={`Gross: ₹${grossProfit.toLocaleString('en-IN')}`}
           change={netProfit >= 0 ? "+15.3%" : "-5.2%"}
           changeType={netProfit >= 0 ? "positive" : "negative"}
           icon={<TrendingUp className={netProfit >= 0 ? "text-green-600" : "text-red-600"} size={20} />}
-          bgColor="bg-gradient-to-br from-blue-50 to-blue-100"
-          borderColor="border-blue-200"
-          iconBg="bg-blue-100"
+          bgColor={netProfit >= 0 ? "bg-gradient-to-br from-blue-50 to-blue-100" : "bg-gradient-to-br from-red-50 to-red-100"}
+          borderColor={netProfit >= 0 ? "border-blue-200" : "border-red-200"}
+          iconBg={netProfit >= 0 ? "bg-blue-100" : "bg-red-100"}
         />
 
         <KPICard
           label="Pending Payments"
           value={stats.pendingPayments}
-          subtext={`₹${(stats.totalRevenue * 0.3).toLocaleString()}`}
+          subtext={`₹${(stats.pendingAmount || 0).toLocaleString('en-IN')} बकाया`}
           icon={<Clock className="text-orange-600" size={20} />}
           bgColor="bg-gradient-to-br from-orange-50 to-orange-100"
           borderColor="border-orange-200"
