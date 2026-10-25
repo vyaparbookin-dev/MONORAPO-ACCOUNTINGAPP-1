@@ -2491,7 +2491,12 @@ function MobileVyaparAppContent() {
         return tPartyId && tPartyId === String(partyId);
       });
 
-      // Merge attached photos from matching local transactions and local bills into server transactions so photos never vanish
+      // Merge attached photos from persistent photo cache, local transactions, and bills
+      let photosCache = {};
+      try {
+        photosCache = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
+      } catch (e) {}
+
       combinedTxs = combinedTxs.map(st => {
         let imgUrl = st.billImageUrl || '';
         let imgUrls = (st.billImageUrls && st.billImageUrls.length > 0) ? [...st.billImageUrls] : (imgUrl ? [imgUrl] : []);
@@ -2499,6 +2504,15 @@ function MobileVyaparAppContent() {
         const stId = String(st._id || st.id || '').replace(/^pay_/, '').trim();
         const stRef = String(st.refNo || st.billNumber || '').trim().toLowerCase();
 
+        // 1. Check persistent photo cache by ID or refNo
+        const cached = photosCache[stId] || photosCache[st._id] || photosCache[stRef] || photosCache[st.refNo] || photosCache[st.billNumber];
+        if (cached) {
+          const cachedUrls = Array.isArray(cached) ? cached : [cached];
+          imgUrls = Array.from(new Set([...imgUrls, ...cachedUrls].filter(Boolean)));
+          if (!imgUrl && cachedUrls[0]) imgUrl = cachedUrls[0];
+        }
+
+        // 2. Check local matching party transactions
         const localMatch = matchingLocalTxs.find(lt => {
           const ltId = String(lt._id || lt.id || '').replace(/^pay_/, '').trim();
           const ltRef = String(lt.refNo || lt.billNumber || '').trim().toLowerCase();
@@ -2510,7 +2524,8 @@ function MobileVyaparAppContent() {
           if (!imgUrl && localMatch.billImageUrl) imgUrl = localMatch.billImageUrl;
         }
 
-        const billMatch = (bills || []).find(b => {
+        // 3. Check all available bills (from state AND localStorage)
+        const billMatch = (allAvailableBills || bills || []).find(b => {
           const bId = String(b._id || b.id || '').trim();
           const bNum = String(b.billNumber || b.invoiceNumber || '').trim().toLowerCase();
           return (bId && stId && bId === stId) || (bNum && stRef && (bNum === stRef || stRef.includes(bNum)));
@@ -2699,6 +2714,43 @@ function MobileVyaparAppContent() {
     }
   };
 
+  // Client-side fast image compression to ensure camera uploads complete in <1s and never time out
+  const compressImageFile = async (file, maxWidth = 1600, quality = 0.8) => {
+    if (!file) return null;
+    return new Promise((resolve) => {
+      if (!file.type || !file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedBase64 = canvas.toDataURL("image/jpeg", quality);
+          resolve(compressedBase64);
+        };
+        img.onerror = () => resolve(e.target.result);
+        img.src = e.target.result;
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleAttachPartyImage = async (txId, filesInput) => {
     if (!filesInput) return;
     const files = filesInput instanceof FileList || Array.isArray(filesInput)
@@ -2715,12 +2767,8 @@ function MobileVyaparAppContent() {
 
       for (let i = 0; i < validFiles.length; i++) {
         const file = validFiles[i];
-        const base64Data = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
+        const base64Data = await compressImageFile(file);
+        if (!base64Data) continue;
 
         const res = await api.post('/api/upload/bill-image', {
           fileData: base64Data,
@@ -2811,11 +2859,21 @@ function MobileVyaparAppContent() {
         });
       }
 
-      alert(`✅ ${validFiles.length} बिल फोटो सफलतापूर्वक सुरक्षित व लिंक हो गईं!`);
-      const pId = selectedPartyDetail?._id || selectedPartyDetail?.id;
-      if (pId) {
-        fetchPartyStatement(pId);
+      // Persist to reliable local photo cache so photos never vanish even across reloads
+      if (latestUrls.length > 0 || latestPrimaryUrl) {
+        const allNewUrls = Array.from(new Set([...latestUrls, latestPrimaryUrl].filter(Boolean)));
+        const cleanTargetId = String(txId).replace(/^(pay_|open_)/, '').trim();
+        try {
+          const photosCache = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
+          const existingForTx = Array.isArray(photosCache[txId]) ? photosCache[txId] : (photosCache[txId] ? [photosCache[txId]] : []);
+          const mergedCache = Array.from(new Set([...existingForTx, ...allNewUrls].filter(Boolean)));
+          photosCache[txId] = mergedCache;
+          if (cleanTargetId) photosCache[cleanTargetId] = mergedCache;
+          localStorage.setItem("vb_tx_photos_cache", JSON.stringify(photosCache));
+        } catch (e) {}
       }
+
+      alert(`✅ ${validFiles.length} बिल फोटो सफलतापूर्वक सुरक्षित व लिंक हो गईं!`);
     } catch (err) {
       console.error("Upload error:", err);
       alert("फोटो अपलोड करने में त्रुटि: " + (err.response?.data?.message || err.message));
@@ -2826,6 +2884,14 @@ function MobileVyaparAppContent() {
     if (!imageUrl) return;
     if (!window.confirm("क्या आप वाकई यह बिल फोटो हटाना चाहते हैं?")) return;
     try {
+      try {
+        const photosCache = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
+        const cleanTargetId = String(txId).replace(/^(pay_|open_)/, '').trim();
+        if (photosCache[txId]) photosCache[txId] = (photosCache[txId] || []).filter(u => u !== imageUrl);
+        if (cleanTargetId && photosCache[cleanTargetId]) photosCache[cleanTargetId] = (photosCache[cleanTargetId] || []).filter(u => u !== imageUrl);
+        localStorage.setItem("vb_tx_photos_cache", JSON.stringify(photosCache));
+      } catch (e) {}
+
       const res = await api.post('/api/upload/delete-bill-image', {
         targetId: txId,
         imageUrl
@@ -2928,12 +2994,8 @@ function MobileVyaparAppContent() {
 
       for (let i = 0; i < validFiles.length; i++) {
         const file = validFiles[i];
-        const base64Data = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
+        const base64Data = await compressImageFile(file);
+        if (!base64Data) continue;
 
         const res = await api.post('/api/upload/bill-image', {
           fileData: base64Data,

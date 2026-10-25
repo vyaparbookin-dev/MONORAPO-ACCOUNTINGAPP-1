@@ -4,6 +4,7 @@ import Purchase from "../model/purchase.js";
 import PartyTransaction from "../model/PartyTransaction.js";
 import mongoose from "mongoose";
 import { syncBillPhotoToSupabase, syncPartyTxToSupabase } from "../services/supabaseSyncService.js";
+import { supabase } from "../config/supabase.js";
 
 /**
  * @desc    Upload bill/receipt photo to Cloudinary (or fallback) and optionally link to a bill/transaction
@@ -73,15 +74,32 @@ export const uploadBillPhoto = async (req, res) => {
         }
       }
 
-      // Sync with Supabase (Sales and Purchases)
+      // Sync with Supabase (Sales and Purchases) - Await to ensure persistence before statement refetch
       const allUrls = updatedRecord?.billImageUrls && updatedRecord.billImageUrls.length > 0 
         ? updatedRecord.billImageUrls 
         : [imageUrl];
 
       const refToSync = updatedRecord?.billNumber || updatedRecord?.invoiceNumber || updatedRecord?.purchaseNumber || cleanId;
-      syncBillPhotoToSupabase(refToSync, imageUrl).catch(() => {});
-      if (cleanId !== refToSync) {
-        syncBillPhotoToSupabase(cleanId, imageUrl).catch(() => {});
+      try {
+        if (refToSync) await syncBillPhotoToSupabase(refToSync, imageUrl);
+        if (cleanId && cleanId !== refToSync) await syncBillPhotoToSupabase(cleanId, imageUrl);
+        if (targetId && targetId !== cleanId && targetId !== refToSync) await syncBillPhotoToSupabase(targetId, imageUrl);
+      } catch (syncErr) {
+        console.warn("[uploadBillPhoto] Supabase syncBillPhoto warning:", syncErr.message);
+      }
+
+      if (supabase) {
+        try {
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+          if (isUuid) {
+            await supabase.from("sales").update({ bill_image_url: imageUrl }).eq("id", cleanId);
+            await supabase.from("purchases").update({ bill_image_url: imageUrl }).eq("id", cleanId);
+          }
+          await supabase.from("sales").update({ bill_image_url: imageUrl }).eq("bill_number", cleanId);
+          await supabase.from("purchases").update({ bill_image_url: imageUrl }).eq("purchase_number", cleanId);
+        } catch (dirSbErr) {
+          console.warn("[uploadBillPhoto] Direct Supabase update note:", dirSbErr.message);
+        }
       }
 
       if (updatedRecord && (targetType === "party_tx" || updatedRecord.partyId)) {
