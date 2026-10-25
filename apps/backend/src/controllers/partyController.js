@@ -4,9 +4,10 @@ import Purchase from "../model/purchase.js";
 import PartyTransaction from "../model/PartyTransaction.js";
 import Product from "../model/product.js";
 import mongoose from "mongoose";
-import { syncPartyToSupabase, syncPartyTxToSupabase, syncBillPhotoToSupabase } from "../services/supabaseSyncService.js";
+import { syncPartyToSupabase, syncPartyTxToSupabase, syncBillPhotoToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
 import { uploadBillImage } from "../services/storageService.js";
-import { getPartiesFromSupabase, getPartyByIdFromSupabase, getPartyTransactionsFromSupabase } from "../services/supabaseReadService.js";
+import { getPartiesFromSupabase, getPartyByIdFromSupabase, getPartyTransactionsFromSupabase, getBillsFromSupabase, getPurchasesFromSupabase, mapSupabaseSalesToBill, mapSupabasePurchaseToPurchase } from "../services/supabaseReadService.js";
+import { supabase } from "../config/supabase.js";
 
 export const createParty = async (req, res) => {
   try {
@@ -341,6 +342,15 @@ export const getPartyStatement = async (req, res) => {
         ]
       });
     }
+    // Fallback: Check Supabase for party if not found in MongoDB
+    if (!party) {
+      try {
+        const sbParty = await getPartyByIdFromSupabase(req.params.id, req.companyId);
+        if (sbParty) party = sbParty;
+      } catch (sbErr) {
+        console.warn("[getPartyStatement] Supabase party lookup error:", sbErr.message);
+      }
+    }
     if (!party) return res.status(404).json({ success: false, error: "Party not found" });
 
     const escapeRegex = (s) => (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -358,41 +368,144 @@ export const getPartyStatement = async (req, res) => {
       pIdQuery.push(new mongoose.Types.ObjectId(pIdStr));
     }
 
-    // 1. Direct Party Transactions (Cash/Bank Payments & Receipts)
-    const txRecords = await PartyTransaction.find({
-      partyId: { $in: pIdQuery },
-      companyId: { $in: coQuery },
-      isDeleted: { $ne: true }
-    }).lean();
-
-    // 2. Sales Bills for this party
-    const billFilter = {
-      companyId: { $in: coQuery },
-      isDeleted: { $ne: true },
-      $or: [
-        { partyId: { $in: pIdQuery } },
-        { customerName: nameRegex },
-        { partyName: nameRegex },
-        { customer: nameRegex }
-      ]
-    };
-    if (party.mobileNumber && party.mobileNumber.length >= 10) {
-      billFilter.$or.push({ customerMobile: party.mobileNumber }, { customerPhone: party.mobileNumber });
+    // 1. Direct Party Transactions (Cash/Bank Payments & Receipts from Mongo + Supabase)
+    let txRecords = [];
+    try {
+      txRecords = await PartyTransaction.find({
+        partyId: { $in: pIdQuery },
+        companyId: { $in: coQuery },
+        isDeleted: { $ne: true }
+      }).lean();
+    } catch (e) {
+      console.warn("[getPartyStatement] Mongo txRecords error:", e.message);
     }
-    const billRecords = await Bill.find(billFilter).lean();
 
-    // 3. Purchase Bills for this party (if supplier)
-    const purchaseFilter = {
-      companyId: { $in: coQuery },
-      isDeleted: { $ne: true },
-      $or: [
-        { partyId: { $in: pIdQuery } },
-        { supplierName: nameRegex },
-        { supplier: nameRegex },
-        { partyName: nameRegex }
-      ]
-    };
-    const purchaseRecords = await Purchase.find(purchaseFilter).lean();
+    try {
+      const sbTxs = await getPartyTransactionsFromSupabase({
+        partyId: party._id || party.id,
+        companyId: req.companyId
+      });
+      if (Array.isArray(sbTxs) && sbTxs.length > 0) {
+        const existingTxIds = new Set(txRecords.map(t => String(t._id || t.id)));
+        for (const st of sbTxs) {
+          const sId = String(st._id || st.id);
+          if (!existingTxIds.has(sId)) {
+            txRecords.push(st);
+            existingTxIds.add(sId);
+          }
+        }
+      }
+    } catch (sbTxErr) {
+      console.warn("[getPartyStatement] Supabase getPartyTransactions error:", sbTxErr.message);
+    }
+
+    // 2. Sales Bills for this party (from Mongo + Supabase)
+    let billRecords = [];
+    try {
+      const billFilter = {
+        companyId: { $in: coQuery },
+        isDeleted: { $ne: true },
+        $or: [
+          { partyId: { $in: pIdQuery } },
+          { customerName: nameRegex },
+          { partyName: nameRegex },
+          { customer: nameRegex }
+        ]
+      };
+      if (party.mobileNumber && party.mobileNumber.length >= 10) {
+        billFilter.$or.push({ customerMobile: party.mobileNumber }, { customerPhone: party.mobileNumber });
+      }
+      billRecords = await Bill.find(billFilter).lean();
+    } catch (e) {
+      console.warn("[getPartyStatement] Mongo billRecords error:", e.message);
+    }
+
+    // Merge Supabase sales bills
+    if (supabase) {
+      try {
+        const sbPartyUuid = mongoIdToUuid(party._id || party.id);
+        const sbCoUuid = mongoIdToUuid(req.companyId);
+        
+        let q = supabase
+          .from("sales")
+          .select("*")
+          .eq("company_id", sbCoUuid);
+
+        if (party.name) {
+          q = q.or(`party_id.eq.${sbPartyUuid},customer_name.ilike.%${party.name}%`);
+        } else {
+          q = q.eq("party_id", sbPartyUuid);
+        }
+
+        const { data: sbSales, error: sbSalesErr } = await q.order("created_at", { ascending: false }).limit(200);
+
+        if (!sbSalesErr && Array.isArray(sbSales)) {
+          const existingBillNos = new Set(billRecords.map(b => String(b.billNumber || b.invoiceNumber || b._id || b.id).toLowerCase()));
+          for (const s of sbSales) {
+            const bMapped = mapSupabaseSalesToBill(s);
+            const bKey = String(bMapped.billNumber || bMapped.invoiceNumber || bMapped._id || bMapped.id).toLowerCase();
+            if (!existingBillNos.has(bKey)) {
+              billRecords.push(bMapped);
+              existingBillNos.add(bKey);
+            }
+          }
+        }
+      } catch (sbSalesException) {
+        console.warn("[getPartyStatement] Supabase sales fetch error:", sbSalesException.message);
+      }
+    }
+
+    // 3. Purchase Bills for this party (from Mongo + Supabase)
+    let purchaseRecords = [];
+    try {
+      const purchaseFilter = {
+        companyId: { $in: coQuery },
+        isDeleted: { $ne: true },
+        $or: [
+          { partyId: { $in: pIdQuery } },
+          { supplierName: nameRegex },
+          { supplier: nameRegex },
+          { partyName: nameRegex }
+        ]
+      };
+      purchaseRecords = await Purchase.find(purchaseFilter).lean();
+    } catch (e) {
+      console.warn("[getPartyStatement] Mongo purchaseRecords error:", e.message);
+    }
+
+    if (supabase) {
+      try {
+        const sbCoUuid = mongoIdToUuid(req.companyId);
+        const sbPartyUuid = mongoIdToUuid(party._id || party.id);
+
+        let pq = supabase
+          .from("purchases")
+          .select("*")
+          .eq("company_id", sbCoUuid);
+
+        if (party.name) {
+          pq = pq.or(`supplier_name.ilike.%${party.name}%,party_id.eq.${sbPartyUuid}`);
+        } else {
+          pq = pq.eq("party_id", sbPartyUuid);
+        }
+
+        const { data: sbPurs, error: sbPurErr } = await pq.order("created_at", { ascending: false }).limit(200);
+
+        if (!sbPurErr && Array.isArray(sbPurs)) {
+          const existingPurNos = new Set(purchaseRecords.map(p => String(p.billNumber || p.invoiceNo || p._id || p.id).toLowerCase()));
+          for (const p of sbPurs) {
+            const pMapped = mapSupabasePurchaseToPurchase(p);
+            const pKey = String(pMapped.billNumber || pMapped.invoiceNo || pMapped._id || pMapped.id).toLowerCase();
+            if (!existingPurNos.has(pKey)) {
+              purchaseRecords.push(pMapped);
+              existingPurNos.add(pKey);
+            }
+          }
+        }
+      } catch (sbPurException) {
+        console.warn("[getPartyStatement] Supabase purchase fetch error:", sbPurException.message);
+      }
+    }
 
     // Track existing bill IDs and refNos to prevent double-counting
     const existingRefBillIds = new Set();
@@ -553,7 +666,7 @@ export const getPartyStatement = async (req, res) => {
     // intentionally zeroed the balance; the recalculated runningBal should already be 0 if
     // bills were properly marked paid.  If it isn't, we trust the settlement, not the recount).
     const hasSettlement = txRecords.some(t => t.type === 'settlement');
-    if (!hasSettlement && party.currentBalance !== runningBal) {
+    if (!hasSettlement && party.save && typeof party.save === 'function' && party.currentBalance !== runningBal) {
       party.currentBalance = runningBal;
       party.updatedAt = new Date();
       party.save().catch(e => console.warn("Failed to auto-sync party balance:", e));

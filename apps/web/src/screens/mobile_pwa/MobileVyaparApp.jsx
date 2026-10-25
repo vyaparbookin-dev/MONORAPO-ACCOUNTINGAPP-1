@@ -2584,11 +2584,29 @@ function MobileVyaparAppContent() {
         if (t.id) existingRefNos.add(String(t.id).trim().toLowerCase());
       });
 
-      const localBills = (bills || []).filter(b => {
-        const bPartyId = String(b.partyId || '');
+      // Merge state bills + stored local bills so newly created bills never go missing in party statement
+      let allAvailableBills = Array.isArray(bills) ? [...bills] : [];
+      try {
+        const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+        if (currentCoId) {
+          const storedLocalBills = storageManager.getBills(currentCoId);
+          if (Array.isArray(storedLocalBills)) {
+            const existingBIds = new Set(allAvailableBills.map(b => String(b._id || b.id)));
+            storedLocalBills.forEach(sb => {
+              if (!existingBIds.has(String(sb._id || sb.id))) {
+                allAvailableBills.push(sb);
+                existingBIds.add(String(sb._id || sb.id));
+              }
+            });
+          }
+        }
+      } catch(e) {}
+
+      const localBills = allAvailableBills.filter(b => {
+        const bPartyId = String(b.partyId || '').trim();
         const bCust = String(b.customerName || b.partyName || b.customer || '').trim().toLowerCase();
         const bPhone = String(b.customerMobile || b.customerPhone || b.phone || '').trim();
-        const pIdMatch = bPartyId && (bPartyId === String(partyId) || (pObj?._id && bPartyId === String(pObj._id)) || (pObj?.id && bPartyId === String(pObj.id)));
+        const pIdMatch = bPartyId && (bPartyId === String(partyId).trim() || (pObj?._id && bPartyId === String(pObj._id).trim()) || (pObj?.id && bPartyId === String(pObj.id).trim()));
         const pNameMatch = Boolean(bCust && pNameNorm && (bCust === pNameNorm || bCust.includes(pNameNorm) || pNameNorm.includes(bCust)));
         const pPhoneMatch = Boolean(pPhoneNorm && bPhone && (bPhone === pPhoneNorm || bPhone.slice(-10) === pPhoneNorm.slice(-10)));
         return pIdMatch || pNameMatch || pPhoneMatch;
