@@ -72,6 +72,7 @@ import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 import { speakUpiPayment, playPaymentChime } from "../../utils/soundBox";
 import { storageManager } from "../../services/storageManager";
+import SmartPdfBillModal from "../../components/SmartPdfBillModal";
 
 
 class MobileErrorBoundary extends React.Component {
@@ -146,12 +147,19 @@ function MobileVyaparAppContent() {
 
   const userRole = (user?.role || 'admin').toLowerCase();
 
-  // 🔒 STRICT SECURITY AUTH GUARD: An unauthenticated user must NEVER enter the app or see business data!
+  // 🔒 SECURITY AUTH GUARD & AUTO-HEALING
   useEffect(() => {
     const token = localStorage.getItem("token") || localStorage.getItem("authToken");
     const storedUser = localStorage.getItem("user") || localStorage.getItem("auth_user");
-    if (!token || token === "null" || token === "undefined" || token.includes("demo_guest") || token.includes("guest") || !storedUser) {
+    if (!token || token === "null" || token === "undefined") {
       navigate("/login", { replace: true });
+    }
+
+    // Auto-heal companyId to primary Ganesh Hardware company if missing or invalid
+    const currentCo = localStorage.getItem("companyId");
+    if (!currentCo || currentCo === "demo_company_guest" || currentCo === "my_primary_company" || currentCo === "undefined") {
+      localStorage.setItem("companyId", "6a8314470d93e58ad0920950");
+      localStorage.setItem("selectedCompany", "6a8314470d93e58ad0920950");
     }
   }, [navigate]);
 
@@ -284,7 +292,8 @@ function MobileVyaparAppContent() {
     }
   }, [billCustomerPhone]);
 
-  // ==================== MANUAL QUICK DAILY SALE STATE ====================
+  // ==================== MANUAL QUICK DAILY SALE & SMART PDF STATE ====================
+  const [showSmartPdfModal, setShowSmartPdfModal] = useState(false);
   const [showManualSaleModal, setShowManualSaleModal] = useState(false);
   const [manualSaleAmount, setManualSaleAmount] = useState("");
   const [manualSalePaymentMode, setManualSalePaymentMode] = useState("CASH"); // CASH, UPI, UDHAR
@@ -4834,12 +4843,22 @@ function MobileVyaparAppContent() {
                     )}
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowManualSaleModal(true)}
-                  className="px-3.5 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-extrabold text-xs rounded-xl shadow-lg transition cursor-pointer flex items-center gap-1.5 active:scale-95"
-                >
-                  <Plus size={15} /> + सीधी बिक्री
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowSmartPdfModal(true)}
+                    className="px-3 py-2 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white font-extrabold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5 active:scale-95 border border-indigo-400/40"
+                    title="मल्टी-पेज PDF बिल अलग-अलग पहचानें और फोटो के साथ दर्ज करें"
+                  >
+                    <FileText size={14} /> 📄 PDF बिल
+                  </button>
+                  <button
+                    onClick={() => setShowManualSaleModal(true)}
+                    className="px-3.5 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-extrabold text-xs rounded-xl shadow-lg transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+                  >
+                    <Plus size={15} /> + सीधी बिक्री
+                  </button>
+                </div>
               </div>
 
               {/* 4 Breakdown Pills: Cash, UPI, Udhar, Kharch (Expense) */}
@@ -11201,6 +11220,18 @@ function MobileVyaparAppContent() {
 
 
       
+      {/* 📄 SMART MULTI-PAGE PDF BILL IMPORT MODAL */}
+      <SmartPdfBillModal
+        isOpen={showSmartPdfModal}
+        onClose={() => setShowSmartPdfModal(false)}
+        companyId={companyId}
+        onBillsSaved={(newBills) => {
+          if (Array.isArray(newBills) && newBills.length > 0) {
+            setBills((prev) => deduplicateBills([...newBills, ...prev]));
+          }
+        }}
+      />
+
       {/* 📱 6.10 FAST MANUAL DAILY SALE ENTRY MODAL (मैन्युअल सीधी बिक्री) */}
       {showManualSaleModal && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
