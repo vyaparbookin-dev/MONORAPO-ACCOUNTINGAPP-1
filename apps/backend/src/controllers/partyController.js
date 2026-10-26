@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 import { syncPartyToSupabase, syncPartyTxToSupabase, syncBillPhotoToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
 import { uploadBillImage } from "../services/storageService.js";
 import { getPartiesFromSupabase, getPartyByIdFromSupabase, getPartyTransactionsFromSupabase, getBillsFromSupabase, getPurchasesFromSupabase, mapSupabaseSalesToBill, mapSupabasePurchaseToPurchase } from "../services/supabaseReadService.js";
+export { getPartyByIdFromSupabase };
 import { supabase } from "../config/supabase.js";
 
 export const createParty = async (req, res) => {

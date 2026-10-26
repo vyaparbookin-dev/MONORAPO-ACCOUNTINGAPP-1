@@ -10,7 +10,7 @@ import path from "path";
 import os from "os";
 import { createWorker } from "tesseract.js";
 import { syncPartyTxToSupabase, syncPartyToSupabase } from "../services/supabaseSyncService.js";
-import { getPartyByIdFromSupabase } from "./partyController.js";
+import { getPartyByIdFromSupabase } from "../services/supabaseReadService.js";
 
 let razorpay;
 const getRazorpayInstance = () => {
