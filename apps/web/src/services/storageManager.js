@@ -268,6 +268,12 @@ class StorageManager {
           ? parsedDateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
           : (b.date || "Today"));
 
+    const rawImages = (b.billImageUrls && Array.isArray(b.billImageUrls) && b.billImageUrls.length > 0)
+      ? b.billImageUrls
+      : (b.billImageUrl ? [b.billImageUrl] : []);
+    const uniqueImages = Array.from(new Set(rawImages.filter(Boolean)));
+    const primaryImg = b.billImageUrl || (uniqueImages.length > 0 ? uniqueImages[0] : "");
+
     return {
       _id: id,
       id: bNo,
@@ -287,6 +293,15 @@ class StorageManager {
       paymentMode: pMode,
       paymentMethod: (pMode === "UDHAR" || pMode === "CREDIT") ? "credit" : "cash",
       paymentStatus: b.paymentStatus || (pMode === "UDHAR" ? "unpaid" : "paid"),
+      billImageUrl: primaryImg,
+      billImageUrls: uniqueImages,
+      notes: b.notes || "",
+      status: b.status || (pMode === "UDHAR" ? "issued" : "paid"),
+      dueDate: b.dueDate || "",
+      tax: Number(b.tax) || 0,
+      discountAmount: Number(b.discountAmount) || 0,
+      customerAddress: b.customerAddress || b.address || "",
+      customerGst: b.customerGst || b.gstin || "",
       date: resolvedDateDisplay,
       rawDate: resolvedRawDate,
       items: Array.isArray(b.items) ? b.items : [],

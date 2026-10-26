@@ -178,6 +178,7 @@ function MobileVyaparAppContent() {
   };
 
   const companyDisplayName = selectedCompany?.name || selectedCompany?.companyName || selectedCompany?.businessName || "VyaparBook";
+  const companyId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "6a8314470d93e58ad0920950").trim();
 
   const [activeTab, setActiveTab] = useState(() => {
     const role = (user?.role || '').toLowerCase();
@@ -2050,7 +2051,9 @@ function MobileVyaparAppContent() {
     const resolvedPartyId = existingParty?._id || existingParty?.id || undefined;
 
     const genBillNo = `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
+    const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "6a8314470d93e58ad0920950").trim();
     const billPayload = {
+      companyId: currentCoId,
       billNumber: genBillNo,
       partyName: finalCustomer,
       customerName: finalCustomer,
@@ -2726,6 +2729,7 @@ function MobileVyaparAppContent() {
   // Client-side fast image compression to ensure camera uploads complete in <1s and never time out
   const compressImageFile = async (file, maxWidth = 1600, quality = 0.8) => {
     if (!file) return null;
+    if (typeof file === "string") return file;
     return new Promise((resolve) => {
       if (!file.type || !file.type.startsWith("image/")) {
         const reader = new FileReader();
@@ -2975,6 +2979,19 @@ function MobileVyaparAppContent() {
         }
       }
 
+      // Clean from persistent photo cache
+      try {
+        const photosCache = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
+        const cleanTId = String(targetId).replace(/^(pay_|open_)/, '').trim();
+        if (Array.isArray(photosCache[targetId])) {
+          photosCache[targetId] = photosCache[targetId].filter(u => u !== imageUrl);
+        }
+        if (cleanTId && Array.isArray(photosCache[cleanTId])) {
+          photosCache[cleanTId] = photosCache[cleanTId].filter(u => u !== imageUrl);
+        }
+        localStorage.setItem("vb_tx_photos_cache", JSON.stringify(photosCache));
+      } catch (e) {}
+
       alert("🗑️ बिल फोटो सफलतापूर्वक हटा दी गई!");
       const pId = selectedPartyDetail?._id || selectedPartyDetail?.id;
       if (pId) {
@@ -3035,7 +3052,8 @@ function MobileVyaparAppContent() {
           const bId = String(b._id || b.id || '').trim();
           const bNum = String(b.billNumber || b.invoiceNumber || '').trim();
           const tId = String(targetId).trim();
-          if (bId === tId || bNum === tId) {
+          const cleanTId = String(targetId).trim().toLowerCase();
+          if (bId.toLowerCase() === cleanTId || bNum.toLowerCase() === cleanTId || (bNum && cleanTId.includes(bNum.toLowerCase())) || (bId && cleanTId.includes(bId.toLowerCase()))) {
             const currentList = b.billImageUrls || (b.billImageUrl ? [b.billImageUrl] : []);
             const merged = Array.from(new Set([...currentList, ...latestUrls, latestPrimaryUrl].filter(Boolean)));
             const updatedBill = {
@@ -3053,10 +3071,10 @@ function MobileVyaparAppContent() {
         }));
 
         setPartyTransactions(prev => prev.map(t => {
-          const tId = String(t._id || t.id || '').replace(/^pay_/, '').trim();
-          const tRef = String(t.refNo || t.billNumber || '').trim();
-          const tTarget = String(targetId).trim();
-          if (tId === tTarget || tRef === tTarget) {
+          const tId = String(t._id || t.id || '').replace(/^pay_/, '').trim().toLowerCase();
+          const tRef = String(t.refNo || t.billNumber || '').trim().toLowerCase();
+          const tTarget = String(targetId).trim().toLowerCase();
+          if (tId === tTarget || tRef === tTarget || (tRef && tTarget.includes(tRef)) || (tId && tTarget.includes(tId))) {
             const currentList = t.billImageUrls || (t.billImageUrl ? [t.billImageUrl] : []);
             const merged = Array.from(new Set([...currentList, ...latestUrls, latestPrimaryUrl].filter(Boolean)));
             return {
@@ -3067,6 +3085,17 @@ function MobileVyaparAppContent() {
           }
           return t;
         }));
+
+        // Persist to reliable local photo cache so photos never vanish even across reloads
+        try {
+          const photosCache = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
+          const cleanTId = String(targetId).replace(/^(pay_|open_)/, '').trim();
+          const existingForTx = Array.isArray(photosCache[targetId]) ? photosCache[targetId] : (photosCache[targetId] ? [photosCache[targetId]] : []);
+          const mergedCache = Array.from(new Set([...existingForTx, ...latestUrls, latestPrimaryUrl].filter(Boolean)));
+          photosCache[targetId] = mergedCache;
+          if (cleanTId) photosCache[cleanTId] = mergedCache;
+          localStorage.setItem("vb_tx_photos_cache", JSON.stringify(photosCache));
+        } catch (e) {}
       }
 
       alert(`✅ ${validFiles.length} बिल फोटो सफलतापूर्वक सुरक्षित हो गई!`);
@@ -3122,6 +3151,19 @@ function MobileVyaparAppContent() {
           setPreviewTargetTxId(null);
         }
       }
+
+      // Clean from persistent photo cache
+      try {
+        const photosCache = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
+        const cleanTId = String(targetId).replace(/^(pay_|open_)/, '').trim();
+        if (Array.isArray(photosCache[targetId])) {
+          photosCache[targetId] = photosCache[targetId].filter(u => u !== imageUrl);
+        }
+        if (cleanTId && Array.isArray(photosCache[cleanTId])) {
+          photosCache[cleanTId] = photosCache[cleanTId].filter(u => u !== imageUrl);
+        }
+        localStorage.setItem("vb_tx_photos_cache", JSON.stringify(photosCache));
+      } catch (e) {}
 
       alert("🗑️ बिल फोटो सफलतापूर्वक हटा दी गई!");
     } catch (err) {
@@ -3752,7 +3794,27 @@ function MobileVyaparAppContent() {
             total: goodsAmt
           }];
 
+      // 0. Pre-upload photo to Cloudinary / Storage
+      let uploadedVendorCloudUrl = "";
+      if (vendorBillImage) {
+        try {
+          const compB64 = await compressImageFile(vendorBillImage);
+          const upRes = await api.post('/api/upload/bill-image', {
+            fileData: compB64 || vendorBillImage,
+            fileName: `pur_${genPurNo}.jpg`,
+            targetType: "purchase"
+          }).catch(() => null);
+          if (upRes?.data?.url) {
+            uploadedVendorCloudUrl = upRes.data.url;
+          }
+        } catch (e) {
+          console.warn("Could not pre-upload purchase photo to Cloudinary:", e);
+        }
+      }
+      const finalVendorImg = uploadedVendorCloudUrl || vendorBillImage || "";
+
       const payload = {
+        companyId: currentCoId,
         partyId,
         supplierName: pName,
         purchaseNumber: genPurNo,
@@ -3765,7 +3827,7 @@ function MobileVyaparAppContent() {
         amountPaid: paidAmt,
         paymentMethod: paidAmt > 0 ? (vendorPaymentMode || 'CASH') : 'credit',
         date: pDate.toISOString(),
-        billImageUrl: vendorBillImage || '',
+        billImageUrl: finalVendorImg,
         notes: `माल मूल्य: ₹${goodsAmt.toLocaleString('en-IN')}${f1 > 0 ? ` | भाड़ा 1 (वेंडर गैरेज): ₹${f1.toLocaleString('en-IN')}` : ''}${f2 > 0 ? ` | भाड़ा 2 (लोकल गल्ला): ₹${f2.toLocaleString('en-IN')}` : ''} | असल कुल लागत: ₹${totalLandedCost.toLocaleString('en-IN')}`
       };
 
@@ -3812,8 +3874,18 @@ function MobileVyaparAppContent() {
         type: 'purchase',
         source: 'Purchase',
         billNumber: genPurNo,
-        billImageUrl: vendorBillImage || ''
+        billImageUrl: finalVendorImg || '',
+        billImageUrls: finalVendorImg ? [finalVendorImg] : []
       };
+
+      if (finalVendorImg) {
+        try {
+          const photosCache = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
+          photosCache[genPurNo] = [finalVendorImg];
+          photosCache[purchaseTxDoc._id] = [finalVendorImg];
+          localStorage.setItem("vb_tx_photos_cache", JSON.stringify(photosCache));
+        } catch (e) {}
+      }
 
       const newTxs = [purchaseTxDoc];
       if (paidAmt > 0) {
@@ -4039,7 +4111,10 @@ function MobileVyaparAppContent() {
       });
       const resolvedManualPartyId = foundParty?._id || foundParty?.id || undefined;
 
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "6a8314470d93e58ad0920950").trim();
+
       const payload = {
+        companyId: currentCoId,
         billNumber: genBillNo,
         partyId: resolvedManualPartyId,
         partyName: partyTitle,
@@ -4103,7 +4178,6 @@ function MobileVyaparAppContent() {
       };
 
       // 1. Instantly persist in localStorage so it NEVER disappears (Offline-First)
-      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
       const updatedList = storageManager.saveBill(currentCoId, createdBill);
       setBills(updatedList);
 
@@ -4563,6 +4637,7 @@ function MobileVyaparAppContent() {
     setSavingScannedBill(true);
 
     try {
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "6a8314470d93e58ad0920950").trim();
       const createdList = [];
       for (const [idx, b] of scannedBillsBatch.entries()) {
         if (b.items.length === 0) continue;
@@ -4574,7 +4649,28 @@ function MobileVyaparAppContent() {
           ? `[अतिरिक्त खर्च: ${(b.additionalCharges || []).map(c => `${c.name} ₹${c.amount}`).join(", ")}]`
           : "";
 
+        // 1. Upload scan photo to Cloudinary / Storage CDN
+        let uploadedCloudUrl = "";
+        if (b.imagePreview) {
+          try {
+            const compB64 = await compressImageFile(b.imagePreview);
+            const upRes = await api.post('/api/upload/bill-image', {
+              fileData: compB64 || b.imagePreview,
+              fileName: `scan_${genScanBillNo}.jpg`,
+              targetType: "bill"
+            }).catch(() => null);
+            if (upRes?.data?.url) {
+              uploadedCloudUrl = upRes.data.url;
+            }
+          } catch (upErr) {
+            console.warn("Could not pre-upload scanned bill to Cloudinary:", upErr);
+          }
+        }
+        const effectiveBillImg = uploadedCloudUrl || b.imagePreview || "";
+        const effectiveImgList = effectiveBillImg ? [effectiveBillImg] : [];
+
         const payload = {
+          companyId: currentCoId,
           billNumber: genScanBillNo,
           partyName: partyTitle,
           customerName: partyTitle,
@@ -4596,28 +4692,51 @@ function MobileVyaparAppContent() {
           })),
           total: Number(b.totalAmount) || 0,
           finalAmount: Number(b.totalAmount) || 0,
-          billImageUrl: b.imagePreview,
+          billImageUrl: effectiveBillImg,
           date: b.billDate ? new Date(b.billDate) : new Date()
         };
 
         const res = await api.post("/api/billing", payload).catch(() => null);
+        const serverDoc = res?.data?.bill;
+        const finalId = serverDoc?._id || `scan_local_${Date.now()}_${idx}`;
         const createdBill = {
-          _id: res?.data?.bill?._id || Date.now().toString(),
-          id: res?.data?.bill?.billNumber || `INV-${Date.now().toString().slice(-4)}`,
+          _id: finalId,
+          id: serverDoc?.billNumber || genScanBillNo,
+          billNumber: serverDoc?.billNumber || genScanBillNo,
+          invoiceNumber: serverDoc?.billNumber || genScanBillNo,
           customerName: payload.partyName,
           phone: payload.customerPhone,
           date: "Today",
           amount: b.totalAmount,
+          finalAmount: b.totalAmount,
+          total: b.totalAmount,
           type: b.paymentMode,
+          paymentMode: b.paymentMode,
           paymentStatus: b.paymentMode === "UDHAR" ? "unpaid" : "paid",
+          status: b.paymentMode === "UDHAR" ? "issued" : "paid",
           items: b.items.map(i => ({ id: i.id, name: i.name, salePrice: i.price, qty: i.qty })),
-          billImageUrl: b.imagePreview || "",
-          billImageUrls: b.imagePreview ? [b.imagePreview] : []
+          billImageUrl: effectiveBillImg,
+          billImageUrls: effectiveImgList
         };
+
+        // Cache photo by IDs
+        if (effectiveBillImg) {
+          try {
+            const photosCache = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
+            photosCache[finalId] = effectiveImgList;
+            photosCache[genScanBillNo] = effectiveImgList;
+            localStorage.setItem("vb_tx_photos_cache", JSON.stringify(photosCache));
+          } catch (e) {}
+        }
+
+        try {
+          storageManager.saveBill(currentCoId, createdBill);
+        } catch (e) {}
+
         createdList.push(createdBill);
       }
 
-      setBills([...createdList, ...bills]);
+      setBills(prev => deduplicateBills([...createdList, ...prev]));
       setShowScannedReviewModal(false);
       if (createdList.length > 0) {
         setSelectedBillDetail(createdList[0]);
