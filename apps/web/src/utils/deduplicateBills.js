@@ -76,6 +76,20 @@ export function deduplicateBills(bills = []) {
     const normCust = normalizeName(custName);
 
     const isDuplicateContent = result.some(existing => {
+      // 1. If explicit bill numbers exist and are different, they are definitely DIFFERENT bills!
+      const exNum = String(existing.billNumber || existing.invoiceNumber || "").trim().toLowerCase();
+      const curNum = String(bill.billNumber || bill.invoiceNumber || "").trim().toLowerCase();
+      if (exNum && curNum && exNum !== curNum) {
+        return false;
+      }
+
+      // 2. Multi-page PDF imports with distinct IDs must never be collapsed
+      const exId = String(existing._id || existing.id || "").trim();
+      const curId = String(bill._id || bill.id || "").trim();
+      if ((curId.startsWith("pdf_") || bill.source === "PDF_MULTI_IMPORT") && exId !== curId) {
+        return false;
+      }
+
       const exAmt = Number(existing.amount ?? existing.finalAmount ?? 0);
       if (Math.abs(exAmt - amtVal) > 0.01) return false;
 

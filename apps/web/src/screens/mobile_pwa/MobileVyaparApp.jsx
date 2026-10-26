@@ -303,6 +303,127 @@ function MobileVyaparAppContent() {
   const [manualSaleDate, setManualSaleDate] = useState(getLocalYmd);
   const [manualSaleNotes, setManualSaleNotes] = useState("");
   const [savingManualSale, setSavingManualSale] = useState(false);
+
+  // -------------------------------------------------------------
+  // 🛡️ ANDROID HARDWARE BACK BUTTON INTERCEPTION FOR PWA
+  // -------------------------------------------------------------
+  const [backPressToast, setBackPressToast] = useState(false);
+  const backPressTimeRef = useRef(0);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        window.history.replaceState({ app: "vyaparbook_root" }, "");
+        window.history.pushState({ app: "vyaparbook_active" }, "");
+      } catch (e) {}
+    }
+
+    const handlePopState = () => {
+      // Re-seed history state so PWA does not exit abruptly
+      try {
+        window.history.pushState({ app: "vyaparbook_active" }, "");
+      } catch (err) {}
+
+      // 1. Check Smart PDF Modal
+      if (showSmartPdfModal) {
+        setShowSmartPdfModal(false);
+        return;
+      }
+
+      // 2. Check Bill Detail View
+      if (selectedBillDetail) {
+        setSelectedBillDetail(null);
+        return;
+      }
+
+      // 3. Check Party Detail View
+      if (selectedPartyDetail) {
+        setSelectedPartyDetail(null);
+        return;
+      }
+
+      // 4. Modals
+      if (showQuickBillModal) {
+        setShowQuickBillModal(false);
+        return;
+      }
+      if (showManualSaleModal) {
+        setShowManualSaleModal(false);
+        return;
+      }
+      if (showAddPartyModal) {
+        setShowAddPartyModal(false);
+        return;
+      }
+      if (showAddItemModal) {
+        setShowAddItemModal(false);
+        return;
+      }
+      if (showAllTransactions) {
+        setShowAllTransactions(false);
+        return;
+      }
+      if (showUdharOtpModal) {
+        setShowUdharOtpModal(false);
+        return;
+      }
+      if (showCompanySelectModal) {
+        setShowCompanySelectModal(false);
+        return;
+      }
+      if (showDayBookModal) {
+        setShowDayBookModal(false);
+        return;
+      }
+      if (showProfitLossModal) {
+        setShowProfitLossModal(false);
+        return;
+      }
+      if (showGharKharchModal) {
+        setShowGharKharchModal(false);
+        return;
+      }
+      if (showPagarBookModal) {
+        setShowPagarBookModal(false);
+        return;
+      }
+
+      // 5. Tab Navigation: return to dashboard if not already there
+      if (activeTab !== "dashboard") {
+        setActiveTab("dashboard");
+        return;
+      }
+
+      // 6. Double back press to exit from dashboard
+      const now = Date.now();
+      if (now - backPressTimeRef.current < 2000) {
+        window.history.go(-2);
+      } else {
+        backPressTimeRef.current = now;
+        setBackPressToast(true);
+        setTimeout(() => setBackPressToast(false), 2000);
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [
+    showSmartPdfModal,
+    selectedBillDetail,
+    selectedPartyDetail,
+    showQuickBillModal,
+    showManualSaleModal,
+    showAddPartyModal,
+    showAddItemModal,
+    showAllTransactions,
+    showUdharOtpModal,
+    showCompanySelectModal,
+    showDayBookModal,
+    showProfitLossModal,
+    showGharKharchModal,
+    showPagarBookModal,
+    activeTab
+  ]);
   const [transactionTab, setTransactionTab] = useState("all"); // "all", "sales", "expenses"
   const [dailySaleFilter, setDailySaleFilter] = useState("today"); // "today", "yesterday", "week", "all"
   const [showAllTransactions, setShowAllTransactions] = useState(false);
@@ -11976,6 +12097,13 @@ function MobileVyaparAppContent() {
         onClose={() => setShowCreditLimitHub(false)}
         onPartyUpdated={() => fetchAllData()}
       />
+
+      {/* 🔔 HARDWARE BACK BUTTON TOAST */}
+      {backPressToast && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[9999] bg-gray-900/90 text-white text-xs font-semibold px-4 py-2 rounded-full shadow-lg border border-gray-700 pointer-events-none animate-in fade-in zoom-in-95">
+          ऐप बंद करने के लिए दोबारा बैक दबाएं
+        </div>
+      )}
 
     </div>
   );
