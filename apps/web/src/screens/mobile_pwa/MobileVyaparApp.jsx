@@ -63,7 +63,7 @@ import MobileProfitLossModal from "../../components/mobile/MobileProfitLossModal
 import MobileReportViewerModal from "../../components/mobile/MobileReportViewerModal";
 import MobileFamilyExpenseModal from "../../components/mobile/MobileFamilyExpenseModal";
 import WealthTrackerExportModal from "../../components/wealth_tracker/WealthTrackerExportModal";
-import MobileSavingsModal from "../../components/mobile/MobileSavingsModal";
+import MobileSavingsModal, { processAutoSavingsDebits } from "../../components/mobile/MobileSavingsModal";
 import MobileBankCCModal from "../../components/mobile/MobileBankCCModal";
 import MobileQuotationModal from "../../components/mobile/MobileQuotationModal";
 import UdharOtpVerificationModal from "../../components/modals/UdharOtpVerificationModal";
@@ -842,6 +842,20 @@ function MobileVyaparAppContent() {
     }
     fetchLiveDashboardData();
     fetchGharKharchData();
+
+    // 🔄 Auto-Debit check for RD / recurring savings due on 26th
+    try {
+      const coId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      const rawSav = localStorage.getItem("vb_local_savings");
+      if (rawSav) {
+        const parsedSav = JSON.parse(rawSav);
+        if (Array.isArray(parsedSav) && parsedSav.length > 0) {
+          processAutoSavingsDebits(parsedSav, coId, (newExp) => {
+            setGharKharchList(prev => [newExp, ...(prev || [])]);
+          });
+        }
+      }
+    } catch (e) {}
 
     const handleBeforeInstall = (e) => {
       e.preventDefault();

@@ -34,6 +34,140 @@ const SAVING_TYPES = [
   { id: "OTHER", label: "अन्य बचत (Other Savings)", icon: "💰", desc: "अन्य निजी या व्यापारिक निवेश" }
 ];
 
+// 🔄 Auto-Debit Execution Engine for Recurring Savings (RD, SIP, PPF, etc.)
+export const processAutoSavingsDebits = async (list, companyId, onExpenseAdded) => {
+  if (!Array.isArray(list) || list.length === 0) return { updatedList: list, debitedCount: 0, newExpenses: [] };
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0-indexed
+  const currentDay = now.getDate();
+  const currentMonthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`; // e.g. "2026-10"
+  const todayStr = now.toISOString().split("T")[0];
+
+  let hasChanges = false;
+  let debitedCount = 0;
+  const newExpenses = [];
+
+  const updatedList = list.map(item => {
+    if (!item) return item;
+    const type = item.savingsType || "RD";
+    // Auto-debit applies only to recurring savings (RD, SIP, PPF, LIC, OTHER) and not one-time FD or closed
+    if (type === "FD" || item.status === "CLOSED") return item;
+
+    // Check if auto-debit is enabled (default is true unless explicitly false)
+    const isAutoEnabled = item.isAutoDebitEnabled !== false;
+    if (!isAutoEnabled) return item;
+
+    const dueDay = Number(item.dueDayOfMonth || 26);
+    const lastMonth = String(item.lastAutoDebitMonth || "");
+
+    // Check if today is on or past due day (e.g. 26th) AND not debited in this month yet
+    const isDueThisMonth = currentDay >= dueDay && lastMonth !== currentMonthKey;
+
+    if (isDueThisMonth) {
+      const instAmt = Number(item.installmentAmount || 0);
+      if (instAmt <= 0) return item;
+
+      hasChanges = true;
+      debitedCount++;
+
+      const monthName = now.toLocaleDateString("hi-IN", { month: "long", year: "numeric" });
+      const newInst = {
+        amount: instAmt,
+        date: todayStr,
+        sourceOfFund: item.autoDebitFundSource || "shop_cash",
+        notes: `🔄 स्वतः बचत RD किस्त (${monthName}) - दुकान गल्ला`,
+        isAutoDebited: true,
+        paidAt: now.toISOString()
+      };
+
+      const existingInsts = Array.isArray(item.installments) ? [...item.installments] : [];
+      const alreadyHasThisMonth = existingInsts.some(x =>
+        x.isAutoDebited && String(x.date || "").startsWith(currentMonthKey)
+      );
+
+      if (!alreadyHasThisMonth) {
+        existingInsts.push(newInst);
+      }
+
+      const explicitPaidCount = Number(item.alreadyPaidCount || 0);
+      const newPaidCount = Math.max(explicitPaidCount + 1, existingInsts.length);
+      const newTotalDeposited = Number(item.totalDeposited || 0) + instAmt;
+
+      // Expense object for shop cash / ledger
+      const autoExp = {
+        id: "exp_rd_auto_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+        _id: "exp_rd_auto_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+        companyId: String(companyId || "").trim(),
+        title: `🔄 स्वतः RD बचत किस्त - ${item.title}`,
+        description: `मासिक RD स्वतः जमा (${monthName}): दुकान गल्ले से ₹${instAmt} बचत खाते में जमा`,
+        amount: instAmt,
+        expenseType: "business",
+        category: "मासिक बचत व निवेश (RD/SIP/FD)",
+        familyMember: "खुद (Self)",
+        paymentMode: "CASH_DRAWER",
+        date: todayStr,
+        createdAt: now.toISOString(),
+        isAutoRdExpense: true,
+        savingsId: item._id || item.id
+      };
+      newExpenses.push(autoExp);
+
+      return {
+        ...item,
+        isAutoDebitEnabled: true,
+        dueDayOfMonth: dueDay,
+        installments: existingInsts,
+        alreadyPaidCount: newPaidCount,
+        alreadyDepositedAmount: newTotalDeposited,
+        totalDeposited: newTotalDeposited,
+        currentValue: newTotalDeposited,
+        lastAutoDebitMonth: currentMonthKey,
+        lastPaidDate: todayStr
+      };
+    }
+
+    return item;
+  });
+
+  if (hasChanges) {
+    try {
+      localStorage.setItem("vb_local_savings", JSON.stringify(updatedList));
+      if (companyId) {
+        localStorage.setItem(`vb_local_savings_${companyId}`, JSON.stringify(updatedList));
+      }
+    } catch (e) {}
+
+    if (newExpenses.length > 0) {
+      try {
+        let localExp = JSON.parse(localStorage.getItem("vb_local_expenses") || "[]");
+        localExp = [...newExpenses, ...localExp];
+        localStorage.setItem("vb_local_expenses", JSON.stringify(localExp));
+        if (companyId) {
+          localStorage.setItem(`vb_local_expenses_${companyId}`, JSON.stringify(localExp));
+        }
+      } catch (e) {}
+
+      newExpenses.forEach(exp => {
+        if (typeof onExpenseAdded === "function") {
+          onExpenseAdded(exp);
+        }
+        api.post("/api/expense", exp).catch(() => {});
+      });
+    }
+
+    updatedList.forEach(item => {
+      if (item.lastAutoDebitMonth === currentMonthKey) {
+        const id = item._id || item.id;
+        api.put(`/api/savings/${id}`, item).catch(() => {});
+      }
+    });
+  }
+
+  return { updatedList, debitedCount, newExpenses };
+};
+
 export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) {
   if (!isOpen) return null;
 
@@ -88,7 +222,7 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
       const now = new Date();
       if (isNaN(start.getTime()) || start > now) return 0;
       let months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
-      const dueDay = Number(dueDayStr || start.getDate() || 5);
+      const dueDay = Number(dueDayStr || 26);
       if (now.getDate() >= dueDay) {
         months += 1;
       }
@@ -168,22 +302,17 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
   const getRdMetrics = (item) => {
     if (!item) return {};
     const type = item.savingsType || "RD";
-    const tenureYears = Number(item.tenureYears || 1);
-    const totalMonths = tenureYears * (item.frequency === "quarterly" ? 4 : (item.frequency === "yearly" ? 1 : 12));
     const instAmt = Number(item.installmentAmount || 0);
-
-    // Due months up to today (कितने महीने बीत चुके हैं - देय अवधि)
-    const dueMonths = type === "FD" ? 1 : getElapsedMonths(item.startDate, item.dueDayOfMonth, totalMonths);
 
     // Explicit recorded installments in the array
     const recordedList = Array.isArray(item.installments) ? item.installments : [];
     const recordedCount = recordedList.length;
     const recordedSum = recordedList.reduce((sum, inst) => sum + Number(inst.amount || 0), 0);
 
-    // Explicit past data if user checked "पुराना चालू खाता"
-    const isOld = Boolean(item.isOldOngoingAccount);
-    const pastAmt = isOld ? Number(item.alreadyDepositedAmount || 0) : 0;
-    const pastCount = isOld ? Number(item.alreadyPaidCount || 0) : 0;
+    // Explicit past data if user entered alreadyPaidCount / alreadyDepositedAmount
+    const explicitPaidCount = Number(item.alreadyPaidCount || 0);
+    const explicitPastAmt = Number(item.alreadyDepositedAmount || 0);
+    const rawDeposited = Number(item.totalDeposited || item.currentValue || 0);
 
     let totalDeposited = 0;
     let paidCount = 0;
@@ -192,24 +321,37 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
       totalDeposited = Number(item.initialDeposit || item.totalDeposited || item.currentValue || 0);
       paidCount = totalDeposited > 0 ? 1 : 0;
     } else {
-      if (recordedList.length > 0) {
+      if (explicitPastAmt > 0) {
+        totalDeposited = Math.max(explicitPastAmt, recordedSum);
+        paidCount = explicitPaidCount > 0 ? explicitPaidCount : (instAmt > 0 ? Math.round(totalDeposited / instAmt) : recordedCount);
+      } else if (explicitPaidCount > 0) {
+        paidCount = explicitPaidCount;
+        totalDeposited = recordedSum > (paidCount * instAmt) ? recordedSum : (paidCount * instAmt);
+      } else if (recordedList.length > 0) {
         totalDeposited = recordedSum;
-        if (isOld && pastAmt > recordedSum) {
-          totalDeposited = pastAmt;
-        }
-        paidCount = instAmt > 0 ? Math.round(totalDeposited / instAmt) : recordedList.length;
-      } else if (isOld && (pastAmt > 0 || pastCount > 0)) {
-        totalDeposited = pastAmt > 0 ? pastAmt : (pastCount * instAmt);
-        paidCount = pastCount > 0 ? pastCount : (instAmt > 0 ? Math.round(totalDeposited / instAmt) : 0);
+        paidCount = instAmt > 0 ? Math.round(totalDeposited / instAmt) : recordedCount;
       } else {
-        // Strictly what was actually deposited! (Never fake-multiplied by dueMonths!)
-        const raw = Number(item.totalDeposited || item.currentValue || 0);
-        totalDeposited = raw;
-        paidCount = instAmt > 0 && raw > 0 ? Math.round(raw / instAmt) : (item.alreadyPaidCount ? Number(item.alreadyPaidCount) : 0);
+        totalDeposited = rawDeposited;
+        paidCount = explicitPaidCount > 0 ? explicitPaidCount : (instAmt > 0 && rawDeposited > 0 ? Math.round(rawDeposited / instAmt) : 0);
       }
     }
 
-    // Overdue / Pending installments (जो देय हैं लेकिन वास्तव में जमा नहीं हुई हैं)
+    // Dynamic Tenure & Months: If user paid 42, 36, or 30 installments, totalMonths must NEVER be clamped to 12!
+    const rawTenureYears = Number(item.tenureYears || 1);
+    const freqFactor = item.frequency === "quarterly" ? 4 : (item.frequency === "yearly" ? 1 : 12);
+    const baseTenureMonths = rawTenureYears * freqFactor;
+
+    // Total months expands dynamically to cover paid installments
+    const totalMonths = Math.max(
+      baseTenureMonths,
+      paidCount > 0 ? (paidCount <= baseTenureMonths ? baseTenureMonths : Math.ceil(paidCount / 12) * 12) : baseTenureMonths
+    );
+    const tenureYears = Math.max(rawTenureYears, Math.ceil(totalMonths / 12));
+
+    // Due months up to today from Start Date (never capped to 12!)
+    const dueMonths = type === "FD" ? 1 : getElapsedMonths(item.startDate, item.dueDayOfMonth, Math.max(totalMonths, 360));
+
+    // Overdue / Pending installments
     const overdueCount = type === "FD" ? 0 : Math.max(0, dueMonths - paidCount);
     const overdueAmount = overdueCount * instAmt;
 
@@ -221,7 +363,12 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
     const progressPct = totalMonths > 0 ? Math.min(100, Math.round((paidCount / totalMonths) * 100)) : 0;
 
     // Expected maturity amount for this individual card
-    const expectedMaturity = calculateExpectedMaturity(item);
+    const expectedMaturity = calculateExpectedMaturity({
+      ...item,
+      tenureYears,
+      installmentAmount: instAmt,
+      totalDeposited
+    });
     const totalPrincipal = type === "FD" ? totalDeposited : (totalMonths * instAmt);
     const interestGain = Math.max(0, expectedMaturity - totalPrincipal);
 
@@ -311,7 +458,9 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
     alreadyDepositedAmount: "",
     alreadyPaidCount: "",
     maturityDate: "",
-    dueDayOfMonth: "5",
+    dueDayOfMonth: "26",
+    isAutoDebitEnabled: true,
+    autoDebitFundSource: "shop_cash",
     expectedMaturityAmount: "",
     notes: ""
   });
@@ -383,10 +532,16 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
       });
 
       const list = Array.from(map.values());
-      setSavingsList(list);
-      if (list.length > 0 && typeof localStorage !== "undefined") {
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      const { updatedList } = await processAutoSavingsDebits(list, currentCoId, onExpenseAdded);
+      const finalList = updatedList || list;
+      setSavingsList(finalList);
+      if (finalList.length > 0 && typeof localStorage !== "undefined") {
         try {
-          localStorage.setItem("vb_local_savings", JSON.stringify(list));
+          localStorage.setItem("vb_local_savings", JSON.stringify(finalList));
+          if (currentCoId) {
+            localStorage.setItem(`vb_local_savings_${currentCoId}`, JSON.stringify(finalList));
+          }
         } catch (e) {}
       }
     } catch (err) {
@@ -404,18 +559,14 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
     }
 
     const type = formData.savingsType || "RD";
-    const tenureYears = Number(formData.tenureYears || 1);
-    const totalMonths = tenureYears * (formData.frequency === "quarterly" ? 4 : (formData.frequency === "yearly" ? 1 : 12));
+    const rawTenure = Number(formData.tenureYears || 1);
     const instAmt = Number(formData.installmentAmount || 0);
     const initDeposit = Number(formData.initialDeposit || 0);
     const pastAmt = Number(formData.alreadyDepositedAmount || 0);
-
-    // Due months from Start Date up to current date (आज तक कितने माह बीते)
-    const dueMonths = type === "FD" ? 1 : getElapsedMonths(formData.startDate, formData.dueDayOfMonth, totalMonths);
-    const isOld = Boolean(formData.isOldOngoingAccount);
     const pastCount = Number(formData.alreadyPaidCount || 0);
+    const isOld = Boolean(formData.isOldOngoingAccount) || pastCount > 0 || pastAmt > 0;
 
-    // Effective paid count: ONLY what the user explicitly entered for old ongoing account! Never auto-multiplied!
+    // Effective paid count: preserve user's explicit count (e.g. 42, 36, 30)
     const effectivePaidCount = type === "FD"
       ? 1
       : (isOld 
@@ -426,6 +577,17 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
     const computedTotal = type === "FD"
       ? (initDeposit > 0 ? initDeposit : pastAmt)
       : (isOld ? (pastAmt > 0 ? pastAmt : effectivePaidCount * instAmt) : 0);
+
+    // Dynamic tenure expanding if paidCount exceeds rawTenure
+    const freqFactor = formData.frequency === "quarterly" ? 4 : (formData.frequency === "yearly" ? 1 : 12);
+    const baseTenureMonths = rawTenure * freqFactor;
+    const totalMonths = Math.max(
+      baseTenureMonths,
+      effectivePaidCount > baseTenureMonths ? Math.ceil(effectivePaidCount / 12) * 12 : baseTenureMonths
+    );
+    const tenureYears = Math.max(rawTenure, Math.ceil(totalMonths / 12));
+
+    const maturityDate = formData.maturityDate || calculateMaturity(formData.startDate, tenureYears);
 
     // Auto-calculate expected maturity if user didn't enter one
     const calcExpectedMaturity = Number(formData.expectedMaturityAmount || 0) > 0
@@ -438,10 +600,13 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
           totalDeposited: computedTotal
         });
 
-    const maturityDate = formData.maturityDate || calculateMaturity(formData.startDate, tenureYears);
+    const dueDay = Number(formData.dueDayOfMonth || 26);
+    const isAutoDebitEnabled = formData.isAutoDebitEnabled !== false;
 
     const payload = {
       ...formData,
+      isAutoDebitEnabled,
+      dueDayOfMonth: dueDay,
       tenureYears,
       installmentAmount: instAmt,
       initialDeposit: type === "FD" ? initDeposit : 0,
@@ -450,7 +615,6 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
       totalDeposited: computedTotal,
       currentValue: computedTotal,
       interestRate: Number(formData.interestRate || 0),
-      dueDayOfMonth: Number(formData.dueDayOfMonth || 5),
       expectedMaturityAmount: calcExpectedMaturity,
       maturityDate,
       updatedAt: new Date().toISOString()
@@ -531,7 +695,7 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
     setEditingId(item._id || item.id);
     const m = getRdMetrics(item);
     const sDate = item.startDate ? String(item.startDate).split("T")[0] : new Date().toISOString().split("T")[0];
-    const tYrs = String(item.tenureYears || "1");
+    const tYrs = String(m.tenureYears || item.tenureYears || "1");
 
     setFormData({
       title: item.title || "",
@@ -547,10 +711,12 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
       startDate: sDate,
       tenureYears: tYrs,
       isOldOngoingAccount: m.paidCount > 0,
-      alreadyDepositedAmount: String(m.totalDeposited || ""),
-      alreadyPaidCount: String(m.paidCount || ""),
+      alreadyDepositedAmount: String(m.totalDeposited || item.alreadyDepositedAmount || ""),
+      alreadyPaidCount: String(m.paidCount || item.alreadyPaidCount || ""),
       maturityDate: item.maturityDate ? String(item.maturityDate).split("T")[0] : calculateMaturity(sDate, tYrs),
-      dueDayOfMonth: String(item.dueDayOfMonth || "5"),
+      dueDayOfMonth: String(item.dueDayOfMonth || "26"),
+      isAutoDebitEnabled: item.isAutoDebitEnabled !== false,
+      autoDebitFundSource: item.autoDebitFundSource || "shop_cash",
       expectedMaturityAmount: String(item.expectedMaturityAmount || (m.expectedMaturity || "")),
       notes: item.notes || ""
     });
@@ -576,10 +742,97 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
       alreadyDepositedAmount: "",
       alreadyPaidCount: "",
       maturityDate: calculateMaturity(today, 1),
-      dueDayOfMonth: "5",
+      dueDayOfMonth: "26",
+      isAutoDebitEnabled: true,
+      autoDebitFundSource: "shop_cash",
       expectedMaturityAmount: "",
       notes: ""
     });
+  };
+
+  // 🔄 1-Click Toggle for Automated vs Manual Recurring Deposit
+  const handleToggleAutoDebit = async (item) => {
+    const id = item._id || item.id;
+    const currentVal = item.isAutoDebitEnabled !== false;
+    const newVal = !currentVal;
+
+    const updatedItem = {
+      ...item,
+      isAutoDebitEnabled: newVal,
+      dueDayOfMonth: Number(item.dueDayOfMonth || 26)
+    };
+
+    setSavingsList(prev => prev.map(s => (s._id || s.id) === id ? updatedItem : s));
+
+    try {
+      let local = JSON.parse(localStorage.getItem("vb_local_savings") || "[]");
+      local = local.map(s => (s._id || s.id) === id ? updatedItem : s);
+      localStorage.setItem("vb_local_savings", JSON.stringify(local));
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      if (currentCoId) {
+        localStorage.setItem(`vb_local_savings_${currentCoId}`, JSON.stringify(local));
+      }
+    } catch (e) {}
+
+    try {
+      await api.put(`/api/savings/${id}`, updatedItem);
+    } catch (e) {}
+
+    if (newVal) {
+      alert(`✅ स्वतः ऑटो-जमा चालू कर दिया गया!\n\nहर माह ${updatedItem.dueDayOfMonth || 26} तारीख को यह किस्त दुकान गल्ले से खुद-ब-खुद कट जाएगी और आज के खर्च में दर्ज हो जाएगी।`);
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      const { updatedList } = await processAutoSavingsDebits([updatedItem], currentCoId, onExpenseAdded);
+      if (updatedList && updatedList[0]) {
+        setSavingsList(prev => prev.map(s => (s._id || s.id) === id ? updatedList[0] : s));
+      }
+    } else {
+      alert(`✋ मैन्युअल मोड सक्रिय!\n\nअब स्वतः ऑटो-कट बंद है। जब भी आप पैसे देंगे, 'पैसे डालें' बटन पर क्लिक करके मैन्युअल दर्ज करेंगे।`);
+    }
+  };
+
+  // ✏️ Quick Edit Due Day Shortcut (उदा. 26 तारीख)
+  const handleQuickEditDueDay = async (item) => {
+    const id = item._id || item.id;
+    const currentDay = String(item.dueDayOfMonth || 26);
+    const input = window.prompt(`हर माह RD किस्त कटने की तारीख दर्ज करें (1 से 31):\n(वर्तमान तारीख: ${currentDay})`, currentDay);
+    if (!input) return;
+
+    const parsedDay = parseInt(input.trim(), 10);
+    if (isNaN(parsedDay) || parsedDay < 1 || parsedDay > 31) {
+      alert("कृपया 1 से 31 के बीच कोई सही तारीख दर्ज करें!");
+      return;
+    }
+
+    const updatedItem = {
+      ...item,
+      dueDayOfMonth: parsedDay
+    };
+
+    setSavingsList(prev => prev.map(s => (s._id || s.id) === id ? updatedItem : s));
+
+    try {
+      let local = JSON.parse(localStorage.getItem("vb_local_savings") || "[]");
+      local = local.map(s => (s._id || s.id) === id ? updatedItem : s);
+      localStorage.setItem("vb_local_savings", JSON.stringify(local));
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      if (currentCoId) {
+        localStorage.setItem(`vb_local_savings_${currentCoId}`, JSON.stringify(local));
+      }
+    } catch (e) {}
+
+    try {
+      await api.put(`/api/savings/${id}`, updatedItem);
+    } catch (e) {}
+
+    alert(`✅ RD किस्त देय तारीख बदलकर हर माह ${parsedDay} तारीख सेट कर दी गई!`);
+
+    if (updatedItem.isAutoDebitEnabled !== false) {
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      const { updatedList } = await processAutoSavingsDebits([updatedItem], currentCoId, onExpenseAdded);
+      if (updatedList && updatedList[0]) {
+        setSavingsList(prev => prev.map(s => (s._id || s.id) === id ? updatedList[0] : s));
+      }
+    }
   };
 
   const handleDelete = (id) => {
@@ -1107,6 +1360,55 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                     </div>
                   )}
 
+                  {/* 🔄 AUTOMATED VS MANUAL RECURRING DEPOSIT STRIP */}
+                  {item.savingsType !== "FD" && (
+                    <div className={`p-2.5 rounded-2xl border transition-all flex items-center justify-between text-xs gap-2 ${
+                      item.isAutoDebitEnabled !== false
+                        ? "bg-emerald-50/90 border-emerald-300 text-emerald-950"
+                        : "bg-slate-100 border-slate-300 text-slate-700"
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAutoDebit(item)}
+                          className={`px-2.5 py-1.5 rounded-xl font-black text-[11px] flex items-center gap-1 shadow-xs transition active:scale-95 cursor-pointer shrink-0 ${
+                            item.isAutoDebitEnabled !== false
+                              ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                              : "bg-slate-200 hover:bg-slate-300 text-slate-800"
+                          }`}
+                          title={item.isAutoDebitEnabled !== false ? "क्लिक करके मैन्युअल मोड करें" : "क्लिक करके स्वतः ऑटो-जमा चालू करें"}
+                        >
+                          {item.isAutoDebitEnabled !== false ? "🔄 स्वतः जमा: चालू" : "✋ मैन्युअल जमा"}
+                        </button>
+
+                        <div>
+                          <span className="font-extrabold text-[11px] block leading-tight">
+                            {item.isAutoDebitEnabled !== false
+                              ? `हर माह ${item.dueDayOfMonth || 26} तारीख को गल्ले से स्वतः कटेगा`
+                              : `मैन्युअल मोड (दुकानदार खुद जमा करेगा)`}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-medium block">
+                            {item.isAutoDebitEnabled !== false
+                              ? `दुकान खर्च में ऑटो जुड़ेगा और गल्ले से घटेगा`
+                              : `ऑटो-कट बंद है`}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Date Edit Shortcut Button */}
+                      <div className="shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleQuickEditDueDay(item)}
+                          className="px-2.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl text-[10px] font-black text-slate-800 flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 transition"
+                          title="तारीख बदलें"
+                        >
+                          📅 {item.dueDayOfMonth || 26} तारीख ✏️
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Action Buttons */}
                   <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
                     <button
@@ -1251,9 +1553,9 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                       ...prev,
                       startDate: newDate,
                       maturityDate: matDate,
-                      isOldOngoingAccount: elapsed > 0,
-                      alreadyPaidCount: elapsed > 0 ? String(elapsed) : prev.alreadyPaidCount,
-                      alreadyDepositedAmount: elapsed > 0 && inst > 0 ? String(elapsed * inst) : prev.alreadyDepositedAmount,
+                      isOldOngoingAccount: prev.isOldOngoingAccount || elapsed > 0,
+                      alreadyPaidCount: prev.alreadyPaidCount ? prev.alreadyPaidCount : (elapsed > 0 ? String(elapsed) : ""),
+                      alreadyDepositedAmount: prev.alreadyDepositedAmount ? prev.alreadyDepositedAmount : (elapsed > 0 && inst > 0 ? String(elapsed * inst) : ""),
                       expectedMaturityAmount: !prev.expectedMaturityAmount || Number(prev.expectedMaturityAmount) <= 0 ? (expMaturity > 0 ? String(expMaturity) : "") : prev.expectedMaturityAmount
                     }));
                   }}
@@ -1268,8 +1570,8 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                       {formData.tenureYears} साल ({Number(formData.tenureYears || 1) * 12} माह)
                     </span>
                   </div>
-                  <div className="grid grid-cols-5 gap-1.5 text-xs font-bold">
-                    {["1", "2", "3", "5", "10"].map(yr => (
+                  <div className="grid grid-cols-6 gap-1.5 text-xs font-bold">
+                    {["1", "2", "3", "4", "5", "10"].map(yr => (
                       <button
                         key={yr}
                         type="button"
@@ -1289,8 +1591,8 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                             ...prev,
                             tenureYears: yr,
                             maturityDate: matDate,
-                            alreadyPaidCount: elapsed > 0 ? String(elapsed) : prev.alreadyPaidCount,
-                            alreadyDepositedAmount: elapsed > 0 && inst > 0 ? String(elapsed * inst) : prev.alreadyDepositedAmount,
+                            alreadyPaidCount: prev.alreadyPaidCount ? prev.alreadyPaidCount : (elapsed > 0 ? String(elapsed) : ""),
+                            alreadyDepositedAmount: prev.alreadyDepositedAmount ? prev.alreadyDepositedAmount : (elapsed > 0 && inst > 0 ? String(elapsed * inst) : ""),
                             expectedMaturityAmount: !prev.expectedMaturityAmount || Number(prev.expectedMaturityAmount) <= 0 ? (expMaturity > 0 ? String(expMaturity) : "") : prev.expectedMaturityAmount
                           }));
                         }}
@@ -1411,21 +1713,97 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                   )}
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">किस्त देय तारीख (Due Day)</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">किस्त देय तारीख (Due Day) *</label>
                   <input
                     type="number"
                     min="1"
                     max="31"
-                    placeholder="जैसे: 5 या 28"
+                    placeholder="उदा. 26"
                     value={formData.dueDayOfMonth}
                     onChange={e => setFormData({ ...formData, dueDayOfMonth: e.target.value })}
-                    className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50"
+                    className="w-full text-xs font-black px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-800"
                   />
-                  <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
-                    महीने की तारीख (रिमाइंडर)
+                  <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                    महीने की तारीख (डिफ़ॉल्ट 26)
                   </span>
                 </div>
               </div>
+
+              {/* 🔄 AUTOMATED VS MANUAL DEPOSIT SWITCH */}
+              {formData.savingsType !== "FD" && (
+                <div className="bg-emerald-50/80 p-3 rounded-2xl border border-emerald-200/90 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-black text-emerald-950 block">
+                        🔄 स्वतः ऑटो-जमा (Auto-Debit on Due Date)
+                      </span>
+                      <span className="text-[10px] text-emerald-800 font-medium">
+                        तय तारीख को दुकान गल्ले से खुद-ब-खुद जमा व खर्च में जोड़ें
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, isAutoDebitEnabled: !prev.isAutoDebitEnabled }))}
+                      className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
+                        formData.isAutoDebitEnabled !== false ? "bg-emerald-600" : "bg-slate-300"
+                      }`}
+                    >
+                      <span
+                        className={`w-5 h-5 rounded-full bg-white block shadow-xs transition-transform transform ${
+                          formData.isAutoDebitEnabled !== false ? "translate-x-6" : "translate-x-1"
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-emerald-200/50">
+                    <span className="font-bold text-emerald-900">
+                      मोड: {formData.isAutoDebitEnabled !== false ? "✅ स्वतः जमा चालू (हर माह ऑटो-कट)" : "✋ मैन्युअल जमा (बटन दबाकर)"}
+                    </span>
+                    <span className="text-[10px] text-emerald-700 font-medium">
+                      {formData.isAutoDebitEnabled !== false ? `हर माह ${formData.dueDayOfMonth || 26} तारीख` : "मैन्युअल"}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* 🔄 AUTOMATED VS MANUAL DEPOSIT SWITCH */}
+              {formData.savingsType !== "FD" && (
+                <div className="bg-emerald-50/80 p-3 rounded-2xl border border-emerald-200/90 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-black text-emerald-950 block">
+                        🔄 स्वतः ऑटो-जमा (Auto-Debit on Due Date)
+                      </span>
+                      <span className="text-[10px] text-emerald-800 font-medium">
+                        तय तारीख को दुकान गल्ले से खुद-ब-खुद जमा व खर्च में जोड़ें
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, isAutoDebitEnabled: !prev.isAutoDebitEnabled }))}
+                      className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
+                        formData.isAutoDebitEnabled !== false ? "bg-emerald-600" : "bg-slate-300"
+                      }`}
+                    >
+                      <span
+                        className={`w-5 h-5 rounded-full bg-white block shadow-xs transition-transform transform ${
+                          formData.isAutoDebitEnabled !== false ? "translate-x-6" : "translate-x-1"
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-emerald-200/50">
+                    <span className="font-bold text-emerald-900">
+                      मोड: {formData.isAutoDebitEnabled !== false ? "✅ स्वतः जमा चालू (हर माह ऑटो-कट)" : "✋ मैन्युअल जमा (बटन दबाकर)"}
+                    </span>
+                    <span className="text-[10px] text-emerald-700 font-medium">
+                      {formData.isAutoDebitEnabled !== false ? `हर माह ${formData.dueDayOfMonth || 26} तारीख` : "मैन्युअल"}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* 🟢 SMART TOGGLE: OLD / EXISTING ONGOING ACCOUNT (पुराना चालू खाता व स्वतः गणना) */}
               <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2.5">
@@ -1465,11 +1843,12 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
 
                 {formData.isOldOngoingAccount && (() => {
                   const totalMonths = Number(formData.tenureYears || 1) * 12;
-                  const elapsedMonths = getElapsedMonths(formData.startDate, formData.dueDayOfMonth, totalMonths);
+                  const elapsedMonths = getElapsedMonths(formData.startDate, formData.dueDayOfMonth, 360);
                   const inst = Number(formData.installmentAmount || 0);
                   const expectedTotal = elapsedMonths * inst;
                   const paidCount = Number(formData.alreadyPaidCount || 0);
                   const remainingCount = Math.max(0, totalMonths - paidCount);
+                  const missedCount = Math.max(0, elapsedMonths - paidCount);
 
                   return (
                     <div className="pt-2 border-t border-slate-200 space-y-2.5 animate-in fade-in">
