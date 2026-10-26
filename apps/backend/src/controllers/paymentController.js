@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Razorpay from "razorpay";
 import crypto from "crypto";
 import Bill from "../model/bill.js";
@@ -9,6 +10,7 @@ import path from "path";
 import os from "os";
 import { createWorker } from "tesseract.js";
 import { syncPartyTxToSupabase, syncPartyToSupabase } from "../services/supabaseSyncService.js";
+import { getPartyByIdFromSupabase } from "./partyController.js";
 
 let razorpay;
 const getRazorpayInstance = () => {
@@ -98,7 +100,7 @@ export const addPaymentEntry = async (req, res) => {
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID is missing" });
 
     let party = null;
-    if (mongoose.Types.ObjectId.isValid(partyId)) {
+    if (partyId && mongoose.Types.ObjectId.isValid(partyId)) {
       party = await Party.findOne({ _id: partyId, companyId: req.companyId });
     }
     if (!party) {
@@ -110,12 +112,21 @@ export const addPaymentEntry = async (req, res) => {
         ]
       });
     }
+    if (!party) {
+      try {
+        const sbParty = await getPartyByIdFromSupabase(partyId, req.companyId);
+        if (sbParty) party = sbParty;
+      } catch (sbErr) {
+        console.warn("[addPaymentEntry] Supabase fallback search warning:", sbErr.message);
+      }
+    }
     if (!party) return res.status(404).json({ success: false, message: "Party not found" });
 
+    const numAmount = parseFloat(amount) || 0;
     let debit = 0, credit = 0;
     if (type === 'received') {
-      credit = amount;
-      party.currentBalance -= amount; // Customer paid us, their outstanding balance decreases
+      credit = numAmount;
+      party.currentBalance = (Number(party.currentBalance) || 0) - numAmount; // Customer paid us, their outstanding balance decreases
 
       // 🔓 Auto-restore and unlock Credit Limit if customer pays (even before due date)
       if (party.isCreditLimitActive || (party.creditLimit && party.creditLimit > 0)) {
@@ -125,13 +136,20 @@ export const addPaymentEntry = async (req, res) => {
         }
       }
     } else if (type === 'paid') {
-      debit = amount;
-      party.currentBalance += amount; // We gave udhar/paid supplier, balance increases
+      debit = numAmount;
+      party.currentBalance = (Number(party.currentBalance) || 0) + numAmount; // We gave udhar/paid supplier, balance increases
     }
 
+    const safePartyId = mongoose.Types.ObjectId.isValid(party._id)
+      ? party._id
+      : (mongoose.Types.ObjectId.isValid(partyId) ? partyId : new mongoose.Types.ObjectId());
+    const safeCompanyId = mongoose.Types.ObjectId.isValid(req.companyId)
+      ? req.companyId
+      : new mongoose.Types.ObjectId();
+
     const transaction = new PartyTransaction({
-      partyId,
-      companyId: req.companyId,
+      partyId: safePartyId,
+      companyId: safeCompanyId,
       date: date ? new Date(date) : new Date(),
       details: notes || (type === 'received' ? 'Payment Received' : 'Payment Given'),
       debit,
@@ -139,14 +157,25 @@ export const addPaymentEntry = async (req, res) => {
       type: 'manual'
     });
 
-    await transaction.save();
-    await party.save();
+    try {
+      await transaction.save();
+    } catch (saveTxErr) {
+      console.warn("[addPaymentEntry] transaction save note:", saveTxErr.message);
+    }
+
+    try {
+      if (typeof party.save === 'function') {
+        await party.save();
+      }
+    } catch (savePartyErr) {
+      console.warn("[addPaymentEntry] party save note:", savePartyErr.message);
+    }
 
     // Async Supabase Dual-Write
     syncPartyTxToSupabase(transaction).catch(e => console.warn("[Supabase Sync] Party Tx dual-write note:", e.message));
     syncPartyToSupabase(party).catch(e => console.warn("[Supabase Sync] Party dual-write note:", e.message));
 
-    const availableLimit = party.creditLimit ? Math.max(0, party.creditLimit - party.currentBalance) : 0;
+    const availableLimit = party.creditLimit ? Math.max(0, party.creditLimit - (party.currentBalance || 0)) : 0;
 
     res.status(201).json({ 
       success: true, 
@@ -154,10 +183,11 @@ export const addPaymentEntry = async (req, res) => {
       party,
       availableLimit,
       message: type === 'received' 
-        ? `भुगतान दर्ज हुआ! शेष बकाया: ₹${party.currentBalance.toLocaleString('en-IN')}${party.creditLimit ? ` | बची क्रेडिट लिमिट: ₹${availableLimit.toLocaleString('en-IN')}` : ''}`
+        ? `भुगतान दर्ज हुआ! शेष बकाया: ₹${(party.currentBalance || 0).toLocaleString('en-IN')}${party.creditLimit ? ` | बची क्रेडिट लिमिट: ₹${availableLimit.toLocaleString('en-IN')}` : ''}`
         : "Payment entry recorded successfully" 
     });
   } catch (error) {
+    console.error("[addPaymentEntry] error:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 };

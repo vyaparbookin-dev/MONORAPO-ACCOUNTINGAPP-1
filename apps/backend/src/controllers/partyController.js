@@ -356,28 +356,30 @@ export const getPartyStatement = async (req, res) => {
     const escapeRegex = (s) => (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const nameRegex = new RegExp(`^${escapeRegex(party.name)}$`, "i");
 
-    const coIdStr = String(req.companyId);
-    const coQuery = [coIdStr];
+    const coIdStr = String(req.companyId || "");
+    const validMongoCoIds = [];
     if (mongoose.Types.ObjectId.isValid(coIdStr)) {
-      coQuery.push(new mongoose.Types.ObjectId(coIdStr));
+      validMongoCoIds.push(new mongoose.Types.ObjectId(coIdStr));
     }
 
-    const pIdStr = String(party._id);
-    const pIdQuery = [pIdStr];
+    const pIdStr = String(party._id || party.id || "");
+    const validMongoPartyIds = [];
     if (mongoose.Types.ObjectId.isValid(pIdStr)) {
-      pIdQuery.push(new mongoose.Types.ObjectId(pIdStr));
+      validMongoPartyIds.push(new mongoose.Types.ObjectId(pIdStr));
     }
 
     // 1. Direct Party Transactions (Cash/Bank Payments & Receipts from Mongo + Supabase)
     let txRecords = [];
-    try {
-      txRecords = await PartyTransaction.find({
-        partyId: { $in: pIdQuery },
-        companyId: { $in: coQuery },
-        isDeleted: { $ne: true }
-      }).lean();
-    } catch (e) {
-      console.warn("[getPartyStatement] Mongo txRecords error:", e.message);
+    if (validMongoPartyIds.length > 0 && validMongoCoIds.length > 0) {
+      try {
+        txRecords = await PartyTransaction.find({
+          partyId: { $in: validMongoPartyIds },
+          companyId: { $in: validMongoCoIds },
+          isDeleted: { $ne: true }
+        }).lean();
+      } catch (e) {
+        console.warn("[getPartyStatement] Mongo txRecords error:", e.message);
+      }
     }
 
     try {
@@ -401,23 +403,28 @@ export const getPartyStatement = async (req, res) => {
 
     // 2. Sales Bills for this party (from Mongo + Supabase)
     let billRecords = [];
-    try {
-      const billFilter = {
-        companyId: { $in: coQuery },
-        isDeleted: { $ne: true },
-        $or: [
-          { partyId: { $in: pIdQuery } },
+    if (validMongoCoIds.length > 0) {
+      try {
+        const orClauses = [
           { customerName: nameRegex },
           { partyName: nameRegex },
           { customer: nameRegex }
-        ]
-      };
-      if (party.mobileNumber && party.mobileNumber.length >= 10) {
-        billFilter.$or.push({ customerMobile: party.mobileNumber }, { customerPhone: party.mobileNumber });
+        ];
+        if (validMongoPartyIds.length > 0) {
+          orClauses.push({ partyId: { $in: validMongoPartyIds } });
+        }
+        const billFilter = {
+          companyId: { $in: validMongoCoIds },
+          isDeleted: { $ne: true },
+          $or: orClauses
+        };
+        if (party.mobileNumber && party.mobileNumber.length >= 10) {
+          billFilter.$or.push({ customerMobile: party.mobileNumber }, { customerPhone: party.mobileNumber });
+        }
+        billRecords = await Bill.find(billFilter).lean();
+      } catch (e) {
+        console.warn("[getPartyStatement] Mongo billRecords error:", e.message);
       }
-      billRecords = await Bill.find(billFilter).lean();
-    } catch (e) {
-      console.warn("[getPartyStatement] Mongo billRecords error:", e.message);
     }
 
     // Merge Supabase sales bills
@@ -457,20 +464,25 @@ export const getPartyStatement = async (req, res) => {
 
     // 3. Purchase Bills for this party (from Mongo + Supabase)
     let purchaseRecords = [];
-    try {
-      const purchaseFilter = {
-        companyId: { $in: coQuery },
-        isDeleted: { $ne: true },
-        $or: [
-          { partyId: { $in: pIdQuery } },
+    if (validMongoCoIds.length > 0) {
+      try {
+        const orClauses = [
           { supplierName: nameRegex },
           { supplier: nameRegex },
           { partyName: nameRegex }
-        ]
-      };
-      purchaseRecords = await Purchase.find(purchaseFilter).lean();
-    } catch (e) {
-      console.warn("[getPartyStatement] Mongo purchaseRecords error:", e.message);
+        ];
+        if (validMongoPartyIds.length > 0) {
+          orClauses.push({ partyId: { $in: validMongoPartyIds } });
+        }
+        const purchaseFilter = {
+          companyId: { $in: validMongoCoIds },
+          isDeleted: { $ne: true },
+          $or: orClauses
+        };
+        purchaseRecords = await Purchase.find(purchaseFilter).lean();
+      } catch (e) {
+        console.warn("[getPartyStatement] Mongo purchaseRecords error:", e.message);
+      }
     }
 
     if (supabase) {

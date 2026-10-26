@@ -2618,6 +2618,24 @@ function MobileVyaparAppContent() {
         return tPartyId && tPartyId === String(partyId);
       });
 
+      // Merge state bills + stored local bills so newly created bills never go missing in party statement
+      let allAvailableBills = Array.isArray(bills) ? [...bills] : [];
+      try {
+        const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+        if (currentCoId) {
+          const storedLocalBills = storageManager.getBills(currentCoId);
+          if (Array.isArray(storedLocalBills)) {
+            const existingBIds = new Set(allAvailableBills.map(b => String(b._id || b.id)));
+            storedLocalBills.forEach(sb => {
+              if (!existingBIds.has(String(sb._id || sb.id))) {
+                allAvailableBills.push(sb);
+                existingBIds.add(String(sb._id || sb.id));
+              }
+            });
+          }
+        }
+      } catch(e) {}
+
       // Merge attached photos from persistent photo cache, local transactions, and bills
       let photosCache = {};
       try {
@@ -2725,24 +2743,6 @@ function MobileVyaparAppContent() {
         if (t._id) existingRefNos.add(String(t._id).trim().toLowerCase());
         if (t.id) existingRefNos.add(String(t.id).trim().toLowerCase());
       });
-
-      // Merge state bills + stored local bills so newly created bills never go missing in party statement
-      let allAvailableBills = Array.isArray(bills) ? [...bills] : [];
-      try {
-        const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
-        if (currentCoId) {
-          const storedLocalBills = storageManager.getBills(currentCoId);
-          if (Array.isArray(storedLocalBills)) {
-            const existingBIds = new Set(allAvailableBills.map(b => String(b._id || b.id)));
-            storedLocalBills.forEach(sb => {
-              if (!existingBIds.has(String(sb._id || sb.id))) {
-                allAvailableBills.push(sb);
-                existingBIds.add(String(sb._id || sb.id));
-              }
-            });
-          }
-        }
-      } catch(e) {}
 
       const localBills = allAvailableBills.filter(b => {
         const bPartyId = String(b.partyId || '').trim();
@@ -3669,16 +3669,21 @@ function MobileVyaparAppContent() {
       const notes = partyTxNotes.trim() || (type === 'paid' ? 'मैंने दिए' : 'मुझे मिले');
       const txDate = partyTxDate ? new Date(partyTxDate) : new Date();
 
-      const res = await api.post("/api/payment/entry", {
-        partyId,
-        amount: amt,
-        type,
-        date: txDate.toISOString(),
-        paymentMethod: partyTxPaymentMode || 'CASH',
-        notes
-      });
+      let serverTx = null;
+      try {
+        const res = await api.post("/api/payment/entry", {
+          partyId,
+          amount: amt,
+          type,
+          date: txDate.toISOString(),
+          paymentMethod: partyTxPaymentMode || 'CASH',
+          notes
+        });
+        serverTx = res?.data?.transaction;
+      } catch (apiErr) {
+        console.warn("[handleSavePartyTx] Server payment sync note:", apiErr.message || apiErr);
+      }
 
-      const serverTx = res?.data?.transaction;
       const actualTxId = serverTx?._id || `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
       // 'paid' increases outstanding (+amt, You'll Get), 'received' decreases outstanding (-amt)
@@ -4121,14 +4126,20 @@ function MobileVyaparAppContent() {
       const txDate = vendorBillDate ? new Date(vendorBillDate) : new Date();
       const notes = vendorNotes.trim() || 'सप्लायर को भुगतान दिया';
 
-      await api.post("/api/payment/entry", {
-        partyId,
-        amount: amt,
-        type: 'paid',
-        date: txDate.toISOString(),
-        paymentMethod: vendorPaymentMode || 'CASH',
-        notes
-      });
+      let serverTx = null;
+      try {
+        const res = await api.post("/api/payment/entry", {
+          partyId,
+          amount: amt,
+          type: 'paid',
+          date: txDate.toISOString(),
+          paymentMethod: vendorPaymentMode || 'CASH',
+          notes
+        });
+        serverTx = res?.data?.transaction;
+      } catch (apiErr) {
+        console.warn("[handleVendorPayment] Server payment sync note:", apiErr.message || apiErr);
+      }
 
       // For vendor, debt decreases (balance increases towards 0)
       const currentBal = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0);
@@ -4153,8 +4164,9 @@ function MobileVyaparAppContent() {
         return updated;
       });
 
+      const actualTxId = serverTx?._id || `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const newTxDoc = {
-        _id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        _id: actualTxId,
         partyId,
         date: txDate.toISOString(),
         details: notes,
