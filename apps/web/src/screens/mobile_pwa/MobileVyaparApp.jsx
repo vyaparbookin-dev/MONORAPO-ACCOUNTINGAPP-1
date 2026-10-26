@@ -303,127 +303,7 @@ function MobileVyaparAppContent() {
   const [manualSaleDate, setManualSaleDate] = useState(getLocalYmd);
   const [manualSaleNotes, setManualSaleNotes] = useState("");
   const [savingManualSale, setSavingManualSale] = useState(false);
-
-  // -------------------------------------------------------------
-  // 🛡️ ANDROID HARDWARE BACK BUTTON INTERCEPTION FOR PWA
-  // -------------------------------------------------------------
   const [backPressToast, setBackPressToast] = useState(false);
-  const backPressTimeRef = useRef(0);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      try {
-        window.history.replaceState({ app: "vyaparbook_root" }, "");
-        window.history.pushState({ app: "vyaparbook_active" }, "");
-      } catch (e) {}
-    }
-
-    const handlePopState = () => {
-      // Re-seed history state so PWA does not exit abruptly
-      try {
-        window.history.pushState({ app: "vyaparbook_active" }, "");
-      } catch (err) {}
-
-      // 1. Check Smart PDF Modal
-      if (showSmartPdfModal) {
-        setShowSmartPdfModal(false);
-        return;
-      }
-
-      // 2. Check Bill Detail View
-      if (selectedBillDetail) {
-        setSelectedBillDetail(null);
-        return;
-      }
-
-      // 3. Check Party Detail View
-      if (selectedPartyDetail) {
-        setSelectedPartyDetail(null);
-        return;
-      }
-
-      // 4. Modals
-      if (showQuickBillModal) {
-        setShowQuickBillModal(false);
-        return;
-      }
-      if (showManualSaleModal) {
-        setShowManualSaleModal(false);
-        return;
-      }
-      if (showAddPartyModal) {
-        setShowAddPartyModal(false);
-        return;
-      }
-      if (showAddItemModal) {
-        setShowAddItemModal(false);
-        return;
-      }
-      if (showAllTransactions) {
-        setShowAllTransactions(false);
-        return;
-      }
-      if (showUdharOtpModal) {
-        setShowUdharOtpModal(false);
-        return;
-      }
-      if (showCompanySelectModal) {
-        setShowCompanySelectModal(false);
-        return;
-      }
-      if (showDayBookModal) {
-        setShowDayBookModal(false);
-        return;
-      }
-      if (showProfitLossModal) {
-        setShowProfitLossModal(false);
-        return;
-      }
-      if (showGharKharchModal) {
-        setShowGharKharchModal(false);
-        return;
-      }
-      if (showPagarBookModal) {
-        setShowPagarBookModal(false);
-        return;
-      }
-
-      // 5. Tab Navigation: return to dashboard if not already there
-      if (activeTab !== "dashboard") {
-        setActiveTab("dashboard");
-        return;
-      }
-
-      // 6. Double back press to exit from dashboard
-      const now = Date.now();
-      if (now - backPressTimeRef.current < 2000) {
-        window.history.go(-2);
-      } else {
-        backPressTimeRef.current = now;
-        setBackPressToast(true);
-        setTimeout(() => setBackPressToast(false), 2000);
-      }
-    };
-
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, [
-    showSmartPdfModal,
-    selectedBillDetail,
-    selectedPartyDetail,
-    showQuickBillModal,
-    showManualSaleModal,
-    showAddPartyModal,
-    showAddItemModal,
-    showAllTransactions,
-    showUdharOtpModal,
-    showCompanySelectModal,
-    showDayBookModal,
-    showProfitLossModal,
-    showGharKharchModal,
-    showPagarBookModal,
-    activeTab
-  ]);
   const [transactionTab, setTransactionTab] = useState("all"); // "all", "sales", "expenses"
   const [dailySaleFilter, setDailySaleFilter] = useState("today"); // "today", "yesterday", "week", "all"
   const [showAllTransactions, setShowAllTransactions] = useState(false);
@@ -976,6 +856,120 @@ function MobileVyaparAppContent() {
       fetchGharKharchData();
     }
   }, [showGharKharchLedgerModal, showGharKharchModal]);
+
+  // -------------------------------------------------------------
+  // 🛡️ ANDROID HARDWARE BACK BUTTON INTERCEPTION FOR PWA
+  // -------------------------------------------------------------
+  const backPressTimeRef = useRef(0);
+  const modalStatesRef = useRef({});
+  modalStatesRef.current = {
+    showSmartPdfModal,
+    selectedBillDetail,
+    selectedPartyDetail,
+    showQuickBillModal,
+    showManualSaleModal,
+    showAddPartyModal,
+    showAddItemModal,
+    showAllTransactions,
+    showUdharOtpModal,
+    showCompanySelectModal,
+    showDayBookModal,
+    showProfitLossModal,
+    showGharKharchModal,
+    showPagarBookModal,
+    activeTab
+  };
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        window.history.replaceState({ app: "vyaparbook_root" }, "");
+        window.history.pushState({ app: "vyaparbook_active" }, "");
+      } catch (e) {}
+    }
+
+    const handlePopState = () => {
+      try {
+        window.history.pushState({ app: "vyaparbook_active" }, "");
+      } catch (err) {}
+
+      const s = modalStatesRef.current;
+
+      if (s.showSmartPdfModal) {
+        setShowSmartPdfModal(false);
+        return;
+      }
+      if (s.selectedBillDetail) {
+        setSelectedBillDetail(null);
+        return;
+      }
+      if (s.selectedPartyDetail) {
+        setSelectedPartyDetail(null);
+        return;
+      }
+      if (s.showQuickBillModal) {
+        setShowQuickBillModal(false);
+        return;
+      }
+      if (s.showManualSaleModal) {
+        setShowManualSaleModal(false);
+        return;
+      }
+      if (s.showAddPartyModal) {
+        setShowAddPartyModal(false);
+        return;
+      }
+      if (s.showAddItemModal) {
+        setShowAddItemModal(false);
+        return;
+      }
+      if (s.showAllTransactions) {
+        setShowAllTransactions(false);
+        return;
+      }
+      if (s.showUdharOtpModal) {
+        setShowUdharOtpModal(false);
+        return;
+      }
+      if (s.showCompanySelectModal) {
+        setShowCompanySelectModal(false);
+        return;
+      }
+      if (s.showDayBookModal) {
+        setShowDayBookModal(false);
+        return;
+      }
+      if (s.showProfitLossModal) {
+        setShowProfitLossModal(false);
+        return;
+      }
+      if (s.showGharKharchModal) {
+        setShowGharKharchModal(false);
+        return;
+      }
+      if (s.showPagarBookModal) {
+        setShowPagarBookModal(false);
+        return;
+      }
+
+      if (s.activeTab !== "dashboard") {
+        setActiveTab("dashboard");
+        return;
+      }
+
+      const now = Date.now();
+      if (now - backPressTimeRef.current < 2000) {
+        window.history.go(-2);
+      } else {
+        backPressTimeRef.current = now;
+        setBackPressToast(true);
+        setTimeout(() => setBackPressToast(false), 2000);
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   const fetchGharKharchData = async () => {
     try {
