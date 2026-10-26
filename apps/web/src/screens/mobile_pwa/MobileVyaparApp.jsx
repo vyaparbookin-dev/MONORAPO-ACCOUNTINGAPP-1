@@ -814,13 +814,22 @@ function MobileVyaparAppContent() {
   const isPersonalExpense = (e) => {
     if (!e) return false;
     const t = String(e.expenseType || '').toLowerCase();
-    if (t === 'operating' || t === '') return false;
+    if (t === 'operating' || t === 'business') return false;
     const c = String(e.category || '').toLowerCase();
     const tit = String(e.title || '').toLowerCase();
+    const desc = String(e.description || e.notes || '').toLowerCase();
+
+    // 🛑 Vendor / Supplier / Shop payments must NEVER be treated as personal / house expense!
+    if (tit.includes('vendor') || tit.includes('vender') || tit.includes('सप्लायर') || tit.includes('वेंडर') || tit.includes('व्यापारी') ||
+        desc.includes('vendor') || desc.includes('vender') || desc.includes('सप्लायर') || desc.includes('वेंडर') || desc.includes('व्यापारी') ||
+        c.includes('सप्लायर') || c.includes('वेंडर') || c.includes('व्यापारी')) {
+      return false;
+    }
+
     const mem = String(e.familyMember || e.member || '').trim();
     return t === 'drawings' || t === 'ghar_kharch' || t === 'personal' ||
            c.includes('घर खर्च') || c.includes('family') || c.includes('personal') ||
-           tit.includes('घर खर्च') || (mem !== '' && mem !== 'Admin' && mem !== 'Shop');
+           tit.includes('घर खर्च') || (mem !== '' && mem !== 'Admin' && mem !== 'Shop' && mem !== 'खुद (Self)' && mem !== 'Self');
   };
 
   const shopExpensesOnly = (gharKharchList || []).filter(e => !isPersonalExpense(e));
@@ -1300,14 +1309,27 @@ function MobileVyaparAppContent() {
     const mm = String(itemDate.getMinutes()).padStart(2, '0');
     setGharKharchTime(`${hh}:${mm}`);
     setGharKharchAmount(String(item.amount || ""));
-    setGharKharchCategory(item.category || "राशन/किराना");
-    setCustomGharKharchCategory("");
+    const notesStr = item.notes || item.description || "";
+    setGharKharchNotes(notesStr);
     setGharKharchTitle(item.title || "");
-    setGharKharchNotes(item.notes || item.description || "");
     setGharKharchPaymentMode(item.paymentMethod || "cash");
-    setGharKharchType(item.expenseType || "drawings");
     setSelectedStaffId(item.staffId || "");
     setGharKharchFlow(item.transactionFlow || "given");
+
+    // Auto-detect: if title/notes mentions vendor, supplier, or business, open in "operating" (दुकान खर्च) mode!
+    const isVendorOrShop = isPersonalExpense(item) === false ||
+      String(item.title || '').toLowerCase().includes('vender') ||
+      String(item.title || '').toLowerCase().includes('vendor') ||
+      String(item.title || '').toLowerCase().includes('सप्लायर') ||
+      String(item.title || '').toLowerCase().includes('वेंडर') ||
+      String(notesStr).toLowerCase().includes('vender') ||
+      String(notesStr).toLowerCase().includes('vendor') ||
+      String(notesStr).toLowerCase().includes('सप्लायर') ||
+      String(notesStr).toLowerCase().includes('वेंडर');
+
+    setGharKharchType(isVendorOrShop ? "operating" : (item.expenseType || "drawings"));
+    setGharKharchCategory(item.category || (isVendorOrShop ? "सप्लायर / वेंडर भुगतान" : "राशन/किराना"));
+    setCustomGharKharchCategory("");
     handleToggleGharKharchEntry(true);
   };
 
@@ -5888,6 +5910,18 @@ function MobileVyaparAppContent() {
                         onClick={() => {
                           if (tx.typeCategory === 'sale') {
                             setSelectedBillDetail(tx.original);
+                          } else if (tx.isPartyTx) {
+                            // If Party / Vendor transaction, open Party Statement & Ledger modal (NOT Ghar Kharch!)
+                            const pId = tx.original.partyId?._id || tx.original.partyId?.id || tx.original.partyId;
+                            const matched = (parties || []).find(p => (p._id || p.id) === pId);
+                            if (matched) {
+                              setSelectedPartyDetail(matched);
+                              fetchPartyStatement(matched._id || matched.id);
+                              setShowPartyDetailModal(true);
+                            } else if (pId) {
+                              fetchPartyStatement(pId);
+                              setShowPartyDetailModal(true);
+                            }
                           } else {
                             handleOpenEditGharKharch(tx.original);
                           }
