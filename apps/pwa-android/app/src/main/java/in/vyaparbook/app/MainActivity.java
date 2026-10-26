@@ -37,7 +37,7 @@ import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String TARGET_URL = "https://vyaparbook.in/mobile-app";
+    private static final String TARGET_URL = "https://monorapo-accountingapp-1-web.vercel.app/mobile-app";
     
     private WebView webView;
     private SwipeRefreshLayout swipeRefresh;
