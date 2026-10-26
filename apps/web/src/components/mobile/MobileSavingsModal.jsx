@@ -34,7 +34,7 @@ const SAVING_TYPES = [
   { id: "OTHER", label: "अन्य बचत (Other Savings)", icon: "💰", desc: "अन्य निजी या व्यापारिक निवेश" }
 ];
 
-export default function MobileSavingsModal({ isOpen, onClose }) {
+export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) {
   if (!isOpen) return null;
 
   const { selectedCompany } = useCompany() || {};
@@ -172,35 +172,52 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
     const totalMonths = tenureYears * (item.frequency === "quarterly" ? 4 : (item.frequency === "yearly" ? 1 : 12));
     const instAmt = Number(item.installmentAmount || 0);
 
-    // Elapsed installments from startDate up to today
-    const elapsedMonths = type === "FD" ? 1 : getElapsedMonths(item.startDate, item.dueDayOfMonth, totalMonths);
+    // Due months up to today (कितने महीने बीत चुके हैं - देय अवधि)
+    const dueMonths = type === "FD" ? 1 : getElapsedMonths(item.startDate, item.dueDayOfMonth, totalMonths);
 
     // Explicit recorded installments in the array
     const recordedList = Array.isArray(item.installments) ? item.installments : [];
     const recordedCount = recordedList.length;
+    const recordedSum = recordedList.reduce((sum, inst) => sum + Number(inst.amount || 0), 0);
 
-    // Deposited amount recorded
-    const rawDeposited = Number(item.totalDeposited ?? item.currentValue ?? 0);
-    const countFromDeposited = instAmt > 0 && rawDeposited > 0 ? Math.round(rawDeposited / instAmt) : 0;
+    // Explicit past data if user checked "पुराना चालू खाता"
+    const isOld = Boolean(item.isOldOngoingAccount);
+    const pastAmt = isOld ? Number(item.alreadyDepositedAmount || 0) : 0;
+    const pastCount = isOld ? Number(item.alreadyPaidCount || 0) : 0;
 
-    // Explicit count saved on item if any
-    const explicitCount = item.alreadyPaidCount != null && item.alreadyPaidCount !== "" ? Number(item.alreadyPaidCount) : 0;
+    let totalDeposited = 0;
+    let paidCount = 0;
 
-    // The core automatic calculation: if startDate is in past, elapsed months are counted as PAID
-    const paidCount = type === "FD" 
-      ? 1 
-      : Math.min(totalMonths, Math.max(elapsedMonths, recordedCount, explicitCount, countFromDeposited));
+    if (type === "FD") {
+      totalDeposited = Number(item.initialDeposit || item.totalDeposited || item.currentValue || 0);
+      paidCount = totalDeposited > 0 ? 1 : 0;
+    } else {
+      if (recordedList.length > 0) {
+        totalDeposited = recordedSum;
+        if (isOld && pastAmt > recordedSum) {
+          totalDeposited = pastAmt;
+        }
+        paidCount = instAmt > 0 ? Math.round(totalDeposited / instAmt) : recordedList.length;
+      } else if (isOld && (pastAmt > 0 || pastCount > 0)) {
+        totalDeposited = pastAmt > 0 ? pastAmt : (pastCount * instAmt);
+        paidCount = pastCount > 0 ? pastCount : (instAmt > 0 ? Math.round(totalDeposited / instAmt) : 0);
+      } else {
+        // Strictly what was actually deposited! (Never fake-multiplied by dueMonths!)
+        const raw = Number(item.totalDeposited || item.currentValue || 0);
+        totalDeposited = raw;
+        paidCount = instAmt > 0 && raw > 0 ? Math.round(raw / instAmt) : (item.alreadyPaidCount ? Number(item.alreadyPaidCount) : 0);
+      }
+    }
 
-    // Total deposited so far
-    const totalDeposited = type === "FD"
-      ? (rawDeposited > 0 ? rawDeposited : Number(item.initialDeposit || 0))
-      : Math.max(rawDeposited, paidCount * instAmt);
+    // Overdue / Pending installments (जो देय हैं लेकिन वास्तव में जमा नहीं हुई हैं)
+    const overdueCount = type === "FD" ? 0 : Math.max(0, dueMonths - paidCount);
+    const overdueAmount = overdueCount * instAmt;
 
-    // Remaining installments and remaining amount to pay
+    // Remaining future installments to complete the tenure
     const remainingCount = type === "FD" ? 0 : Math.max(0, totalMonths - paidCount);
     const remainingAmount = remainingCount * instAmt;
 
-    // Progress percentage
+    // Progress percentage based on actual deposits
     const progressPct = totalMonths > 0 ? Math.min(100, Math.round((paidCount / totalMonths) * 100)) : 0;
 
     // Expected maturity amount for this individual card
@@ -212,9 +229,12 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
       tenureYears,
       totalMonths,
       instAmt,
-      elapsedMonths,
+      elapsedMonths: dueMonths,
+      dueMonths,
       paidCount,
       totalDeposited,
+      overdueCount,
+      overdueAmount,
       remainingCount,
       remainingAmount,
       progressPct,
@@ -390,23 +410,22 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
     const initDeposit = Number(formData.initialDeposit || 0);
     const pastAmt = Number(formData.alreadyDepositedAmount || 0);
 
-    // Elapsed months from Start Date up to current date (आज तक कितने माह बीते)
-    const autoElapsed = type === "FD" ? 1 : getElapsedMonths(formData.startDate, formData.dueDayOfMonth, totalMonths);
+    // Due months from Start Date up to current date (आज तक कितने माह बीते)
+    const dueMonths = type === "FD" ? 1 : getElapsedMonths(formData.startDate, formData.dueDayOfMonth, totalMonths);
+    const isOld = Boolean(formData.isOldOngoingAccount);
+    const pastCount = Number(formData.alreadyPaidCount || 0);
 
-    // If user provided a specific paid count, respect it; otherwise automatically count elapsed months as PAID!
+    // Effective paid count: ONLY what the user explicitly entered for old ongoing account! Never auto-multiplied!
     const effectivePaidCount = type === "FD"
       ? 1
-      : Math.min(
-          totalMonths,
-          formData.alreadyPaidCount != null && formData.alreadyPaidCount !== ""
-            ? Number(formData.alreadyPaidCount)
-            : autoElapsed
-        );
+      : (isOld 
+          ? (pastCount > 0 ? pastCount : (instAmt > 0 && pastAmt > 0 ? Math.round(pastAmt / instAmt) : 0))
+          : 0);
 
     // Effective deposited amount
     const computedTotal = type === "FD"
       ? (initDeposit > 0 ? initDeposit : pastAmt)
-      : (pastAmt > 0 ? pastAmt : effectivePaidCount * instAmt);
+      : (isOld ? (pastAmt > 0 ? pastAmt : effectivePaidCount * instAmt) : 0);
 
     // Auto-calculate expected maturity if user didn't enter one
     const calcExpectedMaturity = Number(formData.expectedMaturityAmount || 0) > 0
@@ -444,8 +463,8 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
         const existing = savingsList.find(x => (x._id || x.id) === editingId);
         let updatedInsts = existing?.installments || [];
 
-        // If installments are fewer than paid count, generate past installments for complete passbook
-        if (type !== "FD" && (updatedInsts.length < effectivePaidCount || pastAmt !== Number(existing?.totalDeposited))) {
+        // If installments are fewer than paid count and user explicitly chose old ongoing account
+        if (type !== "FD" && isOld && (updatedInsts.length < effectivePaidCount || pastAmt !== Number(existing?.totalDeposited))) {
           if (effectivePaidCount > 0 && instAmt > 0) {
             updatedInsts = generatePastInstallments(payload.startDate, effectivePaidCount, instAmt, payload.fundSource, payload.dueDayOfMonth, computedTotal);
           }
@@ -468,7 +487,7 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
       } else {
         // Create new account
         const newId = "sav_" + Date.now();
-        const pastInstallments = type !== "FD" && effectivePaidCount > 0 && instAmt > 0
+        const pastInstallments = type !== "FD" && isOld && effectivePaidCount > 0 && instAmt > 0
           ? generatePastInstallments(payload.startDate, effectivePaidCount, instAmt, payload.fundSource, payload.dueDayOfMonth, computedTotal)
           : (type === "FD" && initDeposit > 0
               ? [{
@@ -625,7 +644,7 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
     setPayData({
       amount: String(item.installmentAmount || ""),
       date: new Date().toISOString().split("T")[0],
-      sourceOfFund: item.fundSource || "business_salary",
+      sourceOfFund: "shop_cash",
       notes: `${item.title} किस्त भुगतान`
     });
     setIsPayOpen(true);
@@ -647,21 +666,25 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
     const newInst = {
       amount: instAmt,
       date: payData.date,
-      sourceOfFund: payData.sourceOfFund,
-      notes: payData.notes || "किस्त जमा",
+      sourceOfFund: payData.sourceOfFund || "shop_cash",
+      notes: payData.notes || `${item.title} किस्त जमा`,
       paidAt: new Date().toISOString()
     };
 
     try {
-      // If paid from business_salary, record a drawing/salary expense automatically!
-      if (payData.sourceOfFund === "business_salary") {
-        const autoExp = {
+      // If paid from shop cash drawer or business salary or business capital, record as expense/drawing!
+      const isShopOutflow = payData.sourceOfFund === "shop_cash" || payData.sourceOfFund === "business_salary" || payData.sourceOfFund === "business_capital";
+      let autoExp = null;
+      if (isShopOutflow) {
+        const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+        autoExp = {
           id: "exp_sav_" + Date.now(),
           _id: "exp_sav_" + Date.now(),
-          title: `बचत किस्त (Salary Drawing) - ${item.title}`,
-          description: `दुकान से सैलरी/ड्राइंग्स के रूप में बचत किस्त: ${item.title}`,
+          companyId: currentCoId,
+          title: `बचत RD किस्त - ${item.title}`,
+          description: `दुकान गल्ले से बचत/RD किस्त जमा: ${item.title} (किस्त राशि: ₹${instAmt})`,
           amount: instAmt,
-          expenseType: "drawings",
+          expenseType: payData.sourceOfFund === "business_salary" ? "drawings" : "business",
           category: "मासिक बचत व निवेश (RD/SIP/FD)",
           familyMember: "खुद (Self)",
           paymentMode: "CASH_DRAWER",
@@ -674,6 +697,10 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
         let localExp = JSON.parse(localStorage.getItem("vb_local_expenses") || "[]");
         localExp.unshift(autoExp);
         localStorage.setItem("vb_local_expenses", JSON.stringify(localExp));
+
+        if (typeof onExpenseAdded === "function") {
+          onExpenseAdded(autoExp);
+        }
       }
 
       // Try server API
@@ -703,6 +730,7 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
       setIsPayOpen(false);
       setSelectedSavingForPay(null);
       fetchSavings();
+      alert(`✅ ₹${instAmt.toLocaleString('en-IN')} की किस्त सफलतापूर्वक RD खाते में जमा हुई${isShopOutflow ? ' और दुकान के गल्ले/खर्च से घटा दी गई' : ''}!`);
     } catch (err) {
       alert("किस्त जोड़ने में त्रुटि: " + (err.message || err));
     } finally {
@@ -1028,7 +1056,7 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                       <div className="flex items-center justify-between text-xs">
                         <div>
                           <span className="text-[10px] text-slate-500 font-bold block">
-                            शुरुआत से आज तक जमा (Paid)
+                            वास्तव में जमा (Actual Paid)
                           </span>
                           <span className="font-black text-emerald-700">
                             ✅ {m.paidCount} किस्तें जमा (₹{m.totalDeposited.toLocaleString("en-IN")})
@@ -1037,17 +1065,31 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                             ({m.progressPct}% पूर्ण)
                           </span>
                         </div>
-                        <div className="text-right">
-                          <span className="text-[10px] text-slate-500 font-bold block">
-                            आगे देना बाकी है (Remaining)
-                          </span>
-                          <span className="font-black text-rose-700">
-                            ⏳ {m.remainingCount} किस्तें बाकी (₹{m.remainingAmount.toLocaleString("en-IN")})
-                          </span>
-                          <span className="text-[10px] text-slate-400 block">
-                            कुल {m.totalMonths} माह की अवधि
-                          </span>
-                        </div>
+                        {m.overdueCount > 0 ? (
+                          <div className="text-right">
+                            <span className="text-[10px] text-rose-600 font-bold block flex items-center justify-end gap-1">
+                              ⚠️ देय बकाया किस्तें (Overdue)
+                            </span>
+                            <span className="font-black text-rose-700">
+                              {m.overdueCount} किस्तें पेंडिंग (₹{m.overdueAmount.toLocaleString("en-IN")})
+                            </span>
+                            <span className="text-[10px] text-slate-500 block">
+                              (आज तक कुल {m.dueMonths} देय थीं)
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="text-right">
+                            <span className="text-[10px] text-slate-500 font-bold block">
+                              आगे देना बाकी है (Remaining)
+                            </span>
+                            <span className="font-black text-slate-700">
+                              ⏳ {m.remainingCount} किस्तें बाकी (₹{m.remainingAmount.toLocaleString("en-IN")})
+                            </span>
+                            <span className="text-[10px] text-slate-400 block">
+                              कुल {m.totalMonths} माह की अवधि
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Visual Progress Bar */}
@@ -1674,13 +1716,14 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
                   onChange={e => setPayData({ ...payData, sourceOfFund: e.target.value })}
                   className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50"
                 >
-                  <option value="business_salary">🏪 दुकान से सैलरी के रूप में (Salary / Drawing)</option>
-                  <option value="business_capital">🏢 बिजनेस कैपिटल से</option>
-                  <option value="personal_funds">👛 पर्सनल बैंक / सेविंग्स से</option>
+                  <option value="shop_cash">🏪 दुकान गल्ला / नकद (Shop Cash - खर्च में दर्ज होगा)</option>
+                  <option value="business_salary">💼 दुकान से सैलरी / ड्राइंग्स (Salary Drawing)</option>
+                  <option value="business_capital">🏢 बिजनेस बैंक खाता / UPI</option>
+                  <option value="personal_funds">👛 पर्सनल बैंक / निजी बचत</option>
                 </select>
-                {payData.sourceOfFund === "business_salary" && (
+                {(payData.sourceOfFund === "shop_cash" || payData.sourceOfFund === "business_salary" || payData.sourceOfFund === "business_capital") && (
                   <p className="text-[10px] text-emerald-700 mt-1 font-medium bg-emerald-50 p-2 rounded-lg">
-                    ✨ दुकान से सैलरी चुनने पर यह राशि अपने आप पर्सनल ड्राइंग्स/सैलरी खर्च में भी दर्ज हो जाएगी।
+                    ✨ दुकान के गल्ले/बिजनेस से चुनने पर यह राशि स्वतः आज के दुकान खर्च में जुड़ जाएगी और गल्ले की शुद्ध नकद (Net Cash) से घट जाएगी।
                   </p>
                 )}
               </div>
@@ -1741,13 +1784,9 @@ export default function MobileSavingsModal({ isOpen, onClose }) {
         const vProgressPct = m.progressPct;
         const vSchedule = getUpcomingSchedule(viewHistoryItem);
 
-        // Ensure passbook list has records for all paid months up to today:
+        // Use actual recorded installments (never generate phantom entries!)
         const rawRecorded = Array.isArray(viewHistoryItem.installments) ? viewHistoryItem.installments : [];
-        const vRecorded = rawRecorded.length >= vPaidCount
-          ? rawRecorded
-          : (vPaidCount > 0 && vInstAmt > 0
-              ? generatePastInstallments(viewHistoryItem.startDate, vPaidCount, vInstAmt, viewHistoryItem.fundSource, viewHistoryItem.dueDayOfMonth, vTotalDep)
-              : rawRecorded);
+        const vRecorded = rawRecorded;
         const vSumRecorded = vRecorded.reduce((s, x) => s + Number(x.amount || 0), 0);
         const vUnrecordedBalance = Math.max(0, vTotalDep - vSumRecorded);
 

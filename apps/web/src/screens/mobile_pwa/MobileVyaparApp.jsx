@@ -1935,8 +1935,17 @@ function MobileVyaparAppContent() {
   // Customer udhar payment received (parties paying back their credit/udhar)
   const isPartyPaymentReceived = (tx) => {
     const isCredit = Number(tx.credit || 0) > 0;
-    const isSupplier = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
-    return isCredit && !isSupplier;
+    if (tx.source === 'Bill' || tx.type === 'bill') return false;
+    const isCustomerPayment = tx.type === 'receipt' || tx.type === 'received' || tx.type === 'payment' || tx.source === 'PartyTransaction';
+    return isCredit && isCustomerPayment;
+  };
+
+  // Money paid out to supplier/vendor/party (मैंने दिए / वेंडर भुगतान / सप्लायर भुगतान)
+  const isPartyPaymentGiven = (tx) => {
+    const isDebit = Number(tx.debit || 0) > 0;
+    if (tx.source === 'Bill' || tx.type === 'bill' || tx.source === 'OpeningBalance') return false;
+    const isPaid = tx.type === 'payment' || tx.type === 'paid' || tx.type === 'purchase' || tx.source === 'PartyTransaction' || tx.type === 'manual';
+    return isDebit && isPaid;
   };
 
   const getTxFilterMatch = (tx, filter) => {
@@ -2023,10 +2032,7 @@ function MobileVyaparAppContent() {
     .reduce((sum, e) => sum + (e.transactionFlow === 'received' ? 0 : (Number(e.amount) || 0)), 0);
 
   const activePeriodSupplierPaid = (allPartyTransactions || []).filter(tx => {
-    const isDebit = Number(tx.debit || 0) > 0;
-    const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
-    if (!isDebit || !isSupplierTx) return false;
-    return getTxFilterMatch(tx, dailySaleFilter);
+    return isPartyPaymentGiven(tx) && getTxFilterMatch(tx, dailySaleFilter);
   }).reduce((sum, tx) => sum + Number(tx.debit || 0), 0);
 
   const activePeriodTotalExpenses = activePeriodDirectExpenses + activePeriodSupplierPaid;
@@ -5124,10 +5130,10 @@ function MobileVyaparAppContent() {
                 <div 
                   onClick={() => handleToggleGharKharchLedger(true)}
                   className="bg-amber-500/20 p-2 rounded-xl backdrop-blur-xs cursor-pointer hover:bg-amber-500/30 transition border border-amber-400/30"
-                  title="दुकान व घर खर्च विवरण देखें"
+                  title="दुकान, घर खर्च व व्यापारी भुगतान विवरण देखें"
                 >
                   <span className="text-[10px] text-amber-300 font-bold block flex items-center justify-center gap-0.5">
-                    💸 कुल खर्च <span className="text-[9px]">→</span>
+                    💸 कुल खर्च व निकासी <span className="text-[9px]">→</span>
                   </span>
                   <span className="font-extrabold text-xs text-amber-200">₹{activePeriodTotalExpenses.toLocaleString('en-IN')}</span>
                 </div>
@@ -5135,7 +5141,14 @@ function MobileVyaparAppContent() {
 
               {/* In-Hand Cash Surplus / Net Shuddh Munafa Strip */}
               <div className="pt-2 border-t border-indigo-400/20 flex items-center justify-between text-[11px] bg-black/20 px-3 py-1.5 rounded-xl">
-                <span className="text-indigo-200 font-medium">💰 शुद्ध गल्ला (नकद आवक - खर्च):</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-indigo-200 font-medium">💰 शुद्ध गल्ला (नकद आवक - खर्च):</span>
+                  {activePeriodSupplierPaid > 0 && (
+                    <span className="text-[10px] font-bold bg-amber-400/30 text-amber-200 px-1.5 py-0.5 rounded">
+                      व्यापारी भुगतान: -₹{activePeriodSupplierPaid.toLocaleString('en-IN')}
+                    </span>
+                  )}
+                </div>
                 <span className={`font-black font-mono ${activePeriodNetCash >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
                   ₹ {activePeriodNetCash.toLocaleString('en-IN')}
                 </span>
@@ -5650,11 +5663,7 @@ function MobileVyaparAppContent() {
                       onClick={() => setTransactionTab("expenses")}
                       className={`px-2 py-0.5 rounded-md transition ${transactionTab === "expenses" ? "bg-amber-600 text-white shadow-xs" : "text-slate-500"}`}
                     >
-                      खर्च ({(gharKharchList || []).length + (allPartyTransactions || []).filter(tx => {
-                        const isDebit = Number(tx.debit || 0) > 0;
-                        const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
-                        return isDebit && isSupplierTx;
-                      }).length})
+                      खर्च ({(gharKharchList || []).length + (allPartyTransactions || []).filter(isPartyPaymentGiven).length})
                     </button>
                   </div>
                 </div>
@@ -5681,11 +5690,7 @@ function MobileVyaparAppContent() {
 
               {(() => {
                 const salesTxsCount = bills.length;
-                const expensesTxsCount = (gharKharchList || []).length + (allPartyTransactions || []).filter(tx => {
-                  const isDebit = Number(tx.debit || 0) > 0;
-                  const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
-                  return isDebit && isSupplierTx;
-                }).length;
+                const expensesTxsCount = (gharKharchList || []).length + (allPartyTransactions || []).filter(isPartyPaymentGiven).length;
 
                 const combinedStream = [
                   ...bills.map(b => ({
@@ -5700,21 +5705,26 @@ function MobileVyaparAppContent() {
                   })),
                   ...(allPartyTransactions || []).filter(tx => !isPartyTxLinkedToBill(tx, bills)).map(tx => {
                     const isDebit = Number(tx.debit || 0) > 0;
-                    const isSupplierTx = tx.type === 'purchase' || (tx.partyId?.partyType === 'supplier');
-                    const pName = tx.partyId?.name || tx.partyName || 'पार्टी खाता';
+                    const isPaidOut = isPartyPaymentGiven(tx);
+                    const partyObj = (parties || []).find(p => {
+                      const pId = String(p._id || p.id || "");
+                      const txPId = String(tx.partyId?._id || tx.partyId?.id || tx.partyId || "");
+                      return pId && txPId && pId === txPId;
+                    });
+                    const isSupplierTx = tx.type === 'purchase' || partyObj?.partyType === 'supplier' || partyObj?.type === 'supplier' || tx.partyId?.partyType === 'supplier' || isPaidOut;
+                    const pName = partyObj?.name || tx.partyId?.name || tx.partyName || 'व्यापारी / पार्टी';
                     const amt = Number(tx.debit || tx.credit || tx.amount || 0);
-                    // Supplier: debit = payment TO supplier (expense), credit = return FROM supplier
-                    // Customer: debit = udhar given (party_tx), credit = payment received (party_tx)
-                    const typeCategory = isSupplierTx ? (isDebit ? 'expense' : 'party_tx') : 'party_tx';
-                    const isPositive = isSupplierTx ? false : !isDebit;
-                    const defaultLabel = isSupplierTx
-                      ? (isDebit ? 'सप्लायर को भुगतान' : 'सप्लायर से वापसी')
+                    // Supplier/Vyapari payment = expense (debit = money given out)
+                    const typeCategory = isPaidOut ? 'expense' : (isSupplierTx ? (isDebit ? 'expense' : 'party_tx') : 'party_tx');
+                    const isPositive = !isDebit;
+                    const defaultLabel = isPaidOut
+                      ? 'व्यापारी को भुगतान (निकासी)'
                       : (isDebit ? 'उधार दिया / खाता' : 'रकम मिली / जमा');
                     return {
                       _id: tx._id || `ptx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
                       typeCategory,
                       title: `${pName} • ${tx.details || defaultLabel}`,
-                      subtitle: `${isSupplierTx ? '🏭' : '🤝'} ${isSupplierTx ? 'सप्लायर लेनदेन' : 'पार्टी लेनदेन'} • ${tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}`,
+                      subtitle: `${isPaidOut ? '🏭' : '🤝'} ${isPaidOut ? 'व्यापारी भुगतान (गल्ले से कटा)' : 'पार्टी लेनदेन'} • ${tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}`,
                       amount: amt,
                       isPositive,
                       dateObj: parseAnyDate(tx.date || tx.createdAt) || new Date(0),
@@ -10953,6 +10963,9 @@ function MobileVyaparAppContent() {
         <MobileSavingsModal
           isOpen={showSavingsModal}
           onClose={() => setShowSavingsModal(false)}
+          onExpenseAdded={(newExp) => {
+            setGharKharchList(prev => [newExp, ...(prev || [])]);
+          }}
         />
       )}
 
