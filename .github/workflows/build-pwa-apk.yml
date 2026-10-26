@@ -5,9 +5,9 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'apps/pwa-android/**'
-      - '.github/workflows/build-pwa-apk.yml'
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -19,6 +19,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: ☕ Set up Java 17
         uses: actions/setup-java@v5
@@ -39,10 +40,11 @@ jobs:
         run: |
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: 📁 Verify APK Generation
+      - name: 📁 Verify and Prepare APK File
         run: |
           ls -la apps/pwa-android/app/build/outputs/apk/release/
           test -f apps/pwa-android/app/build/outputs/apk/release/app-release.apk
+          mkdir -p apps/web/public/downloads
           cp apps/pwa-android/app/build/outputs/apk/release/app-release.apk apps/web/public/downloads/vyaparbook-mobile.apk
           echo "✅ Successfully copied APK to web downloads directory!"
 
@@ -53,14 +55,24 @@ jobs:
           path: apps/pwa-android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
-      - name: 🚀 Commit APK to Web Downloads for Direct Link
+      - name: 🚀 Publish to GitHub Releases (latest-apk)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-apk
+          name: "VyaparBook Mobile APK (Latest Release)"
+          body: "Official VyaparBook Android App APK. Fast, lightweight (~2MB), with smart multi-page PDF bill recognition."
+          files: apps/pwa-android/app/build/outputs/apk/release/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🌐 Push APK into Web Downloads for Vercel
         run: |
-          git config user.name "VyaparBook CI Bot"
-          git config user.email "bot@vyaparbook.in"
-          git add apps/web/public/downloads/vyaparbook-mobile.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f apps/web/public/downloads/vyaparbook-mobile.apk
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "chore(download): update real vyaparbook-mobile.apk in web public downloads"
+            git commit -m "chore(download): update vyaparbook-mobile.apk binary in web public downloads [skip ci]"
             git push origin main
           fi
