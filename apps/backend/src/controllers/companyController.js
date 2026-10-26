@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Company from "../model/company.js";
 import Lead from "../model/lead.js";
 import { supabase } from "../config/supabase.js";
