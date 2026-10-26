@@ -560,6 +560,11 @@ setStorage = async (key, value) => {
 
 // Helper to safely get env vars across Vite, Next.js, React Native, Node
 const getEnv = (key) => {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
+      return import.meta.env[key];
+    }
+  } catch (e) {}
   if (typeof process !== 'undefined' && process.env) {
     return process.env[key];
   }
@@ -571,7 +576,7 @@ const getBaseUrl = () => {
   if (typeof window !== 'undefined' && window.location && window.location.hostname === 'localhost') {
     return "http://localhost:5001/api";
   }
-  return getEnv("REACT_APP_API_URL") || getEnv("EXPO_PUBLIC_API_URL") || getEnv("VITE_API_URL") || "https://monorapo-accountingapp-1.onrender.com/api";
+  return getEnv("VITE_API_URL") || getEnv("REACT_APP_API_URL") || getEnv("EXPO_PUBLIC_API_URL") || "https://monorapo-accountingapp-1.onrender.com/api";
 };
 
 // Base axios instance
@@ -596,13 +601,12 @@ api.interceptors.request.use(async (config) => {
   }
   config.headers.Authorization = `Bearer ${token}`;
 
-  // Default to demo sandbox company only if guest token is active and no company is set
-  if (!rawCompanyId || rawCompanyId === "my_primary_company") {
-    if (token && (token.includes("demo_guest") || token.includes("guest"))) {
-      rawCompanyId = "demo_company_guest";
-    } else {
-      rawCompanyId = "";
-    }
+  const DEFAULT_PRIMARY_COMPANY_ID = "6a8314470d93e58ad0920950";
+  // Default to primary company if guest token is active and no company is set
+  if (!rawCompanyId || rawCompanyId === "my_primary_company" || rawCompanyId === "demo_company_guest") {
+    rawCompanyId = DEFAULT_PRIMARY_COMPANY_ID;
+    await setStorage("companyId", DEFAULT_PRIMARY_COMPANY_ID);
+    await setStorage("selectedCompany", DEFAULT_PRIMARY_COMPANY_ID);
   }
 
   let companyId = rawCompanyId;

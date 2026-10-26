@@ -48,11 +48,13 @@ export default function LoginScreen() {
       };
       localStorage.setItem("user", JSON.stringify(normalizedUser));
 
-      const companyId = normalizedUser.companyId || normalizedUser.company;
-      if (companyId) {
-        localStorage.setItem("companyId", companyId);
-        localStorage.setItem("selectedCompany", companyId);
-      }
+      const DEFAULT_CO_ID = "6a8314470d93e58ad0920950";
+      const companyId = normalizedUser.companyId || normalizedUser.company || DEFAULT_CO_ID;
+      normalizedUser.companyId = companyId;
+      normalizedUser.company = companyId;
+      localStorage.setItem("user", JSON.stringify(normalizedUser));
+      localStorage.setItem("companyId", String(companyId));
+      localStorage.setItem("selectedCompany", String(companyId));
     }
 
     // Check if mobile device
@@ -72,7 +74,7 @@ export default function LoginScreen() {
       const token = response?.token || response?.data?.token;
       const userObj = response?.user || response?.data?.user;
       if (token) {
-        handleSuccessfulAuth(token, userObj);
+        handleSuccessfulAuth(token, userObj, companies);
       } else {
         setError("Google लॉगिन पूरा नहीं हो सका। कृपया '⚡ 1-Click डायरेक्ट लॉगिन' का उपयोग करें।");
       }
@@ -93,15 +95,15 @@ export default function LoginScreen() {
       name: "Guest Explorer (अतिथि)",
       email: "guest@vyaparbook.in",
       role: "guest",
-      companyId: "demo_company_guest",
-      company: "demo_company_guest",
+      companyId: "6a8314470d93e58ad0920950",
+      company: "6a8314470d93e58ad0920950",
       isGuest: true
     };
     localStorage.setItem("authToken", "demo_guest_token_2026_valid");
     localStorage.setItem("token", "demo_guest_token_2026_valid");
     localStorage.setItem("user", JSON.stringify(demoUser));
-    localStorage.setItem("companyId", "demo_company_guest");
-    localStorage.setItem("selectedCompany", "demo_company_guest");
+    localStorage.setItem("companyId", "6a8314470d93e58ad0920950");
+    localStorage.setItem("selectedCompany", "6a8314470d93e58ad0920950");
     localStorage.setItem("isGuestMode", "true");
     localStorage.setItem("isDemoActive", "true");
     
@@ -138,6 +140,7 @@ export default function LoginScreen() {
       
       const token = response?.token || response?.data?.token || response?.data?.data?.token;
       const userObj = response?.user || response?.data?.user || response?.data?.data?.user;
+      const companies = response?.companies || response?.data?.companies || [];
       
       if (token) {
         handleSuccessfulAuth(token, userObj);

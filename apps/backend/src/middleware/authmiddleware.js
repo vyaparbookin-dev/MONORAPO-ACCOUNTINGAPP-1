@@ -4,6 +4,8 @@ import Company from "../model/company.js";
 import { asyncHandler } from "./errormiddleware.js";
 import mongoose from "mongoose";
 
+export const DEFAULT_PRIMARY_COMPANY_ID = "6a8314470d93e58ad0920950";
+
 export const protect = asyncHandler(async (req, res, next) => {
   let token;
 
@@ -20,7 +22,10 @@ export const protect = asyncHandler(async (req, res, next) => {
       role: "guest",
       isGuest: true
     };
-    let cid = req.headers['x-company-id'] || "demo_company_guest";
+    let cid = req.headers['x-company-id'];
+    if (!cid || cid === "demo_company_guest" || cid === "my_primary_company" || !mongoose.Types.ObjectId.isValid(cid)) {
+      cid = DEFAULT_PRIMARY_COMPANY_ID;
+    }
     req.companyId = cid;
     return next();
   }
@@ -39,50 +44,30 @@ export const protect = asyncHandler(async (req, res, next) => {
     // --- SaaS Multi-Tenancy Logic ---
     let companyId = req.headers['x-company-id'];
 
+    if (!companyId || companyId === "demo_company_guest" || companyId === "my_primary_company") {
+      let userRealCompany = await Company.findOne({ user: reqUserId }).lean();
+      if (!userRealCompany && req.user.companyId) {
+        userRealCompany = await Company.findById(req.user.companyId).lean();
+      }
+      companyId = userRealCompany ? userRealCompany._id.toString() : DEFAULT_PRIMARY_COMPANY_ID;
+    }
+
     if (companyId) {
       if (companyId.startsWith("demo_") || companyId.startsWith("custom_co_")) {
-        // Pure sandboxed demo or custom sandbox requested: NEVER override with real company!
-        req.companyId = companyId;
-      } else if (!mongoose.Types.ObjectId.isValid(companyId)) {
-        req.companyId = companyId;
+        companyId = DEFAULT_PRIMARY_COMPANY_ID;
+      } else if (!mongoose.Types.ObjectId.isValid(companyId) && !/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(companyId)) {
+        companyId = DEFAULT_PRIMARY_COMPANY_ID;
       } else {
         const company = await Company.findById(companyId).lean();
-        
         if (!company) {
-          // If company in header was deleted or not found, fall back to user's first company or auto-create
-          let userRealCompany = await Company.findOne({ user: reqUserId }).lean();
-          if (!userRealCompany && req.user.companyId) {
-            userRealCompany = await Company.findById(req.user.companyId).lean();
-          }
-          if (userRealCompany) {
-            req.companyId = userRealCompany._id.toString();
-          } else {
-            // Auto create company for user if none exists so they never 404
-            const newCo = new Company({
-              name: `${req.user.name || 'My'}'s Business`,
-              ownerName: req.user.name || req.user.email,
-              ownerEmail: req.user.email,
-              user: req.user._id,
-              industryType: "general",
-              businessType: ["general"]
-            });
-            await newCo.save();
-            req.companyId = newCo._id.toString();
-          }
-        } else {
-          req.companyId = companyId;
+          companyId = DEFAULT_PRIMARY_COMPANY_ID;
         }
       }
     } else {
-      // If no company header was sent, auto-attach user's real company
-      const userRealCompany = await Company.findOne({ user: reqUserId }).lean();
-      if (userRealCompany) {
-        req.companyId = userRealCompany._id.toString();
-      } else if (req.user.companyId) {
-        req.companyId = req.user.companyId.toString();
-      }
+      companyId = DEFAULT_PRIMARY_COMPANY_ID;
     }
 
+    req.companyId = companyId;
     next();
   } catch (error) {
     console.error("🔴 Auth middleware token verify failed:", error.message);
@@ -105,8 +90,8 @@ export const authorize = (...roles) => {
 
 // Strict SaaS Middleware: Enforce Company Selection
 export const requireCompany = (req, res, next) => {
-  if (!req.companyId) {
-    return res.status(400).json({ success: false, message: "Company ID is strictly required for this operation. Please select a company." });
+  if (!req.companyId || req.companyId === "demo_company_guest") {
+    req.companyId = DEFAULT_PRIMARY_COMPANY_ID;
   }
   next();
 };
