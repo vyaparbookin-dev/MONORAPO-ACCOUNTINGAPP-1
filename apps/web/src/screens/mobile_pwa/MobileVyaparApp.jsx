@@ -5852,17 +5852,32 @@ function MobileVyaparAppContent() {
                                 : (tx.isPartyTx ? (tx.isPositive ? 'जमा (Receipt)' : 'उधार') : 'खर्च')}
                             </span>
                           </div>
-                          {tx.typeCategory === 'sale' && (
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleShareWhatsAppBill(tx.original);
-                              }}
-                              className="w-7 h-7 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-600 flex items-center justify-center transition cursor-pointer"
-                            >
-                              <Share2 size={13} />
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            {tx.typeCategory === 'sale' && (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleShareWhatsAppBill(tx.original);
+                                }}
+                                className="w-7 h-7 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-600 flex items-center justify-center transition cursor-pointer"
+                                title="WhatsApp भेजें"
+                              >
+                                <Share2 size={13} />
+                              </button>
+                            )}
+                            {tx.typeCategory === 'sale' && (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteBillFromDetail(tx.original);
+                                }}
+                                className="w-7 h-7 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition cursor-pointer"
+                                title="बिल हटाएं"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -11468,6 +11483,11 @@ function MobileVyaparAppContent() {
         onBillsSaved={(newBills) => {
           if (Array.isArray(newBills) && newBills.length > 0) {
             setBills((prev) => deduplicateBills([...newBills, ...prev]));
+            // Refresh parties list so newly created vendor/supplier shows up immediately!
+            const coId = companyId || localStorage.getItem("companyId") || "default";
+            setParties(storageManager.getParties(coId) || []);
+            // Immediately open the newly created bill receipt so user can view/verify it!
+            setSelectedBillDetail(newBills[0]);
           }
         }}
       />
@@ -11722,16 +11742,26 @@ function MobileVyaparAppContent() {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedBillDetail(null);
-                  setIsEditingBill(false);
-                }}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl bg-slate-50 transition cursor-pointer"
-              >
-                <X size={18} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDeleteBillFromDetail(selectedBillDetail)}
+                  className="text-rose-600 hover:text-rose-700 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer flex items-center gap-1 text-xs font-bold"
+                  title="बिल हटाएं"
+                >
+                  <Trash2 size={14} /> हटाएं
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedBillDetail(null);
+                    setIsEditingBill(false);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl bg-slate-50 transition cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {/* EDIT MODE */}

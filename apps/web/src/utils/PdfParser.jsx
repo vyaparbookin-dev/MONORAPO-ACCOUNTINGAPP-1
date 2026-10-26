@@ -321,6 +321,74 @@ const formatToISODate = (dateStr) => {
 };
 
 /**
+ * Smart detection of individual line items from invoice table rows
+ */
+const detectLineItems = (lines, totalAmount, pageNum) => {
+  const items = [];
+  const numberExtractRegex = /(?:₹|Rs\.?|INR)?\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/g;
+
+  // Scan lines in the middle section (between header metadata and footer totals)
+  const candidateLines = lines.slice(3, Math.max(4, lines.length - 2));
+
+  for (let i = 0; i < candidateLines.length; i++) {
+    const { lineText } = candidateLines[i];
+    // Ignore lines that look like table headers or total lines
+    if (
+      /^(?:sl|sr|s\.no|item|particulars|description|hsn|rate|qty|quantity|amount|total|sub\s*total|taxable|cgst|sgst|igst|discount|terms|bank|rupees)/i.test(
+        lineText.trim()
+      ) ||
+      /(?:grand\s*total|net\s*payable|round\s*off|balance\s*due)/i.test(lineText)
+    ) {
+      continue;
+    }
+
+    const matches = [...lineText.matchAll(numberExtractRegex)];
+    if (matches.length >= 1) {
+      // The last number is usually the row amount
+      const lastMatch = matches[matches.length - 1];
+      const rowAmt = parseCleanAmount(lastMatch[1]);
+      if (rowAmt && rowAmt > 0 && (totalAmount === 0 || rowAmt <= totalAmount * 1.05)) {
+        let qty = 1;
+        let rate = rowAmt;
+
+        if (matches.length >= 2) {
+          const possibleQty = parseFloat(matches[matches.length - 2][1].replace(/,/g, ""));
+          if (possibleQty > 0 && possibleQty <= 1000) {
+            qty = possibleQty;
+            rate = Math.round((rowAmt / qty) * 100) / 100;
+          }
+        }
+
+        let itemName = lineText.replace(numberExtractRegex, "").trim();
+        itemName = itemName.replace(/^[\d\.\-\)\(\s]+/, "").trim(); // Remove leading serial number like "1."
+        if (itemName.length >= 2 && !/^(pcs|kg|nos|mtr|box|total|amount|rate|qty)$/i.test(itemName)) {
+          items.push({
+            id: `item_${items.length + 1}`,
+            name: itemName.slice(0, 50),
+            qty: qty,
+            rate: rate,
+            amount: rowAmt,
+          });
+        }
+      }
+    }
+  }
+
+  // If no specific lines were extracted, provide a clear editable single item
+  if (items.length === 0) {
+    items.push({
+      id: "item_1",
+      name: `बिल सामान विवरण (पेज ${pageNum})`,
+      qty: 1,
+      rate: totalAmount || 0,
+      amount: totalAmount || 0,
+    });
+  }
+
+  return items;
+};
+
+/**
  * Parses a multi-page PDF into separate page images and auto-detects bill details per page
  * Handles:
  * 1. Rendering each page to a crisp JPEG image
@@ -354,6 +422,7 @@ export const extractPagesAndBillsFromPDF = async (file) => {
     const detectedBillNo = detectBillNumber(visualLines, rawText, pageNum);
     const detectedDate = detectBillDate(visualLines, rawText);
     const detectedParty = detectPartyName(visualLines, rawText, pageNum);
+    const detectedItems = detectLineItems(visualLines, detectedAmount, pageNum);
 
     pages.push({
       pageNumber: pageNum,
@@ -363,6 +432,7 @@ export const extractPagesAndBillsFromPDF = async (file) => {
       date: detectedDate,
       partyName: detectedParty,
       totalAmount: detectedAmount || 0,
+      items: detectedItems,
       isSelected: true, // checked by default
     });
   }

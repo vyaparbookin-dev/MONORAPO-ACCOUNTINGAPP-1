@@ -3,7 +3,7 @@ import React from 'react';
 export default function Home() {
   const GITHUB_REPO = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1";
   const WINDOWS_EXE_URL = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/download/v1.2.0/Red.Accounting.Book.Setup.1.2.0.exe";
-  const ANDROID_APK_URL = "https://monorapo-accountingapp-1-web.vercel.app/downloads/vyaparbook-mobile.apk";
+  const ANDROID_APK_URL = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/download/latest-apk/app-release.apk";
   const LATEST_RELEASE_URL = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/latest";
 
   return (

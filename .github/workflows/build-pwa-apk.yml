@@ -28,7 +28,9 @@ jobs:
           java-version: '17'
 
       - name: 🔑 Make Gradlew Executable
-        run: chmod +x apps/pwa-android/gradlew
+        run: |
+          sed -i 's/\r$//' apps/pwa-android/gradlew
+          chmod +x apps/pwa-android/gradlew
 
       - name: 🏗️ Build Native APK
         working-directory: apps/pwa-android

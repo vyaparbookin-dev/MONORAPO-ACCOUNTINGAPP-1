@@ -8,6 +8,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: 🤖 Compile Android Production APK
@@ -18,7 +21,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: ☕ Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -89,10 +92,12 @@ jobs:
           path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
-      - name: 🚀 Release to GitHub (if tagged)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: 🚀 Release to GitHub (latest-apk)
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: latest-apk
+          name: "Red Accounting Book Mobile APK (Latest Release)"
+          body: "Official Android App APK. Fast, complete accounting with smart multi-page PDF bill recognition."
           files: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

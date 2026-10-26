@@ -74,6 +74,52 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
     });
   };
 
+  const handleItemChange = (pageIdx, itemIdx, field, value) => {
+    setPages((prev) => {
+      const updated = [...prev];
+      const pageItems = [...(updated[pageIdx].items || [])];
+      pageItems[itemIdx] = { ...pageItems[itemIdx], [field]: value };
+
+      if (field === "qty" || field === "rate") {
+        const q = parseFloat(field === "qty" ? value : pageItems[itemIdx].qty) || 0;
+        const r = parseFloat(field === "rate" ? value : pageItems[itemIdx].rate) || 0;
+        pageItems[itemIdx].amount = Math.round(q * r * 100) / 100;
+        const newTotal = pageItems.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+        if (newTotal > 0) {
+          updated[pageIdx].totalAmount = newTotal;
+        }
+      }
+      updated[pageIdx].items = pageItems;
+      return updated;
+    });
+  };
+
+  const handleAddItem = (pageIdx) => {
+    setPages((prev) => {
+      const updated = [...prev];
+      const pageItems = [...(updated[pageIdx].items || [])];
+      pageItems.push({
+        id: `item_${Date.now()}_${pageItems.length + 1}`,
+        name: "नया सामान",
+        qty: 1,
+        rate: 0,
+        amount: 0,
+      });
+      updated[pageIdx].items = pageItems;
+      return updated;
+    });
+  };
+
+  const handleRemoveItem = (pageIdx, itemIdx) => {
+    setPages((prev) => {
+      const updated = [...prev];
+      const pageItems = [...(updated[pageIdx].items || [])];
+      pageItems.splice(itemIdx, 1);
+      updated[pageIdx].items = pageItems;
+      return updated;
+    });
+  };
+
   const handleSaveAllBills = async () => {
     const selected = pages.filter((p) => p.isSelected);
     if (selected.length === 0) {
@@ -101,18 +147,35 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
         const randomSuffix = Math.random().toString(36).substring(2, 6);
         const uniqueId = `pdf_${timestamp}_p${page.pageNumber}_${randomSuffix}`;
         const billAmt = Number(page.totalAmount) || 0;
-        
+
         // Ensure unique billNumber per page so separate bills are never collided
         const rawBillNo = (page.billNumber && page.billNumber.trim()) ? page.billNumber.trim() : "";
         const finalBillNo = rawBillNo
           ? (selected.length > 1 && !rawBillNo.includes(`P${page.pageNumber}`) ? `${rawBillNo}-P${page.pageNumber}` : rawBillNo)
           : `BILL-P${page.pageNumber}-${timestamp.toString().slice(-4)}`;
 
-        const party = (page.partyName && page.partyName.trim()) 
-          ? page.partyName.trim() 
+        const party = (page.partyName && page.partyName.trim())
+          ? page.partyName.trim()
           : `सप्लायर (पेज ${page.pageNumber})`;
-        
+
         const billDate = page.date || new Date().toISOString().split("T")[0];
+
+        // Format items properly
+        const billItems = Array.isArray(page.items) && page.items.length > 0
+          ? page.items.map((it) => ({
+              name: it.name || "सामान",
+              qty: Number(it.qty) || 1,
+              rate: Number(it.rate) || billAmt,
+              amount: Number(it.amount) || billAmt,
+            }))
+          : [
+              {
+                name: `सामान / बिल विवरण (PDF पेज ${page.pageNumber})`,
+                qty: 1,
+                rate: billAmt,
+                amount: billAmt,
+              },
+            ];
 
         const newBill = {
           _id: uniqueId,
@@ -139,20 +202,44 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
           pdfPage: page.pageNumber,
           isOfflineCreated: true,
           imgUrls: page.imageUrl ? [page.imageUrl] : [],
-          items: [
-            {
-              name: `सामान / बिल विवरण (PDF पेज ${page.pageNumber})`,
-              qty: 1,
-              rate: billAmt,
-              amount: billAmt,
-            },
-          ],
+          billImageUrls: page.imageUrl ? [page.imageUrl] : [],
+          items: billItems,
         };
 
         // Cache page photo permanently so it shows in the bill gallery
         if (page.imageUrl) {
           photosCache[uniqueId] = [page.imageUrl];
           photosCache[finalBillNo] = [page.imageUrl];
+        }
+
+        // Auto-create / update Party in Vendor / Customer ledger
+        if (party && !party.startsWith("Party Page")) {
+          try {
+            const currentParties = storageManager.getParties(coId) || [];
+            const exists = currentParties.find(
+              (p) => (p.name || p.partyName || "").trim().toLowerCase() === party.toLowerCase()
+            );
+            if (!exists) {
+              const pType = defaultBillType === "Purchase" ? "supplier" : "customer";
+              const newPartyObj = {
+                _id: `party_${timestamp}_${randomSuffix}`,
+                id: `party_${timestamp}_${randomSuffix}`,
+                name: party,
+                partyName: party,
+                type: pType,
+                partyType: pType,
+                openingBalance: 0,
+                balance: pType === "supplier" ? -billAmt : billAmt,
+                currentBalance: pType === "supplier" ? -billAmt : billAmt,
+                phone: "",
+                address: "",
+                createdAt: new Date().toISOString(),
+              };
+              storageManager.saveParty(coId, newPartyObj);
+            }
+          } catch (pErr) {
+            console.warn("Auto save party error:", pErr);
+          }
         }
 
         createdBills.push(newBill);
@@ -172,7 +259,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
         onBillsSaved(createdBills);
       }
 
-      alert(`✅ ${createdBills.length} अलग-अलग बिल सफलतापूर्वक खाते में दर्ज किए गए और प्रत्येक पेज की मूल HD फोटो सुरक्षित सेव कर दी गई!`);
+      alert(`✅ ${createdBills.length} अलग-अलग बिल सफलतापूर्वक खाते में दर्ज किए गए! सप्लायर खाता भी अपडेट हो गया है।`);
       onClose();
     } catch (err) {
       console.error("Save bills error:", err);
@@ -192,7 +279,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
             <span className="text-2xl">📄</span>
             <div>
               <h3 className="font-bold text-lg leading-tight">स्मार्ट Multi-Page PDF बिल इंपोर्टर</h3>
-              <p className="text-xs text-indigo-100">एक ही PDF के सभी पेजों को अलग-अलग बिल पहचानें और फोटो प्रूफ के साथ दर्ज करें</p>
+              <p className="text-xs text-indigo-100">PDF पढ़कर बिल विवरण, आइटम्स और फोटो प्रूफ के साथ दर्ज करें</p>
             </div>
           </div>
           <button
@@ -239,7 +326,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
             <div className="py-12 flex flex-col items-center justify-center text-center">
               <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
               <h4 className="font-bold text-gray-800 text-base">PDF को पेजों में बांटा जा रहा है...</h4>
-              <p className="text-xs text-gray-500 mt-1">हर पेज की HD फोटो और बिल डिटेल्स (पार्टी, तारीख, Grand Total) पढ़ी जा रही है।</p>
+              <p className="text-xs text-gray-500 mt-1">हर पेज की HD फोटो और बिल डिटेल्स (पार्टी, आइटम्स, Grand Total) पढ़ी जा रही है।</p>
             </div>
           )}
 
@@ -252,7 +339,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                 <div className="text-sm font-bold text-gray-800 flex items-center gap-2">
                   <span>कुल <strong className="text-indigo-600 text-base">{pages.length}</strong> पेज पहचाने गए</span>
                   <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-semibold">
-                    ({pages.filter(p => p.isSelected).length} चयनित)
+                    ({pages.filter((p) => p.isSelected).length} चयनित)
                   </span>
                 </div>
 
@@ -403,6 +490,68 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                           />
                         </div>
                       </div>
+
+                      {/* Items Section */}
+                      {p.isSelected && (
+                        <div className="mt-3 pt-2 border-t border-gray-100">
+                          <div className="flex justify-between items-center mb-1.5">
+                            <span className="text-xs font-bold text-gray-700 flex items-center gap-1">
+                              📦 सामान / आइटम्स ({(p.items || []).length}):
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleAddItem(idx)}
+                              className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer"
+                            >
+                              + नया सामान जोड़ें
+                            </button>
+                          </div>
+
+                          <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                            {(p.items || []).map((it, itemIdx) => (
+                              <div
+                                key={itemIdx}
+                                className="flex items-center gap-1.5 bg-gray-50 p-1.5 rounded-lg border border-gray-200 text-xs"
+                              >
+                                <input
+                                  type="text"
+                                  value={it.name}
+                                  onChange={(e) => handleItemChange(idx, itemIdx, "name", e.target.value)}
+                                  placeholder="सामान का नाम"
+                                  className="flex-1 bg-white px-2 py-1 rounded border border-gray-300 text-xs font-medium"
+                                />
+                                <div className="flex items-center gap-1 w-20">
+                                  <span className="text-[10px] text-gray-400">Qty:</span>
+                                  <input
+                                    type="number"
+                                    value={it.qty}
+                                    onChange={(e) => handleItemChange(idx, itemIdx, "qty", e.target.value)}
+                                    className="w-full bg-white px-1 py-1 rounded border border-gray-300 text-xs text-center font-bold"
+                                  />
+                                </div>
+                                <div className="flex items-center gap-1 w-24">
+                                  <span className="text-[10px] text-gray-400">₹:</span>
+                                  <input
+                                    type="number"
+                                    value={it.rate}
+                                    onChange={(e) => handleItemChange(idx, itemIdx, "rate", e.target.value)}
+                                    className="w-full bg-white px-1 py-1 rounded border border-gray-300 text-xs text-right font-bold text-indigo-700"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveItem(idx, itemIdx)}
+                                  className="text-rose-500 hover:text-rose-700 px-1 font-bold cursor-pointer"
+                                  title="हटाएं"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                     </div>
 
                   </div>
@@ -430,7 +579,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
               disabled={saving || pages.filter((p) => p.isSelected).length === 0}
               className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold shadow-md transition flex items-center gap-2 cursor-pointer"
             >
-              {saving ? "सेव हो रहा है..." : `💾 सभी ${pages.filter((p) => p.isSelected).length} बिल अलग-अलग दर्ज करें (HD फोटो प्रूफ सहित)`}
+              {saving ? "सेव हो रहा है..." : `💾 बिल स्वीकार करें और खाते में जोड़ें (${pages.filter((p) => p.isSelected).length} बिल)`}
             </button>
           )}
         </div>
