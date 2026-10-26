@@ -42,6 +42,33 @@ import { deduplicateBills } from "../../utils/deduplicateBills";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 import { deduplicatePurchases } from "../../utils/deduplicatePurchases";
 
+const safeParseDate = (dateVal) => {
+  if (!dateVal) return null;
+  if (dateVal instanceof Date && !isNaN(dateVal.getTime())) return dateVal;
+  if (typeof dateVal === 'number') {
+    const d = new Date(dateVal);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const str = String(dateVal).trim();
+  if (!str) return null;
+  if (str.toLowerCase() === "today" || str === "आज") return new Date();
+  
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(str)) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) return d;
+  }
+  const dmyMatch = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1;
+    const year = parseInt(dmyMatch[3], 10);
+    const d = new Date(year, month, day);
+    if (!isNaN(d.getTime())) return d;
+  }
+  const fallback = new Date(str);
+  return isNaN(fallback.getTime()) ? null : fallback;
+};
+
 const ProfitLossReportPage = () => {
   const navigate = useNavigate();
   const { selectedCompany } = useCompany() || {};
@@ -166,7 +193,7 @@ const ProfitLossReportPage = () => {
     setLoading(true);
     setError(null);
     try {
-      let plUrl = `/api/reports/profitloss?marginPercent=${marginPercent}&costMode=${costMode}`;
+      let plUrl = `/api/reports/profit-loss?marginPercent=${marginPercent}&costMode=${costMode}`;
       let billingUrl = "/api/billing?limit=500";
       let expenseUrl = "/api/expense";
       let purchaseUrl = "/api/purchase";
@@ -209,8 +236,8 @@ const ProfitLossReportPage = () => {
       const getLocalDayStr = (val) => {
         if (!val) return "";
         if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
-        const d = new Date(val);
-        if (isNaN(d.getTime())) return "";
+        const d = safeParseDate(val);
+        if (!d || isNaN(d.getTime())) return "";
         const y = d.getFullYear();
         const m = String(d.getMonth() + 1).padStart(2, "0");
         const day = String(d.getDate()).padStart(2, "0");
@@ -220,7 +247,7 @@ const ProfitLossReportPage = () => {
       const checkInRange = (rawDateVal) => {
         if (!startDate && !endDate) return true;
         const dStr = getLocalDayStr(rawDateVal);
-        if (!dStr) return true;
+        if (!dStr) return false;
         if (startDate && dStr < startDate) return false;
         if (endDate && dStr > endDate) return false;
         return true;

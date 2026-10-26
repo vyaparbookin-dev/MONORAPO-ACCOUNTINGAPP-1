@@ -3,6 +3,33 @@ import { ArrowUpRight, ArrowDownLeft, TrendingUp, AlertCircle, Clock, RefreshCw,
 import api from "../../services/api";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 
+const safeParseDate = (dateVal) => {
+  if (!dateVal) return null;
+  if (dateVal instanceof Date && !isNaN(dateVal.getTime())) return dateVal;
+  if (typeof dateVal === 'number') {
+    const d = new Date(dateVal);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const str = String(dateVal).trim();
+  if (!str) return null;
+  if (str.toLowerCase() === "today" || str === "आज") return new Date();
+  
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(str)) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) return d;
+  }
+  const dmyMatch = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1;
+    const year = parseInt(dmyMatch[3], 10);
+    const d = new Date(year, month, day);
+    if (!isNaN(d.getTime())) return d;
+  }
+  const fallback = new Date(str);
+  return isNaN(fallback.getTime()) ? null : fallback;
+};
+
 export default function DashboardScreen() {
   const [stats, setStats] = useState({
     totalRevenue: 0,
@@ -61,7 +88,7 @@ export default function DashboardScreen() {
 
       // Filter by date range
       const dateFilteredBills = filterBillsByDate(billsData, dateRange);
-      const filteredBills = dateFilteredBills.length > 0 ? dateFilteredBills : billsData;
+      const filteredBills = dateFilteredBills;
       const filteredExpenses = filterBillsByDate(expensesData, dateRange);
       setBills(filteredBills.slice(0, 8));
 
@@ -132,18 +159,27 @@ export default function DashboardScreen() {
   const filterBillsByDate = (items, range) => {
     if (!Array.isArray(items)) return [];
     const now = new Date();
-    const daysMap = { "last7days": 7, "last30days": 30, "last90days": 90, "allyear": Infinity };
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    
+    if (range === "allyear") {
+      const startOfYear = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+      return items.filter(item => {
+        if (!item) return false;
+        const d = safeParseDate(item.date || item.rawDate || item.createdAt);
+        return d && d >= startOfYear && d <= endOfToday;
+      });
+    }
+
+    const daysMap = { "last7days": 7, "last30days": 30, "last90days": 90 };
     const days = daysMap[range] || 30;
-    
-    if (days === Infinity) return items;
-    
+    const cutoffDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+    cutoffDate.setHours(0, 0, 0, 0);
+
     return items.filter(item => {
       if (!item) return false;
-      const billDate = new Date(item.createdAt || item.date);
-      if (isNaN(billDate.getTime())) return true;
-      const diffTime = Math.abs(now - billDate);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      return diffDays <= days;
+      const d = safeParseDate(item.date || item.rawDate || item.createdAt);
+      if (!d) return false;
+      return d >= cutoffDate && d <= endOfToday;
     });
   };
 

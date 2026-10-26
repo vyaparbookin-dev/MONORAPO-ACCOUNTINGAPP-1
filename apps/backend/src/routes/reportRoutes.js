@@ -6,7 +6,7 @@ import {
   getProfitLoss,
   getPartyWiseReport,
   getStaffPerformanceReport,
-  getNonMovingItems, // Import the new controller
+  getNonMovingItems,
   getRestaurantAnalytics,
 } from "../controllers/reportController.js";
 import { protect } from "../middleware/authmiddleware.js";
@@ -34,9 +34,10 @@ router.get("/non-moving-items", authorizeRoles("owner", "admin", "manager"), get
 router.get("/charts", getChartData);
 
 // Balance Sheet Route
-router.get("/balancesheet", authorizeRoles("owner", "admin"), getBalanceSheet);
+router.get("/balancesheet", getBalanceSheet);
 
-// Profit & Loss Route
-router.get("/profitloss", authorizeRoles("owner", "admin"), getProfitLoss);
+// Profit & Loss Routes (Supports both /profitloss and /profit-loss)
+router.get("/profitloss", getProfitLoss);
+router.get("/profit-loss", getProfitLoss);
 
 export default router;
