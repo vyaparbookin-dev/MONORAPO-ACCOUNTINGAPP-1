@@ -857,6 +857,23 @@ function MobileVyaparAppContent() {
     }
   }, [showGharKharchLedgerModal, showGharKharchModal]);
 
+  const handleInstallClick = async () => {
+    if (installPrompt) {
+      try {
+        installPrompt.prompt();
+        const { outcome } = await installPrompt.userChoice;
+        if (outcome === 'accepted') {
+          setIsPwaInstalled(true);
+          setInstallPrompt(null);
+        }
+      } catch (e) {
+        console.warn("PWA install prompt error:", e);
+      }
+    } else {
+      alert("📲 ऐप इंस्टॉल करने के लिए:\n1. अपने मोबाइल में ब्राउज़र के 3 डॉट्स (⋮) दबाएं।\n2. 'Install app' या 'Add to Home screen' (होम स्क्रीन पर जोड़ें) चुनें।\n\nइसके बाद ऐप सीधे आपके फोन में ओरिजिनल ऐप की तरह सेव हो जाएगा!");
+    }
+  };
+
   // -------------------------------------------------------------
   // 🛡️ ANDROID HARDWARE BACK BUTTON INTERCEPTION FOR PWA
   // -------------------------------------------------------------
@@ -5041,6 +5058,28 @@ function MobileVyaparAppContent() {
         {/* ==================== TAB 1: DASHBOARD ==================== */}
         {activeTab === "dashboard" && (
           <div className="space-y-3.5 animate-in fade-in">
+            {/* 📲 1-CLICK NATIVE PWA APP INSTALL BANNER */}
+            {!isPwaInstalled && (
+              <div className="p-3.5 bg-gradient-to-r from-indigo-900 via-indigo-800 to-indigo-950 text-white rounded-2xl shadow-md border border-indigo-400/40 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-amber-400 text-slate-900 flex items-center justify-center font-black text-lg shadow-sm">
+                    📱
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-xs text-white">VyaparBook मोबाइल ऐप</h4>
+                    <p className="text-[10px] text-indigo-200">होम स्क्रीन पर इंस्टॉल करें (बिना ब्राउज़र के 1-क्लिक में चलेगा)</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleInstallClick}
+                  className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-slate-900 font-black text-xs rounded-xl shadow cursor-pointer shrink-0 transition active:scale-95"
+                >
+                  📲 इंस्टॉल करें
+                </button>
+              </div>
+            )}
+
             {/* 💰 DEDICATED PROMINENT DAILY SALES CARD (दैनिक / अवधि बिक्री) */}
             <div className="p-4 bg-gradient-to-br from-[#1E1B4B] via-[#312E81] to-[#4338CA] text-white rounded-3xl shadow-xl space-y-3 border border-indigo-500/40">
               <div className="flex justify-between items-start flex-wrap gap-2">
