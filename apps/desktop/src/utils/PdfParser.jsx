@@ -1,9 +1,13 @@
 import * as pdfjsLib from "pdfjs-dist";
 
-// Configure worker reliably for web
+// Configure worker reliably for web with safe fallback
 if (typeof window !== "undefined" && pdfjsLib.GlobalWorkerOptions) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || "4.2.67"}/pdf.worker.min.mjs`;
+  try {
+    const version = pdfjsLib.version || "4.10.38";
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.mjs`;
+  } catch (wErr) {
+    console.warn("PDF worker init warning:", wErr);
+  }
 }
 
 /**
@@ -616,47 +620,72 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
  * 2. Visual line-based smart text recognition (Invoice No, Date, Party Name, Grand Total, Line Items)
  */
 export const extractPagesAndBillsFromPDF = async (file) => {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  const pages = [];
-
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-
-    // 1. Render page to high-definition image
-    const viewport = page.getViewport({ scale: 1.5 });
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-
-    await page.render({ canvasContext: ctx, viewport }).promise;
-    const imageUrl = canvas.toDataURL("image/jpeg", 0.85);
-
-    // 2. Extract text items and reconstruct visual lines
-    const textContent = await page.getTextContent();
-    const rawText = textContent.items.map((item) => item.str).join(" ");
-    const visualLines = reconstructVisualLines(textContent.items);
-
-    // 3. Smart Detection for Bill Fields
-    const detectedAmount = detectGrandTotal(visualLines, rawText);
-    const detectedBillNo = detectBillNumber(visualLines, rawText, pageNum);
-    const detectedDate = detectBillDate(visualLines, rawText);
-    const detectedParty = detectPartyName(visualLines, rawText, pageNum);
-    const detectedItems = detectLineItems(visualLines, detectedAmount, pageNum, rawText);
-
-    pages.push({
-      pageNumber: pageNum,
-      imageUrl,
-      rawText,
-      billNumber: detectedBillNo,
-      date: detectedDate,
-      partyName: detectedParty,
-      totalAmount: detectedAmount || 0,
-      items: detectedItems,
-      isSelected: true, // checked by default
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = pdfjsLib.getDocument({
+      data: arrayBuffer,
+      cMapUrl: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/cmaps/",
+      cMapPacked: true,
+      standardFontDataUrl: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/standard_fonts/",
     });
-  }
+    const pdf = await loadingTask.promise;
+    const pages = [];
 
-  return pages;
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      try {
+        const page = await pdf.getPage(pageNum);
+
+        // 1. Render page to high-definition image safely
+        let imageUrl = "";
+        try {
+          const viewport = page.getViewport({ scale: 1.5 });
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          imageUrl = canvas.toDataURL("image/jpeg", 0.85);
+        } catch (imgErr) {
+          console.warn(`Page ${pageNum} canvas image render note:`, imgErr);
+        }
+
+        // 2. Extract text items and reconstruct visual lines safely
+        let rawText = "";
+        let visualLines = [];
+        try {
+          const textContent = await page.getTextContent();
+          rawText = textContent.items.map((item) => item.str).join(" ");
+          visualLines = reconstructVisualLines(textContent.items);
+        } catch (txtErr) {
+          console.warn(`Page ${pageNum} text extract note:`, txtErr);
+        }
+
+        // 3. Smart Detection for Bill Fields
+        const detectedAmount = detectGrandTotal(visualLines, rawText);
+        const detectedBillNo = detectBillNumber(visualLines, rawText, pageNum);
+        const detectedDate = detectBillDate(visualLines, rawText);
+        const detectedParty = detectPartyName(visualLines, rawText, pageNum);
+        const detectedItems = detectLineItems(visualLines, detectedAmount, pageNum, rawText);
+
+        pages.push({
+          pageNumber: pageNum,
+          imageUrl,
+          rawText,
+          billNumber: detectedBillNo,
+          date: detectedDate,
+          partyName: detectedParty,
+          totalAmount: detectedAmount || 0,
+          items: detectedItems,
+          isSelected: true,
+        });
+      } catch (pErr) {
+        console.warn(`Skipping page ${pageNum} due to parse error:`, pErr);
+      }
+    }
+
+    return pages;
+  } catch (err) {
+    console.error("PDF extraction error:", err);
+    throw err;
+  }
 };

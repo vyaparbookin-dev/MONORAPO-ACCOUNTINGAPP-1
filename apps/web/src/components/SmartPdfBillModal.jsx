@@ -12,6 +12,42 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
   const [defaultBillType, setDefaultBillType] = useState("Purchase"); // Purchase (खरीद) vs Sale (बिक्री)
   const fileInputRef = useRef(null);
 
+  // State for Full Screen, Store Products, Aliases, Expanded items, and Error recovery
+  const [isFullScreen, setIsFullScreen] = useState(true);
+  const [storeProducts, setStoreProducts] = useState([]);
+  const [itemAliases, setItemAliases] = useState({});
+  const [expandedItems, setExpandedItems] = useState({});
+  const [modalError, setModalError] = useState(null);
+
+  const toggleExpandItem = (pageIdx, itemIdx) => {
+    const key = `${pageIdx}_${itemIdx}`;
+    setExpandedItems((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // Load existing products and aliases when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    setModalError(null);
+    try {
+      const prodKeys = ["vb_local_products", "products", "inventory", "items"];
+      for (const k of prodKeys) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setStoreProducts(parsed);
+            break;
+          }
+        }
+      }
+    } catch (e) {}
+
+    try {
+      const rawA = localStorage.getItem("vb_item_aliases");
+      if (rawA) setItemAliases(JSON.parse(rawA));
+    } catch (e) {}
+  }, [isOpen]);
+
   // Close preview image on hardware back press or ESC
   useEffect(() => {
     if (!isOpen) return;
