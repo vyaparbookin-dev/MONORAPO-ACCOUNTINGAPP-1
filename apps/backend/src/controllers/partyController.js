@@ -658,6 +658,8 @@ export const getPartyStatement = async (req, res) => {
     if (rawOpening !== 0) {
       const isPayable = openingBal < 0 || isSupplier;
       const absOpening = Math.abs(rawOpening);
+      const openingImg = party.billImageUrl || (party.billImageUrls && party.billImageUrls[0]) || "";
+      const openingImgs = (party.billImageUrls && party.billImageUrls.length > 0) ? party.billImageUrls : (openingImg ? [openingImg] : []);
       formattedTransactions.push({
         _id: `open_${party._id}`,
         date: party.createdAt || new Date(2026, 0, 1),
@@ -670,7 +672,9 @@ export const getPartyStatement = async (req, res) => {
         debit: isPayable ? 0 : absOpening,
         credit: isPayable ? absOpening : 0,
         runningBalance: isPayable ? -absOpening : absOpening,
-        source: "OpeningBalance"
+        source: "OpeningBalance",
+        billImageUrl: openingImg,
+        billImageUrls: openingImgs
       });
     }
 
@@ -760,6 +764,14 @@ export const attachPartyTransactionImage = async (req, res) => {
     }
     if (!updated) {
       updated = await Purchase.findOneAndUpdate(query, updateData, { new: true });
+    }
+    if (!updated && (String(txId).startsWith("open_") || isValidOid)) {
+      try {
+        const pQuery = isValidOid ? { _id: cleanId } : { id: cleanId };
+        updated = await Party.findOneAndUpdate(pQuery, updateData, { new: true });
+      } catch (pe) {
+        console.warn("[attachPartyTransactionImage] Party update warning:", pe.message);
+      }
     }
 
     // Sync to Supabase sales / purchases

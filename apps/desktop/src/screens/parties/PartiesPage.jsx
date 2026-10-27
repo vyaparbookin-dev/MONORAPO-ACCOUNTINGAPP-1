@@ -4,6 +4,7 @@ import api from '../../services/api';
 import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2, Download, FileSpreadsheet, Upload, AlertCircle } from 'lucide-react';
 import { syncQueue } from "@repo/shared";
 import CreditLimitHubModal from '../../components/modals/CreditLimitHubModal';
+import { getWebSafeImageUrl, compressImageFile } from '../../utils/photoStorage';
 
 export default function PartiesPage() {
   const [parties, setParties] = useState([]);
@@ -472,16 +473,31 @@ export default function PartiesPage() {
   const handleAttachImage = async (txId, file) => {
     if (!file) return;
     try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const base64Url = e.target.result;
-        await api.post('/api/party/attach-image', { txId, imageUrl: base64Url });
-        alert("✅ बिल/रसीद फोटो सफलतापूर्वक सेव हो गया!");
-        if (statementParty) {
-          handleOpenStatement(statementParty);
+      // 1. Client-side compress before upload for snappy performance
+      const compressedDataUrl = await compressImageFile(file, 1280, 0.75);
+      
+      let finalUrl = compressedDataUrl;
+      try {
+        const uploadRes = await api.post('/api/upload/bill-image', {
+          fileData: compressedDataUrl,
+          targetId: txId,
+          targetType: String(txId).startsWith("open_") ? "party" : "party_tx"
+        });
+        if (uploadRes?.data?.imageUrl) {
+          finalUrl = uploadRes.data.imageUrl;
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (upErr) {
+        const attachRes = await api.post('/api/party/attach-image', { txId, imageUrl: compressedDataUrl });
+        if (attachRes?.data?.url) {
+          finalUrl = attachRes.data.url;
+        }
+      }
+
+      alert("✅ बिल/रसीद फोटो सफलतापूर्वक सेव हो गया!");
+      if (statementParty) {
+        handleOpenStatement(statementParty);
+      }
+      fetchParties();
     } catch (e) {
       alert("फोटो सेव विफल: " + e.message);
     }
@@ -1093,35 +1109,39 @@ export default function PartiesPage() {
                                 </span>
                               </td>
                               <td className="px-3 py-2.5 text-center whitespace-nowrap">
-                                {tx.billImageUrl ? (
-                                  <div className="flex items-center justify-center gap-1">
-                                    <img
-                                      src={tx.billImageUrl}
-                                      alt="Bill"
-                                      onClick={() => setPreviewImage(tx.billImageUrl)}
-                                      className="w-8 h-8 rounded-lg object-cover border border-indigo-200 cursor-pointer hover:scale-110 shadow-xs transition"
-                                      title="बिल फोटो बड़ी देखें"
-                                    />
-                                    <button
-                                      onClick={() => setPreviewImage(tx.billImageUrl)}
-                                      className="p-1 text-indigo-600 hover:bg-indigo-50 rounded"
-                                      title="बड़ा देखें"
-                                    >
-                                      <Eye size={13} />
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <label className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 px-2 py-1 rounded-lg border border-dashed border-slate-300 cursor-pointer transition">
-                                    <UploadCloud size={11} />
-                                    <span>फोटो जोड़ें</span>
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      className="hidden"
-                                      onChange={(e) => handleAttachImage(tx._id, e.target.files[0])}
-                                    />
-                                  </label>
-                                )}
+                                {(() => {
+                                  const primaryImg = tx.billImageUrl || (tx.billImageUrls && tx.billImageUrls[0]);
+                                  const safeImg = getWebSafeImageUrl(primaryImg);
+                                  return safeImg ? (
+                                    <div className="flex items-center justify-center gap-1">
+                                      <img
+                                        src={safeImg}
+                                        alt="Bill"
+                                        onClick={() => setPreviewImage(safeImg)}
+                                        className="w-8 h-8 rounded-lg object-cover border border-indigo-200 cursor-pointer hover:scale-110 shadow-xs transition"
+                                        title="बिल फोटो बड़ी देखें"
+                                      />
+                                      <button
+                                        onClick={() => setPreviewImage(safeImg)}
+                                        className="p-1 text-indigo-600 hover:bg-indigo-50 rounded"
+                                        title="बड़ा देखें"
+                                      >
+                                        <Eye size={13} />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <label className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 px-2 py-1 rounded-lg border border-dashed border-slate-300 cursor-pointer transition">
+                                      <UploadCloud size={11} />
+                                      <span>फोटो जोड़ें</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => handleAttachImage(tx._id, e.target.files[0])}
+                                      />
+                                    </label>
+                                  );
+                                })()}
                               </td>
                             </tr>
                           );
@@ -1164,11 +1184,11 @@ export default function PartiesPage() {
                 </button>
               </div>
               <div className="max-h-[75vh] overflow-auto flex justify-center items-center bg-black/50 rounded-2xl p-2">
-                <img src={previewImage} alt="Original Bill" className="max-h-[70vh] w-auto rounded-xl object-contain shadow-lg" />
+                <img src={getWebSafeImageUrl(previewImage)} alt="Original Bill" className="max-h-[70vh] w-auto rounded-xl object-contain shadow-lg" />
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <a
-                  href={previewImage}
+                  href={getWebSafeImageUrl(previewImage)}
                   download="bill_invoice_photo.jpg"
                   target="_blank"
                   rel="noreferrer"

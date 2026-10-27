@@ -622,7 +622,7 @@ function MobileVyaparAppContent() {
       } catch (e) {}
 
       const [res1, res2] = await Promise.allSettled([
-        api.get("/api/expenses?limit=500"),
+        api.get("/api/expenses?limit=1000"),
         api.get("/api/expenses/ghar-kharch-summary")
       ]);
 
@@ -642,8 +642,20 @@ function MobileVyaparAppContent() {
         }
       }
       
-      // Authoritative deduplication: server records always supersede temp local entries
-      const combined = deduplicateExpenses([...(Array.isArray(serverList) ? serverList : []), ...localList]);
+      // Authoritative deduplication: Only keep truly unsynced temporary offline items from local storage
+      const unsyncedLocal = (Array.isArray(localList) ? localList : []).filter(item => {
+        const idStr = String(item._id || item.id || "");
+        if (!idStr.startsWith("exp_") && !idStr.startsWith("temp_")) return false;
+        const isSynced = (serverList || []).some(s => {
+          if ((s._id || s.id) === (item._id || item.id)) return true;
+          const sTitle = String(s.title || "").trim().toLowerCase();
+          const sAmt = Number(s.amount || 0);
+          return sTitle === String(item.title || "").trim().toLowerCase() && Math.abs(sAmt - Number(item.amount || 0)) < 0.01;
+        });
+        return !isSynced;
+      });
+
+      const combined = deduplicateExpenses([...(Array.isArray(serverList) ? serverList : []), ...unsyncedLocal]);
       setGharKharchList(combined);
       try {
         localStorage.setItem("vb_local_expenses", JSON.stringify(combined));

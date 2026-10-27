@@ -4,6 +4,35 @@ import api from "../../services/api";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 import WealthTrackerExportModal from "../../components/wealth_tracker/WealthTrackerExportModal";
 
+export const isFamilyGharKharch = (e) => {
+  if (!e) return false;
+  const t = String(e.expenseType || e.type || "").toLowerCase();
+  const c = String(e.category || "").toLowerCase();
+  const tit = String(e.title || e.description || "").toLowerCase();
+  const desc = String(e.description || "").toLowerCase();
+
+  // Strict check: shop supplier or wholesale goods purchases are NEVER family expenses
+  if (t === 'vendor' || t === 'supplier' || c.includes('खरीद') || c.includes('सप्लायर') || c.includes('vendor') ||
+      tit.includes('सामान खरीद') || tit.includes('माल खरीद') || desc.includes('सप्लायर') || desc.includes('व्यापारी')) {
+    return false;
+  }
+
+  // Explicit drawings/ghar_kharch
+  if (t === 'drawings' || t === 'ghar_kharch' || t === 'personal') return true;
+
+  // If a family member is specified (other than Admin / Shop)
+  const mem = String(e.familyMember || e.member || "").trim();
+  if (mem && mem !== 'Admin' && mem !== 'Shop' && mem !== 'खुद (Self)' && mem !== 'Self') return true;
+
+  // Category or title contains home/family keywords (unless strictly operating)
+  const isPersonalCat = /घर खर्च|personal|family|राशन|किराना|दवाई|अस्पताल|स्कूल|कॉलेज फीस|कपड़े|दूध|घरेलू/i.test(c);
+  const isPersonalTitle = /घर खर्च|घरेलू|राशन|किराना|दवाई|स्कूल फीस|कॉलेज फीस|मम्मी|पापा|बच्चे/i.test(tit);
+
+  if (t !== 'operating' && (isPersonalCat || isPersonalTitle || mem)) return true;
+
+  return false;
+};
+
 const ExpensesPage = () => {
   const [expenses, setExpenses] = useState(() => {
     try {
@@ -114,14 +143,21 @@ const ExpensesPage = () => {
         if (stored) localList = JSON.parse(stored);
       } catch (e) {}
 
-      const response = await api.get("/api/expenses?limit=500").catch(() => null);
+      const response = await api.get("/api/expenses?limit=1000").catch(() => null);
       const serverList = response?.recentExpenses || response?.expenses || response?.data?.recentExpenses || response?.data?.expenses || (Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : []));
       const validServerList = Array.isArray(serverList) ? serverList : [];
 
       // Only preserve offline/unsynced temporary items from local storage that aren't on server yet
       const unsyncedLocal = (Array.isArray(localList) ? localList : []).filter(item => {
         const idStr = String(item._id || item.id || "");
-        return (idStr.startsWith("exp_") || idStr.startsWith("temp_")) && !validServerList.some(s => (s._id || s.id) === (item._id || item.id));
+        if (!idStr.startsWith("exp_") && !idStr.startsWith("temp_")) return false;
+        const isSynced = validServerList.some(s => {
+          if ((s._id || s.id) === (item._id || item.id)) return true;
+          const sTitle = String(s.title || "").trim().toLowerCase();
+          const sAmt = Number(s.amount || 0);
+          return sTitle === String(item.title || "").trim().toLowerCase() && Math.abs(sAmt - Number(item.amount || 0)) < 0.01;
+        });
+        return !isSynced;
       });
 
       const combined = deduplicateExpenses([...validServerList, ...unsyncedLocal]);
@@ -141,9 +177,9 @@ const ExpensesPage = () => {
     
     // Filter by Tab (All, Business, Ghar Kharch)
     if (activeTypeTab === "operating") {
-      filtered = filtered.filter(exp => !exp.expenseType || exp.expenseType === "operating");
+      filtered = filtered.filter(exp => !isFamilyGharKharch(exp));
     } else if (activeTypeTab === "drawings") {
-      filtered = filtered.filter(exp => exp.expenseType === "drawings");
+      filtered = filtered.filter(exp => isFamilyGharKharch(exp));
     }
 
     // Filter by Date Range
@@ -338,14 +374,14 @@ const ExpensesPage = () => {
   const gharKharchCategories = ["राशन/किराना", "स्कूल/कॉलेज फीस", "दवाई/अस्पताल", "बिजली/पानी/गैस", "कपड़े/शॉपिंग", "निजी जेब खर्च", "पेट्रोल/वाहन", "अन्य घरेलू खर्च"];
 
   const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
-  const totalBusinessExpenses = filteredExpenses.filter(e => !e.expenseType || e.expenseType === 'operating').reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+  const totalBusinessExpenses = filteredExpenses.filter(e => !isFamilyGharKharch(e)).reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
   
   let totalGharKharchGiven = 0;
   let totalGharKharchReceived = 0;
   const familyMembersMap = {};
 
   filteredExpenses
-    .filter(e => e.expenseType === 'drawings')
+    .filter(e => isFamilyGharKharch(e))
     .forEach(e => {
       const mem = e.familyMember?.trim() || "Self";
       const amt = Number(e.amount) || 0;
@@ -787,7 +823,7 @@ const ExpensesPage = () => {
             ) : (
               filteredExpenses.map((exp) => {
                 const expId = exp._id || exp.id;
-                const isDrawings = exp.expenseType === 'drawings';
+                const isDrawings = isFamilyGharKharch(exp);
                 const st = exp.staffId ? staffList.find(s => s._id === exp.staffId) : null;
 
                 return (

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { deduplicateBills } from "../../utils/deduplicateBills";
+import { getWebSafeImageUrl } from "../../utils/photoStorage";
 
 const PartyWiseReportPage = () => {
   const navigate = useNavigate();
@@ -921,12 +922,13 @@ const PartyWiseReportPage = () => {
                                 <span className="text-[10px] text-indigo-600 font-bold flex items-center justify-center gap-1">
                                   <Loader2 size={12} className="animate-spin" /> अपलोडिंग...
                                 </span>
-                              ) : tx.billImageUrl ? (
+                              ) : (tx.billImageUrl || (tx.billImageUrls && tx.billImageUrls[0])) ? (
                                 <div className="flex items-center justify-center gap-1.5">
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      setPreviewBillImage(tx.billImageUrl);
+                                      const pImg = tx.billImageUrl || (tx.billImageUrls && tx.billImageUrls[0]);
+                                      setPreviewBillImage(getWebSafeImageUrl(pImg));
                                       setPreviewBillDetails({
                                         refNo: tx.refNo || "-",
                                         date: formattedDate,
@@ -1019,7 +1021,7 @@ const PartyWiseReportPage = () => {
 
             <div className="max-h-[65vh] overflow-auto flex items-center justify-center bg-slate-50 rounded-2xl p-2 border border-slate-200">
               <img
-                src={previewBillImage}
+                src={getWebSafeImageUrl(previewBillImage)}
                 alt="Bill Photo"
                 className="max-h-[60vh] w-auto object-contain rounded-xl shadow-md"
               />
@@ -1037,7 +1039,7 @@ const PartyWiseReportPage = () => {
                 बंद करें (Close)
               </button>
               <a
-                href={previewBillImage}
+                href={getWebSafeImageUrl(previewBillImage)}
                 download={`Bill_${previewBillDetails?.refNo || 'receipt'}.jpg`}
                 target="_blank"
                 rel="noreferrer"

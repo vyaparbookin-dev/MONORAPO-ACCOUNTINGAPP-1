@@ -131,7 +131,7 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
     try {
       let serverExp = [];
       try {
-        const res = await api.get("/api/expense");
+        const res = await api.get("/api/expenses?limit=1000");
         serverExp = res?.data?.expenses || res?.expenses || res?.data || [];
       } catch (err) {
         console.warn("Server expense load failed, fallback to local");
@@ -145,9 +145,22 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
         }
       } catch (e) {}
 
+      const validServerExp = Array.isArray(serverExp) ? serverExp : [];
+      const unsyncedLocal = (Array.isArray(localExp) ? localExp : []).filter(item => {
+        const idStr = String(item._id || item.id || "");
+        if (!idStr.startsWith("exp_") && !idStr.startsWith("temp_")) return false;
+        const isSynced = validServerExp.some(s => {
+          if ((s._id || s.id) === (item._id || item.id)) return true;
+          const sTitle = String(s.title || "").trim().toLowerCase();
+          const sAmt = Number(s.amount || 0);
+          return sTitle === String(item.title || "").trim().toLowerCase() && Math.abs(sAmt - Number(item.amount || 0)) < 0.01;
+        });
+        return !isSynced;
+      });
+
       const allMerged = deduplicateExpenses([
-        ...(Array.isArray(serverExp) ? serverExp : []),
-        ...(Array.isArray(localExp) ? localExp : [])
+        ...validServerExp,
+        ...unsyncedLocal
       ]);
 
       const familyList = allMerged

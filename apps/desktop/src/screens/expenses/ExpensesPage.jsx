@@ -2,6 +2,35 @@ import React, { useState, useEffect } from "react";
 import { Plus, Search, Download, Edit, Trash2, DollarSign, Calendar, Tag, PieChart, Users, Home, Building2, CheckCircle2 } from "lucide-react";
 import api from "../../services/api";
 
+export const isFamilyGharKharch = (e) => {
+  if (!e) return false;
+  const t = String(e.expenseType || e.type || "").toLowerCase();
+  const c = String(e.category || "").toLowerCase();
+  const tit = String(e.title || e.description || "").toLowerCase();
+  const desc = String(e.description || "").toLowerCase();
+
+  // Strict check: shop supplier or wholesale goods purchases are NEVER family expenses
+  if (t === 'vendor' || t === 'supplier' || c.includes('खरीद') || c.includes('सप्लायर') || c.includes('vendor') ||
+      tit.includes('सामान खरीद') || tit.includes('माल खरीद') || desc.includes('सप्लायर') || desc.includes('व्यापारी')) {
+    return false;
+  }
+
+  // Explicit drawings/ghar_kharch
+  if (t === 'drawings' || t === 'ghar_kharch' || t === 'personal') return true;
+
+  // If a family member is specified (other than Admin / Shop)
+  const mem = String(e.familyMember || e.member || "").trim();
+  if (mem && mem !== 'Admin' && mem !== 'Shop' && mem !== 'खुद (Self)' && mem !== 'Self') return true;
+
+  // Category or title contains home/family keywords (unless strictly operating)
+  const isPersonalCat = /घर खर्च|personal|family|राशन|किराना|दवाई|अस्पताल|स्कूल|कॉलेज फीस|कपड़े|दूध|घरेलू/i.test(c);
+  const isPersonalTitle = /घर खर्च|घरेलू|राशन|किराना|दवाई|स्कूल फीस|कॉलेज फीस|मम्मी|पापा|बच्चे/i.test(tit);
+
+  if (t !== 'operating' && (isPersonalCat || isPersonalTitle || mem)) return true;
+
+  return false;
+};
+
 const ExpensesPage = () => {
   const [expenses, setExpenses] = useState(() => {
     try {
@@ -98,7 +127,7 @@ const ExpensesPage = () => {
         if (stored) localList = JSON.parse(stored);
       } catch (e) {}
 
-      const response = await api.get("/api/expenses?limit=500").catch(() => null);
+      const response = await api.get("/api/expenses?limit=1000").catch(() => null);
       const serverList = response?.recentExpenses || response?.expenses || response?.data?.recentExpenses || response?.data?.expenses || (Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : []));
       const validServerList = Array.isArray(serverList) ? serverList : [];
 
@@ -136,7 +165,7 @@ const ExpensesPage = () => {
     
     // Filter by Tab (All, Business, Ghar Kharch)
     if (activeTypeTab !== "all") {
-      filtered = filtered.filter(exp => exp.expenseType === activeTypeTab);
+      filtered = filtered.filter(exp => activeTypeTab === "operating" ? !isFamilyGharKharch(exp) : isFamilyGharKharch(exp));
     }
 
     // Filter by Date Range
@@ -258,13 +287,13 @@ const ExpensesPage = () => {
   const safeExpenses = Array.isArray(expenses) ? expenses : [];
   const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
   
-  const totalBusinessExpenses = safeExpenses.filter(e => e.expenseType === 'operating').reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+  const totalBusinessExpenses = safeExpenses.filter(e => !isFamilyGharKharch(e)).reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
   
   let totalGharKharchGiven = 0;
   let totalGharKharchReceived = 0;
   const familyMembersMap = {};
 
-  safeExpenses.filter(e => e.expenseType === 'drawings' || (e.familyMember && e.familyMember.trim() !== '')).forEach(e => {
+  safeExpenses.filter(e => isFamilyGharKharch(e)).forEach(e => {
     const mem = e.familyMember?.trim() || "Family";
     const amt = Number(e.amount) || 0;
     const flow = e.transactionFlow === 'received' ? 'received' : 'given';
@@ -644,8 +673,8 @@ const ExpensesPage = () => {
                   </td>
                   <td className="p-3.5 font-extrabold text-slate-900">{exp.title}</td>
                   <td className="p-3.5">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${exp.expenseType === 'drawings' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
-                      {exp.expenseType === 'drawings' ? '🏡 घर खर्च' : '🏢 दुकान खर्च'}
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isFamilyGharKharch(exp) ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                      {isFamilyGharKharch(exp) ? '🏡 घर खर्च' : '🏢 दुकान खर्च'}
                     </span>
                   </td>
                   <td className="p-3.5 font-bold text-slate-700">

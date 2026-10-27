@@ -228,7 +228,7 @@ export const listExpenses = async (req, res) => {
         category: req.query.category && req.query.category !== 'all' ? req.query.category : undefined,
         startDate: req.query.startDate,
         endDate: req.query.endDate,
-        limit: req.query.limit || 200
+        limit: req.query.limit === 'all' ? 1000 : (parseInt(req.query.limit) || 500)
       });
 
       if (sbExpenses && sbExpenses.length > 0) {
@@ -240,9 +240,9 @@ export const listExpenses = async (req, res) => {
           filtered = filtered.filter(e => e.familyMember === req.query.familyMember);
         }
         const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 100;
+        const limit = (req.query.limit === 'all' || parseInt(req.query.limit) >= 500) ? (parseInt(req.query.limit) || 1000) : (parseInt(req.query.limit) || 200);
         const total = filtered.length;
-        const paged = limit === 'all' ? filtered : filtered.slice((page - 1) * limit, page * limit);
+        const paged = limit === 'all' || limit >= 1000 ? filtered : filtered.slice((page - 1) * limit, page * limit);
         return res.json({
           success: true,
           expenses: paged,
@@ -255,7 +255,7 @@ export const listExpenses = async (req, res) => {
     }
     
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 100;
+    const limit = (req.query.limit === 'all' || parseInt(req.query.limit) >= 500) ? (parseInt(req.query.limit) || 1000) : (parseInt(req.query.limit) || 200);
     const skip = (page - 1) * limit;
 
     const filter = { companyId: req.companyId, isDeleted: { $ne: true } };
@@ -356,7 +356,7 @@ export const getGharKharchSummary = async (req, res) => {
       netBalance: totalGiven - totalReceived,
       count: allGharKharch.length,
       members: memberList,
-      recentExpenses: allGharKharch.slice(0, 100)
+      recentExpenses: allGharKharch.slice(0, 500)
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
