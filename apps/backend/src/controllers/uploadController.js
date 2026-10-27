@@ -20,6 +20,8 @@ export const uploadBillPhoto = async (req, res) => {
       return res.status(400).json({ success: false, message: "कृपया फोटो चुनें (fileData is required)" });
     }
 
+    console.log(`📸 [uploadBillPhoto] Uploading image: ${fileName || 'bill.jpg'}, target: ${targetId || 'none'} (${targetType || 'general'}), size: ${fileData.length} chars`);
+
     // 1. Upload to Cloudinary / Storage
     const uploadResult = await uploadBillImage({
       fileData,
@@ -28,6 +30,7 @@ export const uploadBillPhoto = async (req, res) => {
     });
 
     const imageUrl = uploadResult.url;
+    console.log(`✅ [uploadBillPhoto] Success: ${imageUrl} (${uploadResult.provider})`);
 
     // 2. If targetId is provided, link directly to database document
     let updatedRecord = null;
@@ -40,7 +43,11 @@ export const uploadBillPhoto = async (req, res) => {
         { invoiceNumber: cleanId },
         { purchaseNumber: cleanId },
         { refNo: cleanId },
-        { refNo: targetId }
+        { refNo: targetId },
+        { id: cleanId },
+        { id: targetId },
+        { voucherNo: cleanId },
+        { voucherNo: targetId }
       ];
       if (isValidOid) {
         orConditions.push({ _id: cleanId });

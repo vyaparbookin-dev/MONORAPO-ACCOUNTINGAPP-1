@@ -96,7 +96,7 @@ const detectGrandTotal = (lines, rawText) => {
   const genericTotalRegex = /(?:^|\s)total(?:\s*\(|\s*\:|\s*$|\s+inr|\s+rs)/i;
 
   // Tax, deduction, and quantity patterns that must NEVER be confused with Grand Total
-  const ignorePrefixes = /(?:total\s*qty|total\s*quantity|total\s*items|total\s*discount|taxable|cgst|sgst|igst|cess|total\s*tax|total\s*gst|gst\s*total|tax\s*total|gst\s*amount|tax\s*amount|vat|tds|tcs|round\s*off)/i;
+  const ignorePrefixes = /(?:total\s*qty|total\s*quantity|total\s*items|total\s*discount|discount\s*total|taxable|cgst|sgst|igst|cess|total\s*tax|total\s*gst|gst\s*total|tax\s*total|gst\s*amount|tax\s*amount|central\s*tax|state\s*tax|integrated\s*tax|output\s*tax|input\s*tax|tax\s*payable|vat|tds|tcs|round\s*off|freight|loading|unloading)/i;
 
   const numberExtractRegex = /(?:₹|Rs\.?|INR)?\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/g;
 

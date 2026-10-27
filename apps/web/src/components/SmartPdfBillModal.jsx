@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { extractPagesAndBillsFromPDF } from "../utils/PdfParser";
 import { storageManager } from "../services/storageManager";
 import { deduplicateBills } from "../utils/deduplicateBills";
+import { persistPhotoToLocalCache } from "../utils/photoStorage";
 
 export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, companyId }) {
   const [loading, setLoading] = useState(false);
@@ -18,6 +19,10 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
   const [itemAliases, setItemAliases] = useState({});
   const [expandedItems, setExpandedItems] = useState({});
   const [modalError, setModalError] = useState(null);
+
+  // State for AI Smart Bill Scanner
+  const [aiScanningPages, setAiScanningPages] = useState({});
+  const [aiScanningAll, setAiScanningAll] = useState(false);
 
   const toggleExpandItem = (pageIdx, itemIdx) => {
     const key = `${pageIdx}_${itemIdx}`;
@@ -259,6 +264,130 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
     });
   };
 
+  // 1-Click AI Scan per page using Gemini / OpenAI Vision
+  const handleAiScanPage = async (pageIdx) => {
+    const page = pages[pageIdx];
+    if (!page || !page.imageUrl) {
+      alert("इस पेज की फोटो उपलब्ध नहीं है।");
+      return;
+    }
+
+    setAiScanningPages((prev) => ({ ...prev, [pageIdx]: true }));
+
+    try {
+      const openAiKey = localStorage.getItem("OPENAI_API_KEY") || "";
+      const geminiKey = localStorage.getItem("GEMINI_API_KEY") || "";
+
+      const res = await api.post("/api/billing/parse-image", {
+        images: [page.imageUrl],
+        scannerType: "printed",
+        mode: "printed",
+        rawText: page.rawText || undefined,
+        openaiApiKey: openAiKey.trim() || undefined,
+        geminiApiKey: geminiKey.trim() || undefined
+      });
+
+      const billData = res?.data?.batch && Array.isArray(res.data.bills) && res.data.bills[0]
+        ? res.data.bills[0]
+        : (res?.data?.parsedItems ? res.data : (res?.parsedItems ? res : (res?.data || res)));
+
+      if (!billData) {
+        throw new Error("AI से कोई परिणाम नहीं मिला।");
+      }
+
+      const aiParty = (billData.partyName || "").trim();
+      const aiBillNo = (billData.invoiceNumber || "").trim();
+      const aiDate = (billData.date || billData.billDate || "").trim();
+      const aiTotal = Number(billData.totalAmount) || 0;
+      const aiItems = Array.isArray(billData.parsedItems) ? billData.parsedItems : [];
+
+      let mappedItems = [];
+      if (aiItems.length > 0) {
+        mappedItems = aiItems.map((it, itemIdx) => {
+          const q = Math.max(0.01, Number(it.quantity) || 1);
+          const p = Number(it.price) || 0;
+          const tot = Number(it.total) || Math.round(q * p * 100) / 100;
+          const unitRate = p > 0 ? p : (tot > 0 ? Math.round((tot / q) * 100) / 100 : 0);
+
+          return {
+            id: `item_ai_${Date.now()}_${itemIdx + 1}`,
+            name: it.name || `सामान ${itemIdx + 1}`,
+            rawVendorName: it.name || `सामान ${itemIdx + 1}`,
+            isAutoMapped: false,
+            qty: q,
+            unit: it.unit || "pcs",
+            barcode: it.barcode || "",
+            hsnCode: it.hsn || it.hsnCode || "",
+            preGstRate: unitRate,
+            withGstRate: unitRate,
+            rate: unitRate,
+            gstRate: 0,
+            less: 0,
+            lessType: "flat",
+            taxableAmount: tot,
+            gstAmount: 0,
+            amount: tot,
+          };
+        });
+      }
+
+      setPages((prev) => {
+        const updated = [...prev];
+        const targetPage = { ...updated[pageIdx] };
+
+        if (aiParty) targetPage.partyName = aiParty;
+        if (aiBillNo) targetPage.billNumber = aiBillNo;
+        if (aiDate) {
+          try {
+            const d = new Date(aiDate);
+            if (!isNaN(d.getTime())) targetPage.date = d.toISOString().split("T")[0];
+            else targetPage.date = aiDate;
+          } catch (e) {
+            targetPage.date = aiDate;
+          }
+        }
+
+        if (mappedItems.length > 0) {
+          targetPage.items = mappedItems;
+          const itemsSum = mappedItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+          targetPage.totalAmount = itemsSum > 0 ? Math.round(itemsSum * 100) / 100 : (aiTotal || targetPage.totalAmount);
+        } else if (aiTotal > 0) {
+          targetPage.totalAmount = aiTotal;
+        }
+
+        targetPage.aiParsed = true;
+        updated[pageIdx] = targetPage;
+        return updated;
+      });
+
+      alert(`✨ AI सफलता: पेज ${page.pageNumber} से ${mappedItems.length} सामान और कुल रकम पहचान ली गई है!`);
+    } catch (err) {
+      console.error("AI parse error:", err);
+      alert("AI स्कैन में त्रुटि: " + (err.message || "कृपया पुनः प्रयास करें"));
+    } finally {
+      setAiScanningPages((prev) => ({ ...prev, [pageIdx]: false }));
+    }
+  };
+
+  // AI Scan all selected pages
+  const handleAiScanAllPages = async () => {
+    if (pages.length === 0) return;
+    setAiScanningAll(true);
+    let successCount = 0;
+
+    for (let i = 0; i < pages.length; i++) {
+      if (pages[i].isSelected) {
+        try {
+          await handleAiScanPage(i);
+          successCount++;
+        } catch (e) {}
+      }
+    }
+
+    setAiScanningAll(false);
+    alert(`🎉 सभी ${successCount} पेजों का AI स्कैन पूरा हुआ!`);
+  };
+
   const handleSaveAllBills = async () => {
     const selected = pages.filter((p) => p.isSelected);
     if (selected.length === 0) {
@@ -370,6 +499,21 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
 
         const isCash = pMode === "CASH";
 
+        // Upload page proof to Cloudinary storage to prevent localStorage 5MB quota errors
+        let cloudImgUrl = "";
+        if (page.imageUrl) {
+          try {
+            const upRes = await api.post('/api/upload/bill-image', {
+              fileData: page.imageUrl,
+              fileName: `bill_${finalBillNo}.jpg`,
+              targetType: "bill",
+              targetId: finalBillNo
+            }).catch(() => null);
+            cloudImgUrl = upRes?.url || upRes?.data?.url || "";
+          } catch (e) {}
+        }
+        const effectivePageImg = cloudImgUrl || page.imageUrl || "";
+
         const newBill = {
           _id: uniqueId,
           id: uniqueId,
@@ -394,8 +538,9 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
           source: "PDF_MULTI_IMPORT",
           pdfPage: page.pageNumber,
           isOfflineCreated: true,
-          imgUrls: page.imageUrl ? [page.imageUrl] : [],
-          billImageUrls: page.imageUrl ? [page.imageUrl] : [],
+          billImageUrl: effectivePageImg,
+          billImageUrls: effectivePageImg ? [effectivePageImg] : [],
+          imgUrls: effectivePageImg ? [effectivePageImg] : [],
           items: billItems,
           tax: totalTax,
           taxAmount: totalTax,
@@ -404,9 +549,11 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
           taxableAmount: totalTaxable,
         };
 
-        if (page.imageUrl) {
-          photosCache[uniqueId] = [page.imageUrl];
-          photosCache[finalBillNo] = [page.imageUrl];
+        if (effectivePageImg) {
+          photosCache[uniqueId] = [effectivePageImg];
+          photosCache[finalBillNo] = [effectivePageImg];
+          persistPhotoToLocalCache(uniqueId, [effectivePageImg]);
+          persistPhotoToLocalCache(finalBillNo, [effectivePageImg]);
         }
 
         // Auto-create / update Party in Vendor ledger
@@ -715,6 +862,25 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
 
                   <button
                     type="button"
+                    onClick={handleAiScanAllPages}
+                    disabled={aiScanningAll}
+                    className="text-xs bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition cursor-pointer flex items-center gap-1.5 active:scale-95 ml-2"
+                    title="Gemini/OpenAI Vision से सभी बिलों का सही सामान व रेट निकालें"
+                  >
+                    {aiScanningAll ? (
+                      <>
+                        <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                        <span>AI स्कैन जारी...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>🤖 AI से सभी बिल बनाएं</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold underline ml-2 cursor-pointer"
                   >
@@ -796,13 +962,45 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                           </button>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => setPreviewImage(p.imageUrl)}
-                          className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer flex items-center gap-1 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100"
-                        >
-                          👁️ बिल फोटो देखें
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleAiScanPage(idx)}
+                            disabled={aiScanningPages[idx]}
+                            className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition flex items-center gap-1.5 cursor-pointer ${
+                              aiScanningPages[idx]
+                                ? "bg-amber-100 text-amber-800 border-amber-300 animate-pulse"
+                                : p.aiParsed
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"
+                                : "bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-transparent hover:from-purple-700 hover:to-indigo-700 shadow-2xs"
+                            }`}
+                            title="AI Vision (Gemini / ChatGPT) से इस पेज का सामान, दर और विवरण निकालें"
+                          >
+                            {aiScanningPages[idx] ? (
+                              <>
+                                <span className="w-3 h-3 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></span>
+                                <span>AI पढ़ रहा है...</span>
+                              </>
+                            ) : p.aiParsed ? (
+                              <>
+                                <span>✨ AI स्कैन पूरा</span>
+                                <span className="text-[10px] text-emerald-600 font-black">✓</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>🤖 AI से बिल बनाएं</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setPreviewImage(p.imageUrl)}
+                            className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer flex items-center gap-1 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100"
+                          >
+                            👁️ बिल फोटो देखें
+                          </button>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
