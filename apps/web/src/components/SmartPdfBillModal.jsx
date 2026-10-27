@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { extractPagesAndBillsFromPDF } from "../utils/PdfParser";
 import { storageManager } from "../services/storageManager";
 import { deduplicateBills } from "../utils/deduplicateBills";
-import { persistPhotoToLocalCache } from "../utils/photoStorage";
+import { persistPhotoToLocalCache, getWebSafeImageUrl } from "../utils/photoStorage";
 
 export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, companyId }) {
   const [loading, setLoading] = useState(false);
@@ -903,7 +903,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                     {/* Thumbnail Preview */}
                     <div className="relative group shrink-0 w-full sm:w-28 h-36 bg-gray-100 rounded-lg overflow-hidden border border-gray-200 flex items-center justify-center">
                       <img
-                        src={p.imageUrl}
+                        src={getWebSafeImageUrl(p.imageUrl)}
                         alt={`Page ${p.pageNumber}`}
                         className="w-full h-full object-contain cursor-pointer"
                         onClick={() => setPreviewImage(p.imageUrl)}
@@ -1412,7 +1412,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
         >
           <div className="relative max-w-4xl max-h-[92vh] flex flex-col items-center">
             <img
-              src={previewImage}
+              src={getWebSafeImageUrl(previewImage)}
               alt="Bill Full Preview"
               className="max-h-[85vh] w-auto rounded-xl shadow-2xl object-contain bg-white"
             />

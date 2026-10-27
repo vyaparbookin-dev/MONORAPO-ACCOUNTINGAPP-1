@@ -40,6 +40,8 @@ const partySchema = new mongoose.Schema({
     accountHolder: String,
   },
   notes: String,
+  billImageUrl: { type: String, default: "" },
+  billImageUrls: { type: [String], default: [] },
   isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },

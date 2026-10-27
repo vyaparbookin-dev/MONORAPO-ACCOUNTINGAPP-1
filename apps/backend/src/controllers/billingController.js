@@ -924,12 +924,23 @@ CRITICAL ZERO-HALLUCINATION RULES:
     const parseSingleImage = async (b64) => {
       let mimeType = "image/jpeg";
       let pureB64 = b64;
-      const match = b64.match(/^data:([a-zA-Z0-9.+/-]+);base64,(.+)$/);
-      if (match) {
-        mimeType = match[1];
-        pureB64 = match[2];
+      if (typeof b64 === "string" && (b64.startsWith("http://") || b64.startsWith("https://"))) {
+        try {
+          const downloadRes = await axios.get(b64, { responseType: "arraybuffer", timeout: 20000 });
+          const contentType = downloadRes.headers["content-type"] || "image/jpeg";
+          mimeType = contentType.split(";")[0].trim();
+          pureB64 = Buffer.from(downloadRes.data).toString("base64");
+        } catch (dlErr) {
+          console.warn("[parseBillImage] Failed to download image from URL:", dlErr.message);
+        }
+      } else if (typeof b64 === "string") {
+        const match = b64.match(/^data:([a-zA-Z0-9.+/-]+);base64,(.+)$/);
+        if (match) {
+          mimeType = match[1];
+          pureB64 = match[2];
+        }
       }
-      const fullDataUri = match ? b64 : `data:${mimeType};base64,${pureB64}`;
+      const fullDataUri = `data:${mimeType};base64,${pureB64}`;
 
       // -------------------------------------------------------------
       // PIPELINE A: COMPUTER-GENERATED / PRINTED BILL / PDF SCANNER
@@ -976,20 +987,25 @@ CRITICAL ZERO-HALLUCINATION RULES:
       // STEP 1: RAW OCR GROUNDING ENGINE (Extract Raw Text from Image)
       // Extracts raw text tokens to ground AI Vision model & prevent hallucination
       // -------------------------------------------------------------
-      let rawOcrText = "";
-      try {
-        const buffer = Buffer.from(pureB64, "base64");
-        const tmpDir = os.tmpdir();
-        const filename = `ocr_ground_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.png`;
-        const filepath = path.join(tmpDir, filename);
-        fs.writeFileSync(filepath, buffer);
-        const worker = await createWorker("eng");
-        const { data: { text } } = await worker.recognize(filepath);
-        await worker.terminate();
-        try { fs.unlinkSync(filepath); } catch (e) {}
-        rawOcrText = text || "";
-      } catch (ocrErr) {
-        console.warn("[parseBillImage] Step 1 OCR Grounding note:", ocrErr.message);
+      let rawOcrText = (req.body?.rawText && typeof req.body.rawText === "string" && req.body.rawText.trim().length > 10)
+        ? req.body.rawText.trim()
+        : "";
+
+      if (!rawOcrText && pureB64 && pureB64.length > 50) {
+        try {
+          const buffer = Buffer.from(pureB64, "base64");
+          const tmpDir = os.tmpdir();
+          const filename = `ocr_ground_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.png`;
+          const filepath = path.join(tmpDir, filename);
+          fs.writeFileSync(filepath, buffer);
+          const worker = await createWorker("eng");
+          const { data: { text } } = await worker.recognize(filepath);
+          await worker.terminate();
+          try { fs.unlinkSync(filepath); } catch (e) {}
+          rawOcrText = text || "";
+        } catch (ocrErr) {
+          console.warn("[parseBillImage] Step 1 OCR Grounding note:", ocrErr.message);
+        }
       }
 
       // Parse metadata & tabular items from raw OCR text

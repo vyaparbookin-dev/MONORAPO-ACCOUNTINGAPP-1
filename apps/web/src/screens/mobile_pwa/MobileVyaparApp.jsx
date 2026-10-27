@@ -73,7 +73,7 @@ import { deduplicateBills } from "../../utils/deduplicateBills";
 import { speakUpiPayment, playPaymentChime } from "../../utils/soundBox";
 import { storageManager } from "../../services/storageManager";
 import SmartPdfBillModal from "../../components/SmartPdfBillModal";
-import { compressImageFile, persistPhotoToLocalCache, savePhotosToIndexedDB, getPhotosFromIndexedDB } from "../../utils/photoStorage";
+import { compressImageFile, persistPhotoToLocalCache, savePhotosToIndexedDB, getPhotosFromIndexedDB, getWebSafeImageUrl } from "../../utils/photoStorage";
 
 
 class MobileErrorBoundary extends React.Component {
@@ -2648,6 +2648,16 @@ function MobileVyaparAppContent() {
       let combinedTxs = Array.isArray(serverTxs) ? [...serverTxs] : [];
 
       // 1. If opening balance exists or was ever set, add opening bill/balance row if not already present
+      const cachedOpenPhotos = (() => {
+        try {
+          const c = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
+          return c[`open_${partyId}`] || c[partyId] || [];
+        } catch (e) { return []; }
+      })();
+      const partyOpPhotos = pObj?.billImageUrls && pObj.billImageUrls.length > 0
+        ? pObj.billImageUrls
+        : (pObj?.billImageUrl ? [pObj.billImageUrl] : (Array.isArray(cachedOpenPhotos) ? cachedOpenPhotos : []));
+
       const hasOpening = combinedTxs.some(t => t.refNo === "OPENING" || String(t._id || '').startsWith("open_") || String(t.details || '').includes("प्रारंभिक"));
       if (!hasOpening && (opBal !== 0 || pObj?.openingBalance)) {
         const absOp = Math.abs(opBal);
@@ -2661,9 +2671,26 @@ function MobileVyaparAppContent() {
           debit: isSupplier ? 0 : absOp,
           credit: isSupplier ? absOp : 0,
           runningBalance: isSupplier ? -absOp : absOp,
-          source: "OpeningBalance"
+          source: "OpeningBalance",
+          billImageUrl: partyOpPhotos[0] || "",
+          billImageUrls: partyOpPhotos
         });
       }
+
+      // Ensure existing opening tx also gets photos if available on party or cache
+      combinedTxs = combinedTxs.map(t => {
+        if (t.refNo === "OPENING" || String(t._id || '').startsWith("open_")) {
+          const existingPhotos = (t.billImageUrls && t.billImageUrls.length > 0)
+            ? t.billImageUrls
+            : (t.billImageUrl ? [t.billImageUrl] : partyOpPhotos);
+          return {
+            ...t,
+            billImageUrl: existingPhotos[0] || t.billImageUrl || "",
+            billImageUrls: existingPhotos
+          };
+        }
+        return t;
+      });
 
       // 2. Merge local manual party transactions (मैंने दिए / मुझे मिले) from state and localStorage
       let localPartyTxs = [];
@@ -9631,7 +9658,7 @@ function MobileVyaparAppContent() {
                           </label>
                           {vendorBillImage && (
                             <img 
-                              src={vendorBillImage} 
+                              src={getWebSafeImageUrl(vendorBillImage)} 
                               alt="Vendor Bill Preview" 
                               onClick={() => setPreviewBillImage(vendorBillImage)}
                               className="w-10 h-10 rounded-lg object-cover border border-indigo-400 cursor-pointer shadow-xs active:scale-95" 
@@ -10237,7 +10264,7 @@ function MobileVyaparAppContent() {
                                     {uniqueImages.map((imgUrl, imgIdx) => (
                                       <div key={imgIdx} className="relative group shrink-0">
                                         <img
-                                          src={imgUrl}
+                                          src={getWebSafeImageUrl(imgUrl)}
                                           alt={`Bill ${imgIdx + 1}`}
                                           onClick={() => {
                                             setPreviewBillImage(imgUrl);
@@ -10626,7 +10653,7 @@ function MobileVyaparAppContent() {
             {/* Main Preview Image with Prev/Next buttons */}
             <div className="relative max-h-[65vh] overflow-hidden flex items-center justify-center bg-slate-900 rounded-2xl p-2 border border-slate-200">
               <img
-                src={previewBillImage}
+                src={getWebSafeImageUrl(previewBillImage)}
                 alt="Full Bill"
                 className="max-h-[60vh] w-auto object-contain rounded-xl shadow-md"
               />
@@ -10665,7 +10692,7 @@ function MobileVyaparAppContent() {
                 {previewImageList.map((url, i) => (
                   <img
                     key={i}
-                    src={url}
+                    src={getWebSafeImageUrl(url)}
                     alt={`Thumb ${i + 1}`}
                     onClick={() => {
                       setPreviewImageIndex(i);
@@ -10700,7 +10727,7 @@ function MobileVyaparAppContent() {
                   बंद करें
                 </button>
                 <a
-                  href={previewBillImage}
+                  href={getWebSafeImageUrl(previewBillImage)}
                   download="bill_photo.jpg"
                   target="_blank"
                   rel="noreferrer"
@@ -12200,7 +12227,7 @@ function MobileVyaparAppContent() {
                         {uniqueImages.map((imgUrl, imgIdx) => (
                           <div key={imgIdx} className="relative group shrink-0">
                             <img
-                              src={imgUrl}
+                              src={getWebSafeImageUrl(imgUrl)}
                               alt={`Bill Photo ${imgIdx + 1}`}
                               onClick={() => {
                                 setPreviewBillImage(imgUrl);

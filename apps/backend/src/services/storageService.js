@@ -41,7 +41,7 @@ export const uploadBillImage = async ({ fileData, fileName = "bill.jpg", company
     try {
       const timestamp = Math.floor(Date.now() / 1000);
       const folder = `vyaparbook/bills/${companyId}`;
-      const paramsToSign = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
+      const paramsToSign = `folder=${folder}&format=jpg&timestamp=${timestamp}${apiSecret}`;
       const signature = crypto.createHash("sha1").update(paramsToSign).digest("hex");
 
       const res = await axios.post(
@@ -51,6 +51,7 @@ export const uploadBillImage = async ({ fileData, fileName = "bill.jpg", company
           api_key: apiKey,
           timestamp,
           folder,
+          format: "jpg",
           signature
         },
         {
@@ -60,12 +61,19 @@ export const uploadBillImage = async ({ fileData, fileName = "bill.jpg", company
       );
 
       if (res.data?.secure_url) {
+        let safeUrl = res.data.secure_url;
+        if (safeUrl.includes("res.cloudinary.com")) {
+          safeUrl = safeUrl.replace(/\.heic$/i, ".jpg");
+          if (!safeUrl.includes("/f_auto")) {
+            safeUrl = safeUrl.replace("/upload/", "/upload/f_auto,q_auto/");
+          }
+        }
         return {
           success: true,
-          url: res.data.secure_url,
+          url: safeUrl,
           provider: "cloudinary",
           publicId: res.data.public_id,
-          format: res.data.format || "jpg",
+          format: "jpg",
           bytes: res.data.bytes
         };
       }

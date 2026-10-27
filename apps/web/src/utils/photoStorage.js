@@ -12,6 +12,23 @@ const STORE_NAME = "bill_photos";
 const DB_VERSION = 1;
 
 /**
+ * Converts any image URL (especially Cloudinary HEIC URLs from iPhones)
+ * into a universal web-safe format (JPEG/WebP with auto-compression)
+ * that is 100% visible on every phone, laptop, and browser.
+ */
+export const getWebSafeImageUrl = (url) => {
+  if (!url || typeof url !== "string") return "";
+  if (url.includes("res.cloudinary.com")) {
+    let clean = url.replace(/\.heic$/i, ".jpg");
+    if (!clean.includes("/f_auto")) {
+      clean = clean.replace("/upload/", "/upload/f_auto,q_auto/");
+    }
+    return clean;
+  }
+  return url;
+};
+
+/**
  * Open or initialize IndexedDB for photos
  */
 const openPhotosDB = () => {

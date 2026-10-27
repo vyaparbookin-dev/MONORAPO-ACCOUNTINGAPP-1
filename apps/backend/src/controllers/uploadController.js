@@ -2,6 +2,7 @@ import { uploadBillImage } from "../services/storageService.js";
 import Bill from "../model/bill.js";
 import Purchase from "../model/purchase.js";
 import PartyTransaction from "../model/PartyTransaction.js";
+import Party from "../model/party.js";
 import mongoose from "mongoose";
 import { syncBillPhotoToSupabase, syncPartyTxToSupabase } from "../services/supabaseSyncService.js";
 import { supabase } from "../config/supabase.js";
@@ -29,13 +30,21 @@ export const uploadBillPhoto = async (req, res) => {
       companyId
     });
 
-    const imageUrl = uploadResult.url;
+    let cleanImageUrl = uploadResult.url;
+    if (cleanImageUrl && cleanImageUrl.includes("res.cloudinary.com")) {
+      cleanImageUrl = cleanImageUrl.replace(/\.heic$/i, ".jpg");
+      if (!cleanImageUrl.includes("/f_auto")) {
+        cleanImageUrl = cleanImageUrl.replace("/upload/", "/upload/f_auto,q_auto/");
+      }
+    }
+
+    const imageUrl = cleanImageUrl;
     console.log(`✅ [uploadBillPhoto] Success: ${imageUrl} (${uploadResult.provider})`);
 
     // 2. If targetId is provided, link directly to database document
     let updatedRecord = null;
     if (targetId) {
-      const cleanId = String(targetId).replace(/^(pay_|open_)/, "").trim();
+      const cleanId = String(targetId).replace(/^(pay_|open_|tx_|ptx_)/, "").trim();
       const isValidOid = mongoose.Types.ObjectId.isValid(cleanId) && cleanId.length === 24;
 
       const orConditions = [
@@ -78,6 +87,19 @@ export const uploadBillPhoto = async (req, res) => {
         }
         if (!updatedRecord) {
           updatedRecord = await Purchase.findOneAndUpdate(query, updateData, { new: true });
+        }
+      }
+
+      // Check Party if opening balance (open_...) or matching party ID
+      if (!updatedRecord && (String(targetId).startsWith("open_") || isValidOid)) {
+        try {
+          const pQuery = isValidOid ? { _id: cleanId } : { id: cleanId };
+          updatedRecord = await Party.findOneAndUpdate(pQuery, updateData, { new: true });
+          if (updatedRecord) {
+            console.log(`✅ [uploadBillPhoto] Successfully linked photo to Party ${updatedRecord.name || cleanId}`);
+          }
+        } catch (pe) {
+          console.warn("[uploadBillPhoto] Party link warning:", pe.message);
         }
       }
 
@@ -182,6 +204,16 @@ export const deleteBillPhoto = async (req, res) => {
         { $pull: { billImageUrls: imageUrl } },
         { new: true }
       );
+    }
+    if (!updatedRecord && (String(targetId).startsWith("open_") || isValidOid)) {
+      try {
+        const pQuery = isValidOid ? { _id: cleanId } : { id: cleanId };
+        updatedRecord = await Party.findOneAndUpdate(
+          pQuery,
+          { $pull: { billImageUrls: imageUrl } },
+          { new: true }
+        );
+      } catch (pe) {}
     }
 
     if (updatedRecord) {

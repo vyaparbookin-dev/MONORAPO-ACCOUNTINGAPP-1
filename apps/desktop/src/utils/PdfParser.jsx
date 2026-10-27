@@ -454,15 +454,39 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
       let detectedWithGstRate = 0;
 
       if (numbers.length >= 2) {
-        // Largest number <= totalAmount (or largest in row) is usually row amount
-        const plausibleAmts = numbers.filter((n) => totalAmount === 0 || n <= totalAmount * 1.05);
-        if (plausibleAmts.length > 0) {
-          rowAmt = Math.max(...plausibleAmts);
-        } else {
-          rowAmt = numbers[numbers.length - 1];
-        }
-
+        // Largest number in the row is the row amount
+        rowAmt = Math.max(...numbers);
         const otherNums = numbers.filter((n) => n !== rowAmt);
+
+        // Check if any two remaining numbers multiply to row amount (qty * rate = total)
+        let foundMultiplication = false;
+        if (otherNums.length >= 2) {
+          for (let a = 0; a < otherNums.length; a++) {
+            for (let b = 0; b < otherNums.length; b++) {
+              if (a !== b) {
+                const prod = otherNums[a] * otherNums[b];
+                if (Math.abs(prod - rowAmt) < 1.5 || (rowGst > 0 && Math.abs(prod - (rowAmt / (1 + rowGst / 100))) < 1.5)) {
+                  if (explicitQty === otherNums[a]) {
+                    qty = otherNums[a];
+                    detectedWithGstRate = otherNums[b];
+                  } else if (explicitQty === otherNums[b]) {
+                    qty = otherNums[b];
+                    detectedWithGstRate = otherNums[a];
+                  } else if (otherNums[a] <= 1000 && otherNums[a] >= 1 && (otherNums[b] > 1000 || otherNums[a] <= otherNums[b])) {
+                    qty = otherNums[a];
+                    detectedWithGstRate = otherNums[b];
+                  } else {
+                    qty = otherNums[b];
+                    detectedWithGstRate = otherNums[a];
+                  }
+                  foundMultiplication = true;
+                  break;
+                }
+              }
+            }
+            if (foundMultiplication) break;
+          }
+        }
 
         // Smart GST ratio check between pairs: e.g. 84.75 and 100 -> ratio 1.18 -> GST 18%!
         for (let a = 0; a < otherNums.length; a++) {
@@ -534,7 +558,7 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
       const taxableValue = Math.round(qty * netPreGst * 100) / 100;
       const gstVal = Math.round((rowAmt - taxableValue) * 100) / 100;
 
-      if (rowAmt > 0 && (totalAmount === 0 || rowAmt <= totalAmount * 1.05)) {
+      if (rowAmt > 0) {
         let rawItemName = lineText
           .replace(numberExtractRegex, "")
           .replace(/\b(?:pcs|pc|nos|no|box|boxes|pkt|pkts|kg|kgs|mtr|mtrs|set|sets|ctn|bag|bags|doz|dz)\b/gi, "")
@@ -667,6 +691,12 @@ export const extractPagesAndBillsFromPDF = async (file) => {
         const detectedParty = detectPartyName(visualLines, rawText, pageNum);
         const detectedItems = detectLineItems(visualLines, detectedAmount, pageNum, rawText);
 
+        const itemsTotal = detectedItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+        let finalPageTotal = detectedAmount;
+        if (itemsTotal > 0 && (finalPageTotal === 0 || Math.abs(finalPageTotal - itemsTotal) > itemsTotal * 0.4)) {
+          finalPageTotal = Math.round(itemsTotal * 100) / 100;
+        }
+
         pages.push({
           pageNumber: pageNum,
           imageUrl,
@@ -674,7 +704,7 @@ export const extractPagesAndBillsFromPDF = async (file) => {
           billNumber: detectedBillNo,
           date: detectedDate,
           partyName: detectedParty,
-          totalAmount: detectedAmount || 0,
+          totalAmount: finalPageTotal || 0,
           items: detectedItems,
           isSelected: true,
         });
