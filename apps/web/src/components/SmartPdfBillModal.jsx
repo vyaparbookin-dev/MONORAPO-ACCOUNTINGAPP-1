@@ -1,3 +1,4 @@
+import api from "../services/api";
 import React, { useState, useRef, useEffect } from "react";
 import { extractPagesAndBillsFromPDF } from "../utils/PdfParser";
 import { storageManager } from "../services/storageManager";
@@ -150,7 +151,25 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
       const updated = [...prev];
       const pageItems = [...(updated[pageIdx].items || [])];
       if (field === "name") {
-        pageItems[itemIdx] = { ...pageItems[itemIdx], name: value };
+        const currentItem = pageItems[itemIdx];
+        const rawVendor = currentItem.rawVendorName || currentItem.name;
+        pageItems[itemIdx] = { ...currentItem, name: value };
+
+        // If product name was linked to an existing store product, remember in aliases
+        if (rawVendor && value && rawVendor.toLowerCase().trim() !== value.toLowerCase().trim()) {
+          try {
+            const currentAliases = JSON.parse(localStorage.getItem("vb_item_aliases") || "{}");
+            currentAliases[rawVendor.toLowerCase().trim()] = {
+              mappedName: value,
+              barcode: currentItem.barcode || "",
+              hsnCode: currentItem.hsnCode || ""
+            };
+            localStorage.setItem("vb_item_aliases", JSON.stringify(currentAliases));
+            setItemAliases(currentAliases);
+          } catch (e) {}
+        }
+      } else if (field === "barcode" || field === "hsnCode" || field === "unit") {
+        pageItems[itemIdx] = { ...pageItems[itemIdx], [field]: value };
       } else {
         pageItems[itemIdx] = recalcItem(pageItems[itemIdx], field, value);
       }
@@ -215,7 +234,6 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
     const coId = companyId || localStorage.getItem("companyId") || "default";
 
     try {
-      // 1. Load persistent photo cache
       let photosCache = {};
       try {
         photosCache = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
@@ -224,15 +242,16 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
       const timestamp = Date.now();
       const currentBills = storageManager.getBills(coId) || [];
       const createdBills = [];
+      const allPurchasedItems = [];
 
-      // 2. Loop through each selected page bill and construct unique bill documents
+      // 1. Process each page bill
       for (let i = 0; i < selected.length; i++) {
         const page = selected[i];
         const randomSuffix = Math.random().toString(36).substring(2, 6);
         const uniqueId = `pdf_${timestamp}_p${page.pageNumber}_${randomSuffix}`;
         const billAmt = Number(page.totalAmount) || 0;
+        const pMode = (page.paymentMode || "CASH").toUpperCase();
 
-        // Ensure unique billNumber per page so separate bills are never collided
         const rawBillNo = (page.billNumber && page.billNumber.trim()) ? page.billNumber.trim() : "";
         const finalBillNo = rawBillNo
           ? (selected.length > 1 && !rawBillNo.includes(`P${page.pageNumber}`) ? `${rawBillNo}-P${page.pageNumber}` : rawBillNo)
@@ -258,9 +277,12 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
 
               return {
                 name: it.name || "सामान",
+                rawVendorName: it.rawVendorName || it.name || "सामान",
                 qty: q,
                 quantity: q,
                 unit: it.unit || "pcs",
+                barcode: it.barcode || "",
+                hsnCode: it.hsnCode || "",
                 rate: withRate,
                 price: withRate,
                 preGstRate: preRate,
@@ -278,9 +300,12 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
           : [
               {
                 name: `सामान / बिल विवरण (PDF पेज ${page.pageNumber})`,
+                rawVendorName: `सामान / बिल विवरण (PDF पेज ${page.pageNumber})`,
                 qty: 1,
                 quantity: 1,
                 unit: "pcs",
+                barcode: "",
+                hsnCode: "",
                 rate: billAmt,
                 price: billAmt,
                 preGstRate: billAmt,
@@ -296,6 +321,8 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
               },
             ];
 
+        allPurchasedItems.push(...billItems);
+
         const totalTax = Math.round(billItems.reduce((s, it) => s + (Number(it.gstAmount) || 0), 0) * 100) / 100;
         const totalTaxable = Math.round(billItems.reduce((s, it) => s + (Number(it.taxableAmount) || 0), 0) * 100) / 100;
         const totalLess = Math.round(billItems.reduce((s, it) => {
@@ -304,6 +331,8 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
           const p = Number(it.preGstRate) || 0;
           return s + (it.lessType === "%" ? (p * l / 100) * q : l * q);
         }, 0) * 100) / 100;
+
+        const isCash = pMode === "CASH";
 
         const newBill = {
           _id: uniqueId,
@@ -320,12 +349,12 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
           finalAmount: billAmt,
           totalAmount: billAmt,
           grandTotal: billAmt,
-          paidAmount: 0,
-          balance: billAmt,
-          paymentStatus: "Unpaid",
+          paidAmount: isCash ? billAmt : 0,
+          balance: isCash ? 0 : billAmt,
+          paymentStatus: isCash ? "Paid" : "Unpaid",
           type: defaultBillType,
-          paymentMode: "CASH",
-          paymentMethod: "cash",
+          paymentMode: pMode,
+          paymentMethod: isCash ? "cash" : "credit",
           source: "PDF_MULTI_IMPORT",
           pdfPage: page.pageNumber,
           isOfflineCreated: true,
@@ -339,13 +368,12 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
           taxableAmount: totalTaxable,
         };
 
-        // Cache page photo permanently so it shows in the bill gallery
         if (page.imageUrl) {
           photosCache[uniqueId] = [page.imageUrl];
           photosCache[finalBillNo] = [page.imageUrl];
         }
 
-        // Auto-create / update Party in Vendor / Customer ledger
+        // Auto-create / update Party in Vendor ledger
         if (party && !party.startsWith("Party Page")) {
           try {
             const currentParties = storageManager.getParties(coId) || [];
@@ -362,25 +390,148 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                 type: pType,
                 partyType: pType,
                 openingBalance: 0,
-                balance: pType === "supplier" ? -billAmt : billAmt,
-                currentBalance: pType === "supplier" ? -billAmt : billAmt,
+                balance: isCash ? 0 : (pType === "supplier" ? -billAmt : billAmt),
+                currentBalance: isCash ? 0 : (pType === "supplier" ? -billAmt : billAmt),
                 phone: "",
                 address: "",
-                createdAt: new Date().toISOString(),
               };
               storageManager.saveParty(coId, newPartyObj);
+            } else if (!isCash) {
+              // If Udhar, add to supplier's pending payable balance
+              const currentBal = Number(exists.balance ?? exists.currentBalance ?? 0);
+              const updatedBal = exists.type === "supplier" ? currentBal - billAmt : currentBal + billAmt;
+              storageManager.saveParty(coId, { ...exists, balance: updatedBal, currentBalance: updatedBal });
             }
           } catch (pErr) {
             console.warn("Auto save party error:", pErr);
           }
         }
 
+        // If Cash, log cash expense entry so shop cash drawer reflects the payout immediately
+        if (isCash && billAmt > 0) {
+          try {
+            const cashExp = {
+              _id: `exp_${timestamp}_${randomSuffix}`,
+              id: `exp_${timestamp}_${randomSuffix}`,
+              date: billDate,
+              category: "सप्लायर माल खरीद (Goods Purchase)",
+              amount: billAmt,
+              paymentMode: "CASH",
+              partyName: party,
+              notes: `बिल नं ${finalBillNo} नकद भुगतान (PDF बिल)`,
+              companyId: coId
+            };
+            const curExp = storageManager.getExpenses(coId) || [];
+            storageManager.saveExpenses(coId, [cashExp, ...curExp]);
+          } catch (e) {}
+        }
+
         createdBills.push(newBill);
       }
 
-      // 3. Batch save all bills into storageManager
+      // 2. Batch save all bills into storageManager
       const updatedBills = deduplicateBills([...createdBills, ...currentBills]);
       storageManager.saveBills(coId, updatedBills);
+
+      // 3. Increment Inventory Stock & Auto-Create Products with Barcode & HSN Code
+      try {
+        let currentProducts = [];
+        const prodKeys = ["vb_local_products", "products", "inventory", "items"];
+        for (const k of prodKeys) {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                currentProducts = parsed;
+                break;
+              }
+            } catch (e) {}
+          }
+        }
+
+        const updatedProducts = [...currentProducts];
+        const aliases = JSON.parse(localStorage.getItem("vb_item_aliases") || "{}");
+
+        for (const it of allPurchasedItems) {
+          const q = Number(it.qty) || 1;
+          const nameToMatch = String(it.name || "").trim().toLowerCase();
+          const barcodeToMatch = String(it.barcode || "").trim();
+
+          let matchIdx = -1;
+          if (barcodeToMatch) {
+            matchIdx = updatedProducts.findIndex((p) => String(p.barcode || "").trim() === barcodeToMatch);
+          }
+          if (matchIdx === -1) {
+            matchIdx = updatedProducts.findIndex((p) => String(p.name || p.productName || "").trim().toLowerCase() === nameToMatch);
+          }
+
+          if (matchIdx !== -1) {
+            // Existing Product: Increase Stock
+            const curStock = Number(updatedProducts[matchIdx].currentStock ?? updatedProducts[matchIdx].stock ?? 0);
+            const newStock = curStock + q;
+            updatedProducts[matchIdx].currentStock = newStock;
+            updatedProducts[matchIdx].stock = newStock;
+            if (it.preGstRate || it.rate) {
+              updatedProducts[matchIdx].costPrice = Number(it.preGstRate) || Number(it.rate);
+            }
+            if (it.withGstRate || it.rate) {
+              updatedProducts[matchIdx].sellingPrice = updatedProducts[matchIdx].sellingPrice || Number(it.withGstRate) || Number(it.rate);
+            }
+            if (it.hsnCode && !updatedProducts[matchIdx].hsnCode) {
+              updatedProducts[matchIdx].hsnCode = it.hsnCode;
+            }
+
+            // Sync to backend
+            const prodId = updatedProducts[matchIdx]._id || updatedProducts[matchIdx].id;
+            if (prodId && !String(prodId).startsWith("prod_")) {
+              api.put(`/api/inventory/${prodId}/stock`, { quantity: newStock }).catch(() => {});
+            }
+          } else {
+            // New Product: Create in store inventory with Barcode and HSN Code
+            const newProdId = `prod_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            const autoBarcode = it.barcode || `BC-${Date.now().toString().slice(-6)}`;
+            const newProd = {
+              _id: newProdId,
+              id: newProdId,
+              name: it.name || "नया सामान",
+              category: "General",
+              subCategory: "",
+              brand: "General",
+              costPrice: Number(it.preGstRate) || Number(it.rate) || 0,
+              sellingPrice: Number(it.withGstRate) || Number(it.rate) || 0,
+              salePrice: Number(it.withGstRate) || Number(it.rate) || 0,
+              mrp: Number(it.withGstRate) || Number(it.rate) || 0,
+              stock: q,
+              currentStock: q,
+              unit: it.unit || "Pcs",
+              barcode: autoBarcode,
+              hsnCode: it.hsnCode || "",
+              gstRate: Number(it.gstRate) || 0,
+              isActive: true,
+              companyId: coId,
+            };
+            updatedProducts.unshift(newProd);
+            api.post("/api/inventory", newProd).catch(() => {});
+
+            // Link vendor name to new product code in aliases
+            if (it.rawVendorName) {
+              aliases[it.rawVendorName.toLowerCase().trim()] = {
+                mappedName: it.name,
+                barcode: autoBarcode,
+                hsnCode: it.hsnCode || ""
+              };
+            }
+          }
+        }
+
+        localStorage.setItem("vb_local_products", JSON.stringify(updatedProducts));
+        localStorage.setItem("products", JSON.stringify(updatedProducts));
+        localStorage.setItem("vb_item_aliases", JSON.stringify(aliases));
+        window.dispatchEvent(new CustomEvent("inventory_updated", { detail: { products: updatedProducts } }));
+      } catch (stkErr) {
+        console.warn("Stock update error:", stkErr);
+      }
 
       // 4. Persist photo cache
       try {
@@ -392,7 +543,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
         onBillsSaved(createdBills);
       }
 
-      alert(`✅ ${createdBills.length} अलग-अलग बिल सफलतापूर्वक खाते में दर्ज किए गए! सप्लायर खाता भी अपडेट हो गया है।`);
+      alert(`✅ ${createdBills.length} बिल सफलतापूर्वक दर्ज किए गए! इन्वेंट्री में सभी सामानों का स्टॉक बढ़ गया है और खाता अपडेट हो गया है।`);
       onClose();
     } catch (err) {
       console.error("Save bills error:", err);
@@ -403,8 +554,12 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-gray-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-1 sm:p-3 overflow-y-auto">
+      <div className={`bg-white flex flex-col shadow-2xl overflow-hidden border border-gray-100 transition-all duration-200 ${
+        isFullScreen
+          ? "fixed inset-0 sm:inset-2 rounded-none sm:rounded-2xl z-50 max-w-none max-h-none h-full sm:h-[calc(100vh-1rem)]"
+          : "rounded-2xl w-full max-w-6xl max-h-[92vh]"
+      }`}>
         
         {/* Header */}
         <div className="bg-gradient-to-r from-indigo-600 to-blue-600 px-5 py-4 text-white flex justify-between items-center shadow-md">
@@ -415,13 +570,32 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
               <p className="text-xs text-indigo-100">PDF पढ़कर बिल विवरण, आइटम्स और फोटो प्रूफ के साथ दर्ज करें</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition cursor-pointer"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsFullScreen((prev) => !prev)}
+              className="text-xs bg-white/15 hover:bg-white/25 text-white font-bold px-3 py-1.5 rounded-lg border border-white/20 transition cursor-pointer flex items-center gap-1.5"
+              title={isFullScreen ? "सामान्य विंडो में देखें" : "बड़ी स्क्रीन / फुल स्क्रीन में देखें"}
+            >
+              <span>{isFullScreen ? "🗗 सामान्य स्क्रीन" : "⛶ बड़ी स्क्रीन (Full Screen)"}</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
         </div>
+
+        {/* Store Products Datalist for Auto-complete */}
+        <datalist id="store_products_datalist">
+          {(storeProducts || []).map((prod, pIdx) => (
+            <option key={pIdx} value={prod.name}>
+              {prod.barcode ? `[${prod.barcode}] ` : ""}{prod.name} (स्टॉक: {prod.currentStock || prod.stock || 0})
+            </option>
+          ))}
+        </datalist>
 
         {/* Content Body */}
         <div className="p-4 overflow-y-auto flex-1 space-y-4">
@@ -546,7 +720,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
 
                     {/* Form Fields for this Bill */}
                     <div className="flex-1 space-y-2">
-                      <div className="flex justify-between items-center mb-1">
+                      <div className="flex flex-wrap justify-between items-center gap-2 mb-2 pb-2 border-b border-gray-100">
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
@@ -554,17 +728,44 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                             onChange={() => toggleSelectPage(idx)}
                             className="w-4 h-4 text-indigo-600 rounded cursor-pointer"
                           />
-                          <span className="text-xs font-bold text-gray-800">
+                          <span className="text-xs font-black text-gray-900">
                             पेज {p.pageNumber} को अलग बिल के रूप में दर्ज करें
                           </span>
                         </label>
 
+                        {/* Payment Mode Selector: Cash vs Udhar */}
+                        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-500 pl-1">भुगतान:</span>
+                          <button
+                            type="button"
+                            onClick={() => handleFieldChange(idx, "paymentMode", "CASH")}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1 ${
+                              (p.paymentMode || "CASH") === "CASH"
+                                ? "bg-emerald-600 text-white shadow-xs"
+                                : "bg-transparent text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            💵 नकद (Cash - दुकान गल्ला)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleFieldChange(idx, "paymentMode", "UDHAR")}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1 ${
+                              p.paymentMode === "UDHAR"
+                                ? "bg-rose-600 text-white shadow-xs"
+                                : "bg-transparent text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            ⏳ उधारी (Udhar / Credit)
+                          </button>
+                        </div>
+
                         <button
                           type="button"
                           onClick={() => setPreviewImage(p.imageUrl)}
-                          className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer flex items-center gap-1"
+                          className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer flex items-center gap-1 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100"
                         >
-                          👁️ फोटो देखें
+                          👁️ बिल फोटो देखें
                         </button>
                       </div>
 
@@ -684,9 +885,15 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                                         type="text"
                                         value={it.name}
                                         onChange={(e) => handleItemChange(idx, itemIdx, "name", e.target.value)}
-                                        placeholder="सामान का नाम"
-                                        className="w-full bg-white px-2 py-1 rounded border border-gray-300 text-xs font-medium"
+                                        placeholder="सामान का नाम (टाइप करें या लिस्ट से चुनें)"
+                                        list="store_products_datalist"
+                                        className="w-full bg-white px-2 py-1 rounded border border-gray-300 text-xs font-bold text-gray-800"
                                       />
+                                      {it.rawVendorName && it.rawVendorName.toLowerCase().trim() !== (it.name || '').toLowerCase().trim() && (
+                                        <div className="text-[9px] text-emerald-700 font-bold mt-0.5 truncate flex items-center gap-1" title={`सप्लायर नाम: ${it.rawVendorName}`}>
+                                          <span>🔗 लिंक्ड:</span> <span className="bg-emerald-100/90 text-emerald-800 px-1 py-0.2 rounded font-mono">{it.rawVendorName}</span>
+                                        </div>
+                                      )}
                                     </div>
                                     <div className="col-span-2">
                                       <input
@@ -831,6 +1038,46 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                                             className="w-full bg-white px-2 py-1 rounded border border-emerald-400 font-extrabold text-emerald-800 text-xs"
                                           />
                                           <span className="text-[9px] text-emerald-600">फाइनल रेट</span>
+                                        </div>
+                                      </div>
+
+                                      {/* HSN, Barcode, Unit, and Alias Memory */}
+                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1.5 border-t border-indigo-100">
+                                        <div>
+                                          <label className="block text-[10px] font-bold text-gray-700 mb-0.5">🏷️ HSN कोड</label>
+                                          <input
+                                            type="text"
+                                            value={it.hsnCode || ""}
+                                            onChange={(e) => handleItemChange(idx, itemIdx, "hsnCode", e.target.value)}
+                                            placeholder="उदा. 8517"
+                                            className="w-full bg-white px-2 py-1 rounded border border-gray-300 font-bold text-gray-800 text-xs"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[10px] font-bold text-gray-700 mb-0.5">📊 बारकोड / कोड</label>
+                                          <input
+                                            type="text"
+                                            value={it.barcode || ""}
+                                            onChange={(e) => handleItemChange(idx, itemIdx, "barcode", e.target.value)}
+                                            placeholder="उदा. BC-1001"
+                                            className="w-full bg-white px-2 py-1 rounded border border-gray-300 font-bold text-gray-800 text-xs"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[10px] font-bold text-gray-700 mb-0.5">📦 इकाई (Unit)</label>
+                                          <input
+                                            type="text"
+                                            value={it.unit || "pcs"}
+                                            onChange={(e) => handleItemChange(idx, itemIdx, "unit", e.target.value)}
+                                            placeholder="pcs / box / kg"
+                                            className="w-full bg-white px-2 py-1 rounded border border-gray-300 font-bold text-gray-800 text-xs"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[10px] font-bold text-gray-700 mb-0.5">🔗 सप्लायर बिल नाम</label>
+                                          <div className="text-[10px] text-indigo-700 bg-white px-2 py-1 rounded border border-indigo-200 truncate font-semibold" title={it.rawVendorName || it.name}>
+                                            {it.rawVendorName || it.name}
+                                          </div>
                                         </div>
                                       </div>
 

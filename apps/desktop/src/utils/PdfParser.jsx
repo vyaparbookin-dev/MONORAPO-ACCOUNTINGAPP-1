@@ -357,6 +357,12 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
     }
   }
 
+  // Load saved item aliases memory (vendor text -> user's product name & code)
+  let itemAliases = {};
+  try {
+    itemAliases = JSON.parse(localStorage.getItem("vb_item_aliases") || "{}");
+  } catch (e) {}
+
   // 2. Scan lines in the middle section (between header metadata and footer totals)
   const candidateLines = lines.slice(2, Math.max(3, lines.length - 2));
 
@@ -381,7 +387,21 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
       detectedUnit = unitQtyMatch[2].toLowerCase();
     }
 
-    // B. Detect row-level GST rate
+    // B. Detect HSN code if present (4 to 8 digit standard GST HSN)
+    let detectedHsn = "";
+    const hsnMatch = lineText.match(/\b(?:hsn|sac)?\s*[:#]?\s*([1-9][0-9]{3,7})\b/i);
+    if (hsnMatch && parseInt(hsnMatch[1]) > 1000) {
+      detectedHsn = hsnMatch[1];
+    }
+
+    // C. Detect Barcode or Item Code if present (e.g., BC-101, ITEM-002, 8901...)
+    let detectedBarcode = "";
+    const codeMatch = lineText.match(/\b([A-Za-z0-9]{3,12}-[A-Za-z0-9]{2,10})\b/);
+    if (codeMatch) {
+      detectedBarcode = codeMatch[1];
+    }
+
+    // D. Detect row-level GST rate
     let rowGst = pageDefaultGst;
     const rowSplitMatch = lineText.match(/(?:cgst|sgst)\s*[@:]?\s*(2\.5|6|9|14)\s*%/i);
     if (rowSplitMatch) {
@@ -398,7 +418,7 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
       }
     }
 
-    // C. Detect row-level Less / Discount (छूट)
+    // E. Detect row-level Less / Discount (छूट)
     let rowLess = 0;
     let rowLessType = "flat";
     const lessPctMatch = lineText.match(/(?:less|disc|discount|dis)\s*[@:]?\s*([0-9]+(?:\.[0-9]{1,2})?)\s*%/i);
@@ -414,7 +434,7 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
     }
 
     const matches = [...lineText.matchAll(numberExtractRegex)];
-    // Filter out 6-to-8 digit HSN codes
+    // Filter out 6-to-8 digit HSN codes from price candidates
     const validNumMatches = matches.filter((m) => {
       const val = parseFloat(m[1].replace(/,/g, ""));
       if (val >= 100000 && val <= 99999999 && Number.isInteger(val)) return false;
@@ -474,7 +494,6 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
         if (explicitQty) {
           qty = explicitQty;
         } else {
-          // Identify quantity candidate
           const qCand = otherNums.find((n) => n !== detectedPreGstRate && n !== detectedWithGstRate && n <= 1000 && n >= 1);
           if (qCand) {
             qty = qCand;
@@ -489,7 +508,7 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
 
       // Safeguards: Ensure positive valid numbers
       qty = Math.max(1, Number(qty) || 1);
-      
+
       // Calculate unit rate
       let unitWithGst = detectedWithGstRate > 0 ? detectedWithGstRate : Math.round((rowAmt / qty) * 100) / 100;
       let unitPreGst = detectedPreGstRate > 0 
@@ -512,19 +531,40 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
       const gstVal = Math.round((rowAmt - taxableValue) * 100) / 100;
 
       if (rowAmt > 0 && (totalAmount === 0 || rowAmt <= totalAmount * 1.05)) {
-        let itemName = lineText
+        let rawItemName = lineText
           .replace(numberExtractRegex, "")
           .replace(/\b(?:pcs|pc|nos|no|box|boxes|pkt|pkts|kg|kgs|mtr|mtrs|set|sets|ctn|bag|bags|doz|dz)\b/gi, "")
           .replace(/^[\d\s().-]+/, "")
           .replace(/[:#|-]+/g, " ")
           .trim();
 
-        if (itemName.length >= 2 && !/^(pcs|kg|nos|mtr|box|total|amount|rate|qty|tax|gst|subtotal)$/i.test(itemName)) {
+        if (rawItemName.length >= 2 && !/^(pcs|kg|nos|mtr|box|total|amount|rate|qty|tax|gst|subtotal)$/i.test(rawItemName)) {
+          let resolvedName = rawItemName.slice(0, 60);
+          let isAutoMapped = false;
+          let originalVendorName = rawItemName;
+
+          // Check if vendor item name has a saved alias in memory
+          const aliasKey = rawItemName.toLowerCase().trim();
+          if (itemAliases[aliasKey]) {
+            resolvedName = itemAliases[aliasKey].mappedName || resolvedName;
+            if (!detectedBarcode && itemAliases[aliasKey].barcode) {
+              detectedBarcode = itemAliases[aliasKey].barcode;
+            }
+            if (!detectedHsn && itemAliases[aliasKey].hsnCode) {
+              detectedHsn = itemAliases[aliasKey].hsnCode;
+            }
+            isAutoMapped = true;
+          }
+
           items.push({
             id: `item_${items.length + 1}`,
-            name: itemName.slice(0, 60),
+            name: resolvedName,
+            rawVendorName: originalVendorName,
+            isAutoMapped: isAutoMapped,
             qty: qty,
             unit: detectedUnit,
+            barcode: detectedBarcode,
+            hsnCode: detectedHsn,
             preGstRate: unitPreGst,
             withGstRate: unitWithGst,
             rate: unitWithGst,
@@ -548,8 +588,12 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
     items.push({
       id: "item_1",
       name: `बिल सामान विवरण (पेज ${pageNum})`,
+      rawVendorName: `बिल सामान विवरण (पेज ${pageNum})`,
+      isAutoMapped: false,
       qty: 1,
       unit: "pcs",
+      barcode: "",
+      hsnCode: "",
       preGstRate: defaultPre,
       withGstRate: singleAmt,
       rate: singleAmt,
