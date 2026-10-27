@@ -341,11 +341,23 @@ const formatToISODate = (dateStr) => {
  * Reliably extracts item name, quantity (with units), unit rate, and total amount.
  * Never leaves quantity or rate empty or zero.
  */
-const detectLineItems = (lines, totalAmount, pageNum) => {
+const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
   const items = [];
   const numberExtractRegex = /(?:₹|Rs\.?|INR)?\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/g;
 
-  // Scan lines in the middle section (between header metadata and footer totals)
+  // 1. Detect default GST rate from entire page text if present (e.g., GST 18%, IGST 12%, CGST 9%)
+  let pageDefaultGst = 0;
+  const pageSplitGstMatch = (rawText || "").match(/(?:cgst|sgst)\s*[@:]?\s*(2\.5|6|9|14)\s*%/i);
+  if (pageSplitGstMatch) {
+    pageDefaultGst = parseFloat(pageSplitGstMatch[1]) * 2;
+  } else {
+    const pageGstMatch = (rawText || "").match(/(?:gst|igst|tax)\s*[@:]?\s*(0|0\.25|3|5|12|18|28)\s*%/i);
+    if (pageGstMatch) {
+      pageDefaultGst = parseFloat(pageGstMatch[1]);
+    }
+  }
+
+  // 2. Scan lines in the middle section (between header metadata and footer totals)
   const candidateLines = lines.slice(2, Math.max(3, lines.length - 2));
 
   for (let i = 0; i < candidateLines.length; i++) {
@@ -360,11 +372,45 @@ const detectLineItems = (lines, totalAmount, pageNum) => {
       continue;
     }
 
-    // Check for explicit quantity with units e.g. "10 PCS", "5 NOS", "2 BOX", "1.5 KG"
+    // A. Detect explicit quantity with units e.g. "10 PCS", "5 NOS", "2 BOX", "1.5 KG"
     let explicitQty = null;
-    const unitQtyMatch = lineText.match(/\b([0-9]+(?:\.[0-9]{1,2})?)\s*(?:pcs|pc|nos|no|box|boxes|pkt|pkts|kg|kgs|mtr|mtrs|set|sets|ctn|bag|bags|doz|dz|pairs?|units?|gm|gms)\b/i);
+    let detectedUnit = "pcs";
+    const unitQtyMatch = lineText.match(/\b([0-9]+(?:\.[0-9]{1,2})?)\s*(pcs|pc|nos|no|box|boxes|pkt|pkts|kg|kgs|mtr|mtrs|set|sets|ctn|bag|bags|doz|dz|pairs?|units?|gm|gms)\b/i);
     if (unitQtyMatch && parseFloat(unitQtyMatch[1]) > 0) {
       explicitQty = parseFloat(unitQtyMatch[1]);
+      detectedUnit = unitQtyMatch[2].toLowerCase();
+    }
+
+    // B. Detect row-level GST rate
+    let rowGst = pageDefaultGst;
+    const rowSplitMatch = lineText.match(/(?:cgst|sgst)\s*[@:]?\s*(2\.5|6|9|14)\s*%/i);
+    if (rowSplitMatch) {
+      rowGst = parseFloat(rowSplitMatch[1]) * 2;
+    } else {
+      const rowGstMatch = lineText.match(/(?:gst|igst|tax)?\s*[@:]?\s*(0|0\.25|3|5|12|18|28)\s*%/i);
+      if (rowGstMatch && rowGstMatch[1]) {
+        rowGst = parseFloat(rowGstMatch[1]);
+      } else {
+        const anyPctMatch = lineText.match(/\b(3|5|12|18|28)\s*%/);
+        if (anyPctMatch) {
+          rowGst = parseFloat(anyPctMatch[1]);
+        }
+      }
+    }
+
+    // C. Detect row-level Less / Discount (छूट)
+    let rowLess = 0;
+    let rowLessType = "flat";
+    const lessPctMatch = lineText.match(/(?:less|disc|discount|dis)\s*[@:]?\s*([0-9]+(?:\.[0-9]{1,2})?)\s*%/i);
+    if (lessPctMatch) {
+      rowLess = parseFloat(lessPctMatch[1]);
+      rowLessType = "%";
+    } else {
+      const lessFlatMatch = lineText.match(/(?:less|disc|discount)\s*[@:]?\s*(?:₹|Rs\.?)?\s*([0-9]+(?:\.[0-9]{1,2})?)/i);
+      if (lessFlatMatch && parseFloat(lessFlatMatch[1]) > 0) {
+        rowLess = parseFloat(lessFlatMatch[1]);
+        rowLessType = "flat";
+      }
     }
 
     const matches = [...lineText.matchAll(numberExtractRegex)];
@@ -380,7 +426,8 @@ const detectLineItems = (lines, totalAmount, pageNum) => {
 
       let rowAmt = 0;
       let qty = explicitQty || 1;
-      let rate = 0;
+      let detectedPreGstRate = 0;
+      let detectedWithGstRate = 0;
 
       if (numbers.length >= 2) {
         // Largest number <= totalAmount (or largest in row) is usually row amount
@@ -391,59 +438,85 @@ const detectLineItems = (lines, totalAmount, pageNum) => {
           rowAmt = numbers[numbers.length - 1];
         }
 
+        const otherNums = numbers.filter((n) => n !== rowAmt);
+
+        // Smart GST ratio check between pairs: e.g. 84.75 and 100 -> ratio 1.18 -> GST 18%!
+        for (let a = 0; a < otherNums.length; a++) {
+          for (let b = 0; b < otherNums.length; b++) {
+            if (a !== b && otherNums[a] < otherNums[b]) {
+              const ratio = otherNums[b] / otherNums[a];
+              if (Math.abs(ratio - 1.18) < 0.015) {
+                detectedPreGstRate = otherNums[a];
+                detectedWithGstRate = otherNums[b];
+                rowGst = 18;
+                break;
+              } else if (Math.abs(ratio - 1.12) < 0.015) {
+                detectedPreGstRate = otherNums[a];
+                detectedWithGstRate = otherNums[b];
+                rowGst = 12;
+                break;
+              } else if (Math.abs(ratio - 1.05) < 0.015) {
+                detectedPreGstRate = otherNums[a];
+                detectedWithGstRate = otherNums[b];
+                rowGst = 5;
+                break;
+              } else if (Math.abs(ratio - 1.28) < 0.015) {
+                detectedPreGstRate = otherNums[a];
+                detectedWithGstRate = otherNums[b];
+                rowGst = 28;
+                break;
+              }
+            }
+          }
+          if (detectedPreGstRate > 0) break;
+        }
+
         if (explicitQty) {
           qty = explicitQty;
-          rate = Math.round((rowAmt / qty) * 100) / 100;
         } else {
-          const otherNums = numbers.filter((n) => n !== rowAmt);
-          if (otherNums.length >= 2) {
-            const qCand = otherNums.find((n) => n <= 1000);
-            const rCand = otherNums.find((n) => n !== qCand);
-            if (qCand && rCand && Math.abs(qCand * rCand - rowAmt) < 2) {
-              qty = qCand;
-              rate = rCand;
-            } else if (qCand) {
-              qty = qCand;
-              rate = Math.round((rowAmt / qty) * 100) / 100;
-            } else {
-              qty = 1;
-              rate = rowAmt;
-            }
-          } else if (otherNums.length === 1) {
-            const cand = otherNums[0];
-            if (cand > 0 && cand <= 500 && rowAmt % cand === 0) {
-              qty = cand;
-              rate = Math.round((rowAmt / qty) * 100) / 100;
-            } else if (cand > 0 && rowAmt > 0 && cand < rowAmt) {
-              rate = cand;
-              qty = Math.max(1, Math.round(rowAmt / rate));
-            } else {
-              qty = 1;
-              rate = rowAmt;
-            }
+          // Identify quantity candidate
+          const qCand = otherNums.find((n) => n !== detectedPreGstRate && n !== detectedWithGstRate && n <= 1000 && n >= 1);
+          if (qCand) {
+            qty = qCand;
           } else {
             qty = 1;
-            rate = rowAmt;
           }
         }
       } else {
         rowAmt = numbers[0];
         qty = explicitQty || 1;
-        rate = Math.round((rowAmt / qty) * 100) / 100;
       }
 
       // Safeguards: Ensure positive valid numbers
       qty = Math.max(1, Number(qty) || 1);
-      rate = Number(rate) > 0 ? Number(rate) : (rowAmt > 0 ? Math.round((rowAmt / qty) * 100) / 100 : 0);
-      if (rate === 0 && rowAmt > 0) rate = rowAmt;
-      if (rowAmt === 0 && qty > 0 && rate > 0) rowAmt = qty * rate;
+      
+      // Calculate unit rate
+      let unitWithGst = detectedWithGstRate > 0 ? detectedWithGstRate : Math.round((rowAmt / qty) * 100) / 100;
+      let unitPreGst = detectedPreGstRate > 0 
+        ? detectedPreGstRate 
+        : (rowGst > 0 ? Math.round((unitWithGst / (1 + rowGst / 100)) * 100) / 100 : unitWithGst);
+
+      // Apply Less if detected
+      let netPreGst = unitPreGst;
+      if (rowLess > 0) {
+        const lessDeduction = rowLessType === "%" ? (unitPreGst * rowLess / 100) : rowLess;
+        netPreGst = Math.max(0, unitPreGst - lessDeduction);
+        unitWithGst = Math.round((netPreGst * (1 + rowGst / 100)) * 100) / 100;
+      }
+
+      if (rowAmt === 0 && unitWithGst > 0) {
+        rowAmt = Math.round(qty * unitWithGst * 100) / 100;
+      }
+
+      const taxableValue = Math.round(qty * netPreGst * 100) / 100;
+      const gstVal = Math.round((rowAmt - taxableValue) * 100) / 100;
 
       if (rowAmt > 0 && (totalAmount === 0 || rowAmt <= totalAmount * 1.05)) {
         let itemName = lineText
           .replace(numberExtractRegex, "")
           .replace(/\b(?:pcs|pc|nos|no|box|boxes|pkt|pkts|kg|kgs|mtr|mtrs|set|sets|ctn|bag|bags|doz|dz)\b/gi, "")
-          .replace(/^[\d\.\-\)\(\s]+/, "")
-          .replace(/[\:\#\|\-]+/g, " ")
+          .replace(/^[\d\s().-]+/, "")
+          .replace(/[:#|-]+/g, " ")
           .trim();
 
         if (itemName.length >= 2 && !/^(pcs|kg|nos|mtr|box|total|amount|rate|qty|tax|gst|subtotal)$/i.test(itemName)) {
@@ -451,7 +524,15 @@ const detectLineItems = (lines, totalAmount, pageNum) => {
             id: `item_${items.length + 1}`,
             name: itemName.slice(0, 60),
             qty: qty,
-            rate: rate,
+            unit: detectedUnit,
+            preGstRate: unitPreGst,
+            withGstRate: unitWithGst,
+            rate: unitWithGst,
+            gstRate: rowGst,
+            less: rowLess,
+            lessType: rowLessType,
+            taxableAmount: taxableValue,
+            gstAmount: gstVal,
             amount: rowAmt,
           });
         }
@@ -462,11 +543,21 @@ const detectLineItems = (lines, totalAmount, pageNum) => {
   // If no specific lines were extracted, provide a clear editable single item
   if (items.length === 0) {
     const singleAmt = totalAmount || 0;
+    const defaultGst = pageDefaultGst || 0;
+    const defaultPre = defaultGst > 0 ? Math.round((singleAmt / (1 + defaultGst / 100)) * 100) / 100 : singleAmt;
     items.push({
       id: "item_1",
       name: `बिल सामान विवरण (पेज ${pageNum})`,
       qty: 1,
+      unit: "pcs",
+      preGstRate: defaultPre,
+      withGstRate: singleAmt,
       rate: singleAmt,
+      gstRate: defaultGst,
+      less: 0,
+      lessType: "flat",
+      taxableAmount: defaultPre,
+      gstAmount: Math.round((singleAmt - defaultPre) * 100) / 100,
       amount: singleAmt,
     });
   }
@@ -508,7 +599,7 @@ export const extractPagesAndBillsFromPDF = async (file) => {
     const detectedBillNo = detectBillNumber(visualLines, rawText, pageNum);
     const detectedDate = detectBillDate(visualLines, rawText);
     const detectedParty = detectPartyName(visualLines, rawText, pageNum);
-    const detectedItems = detectLineItems(visualLines, detectedAmount, pageNum);
+    const detectedItems = detectLineItems(visualLines, detectedAmount, pageNum, rawText);
 
     pages.push({
       pageNumber: pageNum,

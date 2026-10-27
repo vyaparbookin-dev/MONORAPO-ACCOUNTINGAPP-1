@@ -74,22 +74,106 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
     });
   };
 
+  const recalcItem = (item, field, val) => {
+    const updated = { ...item, [field]: val };
+    const qty = Math.max(0.01, parseFloat(updated.qty) || 1);
+    const gst = Math.max(0, parseFloat(updated.gstRate) || 0);
+    const lessVal = Math.max(0, parseFloat(updated.less) || 0);
+    const isPercent = updated.lessType === "%";
+
+    if (field === "preGstRate") {
+      const pre = Math.max(0, parseFloat(val) || 0);
+      const lessAmt = isPercent ? (pre * lessVal / 100) : lessVal;
+      const netPre = Math.max(0, pre - lessAmt);
+      const withGst = Math.round((netPre * (1 + gst / 100)) * 100) / 100;
+      const totalAmt = Math.round(qty * withGst * 100) / 100;
+      const taxAmt = Math.round(qty * netPre * (gst / 100) * 100) / 100;
+
+      updated.preGstRate = pre;
+      updated.withGstRate = withGst;
+      updated.rate = withGst;
+      updated.taxableAmount = Math.round(qty * netPre * 100) / 100;
+      updated.gstAmount = taxAmt;
+      updated.amount = totalAmt;
+    } else if (field === "withGstRate" || field === "rate") {
+      const withGst = Math.max(0, parseFloat(val) || 0);
+      const netPre = gst > 0 ? (withGst / (1 + gst / 100)) : withGst;
+      const grossPre = isPercent ? (lessVal < 100 ? netPre / (1 - lessVal / 100) : netPre) : (netPre + lessVal);
+      const preRound = Math.round(grossPre * 100) / 100;
+      const totalAmt = Math.round(qty * withGst * 100) / 100;
+      const taxAmt = Math.round((totalAmt - (qty * netPre)) * 100) / 100;
+
+      updated.withGstRate = withGst;
+      updated.rate = withGst;
+      updated.preGstRate = preRound;
+      updated.taxableAmount = Math.round(qty * netPre * 100) / 100;
+      updated.gstAmount = taxAmt;
+      updated.amount = totalAmt;
+    } else if (field === "gstRate" || field === "less" || field === "lessType" || field === "qty") {
+      let pre = parseFloat(updated.preGstRate);
+      if (!pre && updated.withGstRate) {
+        pre = gst > 0 ? (updated.withGstRate / (1 + gst / 100)) : updated.withGstRate;
+        updated.preGstRate = Math.round(pre * 100) / 100;
+      } else if (!pre) {
+        pre = parseFloat(updated.rate) || 0;
+        updated.preGstRate = pre;
+      }
+
+      const lessAmt = isPercent ? (pre * lessVal / 100) : lessVal;
+      const netPre = Math.max(0, pre - lessAmt);
+      const withGst = Math.round((netPre * (1 + gst / 100)) * 100) / 100;
+      const totalAmt = Math.round(qty * withGst * 100) / 100;
+      const taxAmt = Math.round(qty * netPre * (gst / 100) * 100) / 100;
+
+      updated.withGstRate = withGst;
+      updated.rate = withGst;
+      updated.taxableAmount = Math.round(qty * netPre * 100) / 100;
+      updated.gstAmount = taxAmt;
+      updated.amount = totalAmt;
+    } else if (field === "amount") {
+      const amt = Math.max(0, parseFloat(val) || 0);
+      const withGst = Math.round((amt / qty) * 100) / 100;
+      const netPre = gst > 0 ? (withGst / (1 + gst / 100)) : withGst;
+      updated.amount = amt;
+      updated.withGstRate = withGst;
+      updated.rate = withGst;
+      updated.preGstRate = Math.round(netPre * 100) / 100;
+      updated.taxableAmount = Math.round(qty * netPre * 100) / 100;
+      updated.gstAmount = Math.round((amt - updated.taxableAmount) * 100) / 100;
+    }
+
+    return updated;
+  };
+
   const handleItemChange = (pageIdx, itemIdx, field, value) => {
     setPages((prev) => {
       const updated = [...prev];
       const pageItems = [...(updated[pageIdx].items || [])];
-      pageItems[itemIdx] = { ...pageItems[itemIdx], [field]: value };
-
-      if (field === "qty" || field === "rate") {
-        const q = parseFloat(field === "qty" ? value : pageItems[itemIdx].qty) || 0;
-        const r = parseFloat(field === "rate" ? value : pageItems[itemIdx].rate) || 0;
-        pageItems[itemIdx].amount = Math.round(q * r * 100) / 100;
-        const newTotal = pageItems.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
-        if (newTotal > 0) {
-          updated[pageIdx].totalAmount = newTotal;
-        }
+      if (field === "name") {
+        pageItems[itemIdx] = { ...pageItems[itemIdx], name: value };
+      } else {
+        pageItems[itemIdx] = recalcItem(pageItems[itemIdx], field, value);
+      }
+      const newTotal = pageItems.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+      if (newTotal > 0) {
+        updated[pageIdx].totalAmount = Math.round(newTotal * 100) / 100;
       }
       updated[pageIdx].items = pageItems;
+      return updated;
+    });
+  };
+
+  const handleApplyBatchGst = (pageIdx, slab) => {
+    setPages((prev) => {
+      const updated = [...prev];
+      const pageItems = (updated[pageIdx].items || []).map((it) => {
+        return recalcItem({ ...it, gstRate: slab }, "gstRate", slab);
+      });
+      updated[pageIdx].items = pageItems;
+      const newTotal = pageItems.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+      if (newTotal > 0) {
+        updated[pageIdx].totalAmount = Math.round(newTotal * 100) / 100;
+      }
       return updated;
     });
   };
@@ -160,27 +244,66 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
 
         const billDate = page.date || new Date().toISOString().split("T")[0];
 
-        // Format items properly with guaranteed positive numbers
+        // Format items properly with guaranteed positive numbers, GST, and Less tracking
         const billItems = Array.isArray(page.items) && page.items.length > 0
           ? page.items.map((it) => {
-              const q = Math.max(1, Number(it.qty) || 1);
-              const r = Number(it.rate) > 0 ? Number(it.rate) : (Number(it.amount) > 0 ? Math.round((Number(it.amount) / q) * 100) / 100 : billAmt);
-              const amt = Number(it.amount) > 0 ? Number(it.amount) : Math.round(q * r * 100) / 100;
+              const q = Math.max(0.01, Number(it.qty) || 1);
+              const withRate = Number(it.withGstRate) > 0 ? Number(it.withGstRate) : (Number(it.rate) || billAmt);
+              const preRate = Number(it.preGstRate) > 0 ? Number(it.preGstRate) : withRate;
+              const gst = Number(it.gstRate) || 0;
+              const l = Number(it.less) || 0;
+              const amt = Number(it.amount) > 0 ? Number(it.amount) : Math.round(q * withRate * 100) / 100;
+              const taxVal = Number(it.taxableAmount) > 0 ? Number(it.taxableAmount) : Math.round(q * preRate * 100) / 100;
+              const gstVal = Number(it.gstAmount) > 0 ? Number(it.gstAmount) : Math.round((amt - taxVal) * 100) / 100;
+
               return {
                 name: it.name || "सामान",
                 qty: q,
-                rate: r,
+                quantity: q,
+                unit: it.unit || "pcs",
+                rate: withRate,
+                price: withRate,
+                preGstRate: preRate,
+                withGstRate: withRate,
+                gstRate: gst,
+                less: l,
+                lessType: it.lessType || "flat",
+                discount: l,
+                taxableAmount: taxVal,
+                gstAmount: gstVal,
                 amount: amt,
+                total: amt,
               };
             })
           : [
               {
                 name: `सामान / बिल विवरण (PDF पेज ${page.pageNumber})`,
                 qty: 1,
+                quantity: 1,
+                unit: "pcs",
                 rate: billAmt,
+                price: billAmt,
+                preGstRate: billAmt,
+                withGstRate: billAmt,
+                gstRate: 0,
+                less: 0,
+                lessType: "flat",
+                discount: 0,
+                taxableAmount: billAmt,
+                gstAmount: 0,
                 amount: billAmt,
+                total: billAmt,
               },
             ];
+
+        const totalTax = Math.round(billItems.reduce((s, it) => s + (Number(it.gstAmount) || 0), 0) * 100) / 100;
+        const totalTaxable = Math.round(billItems.reduce((s, it) => s + (Number(it.taxableAmount) || 0), 0) * 100) / 100;
+        const totalLess = Math.round(billItems.reduce((s, it) => {
+          const l = Number(it.less) || 0;
+          const q = Number(it.qty) || 1;
+          const p = Number(it.preGstRate) || 0;
+          return s + (it.lessType === "%" ? (p * l / 100) * q : l * q);
+        }, 0) * 100) / 100;
 
         const newBill = {
           _id: uniqueId,
@@ -209,6 +332,11 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
           imgUrls: page.imageUrl ? [page.imageUrl] : [],
           billImageUrls: page.imageUrl ? [page.imageUrl] : [],
           items: billItems,
+          tax: totalTax,
+          taxAmount: totalTax,
+          discountAmount: totalLess,
+          subTotal: totalTaxable,
+          taxableAmount: totalTaxable,
         };
 
         // Cache page photo permanently so it shows in the bill gallery
@@ -496,13 +624,30 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                         </div>
                       </div>
 
-                      {/* Items Section */}
+                      {/* Items Section with Pre-GST, With-GST, and Less Support */}
                       {p.isSelected && (
                         <div className="mt-3 pt-2 border-t border-gray-100">
-                          <div className="flex justify-between items-center mb-1.5">
+                          <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
                             <span className="text-xs font-bold text-gray-700 flex items-center gap-1">
                               📦 सामान / आइटम्स ({(p.items || []).length}):
                             </span>
+                            
+                            {/* Quick GST batch applicator */}
+                            <div className="flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
+                              <span className="text-[10px] font-bold text-slate-500">⚡ GST लगाएं:</span>
+                              {[0, 5, 12, 18, 28].map((slab) => (
+                                <button
+                                  key={slab}
+                                  type="button"
+                                  onClick={() => handleApplyBatchGst(idx, slab)}
+                                  className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-white hover:bg-indigo-600 hover:text-white border border-slate-300 text-slate-700 transition cursor-pointer"
+                                  title={`सभी सामान पर ${slab}% GST लगाएं`}
+                                >
+                                  {slab}%
+                                </button>
+                              ))}
+                            </div>
+
                             <button
                               type="button"
                               onClick={() => handleAddItem(idx)}
@@ -514,70 +659,232 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
 
                           {/* Table Header */}
                           <div className="grid grid-cols-12 gap-1 px-2 py-1 bg-gray-100 rounded text-[10px] font-bold text-gray-500 mb-1">
-                            <span className="col-span-5">सामान का नाम</span>
+                            <span className="col-span-4">सामान का नाम</span>
                             <span className="col-span-2 text-center">मात्रा (Qty)</span>
-                            <span className="col-span-2 text-right">दर (Rate ₹)</span>
+                            <span className="col-span-2 text-right">दर (With-GST ₹)</span>
                             <span className="col-span-2 text-right">रकम (₹)</span>
+                            <span className="col-span-1 text-center">GST/छूट</span>
                             <span className="col-span-1 text-center">हटाएं</span>
                           </div>
 
-                          <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                          <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
                             {(p.items || []).map((it, itemIdx) => {
                               const itemAmt = Number(it.amount || ((Number(it.qty) || 1) * (Number(it.rate) || 0)));
+                              const isExp = expandedItems[`${idx}_${itemIdx}`];
+
                               return (
-                                <div
-                                  key={itemIdx}
-                                  className="grid grid-cols-12 gap-1 items-center bg-gray-50 p-1.5 rounded-lg border border-gray-200 text-xs"
-                                >
-                                  <div className="col-span-5">
-                                    <input
-                                      type="text"
-                                      value={it.name}
-                                      onChange={(e) => handleItemChange(idx, itemIdx, "name", e.target.value)}
-                                      placeholder="सामान का नाम"
-                                      className="w-full bg-white px-2 py-1 rounded border border-gray-300 text-xs font-medium"
-                                    />
+                                <div key={itemIdx} className="space-y-1">
+                                  <div
+                                    className={`grid grid-cols-12 gap-1 items-center p-1.5 rounded-lg border text-xs transition ${
+                                      isExp ? "bg-indigo-50/50 border-indigo-300 ring-1 ring-indigo-200" : "bg-gray-50 border-gray-200"
+                                    }`}
+                                  >
+                                    <div className="col-span-4">
+                                      <input
+                                        type="text"
+                                        value={it.name}
+                                        onChange={(e) => handleItemChange(idx, itemIdx, "name", e.target.value)}
+                                        placeholder="सामान का नाम"
+                                        className="w-full bg-white px-2 py-1 rounded border border-gray-300 text-xs font-medium"
+                                      />
+                                    </div>
+                                    <div className="col-span-2">
+                                      <input
+                                        type="number"
+                                        min="0.01"
+                                        step="any"
+                                        value={it.qty ?? 1}
+                                        onChange={(e) => handleItemChange(idx, itemIdx, "qty", e.target.value)}
+                                        className="w-full bg-white px-1 py-1 rounded border border-gray-300 text-xs text-center font-bold"
+                                        placeholder="Qty"
+                                      />
+                                    </div>
+                                    <div className="col-span-2">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="any"
+                                        value={it.withGstRate || it.rate || ""}
+                                        onChange={(e) => handleItemChange(idx, itemIdx, "withGstRate", e.target.value)}
+                                        className="w-full bg-white px-1 py-1 rounded border border-gray-300 text-xs text-right font-bold text-indigo-700"
+                                        placeholder="दर ₹"
+                                      />
+                                      <div className="text-[9px] text-gray-500 text-right truncate">
+                                        Pre: ₹{it.preGstRate || it.rate || 0} {it.gstRate > 0 ? `+${it.gstRate}%` : ""}
+                                      </div>
+                                    </div>
+                                    <div className="col-span-2 text-right pr-1">
+                                      <span className="font-extrabold text-slate-800 text-xs block truncate" title={`₹${itemAmt.toLocaleString("en-IN")}`}>
+                                        ₹{itemAmt.toLocaleString("en-IN")}
+                                      </span>
+                                    </div>
+                                    <div className="col-span-1 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleExpandItem(idx, itemIdx)}
+                                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer transition ${
+                                          isExp ? "bg-indigo-600 text-white" : "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                                        }`}
+                                        title="Pre-GST, GST% व Less (छूट) सेट करें"
+                                      >
+                                        {isExp ? "▲ बंद" : "⚡ GST"}
+                                      </button>
+                                    </div>
+                                    <div className="col-span-1 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveItem(idx, itemIdx)}
+                                        className="text-rose-500 hover:text-rose-700 p-0.5 font-bold cursor-pointer"
+                                        title="हटाएं"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
                                   </div>
-                                  <div className="col-span-2">
-                                    <input
-                                      type="number"
-                                      min="0.01"
-                                      step="any"
-                                      value={it.qty ?? 1}
-                                      onChange={(e) => handleItemChange(idx, itemIdx, "qty", e.target.value)}
-                                      className="w-full bg-white px-1 py-1 rounded border border-gray-300 text-xs text-center font-bold"
-                                      placeholder="Qty"
-                                    />
-                                  </div>
-                                  <div className="col-span-2">
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      step="any"
-                                      value={it.rate || (it.amount && it.qty ? Math.round((it.amount / it.qty) * 100) / 100 : "")}
-                                      onChange={(e) => handleItemChange(idx, itemIdx, "rate", e.target.value)}
-                                      className="w-full bg-white px-1 py-1 rounded border border-gray-300 text-xs text-right font-bold text-indigo-700"
-                                      placeholder="दर ₹"
-                                    />
-                                  </div>
-                                  <div className="col-span-2 text-right pr-1">
-                                    <span className="font-extrabold text-slate-800 text-xs block truncate" title={`₹${itemAmt.toLocaleString("en-IN")}`}>
-                                      ₹{itemAmt.toLocaleString("en-IN")}
-                                    </span>
-                                  </div>
-                                  <div className="col-span-1 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveItem(idx, itemIdx)}
-                                      className="text-rose-500 hover:text-rose-700 p-0.5 font-bold cursor-pointer"
-                                      title="हटाएं"
-                                    >
-                                      ✕
-                                    </button>
-                                  </div>
+
+                                  {/* Expandable GST & Less Editor Box */}
+                                  {isExp && (
+                                    <div className="bg-indigo-50/80 border border-indigo-200 rounded-lg p-2.5 space-y-2 text-xs animate-in fade-in">
+                                      <div className="flex justify-between items-center border-b border-indigo-100 pb-1">
+                                        <span className="font-extrabold text-indigo-900 text-[11px] flex items-center gap-1">
+                                          🧮 GST व छूट (Less) कैलकुलेटर: {it.name || "सामान"}
+                                        </span>
+                                        <span className="text-[10px] text-indigo-600 font-semibold">
+                                          (दोनों तरफ से ऑटोमैटिक गणना)
+                                        </span>
+                                      </div>
+
+                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                        {/* 1. Pre-GST Base Rate */}
+                                        <div>
+                                          <label className="block text-[10px] font-bold text-gray-700 mb-0.5">
+                                            📝 Pre-GST दर (Base ₹)
+                                          </label>
+                                          <input
+                                            type="number"
+                                            step="any"
+                                            value={it.preGstRate ?? ""}
+                                            onChange={(e) => handleItemChange(idx, itemIdx, "preGstRate", e.target.value)}
+                                            placeholder="उदा. 84.75"
+                                            className="w-full bg-white px-2 py-1 rounded border border-gray-300 font-bold text-indigo-900 text-xs"
+                                          />
+                                          <span className="text-[9px] text-gray-500">बिना GST की दर</span>
+                                        </div>
+
+                                        {/* 2. Less / Discount */}
+                                        <div>
+                                          <div className="flex justify-between items-center mb-0.5">
+                                            <label className="text-[10px] font-bold text-gray-700">🏷️ Less (छूट)</label>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleItemChange(idx, itemIdx, "lessType", it.lessType === "%" ? "flat" : "%")}
+                                              className="text-[9px] font-bold px-1 rounded bg-amber-100 text-amber-800 hover:bg-amber-200 cursor-pointer"
+                                            >
+                                              {it.lessType === "%" ? "% प्रतिशत" : "₹ फिक्स"}
+                                            </button>
+                                          </div>
+                                          <input
+                                            type="number"
+                                            step="any"
+                                            value={it.less ?? ""}
+                                            onChange={(e) => handleItemChange(idx, itemIdx, "less", e.target.value)}
+                                            placeholder="0"
+                                            className="w-full bg-white px-2 py-1 rounded border border-gray-300 font-bold text-amber-700 text-xs"
+                                          />
+                                          <span className="text-[9px] text-amber-600">
+                                            {it.less > 0 ? (it.lessType === "%" ? `-${it.less}% छूट` : `-₹${it.less}/इकाई`) : "छूट नहीं"}
+                                          </span>
+                                        </div>
+
+                                        {/* 3. GST % Slabs */}
+                                        <div>
+                                          <label className="block text-[10px] font-bold text-gray-700 mb-0.5">
+                                            📊 GST दर (%)
+                                          </label>
+                                          <select
+                                            value={it.gstRate ?? 0}
+                                            onChange={(e) => handleItemChange(idx, itemIdx, "gstRate", e.target.value)}
+                                            className="w-full bg-white px-1.5 py-1 rounded border border-gray-300 font-bold text-indigo-700 text-xs"
+                                          >
+                                            <option value={0}>0% (टैक्स मुक्त)</option>
+                                            <option value={5}>5% GST (2.5% + 2.5%)</option>
+                                            <option value={12}>12% GST (6% + 6%)</option>
+                                            <option value={18}>18% GST (9% + 9%)</option>
+                                            <option value={28}>28% GST (14% + 14%)</option>
+                                          </select>
+                                          <span className="text-[9px] text-gray-500">
+                                            टैक्स: ₹{(Number(it.gstAmount) || 0).toLocaleString("en-IN")}
+                                          </span>
+                                        </div>
+
+                                        {/* 4. With-GST Rate */}
+                                        <div>
+                                          <label className="block text-[10px] font-bold text-gray-700 mb-0.5">
+                                            💰 With-GST दर (Final ₹)
+                                          </label>
+                                          <input
+                                            type="number"
+                                            step="any"
+                                            value={it.withGstRate ?? ""}
+                                            onChange={(e) => handleItemChange(idx, itemIdx, "withGstRate", e.target.value)}
+                                            placeholder="उदा. 100.00"
+                                            className="w-full bg-white px-2 py-1 rounded border border-emerald-400 font-extrabold text-emerald-800 text-xs"
+                                          />
+                                          <span className="text-[9px] text-emerald-600">फाइनल रेट</span>
+                                        </div>
+                                      </div>
+
+                                      {/* Formula explanation preview */}
+                                      <div className="bg-white/90 p-1.5 rounded border border-indigo-100 flex flex-wrap items-center justify-between text-[11px] text-slate-700 font-medium">
+                                        <span>
+                                          <strong>₹{it.preGstRate || 0}</strong> (Pre-GST)
+                                          {Number(it.less) > 0 && <span className="text-amber-700 font-bold"> - ₹{it.less} (Less)</span>}
+                                          {Number(it.gstRate) > 0 && <span className="text-indigo-700 font-bold"> + {it.gstRate}% GST (₹{Math.round(((it.withGstRate || 0) - (it.preGstRate || 0) + (Number(it.less) || 0)) * 100) / 100})</span>}
+                                          {" = "}
+                                          <span className="text-emerald-700 font-black">₹{it.withGstRate || 0} (With-GST)</span>
+                                        </span>
+                                        <span className="font-bold text-slate-900">
+                                          योग: {it.qty} × ₹{it.withGstRate || 0} = <span className="text-emerald-700 font-black">₹{(itemAmt || 0).toLocaleString("en-IN")}</span>
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}
+                          </div>
+
+                          {/* Page Summary Strip */}
+                          <div className="mt-2.5 pt-2 border-t border-dashed border-gray-300 grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 p-2 rounded-lg text-xs">
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">टैक्सेबल मूल्य:</span>
+                              <span className="font-bold text-slate-800">
+                                ₹{Math.round((p.items || []).reduce((s, it) => s + (Number(it.taxableAmount) || ((Number(it.preGstRate) || Number(it.rate) || 0) * (Number(it.qty) || 1))), 0)).toLocaleString("en-IN")}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-amber-600 block">कुल छूट (Less):</span>
+                              <span className="font-bold text-amber-700">
+                                -₹{Math.round((p.items || []).reduce((s, it) => {
+                                  const l = Number(it.less) || 0;
+                                  const q = Number(it.qty) || 1;
+                                  const pr = Number(it.preGstRate) || 0;
+                                  return s + (it.lessType === "%" ? (pr * l / 100) * q : l * q);
+                                }, 0)).toLocaleString("en-IN")}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-indigo-600 block">कुल GST:</span>
+                              <span className="font-bold text-indigo-700">
+                                +₹{Math.round((p.items || []).reduce((s, it) => s + (Number(it.gstAmount) || 0), 0)).toLocaleString("en-IN")}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-emerald-700 block font-bold">फाइनल बिल टोटल:</span>
+                              <span className="font-extrabold text-emerald-800 text-sm">
+                                ₹{Math.round((p.items || []).reduce((s, it) => s + (Number(it.amount) || 0), 0)).toLocaleString("en-IN")}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       )}

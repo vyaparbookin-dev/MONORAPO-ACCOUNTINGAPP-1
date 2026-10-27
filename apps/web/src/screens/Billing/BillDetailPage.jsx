@@ -181,6 +181,14 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
               <tr key={idx} className="border-b last:border-0">
                 <td className="py-3 px-4">
                   <div className="font-medium">{item.name}</div>
+                  {(Number(item.gstRate) > 0 || Number(item.less) > 0 || item.preGstRate) && (
+                    <div className="text-[11px] text-gray-500 mt-0.5 flex flex-wrap gap-2">
+                      {item.preGstRate && <span>Base (Pre-GST): <strong className="text-gray-700">₹{item.preGstRate}</strong></span>}
+                      {Number(item.less) > 0 && <span className="text-amber-700 font-semibold">Less: <strong>-{item.lessType === '%' ? `${item.less}%` : `₹${item.less}`}</strong></span>}
+                      {Number(item.gstRate) > 0 && <span className="text-indigo-600 font-bold">GST {item.gstRate}% (+₹{item.gstAmount || Math.round((((item.taxableAmount || (item.preGstRate || item.rate) * (item.quantity || 1)) * item.gstRate) / 100) * 100) / 100})</span>}
+                      {item.withGstRate && <span className="text-emerald-700 font-bold">Net Rate: ₹{item.withGstRate}</span>}
+                    </div>
+                  )}
                   {(item.serialNumber || item.warranty) && (
                     <div className="text-xs text-gray-500 mt-1 flex gap-3">
                       {item.serialNumber && <span><strong className="text-gray-700">SN/IMEI:</strong> {item.serialNumber}</span>}
@@ -202,6 +210,38 @@ export default function BillDetailPage({ bill: propBill, onBack }) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* 📊 Bill Financial Breakdown (Taxable, Less/Discount, GST, Grand Total) */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-gray-50 p-4 rounded-xl border border-gray-200 mb-8 gap-4">
+        <div className="text-xs text-gray-500 space-y-1">
+          <div><span className="font-semibold text-gray-700">कुल सामान (Items):</span> {bill.items?.length || 0}</div>
+          {bill.customerGst && <div><span className="font-semibold text-gray-700">GSTIN:</span> {bill.customerGst}</div>}
+        </div>
+        <div className="w-full sm:w-72 space-y-1.5 text-xs text-right">
+          {(bill.subTotal > 0 || bill.taxableAmount > 0) && (
+            <div className="flex justify-between text-gray-600">
+              <span>{invoicePrintLanguage === "hi" ? "टैक्सेबल मूल्य (Taxable Value):" : "Taxable Value:"}</span>
+              <span className="font-semibold text-gray-800">₹{Number(bill.subTotal || bill.taxableAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+            </div>
+          )}
+          {bill.discountAmount > 0 && (
+            <div className="flex justify-between text-amber-700">
+              <span>{invoicePrintLanguage === "hi" ? "कुल छूट (Less / Discount):" : "Total Discount:"}</span>
+              <span className="font-bold">-₹{Number(bill.discountAmount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+            </div>
+          )}
+          {bill.tax > 0 && (
+            <div className="flex justify-between text-indigo-700">
+              <span>{invoicePrintLanguage === "hi" ? "कुल GST (CGST+SGST/IGST):" : "Total GST:"}</span>
+              <span className="font-bold">+₹{Number(bill.tax).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+            </div>
+          )}
+          <div className="flex justify-between text-sm font-extrabold text-gray-900 border-t border-gray-300 pt-1.5">
+            <span>{invoicePrintLanguage === "hi" ? "कुल देय राशि (Grand Total):" : "Grand Total:"}</span>
+            <span className="text-indigo-700 text-base">₹{Number(bill.finalAmount || bill.total || bill.totalAmount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+          </div>
+        </div>
       </div>
 
       {/* Dynamic UPI QR Code Section */}
