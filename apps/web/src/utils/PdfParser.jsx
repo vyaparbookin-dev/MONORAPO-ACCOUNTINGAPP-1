@@ -25,11 +25,11 @@ export const extractTextFromPDF = async (file) => {
 
 /**
  * Reconstructs visual lines from PDF text items by grouping items with similar Y coordinates.
- * In PDF coordinates, Y increases from bottom to top.
+ * Tolerance is set to 7px to robustly capture table rows where text and numbers have slight baseline offsets.
  */
 const reconstructVisualLines = (items) => {
   if (!items || items.length === 0) return [];
-  const tolerance = 4; // pixels tolerance for grouping into the same horizontal line
+  const tolerance = 7; // pixels tolerance for grouping into the same horizontal line
   const linesMap = [];
 
   for (const item of items) {
@@ -55,6 +55,7 @@ const reconstructVisualLines = (items) => {
     return {
       y: l.y,
       lineText: l.items.map((i) => i.text).join(" ").trim(),
+      items: l.items,
     };
   });
 };
@@ -71,49 +72,59 @@ const parseCleanAmount = (valStr) => {
   // Exclude phone numbers (10 digits) and 6-digit pin codes
   if (num >= 1000000000) return null; // Likely phone number or account number
   if (num >= 100000 && num <= 999999 && Number.isInteger(num)) return null; // Likely PIN code
+  // Exclude 6-to-8-digit HSN codes (e.g. 85044090, 39269099)
+  if (num >= 1000000 && num <= 99999999 && Number.isInteger(num)) return null;
   // Exclude 4-digit years like 2024, 2025, 2026 if exact integer
   if (num >= 2020 && num <= 2035 && Number.isInteger(num)) return null;
   return num;
 };
 
 /**
- * Smart detection of Grand Total / Total Amount from visual lines & text
+ * Smart detection of Grand Total / Total Amount from visual lines & text.
+ * Strictly ignores tax totals (GST/CGST/SGST ~₹1,400) and prioritizes the true Invoice Grand Total.
  */
 const detectGrandTotal = (lines, rawText) => {
   const candidateScores = [];
 
   // Patterns for high confidence grand totals
-  const highPriorityRegex = /(?:grand\s*total|invoice\s*total|net\s*payable|total\s*payable|total\s*amount\s*payable|net\s*amount\s*payable|total\s*invoice\s*value|final\s*amount|final\s*total|balance\s*due|bill\s*amount)/i;
+  const highPriorityRegex = /(?:grand\s*total|invoice\s*total|net\s*payable|total\s*payable|total\s*amount\s*payable|net\s*amount\s*payable|total\s*invoice\s*value|final\s*amount|final\s*total|gross\s*total|bill\s*amount|balance\s*due)/i;
   const mediumPriorityRegex = /(?:total\s*amount|net\s*amount|total\s*value)/i;
-  const genericTotalRegex = /(?:^|\s)total(?:\s|$|\:)/i;
-  const ignorePrefixes = /(?:total\s*qty|total\s*quantity|total\s*items|total\s*discount|taxable|cgst|sgst|igst|cess)/i;
+  const genericTotalRegex = /(?:^|\s)total(?:\s*\(|\s*\:|\s*$|\s+inr|\s+rs)/i;
+
+  // Tax, deduction, and quantity patterns that must NEVER be confused with Grand Total
+  const ignorePrefixes = /(?:total\s*qty|total\s*quantity|total\s*items|total\s*discount|taxable|cgst|sgst|igst|cess|total\s*tax|total\s*gst|gst\s*total|tax\s*total|gst\s*amount|tax\s*amount|vat|tds|tcs|round\s*off)/i;
 
   const numberExtractRegex = /(?:₹|Rs\.?|INR)?\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/g;
 
   // 1. Scan visual lines from bottom to top (totals are in lower half)
   for (let idx = lines.length - 1; idx >= 0; idx--) {
-    const { lineText, y } = lines[idx];
+    const { lineText } = lines[idx];
+
+    // Explicitly reject tax summary lines
+    if (ignorePrefixes.test(lineText)) {
+      continue;
+    }
 
     let priority = 0;
     if (highPriorityRegex.test(lineText)) {
       priority = 1000;
     } else if (mediumPriorityRegex.test(lineText)) {
       priority = 500;
-    } else if (genericTotalRegex.test(lineText) && !ignorePrefixes.test(lineText)) {
-      priority = 200;
+    } else if (genericTotalRegex.test(lineText)) {
+      priority = 250;
     }
 
     if (priority > 0) {
       // Find all numbers in this line
       const matches = [...lineText.matchAll(numberExtractRegex)];
       if (matches.length > 0) {
-        // Take the last number in this total line (often the final column amount)
+        // Find largest valid amount in the total row
         for (let m = matches.length - 1; m >= 0; m--) {
           const amt = parseCleanAmount(matches[m][1]);
           if (amt && amt > 0) {
             candidateScores.push({
               amount: amt,
-              score: priority + amt * 0.01, // slight bonus to higher amount if same label
+              score: priority + amt * 0.005,
               label: lineText,
               lineIndex: idx,
             });
@@ -137,10 +148,10 @@ const detectGrandTotal = (lines, rawText) => {
     }
   }
 
-  // 2. Also check full raw text with direct multi-match regex
+  // 2. Also check full raw text with direct multi-match regex (excluding tax phrases)
   const directMatches = [
     ...rawText.matchAll(
-      /(?:grand\s*total|invoice\s*total|net\s*payable|total\s*payable|total\s*amount)[\s\:\₹\Rs\.\-]*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/gi
+      /(?:grand\s*total|invoice\s*total|net\s*payable|total\s*payable|total\s*invoice\s*value|gross\s*total)[\s\:\₹\Rs\.\-]*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/gi
     ),
   ];
   for (const dm of directMatches) {
@@ -149,7 +160,7 @@ const detectGrandTotal = (lines, rawText) => {
       if (amt && amt > 0) {
         candidateScores.push({
           amount: amt,
-          score: 800,
+          score: 900,
           label: dm[0],
           lineIndex: -1,
         });
@@ -158,20 +169,25 @@ const detectGrandTotal = (lines, rawText) => {
   }
 
   if (candidateScores.length > 0) {
-    // Sort descending by score
-    candidateScores.sort((a, b) => b.score - a.score);
-    // If top candidates have high priority, choose the maximum amount among top tier
-    const topScore = candidateScores[0].score;
-    const topCandidates = candidateScores.filter((c) => c.score >= topScore - 200);
+    // Filter out candidates with tax/discount/qty labels
+    const validCandidates = candidateScores.filter((c) => !ignorePrefixes.test(c.label));
+    const targetPool = validCandidates.length > 0 ? validCandidates : candidateScores;
+
+    // Sort descending by score, then by amount
+    targetPool.sort((a, b) => (b.score !== a.score ? b.score - a.score : b.amount - a.amount));
+
+    // In Indian invoices, Grand Total is ALWAYS the largest total among valid candidates
+    const topScore = targetPool[0].score;
+    const topCandidates = targetPool.filter((c) => c.score >= topScore - 200);
     topCandidates.sort((a, b) => b.amount - a.amount);
     return topCandidates[0].amount;
   }
 
-  // 3. Fallback: If no label matched, scan bottom 40% of lines for plausible largest amounts
-  const bottomLines = lines.slice(Math.floor(lines.length * 0.5));
+  // 3. Fallback: If no label matched, scan bottom 50% of lines for plausible largest amounts (skipping tax lines)
+  const bottomLines = lines.slice(Math.floor(lines.length * 0.4));
   let maxPlausibleAmt = 0;
   for (const bl of bottomLines) {
-    if (/tax|cgst|sgst|igst|hsn|rate|qty|discount/i.test(bl.lineText)) continue;
+    if (/tax|cgst|sgst|igst|hsn|rate|qty|discount|cess|vat|pan|gstin/i.test(bl.lineText)) continue;
     const matches = [...bl.lineText.matchAll(numberExtractRegex)];
     for (const m of matches) {
       const amt = parseCleanAmount(m[1]);
@@ -204,7 +220,7 @@ const detectPartyName = (lines, rawText, pageNum) => {
     if (isValidPartyName(cleaned)) return cleaned;
   }
 
-  // 3. Inspect top visual lines (lines 0 to 5) for business header
+  // 3. Inspect top visual lines (lines 0 to 6) for business header
   const topLines = lines.slice(0, 7);
   for (const { lineText } of topLines) {
     const cleaned = cleanPartyName(lineText);
@@ -321,50 +337,119 @@ const formatToISODate = (dateStr) => {
 };
 
 /**
- * Smart detection of individual line items from invoice table rows
+ * Smart detection of individual line items from invoice table rows.
+ * Reliably extracts item name, quantity (with units), unit rate, and total amount.
+ * Never leaves quantity or rate empty or zero.
  */
 const detectLineItems = (lines, totalAmount, pageNum) => {
   const items = [];
   const numberExtractRegex = /(?:₹|Rs\.?|INR)?\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/g;
 
   // Scan lines in the middle section (between header metadata and footer totals)
-  const candidateLines = lines.slice(3, Math.max(4, lines.length - 2));
+  const candidateLines = lines.slice(2, Math.max(3, lines.length - 2));
 
   for (let i = 0; i < candidateLines.length; i++) {
     const { lineText } = candidateLines[i];
-    // Ignore lines that look like table headers or total lines
+    // Ignore lines that look like table headers or total/tax summary lines
     if (
       /^(?:sl|sr|s\.no|item|particulars|description|hsn|rate|qty|quantity|amount|total|sub\s*total|taxable|cgst|sgst|igst|discount|terms|bank|rupees)/i.test(
         lineText.trim()
       ) ||
-      /(?:grand\s*total|net\s*payable|round\s*off|balance\s*due)/i.test(lineText)
+      /(?:grand\s*total|net\s*payable|round\s*off|balance\s*due|total\s*tax|total\s*gst|cgst\s*amount|sgst\s*amount|igst\s*amount)/i.test(lineText)
     ) {
       continue;
     }
 
-    const matches = [...lineText.matchAll(numberExtractRegex)];
-    if (matches.length >= 1) {
-      // The last number is usually the row amount
-      const lastMatch = matches[matches.length - 1];
-      const rowAmt = parseCleanAmount(lastMatch[1]);
-      if (rowAmt && rowAmt > 0 && (totalAmount === 0 || rowAmt <= totalAmount * 1.05)) {
-        let qty = 1;
-        let rate = rowAmt;
+    // Check for explicit quantity with units e.g. "10 PCS", "5 NOS", "2 BOX", "1.5 KG"
+    let explicitQty = null;
+    const unitQtyMatch = lineText.match(/\b([0-9]+(?:\.[0-9]{1,2})?)\s*(?:pcs|pc|nos|no|box|boxes|pkt|pkts|kg|kgs|mtr|mtrs|set|sets|ctn|bag|bags|doz|dz|pairs?|units?|gm|gms)\b/i);
+    if (unitQtyMatch && parseFloat(unitQtyMatch[1]) > 0) {
+      explicitQty = parseFloat(unitQtyMatch[1]);
+    }
 
-        if (matches.length >= 2) {
-          const possibleQty = parseFloat(matches[matches.length - 2][1].replace(/,/g, ""));
-          if (possibleQty > 0 && possibleQty <= 1000) {
-            qty = possibleQty;
-            rate = Math.round((rowAmt / qty) * 100) / 100;
-          }
+    const matches = [...lineText.matchAll(numberExtractRegex)];
+    // Filter out 6-to-8 digit HSN codes
+    const validNumMatches = matches.filter((m) => {
+      const val = parseFloat(m[1].replace(/,/g, ""));
+      if (val >= 100000 && val <= 99999999 && Number.isInteger(val)) return false;
+      return true;
+    });
+
+    if (validNumMatches.length >= 1) {
+      const numbers = validNumMatches.map((m) => parseFloat(m[1].replace(/,/g, ""))).filter((n) => n > 0);
+
+      let rowAmt = 0;
+      let qty = explicitQty || 1;
+      let rate = 0;
+
+      if (numbers.length >= 2) {
+        // Largest number <= totalAmount (or largest in row) is usually row amount
+        const plausibleAmts = numbers.filter((n) => totalAmount === 0 || n <= totalAmount * 1.05);
+        if (plausibleAmts.length > 0) {
+          rowAmt = Math.max(...plausibleAmts);
+        } else {
+          rowAmt = numbers[numbers.length - 1];
         }
 
-        let itemName = lineText.replace(numberExtractRegex, "").trim();
-        itemName = itemName.replace(/^[\d\.\-\)\(\s]+/, "").trim(); // Remove leading serial number like "1."
-        if (itemName.length >= 2 && !/^(pcs|kg|nos|mtr|box|total|amount|rate|qty)$/i.test(itemName)) {
+        if (explicitQty) {
+          qty = explicitQty;
+          rate = Math.round((rowAmt / qty) * 100) / 100;
+        } else {
+          const otherNums = numbers.filter((n) => n !== rowAmt);
+          if (otherNums.length >= 2) {
+            const qCand = otherNums.find((n) => n <= 1000);
+            const rCand = otherNums.find((n) => n !== qCand);
+            if (qCand && rCand && Math.abs(qCand * rCand - rowAmt) < 2) {
+              qty = qCand;
+              rate = rCand;
+            } else if (qCand) {
+              qty = qCand;
+              rate = Math.round((rowAmt / qty) * 100) / 100;
+            } else {
+              qty = 1;
+              rate = rowAmt;
+            }
+          } else if (otherNums.length === 1) {
+            const cand = otherNums[0];
+            if (cand > 0 && cand <= 500 && rowAmt % cand === 0) {
+              qty = cand;
+              rate = Math.round((rowAmt / qty) * 100) / 100;
+            } else if (cand > 0 && rowAmt > 0 && cand < rowAmt) {
+              rate = cand;
+              qty = Math.max(1, Math.round(rowAmt / rate));
+            } else {
+              qty = 1;
+              rate = rowAmt;
+            }
+          } else {
+            qty = 1;
+            rate = rowAmt;
+          }
+        }
+      } else {
+        rowAmt = numbers[0];
+        qty = explicitQty || 1;
+        rate = Math.round((rowAmt / qty) * 100) / 100;
+      }
+
+      // Safeguards: Ensure positive valid numbers
+      qty = Math.max(1, Number(qty) || 1);
+      rate = Number(rate) > 0 ? Number(rate) : (rowAmt > 0 ? Math.round((rowAmt / qty) * 100) / 100 : 0);
+      if (rate === 0 && rowAmt > 0) rate = rowAmt;
+      if (rowAmt === 0 && qty > 0 && rate > 0) rowAmt = qty * rate;
+
+      if (rowAmt > 0 && (totalAmount === 0 || rowAmt <= totalAmount * 1.05)) {
+        let itemName = lineText
+          .replace(numberExtractRegex, "")
+          .replace(/\b(?:pcs|pc|nos|no|box|boxes|pkt|pkts|kg|kgs|mtr|mtrs|set|sets|ctn|bag|bags|doz|dz)\b/gi, "")
+          .replace(/^[\d\.\-\)\(\s]+/, "")
+          .replace(/[\:\#\|\-]+/g, " ")
+          .trim();
+
+        if (itemName.length >= 2 && !/^(pcs|kg|nos|mtr|box|total|amount|rate|qty|tax|gst|subtotal)$/i.test(itemName)) {
           items.push({
             id: `item_${items.length + 1}`,
-            name: itemName.slice(0, 50),
+            name: itemName.slice(0, 60),
             qty: qty,
             rate: rate,
             amount: rowAmt,
@@ -376,12 +461,13 @@ const detectLineItems = (lines, totalAmount, pageNum) => {
 
   // If no specific lines were extracted, provide a clear editable single item
   if (items.length === 0) {
+    const singleAmt = totalAmount || 0;
     items.push({
       id: "item_1",
       name: `बिल सामान विवरण (पेज ${pageNum})`,
       qty: 1,
-      rate: totalAmount || 0,
-      amount: totalAmount || 0,
+      rate: singleAmt,
+      amount: singleAmt,
     });
   }
 
@@ -392,7 +478,7 @@ const detectLineItems = (lines, totalAmount, pageNum) => {
  * Parses a multi-page PDF into separate page images and auto-detects bill details per page
  * Handles:
  * 1. Rendering each page to a crisp JPEG image
- * 2. Visual line-based smart text recognition (Invoice No, Date, Party Name, Grand Total)
+ * 2. Visual line-based smart text recognition (Invoice No, Date, Party Name, Grand Total, Line Items)
  */
 export const extractPagesAndBillsFromPDF = async (file) => {
   const arrayBuffer = await file.arrayBuffer();

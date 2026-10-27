@@ -308,6 +308,8 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
     const recordedList = Array.isArray(item.installments) ? item.installments : [];
     const recordedCount = recordedList.length;
     const recordedSum = recordedList.reduce((sum, inst) => sum + Number(inst.amount || 0), 0);
+    const autoDebitedCount = recordedList.filter(x => x.isAutoDebited).length;
+    const manualDebitedCount = recordedList.filter(x => !x.isAutoDebited).length;
 
     // Explicit past data if user entered alreadyPaidCount / alreadyDepositedAmount
     const explicitPaidCount = Number(item.alreadyPaidCount || 0);
@@ -336,10 +338,21 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
       }
     }
 
-    // Dynamic Tenure & Months: If user paid 42, 36, or 30 installments, totalMonths must NEVER be clamped to 12!
+    // Dynamic Tenure & Months: If user set maturity date or paid 42, 36, or 30 installments, calculate real tenure!
+    let calcMonthsFromMaturity = 0;
+    if (item.startDate && item.maturityDate) {
+      try {
+        const sD = new Date(item.startDate);
+        const mD = new Date(item.maturityDate);
+        if (!isNaN(sD.getTime()) && !isNaN(mD.getTime()) && mD > sD) {
+          calcMonthsFromMaturity = (mD.getFullYear() - sD.getFullYear()) * 12 + (mD.getMonth() - sD.getMonth());
+        }
+      } catch (e) {}
+    }
+
     const rawTenureYears = Number(item.tenureYears || 1);
     const freqFactor = item.frequency === "quarterly" ? 4 : (item.frequency === "yearly" ? 1 : 12);
-    const baseTenureMonths = rawTenureYears * freqFactor;
+    const baseTenureMonths = Math.max(rawTenureYears * freqFactor, calcMonthsFromMaturity);
 
     // Total months expands dynamically to cover paid installments
     const totalMonths = Math.max(
@@ -380,6 +393,8 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
       dueMonths,
       paidCount,
       totalDeposited,
+      autoDebitedCount,
+      manualDebitedCount,
       overdueCount,
       overdueAmount,
       remainingCount,
@@ -480,6 +495,201 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
   // History Drawer Modal
   const [viewHistoryItem, setViewHistoryItem] = useState(null);
 
+  // In-place Passbook Installment Editing & Adding Past Deposits
+  const [editingInstallmentIdx, setEditingInstallmentIdx] = useState(null);
+  const [editInstData, setEditInstData] = useState({
+    date: "",
+    amount: "",
+    sourceOfFund: "shop_cash",
+    notes: ""
+  });
+  const [isAddingPastInst, setIsAddingPastInst] = useState(false);
+  const [newPastInstData, setNewPastInstData] = useState({
+    date: new Date().toISOString().split("T")[0],
+    amount: "",
+    sourceOfFund: "shop_cash",
+    notes: ""
+  });
+
+  // Reactive date & tenure handlers for Add/Edit Form
+  const handleStartDateChange = (newDate) => {
+    const sD = new Date(newDate);
+    let newMatDate = formData.maturityDate;
+    let newTenure = Number(formData.tenureYears || 1);
+
+    if (formData.maturityDate) {
+      const mD = new Date(formData.maturityDate);
+      if (!isNaN(sD.getTime()) && !isNaN(mD.getTime()) && mD > sD) {
+        const diffMonths = (mD.getFullYear() - sD.getFullYear()) * 12 + (mD.getMonth() - sD.getMonth());
+        newTenure = Math.max(1, Math.round(diffMonths / 12));
+      }
+    } else {
+      newMatDate = calculateMaturity(newDate, newTenure);
+    }
+
+    const elapsed = getElapsedMonths(newDate, formData.dueDayOfMonth, newTenure * 12);
+    const inst = Number(formData.installmentAmount || 0);
+
+    setFormData(prev => ({
+      ...prev,
+      startDate: newDate,
+      maturityDate: newMatDate,
+      tenureYears: String(newTenure),
+      isOldOngoingAccount: prev.isOldOngoingAccount || elapsed > 0,
+      alreadyPaidCount: prev.alreadyPaidCount ? prev.alreadyPaidCount : (elapsed > 0 ? String(elapsed) : ""),
+      alreadyDepositedAmount: prev.alreadyDepositedAmount ? prev.alreadyDepositedAmount : (elapsed > 0 && inst > 0 ? String(elapsed * inst) : "")
+    }));
+  };
+
+  const handleMaturityDateChange = (newMatDate) => {
+    let newTenure = Number(formData.tenureYears || 1);
+    if (formData.startDate && newMatDate) {
+      const sD = new Date(formData.startDate);
+      const mD = new Date(newMatDate);
+      if (!isNaN(sD.getTime()) && !isNaN(mD.getTime()) && mD > sD) {
+        const diffMonths = (mD.getFullYear() - sD.getFullYear()) * 12 + (mD.getMonth() - sD.getMonth());
+        newTenure = Math.max(1, Math.round(diffMonths / 12));
+      }
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      maturityDate: newMatDate,
+      tenureYears: String(newTenure)
+    }));
+  };
+
+  const handleTenureChange = (yr) => {
+    const newMatDate = calculateMaturity(formData.startDate, yr);
+    setFormData(prev => ({
+      ...prev,
+      tenureYears: String(yr),
+      maturityDate: newMatDate
+    }));
+  };
+
+  // Open Advance RD Payment dialog (prefilled with shop cash & selected RD)
+  const handleOpenAdvancePay = (item) => {
+    const targetItem = item || savingsList.find(s => s.savingsType !== "FD" && s.status !== "CLOSED") || savingsList[0];
+    if (!targetItem) {
+      alert("कृपया पहले एक RD बचत खाता जोड़ें!");
+      return;
+    }
+    setSelectedSavingForPay(targetItem);
+    setPayData({
+      amount: String(targetItem.installmentAmount || ""),
+      date: new Date().toISOString().split("T")[0],
+      sourceOfFund: "shop_cash",
+      notes: "⚡ एडवांस RD किस्त जमा"
+    });
+    setIsPayOpen(true);
+  };
+
+  // 1-Click Sync Helper for user's 3 real-world RD accounts
+  const handleQuickSync3Rds = async () => {
+    const rdItems = savingsList.filter(s => s.savingsType === "RD");
+    if (rdItems.length === 0) {
+      alert("कोई RD खाता नहीं मिला। कृपया पहले 'नया खाता जोड़ें' बटन से RD खाता बनाएं।");
+      return;
+    }
+
+    if (!confirm(
+      "क्या आप अपने 3 RD खातों को सही शुरुआत तारीख, परिपक्वता तारीख और वास्तविक जमा किस्तों (31, 36, 43 किस्तें) के साथ सिंक करना चाहते हैं?\n\n" +
+      "1. RD 1 (मैच्योरिटी 16 मार्च 2029): 5 वर्ष (60 माह) • 31 किस्तें जमा • 29 बाकी\n" +
+      "2. RD 2 (मैच्योरिटी 26 अक्टूबर 2028): 5 वर्ष (60 माह) • 36 किस्तें जमा • 24 बाकी\n" +
+      "3. RD 3 (मैच्योरिटी 26 मार्च 2028): 5 वर्ष (60 माह) • 43 किस्तें जमा • 17 बाकी\n\n" +
+      "सिस्टम प्रत्येक खाते की पूरी तारीखवार पासबुक भी तुरंत तैयार कर देगा।"
+    )) return;
+
+    const presets = [
+      {
+        matchKey: "2029",
+        title: "SBI RD (16 मार्च 2029)",
+        startDate: "2024-03-16",
+        maturityDate: "2029-03-16",
+        tenureYears: 5,
+        dueDayOfMonth: 16,
+        paidCount: 31,
+      },
+      {
+        matchKey: "2028_oct",
+        title: "RD खाता (अक्टूबर 2028)",
+        startDate: "2023-10-26",
+        maturityDate: "2028-10-26",
+        tenureYears: 5,
+        dueDayOfMonth: 26,
+        paidCount: 36,
+      },
+      {
+        matchKey: "2028_mar",
+        title: "RD खाता (मार्च 2028)",
+        startDate: "2023-03-26",
+        maturityDate: "2028-03-26",
+        tenureYears: 5,
+        dueDayOfMonth: 26,
+        paidCount: 43,
+      }
+    ];
+
+    let updatedList = [...savingsList];
+    let count = 0;
+
+    rdItems.forEach((rd, idx) => {
+      let preset = presets[idx % presets.length];
+      const str = `${rd.title || ''} ${rd.maturityDate || ''}`.toLowerCase();
+      if (str.includes("2029") || str.includes("16")) {
+        preset = presets[0];
+      } else if (str.includes("oct") || str.includes("10")) {
+        preset = presets[1];
+      } else if (str.includes("mar") || str.includes("03")) {
+        preset = presets[2];
+      }
+
+      count++;
+      const id = rd._id || rd.id;
+      const instAmt = Number(rd.installmentAmount || 3000);
+      const totalDep = preset.paidCount * instAmt;
+      const pastInsts = generatePastInstallments(
+        preset.startDate,
+        preset.paidCount,
+        instAmt,
+        rd.fundSource || "shop_cash",
+        preset.dueDayOfMonth,
+        totalDep
+      );
+
+      const updatedRd = {
+        ...rd,
+        title: rd.title && !rd.title.includes("खाता") ? rd.title : preset.title,
+        startDate: preset.startDate,
+        maturityDate: preset.maturityDate,
+        tenureYears: preset.tenureYears,
+        dueDayOfMonth: preset.dueDayOfMonth,
+        installmentAmount: instAmt,
+        alreadyPaidCount: preset.paidCount,
+        alreadyDepositedAmount: totalDep,
+        totalDeposited: totalDep,
+        currentValue: totalDep,
+        installments: pastInsts,
+        isAutoDebitEnabled: rd.isAutoDebitEnabled !== false
+      };
+
+      updatedList = updatedList.map(s => (s._id || s.id) === id ? updatedRd : s);
+      api.put(`/api/savings/${id}`, updatedRd).catch(() => {});
+    });
+
+    setSavingsList(updatedList);
+    try {
+      localStorage.setItem("vb_local_savings", JSON.stringify(updatedList));
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      if (currentCoId) {
+        localStorage.setItem(`vb_local_savings_${currentCoId}`, JSON.stringify(updatedList));
+      }
+    } catch (e) {}
+
+    alert(`✅ ${count} RD खाते सफलतापूर्वक सिंक हो गए!\n\nअब तारीखवार पासबुक, भरी किस्तें और बाकी किस्तों का हिसाब बिल्कुल सही दिखेगा।`);
+  };
+
   useEffect(() => {
     if (isOpen) {
       fetchSavings();
@@ -559,28 +769,39 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
     }
 
     const type = formData.savingsType || "RD";
-    const rawTenure = Number(formData.tenureYears || 1);
     const instAmt = Number(formData.installmentAmount || 0);
     const initDeposit = Number(formData.initialDeposit || 0);
     const pastAmt = Number(formData.alreadyDepositedAmount || 0);
     const pastCount = Number(formData.alreadyPaidCount || 0);
-    const isOld = Boolean(formData.isOldOngoingAccount) || pastCount > 0 || pastAmt > 0;
 
-    // Effective paid count: preserve user's explicit count (e.g. 42, 36, 30)
+    // Compute elapsed months up to today from Start Date
+    const elapsedMonths = getElapsedMonths(formData.startDate, formData.dueDayOfMonth, 360);
+
+    // Effective paid count: directly preserve user input (42, 36, 30, etc.)
     const effectivePaidCount = type === "FD"
       ? 1
-      : (isOld 
-          ? (pastCount > 0 ? pastCount : (instAmt > 0 && pastAmt > 0 ? Math.round(pastAmt / instAmt) : 0))
-          : 0);
+      : (pastCount > 0 ? pastCount : (pastAmt > 0 && instAmt > 0 ? Math.round(pastAmt / instAmt) : 0));
 
     // Effective deposited amount
     const computedTotal = type === "FD"
       ? (initDeposit > 0 ? initDeposit : pastAmt)
-      : (isOld ? (pastAmt > 0 ? pastAmt : effectivePaidCount * instAmt) : 0);
+      : (pastAmt > 0 ? pastAmt : effectivePaidCount * instAmt);
 
-    // Dynamic tenure expanding if paidCount exceeds rawTenure
+    // Compute dynamic tenure from Start Date to Maturity Date
+    let calcMonthsFromMaturity = 0;
+    if (formData.startDate && formData.maturityDate) {
+      try {
+        const sD = new Date(formData.startDate);
+        const mD = new Date(formData.maturityDate);
+        if (!isNaN(sD.getTime()) && !isNaN(mD.getTime()) && mD > sD) {
+          calcMonthsFromMaturity = (mD.getFullYear() - sD.getFullYear()) * 12 + (mD.getMonth() - sD.getMonth());
+        }
+      } catch (e) {}
+    }
+
+    const rawTenure = Number(formData.tenureYears || 1);
     const freqFactor = formData.frequency === "quarterly" ? 4 : (formData.frequency === "yearly" ? 1 : 12);
-    const baseTenureMonths = rawTenure * freqFactor;
+    const baseTenureMonths = Math.max(rawTenure * freqFactor, calcMonthsFromMaturity);
     const totalMonths = Math.max(
       baseTenureMonths,
       effectivePaidCount > baseTenureMonths ? Math.ceil(effectivePaidCount / 12) * 12 : baseTenureMonths
@@ -589,7 +810,6 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
 
     const maturityDate = formData.maturityDate || calculateMaturity(formData.startDate, tenureYears);
 
-    // Auto-calculate expected maturity if user didn't enter one
     const calcExpectedMaturity = Number(formData.expectedMaturityAmount || 0) > 0
       ? Number(formData.expectedMaturityAmount)
       : calculateExpectedMaturity({
@@ -623,15 +843,13 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
     setSaving(true);
     try {
       if (editingId) {
-        // Update
+        // Update existing account
         const existing = savingsList.find(x => (x._id || x.id) === editingId);
-        let updatedInsts = existing?.installments || [];
+        let updatedInsts = Array.isArray(existing?.installments) ? [...existing.installments] : [];
 
-        // If installments are fewer than paid count and user explicitly chose old ongoing account
-        if (type !== "FD" && isOld && (updatedInsts.length < effectivePaidCount || pastAmt !== Number(existing?.totalDeposited))) {
-          if (effectivePaidCount > 0 && instAmt > 0) {
-            updatedInsts = generatePastInstallments(payload.startDate, effectivePaidCount, instAmt, payload.fundSource, payload.dueDayOfMonth, computedTotal);
-          }
+        // If installments are fewer than paid count, generate full date-wise passbook entries
+        if (type !== "FD" && effectivePaidCount > 0 && instAmt > 0 && (updatedInsts.length < effectivePaidCount || pastAmt !== Number(existing?.totalDeposited))) {
+          updatedInsts = generatePastInstallments(payload.startDate, effectivePaidCount, instAmt, payload.fundSource, payload.dueDayOfMonth, computedTotal);
         }
 
         const updatePayload = {
@@ -651,7 +869,7 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
       } else {
         // Create new account
         const newId = "sav_" + Date.now();
-        const pastInstallments = type !== "FD" && isOld && effectivePaidCount > 0 && instAmt > 0
+        const pastInstallments = type !== "FD" && effectivePaidCount > 0 && instAmt > 0
           ? generatePastInstallments(payload.startDate, effectivePaidCount, instAmt, payload.fundSource, payload.dueDayOfMonth, computedTotal)
           : (type === "FD" && initDeposit > 0
               ? [{
@@ -691,7 +909,7 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
     }
   };
 
-  const handleOpenEdit = (item) => {
+    const handleOpenEdit = (item) => {
     setEditingId(item._id || item.id);
     const m = getRdMetrics(item);
     const sDate = item.startDate ? String(item.startDate).split("T")[0] : new Date().toISOString().split("T")[0];
@@ -890,6 +1108,121 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
     } catch (err) {
       alert("हटाने में त्रुटि: " + (err.message || err));
     }
+  };
+
+  const handleStartEditInstallment = (idx, inst) => {
+    setEditingInstallmentIdx(idx);
+    setEditInstData({
+      date: inst.date ? String(inst.date).split("T")[0] : new Date().toISOString().split("T")[0],
+      amount: String(inst.amount || ""),
+      sourceOfFund: inst.sourceOfFund || "shop_cash",
+      notes: inst.notes || ""
+    });
+  };
+
+  const handleSaveEditInstallment = async (savingItem, idx) => {
+    if (!savingItem) return;
+    const newAmt = Number(editInstData.amount);
+    if (!editInstData.date || isNaN(newAmt) || newAmt <= 0) {
+      alert("कृपया सही तारीख और किस्त राशि दर्ज करें!");
+      return;
+    }
+
+    const id = savingItem._id || savingItem.id;
+    const instList = Array.isArray(savingItem.installments) ? [...savingItem.installments] : [];
+    if (!instList[idx]) return;
+
+    instList[idx] = {
+      ...instList[idx],
+      date: editInstData.date,
+      amount: newAmt,
+      sourceOfFund: editInstData.sourceOfFund,
+      notes: editInstData.notes || instList[idx].notes
+    };
+
+    instList.sort((a, b) => new Date(a.date) - new Date(b.date));
+    const newTotal = instList.reduce((sum, x) => sum + Number(x.amount || 0), 0);
+    const updatedSaving = {
+      ...savingItem,
+      installments: instList,
+      totalDeposited: newTotal,
+      currentValue: newTotal
+    };
+
+    try {
+      await api.put(`/api/savings/${id}`, {
+        installments: instList,
+        totalDeposited: newTotal,
+        currentValue: newTotal
+      });
+    } catch (e) {}
+
+    let local = JSON.parse(localStorage.getItem("vb_local_savings") || "[]");
+    local = local.map(s => ((s._id || s.id) === id ? updatedSaving : s));
+    localStorage.setItem("vb_local_savings", JSON.stringify(local));
+
+    setViewHistoryItem(updatedSaving);
+    setSavingsList(prev => prev.map(s => ((s._id || s.id) === id ? updatedSaving : s)));
+    setEditingInstallmentIdx(null);
+    alert("✅ किस्त एंट्री सफलतापूर्वक अपडेट हो गई!");
+  };
+
+  const handleAddNewPastInstallment = async (savingItem) => {
+    if (!savingItem) return;
+    const amt = Number(newPastInstData.amount);
+    if (!newPastInstData.date || isNaN(amt) || amt <= 0) {
+      alert("कृपया सही तारीख और किस्त राशि दर्ज करें!");
+      return;
+    }
+
+    const id = savingItem._id || savingItem.id;
+    const instList = Array.isArray(savingItem.installments) ? [...savingItem.installments] : [];
+
+    const newEntry = {
+      amount: amt,
+      date: newPastInstData.date,
+      sourceOfFund: newPastInstData.sourceOfFund || "shop_cash",
+      notes: newPastInstData.notes || `किस्त जमा (${formatDateDisplay(newPastInstData.date)})`,
+      paidAt: new Date().toISOString()
+    };
+
+    instList.push(newEntry);
+    instList.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    const newTotal = instList.reduce((sum, x) => sum + Number(x.amount || 0), 0);
+    const updatedSaving = {
+      ...savingItem,
+      installments: instList,
+      alreadyPaidCount: instList.length,
+      alreadyDepositedAmount: newTotal,
+      totalDeposited: newTotal,
+      currentValue: newTotal
+    };
+
+    try {
+      await api.put(`/api/savings/${id}`, {
+        installments: instList,
+        alreadyPaidCount: instList.length,
+        alreadyDepositedAmount: newTotal,
+        totalDeposited: newTotal,
+        currentValue: newTotal
+      });
+    } catch (e) {}
+
+    let local = JSON.parse(localStorage.getItem("vb_local_savings") || "[]");
+    local = local.map(s => ((s._id || s.id) === id ? updatedSaving : s));
+    localStorage.setItem("vb_local_savings", JSON.stringify(local));
+
+    setViewHistoryItem(updatedSaving);
+    setSavingsList(prev => prev.map(s => ((s._id || s.id) === id ? updatedSaving : s)));
+    setIsAddingPastInst(false);
+    setNewPastInstData({
+      date: new Date().toISOString().split("T")[0],
+      amount: "",
+      sourceOfFund: "shop_cash",
+      notes: ""
+    });
+    alert("✅ नई पासबुक एंट्री सफलतापूर्वक जोड़ी गई!");
   };
 
   const handleOpenPay = (item) => {
@@ -1153,6 +1486,58 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
           </div>
         </div>
 
+        {/* Quick Advance Payment & 3 RDs Preset Helper */}
+        <div className="space-y-2">
+          {/* 1. Advance Payment Banner */}
+          <div className="bg-gradient-to-r from-emerald-600 via-teal-700 to-slate-900 rounded-3xl p-3.5 text-white flex items-center justify-between shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-white/20 text-white flex items-center justify-center text-xl shrink-0">
+                ⚡
+              </div>
+              <div>
+                <h4 className="text-xs font-black leading-tight text-white flex items-center gap-1.5">
+                  <span>समय से पहले / एडवांस RD किस्त जमा करें</span>
+                  <span className="text-[10px] bg-emerald-400 text-emerald-950 font-black px-1.5 py-0.2 rounded">गल्ले से खर्च</span>
+                </h4>
+                <p className="text-[10px] text-emerald-100/90 font-medium mt-0.5">
+                  दुकान गल्ले से राशि कटेगी और दैनिक खर्च रजिस्टर में RD बचत के रूप में दर्ज होगी
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleOpenAdvancePay()}
+              className="px-3 py-2 rounded-xl bg-white text-emerald-800 text-xs font-black shadow-md hover:bg-emerald-50 active:scale-95 transition cursor-pointer shrink-0"
+            >
+              ⚡ एडवांस जमा
+            </button>
+          </div>
+
+          {/* 2. 1-Click 3 RDs Setup Helper */}
+          {savingsList.filter(s => s.savingsType === "RD").length > 0 && (
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 rounded-2xl p-2.5 flex items-center justify-between gap-2 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <span className="text-base shrink-0">🔧</span>
+                <div>
+                  <span className="text-xs font-black text-amber-950 block leading-tight">
+                    3 RD खाते (16 मार्च 2029, अक्टूबर 2028, मार्च 2028) क्विक सेट करें
+                  </span>
+                  <span className="text-[10px] text-amber-800 font-medium block">
+                    तारीखवार पूरी पासबुक (31, 36, 43 किस्तें) व सही बाकी किस्तें 1-क्लिक में सेट करें
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleQuickSync3Rds}
+                className="px-2.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-black text-[11px] shrink-0 shadow-xs cursor-pointer transition"
+              >
+                ⚡ 3 RD सिंक करें
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Savings List */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -1303,46 +1688,52 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                     </div>
                   </div>
 
-                  {/* Installment Progress & Fund Details (RD / SIP / Post Office) */}
+                  {/* Installment Progress: Prominent Side-by-Side Paid vs Remaining Breakdown */}
                   {item.savingsType !== "FD" && (
-                    <div className="bg-amber-50/70 rounded-xl p-3 border border-amber-200/80 space-y-2">
-                      <div className="flex items-center justify-between text-xs">
-                        <div>
-                          <span className="text-[10px] text-slate-500 font-bold block">
-                            वास्तव में जमा (Actual Paid)
-                          </span>
-                          <span className="font-black text-emerald-700">
-                            ✅ {m.paidCount} किस्तें जमा (₹{m.totalDeposited.toLocaleString("en-IN")})
-                          </span>
-                          <span className="text-[10px] text-slate-400 block">
-                            ({m.progressPct}% पूर्ण)
-                          </span>
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {/* Paid Installments Box */}
+                        <div className="bg-gradient-to-br from-emerald-50 to-teal-50/70 border border-emerald-300 rounded-2xl p-3 space-y-1 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black text-emerald-950 uppercase tracking-tight">
+                              जमा किस्तें (Paid)
+                            </span>
+                            <span className="text-[10px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full">
+                              {`${m.progressPct}% पूर्ण`}
+                            </span>
+                          </div>
+                          <div className="text-base sm:text-lg font-black text-emerald-700 tracking-tight">
+                            ✅ {`${m.paidCount} किस्तें जमा`}
+                          </div>
+                          <div className="text-xs font-black text-emerald-900">
+                            कुल ₹{m.totalDeposited.toLocaleString("en-IN")}
+                          </div>
+                          <div className="text-[10px] text-emerald-800 font-medium pt-1 border-t border-emerald-200/60 flex items-center justify-between">
+                            <span>🔄 स्वतः: {m.autoDebitedCount || 0}</span>
+                            <span>✋ नकद: {m.manualDebitedCount || 0}</span>
+                          </div>
                         </div>
-                        {m.overdueCount > 0 ? (
-                          <div className="text-right">
-                            <span className="text-[10px] text-rose-600 font-bold block flex items-center justify-end gap-1">
-                              ⚠️ देय बकाया किस्तें (Overdue)
+
+                        {/* Remaining Installments Box */}
+                        <div className="bg-gradient-to-br from-amber-50 to-orange-50/70 border border-amber-300 rounded-2xl p-3 space-y-1 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black text-amber-950 uppercase tracking-tight">
+                              शेष बाकी (Remaining)
                             </span>
-                            <span className="font-black text-rose-700">
-                              {m.overdueCount} किस्तें पेंडिंग (₹{m.overdueAmount.toLocaleString("en-IN")})
-                            </span>
-                            <span className="text-[10px] text-slate-500 block">
-                              (आज तक कुल {m.dueMonths} देय थीं)
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="text-right">
-                            <span className="text-[10px] text-slate-500 font-bold block">
-                              आगे देना बाकी है (Remaining)
-                            </span>
-                            <span className="font-black text-slate-700">
-                              ⏳ {m.remainingCount} किस्तें बाकी (₹{m.remainingAmount.toLocaleString("en-IN")})
-                            </span>
-                            <span className="text-[10px] text-slate-400 block">
-                              कुल {m.totalMonths} माह की अवधि
+                            <span className="text-[10px] font-black bg-amber-600 text-white px-2 py-0.5 rounded-full">
+                              {`${m.remainingCount} माह बाकी`}
                             </span>
                           </div>
-                        )}
+                          <div className="text-base sm:text-lg font-black text-amber-900 tracking-tight">
+                            ⏳ {`${m.remainingCount} किस्तें बाकी`}
+                          </div>
+                          <div className="text-xs font-black text-amber-800">
+                            ₹{m.instAmt.toLocaleString("en-IN")}/माह = ₹{m.remainingAmount.toLocaleString("en-IN")}
+                          </div>
+                          <div className="text-[10px] text-amber-800 font-medium pt-1 border-t border-amber-200/60 truncate">
+                            देना शेष: कुल {m.totalMonths} माह ({m.tenureYears} वर्ष)
+                          </div>
+                        </div>
                       </div>
 
                       {/* Visual Progress Bar */}
@@ -1353,10 +1744,13 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                         />
                       </div>
 
-                      <div className="flex items-center justify-between text-[10px] text-slate-600 pt-0.5 font-bold">
-                        <span>शुरुआत: {formatDateDisplay(item.startDate)}</span>
-                        <span>अवधि: {m.totalMonths} माह ({m.tenureYears} वर्ष)</span>
-                      </div>
+                      {/* Overdue Alert if any */}
+                      {m.overdueCount > 0 && (
+                        <div className="bg-rose-50 border border-rose-200 rounded-xl px-2.5 py-1 text-[11px] text-rose-700 font-bold flex items-center justify-between">
+                          <span>⚠️ आज तक {m.dueMonths} देय थीं, {m.overdueCount} किस्तें बकाया हैं</span>
+                          <span className="font-black text-rose-800">बकाया: ₹{m.overdueAmount.toLocaleString("en-IN")}</span>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1416,7 +1810,7 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                       onClick={() => handleOpenPay(item)}
                       className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 active:scale-95 text-white text-xs font-black shadow-md flex items-center justify-center gap-1.5 cursor-pointer transition"
                     >
-                      <CreditCard size={15} /> 💵 पैसे डालें / किस्त भरें
+                      <CreditCard size={15} /> ⚡ पैसे डालें / एडवांस जमा
                     </button>
                     <button
                       type="button"
@@ -1522,101 +1916,62 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                 />
               </div>
 
-              {/* Start Date & Tenure (अवधि व शुरुआत तारीख) */}
-              <div className="bg-amber-50/60 p-3 rounded-2xl border border-amber-200/80 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-black text-amber-950 flex items-center gap-1">
-                    <Calendar size={13} className="text-amber-700" />
-                    <span>खाता शुरुआत तारीख (Start Date) *</span>
-                  </label>
-                  <span className="text-[10px] text-amber-700 font-bold">शुरू होने का दिन</span>
-                </div>
-                <input
-                  type="date"
-                  required
-                  value={formData.startDate}
-                  onChange={e => {
-                    const newDate = e.target.value;
-                    const tenure = Number(formData.tenureYears || 1);
-                    const totalMonths = tenure * 12;
-                    const elapsed = getElapsedMonths(newDate, formData.dueDayOfMonth, totalMonths);
-                    const inst = Number(formData.installmentAmount || 0);
-                    const matDate = calculateMaturity(newDate, tenure);
-                    const expMaturity = calculateExpectedMaturity({
-                      ...formData,
-                      startDate: newDate,
-                      tenureYears: tenure,
-                      installmentAmount: inst,
-                      interestRate: formData.interestRate
-                    });
-                    setFormData(prev => ({
-                      ...prev,
-                      startDate: newDate,
-                      maturityDate: matDate,
-                      isOldOngoingAccount: prev.isOldOngoingAccount || elapsed > 0,
-                      alreadyPaidCount: prev.alreadyPaidCount ? prev.alreadyPaidCount : (elapsed > 0 ? String(elapsed) : ""),
-                      alreadyDepositedAmount: prev.alreadyDepositedAmount ? prev.alreadyDepositedAmount : (elapsed > 0 && inst > 0 ? String(elapsed * inst) : ""),
-                      expectedMaturityAmount: !prev.expectedMaturityAmount || Number(prev.expectedMaturityAmount) <= 0 ? (expMaturity > 0 ? String(expMaturity) : "") : prev.expectedMaturityAmount
-                    }));
-                  }}
-                  className="w-full text-xs font-bold p-2.5 rounded-xl border border-amber-300/70 bg-white text-slate-800 outline-none"
-                />
+              {/* Start Date, Maturity Date & Tenure (अवधि व शुरुआत-मैच्योरिटी तारीखें) */}
+              <div className="bg-amber-50/60 p-3.5 rounded-2xl border border-amber-200/80 space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-black text-amber-950 flex items-center gap-1 mb-1">
+                      <Calendar size={13} className="text-amber-700" />
+                      <span>शुरुआत तारीख (Start) *</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={formData.startDate}
+                      onChange={e => handleStartDateChange(e.target.value)}
+                      className="w-full text-xs font-black p-2.5 rounded-xl border border-amber-300 bg-white text-slate-800 outline-none"
+                    />
+                  </div>
 
-                {/* Tenure in Years */}
-                <div className="pt-1">
+                  <div>
+                    <label className="text-xs font-black text-amber-950 flex items-center gap-1 mb-1">
+                      <span>🏁 मैच्योरिटी तारीख (Maturity) *</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={formData.maturityDate}
+                      onChange={e => handleMaturityDateChange(e.target.value)}
+                      className="w-full text-xs font-black p-2.5 rounded-xl border border-amber-300 bg-white text-slate-800 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Tenure display and quick preset buttons */}
+                <div>
                   <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs font-bold text-amber-950">अवधि / कितने साल के लिए है (Tenure):</label>
+                    <label className="text-xs font-bold text-amber-950">अवधि (Tenure):</label>
                     <span className="text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
                       {formData.tenureYears} साल ({Number(formData.tenureYears || 1) * 12} माह)
                     </span>
                   </div>
-                  <div className="grid grid-cols-6 gap-1.5 text-xs font-bold">
-                    {["1", "2", "3", "4", "5", "10"].map(yr => (
+                  <div className="grid grid-cols-5 gap-1.5 text-xs font-bold">
+                    {["1", "2", "3", "5", "10"].map(yr => (
                       <button
                         key={yr}
                         type="button"
-                        onClick={() => {
-                          const tenure = Number(yr);
-                          const totalMonths = tenure * 12;
-                          const elapsed = getElapsedMonths(formData.startDate, formData.dueDayOfMonth, totalMonths);
-                          const inst = Number(formData.installmentAmount || 0);
-                          const matDate = calculateMaturity(formData.startDate, yr);
-                          const expMaturity = calculateExpectedMaturity({
-                            ...formData,
-                            tenureYears: yr,
-                            installmentAmount: inst,
-                            interestRate: formData.interestRate
-                          });
-                          setFormData(prev => ({
-                            ...prev,
-                            tenureYears: yr,
-                            maturityDate: matDate,
-                            alreadyPaidCount: prev.alreadyPaidCount ? prev.alreadyPaidCount : (elapsed > 0 ? String(elapsed) : ""),
-                            alreadyDepositedAmount: prev.alreadyDepositedAmount ? prev.alreadyDepositedAmount : (elapsed > 0 && inst > 0 ? String(elapsed * inst) : ""),
-                            expectedMaturityAmount: !prev.expectedMaturityAmount || Number(prev.expectedMaturityAmount) <= 0 ? (expMaturity > 0 ? String(expMaturity) : "") : prev.expectedMaturityAmount
-                          }));
-                        }}
+                        onClick={() => handleTenureChange(yr)}
                         className={`py-1.5 rounded-lg border text-center transition cursor-pointer ${
                           formData.tenureYears === yr
                             ? "bg-amber-700 text-white border-amber-700 font-black shadow-xs"
                             : "bg-white border-amber-200 text-amber-900"
                         }`}
                       >
-                        {yr} वर्ष
+                        {yr} वर्ष ({Number(yr) * 12} माह)
                       </button>
                     ))}
                   </div>
                 </div>
-
-                {/* Calculated Maturity Date */}
-                {formData.maturityDate && (
-                  <div className="text-[11px] text-amber-900 font-bold flex items-center justify-between pt-1 border-t border-amber-200/50">
-                    <span>🗓️ परिपक्वता तिथि (Maturity Date):</span>
-                    <span className="font-black text-amber-950 underline">
-                      {new Date(formData.maturityDate).toLocaleDateString("hi-IN", { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </span>
-                  </div>
-                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -1662,7 +2017,8 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                     onChange={e => setFormData({ ...formData, fundSource: e.target.value })}
                     className="w-full text-xs font-bold px-2 py-2 rounded-xl border border-slate-200 bg-slate-50"
                   >
-                    <option value="business_salary">🏪 दुकान गल्ले से (Cash Drawer)</option>
+                    <option value="shop_cash">🏪 दुकान गल्ले से (Cash Drawer)</option>
+                    <option value="business_salary">💼 दुकान सैलरी (Drawings)</option>
                     <option value="business_capital">🏢 बिजनेस कैपिटल</option>
                     <option value="personal_funds">👛 पर्सनल फंड्स</option>
                   </select>
@@ -1729,7 +2085,7 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                 </div>
               </div>
 
-              {/* 🔄 AUTOMATED VS MANUAL DEPOSIT SWITCH */}
+              {/* 🔄 AUTOMATED VS MANUAL DEPOSIT SWITCH (Single Clean Switch) */}
               {formData.savingsType !== "FD" && (
                 <div className="bg-emerald-50/80 p-3 rounded-2xl border border-emerald-200/90 space-y-2">
                   <div className="flex items-center justify-between">
@@ -1767,210 +2123,101 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                 </div>
               )}
 
-              {/* 🔄 AUTOMATED VS MANUAL DEPOSIT SWITCH */}
-              {formData.savingsType !== "FD" && (
-                <div className="bg-emerald-50/80 p-3 rounded-2xl border border-emerald-200/90 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-black text-emerald-950 block">
-                        🔄 स्वतः ऑटो-जमा (Auto-Debit on Due Date)
+              {/* 🟢 ALWAYS-VISIBLE: INSTALLMENT STATUS & PAST DEPOSITS (अब तक जमा किस्तों का स्पष्ट हिसाब) */}
+              {formData.savingsType !== "FD" && (() => {
+                const totalMonths = Number(formData.tenureYears || 1) * 12;
+                const elapsedMonths = getElapsedMonths(formData.startDate, formData.dueDayOfMonth, 360);
+                const inst = Number(formData.installmentAmount || 0);
+                const expectedTotal = elapsedMonths * inst;
+                const paidCount = Number(formData.alreadyPaidCount || 0);
+                const remainingCount = Math.max(0, totalMonths - paidCount);
+
+                return (
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                        <Calculator size={15} className="text-amber-600" />
+                        <span>किस्तों का हिसाब (Paid vs Remaining Installments)</span>
                       </span>
-                      <span className="text-[10px] text-emerald-800 font-medium">
-                        तय तारीख को दुकान गल्ले से खुद-ब-खुद जमा व खर्च में जोड़ें
+                      <span className="text-[10px] font-black bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full">
+                        {elapsedMonths} माह बीते हैं
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setFormData(prev => ({ ...prev, isAutoDebitEnabled: !prev.isAutoDebitEnabled }))}
-                      className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
-                        formData.isAutoDebitEnabled !== false ? "bg-emerald-600" : "bg-slate-300"
-                      }`}
-                    >
-                      <span
-                        className={`w-5 h-5 rounded-full bg-white block shadow-xs transition-transform transform ${
-                          formData.isAutoDebitEnabled !== false ? "translate-x-6" : "translate-x-1"
-                        }`}
-                      />
-                    </button>
-                  </div>
 
-                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-emerald-200/50">
-                    <span className="font-bold text-emerald-900">
-                      मोड: {formData.isAutoDebitEnabled !== false ? "✅ स्वतः जमा चालू (हर माह ऑटो-कट)" : "✋ मैन्युअल जमा (बटन दबाकर)"}
-                    </span>
-                    <span className="text-[10px] text-emerald-700 font-medium">
-                      {formData.isAutoDebitEnabled !== false ? `हर माह ${formData.dueDayOfMonth || 26} तारीख` : "मैन्युअल"}
-                    </span>
-                  </div>
-                </div>
-              )}
+                    <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-2.5 rounded-xl border border-amber-200 text-xs space-y-1">
+                      <p className="text-[11px] text-amber-950 font-bold leading-relaxed">
+                        खाता शुरुआत (<b>{formatDateDisplay(formData.startDate)}</b>) से आज तक कुल <b>{elapsedMonths} महीने</b> की किस्तें बनती हैं (₹{expectedTotal.toLocaleString("en-IN")})।
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData(prev => ({
+                            ...prev,
+                            alreadyPaidCount: String(elapsedMonths),
+                            alreadyDepositedAmount: inst > 0 ? String(elapsedMonths * inst) : prev.alreadyDepositedAmount
+                          }));
+                        }}
+                        className="text-[10px] text-emerald-800 font-black bg-emerald-100 hover:bg-emerald-200 px-2.5 py-1 rounded-lg transition cursor-pointer shadow-2xs inline-flex items-center gap-1"
+                      >
+                        ⚡ तारीख के हिसाब से पूरी {elapsedMonths} किस्तें सेट करें
+                      </button>
+                    </div>
 
-              {/* 🟢 SMART TOGGLE: OLD / EXISTING ONGOING ACCOUNT (पुराना चालू खाता व स्वतः गणना) */}
-              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-black text-slate-800 block">
-                      📁 क्या यह खाता पहले से चल रहा है? (पुराना चालू खाता)
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-medium">
-                      शुरुआत तारीख से आज तक किस्तों की स्वतः गणना व पिछली जमा जोड़ने हेतु
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextVal = !formData.isOldOngoingAccount;
-                      const elapsed = getElapsedMonths(formData.startDate, formData.dueDayOfMonth, Number(formData.tenureYears || 1) * 12);
-                      const inst = Number(formData.installmentAmount || 0);
-                      setFormData(prev => ({
-                        ...prev,
-                        isOldOngoingAccount: nextVal,
-                        alreadyPaidCount: nextVal && !prev.alreadyPaidCount && elapsed > 0 ? String(elapsed) : prev.alreadyPaidCount,
-                        alreadyDepositedAmount: nextVal && !prev.alreadyDepositedAmount && elapsed > 0 && inst > 0 ? String(elapsed * inst) : prev.alreadyDepositedAmount
-                      }));
-                    }}
-                    className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
-                      formData.isOldOngoingAccount ? "bg-emerald-600" : "bg-slate-300"
-                    }`}
-                  >
-                    <span
-                      className={`w-5 h-5 rounded-full bg-white block shadow-xs transition-transform transform ${
-                        formData.isOldOngoingAccount ? "translate-x-6" : "translate-x-1"
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                {formData.isOldOngoingAccount && (() => {
-                  const totalMonths = Number(formData.tenureYears || 1) * 12;
-                  const elapsedMonths = getElapsedMonths(formData.startDate, formData.dueDayOfMonth, 360);
-                  const inst = Number(formData.installmentAmount || 0);
-                  const expectedTotal = elapsedMonths * inst;
-                  const paidCount = Number(formData.alreadyPaidCount || 0);
-                  const remainingCount = Math.max(0, totalMonths - paidCount);
-                  const missedCount = Math.max(0, elapsedMonths - paidCount);
-
-                  return (
-                    <div className="pt-2 border-t border-slate-200 space-y-2.5 animate-in fade-in">
-                      {/* Smart calculation banner */}
-                      <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-3 rounded-xl border border-amber-200 text-xs space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-black text-amber-950 flex items-center gap-1">
-                            <Calculator size={14} className="text-amber-700" />
-                            <span>सिस्टम स्वतः गणना (Smart Auto Calculation)</span>
-                          </span>
-                          <span className="text-[10px] font-bold bg-amber-200/80 text-amber-900 px-2 py-0.5 rounded-full">
-                            {elapsedMonths} माह बीते हैं
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-amber-900 leading-relaxed">
-                          खाता शुरुआत (<b>{formatDateDisplay(formData.startDate)}</b>) से अब तक कुल <b>{elapsedMonths} महीने</b> की किस्तें बनती हैं (₹{expectedTotal.toLocaleString("en-IN")}), जिन्हें सिस्टम स्वतः <b>जमा</b> मान रहा है। आगे <b>{remainingCount} किस्तें</b> देना बाकी रहेंगी।
-                        </p>
-                      </div>
-
-                      {/* Interactive Inputs */}
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <label className="block text-[11px] font-black text-slate-700 mb-1">
-                            कितनी किस्तें जमा कीं? (Paid) *
-                          </label>
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="number"
-                              min="0"
-                              max="360"
-                              placeholder={String(elapsedMonths || 0)}
-                              value={formData.alreadyPaidCount}
-                              onChange={e => {
-                                const newCount = e.target.value;
-                                const numCount = Math.max(0, parseInt(newCount) || 0);
-                                setFormData(prev => ({
-                                  ...prev,
-                                  alreadyPaidCount: newCount,
-                                  alreadyDepositedAmount: inst > 0 ? String(numCount * inst) : prev.alreadyDepositedAmount
-                                }));
-                              }}
-                              className="w-full text-xs font-black p-2 rounded-xl border border-slate-200 bg-white focus:border-amber-500 outline-none text-slate-800"
-                            />
-                            <span className="text-[11px] font-bold text-slate-500 whitespace-nowrap">किस्तें</span>
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-black text-slate-700 mb-1">
-                            कुल जमा रकम (₹) *
-                          </label>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <label className="block text-[11px] font-black text-slate-700 mb-1">
+                          कितनी किस्तें जमा कीं? (Paid) *
+                        </label>
+                        <div className="flex items-center gap-1.5">
                           <input
                             type="number"
-                            placeholder="₹ कुल राशि"
-                            value={formData.alreadyDepositedAmount}
-                            onChange={e => setFormData({ ...formData, alreadyDepositedAmount: e.target.value })}
-                            className="w-full text-xs font-black p-2 rounded-xl border border-emerald-300 bg-emerald-50/40 text-emerald-800 focus:bg-white outline-none"
+                            min="0"
+                            max="360"
+                            placeholder={String(elapsedMonths || 0)}
+                            value={formData.alreadyPaidCount}
+                            onChange={e => {
+                              const newCount = e.target.value;
+                              const numCount = Math.max(0, parseInt(newCount) || 0);
+                              setFormData(prev => ({
+                                ...prev,
+                                alreadyPaidCount: newCount,
+                                alreadyDepositedAmount: inst > 0 ? String(numCount * inst) : prev.alreadyDepositedAmount
+                              }));
+                            }}
+                            className="w-full text-xs font-black p-2 rounded-xl border border-slate-300 bg-white focus:border-amber-500 outline-none text-slate-900"
                           />
+                          <span className="text-[11px] font-bold text-slate-500">किस्तें</span>
                         </div>
                       </div>
 
-                      {/* Missed / Paid Status Callout */}
-                      {elapsedMonths > 0 && (
-                        <div className="flex items-center justify-between text-[10px] font-bold pt-0.5 flex-wrap gap-1">
-                          {paidCount < elapsedMonths ? (
-                            <span className="text-rose-700 bg-rose-50 px-2 py-1 rounded-lg border border-rose-200 flex items-center gap-1">
-                              ⚠️ {missedCount} किस्त छूटी / बकाया है (₹{(missedCount * inst).toLocaleString("en-IN")})
-                            </span>
-                          ) : paidCount > elapsedMonths ? (
-                            <span className="text-blue-700 bg-blue-50 px-2 py-1 rounded-lg border border-blue-200">
-                              ℹ️ {paidCount - elapsedMonths} किस्तें एडवांस जमा हैं
-                            </span>
-                          ) : (
-                            <span className="text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">
-                              ✅ सभी {elapsedMonths} किस्तें पूरी जमा हैं (कोई बकाया नहीं)
-                            </span>
-                          )}
+                      <div>
+                        <label className="block text-[11px] font-black text-slate-700 mb-1">
+                          कुल जमा रकम (₹) *
+                        </label>
+                        <input
+                          type="number"
+                          placeholder="₹ कुल राशि"
+                          value={formData.alreadyDepositedAmount}
+                          onChange={e => setFormData({ ...formData, alreadyDepositedAmount: e.target.value })}
+                          className="w-full text-xs font-black p-2 rounded-xl border border-emerald-300 bg-emerald-50/40 text-emerald-800 focus:bg-white outline-none"
+                        />
+                      </div>
+                    </div>
 
-                          {/* Quick 1-click preset buttons */}
-                          <div className="flex items-center gap-1 ml-auto">
-                            {elapsedMonths > 1 && paidCount !== elapsedMonths - 1 && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const c = Math.max(0, elapsedMonths - 1);
-                                  setFormData(prev => ({
-                                    ...prev,
-                                    alreadyPaidCount: String(c),
-                                    alreadyDepositedAmount: inst > 0 ? String(c * inst) : prev.alreadyDepositedAmount
-                                  }));
-                                }}
-                                className="text-[10px] text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded cursor-pointer transition font-bold"
-                                title="1 महीना छूटा हुआ (उदा. 11 किस्तें)"
-                              >
-                                {elapsedMonths - 1} किस्तें (1 छूटी)
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setFormData(prev => ({
-                                  ...prev,
-                                  alreadyPaidCount: String(elapsedMonths),
-                                  alreadyDepositedAmount: inst > 0 ? String(elapsedMonths * inst) : prev.alreadyDepositedAmount
-                                }));
-                              }}
-                              className="text-[10px] text-emerald-700 hover:text-emerald-900 bg-emerald-100 hover:bg-emerald-200 px-1.5 py-0.5 rounded cursor-pointer transition font-bold"
-                              title="सभी पूरी किस्तें सेट करें"
-                            >
-                              सभी {elapsedMonths} किस्तें
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      <span className="text-[10px] text-slate-500 font-medium block">
-                        💡 सिस्टम इन सभी {paidCount} किस्तों को पासबुक में तारीखवार व महीनेवार स्वतः जोड़ देगा। आप जब चाहें पासबुक में किसी भी महीने को एडिट कर सकते हैं या हटा सकते हैं।
+                    {/* Live Remaining Callout */}
+                    <div className="bg-amber-100/70 border border-amber-300/80 rounded-xl p-2.5 flex items-center justify-between text-xs font-bold text-amber-950">
+                      <span>⏳ आगे देना बाकी रहेगा:</span>
+                      <span className="font-black text-amber-900">
+                        {remainingCount} किस्तें बाकी • ₹{(remainingCount * inst).toLocaleString("en-IN")} शेष
                       </span>
                     </div>
-                  );
-                })()}
-              </div>
+
+                    <span className="text-[10px] text-slate-500 font-medium block">
+                      💡 सिस्टम इन सभी {paidCount} किस्तों को तारीखवार पासबुक में स्वतः जोड़ देगा, जिसे आप कभी भी एडिट कर सकते हैं।
+                    </span>
+                  </div>
+                );
+              })()}
 
               {/* Interest & Maturity */}
               <div className="grid grid-cols-2 gap-2">
@@ -2022,14 +2269,14 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
       {/* Pay Installment Modal */}
       {isPayOpen && selectedSavingForPay && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
-          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center shadow-md">
                   <CreditCard size={20} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900">💰 RD में पैसे डालें / किस्त जमा करें</h3>
+                  <h3 className="text-sm font-black text-slate-900">💰 RD में पैसे डालें / एडवांस किस्त जमा करें</h3>
                   <p className="text-[11px] text-slate-500 font-bold">{selectedSavingForPay.title} ({selectedSavingForPay.savingsType || "RD"})</p>
                 </div>
               </div>
@@ -2043,12 +2290,40 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
             </div>
 
             <form onSubmit={handleRecordInstallment} className="space-y-3">
+              {/* Account Selector if multiple RD accounts */}
+              {savingsList.filter(s => s.savingsType !== "FD" && s.status !== "CLOSED").length > 1 && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">RD खाता चुनें (Select Account) *</label>
+                  <select
+                    value={selectedSavingForPay._id || selectedSavingForPay.id}
+                    onChange={(e) => {
+                      const chosen = savingsList.find(s => (s._id || s.id) === e.target.value);
+                      if (chosen) {
+                        setSelectedSavingForPay(chosen);
+                        setPayData(prev => ({
+                          ...prev,
+                          amount: String(chosen.installmentAmount || prev.amount),
+                          notes: "⚡ एडवांस RD किस्त जमा"
+                        }));
+                      }
+                    }}
+                    className="w-full text-xs font-black px-3 py-2.5 rounded-xl border border-slate-300 bg-slate-50 text-slate-900"
+                  >
+                    {savingsList.filter(s => s.savingsType !== "FD" && s.status !== "CLOSED").map(s => (
+                      <option key={s._id || s.id} value={s._id || s.id}>
+                        {s.title} ({s.savingsType || "RD"}) - ₹{Number(s.installmentAmount || 0).toLocaleString("en-IN")}/माह
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-bold text-slate-700">जमा राशि (Amount ₹) *</label>
                   {Number(selectedSavingForPay.installmentAmount || 0) > 0 && (
                     <span className="text-[11px] text-slate-500 font-bold">
-                      नियमित किस्त: ₹{Number(selectedSavingForPay.installmentAmount).toLocaleString("en-IN")}
+                      नियमित मासिक किस्त: ₹{Number(selectedSavingForPay.installmentAmount).toLocaleString("en-IN")}
                     </span>
                   )}
                 </div>
@@ -2065,15 +2340,31 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                 <div className="flex items-center gap-1.5 flex-wrap mt-2">
                   <span className="text-[10px] text-slate-400 font-bold">शॉर्टकट:</span>
                   {Number(selectedSavingForPay.installmentAmount || 0) > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setPayData({ ...payData, amount: String(selectedSavingForPay.installmentAmount) })}
-                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-[11px] font-black rounded-lg shadow-xs transition cursor-pointer"
-                    >
-                      ₹{Number(selectedSavingForPay.installmentAmount).toLocaleString("en-IN")} (1 किस्त)
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setPayData({ ...payData, amount: String(selectedSavingForPay.installmentAmount) })}
+                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-[11px] font-black rounded-lg shadow-xs transition cursor-pointer"
+                      >
+                        ₹{Number(selectedSavingForPay.installmentAmount).toLocaleString("en-IN")} (1 किस्त)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPayData({ ...payData, amount: String(Number(selectedSavingForPay.installmentAmount) * 2) })}
+                        className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 active:scale-95 text-emerald-900 text-[11px] font-black rounded-lg border border-emerald-300 transition cursor-pointer"
+                      >
+                        ₹{(Number(selectedSavingForPay.installmentAmount) * 2).toLocaleString("en-IN")} (2 किस्तें)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPayData({ ...payData, amount: String(Number(selectedSavingForPay.installmentAmount) * 3) })}
+                        className="px-2.5 py-1 bg-teal-100 hover:bg-teal-200 active:scale-95 text-teal-900 text-[11px] font-black rounded-lg border border-teal-300 transition cursor-pointer"
+                      >
+                        ₹{(Number(selectedSavingForPay.installmentAmount) * 3).toLocaleString("en-IN")} (3 किस्तें)
+                      </button>
+                    </>
                   )}
-                  {[1000, 2000, 5000, 10000]
+                  {[1000, 2000, 5000]
                     .filter(a => a !== Number(selectedSavingForPay.installmentAmount || 0))
                     .map(amt => (
                       <button
@@ -2100,11 +2391,9 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                   <option value="business_capital">🏢 बिजनेस बैंक खाता / UPI</option>
                   <option value="personal_funds">👛 पर्सनल बैंक / निजी बचत</option>
                 </select>
-                {(payData.sourceOfFund === "shop_cash" || payData.sourceOfFund === "business_salary" || payData.sourceOfFund === "business_capital") && (
-                  <p className="text-[10px] text-emerald-700 mt-1 font-medium bg-emerald-50 p-2 rounded-lg">
-                    ✨ दुकान के गल्ले/बिजनेस से चुनने पर यह राशि स्वतः आज के दुकान खर्च में जुड़ जाएगी और गल्ले की शुद्ध नकद (Net Cash) से घट जाएगी।
-                  </p>
-                )}
+                <p className="text-[10px] text-emerald-800 mt-1 font-medium bg-emerald-50 border border-emerald-200 p-2 rounded-lg leading-relaxed">
+                  ✨ <b>दुकान गल्ले से पैसे कटेंगे</b>, आज के खर्च रजिस्टर में दर्ज होंगे और इस RD खाते की पासबुक में एडवांस किस्त के रूप में जुड़ जाएंगे।
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -2114,7 +2403,7 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                     type="date"
                     value={payData.date}
                     onChange={e => setPayData({ ...payData, date: e.target.value })}
-                    className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50"
+                    className="w-full text-xs font-bold px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50"
                   />
                 </div>
                 <div>
@@ -2274,26 +2563,114 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                 )}
 
                 {/* Section 1: Month-wise & Date-wise Deposited Installments */}
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                      <span>📜 जमा किस्तों की पासबुक (Date & Month-wise)</span>
-                      <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-black">
-                        {vRecorded.length} एंट्री
-                      </span>
-                    </h4>
-                    {vRecorded.length > 0 && (
-                      <span className="text-[11px] text-slate-500 font-bold">
-                        योग: ₹{vSumRecorded.toLocaleString("en-IN")}
-                      </span>
-                    )}
+                    <div>
+                      <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                        <span>📜 जमा किस्तों की पासबुक (Date & Month-wise)</span>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-black">
+                          {vRecorded.length} एंट्री
+                        </span>
+                      </h4>
+                      {vRecorded.length > 0 && (
+                        <span className="text-[10px] text-slate-500 font-bold block mt-0.5">
+                          कुल योग: ₹{vSumRecorded.toLocaleString("en-IN")}
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingPastInst(!isAddingPastInst)}
+                      className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-[11px] flex items-center gap-1 shadow-2xs transition cursor-pointer"
+                    >
+                      <Plus size={13} /> + पुरानी किस्त जोड़ें
+                    </button>
                   </div>
+
+                  {/* Add Past Installment Form */}
+                  {isAddingPastInst && (
+                    <div className="bg-emerald-50/90 border border-emerald-300 rounded-2xl p-3 space-y-2.5 animate-in fade-in">
+                      <div className="flex items-center justify-between border-b border-emerald-200/60 pb-1.5">
+                        <span className="text-xs font-black text-emerald-950">➕ पुरानी / पिछली तारीख की किस्त दर्ज करें</span>
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingPastInst(false)}
+                          className="text-slate-400 hover:text-slate-600 p-0.5 text-xs font-bold"
+                        >
+                          ✕ बंद करें
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5">जमा तारीख</label>
+                          <input
+                            type="date"
+                            value={newPastInstData.date}
+                            onChange={e => setNewPastInstData({ ...newPastInstData, date: e.target.value })}
+                            className="w-full text-xs font-bold p-1.5 rounded-lg border border-slate-300 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5">किस्त रकम (₹) *</label>
+                          <input
+                            type="number"
+                            placeholder={String(vInstAmt || 3000)}
+                            value={newPastInstData.amount}
+                            onChange={e => setNewPastInstData({ ...newPastInstData, amount: e.target.value })}
+                            className="w-full text-xs font-black p-1.5 rounded-lg border border-slate-300 bg-white text-emerald-700"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5">रकम स्रोत</label>
+                          <select
+                            value={newPastInstData.sourceOfFund}
+                            onChange={e => setNewPastInstData({ ...newPastInstData, sourceOfFund: e.target.value })}
+                            className="w-full text-xs font-bold p-1.5 rounded-lg border border-slate-300 bg-white"
+                          >
+                            <option value="shop_cash">🏪 दुकान गल्ला</option>
+                            <option value="business_salary">💼 दुकान सैलरी</option>
+                            <option value="business_capital">🏢 बिजनेस बैंक/UPI</option>
+                            <option value="personal_funds">👛 पर्सनल फंड</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5">विवरण / टिप्पणी</label>
+                          <input
+                            type="text"
+                            placeholder="उदा. मार्च 2024 किस्त"
+                            value={newPastInstData.notes}
+                            onChange={e => setNewPastInstData({ ...newPastInstData, notes: e.target.value })}
+                            className="w-full text-xs font-bold p-1.5 rounded-lg border border-slate-300 bg-white"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-1.5 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingPastInst(false)}
+                          className="px-3 py-1 rounded-lg border border-slate-300 text-slate-600 text-xs font-bold hover:bg-slate-100"
+                        >
+                          रद्द करें
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddNewPastInstallment(viewHistoryItem)}
+                          className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs cursor-pointer active:scale-95 transition"
+                        >
+                          💾 पासबुक में जोड़ें
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {vRecorded.length === 0 ? (
                     <div className="text-center py-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200 p-4">
                       <p className="text-slate-400 text-xs font-bold">अभी तक कोई तारीखवार किस्त एंट्री दर्ज नहीं है।</p>
                       <p className="text-[11px] text-slate-500 mt-1">
-                        नीचे दिए गए "पैसे डालें / किस्त भरें" बटन से नई किस्त जोड़ें।
+                        ऊपर दिए गए "+ पुरानी किस्त जोड़ें" या "नई किस्त जमा करें" बटन से किस्त जोड़ें।
                       </p>
                     </div>
                   ) : (
@@ -2303,6 +2680,90 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                         const dateFormatted = formatDateDisplay(inst.date);
                         const isSalary = inst.sourceOfFund === "business_salary";
                         const isCap = inst.sourceOfFund === "business_capital";
+                        const isEditingThis = editingInstallmentIdx === idx;
+
+                        if (isEditingThis) {
+                          return (
+                            <div
+                              key={idx}
+                              className="bg-amber-50/90 rounded-2xl p-3 border-2 border-amber-400 space-y-2 shadow-xs"
+                            >
+                              <div className="flex items-center justify-between border-b border-amber-200/60 pb-1">
+                                <span className="text-xs font-black text-amber-950">✏️ किस्त #{idx + 1} संपादित करें</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingInstallmentIdx(null)}
+                                  className="text-slate-400 hover:text-slate-600 text-xs font-bold"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-700 mb-0.5">जमा तारीख</label>
+                                  <input
+                                    type="date"
+                                    value={editInstData.date}
+                                    onChange={e => setEditInstData({ ...editInstData, date: e.target.value })}
+                                    className="w-full text-xs font-bold p-1.5 rounded-lg border border-slate-300 bg-white"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-700 mb-0.5">रकम (₹) *</label>
+                                  <input
+                                    type="number"
+                                    value={editInstData.amount}
+                                    onChange={e => setEditInstData({ ...editInstData, amount: e.target.value })}
+                                    className="w-full text-xs font-black p-1.5 rounded-lg border border-slate-300 bg-white text-emerald-700"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-700 mb-0.5">रकम स्रोत</label>
+                                  <select
+                                    value={editInstData.sourceOfFund}
+                                    onChange={e => setEditInstData({ ...editInstData, sourceOfFund: e.target.value })}
+                                    className="w-full text-xs font-bold p-1.5 rounded-lg border border-slate-300 bg-white"
+                                  >
+                                    <option value="shop_cash">🏪 दुकान गल्ला</option>
+                                    <option value="business_salary">💼 दुकान सैलरी</option>
+                                    <option value="business_capital">🏢 बिजनेस बैंक/UPI</option>
+                                    <option value="personal_funds">👛 पर्सनल फंड</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-700 mb-0.5">टिप्पणी / विवरण</label>
+                                  <input
+                                    type="text"
+                                    value={editInstData.notes}
+                                    onChange={e => setEditInstData({ ...editInstData, notes: e.target.value })}
+                                    className="w-full text-xs font-bold p-1.5 rounded-lg border border-slate-300 bg-white"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="flex justify-end gap-1.5 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingInstallmentIdx(null)}
+                                  className="px-2.5 py-1 rounded-lg border border-slate-300 text-slate-600 text-xs font-bold hover:bg-slate-100"
+                                >
+                                  रद्द करें
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveEditInstallment(viewHistoryItem, idx)}
+                                  className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs cursor-pointer active:scale-95 transition"
+                                >
+                                  💾 सुरक्षित करें
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
 
                         return (
                           <div
@@ -2315,6 +2776,11 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                                 <span className="text-[10px] px-1.5 py-0.2 rounded-md font-bold bg-slate-200 text-slate-700">
                                   किस्त #{idx + 1}
                                 </span>
+                                {inst.isAutoDebited && (
+                                  <span className="text-[9px] px-1 py-0.2 rounded font-bold bg-emerald-100 text-emerald-800">
+                                    🔄 स्वतः
+                                  </span>
+                                )}
                               </div>
                               <p className="text-[11px] text-slate-600 flex items-center gap-1">
                                 <span>📅 {dateFormatted}</span>
@@ -2338,11 +2804,19 @@ export default function MobileSavingsModal({ isOpen, onClose, onExpenseAdded }) 
                               </div>
                               <button
                                 type="button"
+                                onClick={() => handleStartEditInstallment(idx, inst)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-amber-700 hover:bg-amber-50 transition cursor-pointer"
+                                title="इस जमा एंट्री की तारीख या रकम बदलें"
+                              >
+                                <Edit2 size={15} />
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => handleDeleteSingleInstallment(viewHistoryItem, idx)}
                                 className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
                                 title="इस जमा एंट्री को हटाएं"
                               >
-                                <Trash2 size={16} />
+                                <Trash2 size={15} />
                               </button>
                             </div>
                           </div>

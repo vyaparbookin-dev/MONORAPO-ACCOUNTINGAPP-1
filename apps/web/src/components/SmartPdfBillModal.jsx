@@ -160,14 +160,19 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
 
         const billDate = page.date || new Date().toISOString().split("T")[0];
 
-        // Format items properly
+        // Format items properly with guaranteed positive numbers
         const billItems = Array.isArray(page.items) && page.items.length > 0
-          ? page.items.map((it) => ({
-              name: it.name || "सामान",
-              qty: Number(it.qty) || 1,
-              rate: Number(it.rate) || billAmt,
-              amount: Number(it.amount) || billAmt,
-            }))
+          ? page.items.map((it) => {
+              const q = Math.max(1, Number(it.qty) || 1);
+              const r = Number(it.rate) > 0 ? Number(it.rate) : (Number(it.amount) > 0 ? Math.round((Number(it.amount) / q) * 100) / 100 : billAmt);
+              const amt = Number(it.amount) > 0 ? Number(it.amount) : Math.round(q * r * 100) / 100;
+              return {
+                name: it.name || "सामान",
+                qty: q,
+                rate: r,
+                amount: amt,
+              };
+            })
           : [
               {
                 name: `सामान / बिल विवरण (PDF पेज ${page.pageNumber})`,
@@ -507,47 +512,72 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                             </button>
                           </div>
 
-                          <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                            {(p.items || []).map((it, itemIdx) => (
-                              <div
-                                key={itemIdx}
-                                className="flex items-center gap-1.5 bg-gray-50 p-1.5 rounded-lg border border-gray-200 text-xs"
-                              >
-                                <input
-                                  type="text"
-                                  value={it.name}
-                                  onChange={(e) => handleItemChange(idx, itemIdx, "name", e.target.value)}
-                                  placeholder="सामान का नाम"
-                                  className="flex-1 bg-white px-2 py-1 rounded border border-gray-300 text-xs font-medium"
-                                />
-                                <div className="flex items-center gap-1 w-20">
-                                  <span className="text-[10px] text-gray-400">Qty:</span>
-                                  <input
-                                    type="number"
-                                    value={it.qty}
-                                    onChange={(e) => handleItemChange(idx, itemIdx, "qty", e.target.value)}
-                                    className="w-full bg-white px-1 py-1 rounded border border-gray-300 text-xs text-center font-bold"
-                                  />
-                                </div>
-                                <div className="flex items-center gap-1 w-24">
-                                  <span className="text-[10px] text-gray-400">₹:</span>
-                                  <input
-                                    type="number"
-                                    value={it.rate}
-                                    onChange={(e) => handleItemChange(idx, itemIdx, "rate", e.target.value)}
-                                    className="w-full bg-white px-1 py-1 rounded border border-gray-300 text-xs text-right font-bold text-indigo-700"
-                                  />
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveItem(idx, itemIdx)}
-                                  className="text-rose-500 hover:text-rose-700 px-1 font-bold cursor-pointer"
-                                  title="हटाएं"
+                          {/* Table Header */}
+                          <div className="grid grid-cols-12 gap-1 px-2 py-1 bg-gray-100 rounded text-[10px] font-bold text-gray-500 mb-1">
+                            <span className="col-span-5">सामान का नाम</span>
+                            <span className="col-span-2 text-center">मात्रा (Qty)</span>
+                            <span className="col-span-2 text-right">दर (Rate ₹)</span>
+                            <span className="col-span-2 text-right">रकम (₹)</span>
+                            <span className="col-span-1 text-center">हटाएं</span>
+                          </div>
+
+                          <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                            {(p.items || []).map((it, itemIdx) => {
+                              const itemAmt = Number(it.amount || ((Number(it.qty) || 1) * (Number(it.rate) || 0)));
+                              return (
+                                <div
+                                  key={itemIdx}
+                                  className="grid grid-cols-12 gap-1 items-center bg-gray-50 p-1.5 rounded-lg border border-gray-200 text-xs"
                                 >
-                                  ✕
-                                </button>
-                              </div>
-                            ))}
+                                  <div className="col-span-5">
+                                    <input
+                                      type="text"
+                                      value={it.name}
+                                      onChange={(e) => handleItemChange(idx, itemIdx, "name", e.target.value)}
+                                      placeholder="सामान का नाम"
+                                      className="w-full bg-white px-2 py-1 rounded border border-gray-300 text-xs font-medium"
+                                    />
+                                  </div>
+                                  <div className="col-span-2">
+                                    <input
+                                      type="number"
+                                      min="0.01"
+                                      step="any"
+                                      value={it.qty ?? 1}
+                                      onChange={(e) => handleItemChange(idx, itemIdx, "qty", e.target.value)}
+                                      className="w-full bg-white px-1 py-1 rounded border border-gray-300 text-xs text-center font-bold"
+                                      placeholder="Qty"
+                                    />
+                                  </div>
+                                  <div className="col-span-2">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      value={it.rate || (it.amount && it.qty ? Math.round((it.amount / it.qty) * 100) / 100 : "")}
+                                      onChange={(e) => handleItemChange(idx, itemIdx, "rate", e.target.value)}
+                                      className="w-full bg-white px-1 py-1 rounded border border-gray-300 text-xs text-right font-bold text-indigo-700"
+                                      placeholder="दर ₹"
+                                    />
+                                  </div>
+                                  <div className="col-span-2 text-right pr-1">
+                                    <span className="font-extrabold text-slate-800 text-xs block truncate" title={`₹${itemAmt.toLocaleString("en-IN")}`}>
+                                      ₹{itemAmt.toLocaleString("en-IN")}
+                                    </span>
+                                  </div>
+                                  <div className="col-span-1 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveItem(idx, itemIdx)}
+                                      className="text-rose-500 hover:text-rose-700 p-0.5 font-bold cursor-pointer"
+                                      title="हटाएं"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
