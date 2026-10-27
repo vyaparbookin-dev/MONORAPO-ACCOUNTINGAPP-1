@@ -65,6 +65,23 @@ export const uploadBillPhoto = async (req, res) => {
         orConditions.push({ _id: targetId });
       }
 
+      // If cleanId is a Supabase UUID, resolve its bill_number or purchase_number to match in MongoDB
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+      if (isUuid && supabase) {
+        try {
+          const { data: sSale } = await supabase.from("sales").select("bill_number").eq("id", cleanId).maybeSingle();
+          if (sSale?.bill_number) {
+            orConditions.push({ billNumber: sSale.bill_number }, { invoiceNumber: sSale.bill_number });
+          }
+          const { data: sPur } = await supabase.from("purchases").select("purchase_number").eq("id", cleanId).maybeSingle();
+          if (sPur?.purchase_number) {
+            orConditions.push({ purchaseNumber: sPur.purchase_number }, { billNumber: sPur.purchase_number });
+          }
+        } catch (sbResErr) {
+          console.warn("[uploadBillPhoto] Supabase UUID lookup note:", sbResErr.message);
+        }
+      }
+
       const query = { $or: orConditions };
       const updateData = {
         billImageUrl: imageUrl,
@@ -109,26 +126,29 @@ export const uploadBillPhoto = async (req, res) => {
         : [imageUrl];
 
       const refToSync = updatedRecord?.billNumber || updatedRecord?.invoiceNumber || updatedRecord?.purchaseNumber || cleanId;
-      try {
-        if (refToSync) await syncBillPhotoToSupabase(refToSync, imageUrl);
-        if (cleanId && cleanId !== refToSync) await syncBillPhotoToSupabase(cleanId, imageUrl);
-        if (targetId && targetId !== cleanId && targetId !== refToSync) await syncBillPhotoToSupabase(targetId, imageUrl);
-      } catch (syncErr) {
-        console.warn("[uploadBillPhoto] Supabase syncBillPhoto warning:", syncErr.message);
-      }
-
+      // Non-blocking parallel sync to Supabase so upload returns instantly (< 1s) to client
       if (supabase) {
-        try {
-          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
-          if (isUuid) {
-            await supabase.from("sales").update({ bill_image_url: imageUrl }).eq("id", cleanId);
-            await supabase.from("purchases").update({ bill_image_url: imageUrl }).eq("id", cleanId);
-          }
-          await supabase.from("sales").update({ bill_image_url: imageUrl }).eq("bill_number", cleanId);
-          await supabase.from("purchases").update({ bill_image_url: imageUrl }).eq("purchase_number", cleanId);
-        } catch (dirSbErr) {
-          console.warn("[uploadBillPhoto] Direct Supabase update note:", dirSbErr.message);
+        const syncUpdates = [
+          syncBillPhotoToSupabase(refToSync, imageUrl),
+          supabase.from("sales").update({ bill_image_url: imageUrl }).eq("bill_number", cleanId),
+          supabase.from("purchases").update({ bill_image_url: imageUrl }).eq("purchase_number", cleanId)
+        ];
+        if (isUuid) {
+          syncUpdates.push(
+            supabase.from("sales").update({ bill_image_url: imageUrl }).eq("id", cleanId),
+            supabase.from("purchases").update({ bill_image_url: imageUrl }).eq("id", cleanId)
+          );
         }
+        if (refToSync && refToSync !== cleanId) {
+          syncUpdates.push(
+            supabase.from("sales").update({ bill_image_url: imageUrl }).eq("bill_number", refToSync),
+            supabase.from("purchases").update({ bill_image_url: imageUrl }).eq("purchase_number", refToSync)
+          );
+        }
+        if (targetId && targetId !== cleanId && targetId !== refToSync) {
+          syncUpdates.push(syncBillPhotoToSupabase(targetId, imageUrl));
+        }
+        Promise.allSettled(syncUpdates).catch(e => console.warn("[uploadBillPhoto] Supabase async sync note:", e.message));
       }
 
       if (updatedRecord && (targetType === "party_tx" || updatedRecord.partyId)) {

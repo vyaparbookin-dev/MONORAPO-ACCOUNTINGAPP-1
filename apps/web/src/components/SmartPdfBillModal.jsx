@@ -350,7 +350,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
         if (mappedItems.length > 0) {
           targetPage.items = mappedItems;
           const itemsSum = mappedItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
-          targetPage.totalAmount = itemsSum > 0 ? Math.round(itemsSum * 100) / 100 : (aiTotal || targetPage.totalAmount);
+          targetPage.totalAmount = aiTotal > 0 ? aiTotal : (itemsSum > 0 ? Math.round(itemsSum * 100) / 100 : targetPage.totalAmount);
         } else if (aiTotal > 0) {
           targetPage.totalAmount = aiTotal;
         }
@@ -1363,7 +1363,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                             <div>
                               <span className="text-[10px] text-emerald-700 block font-bold">फाइनल बिल टोटल:</span>
                               <span className="font-extrabold text-emerald-800 text-sm">
-                                ₹{Math.round((p.items || []).reduce((s, it) => s + (Number(it.amount) || 0), 0)).toLocaleString("en-IN")}
+                                ₹{Math.round(p.totalAmount || (p.items || []).reduce((s, it) => s + (Number(it.amount) || 0), 0)).toLocaleString("en-IN")}
                               </span>
                             </div>
                           </div>

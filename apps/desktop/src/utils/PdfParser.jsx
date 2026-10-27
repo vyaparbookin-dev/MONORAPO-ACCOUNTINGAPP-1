@@ -349,7 +349,7 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
   const items = [];
   const numberExtractRegex = /(?:₹|Rs\.?|INR)?\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/g;
 
-  // 1. Detect default GST rate from entire page text if present (e.g., GST 18%, IGST 12%, CGST 9%)
+  // 1. Detect default GST rate from entire page text if present
   let pageDefaultGst = 0;
   const pageSplitGstMatch = (rawText || "").match(/(?:cgst|sgst)\s*[@:]?\s*(2\.5|6|9|14)\s*%/i);
   if (pageSplitGstMatch) {
@@ -361,23 +361,30 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
     }
   }
 
-  // Load saved item aliases memory (vendor text -> user's product name & code)
+  // Load saved item aliases memory
   let itemAliases = {};
   try {
     itemAliases = JSON.parse(localStorage.getItem("vb_item_aliases") || "{}");
   } catch (e) {}
 
-  // 2. Scan lines in the middle section (between header metadata and footer totals)
+  // 2. Scan lines in the middle section
   const candidateLines = lines.slice(2, Math.max(3, lines.length - 2));
 
   for (let i = 0; i < candidateLines.length; i++) {
     const { lineText } = candidateLines[i];
-    // Ignore lines that look like table headers or total/tax summary lines
+    const trimmedLine = lineText.trim();
+
+    // STRICT FILTER: Ignore table header rows
+    if (/^(?:sl|sr|s\.no|sno|#|item|particulars|description|desc|hsn|sac|rate|qty|quantity|unit|amount|price|mrp|disc|discount|taxable)\b/i.test(trimmedLine)) {
+      continue;
+    }
+
+    // STRICT FILTER: Ignore Subtotals, Tax breakups (CGST, SGST, IGST), Round Off, Grand Total, Freight, Terms, Bank
     if (
-      /^(?:sl|sr|s\.no|item|particulars|description|hsn|rate|qty|quantity|amount|total|sub\s*total|taxable|cgst|sgst|igst|discount|terms|bank|rupees)/i.test(
-        lineText.trim()
-      ) ||
-      /(?:grand\s*total|net\s*payable|round\s*off|balance\s*due|total\s*tax|total\s*gst|cgst\s*amount|sgst\s*amount|igst\s*amount)/i.test(lineText)
+      /(?:sub\s*total|total\s*taxable|taxable\s*(?:value|amount)|tax\s*amount|gst\s*amount|cgst|sgst|igst|cess|central\s*tax|state\s*tax|integrated\s*tax|output\s*tax|input\s*tax|total\s*tax|total\s*gst|gst\s*total|tax\s*payable|round\s*off|grand\s*total|invoice\s*total|net\s*payable|total\s*payable|balance\s*due|final\s*amount|total\s*amount|net\s*amount|total\s*value)/i.test(lineText) ||
+      /(?:freight|carriage|transport|cartage|loading|unloading|packing|handling|courier|insurance)/i.test(lineText) ||
+      /(?:bank\s*(?:name|a\/c|acc|account)|ifsc|branch|upi\s*id|pan\s*no|gstin|state\s*code|cin\b)/i.test(lineText) ||
+      /(?:terms\s*&|terms\s*and|authorized\s*signatory|for\s+[a-z]|e\.?\s*&\s*o\.?\s*e|jurisdiction|rupees\s*in\s*words|amount\s*in\s*words)/i.test(lineText)
     ) {
       continue;
     }
@@ -394,11 +401,11 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
     // B. Detect HSN code if present (4 to 8 digit standard GST HSN)
     let detectedHsn = "";
     const hsnMatch = lineText.match(/\b(?:hsn|sac)?\s*[:#]?\s*([1-9][0-9]{3,7})\b/i);
-    if (hsnMatch && parseInt(hsnMatch[1]) > 1000) {
+    if (hsnMatch && parseInt(hsnMatch[1]) >= 1000) {
       detectedHsn = hsnMatch[1];
     }
 
-    // C. Detect Barcode or Item Code if present (e.g., BC-101, ITEM-002, 8901...)
+    // C. Detect Barcode or Item Code if present
     let detectedBarcode = "";
     const codeMatch = lineText.match(/\b([A-Za-z0-9]{3,12}-[A-Za-z0-9]{2,10})\b/);
     if (codeMatch) {
@@ -438,15 +445,30 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
     }
 
     const matches = [...lineText.matchAll(numberExtractRegex)];
-    // Filter out 6-to-8 digit HSN codes from price candidates
+    // Filter out:
+    // - Numbers matching detectedHsn (prevents picking HSN e.g. 8414 or 3209 as price/total!)
+    // - 6 to 8 digit integers (barcodes, pin codes)
+    // - 4-digit years (2020-2035)
+    // - Numbers that exceed totalAmount (if totalAmount > 0)
     const validNumMatches = matches.filter((m) => {
-      const val = parseFloat(m[1].replace(/,/g, ""));
+      const rawVal = m[1].replace(/,/g, "");
+      const val = parseFloat(rawVal);
+      if (isNaN(val) || val <= 0) return false;
+      if (detectedHsn && rawVal === detectedHsn) return false;
       if (val >= 100000 && val <= 99999999 && Number.isInteger(val)) return false;
+      if (val >= 2020 && val <= 2035 && Number.isInteger(val)) return false;
+      if (totalAmount > 0 && val > totalAmount * 1.05) return false;
       return true;
     });
 
     if (validNumMatches.length >= 1) {
-      const numbers = validNumMatches.map((m) => parseFloat(m[1].replace(/,/g, ""))).filter((n) => n > 0);
+      let numbers = validNumMatches.map((m) => parseFloat(m[1].replace(/,/g, ""))).filter((n) => n > 0);
+
+      // If line starts with serial number like "1.", "2 ", ignore first number if it equals leading serial no
+      const srMatch = trimmedLine.match(/^(\d{1,2})[\.\s\-]/);
+      if (srMatch && numbers.length > 2 && numbers[0] === parseFloat(srMatch[1])) {
+        numbers = numbers.slice(1);
+      }
 
       let rowAmt = 0;
       let qty = explicitQty || 1;
@@ -454,90 +476,66 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
       let detectedWithGstRate = 0;
 
       if (numbers.length >= 2) {
-        // Largest number in the row is the row amount
-        rowAmt = Math.max(...numbers);
-        const otherNums = numbers.filter((n) => n !== rowAmt);
+        // Priority 1: Check if any pair (q, r) multiplies to equal a third candidate (total)
+        let foundTrio = false;
+        for (let a = 0; a < numbers.length; a++) {
+          for (let b = 0; b < numbers.length; b++) {
+            if (a === b) continue;
+            const qCand = numbers[a];
+            const rCand = numbers[b];
+            if (qCand <= 0 || rCand <= 0 || qCand > 10000) continue;
 
-        // Check if any two remaining numbers multiply to row amount (qty * rate = total)
-        let foundMultiplication = false;
-        if (otherNums.length >= 2) {
-          for (let a = 0; a < otherNums.length; a++) {
-            for (let b = 0; b < otherNums.length; b++) {
-              if (a !== b) {
-                const prod = otherNums[a] * otherNums[b];
-                if (Math.abs(prod - rowAmt) < 1.5 || (rowGst > 0 && Math.abs(prod - (rowAmt / (1 + rowGst / 100))) < 1.5)) {
-                  if (explicitQty === otherNums[a]) {
-                    qty = otherNums[a];
-                    detectedWithGstRate = otherNums[b];
-                  } else if (explicitQty === otherNums[b]) {
-                    qty = otherNums[b];
-                    detectedWithGstRate = otherNums[a];
-                  } else if (otherNums[a] <= 1000 && otherNums[a] >= 1 && (otherNums[b] > 1000 || otherNums[a] <= otherNums[b])) {
-                    qty = otherNums[a];
-                    detectedWithGstRate = otherNums[b];
-                  } else {
-                    qty = otherNums[b];
-                    detectedWithGstRate = otherNums[a];
-                  }
-                  foundMultiplication = true;
-                  break;
-                }
-              }
-            }
-            if (foundMultiplication) break;
-          }
-        }
-
-        // Smart GST ratio check between pairs: e.g. 84.75 and 100 -> ratio 1.18 -> GST 18%!
-        for (let a = 0; a < otherNums.length; a++) {
-          for (let b = 0; b < otherNums.length; b++) {
-            if (a !== b && otherNums[a] < otherNums[b]) {
-              const ratio = otherNums[b] / otherNums[a];
-              if (Math.abs(ratio - 1.18) < 0.015) {
-                detectedPreGstRate = otherNums[a];
-                detectedWithGstRate = otherNums[b];
-                rowGst = 18;
-                break;
-              } else if (Math.abs(ratio - 1.12) < 0.015) {
-                detectedPreGstRate = otherNums[a];
-                detectedWithGstRate = otherNums[b];
-                rowGst = 12;
-                break;
-              } else if (Math.abs(ratio - 1.05) < 0.015) {
-                detectedPreGstRate = otherNums[a];
-                detectedWithGstRate = otherNums[b];
-                rowGst = 5;
-                break;
-              } else if (Math.abs(ratio - 1.28) < 0.015) {
-                detectedPreGstRate = otherNums[a];
-                detectedWithGstRate = otherNums[b];
-                rowGst = 28;
+            const expectedTot = qCand * rCand;
+            for (let c = 0; c < numbers.length; c++) {
+              if (c === a || c === b) continue;
+              const tCand = numbers[c];
+              if (Math.abs(expectedTot - tCand) <= Math.max(1.5, tCand * 0.02) ||
+                  (rowGst > 0 && Math.abs((expectedTot * (1 + rowGst / 100)) - tCand) <= Math.max(1.5, tCand * 0.02))) {
+                qty = explicitQty || qCand;
+                detectedWithGstRate = (qty === qCand) ? rCand : Math.round((tCand / qty) * 100) / 100;
+                rowAmt = tCand;
+                foundTrio = true;
                 break;
               }
             }
+            if (foundTrio) break;
           }
-          if (detectedPreGstRate > 0) break;
+          if (foundTrio) break;
         }
 
-        if (explicitQty) {
-          qty = explicitQty;
-        } else {
-          const qCand = otherNums.find((n) => n !== detectedPreGstRate && n !== detectedWithGstRate && n <= 1000 && n >= 1);
-          if (qCand) {
-            qty = qCand;
+        if (!foundTrio) {
+          // In standard tabular bills (ordered left-to-right), the row total is the LAST number in the row
+          const lastNum = numbers[numbers.length - 1];
+          const secondLastNum = numbers[numbers.length - 2];
+
+          if (explicitQty) {
+            qty = explicitQty;
+            rowAmt = lastNum;
+            detectedWithGstRate = (secondLastNum > 0 && Math.abs(qty * secondLastNum - lastNum) < 2)
+              ? secondLastNum
+              : Math.round((lastNum / qty) * 100) / 100;
+          } else if (numbers.length >= 3 && numbers[0] <= 1000 && numbers[0] >= 1) {
+            qty = numbers[0];
+            detectedWithGstRate = numbers[1];
+            rowAmt = numbers[2];
           } else {
+            rowAmt = lastNum;
             qty = 1;
+            detectedWithGstRate = lastNum;
           }
         }
       } else {
         rowAmt = numbers[0];
         qty = explicitQty || 1;
+        detectedWithGstRate = Math.round((rowAmt / qty) * 100) / 100;
       }
 
-      // Safeguards: Ensure positive valid numbers
-      qty = Math.max(1, Number(qty) || 1);
+      // Safeguards: Ensure row amount does not exceed bill total
+      qty = Math.max(0.01, Number(qty) || 1);
+      if (totalAmount > 0 && rowAmt > totalAmount * 1.05) {
+        continue;
+      }
 
-      // Calculate unit rate
       let unitWithGst = detectedWithGstRate > 0 ? detectedWithGstRate : Math.round((rowAmt / qty) * 100) / 100;
       let unitPreGst = detectedPreGstRate > 0 
         ? detectedPreGstRate 
@@ -558,7 +556,7 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
       const taxableValue = Math.round(qty * netPreGst * 100) / 100;
       const gstVal = Math.round((rowAmt - taxableValue) * 100) / 100;
 
-      if (rowAmt > 0) {
+      if (rowAmt > 0 && (totalAmount === 0 || rowAmt <= totalAmount * 1.05)) {
         let rawItemName = lineText
           .replace(numberExtractRegex, "")
           .replace(/\b(?:pcs|pc|nos|no|box|boxes|pkt|pkts|kg|kgs|mtr|mtrs|set|sets|ctn|bag|bags|doz|dz)\b/gi, "")
@@ -566,12 +564,11 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
           .replace(/[:#|-]+/g, " ")
           .trim();
 
-        if (rawItemName.length >= 2 && !/^(pcs|kg|nos|mtr|box|total|amount|rate|qty|tax|gst|subtotal)$/i.test(rawItemName)) {
+        if (rawItemName.length >= 2 && !/^(pcs|kg|nos|mtr|box|total|amount|rate|qty|tax|gst|subtotal|balance|date|due)$/i.test(rawItemName)) {
           let resolvedName = rawItemName.slice(0, 60);
           let isAutoMapped = false;
           let originalVendorName = rawItemName;
 
-          // Check if vendor item name has a saved alias in memory
           const aliasKey = rawItemName.toLowerCase().trim();
           if (itemAliases[aliasKey]) {
             resolvedName = itemAliases[aliasKey].mappedName || resolvedName;
@@ -608,7 +605,7 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
     }
   }
 
-  // If no specific lines were extracted, provide a clear editable single item
+  // If no specific lines were extracted, provide a single editable item equal to detectedAmount
   if (items.length === 0) {
     const singleAmt = totalAmount || 0;
     const defaultGst = pageDefaultGst || 0;

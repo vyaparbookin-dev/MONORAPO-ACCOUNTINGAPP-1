@@ -367,6 +367,19 @@ export const getPartyStatement = async (req, res) => {
     const validMongoPartyIds = [];
     if (mongoose.Types.ObjectId.isValid(pIdStr)) {
       validMongoPartyIds.push(new mongoose.Types.ObjectId(pIdStr));
+    } else {
+      try {
+        const mParty = await Party.findOne({
+          companyId: { $in: validMongoCoIds },
+          $or: [
+            { name: party.name },
+            { mobileNumber: party.mobileNumber || party.phone || "---" }
+          ]
+        }).lean();
+        if (mParty?._id) {
+          validMongoPartyIds.push(mParty._id);
+        }
+      } catch (me) {}
     }
 
     // 1. Direct Party Transactions (Cash/Bank Payments & Receipts from Mongo + Supabase)

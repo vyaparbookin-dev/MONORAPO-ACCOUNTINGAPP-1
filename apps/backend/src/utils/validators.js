@@ -42,7 +42,8 @@ export const createBillSchema = z.object({
   paymentMethod: z.string().optional(),
   notes: z.string().optional(),
   status: z.string().optional(),
-  billImageUrl: z.string().optional(),
+  billImageUrl: z.string().nullable().optional(),
+  billImageUrls: z.array(z.string()).optional(),
 });
 
 // --- Purchase Schemas ---
