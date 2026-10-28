@@ -276,24 +276,37 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
 
     try {
       let openAiKey = (localStorage.getItem("OPENAI_API_KEY") || "").trim();
-      if (!openAiKey) {
-        const userEnteredKey = window.prompt("🤖 OpenAI ChatGPT-4o-mini स्कैन के लिए कृपया अपनी OpenAI API Key दर्ज करें (उदा. sk-proj-...):");
-        if (userEnteredKey && userEnteredKey.trim()) {
-          openAiKey = userEnteredKey.trim();
-          localStorage.setItem("OPENAI_API_KEY", openAiKey);
+
+      let res;
+      try {
+        res = await api.post("/api/billing/parse-image", {
+          images: [page.imageUrl],
+          useAiVision: true,
+          rawText: page.rawText || undefined,
+          openaiApiKey: openAiKey || undefined
+        });
+      } catch (postErr) {
+        // If error indicates key is missing, prompt user immediately
+        const errMsg = postErr?.response?.data?.error || postErr?.message || "";
+        if (errMsg.includes("OpenAI API Key") || postErr?.response?.status === 400) {
+          const userKey = window.prompt("🔑 OpenAI API Key दर्ज करें (Render/Browser में सेव करने के लिए):\n\nआपके पास जो OpenAI Key है उसे यहाँ पेस्ट करें:");
+          if (userKey && userKey.trim()) {
+            openAiKey = userKey.trim();
+            localStorage.setItem("OPENAI_API_KEY", openAiKey);
+            // Retry scan immediately with newly entered key
+            res = await api.post("/api/billing/parse-image", {
+              images: [page.imageUrl],
+              useAiVision: true,
+              rawText: page.rawText || undefined,
+              openaiApiKey: openAiKey
+            });
+          } else {
+            throw new Error("OpenAI API Key के बिना AI स्कैन नहीं हो सकता।");
+          }
         } else {
-          setAiScanningPages((prev) => ({ ...prev, [pageIdx]: false }));
-          alert("OpenAI API Key के बिना AI स्कैन संभव नहीं है।");
-          return;
+          throw postErr;
         }
       }
-
-      const res = await api.post("/api/billing/parse-image", {
-        images: [page.imageUrl],
-        useAiVision: true,
-        rawText: page.rawText || undefined,
-        openaiApiKey: openAiKey
-      });
 
       const billData = res?.data?.batch && Array.isArray(res.data.bills) && res.data.bills[0]
         ? res.data.bills[0]
@@ -872,6 +885,22 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                       बिक्री (Sale)
                     </button>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentKey = localStorage.getItem("OPENAI_API_KEY") || "";
+                      const newKey = window.prompt("🔑 OpenAI ChatGPT API Key दर्ज / अपडेट करें:", currentKey);
+                      if (newKey !== null) {
+                        localStorage.setItem("OPENAI_API_KEY", newKey.trim());
+                        alert("✅ OpenAI API Key सफलतापूर्वक सेव हो गई!");
+                      }
+                    }}
+                    className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2.5 py-1.5 rounded-lg border border-slate-300 transition cursor-pointer flex items-center gap-1 active:scale-95"
+                    title="OpenAI API Key सेट या अपडेट करें"
+                  >
+                    🔑 OpenAI Key
+                  </button>
 
                   <button
                     type="button"

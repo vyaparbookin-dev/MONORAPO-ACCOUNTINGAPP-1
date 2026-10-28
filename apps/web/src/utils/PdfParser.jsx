@@ -504,53 +504,104 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
       let detectedPreGstRate = 0;
       let detectedWithGstRate = 0;
 
+      // Smart resolution of Trio (q * r = t) with column-order and unit awareness
+      let bestTrio = null;
       if (numbers.length >= 2) {
-        // Priority 1: Check if any pair (q, r) multiplies to equal a third candidate (total)
-        let foundTrio = false;
-        for (let a = 0; a < numbers.length; a++) {
-          for (let b = 0; b < numbers.length; b++) {
-            if (a === b) continue;
-            const qCand = numbers[a];
-            const rCand = numbers[b];
-            if (qCand <= 0 || rCand <= 0 || qCand > 10000) continue;
+        for (let c = numbers.length - 1; c >= 0; c--) {
+          const tCand = numbers[c];
+          if (tCand <= 0) continue;
+          if (totalAmount > 0 && tCand > totalAmount * 1.05) continue;
 
-            const expectedTot = qCand * rCand;
-            for (let c = 0; c < numbers.length; c++) {
-              if (c === a || c === b) continue;
-              const tCand = numbers[c];
-              if (Math.abs(expectedTot - tCand) <= Math.max(1.5, tCand * 0.02) ||
-                  (rowGst > 0 && Math.abs((expectedTot * (1 + rowGst / 100)) - tCand) <= Math.max(1.5, tCand * 0.02))) {
-                qty = explicitQty || qCand;
-                detectedWithGstRate = (qty === qCand) ? rCand : Math.round((tCand / qty) * 100) / 100;
-                rowAmt = tCand;
-                foundTrio = true;
+          for (let a = 0; a < numbers.length; a++) {
+            if (a === c) continue;
+            for (let b = 0; b < numbers.length; b++) {
+              if (b === c || b === a) continue;
+
+              const numA = numbers[a];
+              const numB = numbers[b];
+              if (numA <= 0 || numB <= 0) continue;
+
+              const prod = numA * numB;
+              const matchesPlain = Math.abs(prod - tCand) <= Math.max(1.5, tCand * 0.02);
+              const matchesGst = rowGst > 0 && Math.abs((prod * (1 + rowGst / 100)) - tCand) <= Math.max(1.5, tCand * 0.02);
+
+              if (matchesPlain || matchesGst) {
+                let candQ = numA;
+                let candR = numB;
+
+                // Rule 1: If explicitQty was matched from regex (e.g. "50 KG"), that number is QTY
+                if (explicitQty && (Math.abs(numA - explicitQty) < 0.01 || Math.abs(numB - explicitQty) < 0.01)) {
+                  if (Math.abs(numA - explicitQty) < 0.01) {
+                    candQ = numA;
+                    candR = numB;
+                  } else {
+                    candQ = numB;
+                    candR = numA;
+                  }
+                } 
+                // Rule 2: In standard invoices, Qty column appears before Rate (a < b)
+                else if (a < b) {
+                  candQ = numA;
+                  candR = numB;
+                } else {
+                  candQ = numB;
+                  candR = numA;
+                }
+
+                // Rule 3: Sanity check - In retail/wholesale, small integers (<= 20) paired with large numbers (> 50) are Quantities
+                if (candQ > 50 && Number.isInteger(candR) && candR <= 20 && !explicitQty) {
+                  const swapTemp = candQ;
+                  candQ = candR;
+                  candR = swapTemp;
+                }
+
+                bestTrio = {
+                  qty: candQ,
+                  rate: candR,
+                  amount: tCand,
+                  isGstIncluded: matchesGst && !matchesPlain
+                };
                 break;
               }
             }
-            if (foundTrio) break;
+            if (bestTrio) break;
           }
-          if (foundTrio) break;
+          if (bestTrio) break;
         }
+      }
 
-        if (!foundTrio) {
-          const lastNum = numbers[numbers.length - 1];
-          const secondLastNum = numbers[numbers.length - 2];
+      if (bestTrio) {
+        qty = bestTrio.qty;
+        rowAmt = bestTrio.amount;
+        detectedWithGstRate = bestTrio.isGstIncluded ? Math.round((bestTrio.amount / qty) * 100) / 100 : bestTrio.rate;
+        detectedPreGstRate = bestTrio.isGstIncluded ? bestTrio.rate : 0;
+      } else if (numbers.length >= 2) {
+        // Fallback for non-multiplication lines
+        const lastNum = numbers[numbers.length - 1];
+        const secondLastNum = numbers[numbers.length - 2];
 
-          if (explicitQty) {
-            qty = explicitQty;
+        if (explicitQty) {
+          qty = explicitQty;
+          rowAmt = lastNum;
+          detectedWithGstRate = (secondLastNum > 0 && Math.abs(qty * secondLastNum - lastNum) < 2)
+            ? secondLastNum
+            : Math.round((lastNum / qty) * 100) / 100;
+        } else if (numbers.length >= 3) {
+          const candQty = numbers[numbers.length - 3];
+          const candRate = numbers[numbers.length - 2];
+          if (candQty > 0 && candQty <= 500 && candRate > 0) {
+            qty = candQty;
+            detectedWithGstRate = candRate;
             rowAmt = lastNum;
-            detectedWithGstRate = (secondLastNum > 0 && Math.abs(qty * secondLastNum - lastNum) < 2)
-              ? secondLastNum
-              : Math.round((lastNum / qty) * 100) / 100;
-          } else if (numbers.length >= 3 && numbers[0] <= 1000 && numbers[0] >= 1) {
-            qty = numbers[0];
-            detectedWithGstRate = numbers[1];
-            rowAmt = numbers[2];
           } else {
             rowAmt = lastNum;
             qty = 1;
             detectedWithGstRate = lastNum;
           }
+        } else {
+          rowAmt = lastNum;
+          qty = 1;
+          detectedWithGstRate = lastNum;
         }
       } else {
         rowAmt = numbers[0];
