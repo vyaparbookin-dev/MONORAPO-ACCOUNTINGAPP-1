@@ -275,16 +275,24 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
     setAiScanningPages((prev) => ({ ...prev, [pageIdx]: true }));
 
     try {
-      const openAiKey = localStorage.getItem("OPENAI_API_KEY") || "";
-      const geminiKey = localStorage.getItem("GEMINI_API_KEY") || "";
+      let openAiKey = (localStorage.getItem("OPENAI_API_KEY") || "").trim();
+      if (!openAiKey) {
+        const userEnteredKey = window.prompt("🤖 OpenAI ChatGPT-4o-mini स्कैन के लिए कृपया अपनी OpenAI API Key दर्ज करें (उदा. sk-proj-...):");
+        if (userEnteredKey && userEnteredKey.trim()) {
+          openAiKey = userEnteredKey.trim();
+          localStorage.setItem("OPENAI_API_KEY", openAiKey);
+        } else {
+          setAiScanningPages((prev) => ({ ...prev, [pageIdx]: false }));
+          alert("OpenAI API Key के बिना AI स्कैन संभव नहीं है।");
+          return;
+        }
+      }
 
       const res = await api.post("/api/billing/parse-image", {
         images: [page.imageUrl],
-        scannerType: "printed",
-        mode: "printed",
+        useAiVision: true,
         rawText: page.rawText || undefined,
-        openaiApiKey: openAiKey.trim() || undefined,
-        geminiApiKey: geminiKey.trim() || undefined
+        openaiApiKey: openAiKey
       });
 
       const billData = res?.data?.batch && Array.isArray(res.data.bills) && res.data.bills[0]
@@ -337,6 +345,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
 
         if (aiParty) targetPage.partyName = aiParty;
         if (aiBillNo) targetPage.billNumber = aiBillNo;
+        if (billData.notes) targetPage.notes = billData.notes;
         if (aiDate) {
           try {
             const d = new Date(aiDate);
@@ -538,6 +547,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
           source: "PDF_MULTI_IMPORT",
           pdfPage: page.pageNumber,
           isOfflineCreated: true,
+          notes: page.notes || `PDF पेज ${page.pageNumber} से आयातित बिल`,
           billImageUrl: effectivePageImg,
           billImageUrls: effectivePageImg ? [effectivePageImg] : [],
           imgUrls: effectivePageImg ? [effectivePageImg] : [],

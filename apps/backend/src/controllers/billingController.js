@@ -886,6 +886,7 @@ CRITICAL ZERO-HALLUCINATION RULES:
   "gstin": string or null,
   "sellerGst": string or null,
   "buyerGst": string or null,
+  "notes": string or null,
   "items": [
     {
       "name": string,
@@ -946,7 +947,7 @@ CRITICAL ZERO-HALLUCINATION RULES:
       // PIPELINE A: COMPUTER-GENERATED / PRINTED BILL / PDF SCANNER
       // Triggered if explicitly requested or if file is a PDF
       // -------------------------------------------------------------
-      const isPrintedMode = req.body?.scannerType === "printed" || req.body?.mode === "printed" || mimeType.includes("pdf");
+      const isPrintedMode = !openAiKey && (req.body?.scannerType === "printed" || req.body?.mode === "printed");
       if (isPrintedMode) {
         try {
           const imgBuffer = Buffer.from(pureB64, "base64");
@@ -1087,6 +1088,7 @@ NEVER infer, guess, or invent products or prices.${ocrContextSnippet}`;
               gstin: parsed.gstin || metaFromOcr.gstin || "",
               sellerGst: parsed.sellerGst || metaFromOcr.sellerGst || "",
               buyerGst: parsed.buyerGst || metaFromOcr.buyerGst || "",
+              notes: parsed.notes || metaFromOcr.notes || "",
               challanNo: metaFromOcr.challanNo || "",
               biltyNo: metaFromOcr.biltyNo || "",
               vehicleNo: metaFromOcr.vehicleNo || "",
@@ -1110,7 +1112,9 @@ NEVER infer, guess, or invent products or prices.${ocrContextSnippet}`;
             };
           }
         } catch (oErr) {
-          console.warn("OpenAI parse failed, trying Gemini:", oErr.message);
+          const openAiErrMsg = oErr.response?.data?.error?.message || oErr.message;
+          console.warn("[parseBillImage] OpenAI GPT-4o-mini error:", openAiErrMsg);
+          throw new Error("OpenAI ChatGPT-4o-mini त्रुटि: " + openAiErrMsg);
         }
       }
 
@@ -1193,6 +1197,10 @@ NEVER infer, guess, or invent products or prices.${ocrContextSnippet}`;
       }
 
       // -------------------------------------------------------------
+      if (!openAiKey && !geminiKey) {
+        throw new Error("OpenAI API Key सेट नहीं है। कृपया ऐप सेटिंग्स में जाकर अपनी OpenAI ChatGPT API Key दर्ज करें।");
+      }
+
       // STEP 3: STRICT OCR-GROUNDED EXTRACTION (NO FAKE / DUMMY FALLBACKS)
       // -------------------------------------------------------------
       const fallbackItems = itemsFromOcr.map(it => ({
