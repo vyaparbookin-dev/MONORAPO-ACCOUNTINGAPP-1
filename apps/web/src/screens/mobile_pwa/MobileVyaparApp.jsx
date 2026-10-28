@@ -830,7 +830,7 @@ function MobileVyaparAppContent() {
     const mem = String(e.familyMember || e.member || '').trim();
     return t === 'drawings' || t === 'ghar_kharch' || t === 'personal' ||
            c.includes('घर खर्च') || c.includes('family') || c.includes('personal') ||
-           tit.includes('घर खर्च') || (mem !== '' && mem !== 'Admin' && mem !== 'Shop' && mem !== 'खुद (Self)' && mem !== 'Self');
+           tit.includes('घर खर्च') || (mem !== '' && mem !== 'Admin' && mem !== 'Shop');
   };
 
   const shopExpensesOnly = (gharKharchList || []).filter(e => !isPersonalExpense(e));

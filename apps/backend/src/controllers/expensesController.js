@@ -367,28 +367,42 @@ export const deleteExpense = async (req, res) => {
   try {
     const id = req.params.id;
     
-    // Offline-only IDs (exp_, temp_) don't exist in MongoDB
+    // Offline-only IDs (exp_, temp_) don't exist in DB
     if (id && (id.startsWith('exp_') || id.startsWith('temp_'))) {
       return res.json({ success: true, message: "Offline expense deleted locally", offline: true });
     }
 
-    let query = { companyId: req.companyId };
+    let query = { companyId: req.companyId, isDeleted: { $ne: true } };
+    let oldExpense = null;
 
     if (id && id.match(/^[0-9a-fA-F]{24}$/)) {
       query._id = id;
+      oldExpense = await Expense.findOne(query);
+      if (oldExpense) {
+        await Expense.findOneAndUpdate(query, { isDeleted: true }, { new: true });
+      }
+    } else if (id && id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)) {
+      // Supabase UUID passed from frontend
+      try {
+        const { supabase, isSupabaseConfigured } = await import("../services/supabaseReadService.js");
+        if (isSupabaseConfigured && supabase) {
+          await supabase.from("expenses").update({ is_deleted: true, updated_at: new Date().toISOString() }).eq("id", id);
+        }
+      } catch (sbDelErr) {
+        console.warn("[Supabase Delete] note:", sbDelErr.message);
+      }
+      oldExpense = await Expense.findOne({ companyId: req.companyId, isDeleted: { $ne: true } });
+      if (oldExpense) {
+        await Expense.findOneAndUpdate({ _id: oldExpense._id }, { isDeleted: true });
+      }
     } else {
-      return res.status(404).json({ success: false, error: "Invalid expense ID format" });
+      return res.status(400).json({ success: false, error: "Invalid expense ID format" });
     }
 
-    const oldExpense = await Expense.findOne(query);
-    if (!oldExpense) {
+    if (!oldExpense && !id.match(/^[0-9a-f]{8}-[0-9a-f]{4}/i)) {
       return res.status(404).json({ success: false, error: "Expense not found" });
     }
-    const expense = await Expense.findOneAndUpdate(
-       query,
-       { isDeleted: true },
-       { new: true }
-     );
+    const expense = oldExpense || { _id: id, isDeleted: true };
      
      if (oldExpense) {
        // Revert linked Staff Transaction if this expense was for a staff advance

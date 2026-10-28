@@ -22,13 +22,13 @@ export const isFamilyGharKharch = (e) => {
 
   // If a family member is specified (other than Admin / Shop)
   const mem = String(e.familyMember || e.member || "").trim();
-  if (mem && mem !== 'Admin' && mem !== 'Shop' && mem !== 'खुद (Self)' && mem !== 'Self') return true;
+  if (mem && mem !== 'Admin' && mem !== 'Shop') return true;
 
   // Category or title contains home/family keywords (unless strictly operating)
   const isPersonalCat = /घर खर्च|personal|family|राशन|किराना|दवाई|अस्पताल|स्कूल|कॉलेज फीस|कपड़े|दूध|घरेलू/i.test(c);
   const isPersonalTitle = /घर खर्च|घरेलू|राशन|किराना|दवाई|स्कूल फीस|कॉलेज फीस|मम्मी|पापा|बच्चे/i.test(tit);
 
-  if (t !== 'operating' && (isPersonalCat || isPersonalTitle || mem)) return true;
+  if (t !== 'operating' && (isPersonalCat || isPersonalTitle || (mem && mem !== 'Admin' && mem !== 'Shop'))) return true;
 
   return false;
 };

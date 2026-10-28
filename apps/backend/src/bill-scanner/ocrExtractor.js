@@ -213,7 +213,7 @@ export function parseLineItems(rawText) {
   const itemLineRegex3 = /^(.+?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)$/;
 
   const items = [];
-  const skipWords = /invoice|bill|subtotal|total|cgst|sgst|igst|tax|round|discount|gstin|fssai|phone|mobile|date|cashier|welcome|thank/i;
+  const skipWords = /invoice|bill|subtotal|total|cgst|sgst|igst|cess|tax|round\s*off|discount|gstin|fssai|phone|mobile|mob|tel|contact|date|dated|cashier|welcome|thank|pin[\s\:\-\.]*\d{4,6}|pincode|address|road|street|nagar|colony|ward|plot|shop\s*no|near|opp|state\s*code|bill\s*to|buyer|consignee|ship\s*to|transport|vehicle|challan|lr\s*no|bank\s*name|ifsc|a\/c|terms\s*&|authorised|authorized|rupees\s*in\s*words|amount\s*in\s*words/i;
 
   for (const line of lines) {
     if (skipWords.test(line)) continue;

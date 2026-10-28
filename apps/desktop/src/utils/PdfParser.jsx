@@ -98,7 +98,7 @@ const detectGrandTotal = (lines, rawText) => {
   // Tax, deduction, and quantity patterns that must NEVER be confused with Grand Total
   const ignorePrefixes = /(?:total\s*qty|total\s*quantity|total\s*items|total\s*discount|discount\s*total|taxable|cgst|sgst|igst|cess|total\s*tax|total\s*gst|gst\s*total|tax\s*total|gst\s*amount|tax\s*amount|central\s*tax|state\s*tax|integrated\s*tax|output\s*tax|input\s*tax|tax\s*payable|vat|tds|tcs|round\s*off|freight|loading|unloading)/i;
 
-  const numberExtractRegex = /(?:₹|Rs\.?|INR)?\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/g;
+  const numberExtractRegex = /(?:₹|Rs\.?|INR)?\s*([0-9]{1,3}(?:,[0-9]{2,3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/g;
 
   // 1. Scan visual lines from bottom to top (totals are in lower half)
   for (let idx = lines.length - 1; idx >= 0; idx--) {
@@ -155,7 +155,7 @@ const detectGrandTotal = (lines, rawText) => {
   // 2. Also check full raw text with direct multi-match regex (excluding tax phrases)
   const directMatches = [
     ...rawText.matchAll(
-      /(?:grand\s*total|invoice\s*total|net\s*payable|total\s*payable|total\s*invoice\s*value|gross\s*total)[\s\:\₹\Rs\.\-]*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/gi
+      /(?:grand\s*total|invoice\s*total|net\s*payable|total\s*payable|total\s*invoice\s*value|gross\s*total)[\s\:\₹\Rs\.\-]*([0-9]{1,3}(?:,[0-9]{2,3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/gi
     ),
   ];
   for (const dm of directMatches) {
@@ -345,9 +345,20 @@ const formatToISODate = (dateStr) => {
  * Reliably extracts item name, quantity (with units), unit rate, and total amount.
  * Never leaves quantity or rate empty or zero.
  */
+/**
+ * Smart detection of individual line items from invoice table rows.
+ * Reliably extracts item name, quantity (with units), unit rate, and total amount.
+ * Strictly excludes:
+ * - Table header row
+ * - All address, location, PIN codes, phone/mobile numbers
+ * - Buyer / Seller / Vendor header details
+ * - Transporter, E-way bill, Vehicle, and Challan lines
+ * - Subtotals, taxes (CGST/SGST/IGST), Round off, Grand totals, Bank details, and Terms
+ */
 const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
   const items = [];
-  const numberExtractRegex = /(?:₹|Rs\.?|INR)?\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/g;
+  // Standardized regex for comma-separated currency amounts with mandatory comma in multi-digit grouping
+  const numberExtractRegex = /(?:₹|Rs\.?|INR)?\s*([0-9]{1,3}(?:,[0-9]{2,3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/g;
 
   // 1. Detect default GST rate from entire page text if present
   let pageDefaultGst = 0;
@@ -367,32 +378,50 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
     itemAliases = JSON.parse(localStorage.getItem("vb_item_aliases") || "{}");
   } catch (e) {}
 
-  // 2. Scan lines in the middle section
-  const candidateLines = lines.slice(2, Math.max(3, lines.length - 2));
+  // 2. Identify Table Header index (Where actual item rows begin)
+  const isTableHeaderRegex = /(?:(?:description|particulars|item|product|goods|details).*(?:qty|quantity|rate|price|mrp|amount|value|taxable|hsn|sac)|^(?:sl|sr|s\.no|sno|#|item\s*no)\b)/i;
+  let tableHeaderIndex = -1;
+  for (let idx = 0; idx < lines.length; idx++) {
+    if (isTableHeaderRegex.test(lines[idx].lineText)) {
+      tableHeaderIndex = idx;
+      break;
+    }
+  }
 
-  for (let i = 0; i < candidateLines.length; i++) {
-    const { lineText } = candidateLines[i];
+  // 3. Strict Exclusion Regex for Header Metadata, Address, Contact, and Registration details
+  const addressAndContactRegex = /(?:pin[\s\:\-\.]*\d{4,6}|pincode|pin\s*code|address|addr|road|street|nagar|colony|marg|chowk|ward|plot|floor|flat|shop\s*no|complex|plaza|near|opp|opposite|behind|beside|dist|district|tehsil|state\s*code|mob(?:ile)?[\s\:\-\.]*\d|phone|ph[\s\:\-\.]*\d|tel|contact|call|whatsapp|email|@|\.com\b|\.in\b|website|www\.)/i;
+  const partyAndInvoiceMetaRegex = /(?:bill\s*to|billed\s*to|buyer|consignee|ship\s*to|shipped\s*to|deliver\s*to|sold\s*by|supplier|seller|vendor|party\s*name|customer\s*name|client\s*name|transporter|transport|vehicle\s*no|veh\s*no|e-?way|eway|challan|lr\s*no|bilty|dispatch|despatch|place\s*of\s*supply|gstin|gst\s*no|pan\s*no|cin\b|fssai|dl\s*no|drug\s*lic|tax\s*invoice|retail\s*invoice|bill\s*of\s*supply|cash\s*memo|original\s*for|duplicate\s*for|triplicate\s*for|invoice\s*no|inv\s*no|bill\s*no|date\s*[:#])/i;
+
+  // 4. Strict Exclusion Regex for Table Summary, Taxes, Round Off, Grand Total, Footer, Banking
+  const tableFooterSummaryRegex = /(?:sub\s*total|total\s*taxable|taxable\s*(?:value|amount)|tax\s*amount|gst\s*amount|cgst|sgst|igst|cess|central\s*tax|state\s*tax|integrated\s*tax|output\s*tax|input\s*tax|total\s*tax|total\s*gst|gst\s*total|tax\s*payable|round\s*off|grand\s*total|invoice\s*total|net\s*payable|total\s*payable|balance\s*due|final\s*amount|total\s*amount|net\s*amount|total\s*value|freight|carriage|transport|cartage|loading|unloading|packing|handling|courier|insurance|bank\s*(?:name|a\/c|acc|account)|ifsc|branch|upi\s*id|terms\s*&|terms\s*and|authorized\s*signatory|authorised\s*signatory|for\s+[a-z]|e\.?\s*&\s*o\.?\s*e|jurisdiction|rupees\s*in\s*words|amount\s*in\s*words|amount\s*chargeable)/i;
+
+  // Start from line after Table Header if found, else start after top 30% of lines or line 3
+  const startIdx = tableHeaderIndex !== -1 ? tableHeaderIndex + 1 : Math.min(3, Math.floor(lines.length * 0.25));
+
+  for (let i = startIdx; i < lines.length; i++) {
+    const { lineText } = lines[i];
     const trimmedLine = lineText.trim();
+    if (!trimmedLine) continue;
 
-    // STRICT FILTER: Ignore table header rows
-    if (/^(?:sl|sr|s\.no|sno|#|item|particulars|description|desc|hsn|sac|rate|qty|quantity|unit|amount|price|mrp|disc|discount|taxable)\b/i.test(trimmedLine)) {
+    // STOP CONDITION: Table items end as soon as table summary/subtotal/total/tax/footer appears
+    if (tableFooterSummaryRegex.test(trimmedLine)) {
+      break;
+    }
+
+    // STRICT REJECTION: Table header row
+    if (isTableHeaderRegex.test(trimmedLine)) {
       continue;
     }
 
-    // STRICT FILTER: Ignore Subtotals, Tax breakups (CGST, SGST, IGST), Round Off, Grand Total, Freight, Terms, Bank
-    if (
-      /(?:sub\s*total|total\s*taxable|taxable\s*(?:value|amount)|tax\s*amount|gst\s*amount|cgst|sgst|igst|cess|central\s*tax|state\s*tax|integrated\s*tax|output\s*tax|input\s*tax|total\s*tax|total\s*gst|gst\s*total|tax\s*payable|round\s*off|grand\s*total|invoice\s*total|net\s*payable|total\s*payable|balance\s*due|final\s*amount|total\s*amount|net\s*amount|total\s*value)/i.test(lineText) ||
-      /(?:freight|carriage|transport|cartage|loading|unloading|packing|handling|courier|insurance)/i.test(lineText) ||
-      /(?:bank\s*(?:name|a\/c|acc|account)|ifsc|branch|upi\s*id|pan\s*no|gstin|state\s*code|cin\b)/i.test(lineText) ||
-      /(?:terms\s*&|terms\s*and|authorized\s*signatory|for\s+[a-z]|e\.?\s*&\s*o\.?\s*e|jurisdiction|rupees\s*in\s*words|amount\s*in\s*words)/i.test(lineText)
-    ) {
+    // STRICT REJECTION: Address, PIN Code, Mobile, Buyer/Seller Header, Registration Details
+    if (addressAndContactRegex.test(trimmedLine) || partyAndInvoiceMetaRegex.test(trimmedLine)) {
       continue;
     }
 
     // A. Detect explicit quantity with units e.g. "10 PCS", "5 NOS", "2 BOX", "1.5 KG"
     let explicitQty = null;
     let detectedUnit = "pcs";
-    const unitQtyMatch = lineText.match(/\b([0-9]+(?:\.[0-9]{1,2})?)\s*(pcs|pc|nos|no|box|boxes|pkt|pkts|kg|kgs|mtr|mtrs|set|sets|ctn|bag|bags|doz|dz|pairs?|units?|gm|gms)\b/i);
+    const unitQtyMatch = lineText.match(/\b([0-9]+(?:\.[0-9]{1,2})?)\s*(pcs|pc|nos|no|box|boxes|pkt|pkts|kg|kgs|mtr|mtrs|set|sets|ctn|bag|bags|doz|dz|pairs?|units?|gm|gms|tin|tins|ltr|ltrs|liter|litres)\b/i);
     if (unitQtyMatch && parseFloat(unitQtyMatch[1]) > 0) {
       explicitQty = parseFloat(unitQtyMatch[1]);
       detectedUnit = unitQtyMatch[2].toLowerCase();
@@ -423,9 +452,7 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
         rowGst = parseFloat(rowGstMatch[1]);
       } else {
         const anyPctMatch = lineText.match(/\b(3|5|12|18|28)\s*%/);
-        if (anyPctMatch) {
-          rowGst = parseFloat(anyPctMatch[1]);
-        }
+        if (anyPctMatch) rowGst = parseFloat(anyPctMatch[1]);
       }
     }
 
@@ -444,19 +471,16 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
       }
     }
 
+    // F. Extract valid numbers excluding PIN, mobile, years, and HSN
     const matches = [...lineText.matchAll(numberExtractRegex)];
-    // Filter out:
-    // - Numbers matching detectedHsn (prevents picking HSN e.g. 8414 or 3209 as price/total!)
-    // - 6 to 8 digit integers (barcodes, pin codes)
-    // - 4-digit years (2020-2035)
-    // - Numbers that exceed totalAmount (if totalAmount > 0)
     const validNumMatches = matches.filter((m) => {
       const rawVal = m[1].replace(/,/g, "");
       const val = parseFloat(rawVal);
       if (isNaN(val) || val <= 0) return false;
       if (detectedHsn && rawVal === detectedHsn) return false;
-      if (val >= 100000 && val <= 99999999 && Number.isInteger(val)) return false;
-      if (val >= 2020 && val <= 2035 && Number.isInteger(val)) return false;
+      if (val >= 100000 && val <= 99999999 && Number.isInteger(val)) return false; // PIN code / large code
+      if (val >= 1000000000) return false; // Mobile number
+      if (val >= 2020 && val <= 2035 && Number.isInteger(val)) return false; // Year
       if (totalAmount > 0 && val > totalAmount * 1.05) return false;
       return true;
     });
@@ -468,6 +492,11 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
       const srMatch = trimmedLine.match(/^(\d{1,2})[\.\s\-]/);
       if (srMatch && numbers.length > 2 && numbers[0] === parseFloat(srMatch[1])) {
         numbers = numbers.slice(1);
+      }
+
+      // If only 1 number and it's a small integer without explicit unit/item context, skip it (likely a serial/ward/page number)
+      if (numbers.length === 1 && !explicitQty && numbers[0] <= 50 && Number.isInteger(numbers[0])) {
+        continue;
       }
 
       let rowAmt = 0;
@@ -504,7 +533,6 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
         }
 
         if (!foundTrio) {
-          // In standard tabular bills (ordered left-to-right), the row total is the LAST number in the row
           const lastNum = numbers[numbers.length - 1];
           const secondLastNum = numbers[numbers.length - 2];
 
@@ -557,14 +585,32 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
       const gstVal = Math.round((rowAmt - taxableValue) * 100) / 100;
 
       if (rowAmt > 0 && (totalAmount === 0 || rowAmt <= totalAmount * 1.05)) {
-        let rawItemName = lineText
-          .replace(numberExtractRegex, "")
-          .replace(/\b(?:pcs|pc|nos|no|box|boxes|pkt|pkts|kg|kgs|mtr|mtrs|set|sets|ctn|bag|bags|doz|dz)\b/gi, "")
-          .replace(/^[\d\s().-]+/, "")
-          .replace(/[:#|-]+/g, " ")
-          .trim();
+        // Clean item name: Find where column numbers begin and extract item description cleanly
+        let rawItemName = trimmedLine.replace(/^\d{1,3}[\.\s\)-]+\s*/, "");
+        
+        // Find position of the first table column (HSN or first number match)
+        let firstColIndex = -1;
+        if (detectedHsn) {
+          firstColIndex = rawItemName.indexOf(detectedHsn);
+        }
+        if (firstColIndex === -1 && validNumMatches.length > 0) {
+          const firstNumRaw = validNumMatches[0][0];
+          firstColIndex = rawItemName.indexOf(firstNumRaw);
+        }
 
-        if (rawItemName.length >= 2 && !/^(pcs|kg|nos|mtr|box|total|amount|rate|qty|tax|gst|subtotal|balance|date|due)$/i.test(rawItemName)) {
+        if (firstColIndex > 3) {
+          rawItemName = rawItemName.slice(0, firstColIndex).trim();
+        } else {
+          rawItemName = rawItemName
+            .replace(numberExtractRegex, "")
+            .replace(/\b(?:pcs|pc|nos|no|box|boxes|pkt|pkts|kg|kgs|mtr|mtrs|set|sets|ctn|bag|bags|doz|dz|tin|tins|ltr|ltrs|liter|litres)\b/gi, "")
+            .replace(/[:#|-]+/g, " ")
+            .trim();
+        }
+
+        // Must have at least 2 alphabetic characters and not be generic keywords
+        if (rawItemName.length >= 2 && /[A-Za-z\u0900-\u097F]{2,}/.test(rawItemName) &&
+            !/^(pcs|kg|nos|mtr|box|tin|total|amount|rate|qty|tax|gst|subtotal|balance|date|due)$/i.test(rawItemName)) {
           let resolvedName = rawItemName.slice(0, 60);
           let isAutoMapped = false;
           let originalVendorName = rawItemName;
@@ -634,12 +680,6 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
   return items;
 };
 
-/**
- * Parses a multi-page PDF into separate page images and auto-detects bill details per page
- * Handles:
- * 1. Rendering each page to a crisp JPEG image
- * 2. Visual line-based smart text recognition (Invoice No, Date, Party Name, Grand Total, Line Items)
- */
 export const extractPagesAndBillsFromPDF = async (file) => {
   try {
     const arrayBuffer = await file.arrayBuffer();
@@ -689,10 +729,7 @@ export const extractPagesAndBillsFromPDF = async (file) => {
         const detectedItems = detectLineItems(visualLines, detectedAmount, pageNum, rawText);
 
         const itemsTotal = detectedItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
-        let finalPageTotal = detectedAmount;
-        if (itemsTotal > 0 && (finalPageTotal === 0 || Math.abs(finalPageTotal - itemsTotal) > itemsTotal * 0.4)) {
-          finalPageTotal = Math.round(itemsTotal * 100) / 100;
-        }
+        let finalPageTotal = detectedAmount > 0 ? detectedAmount : (itemsTotal > 0 ? Math.round(itemsTotal * 100) / 100 : 0);
 
         pages.push({
           pageNumber: pageNum,
