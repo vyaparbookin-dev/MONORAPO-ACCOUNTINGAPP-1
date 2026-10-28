@@ -16,6 +16,9 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
   // State for Full Screen, Store Products, Aliases, Expanded items, and Error recovery
   const [isFullScreen, setIsFullScreen] = useState(true);
   const [storeProducts, setStoreProducts] = useState([]);
+  const [existingParties, setExistingParties] = useState([]);
+  const [existingBills, setExistingBills] = useState([]);
+  const [mergeMode, setMergeMode] = useState(false); // Zoho/Marg style Multi-page Bill Stitching
   const [itemAliases, setItemAliases] = useState({});
   const [expandedItems, setExpandedItems] = useState({});
   const [modalError, setModalError] = useState(null);
@@ -33,6 +36,14 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
   useEffect(() => {
     if (!isOpen) return;
     setModalError(null);
+    const coId = companyId || localStorage.getItem("companyId") || "default";
+    try {
+      const parties = storageManager.getParties(coId) || [];
+      setExistingParties(parties);
+      const bills = storageManager.getBills(coId) || [];
+      setExistingBills(bills);
+    } catch (e) {}
+
     try {
       const prodKeys = ["vb_local_products", "products", "inventory", "items"];
       for (const k of prodKeys) {
@@ -91,6 +102,14 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
         alert("इस PDF में कोई पेज नहीं मिला।");
       } else {
         setPages(extractedPages);
+        // If multi-page PDF, auto-enable mergeMode if pages share bill number or within 10 pages
+        if (extractedPages.length > 1) {
+          const firstNo = extractedPages[0].billNumber;
+          const sameBillNo = firstNo && extractedPages.every(p => !p.billNumber || p.billNumber === firstNo);
+          setMergeMode(Boolean(sameBillNo || extractedPages.length <= 5));
+        } else {
+          setMergeMode(false);
+        }
       }
     } catch (err) {
       console.error("PDF Parsing error:", err);
@@ -113,6 +132,20 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
       const updated = [...prev];
       updated[index] = { ...updated[index], isSelected: !updated[index].isSelected };
       return updated;
+    });
+  };
+
+  // Duplicate Invoice Number Detector (Zoho / Busy / Tally style)
+  const getDuplicateInfo = (billNo, partyName) => {
+    if (!billNo || !billNo.trim()) return null;
+    const cleanNo = billNo.trim().toLowerCase();
+    const cleanParty = (partyName || "").trim().toLowerCase();
+    return existingBills.find((b) => {
+      const bNo = (b.billNumber || b.invoiceNumber || "").trim().toLowerCase();
+      if (!bNo || bNo !== cleanNo) return false;
+      if (!cleanParty) return true;
+      const bParty = (b.customerName || b.partyName || "").trim().toLowerCase();
+      return bParty.includes(cleanParty) || cleanParty.includes(bParty) || !bParty;
     });
   };
 
@@ -431,7 +464,176 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
       const createdBills = [];
       const allPurchasedItems = [];
 
-      // 1. Process each page bill
+      // 1. MERGE MODE (Zoho / Marg ERP Multi-page Bill Stitching)
+      if (mergeMode && selected.length > 1) {
+        const mainPage = selected[0];
+        const lastPage = selected[selected.length - 1];
+        const randomSuffix = Math.random().toString(36).substring(2, 6);
+        const uniqueId = `pdf_${timestamp}_merged_${randomSuffix}`;
+
+        const rawBillNo = (mainPage.billNumber && mainPage.billNumber.trim()) ? mainPage.billNumber.trim() : "";
+        const finalBillNo = rawBillNo || `BILL-MERGED-${timestamp.toString().slice(-4)}`;
+
+        const party = (mainPage.partyName && mainPage.partyName.trim())
+          ? mainPage.partyName.trim()
+          : "सप्लायर";
+
+        const billDate = mainPage.date || new Date().toISOString().split("T")[0];
+        const pMode = (mainPage.paymentMode || "CASH").toUpperCase();
+        const isCash = pMode === "CASH";
+
+        // Stitch all items together from all selected pages in sequential order
+        const allItems = [];
+        selected.forEach((pg) => {
+          if (Array.isArray(pg.items)) {
+            allItems.push(...pg.items);
+          }
+        });
+
+        const itemsTotal = allItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+        const billAmt = lastPage.totalAmount > 0 ? lastPage.totalAmount : (itemsTotal > 0 ? Math.round(itemsTotal * 100) / 100 : 0);
+
+        const billItems = allItems.map((it) => {
+          const q = Math.max(0.01, Number(it.qty) || 1);
+          const withRate = Number(it.withGstRate) > 0 ? Number(it.withGstRate) : (Number(it.rate) || 0);
+          const preRate = Number(it.preGstRate) > 0 ? Number(it.preGstRate) : withRate;
+          const gst = Number(it.gstRate) || 0;
+          const l = Number(it.less) || 0;
+          const amt = Number(it.amount) > 0 ? Number(it.amount) : Math.round(q * withRate * 100) / 100;
+          const taxVal = Number(it.taxableAmount) > 0 ? Number(it.taxableAmount) : Math.round(q * preRate * 100) / 100;
+          const gstVal = Number(it.gstAmount) > 0 ? Number(it.gstAmount) : Math.round((amt - taxVal) * 100) / 100;
+
+          return {
+            name: it.name || "सामान",
+            rawVendorName: it.rawVendorName || it.name || "सामान",
+            qty: q,
+            quantity: q,
+            unit: it.unit || "pcs",
+            barcode: it.barcode || "",
+            hsnCode: it.hsnCode || "",
+            rate: withRate,
+            price: withRate,
+            preGstRate: preRate,
+            withGstRate: withRate,
+            gstRate: gst,
+            less: l,
+            lessType: it.lessType || "flat",
+            discount: l,
+            taxableAmount: taxVal,
+            gstAmount: gstVal,
+            amount: amt,
+            total: amt,
+          };
+        });
+
+        allPurchasedItems.push(...billItems);
+
+        // Upload all page images
+        const uploadedImgUrls = [];
+        for (let i = 0; i < selected.length; i++) {
+          const pg = selected[i];
+          if (pg.imageUrl) {
+            try {
+              const upRes = await api.post('/api/upload/bill-image', {
+                fileData: pg.imageUrl,
+                fileName: `bill_${finalBillNo}_p${pg.pageNumber}.jpg`,
+                targetType: "bill",
+                targetId: finalBillNo
+              }).catch(() => null);
+              const url = upRes?.url || upRes?.data?.url || pg.imageUrl;
+              uploadedImgUrls.push(url);
+            } catch (e) {
+              uploadedImgUrls.push(pg.imageUrl);
+            }
+          }
+        }
+
+        const primaryImg = uploadedImgUrls[0] || "";
+        const totalTax = Math.round(billItems.reduce((s, it) => s + (Number(it.gstAmount) || 0), 0) * 100) / 100;
+        const totalTaxable = Math.round(billItems.reduce((s, it) => s + (Number(it.taxableAmount) || 0), 0) * 100) / 100;
+        const totalLess = Math.round(billItems.reduce((s, it) => {
+          const l = Number(it.less) || 0;
+          const q = Number(it.qty) || 1;
+          const p = Number(it.preGstRate) || 0;
+          return s + (it.lessType === "%" ? (p * l / 100) * q : l * q);
+        }, 0) * 100) / 100;
+
+        const mergedBill = {
+          _id: uniqueId,
+          id: uniqueId,
+          billNumber: finalBillNo,
+          invoiceNumber: finalBillNo,
+          customerName: party,
+          partyName: party,
+          customer: party,
+          date: billDate,
+          rawDate: `${billDate}T12:00:00.000Z`,
+          amount: billAmt,
+          total: billAmt,
+          finalAmount: billAmt,
+          totalAmount: billAmt,
+          grandTotal: billAmt,
+          paidAmount: isCash ? billAmt : 0,
+          balance: isCash ? 0 : billAmt,
+          paymentStatus: isCash ? "Paid" : "Unpaid",
+          type: defaultBillType,
+          paymentMode: pMode,
+          paymentMethod: isCash ? "cash" : "credit",
+          source: "PDF_MULTI_MERGE",
+          pdfPageCount: selected.length,
+          isOfflineCreated: true,
+          notes: `PDF के ${selected.length} पेजों को जोड़कर 1 बिल बनाया गया`,
+          billImageUrl: primaryImg,
+          billImageUrls: uploadedImgUrls,
+          imgUrls: uploadedImgUrls,
+          pageImages: uploadedImgUrls,
+          items: billItems,
+          tax: totalTax,
+          taxAmount: totalTax,
+          discountAmount: totalLess,
+          subTotal: totalTaxable,
+          taxableAmount: totalTaxable,
+        };
+
+        if (primaryImg) {
+          photosCache[uniqueId] = uploadedImgUrls;
+          photosCache[finalBillNo] = uploadedImgUrls;
+          persistPhotoToLocalCache(uniqueId, uploadedImgUrls);
+          persistPhotoToLocalCache(finalBillNo, uploadedImgUrls);
+        }
+
+        // Auto-create / update Party in Vendor ledger
+        if (party && !party.startsWith("सप्लायर (पेज")) {
+          try {
+            const currentParties = storageManager.getParties(coId) || [];
+            const exists = currentParties.find(
+              (p) => (p.name || p.partyName || "").trim().toLowerCase() === party.toLowerCase()
+            );
+            if (!exists) {
+              const pType = defaultBillType === "Purchase" ? "supplier" : "customer";
+              const newPartyObj = {
+                _id: `party_${timestamp}_${randomSuffix}`,
+                id: `party_${timestamp}_${randomSuffix}`,
+                name: party,
+                partyName: party,
+                type: pType,
+                partyType: pType,
+                openingBalance: 0,
+                balance: isCash ? 0 : (pType === "supplier" ? -billAmt : billAmt),
+                currentBalance: isCash ? 0 : (pType === "supplier" ? -billAmt : billAmt),
+                totalTransactions: 1,
+                lastTransactionDate: billDate,
+                createdAt: new Date().toISOString(),
+                source: "PDF_AUTO_CREATED",
+              };
+              storageManager.saveParty(coId, newPartyObj);
+            }
+          } catch (pe) {}
+        }
+
+        createdBills.push(mergedBill);
+      } else {
+      // 2. PAGE BY PAGE MODE (Separate bills for each page)
       for (let i = 0; i < selected.length; i++) {
         const page = selected[i];
         const randomSuffix = Math.random().toString(36).substring(2, 6);
@@ -634,6 +836,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
 
         createdBills.push(newBill);
       }
+      }
 
       // 2. Batch save all bills into storageManager
       const updatedBills = deduplicateBills([...createdBills, ...currentBills]);
@@ -803,6 +1006,15 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
           ))}
         </datalist>
 
+        {/* Existing Parties Datalist for Auto-complete (Zoho/Tally style) */}
+        <datalist id="existing_parties_datalist">
+          {(existingParties || []).map((pty, ptyIdx) => (
+            <option key={ptyIdx} value={pty.name || pty.partyName}>
+              {pty.name || pty.partyName} {pty.gstin ? `[GST: ${pty.gstin}] ` : ""}{pty.phone ? `(${pty.phone})` : ""}
+            </option>
+          ))}
+        </datalist>
+
         {/* Content Body */}
         <div className="p-4 overflow-y-auto flex-1 space-y-4">
           
@@ -885,6 +1097,35 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                       बिक्री (Sale)
                     </button>
                   </div>
+
+                  {pages.length > 1 && (
+                    <div className="inline-flex rounded-lg border border-emerald-300 p-0.5 bg-emerald-50/60 shadow-xs">
+                      <button
+                        type="button"
+                        onClick={() => setMergeMode(true)}
+                        className={`px-2.5 py-1 text-xs font-bold rounded-md transition flex items-center gap-1 ${
+                          mergeMode
+                            ? "bg-emerald-600 text-white shadow-xs"
+                            : "text-emerald-800 hover:bg-emerald-100"
+                        }`}
+                        title="सभी पेजों को जोड़कर 1 बिल बनाएं (Zoho/Marg ERP स्टाइल)"
+                      >
+                        📄 1 संयुक्त बिल ({pages.length} पेज)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMergeMode(false)}
+                        className={`px-2.5 py-1 text-xs font-bold rounded-md transition flex items-center gap-1 ${
+                          !mergeMode
+                            ? "bg-indigo-600 text-white shadow-xs"
+                            : "text-gray-700 hover:bg-gray-200"
+                        }`}
+                        title="हर पेज का अलग बिल बनाएं"
+                      >
+                        📑 अलग-अलग ({pages.length} बिल)
+                      </button>
+                    </div>
+                  )}
 
                   <button
                     type="button"
@@ -1045,16 +1286,36 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                         </div>
                       </div>
 
+                      {/* Duplicate Invoice Alert (Zoho / Tally / Busy Style) */}
+                      {(() => {
+                        const duplicate = getDuplicateInfo(p.billNumber, p.partyName);
+                        if (!duplicate) return null;
+                        return (
+                          <div className="mb-2 p-2 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-xs flex items-center justify-between shadow-xs">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-base">⚠️</span>
+                              <div>
+                                <strong className="font-bold">डुप्लीकेट बिल चेतावनी:</strong> बिल <strong>#{p.billNumber}</strong> पार्टी <strong>'{duplicate.customerName || duplicate.partyName}'</strong> के लिए पहले से दर्ज है ({duplicate.date} • ₹{Number(duplicate.totalAmount || duplicate.amount || 0).toLocaleString("en-IN")})।
+                              </div>
+                            </div>
+                            <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-extrabold whitespace-nowrap ml-2">
+                              पूर्व दर्ज बिल
+                            </span>
+                          </div>
+                        );
+                      })()}
+
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                         <div>
                           <label className="text-gray-500 font-medium">पार्टी / सप्लायर नाम</label>
                           <input
                             type="text"
+                            list="existing_parties_datalist"
                             value={p.partyName}
                             onChange={(e) => handleFieldChange(idx, "partyName", e.target.value)}
                             disabled={!p.isSelected}
                             className="w-full mt-0.5 px-2.5 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-indigo-500 font-semibold text-gray-800"
-                            placeholder="सप्लायर का नाम"
+                            placeholder="सप्लायर का नाम (टाइप करें या लिस्ट से चुनें)"
                           />
                         </div>
 
@@ -1104,6 +1365,28 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                             className="w-full mt-0.5 px-2.5 py-1.5 border-2 border-indigo-400 bg-indigo-50/40 rounded-md focus:ring-2 focus:ring-indigo-500 font-extrabold text-indigo-800 text-sm"
                             placeholder="₹ 0.00"
                           />
+                          {p.totalAmount > 0 && (() => {
+                            const itemsSum = (p.items || []).reduce((s, it) => s + (Number(it.amount) || 0), 0);
+                            const diff = Math.round((p.totalAmount - itemsSum) * 100) / 100;
+                            if (itemsSum > 0 && Math.abs(diff) > 2) {
+                              if (diff > 2) {
+                                return (
+                                  <div className="text-[10px] text-slate-600 mt-1 flex items-center justify-between bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                                    <span>🚚 भाड़ा / पैकिंग / अतिरिक्त प्रभार:</span>
+                                    <span className="font-bold text-slate-800">+₹{diff.toLocaleString("en-IN")}</span>
+                                  </div>
+                                );
+                              } else {
+                                return (
+                                  <div className="text-[10px] text-rose-700 mt-1 flex items-center justify-between bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                                    <span>🏷️ बिल-स्तरीय छूट / राउंड ऑफ:</span>
+                                    <span className="font-bold text-rose-800">-₹{Math.abs(diff).toLocaleString("en-IN")}</span>
+                                  </div>
+                                );
+                              }
+                            }
+                            return null;
+                          })()}
                         </div>
                       </div>
 
@@ -1445,7 +1728,11 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
               disabled={saving || pages.filter((p) => p.isSelected).length === 0}
               className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold shadow-md transition flex items-center gap-2 cursor-pointer"
             >
-              {saving ? "सेव हो रहा है..." : `💾 बिल स्वीकार करें और खाते में जोड़ें (${pages.filter((p) => p.isSelected).length} बिल • कुल ${pages.filter(p => p.isSelected).reduce((sum, p) => sum + (p.items || []).length, 0)} सामान)`}
+              {saving ? "सेव हो रहा है..." : (
+                mergeMode && pages.filter((p) => p.isSelected).length > 1
+                  ? `💾 1 संयुक्त बिल स्वीकार करें (${pages.filter((p) => p.isSelected).length} पेज जोड़े • कुल ${pages.filter(p => p.isSelected).reduce((sum, p) => sum + (p.items || []).length, 0)} सामान)`
+                  : `💾 बिल स्वीकार करें (${pages.filter((p) => p.isSelected).length} अलग बिल • कुल ${pages.filter(p => p.isSelected).reduce((sum, p) => sum + (p.items || []).length, 0)} सामान)`
+              )}
             </button>
           )}
         </div>
