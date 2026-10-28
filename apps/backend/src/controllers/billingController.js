@@ -876,7 +876,12 @@ CRITICAL ZERO-HALLUCINATION RULES:
 4. Do NOT use outside training data to invent products (never invent paint, cement, or random hardware names).
 5. For line items: ONLY return items that are visibly printed/written on the bill. If no items are legible, return an empty array: "items": [].
 6. Every line item's price must be the literal rate printed. If missing, leave price as null.
-7. Return STRICTLY a valid JSON object without markdown fences:
+7. HIGH-VOLUME & COMMODITY TRADE RULE: For high volume or commodity goods (e.g. TMT steel bars, cement, bricks, loose grains, sand, wholesale wire), quantity can be very large (e.g. 500, 1000, 5000 kg/pcs/bags) and unit price can be low (e.g. ₹8, ₹15, ₹60). NEVER swap quantity and price based on number magnitude. Strictly follow the invoice table column headers: the "Qty" column is quantity, and the "Rate/Price" column is price.
+8. MATHEMATICAL RECONCILIATION WITH GRAND TOTAL:
+   - For each line item: total must mathematically equal quantity * price (or tax-adjusted total).
+   - Reconcile the sum of all line item totals against totalAmount: sum(items.total) + additionalCharges + roundOff + taxes ≈ totalAmount.
+   - NEVER include summary rows (Subtotal, Grand Total, Tax Total, Round Off) inside the "items" array.
+9. Return STRICTLY a valid JSON object without markdown fences:
 {
   "partyName": string or null,
   "partyType": "customer" | "supplier",

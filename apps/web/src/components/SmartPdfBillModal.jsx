@@ -1084,11 +1084,17 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                         <div>
                           <label className="text-indigo-700 font-bold flex items-center justify-between">
                             <span>कुल रकम (Grand Total ₹)</span>
-                            {p.totalAmount > 0 && (
-                              <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded font-semibold">
-                                ऑटो-डिटेक्टेड
-                              </span>
-                            )}
+                            {p.totalAmount > 0 && (() => {
+                              const itemsSum = (p.items || []).reduce((s, it) => s + (Number(it.amount) || 0), 0);
+                              const isExact = itemsSum > 0 && Math.abs(p.totalAmount - itemsSum) <= Math.max(2, p.totalAmount * 0.005);
+                              return (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                                  isExact ? "text-emerald-700 bg-emerald-100" : "text-amber-800 bg-amber-100"
+                                }`}>
+                                  {isExact ? "✅ सामानों के जोड़ से 100% मेल खाता है" : `सामानों का जोड़: ₹${Math.round(itemsSum).toLocaleString("en-IN")}`}
+                                </span>
+                              );
+                            })()}
                           </label>
                           <input
                             type="number"

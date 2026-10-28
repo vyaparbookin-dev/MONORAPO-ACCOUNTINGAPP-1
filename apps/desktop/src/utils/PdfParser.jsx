@@ -378,12 +378,24 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
     itemAliases = JSON.parse(localStorage.getItem("vb_item_aliases") || "{}");
   } catch (e) {}
 
-  // 2. Identify Table Header index (Where actual item rows begin)
+  // 2. Identify Table Header index & Column Ordering (Where actual item rows begin)
   const isTableHeaderRegex = /(?:(?:description|particulars|item|product|goods|details).*(?:qty|quantity|rate|price|mrp|amount|value|taxable|hsn|sac)|^(?:sl|sr|s\.no|sno|#|item\s*no)\b)/i;
   let tableHeaderIndex = -1;
+  let detectedColumnOrder = "qty_first"; // default: Qty column comes before Rate column
+
   for (let idx = 0; idx < lines.length; idx++) {
     if (isTableHeaderRegex.test(lines[idx].lineText)) {
       tableHeaderIndex = idx;
+      const hText = lines[idx].lineText;
+      const qtyMatch = hText.match(/\b(?:qty|quantity|nos|qnty|pkts?|bags?|pcs)\b/i);
+      const rateMatch = hText.match(/\b(?:rate|price|mrp|unit\s*price|prc)\b/i);
+      if (qtyMatch && rateMatch && qtyMatch.index !== undefined && rateMatch.index !== undefined) {
+        if (rateMatch.index < qtyMatch.index) {
+          detectedColumnOrder = "rate_first";
+        } else {
+          detectedColumnOrder = "qty_first";
+        }
+      }
       break;
     }
   }
@@ -539,21 +551,17 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
                     candR = numA;
                   }
                 } 
-                // Rule 2: In standard invoices, Qty column appears before Rate (a < b)
-                else if (a < b) {
-                  candQ = numA;
-                  candR = numB;
+                // Rule 2: Column order based on table header or standard left-to-right invoice format
+                else if (detectedColumnOrder === "rate_first") {
+                  candR = (a < b) ? numA : numB;
+                  candQ = (a < b) ? numB : numA;
                 } else {
-                  candQ = numB;
-                  candR = numA;
+                  // Standard: Qty column comes before Rate column (a < b)
+                  candQ = (a < b) ? numA : numB;
+                  candR = (a < b) ? numB : numA;
                 }
 
-                // Rule 3: Sanity check - In retail/wholesale, small integers (<= 20) paired with large numbers (> 50) are Quantities
-                if (candQ > 50 && Number.isInteger(candR) && candR <= 20 && !explicitQty) {
-                  const swapTemp = candQ;
-                  candQ = candR;
-                  candR = swapTemp;
-                }
+                // NOTE: Never swap based on number magnitude! (Supports high-volume trade like TMT steel, cement, bricks)
 
                 bestTrio = {
                   qty: candQ,
@@ -587,9 +595,9 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
             ? secondLastNum
             : Math.round((lastNum / qty) * 100) / 100;
         } else if (numbers.length >= 3) {
-          const candQty = numbers[numbers.length - 3];
-          const candRate = numbers[numbers.length - 2];
-          if (candQty > 0 && candQty <= 500 && candRate > 0) {
+          const candQty = (detectedColumnOrder === "rate_first") ? numbers[numbers.length - 2] : numbers[numbers.length - 3];
+          const candRate = (detectedColumnOrder === "rate_first") ? numbers[numbers.length - 3] : numbers[numbers.length - 2];
+          if (candQty > 0 && candRate > 0) {
             qty = candQty;
             detectedWithGstRate = candRate;
             rowAmt = lastNum;
@@ -599,9 +607,15 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
             detectedWithGstRate = lastNum;
           }
         } else {
+          const cand = numbers[0];
           rowAmt = lastNum;
-          qty = 1;
-          detectedWithGstRate = lastNum;
+          if (detectedColumnOrder === "rate_first") {
+            detectedWithGstRate = cand;
+            qty = (cand > 0 && rowAmt >= cand) ? Math.round((rowAmt / cand) * 100) / 100 : 1;
+          } else {
+            qty = cand > 0 ? cand : 1;
+            detectedWithGstRate = Math.round((rowAmt / qty) * 100) / 100;
+          }
         }
       } else {
         rowAmt = numbers[0];
@@ -728,6 +742,90 @@ const detectLineItems = (lines, totalAmount, pageNum, rawText = "") => {
     });
   }
 
+  // --- Post-Processing: Mathematical Reconciliation with Bill Total & Cross-Validation ---
+  if (items.length > 0) {
+    // 1. Eliminate any accidental Total/Subtotal row masquerading as an item
+    const summaryNamePattern = /\b(?:total|subtotal|sub\s*total|net\s*amt|net\s*payable|grand\s*total|balance|taxable\s*amt|taxable\s*value|round\s*off)\b/i;
+    let filteredItems = items.filter((it) => {
+      if (items.length > 1 && totalAmount > 0) {
+        if (Math.abs(it.amount - totalAmount) < 2 && summaryNamePattern.test(it.name)) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // 2. Strict Cross-verification: qty * rate = amount for every item row
+    filteredItems = filteredItems.map((it) => {
+      let q = Math.max(0.001, Number(it.qty) || 1);
+      let r = Number(it.rate) || Number(it.withGstRate) || 0;
+      let amt = Number(it.amount) || 0;
+
+      // Ensure mathematical integrity of row: amount = qty * rate
+      if (amt > 0) {
+        const expected = q * r;
+        if (r <= 0 || Math.abs(expected - amt) > Math.max(2, amt * 0.02)) {
+          r = Math.round((amt / q) * 100) / 100;
+        }
+      } else if (q > 0 && r > 0) {
+        amt = Math.round(q * r * 100) / 100;
+      }
+
+      const preRate = it.gstRate > 0 ? Math.round((r / (1 + it.gstRate / 100)) * 100) / 100 : r;
+      const taxable = Math.round(q * preRate * 100) / 100;
+      const gstAmt = Math.round((amt - taxable) * 100) / 100;
+
+      return {
+        ...it,
+        qty: q,
+        rate: r,
+        withGstRate: r,
+        preGstRate: preRate,
+        taxableAmount: taxable,
+        gstAmount: gstAmt,
+        amount: amt,
+      };
+    });
+
+    // 3. Mathematical Reconciliation against Grand Total (totalAmount)
+    const sumItems = filteredItems.reduce((acc, it) => acc + (Number(it.amount) || 0), 0);
+
+    if (totalAmount > 0 && sumItems > 0) {
+      // Scenario A: Exact or near match within ₹5 (Direct Match or minor Round-off)
+      if (Math.abs(sumItems - totalAmount) <= Math.max(5, totalAmount * 0.005)) {
+        // Items match Grand Total directly!
+      }
+      // Scenario B: Items are pre-tax (Taxable Subtotal) and totalAmount includes GST
+      else if (pageDefaultGst > 0 && Math.abs(sumItems * (1 + pageDefaultGst / 100) - totalAmount) <= Math.max(5, totalAmount * 0.01)) {
+        filteredItems = filteredItems.map((it) => {
+          const inclusiveRate = Math.round(it.rate * (1 + pageDefaultGst / 100) * 100) / 100;
+          const inclusiveAmt = Math.round(it.qty * inclusiveRate * 100) / 100;
+          return {
+            ...it,
+            gstRate: pageDefaultGst,
+            preGstRate: it.rate,
+            withGstRate: inclusiveRate,
+            rate: inclusiveRate,
+            amount: inclusiveAmt,
+            taxableAmount: it.amount,
+            gstAmount: Math.round((inclusiveAmt - it.amount) * 100) / 100,
+          };
+        });
+      }
+      // Scenario C: Single item detected whose amount was parsed lower than bill total
+      else if (filteredItems.length === 1 && totalAmount > filteredItems[0].amount) {
+        const singleIt = filteredItems[0];
+        singleIt.amount = totalAmount;
+        if (singleIt.qty > 0) {
+          singleIt.rate = Math.round((totalAmount / singleIt.qty) * 100) / 100;
+          singleIt.withGstRate = singleIt.rate;
+        }
+      }
+    }
+
+    return filteredItems;
+  }
+
   return items;
 };
 
@@ -780,7 +878,18 @@ export const extractPagesAndBillsFromPDF = async (file) => {
         const detectedItems = detectLineItems(visualLines, detectedAmount, pageNum, rawText);
 
         const itemsTotal = detectedItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
-        let finalPageTotal = detectedAmount > 0 ? detectedAmount : (itemsTotal > 0 ? Math.round(itemsTotal * 100) / 100 : 0);
+        
+        // Reconcile page total amount with items total:
+        let finalPageTotal = detectedAmount;
+        if (detectedAmount <= 0) {
+          finalPageTotal = itemsTotal > 0 ? Math.round(itemsTotal * 100) / 100 : 0;
+        } else if (itemsTotal > 0 && Math.abs(itemsTotal - detectedAmount) <= Math.max(5, detectedAmount * 0.01)) {
+          // If items sum is within 1% or ₹5 (round-off), keep exact detectedAmount from bill footer
+          finalPageTotal = detectedAmount;
+        } else if (itemsTotal > 0 && detectedAmount > 0 && Math.abs(itemsTotal - detectedAmount) > detectedAmount * 0.5) {
+          // If detectedAmount was way off while items are comprehensive, trust items
+          finalPageTotal = Math.round(itemsTotal * 100) / 100;
+        }
 
         pages.push({
           pageNumber: pageNum,
