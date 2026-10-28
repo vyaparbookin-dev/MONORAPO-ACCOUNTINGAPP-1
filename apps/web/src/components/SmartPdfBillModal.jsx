@@ -841,6 +841,9 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                   <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-semibold">
                     ({pages.filter((p) => p.isSelected).length} चयनित)
                   </span>
+                  <span className="text-xs bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 shadow-2xs">
+                    📦 कुल {pages.filter(p => p.isSelected).reduce((sum, p) => sum + (p.items || []).length, 0)} सामान (Items) मिले
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -1407,7 +1410,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
               disabled={saving || pages.filter((p) => p.isSelected).length === 0}
               className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold shadow-md transition flex items-center gap-2 cursor-pointer"
             >
-              {saving ? "सेव हो रहा है..." : `💾 बिल स्वीकार करें और खाते में जोड़ें (${pages.filter((p) => p.isSelected).length} बिल)`}
+              {saving ? "सेव हो रहा है..." : `💾 बिल स्वीकार करें और खाते में जोड़ें (${pages.filter((p) => p.isSelected).length} बिल • कुल ${pages.filter(p => p.isSelected).reduce((sum, p) => sum + (p.items || []).length, 0)} सामान)`}
             </button>
           )}
         </div>
