@@ -10,7 +10,7 @@ import Brand from "../models/brand.js";
 import Unit from "../models/unit.js";
 import { supabase } from "../../../config/supabase.js";
 import { getProductsFromSupabase, getProductByIdFromSupabase } from "../../../services/supabaseReadService.js";
-import { syncProductToSupabase, syncProductDeleteToSupabase } from "../../../services/supabaseSyncService.js";
+import { syncProductToSupabase, syncProductDeleteToSupabase, mongoIdToUuid } from "../../../services/supabaseSyncService.js";
 
 // Zod schema for robust validation
 const productSchema = z.object({
@@ -683,9 +683,12 @@ export const getProductById = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
+    const { id } = req.params;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
+
     // --- PHASE 2: SUPABASE PRIMARY READ ---
     try {
-      const sbProduct = await getProductByIdFromSupabase(req.params.id, req.companyId);
+      const sbProduct = await getProductByIdFromSupabase(id, req.companyId);
       if (sbProduct) {
         return res.json({ success: true, product: sbProduct, source: "supabase" });
       }
@@ -693,7 +696,10 @@ export const getProductById = async (req, res) => {
       console.warn("[Inventory Controller] getProductById fallback to Mongo:", sbErr.message);
     }
 
-    const product = await Product.findOne({ _id: req.params.id, companyId: req.companyId });
+    let product = null;
+    if (isMongoId) {
+      product = await Product.findOne({ _id: id, companyId: req.companyId });
+    }
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
@@ -709,19 +715,36 @@ export const updateProduct = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const product = await Product.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId },
-      req.body,
-      { new: true, runValidators: true }
-    );
-    if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+    const { id } = req.params;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
+
+    let product = null;
+    if (isMongoId) {
+      product = await Product.findOneAndUpdate(
+        { _id: id, companyId: req.companyId },
+        req.body,
+        { new: true, runValidators: true }
+      );
+    } else {
+      const searchCrit = [];
+      if (req.body.barcode) searchCrit.push({ barcode: req.body.barcode });
+      if (req.body.sku) searchCrit.push({ sku: req.body.sku });
+      if (req.body.name) searchCrit.push({ name: req.body.name });
+      if (searchCrit.length > 0) {
+        product = await Product.findOneAndUpdate(
+          { companyId: req.companyId, $or: searchCrit },
+          req.body,
+          { new: true }
+        );
+      }
     }
 
-    // --- DUAL-WRITE TO SUPABASE ---
-    await syncProductToSupabase(product);
+    const productToSync = product ? product.toObject() : { ...req.body, _id: id, id, companyId: req.companyId };
 
-    res.json({ success: true, product });
+    // --- DUAL-WRITE TO SUPABASE ---
+    await syncProductToSupabase(productToSync);
+
+    res.json({ success: true, product: productToSync });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -733,27 +756,32 @@ export const updateStock = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
+    const { id } = req.params;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
     const { quantity } = req.body;
     if (quantity === undefined) {
       return res.status(400).json({ success: false, message: "Quantity required" });
     }
     
-    const product = await Product.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId },
-      { currentStock: quantity },
-      { new: true }
-    );
-
-    if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+    let product = null;
+    if (isMongoId) {
+      product = await Product.findOneAndUpdate(
+        { _id: id, companyId: req.companyId },
+        { currentStock: Number(quantity) },
+        { new: true }
+      );
     }
 
-    // --- DUAL-WRITE TO SUPABASE ---
-    await syncProductToSupabase(product);
-    
+    if (supabase) {
+      await supabase.from("products").update({
+        current_stock: Number(quantity),
+        updated_at: new Date().toISOString()
+      }).eq("id", mongoIdToUuid(id));
+    }
+
     res.json({ 
       success: true, 
-      product,
+      product: product || { _id: id, id, currentStock: Number(quantity) },
       message: `Stock updated to ${quantity}`
     });
   } catch (err) {
@@ -795,29 +823,16 @@ export const deleteProduct = async (req, res) => {
     }
 
     const productId = req.params.id;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(productId);
 
-    // 🚀 SMART DELETE LOGIC (Hard Delete vs Soft Delete)
-    // TODO: Jab Invoices/Bills ka backend banega, yahan check lagana hoga:
-    // const isUsedInBills = await Bill.exists({ "items.productId": productId });
-    const isUsedInBills = false; // Abhi ke liye 'false' maan rahe hain (Hard delete allowed)
-
-    if (isUsedInBills) {
-      // SOFT DELETE: Product hide hoga, par SKU same rahega taaki Excel se wapas merge (restore) ho sake
-      const product = await Product.findOneAndUpdate(
-        { _id: productId, companyId: req.companyId },
-        { isActive: false },
-        { new: true }
-      );
-      if (!product) return res.status(404).json({ success: false, message: "Product not found" });
-      await syncProductDeleteToSupabase(productId);
-      return res.json({ success: true, message: "Product is linked to bills. Soft-deleted safely." });
-    } else {
-      // HARD DELETE: Koi bill nahi bana, toh DB se permanently saaf
-      const product = await Product.findOneAndDelete({ _id: productId, companyId: req.companyId });
-      if (!product) return res.status(404).json({ success: false, message: "Product not found" });
-      await syncProductDeleteToSupabase(productId);
-      return res.json({ success: true, message: "Unused product permanently deleted." });
+    if (isMongoId) {
+      await Product.findOneAndDelete({ _id: productId, companyId: req.companyId });
     }
+
+    // Always deactivate in Supabase
+    await syncProductDeleteToSupabase(productId);
+
+    return res.json({ success: true, message: "Product deleted successfully." });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

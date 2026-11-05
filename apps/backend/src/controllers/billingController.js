@@ -17,7 +17,8 @@ import { Parser } from "json2csv";
 import { logActivity } from "../utils/logger.js";
 import { sendAutoWhatsappMessage } from "../services/whatsappService.js";
 import { processStampAwardOnBill } from "./stampController.js";
-import { syncBillToSupabase, syncBillDeleteToSupabase } from "../services/supabaseSyncService.js";
+import { syncBillToSupabase, syncBillDeleteToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
+import { supabase } from "../config/supabase.js";
 import { getBillsFromSupabase, getBillByIdFromSupabase } from "../services/supabaseReadService.js";
 import { scanBillToEntry } from "../bill-scanner/index.js";
 import { parseBillMetadata, parseLineItems } from "../bill-scanner/ocrExtractor.js";
@@ -516,9 +517,12 @@ export const getBillById = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing. Please provide 'x-company-id' header." });
     }
 
+    const { id } = req.params;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
+
     // --- PHASE 2: SUPABASE PRIMARY READ ---
     try {
-      const sbBill = await getBillByIdFromSupabase(req.params.id, companyId);
+      const sbBill = await getBillByIdFromSupabase(id, companyId);
       if (sbBill) {
         return res.json({ success: true, data: sbBill, bill: sbBill, source: "supabase" });
       }
@@ -526,7 +530,12 @@ export const getBillById = async (req, res) => {
       console.warn("[Supabase Read] getBillById error, falling back to Mongo:", sbErr.message);
     }
 
-    const bill = await Bill.findOne({ _id: req.params.id, companyId });
+    let bill = null;
+    if (isMongoId) {
+      bill = await Bill.findOne({ _id: id, companyId });
+    } else {
+      bill = await Bill.findOne({ billNumber: id, companyId });
+    }
     if (!bill) return res.status(404).json({ success: false, error: "Bill not found" });
     res.json({ success: true, data: bill });
   } catch (error) {
@@ -540,13 +549,28 @@ export const updateBill = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing. Please provide 'x-company-id' header." });
     }
     
-    const oldBill = await Bill.findOne({ _id: req.params.id, companyId: req.companyId });
+    const { id } = req.params;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
+
+    let oldBill = null;
+    if (isMongoId) {
+      oldBill = await Bill.findOne({ _id: id, companyId: req.companyId });
+    } else if (req.body.billNumber) {
+      oldBill = await Bill.findOne({ billNumber: req.body.billNumber, companyId: req.companyId });
+    }
+
+    if (!oldBill) {
+      try {
+        oldBill = await getBillByIdFromSupabase(id, req.companyId);
+      } catch (e) {}
+    }
+
     if (!oldBill) return res.status(404).json({ success: false, error: "Bill not found" });
 
     // Revert old stock: add back old quantities to inventory
     if (Array.isArray(oldBill.items)) {
       for (const item of oldBill.items) {
-        if (item.productId) {
+        if (item.productId && /^[0-9a-fA-F]{24}$/.test(String(item.productId))) {
           await Product.findByIdAndUpdate(item.productId, {
             $inc: { currentStock: Number(item.quantity || 0) }
           });
@@ -558,23 +582,41 @@ export const updateBill = async (req, res) => {
     if (oldBill.partyId || oldBill.customer) {
       const oldPartyId = oldBill.partyId || oldBill.customer;
       const oldFinalAmt = Number(oldBill.finalAmount || oldBill.total || 0);
-      if (oldFinalAmt > 0) {
+      if (oldFinalAmt > 0 && /^[0-9a-fA-F]{24}$/.test(String(oldPartyId))) {
         await Party.findByIdAndUpdate(oldPartyId, {
           $inc: { currentBalance: -oldFinalAmt }
         });
       }
     }
 
-    const bill = await Bill.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId },
-      { ...req.body },
-      { new: true }
-    );
+    let bill = null;
+    if (isMongoId) {
+      bill = await Bill.findOneAndUpdate(
+        { _id: id, companyId: req.companyId },
+        { ...req.body },
+        { new: true }
+      );
+    } else if (oldBill._id && /^[0-9a-fA-F]{24}$/.test(String(oldBill._id))) {
+      bill = await Bill.findOneAndUpdate(
+        { _id: oldBill._id, companyId: req.companyId },
+        { ...req.body },
+        { new: true }
+      );
+    } else {
+      bill = {
+        ...(oldBill.toObject ? oldBill.toObject() : oldBill),
+        ...req.body,
+        _id: id,
+        id: id,
+        companyId: req.companyId,
+        updatedAt: new Date()
+      };
+    }
     
     // Apply new stock: deduct new quantities from inventory
-    if (Array.isArray(bill.items)) {
+    if (bill && Array.isArray(bill.items)) {
       for (const item of bill.items) {
-        if (item.productId) {
+        if (item.productId && /^[0-9a-fA-F]{24}$/.test(String(item.productId))) {
           await Product.findByIdAndUpdate(item.productId, {
             $inc: { currentStock: -Number(item.quantity || 0) }
           });
@@ -583,20 +625,23 @@ export const updateBill = async (req, res) => {
     }
 
     // Apply new party balance
-    if (bill.partyId || bill.customer) {
+    if (bill && (bill.partyId || bill.customer)) {
       const newPartyId = bill.partyId || bill.customer;
       const newFinalAmt = Number(bill.finalAmount || bill.total || 0);
-      if (newFinalAmt > 0) {
+      if (newFinalAmt > 0 && /^[0-9a-fA-F]{24}$/.test(String(newPartyId))) {
         await Party.findByIdAndUpdate(newPartyId, {
           $inc: { currentBalance: newFinalAmt }
         });
       }
     }
 
-    await logActivity(req, 'UPDATE', 'bill', bill._id, oldBill.toObject(), bill.toObject());
+    if (bill && bill._id && /^[0-9a-fA-F]{24}$/.test(String(bill._id))) {
+      await logActivity(req, 'UPDATE', 'bill', bill._id, oldBill.toObject ? oldBill.toObject() : oldBill, bill.toObject ? bill.toObject() : bill);
+    }
     
     // Sync to Supabase
-    syncBillToSupabase(bill).catch(e => console.warn("[Supabase Dual-Write] updateBill sync note:", e.message));
+    const billToSync = { ...req.body, _id: id, id, companyId: req.companyId };
+    syncBillToSupabase(billToSync).catch(e => console.warn("[Supabase Dual-Write] updateBill sync note:", e.message));
 
     res.json({ success: true, bill, message: "Bill updated successfully!" });
   } catch (error) {
@@ -648,13 +693,23 @@ export const deleteBill = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing. Please provide 'x-company-id' header." });
     }
     
-    const oldBill = await Bill.findOne({ _id: req.params.id, companyId: req.companyId });
+    const { id } = req.params;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
+
+    let oldBill = null;
+    if (isMongoId) {
+      oldBill = await Bill.findOne({ _id: id, companyId: req.companyId });
+    } else {
+      try {
+        oldBill = await getBillByIdFromSupabase(id, req.companyId);
+      } catch (e) {}
+    }
     if (!oldBill) return res.status(404).json({ success: false, error: "Bill not found" });
 
     // Revert stock: add back quantities to inventory
     if (Array.isArray(oldBill.items)) {
       for (const item of oldBill.items) {
-        if (item.productId) {
+        if (item.productId && /^[0-9a-fA-F]{24}$/.test(String(item.productId))) {
           await Product.findByIdAndUpdate(item.productId, {
             $inc: { currentStock: Number(item.quantity || 0) }
           });
@@ -666,25 +721,24 @@ export const deleteBill = async (req, res) => {
     if (oldBill.partyId || oldBill.customer) {
       const partyId = oldBill.partyId || oldBill.customer;
       const finalAmt = Number(oldBill.finalAmount || oldBill.total || 0);
-      if (finalAmt > 0) {
+      if (finalAmt > 0 && /^[0-9a-fA-F]{24}$/.test(String(partyId))) {
         await Party.findByIdAndUpdate(partyId, {
           $inc: { currentBalance: -finalAmt }
         });
       }
     }
 
-    const bill = await Bill.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId },
-      { isDeleted: true },
-      { new: true }
-    );
-    
-    await logActivity(req, 'DELETE', 'bill', bill._id, oldBill.toObject(), { isDeleted: true });
+    if (isMongoId) {
+      const bill = await Bill.findOneAndUpdate(
+        { _id: id, companyId: req.companyId },
+        { isDeleted: true },
+        { new: true }
+      );
+      await logActivity(req, 'DELETE', 'bill', bill._id, oldBill.toObject ? oldBill.toObject() : oldBill, { isDeleted: true });
+    }
     
     // Sync delete to Supabase
-    if (oldBill.billNumber) {
-      syncBillDeleteToSupabase(oldBill.billNumber).catch(e => console.warn("[Supabase Dual-Write] deleteBill sync note:", e.message));
-    }
+    syncBillDeleteToSupabase(oldBill.billNumber, id).catch(e => console.warn("[Supabase Dual-Write] deleteBill sync note:", e.message));
 
     res.json({ success: true, message: "Bill deleted successfully!" });
   } catch (error) {

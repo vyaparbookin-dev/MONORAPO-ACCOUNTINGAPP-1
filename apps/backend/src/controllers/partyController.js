@@ -4,7 +4,7 @@ import Purchase from "../model/purchase.js";
 import PartyTransaction from "../model/PartyTransaction.js";
 import Product from "../model/product.js";
 import mongoose from "mongoose";
-import { syncPartyToSupabase, syncPartyTxToSupabase, syncBillPhotoToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
+import { syncPartyToSupabase, syncPartyTxToSupabase, syncPartyDeleteToSupabase, syncBillPhotoToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
 import { uploadBillImage } from "../services/storageService.js";
 import { getPartiesFromSupabase, getPartyByIdFromSupabase, getPartyTransactionsFromSupabase, getBillsFromSupabase, getPurchasesFromSupabase, mapSupabaseSalesToBill, mapSupabasePurchaseToPurchase } from "../services/supabaseReadService.js";
 export { getPartyByIdFromSupabase };
@@ -1306,13 +1306,12 @@ export const listParties = async (req, res) => {
 
 export const getPartyById = async (req, res) => {
   try {
-    if (!req.companyId) {
-      return res.status(400).json({ success: false, message: "Company ID is missing" });
-    }
+    const { id } = req.params;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
 
     // --- PHASE 2: SUPABASE PRIMARY READ ---
     try {
-      const sbParty = await getPartyByIdFromSupabase(req.params.id, req.companyId);
+      const sbParty = await getPartyByIdFromSupabase(id, req.companyId);
       if (sbParty) {
         return res.json({ success: true, party: sbParty, source: "supabase" });
       }
@@ -1320,7 +1319,10 @@ export const getPartyById = async (req, res) => {
       console.warn("[Supabase Read] getPartyById error, falling back to Mongo:", sbErr.message);
     }
 
-    const party = await Party.findOne({ _id: req.params.id, companyId: req.companyId });
+    let party = null;
+    if (isMongoId) {
+      party = await Party.findOne({ _id: id, companyId: req.companyId });
+    }
     if (!party) return res.status(404).json({ success: false, error: "Party not found" });
     res.json({ success: true, party });
   } catch (error) {
@@ -1334,19 +1336,24 @@ export const updateParty = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
+    const { id } = req.params;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
     const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     if (req.body.name && req.body.address) {
       const trimmedName = req.body.name.trim();
       const trimmedAddress = req.body.address.trim();
-      const duplicateParty = await Party.findOne({
-        _id: { $ne: req.params.id },
+      const duplicateQuery = {
         companyId: req.companyId,
         isActive: true,
         name: { $regex: new RegExp(`^${escapeRegex(trimmedName)}$`, "i") },
         address: { $regex: new RegExp(`^${escapeRegex(trimmedAddress)}$`, "i") }
-      });
-      if (duplicateParty) {
+      };
+      if (isMongoId) {
+        duplicateQuery._id = { $ne: id };
+      }
+      const duplicateParty = await Party.findOne(duplicateQuery);
+      if (duplicateParty && (isMongoId ? String(duplicateParty._id) !== id : mongoIdToUuid(duplicateParty._id) !== id)) {
         return res.status(400).json({
           success: false,
           error: `पार्टी '${trimmedName}' (पता: '${trimmedAddress}') पहले से मौजूद है! एक ही नाम और पते से डुप्लीकेट नहीं बनाया जा सकता।`
@@ -1354,14 +1361,34 @@ export const updateParty = async (req, res) => {
       }
     }
 
-    const party = await Party.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId },
-      req.body,
-      { new: true }
-    );
-    if (!party) return res.status(404).json({ success: false, error: "Party not found" });
-    syncPartyToSupabase(party).catch(e => console.warn("[Supabase Sync] Party dual-write note:", e.message));
-    res.json({ success: true, party, message: "Party updated successfully!" });
+    let party = null;
+    if (isMongoId) {
+      party = await Party.findOneAndUpdate(
+        { _id: id, companyId: req.companyId },
+        req.body,
+        { new: true }
+      );
+    } else {
+      const nameOrPhone = req.body.name || req.body.mobileNumber;
+      if (nameOrPhone) {
+        party = await Party.findOneAndUpdate(
+          {
+            companyId: req.companyId,
+            $or: [
+              ...(req.body.mobileNumber ? [{ mobileNumber: req.body.mobileNumber }] : []),
+              ...(req.body.name ? [{ name: req.body.name }] : [])
+            ]
+          },
+          req.body,
+          { new: true }
+        );
+      }
+    }
+
+    const partyToSync = party ? party.toObject() : { ...req.body, _id: id, id, companyId: req.companyId };
+    syncPartyToSupabase(partyToSync).catch(e => console.warn("[Supabase Sync] Party dual-write note:", e.message));
+
+    res.json({ success: true, party: partyToSync, message: "Party updated successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -1373,31 +1400,43 @@ export const deleteParty = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const party = await Party.findOne({ _id: req.params.id, companyId: req.companyId });
+    const { id } = req.params;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
+
+    let party = null;
+    if (isMongoId) {
+      party = await Party.findOne({ _id: id, companyId: req.companyId });
+    } else {
+      party = await getPartyByIdFromSupabase(id, req.companyId);
+    }
     if (!party) return res.status(404).json({ success: false, error: "Party not found" });
 
     // Check if the party has any bills or transactions
-    const txCount = await PartyTransaction.countDocuments({ partyId: req.params.id, isDeleted: { $ne: true } });
-    const billCount = await Bill.countDocuments({ partyId: req.params.id, isDeleted: { $ne: true } });
-
-    if (txCount === 0 && billCount === 0) {
-      // Clean permanent delete so mobile number is immediately freed with 0 conflicts!
-      await Party.deleteOne({ _id: req.params.id, companyId: req.companyId });
-      return res.json({ success: true, message: "पार्टी सफलतापूर्वक हटा दी गई!" });
+    let txCount = 0;
+    let billCount = 0;
+    if (isMongoId) {
+      txCount = await PartyTransaction.countDocuments({ partyId: id, isDeleted: { $ne: true } });
+      billCount = await Bill.countDocuments({ partyId: id, isDeleted: { $ne: true } });
     }
 
-    // If it has financial history, soft-delete and release mobileNumber to prevent duplicate index conflicts
-    party.isActive = false;
-    party.mobileNumber = `${party.mobileNumber}_del_${Date.now()}`;
-    await party.save();
+    if (isMongoId) {
+      if (txCount === 0 && billCount === 0) {
+        await Party.deleteOne({ _id: id, companyId: req.companyId });
+      } else {
+        party.isActive = false;
+        party.mobileNumber = `${party.mobileNumber}_del_${Date.now()}`;
+        await party.save();
+        await PartyTransaction.updateMany(
+          { partyId: id, companyId: req.companyId },
+          { $set: { isDeleted: true } }
+        );
+      }
+    }
 
-    // Cascade soft-delete party transactions so they do not show up as ghost duplicates
-    await PartyTransaction.updateMany(
-      { partyId: req.params.id, companyId: req.companyId },
-      { $set: { isDeleted: true } }
-    );
+    // Always deactivate in Supabase
+    syncPartyDeleteToSupabase(id).catch(e => console.warn("[Supabase Sync] deleteParty sync note:", e.message));
 
-    res.json({ success: true, message: "Party deleted (deactivated) successfully!" });
+    res.json({ success: true, message: "पार्टी सफलतापूर्वक हटा दी गई!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

@@ -902,13 +902,12 @@ export const listStaff = async (req, res) => {
 
 export const getStaffById = async (req, res) => {
   try {
-    if (!req.companyId) {
-      return res.status(400).json({ success: false, message: "Company ID is missing" });
-    }
+    const { id } = req.params;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
 
     // --- PHASE 2: SUPABASE PRIMARY READ ---
     try {
-      const sbStaff = await getStaffByIdFromSupabase(req.params.id, req.companyId);
+      const sbStaff = await getStaffByIdFromSupabase(id, req.companyId);
       if (sbStaff) {
         return res.json({ success: true, staff: sbStaff, source: "supabase" });
       }
@@ -916,7 +915,10 @@ export const getStaffById = async (req, res) => {
       console.warn("[Staff Controller] getStaffById fallback to Mongo:", sbErr.message);
     }
 
-    const staff = await Staff.findOne({ _id: req.params.id, companyId: req.companyId });
+    let staff = null;
+    if (isMongoId) {
+      staff = await Staff.findOne({ _id: id, companyId: req.companyId });
+    }
     if (!staff) return res.status(404).json({ success: false, error: "Staff not found" });
     res.json({ success: true, staff });
   } catch (error) {
@@ -930,6 +932,8 @@ export const updateStaff = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
+    const { id } = req.params;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
     const { wageType, dailyRate, monthlySalary, salary, wageAmount, paidLeavesAllowed } = req.body;
     const isDaily = wageType === 'daily';
 
@@ -953,17 +957,37 @@ export const updateStaff = async (req, res) => {
       updatedAt: new Date()
     };
 
-    const staff = await Staff.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId },
-      { $set: updatePayload },
-      { new: true }
-    );
-    if (!staff) return res.status(404).json({ success: false, error: "Staff not found" });
+    let staff = null;
+    if (isMongoId) {
+      staff = await Staff.findOneAndUpdate(
+        { _id: id, companyId: req.companyId },
+        { $set: updatePayload },
+        { new: true }
+      );
+    } else {
+      const phone = (req.body.mobileNumber || '').trim();
+      const name = (req.body.name || '').trim();
+      if (phone || name) {
+        staff = await Staff.findOneAndUpdate(
+          {
+            companyId: req.companyId,
+            $or: [
+              ...(phone ? [{ mobileNumber: phone }] : []),
+              ...(name ? [{ name }] : [])
+            ]
+          },
+          { $set: updatePayload },
+          { new: true }
+        );
+      }
+    }
+
+    const staffObj = staff ? staff.toObject() : { ...updatePayload, _id: id, id, companyId: req.companyId };
 
     // Sync credentials & role with User login record for mobile access
     if (req.body.role || req.body.password || req.body.mobileNumber || req.body.name) {
       try {
-        const phone = (staff.mobileNumber || req.body.mobileNumber || '').trim();
+        const phone = (staffObj.mobileNumber || req.body.mobileNumber || '').trim();
         if (phone) {
           const userDoc = await User.findOne({ phone, companyId: req.companyId });
           if (userDoc) {
@@ -979,11 +1003,11 @@ export const updateStaff = async (req, res) => {
             const salt = await bcryptjs.genSalt(10);
             const hashedPassword = await bcryptjs.hash(rawPass, salt);
             await User.create({
-              name: staff.name,
+              name: staffObj.name,
               phone,
               email: `${phone}@vyaparbook.local`,
               password: hashedPassword,
-              role: (req.body.role || staff.role || 'salesman').toLowerCase(),
+              role: (req.body.role || staffObj.role || 'salesman').toLowerCase(),
               companyId: req.companyId,
               isActive: true,
               isVerified: true
@@ -995,8 +1019,8 @@ export const updateStaff = async (req, res) => {
       }
     }
 
-    syncStaffToSupabase(staff).catch(sbErr => console.warn("[Supabase Dual-Write] Staff sync note:", sbErr.message));
-    res.json({ success: true, staff, message: "Staff updated successfully!" });
+    syncStaffToSupabase(staffObj).catch(sbErr => console.warn("[Supabase Dual-Write] Staff sync note:", sbErr.message));
+    res.json({ success: true, staff: staffObj, message: "Staff updated successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -1008,12 +1032,20 @@ export const deleteStaff = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const staff = await Staff.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId },
-      { $set: { isActive: false, updatedAt: new Date() } },
-      { new: true }
-    );
-    if (!staff) return res.status(404).json({ success: false, error: "Staff not found" });
+    const { id } = req.params;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
+
+    if (isMongoId) {
+      await Staff.findOneAndUpdate(
+        { _id: id, companyId: req.companyId },
+        { $set: { isActive: false, updatedAt: new Date() } },
+        { new: true }
+      );
+    }
+
+    // Sync delete to Supabase
+    syncStaffDeleteToSupabase(id).catch(e => console.warn("[Supabase Dual-Write] Staff delete note:", e.message));
+
     res.json({ success: true, message: "Staff deleted successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

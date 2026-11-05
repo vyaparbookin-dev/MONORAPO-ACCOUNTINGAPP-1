@@ -156,7 +156,9 @@ export const syncPartyToSupabase = async (party) => {
 export const syncPartyTxToSupabase = async (tx) => {
   if (!supabase || !tx) return;
   try {
+    const txId = tx._id || tx.id;
     const txPayload = {
+      ...(txId ? { id: mongoIdToUuid(txId) } : {}),
       company_id: mongoIdToUuid(tx.companyId),
       party_id: mongoIdToUuid(tx.partyId),
       date: tx.date ? new Date(tx.date).toISOString() : new Date().toISOString(),
@@ -166,10 +168,25 @@ export const syncPartyTxToSupabase = async (tx) => {
       type: tx.type || "manual",
       created_at: tx.createdAt ? new Date(tx.createdAt).toISOString() : new Date().toISOString()
     };
-    const { error } = await supabase.from("party_transactions").insert(txPayload);
+    const { error } = txId
+      ? await supabase.from("party_transactions").upsert(txPayload, { onConflict: "id" })
+      : await supabase.from("party_transactions").insert(txPayload);
     if (error) console.warn("[Supabase Sync] Party Tx sync error:", error.message);
   } catch (err) {
     console.warn("[Supabase Sync] Party Transaction sync note:", err.message);
+  }
+};
+
+/**
+ * Sync Party Delete (Deactivate) to Supabase
+ */
+export const syncPartyDeleteToSupabase = async (partyId) => {
+  if (!supabase || !partyId) return;
+  try {
+    const pUuid = mongoIdToUuid(partyId);
+    await supabase.from("parties").update({ is_active: false, updated_at: new Date().toISOString() }).eq("id", pUuid);
+  } catch (err) {
+    console.warn("[Supabase Sync] Party delete note:", err.message);
   }
 };
 
@@ -279,7 +296,9 @@ export const syncAttendanceToSupabase = async (attendance) => {
 export const syncStaffTxToSupabase = async (tx) => {
   if (!supabase || !tx || !tx.staffId) return;
   try {
+    const txId = tx._id || tx.id;
     const payload = {
+      ...(txId ? { id: mongoIdToUuid(txId) } : {}),
       company_id: mongoIdToUuid(tx.companyId),
       employee_id: mongoIdToUuid(tx.staffId),
       date: tx.date ? new Date(tx.date).toISOString() : new Date().toISOString(),
@@ -292,10 +311,25 @@ export const syncStaffTxToSupabase = async (tx) => {
       created_at: tx.createdAt ? new Date(tx.createdAt).toISOString() : new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
-    const { error } = await supabase.from("staff_transactions").insert(payload);
+    const { error } = txId
+      ? await supabase.from("staff_transactions").upsert(payload, { onConflict: "id" })
+      : await supabase.from("staff_transactions").insert(payload);
     if (error) console.warn("[Supabase Sync] Staff Tx sync error:", error.message);
   } catch (err) {
     console.warn("[Supabase Sync] Staff Transaction sync note:", err.message);
+  }
+};
+
+/**
+ * Sync Staff Deletion (Deactivate) to Supabase
+ */
+export const syncStaffDeleteToSupabase = async (staffId) => {
+  if (!supabase || !staffId) return;
+  try {
+    const sUuid = mongoIdToUuid(staffId);
+    await supabase.from("employees").update({ is_active: false, updated_at: new Date().toISOString() }).eq("id", sUuid);
+  } catch (err) {
+    console.warn("[Supabase Sync] Staff delete note:", err.message);
   }
 };
 
@@ -331,6 +365,24 @@ export const syncPurchaseToSupabase = async (pr) => {
     if (error) console.warn("[Supabase Sync] Purchase sync error:", error.message);
   } catch (err) {
     console.warn("[Supabase Sync] Purchase sync note:", err.message);
+  }
+};
+
+/**
+ * Sync Purchase Deletion to Supabase
+ */
+export const syncPurchaseDeleteToSupabase = async (purchaseIdOrNumber) => {
+  if (!supabase || !purchaseIdOrNumber) return;
+  try {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(purchaseIdOrNumber));
+    if (isUuid) {
+      await supabase.from("purchases").update({ is_deleted: true, updated_at: new Date().toISOString() }).eq("id", purchaseIdOrNumber);
+    } else {
+      const pUuid = mongoIdToUuid(purchaseIdOrNumber);
+      await supabase.from("purchases").update({ is_deleted: true, updated_at: new Date().toISOString() }).or(`id.eq.${pUuid},purchase_number.eq.${purchaseIdOrNumber}`);
+    }
+  } catch (err) {
+    console.warn("[Supabase Sync] Purchase delete note:", err.message);
   }
 };
 
@@ -378,7 +430,7 @@ export const syncProductDeleteToSupabase = async (productId) => {
   try {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(productId));
     const pUuid = isUuid ? productId : mongoIdToUuid(productId);
-    await supabase.from("products").update({ is_active: false }).eq("id", pUuid);
+    await supabase.from("products").update({ is_active: false, updated_at: new Date().toISOString() }).eq("id", pUuid);
   } catch (err) {
     console.warn("[Supabase Sync] Product delete note:", err.message);
   }
@@ -389,12 +441,15 @@ export default {
   syncBillDeleteToSupabase,
   syncBillPhotoToSupabase,
   syncPartyToSupabase,
+  syncPartyDeleteToSupabase,
   syncPartyTxToSupabase,
   syncExpenseToSupabase,
   syncStaffToSupabase,
+  syncStaffDeleteToSupabase,
   syncAttendanceToSupabase,
   syncStaffTxToSupabase,
   syncPurchaseToSupabase,
+  syncPurchaseDeleteToSupabase,
   syncProductToSupabase,
   syncProductDeleteToSupabase,
   mongoIdToUuid

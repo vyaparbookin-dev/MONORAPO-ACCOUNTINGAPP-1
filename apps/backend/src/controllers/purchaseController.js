@@ -4,7 +4,8 @@ import Party from "../model/party.js";
 import PartyTransaction from "../model/PartyTransaction.js";
 import { Parser } from "json2csv";
 import { logActivity } from "../utils/logger.js";
-import { syncPurchaseToSupabase } from "../services/supabaseSyncService.js";
+import { syncPurchaseToSupabase, syncPurchaseDeleteToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
+import { supabase } from "../config/supabase.js";
 import { getPurchasesFromSupabase, getPurchaseByIdFromSupabase } from "../services/supabaseReadService.js";
 
 // Create a new Purchase Bill (Stock Inward)
@@ -143,33 +144,43 @@ export const exportPurchasesCSV = async (req, res) => {
 // Soft Delete a Purchase (with Stock & Supplier Ledger Revert)
 export const deletePurchase = async (req, res) => {
   try {
-    const oldPurchase = await Purchase.findOne({ 
-      _id: req.params.id, 
-      companyId: req.companyId, 
-      isDeleted: { $ne: true } 
-    });
+    const { id } = req.params;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
+
+    let oldPurchase = null;
+    if (isMongoId) {
+      oldPurchase = await Purchase.findOne({ 
+        _id: id, 
+        companyId: req.companyId, 
+        isDeleted: { $ne: true } 
+      });
+    } else {
+      oldPurchase = await getPurchaseByIdFromSupabase(id, req.companyId);
+    }
     if (!oldPurchase) return res.status(404).json({ success: false, error: "Purchase not found or already deleted" });
 
-    const purchase = await Purchase.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId },
-      { isDeleted: true },
-      { new: true }
-    );
+    if (isMongoId) {
+      await Purchase.findOneAndUpdate(
+        { _id: id, companyId: req.companyId },
+        { isDeleted: true },
+        { new: true }
+      );
+    }
 
     // 1. REVERT INVENTORY (Reduce the stock that was added on purchase)
     if (Array.isArray(oldPurchase.items)) {
       for (const item of oldPurchase.items) {
-        if (item.productId && Number(item.quantity) > 0) {
+        if (item.productId && /^[0-9a-fA-F]{24}$/.test(String(item.productId))) {
           await Product.findByIdAndUpdate(
             item.productId,
-            { $inc: { currentStock: -Number(item.quantity) } }
+            { $inc: { currentStock: -Number(item.quantity || 1) } }
           );
         }
       }
     }
 
     // 2. REVERT SUPPLIER BALANCE & LEDGER
-    if (oldPurchase.partyId) {
+    if (oldPurchase.partyId && /^[0-9a-fA-F]{24}$/.test(String(oldPurchase.partyId))) {
       const finalAmt = Number(oldPurchase.finalAmount || 0);
       const paidAmt = Number(oldPurchase.amountPaid || 0);
       const pendingAmt = finalAmt - paidAmt;
@@ -187,7 +198,10 @@ export const deletePurchase = async (req, res) => {
       );
     }
 
-    await logActivity(req, `Deleted Purchase #${purchase.purchaseNumber || req.params.id} | Supplier: ${oldPurchase?.supplierName || 'Unknown'}, Amount was: ₹${oldPurchase?.finalAmount || 0}`);
+    // Supabase Dual-Write Deletion
+    syncPurchaseDeleteToSupabase(id).catch(e => console.warn("[Supabase Dual-Write] Purchase delete note:", e.message));
+
+    await logActivity(req, `Deleted Purchase #${oldPurchase.purchaseNumber || id} | Supplier: ${oldPurchase?.supplierName || 'Unknown'}, Amount was: ₹${oldPurchase?.finalAmount || 0}`);
 
     res.json({ success: true, message: "Purchase deleted and inventory/supplier ledger reverted successfully!" });
   } catch (error) {
@@ -245,9 +259,12 @@ export const getPurchases = async (req, res) => {
 // Get single Purchase details
 export const getPurchaseById = async (req, res) => {
   try {
+    const { id } = req.params;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
+
     // --- PHASE 2: SUPABASE PRIMARY READ ---
     try {
-      const sbPurchase = await getPurchaseByIdFromSupabase(req.params.id, req.companyId);
+      const sbPurchase = await getPurchaseByIdFromSupabase(id, req.companyId);
       if (sbPurchase) {
         return res.status(200).json({ success: true, purchase: sbPurchase, source: "supabase" });
       }
@@ -255,7 +272,11 @@ export const getPurchaseById = async (req, res) => {
       console.warn("[Purchase Controller] getPurchaseById fallback to Mongo:", sbErr.message);
     }
 
-    const purchase = await Purchase.findOne({ _id: req.params.id, companyId: req.companyId })
+    if (!isMongoId) {
+      return res.status(404).json({ success: false, message: "Purchase not found" });
+    }
+
+    const purchase = await Purchase.findOne({ _id: id, companyId: req.companyId })
                                    .populate("partyId", "name address gstNumber");
     if (!purchase) return res.status(404).json({ success: false, message: "Purchase not found" });
     res.status(200).json({ success: true, purchase });
