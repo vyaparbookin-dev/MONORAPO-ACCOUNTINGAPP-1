@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Search, Download, Edit, Trash2, DollarSign, Calendar, Tag, PieChart, Users, Home, Building2, CheckCircle2, UserCheck, Sparkles } from "lucide-react";
 import api from "../../services/api";
+import { storageManager } from "../../services/storageManager";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 import WealthTrackerExportModal from "../../components/wealth_tracker/WealthTrackerExportModal";
 
@@ -215,14 +216,15 @@ const ExpensesPage = () => {
   const handleEdit = (expense) => {
     const editId = expense._id || expense.id;
     setEditingId(editId);
+    const isDrawings = expense.expenseType === "drawings" || isFamilyGharKharch(expense);
     setFormData({
       title: expense.title || "",
       amount: expense.amount || "",
-      category: expense.category || "other",
-      expenseType: expense.expenseType || "operating",
+      category: expense.category || (isDrawings ? "राशन/किराना" : "other"),
+      expenseType: isDrawings ? "drawings" : "operating",
       transactionFlow: expense.transactionFlow || "given",
       notes: expense.notes || expense.description || "",
-      familyMember: expense.familyMember || "",
+      familyMember: expense.familyMember || (isDrawings ? "Self" : ""),
       staffId: expense.staffId || "",
       description: expense.description || "",
       paymentMethod: expense.paymentMethod || "cash",
@@ -265,7 +267,36 @@ const ExpensesPage = () => {
       };
 
       if (editingId) {
-        await api.put(`/api/expenses/${editingId}`, payload).catch(() => api.put(`/api/expense/${editingId}`, payload));
+        const updatedExpenseObj = {
+          _id: editingId,
+          id: editingId,
+          ...payload
+        };
+
+        // 1. Optimistically update local state immediately
+        setExpenses(prev => (Array.isArray(prev) ? prev : []).map(exp => ((exp._id || exp.id) === editingId ? { ...exp, ...updatedExpenseObj } : exp)));
+
+        // 2. Persist in localStorage and storageManager
+        try {
+          const stored = localStorage.getItem("vb_local_expenses");
+          if (stored) {
+            const list = JSON.parse(stored);
+            const updated = list.map(item => ((item._id || item.id) === editingId ? { ...item, ...updatedExpenseObj } : item));
+            const clean = deduplicateExpenses(updated);
+            localStorage.setItem("vb_local_expenses", JSON.stringify(clean));
+          }
+          const coId = localStorage.getItem("companyId") || "default";
+          const currentCoExpenses = storageManager.getExpenses(coId) || [];
+          const updatedCoExp = currentCoExpenses.map(item => ((item._id || item.id) === editingId ? { ...item, ...updatedExpenseObj } : item));
+          storageManager.saveExpenses(coId, updatedCoExp);
+        } catch (e) {}
+
+        // 3. Send update to backend
+        const putRes = await api.put(`/api/expenses/${editingId}`, payload).catch(() => api.put(`/api/expense/${editingId}`, payload));
+        const savedExp = putRes?.expense || putRes?.data?.expense;
+        if (savedExp) {
+          setExpenses(prev => (Array.isArray(prev) ? prev : []).map(exp => ((exp._id || exp.id) === editingId ? { ...exp, ...savedExp } : exp)));
+        }
         alert("✅ खर्च सफलतापूर्वक अपडेट हो गया!");
       } else {
         const createRes = await api.post("/api/expenses", payload);
@@ -736,6 +767,9 @@ const ExpensesPage = () => {
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                   >
+                    {formData.category && !(formData.expenseType === "drawings" ? gharKharchCategories : businessCategories).includes(formData.category) && (
+                      <option value={formData.category}>{formData.category}</option>
+                    )}
                     {(formData.expenseType === "drawings" ? gharKharchCategories : businessCategories).map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}

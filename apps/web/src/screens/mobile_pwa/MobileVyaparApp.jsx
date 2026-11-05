@@ -1416,7 +1416,20 @@ function MobileVyaparAppContent() {
 
       if (editingGharKharchItem) {
         const expId = editingGharKharchItem._id || editingGharKharchItem.id;
-        await api.put(`/api/expenses/${expId}`, payload).catch(() => {});
+        const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+        const putRes = await api.put(`/api/expenses/${expId}`, payload).catch(() => api.put(`/api/expense/${expId}`, payload)).catch(() => {});
+        const serverExpense = putRes?.expense || putRes?.data?.expense;
+        if (serverExpense) {
+          try {
+            const stored = localStorage.getItem("vb_local_expenses");
+            let list = stored ? JSON.parse(stored) : [];
+            list = list.map(item => ((item._id || item.id) === expId ? { ...item, ...serverExpense } : item));
+            const cleanList = deduplicateExpenses(list);
+            localStorage.setItem("vb_local_expenses", JSON.stringify(cleanList));
+            setGharKharchList(cleanList);
+            storageManager.saveExpenses(currentCoId, cleanList);
+          } catch (e) {}
+        }
         alert(`✅ ${finalMember} का खर्च (₹${gharKharchAmount}) सफलता से अपडेट हो गया!`);
       } else {
         const createRes = await api.post("/api/expenses", payload).catch(() => null);

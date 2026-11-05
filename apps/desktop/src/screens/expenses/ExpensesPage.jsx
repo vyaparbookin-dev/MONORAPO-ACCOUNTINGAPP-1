@@ -245,8 +245,27 @@ const ExpensesPage = () => {
       };
 
       if (editingId) {
-        await api.put(`/api/expenses/${editingId}`, payload);
-        alert("खर्च सफलतापूर्वक अपडेट हो गया!");
+        const updatedExpenseObj = {
+          _id: editingId,
+          id: editingId,
+          ...payload
+        };
+        setExpenses(prev => (Array.isArray(prev) ? prev : []).map(exp => ((exp._id || exp.id) === editingId ? { ...exp, ...updatedExpenseObj } : exp)));
+        try {
+          const stored = localStorage.getItem("vb_local_expenses");
+          if (stored) {
+            const list = JSON.parse(stored);
+            const updated = list.map(item => ((item._id || item.id) === editingId ? { ...item, ...updatedExpenseObj } : item));
+            localStorage.setItem("vb_local_expenses", JSON.stringify(updated));
+          }
+        } catch (e) {}
+
+        const putRes = await api.put(`/api/expenses/${editingId}`, payload).catch(() => api.put(`/api/expense/${editingId}`, payload));
+        const savedExp = putRes?.expense || putRes?.data?.expense;
+        if (savedExp) {
+          setExpenses(prev => (Array.isArray(prev) ? prev : []).map(exp => ((exp._id || exp.id) === editingId ? { ...exp, ...savedExp } : exp)));
+        }
+        alert("✅ खर्च सफलतापूर्वक अपडेट हो गया!");
       } else {
         await api.post("/api/expenses", payload);
         alert(payload.expenseType === 'drawings' ? `🏡 ${payload.familyMember} का घर खर्च ₹${payload.amount} दर्ज हो गया!` : `🏢 दुकान खर्च ₹${payload.amount} दर्ज हो गया!`);

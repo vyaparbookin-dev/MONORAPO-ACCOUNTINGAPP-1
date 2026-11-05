@@ -4,8 +4,9 @@ import BankAccount from "../model/bankAccount.js";
 import Staff from "../model/staff.js";
 import StaffTransaction from "../model/StaffTransaction.js";
 import { logActivity } from "../utils/logger.js";
-import { syncExpenseToSupabase } from "../services/supabaseSyncService.js";
-import { getExpensesFromSupabase, getExpenseByIdFromSupabase } from "../services/supabaseReadService.js";
+import { supabase } from "../config/supabase.js";
+import { syncExpenseToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
+import { getExpensesFromSupabase, getExpenseByIdFromSupabase, mapSupabaseExpenseToExpense } from "../services/supabaseReadService.js";
 
 export const addExpense = async (req, res) => {
   try {
@@ -121,10 +122,15 @@ export const getExpenseById = async (req, res) => {
       console.warn("[Supabase Read] getExpenseById error, fallback to Mongo:", sbErr.message);
     }
 
-    const expense = await Expense.findOne({ _id: req.params.id, companyId: req.companyId, isDeleted: false });
-    if (!expense) return res.status(404).json({ success: false, error: "Expense not found" });
-    syncExpenseToSupabase(expense).catch(sbErr => console.warn("[Supabase Dual-Write] expense sync note:", sbErr.message));
-    res.json({ success: true, expense });
+    const id = req.params.id;
+    if (id && /^[0-9a-fA-F]{24}$/.test(id)) {
+      const expense = await Expense.findOne({ _id: id, companyId: req.companyId, isDeleted: false });
+      if (expense) {
+        syncExpenseToSupabase(expense).catch(sbErr => console.warn("[Supabase Dual-Write] expense sync note:", sbErr.message));
+        return res.json({ success: true, expense });
+      }
+    }
+    return res.status(404).json({ success: false, error: "Expense not found" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -132,56 +138,155 @@ export const getExpenseById = async (req, res) => {
 
 export const updateExpense = async (req, res) => {
   try {
+    const id = req.params.id;
+    if (!id) {
+      return res.status(400).json({ success: false, error: "Expense ID is required" });
+    }
+
     const updateData = { ...req.body, companyId: req.companyId };
+
     // Strict separation: Operating expenses MUST NEVER carry a familyMember
     if (!updateData.expenseType || updateData.expenseType === 'operating') {
       updateData.expenseType = 'operating';
       updateData.familyMember = '';
+    } else if (updateData.expenseType === 'drawings') {
+      updateData.familyMember = updateData.familyMember || 'Self';
     }
-    const oldExpense = await Expense.findOne({ _id: req.params.id, companyId: req.companyId, isDeleted: false });
-    if (!oldExpense) return res.status(404).json({ success: false, error: "Expense not found" });
 
-    const expense = await Expense.findOneAndUpdate(
-      { _id: req.params.id, companyId: req.companyId, isDeleted: false },
-      { $set: updateData },
-      { new: true }
-    );
+    const isMongoId = Boolean(id && /^[0-9a-fA-F]{24}$/.test(id));
+    const isUuid = Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id));
+    const isOfflineId = Boolean(id && (id.startsWith('exp_') || id.startsWith('temp_')));
 
-    // Auto-sync Staff Transaction if staffId is provided or updated
-    const targetStaffId = updateData.staffId || expense.staffId;
-    const amountNum = Number(expense.amount) || 0;
-    const oldStaffId = oldExpense.staffId ? String(oldExpense.staffId) : null;
-    const oldAmount = Number(oldExpense.amount) || 0;
+    let oldExpense = null;
+    let expense = null;
+    let sbUpdated = null;
 
-    if (targetStaffId && amountNum > 0 && expense.expenseType === 'operating') {
+    // 1. UPDATE IN SUPABASE (if UUID or Mongo ID)
+    if (supabase) {
+      try {
+        const targetUuid = isUuid ? id : (isMongoId ? mongoIdToUuid(id) : null);
+        if (targetUuid) {
+          const meta = {
+            expenseType: updateData.expenseType || 'operating',
+            familyMember: updateData.familyMember || '',
+            paymentMethod: updateData.paymentMethod || 'cash',
+            transactionFlow: updateData.transactionFlow || 'given',
+            staffId: updateData.staffId ? String(updateData.staffId) : undefined,
+            staffTransactionId: updateData.staffTransactionId ? String(updateData.staffTransactionId) : undefined
+          };
+          const cleanDesc = (updateData.description || updateData.notes || '').replace(/\[VB_META:[^\]]+\]\s*/g, '').trim();
+          const encodedDescription = `[VB_META:${JSON.stringify(meta)}] ${cleanDesc}`.trim();
+
+          const sbPayload = {
+            title: updateData.title || "खर्च",
+            amount: Number(updateData.amount || 0),
+            category: updateData.category || "General",
+            date: updateData.date ? new Date(updateData.date).toISOString() : new Date().toISOString(),
+            description: encodedDescription,
+            status: updateData.status || "approved",
+            updated_at: new Date().toISOString()
+          };
+
+          const { data: updatedSbData, error: sbErr } = await supabase
+            .from("expenses")
+            .update(sbPayload)
+            .eq("id", targetUuid)
+            .select()
+            .maybeSingle();
+
+          if (!sbErr && updatedSbData) {
+            sbUpdated = mapSupabaseExpenseToExpense(updatedSbData);
+          }
+        }
+      } catch (sbEx) {
+        console.warn("[updateExpense] Supabase direct update note:", sbEx.message);
+      }
+    }
+
+    // 2. UPDATE IN MONGODB
+    if (isMongoId) {
+      oldExpense = await Expense.findOne({ _id: id, companyId: req.companyId, isDeleted: false });
+      if (oldExpense) {
+        expense = await Expense.findOneAndUpdate(
+          { _id: id, companyId: req.companyId, isDeleted: false },
+          { $set: updateData },
+          { new: true }
+        );
+      }
+    } else {
+      // If id is a Supabase UUID or offline ID, find matching document in MongoDB if present
+      const candidates = await Expense.find({ companyId: req.companyId, isDeleted: false }).limit(50);
+      const match = candidates.find(c => {
+        if (isUuid && mongoIdToUuid(c._id) === id) return true;
+        if (c.title === updateData.title && Math.abs(Number(c.amount) - Number(updateData.amount)) < 0.01) return true;
+        return false;
+      });
+      if (match) {
+        oldExpense = match;
+        expense = await Expense.findOneAndUpdate(
+          { _id: match._id },
+          { $set: updateData },
+          { new: true }
+        );
+      }
+    }
+
+    // 3. Fallback: If neither MongoDB nor Supabase had it (e.g. offline-created entry being edited/saved)
+    if (!expense && !sbUpdated) {
+      try {
+        expense = await Expense.create({
+          ...updateData,
+          companyId: req.companyId
+        });
+      } catch (crErr) {
+        console.warn("[updateExpense] Mongo fallback create note:", crErr.message);
+      }
+    }
+
+    // Dual-write sync to Supabase if we have a mongo doc
+    if (expense) {
+      syncExpenseToSupabase(expense).catch(sbErr => console.warn("[Supabase Dual-Write] expense sync note:", sbErr.message));
+    }
+
+    const finalExpense = expense ? (expense.toObject ? expense.toObject() : expense) : (sbUpdated || { ...updateData, _id: id, id });
+
+    // 4. Auto-sync Staff Transaction if staffId is provided or updated
+    const targetStaffId = updateData.staffId || finalExpense.staffId;
+    const amountNum = Number(finalExpense.amount || updateData.amount) || 0;
+    const oldStaffId = oldExpense?.staffId ? String(oldExpense.staffId) : null;
+    const oldAmount = Number(oldExpense?.amount || 0);
+
+    if (targetStaffId && amountNum > 0 && finalExpense.expenseType === 'operating') {
       try {
         const staffDoc = await Staff.findOne({ _id: targetStaffId, companyId: req.companyId }) || await Staff.findById(targetStaffId);
         if (staffDoc) {
           let targetTx = null;
-          if (expense.staffTransactionId) {
-            targetTx = await StaffTransaction.findById(expense.staffTransactionId);
+          if (finalExpense.staffTransactionId) {
+            targetTx = await StaffTransaction.findById(finalExpense.staffTransactionId);
           }
-          if (!targetTx) {
-            targetTx = await StaffTransaction.findOne({ expenseId: expense._id, isDeleted: { $ne: true } });
+          if (!targetTx && finalExpense._id && /^[0-9a-fA-F]{24}$/.test(String(finalExpense._id))) {
+            targetTx = await StaffTransaction.findOne({ expenseId: finalExpense._id, isDeleted: { $ne: true } });
           }
           if (targetTx) {
             targetTx.debit = amountNum;
-            targetTx.date = expense.date ? new Date(expense.date) : new Date();
-            targetTx.notes = (expense.description || expense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim();
+            targetTx.date = finalExpense.date ? new Date(finalExpense.date) : new Date();
+            targetTx.notes = (finalExpense.description || finalExpense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim();
             await targetTx.save();
           } else {
             const newStTx = await StaffTransaction.create({
               staffId: staffDoc._id,
               companyId: staffDoc.companyId || req.companyId,
               type: 'advance',
-              date: expense.date ? new Date(expense.date) : new Date(),
+              date: finalExpense.date ? new Date(finalExpense.date) : new Date(),
               debit: amountNum,
               credit: 0,
-              notes: (expense.description || expense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim(),
-              expenseId: expense._id
+              notes: (finalExpense.description || finalExpense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim(),
+              expenseId: (finalExpense._id && /^[0-9a-fA-F]{24}$/.test(String(finalExpense._id))) ? finalExpense._id : undefined
             });
-            expense.staffTransactionId = newStTx._id;
-            await expense.save();
+            if (expense) {
+              expense.staffTransactionId = newStTx._id;
+              await expense.save();
+            }
           }
 
           // Balance adjustment
@@ -208,9 +313,9 @@ export const updateExpense = async (req, res) => {
       }
     }
 
-    syncExpenseToSupabase(expense).catch(sbErr => console.warn("[Supabase Dual-Write] expense sync note:", sbErr.message));
-    res.json({ success: true, expense });
+    res.json({ success: true, expense: finalExpense });
   } catch (error) {
+    console.error("[updateExpense] Error:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -384,8 +489,7 @@ export const deleteExpense = async (req, res) => {
     } else if (id && id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)) {
       // Supabase UUID passed from frontend
       try {
-        const { supabase, isSupabaseConfigured } = await import("../services/supabaseReadService.js");
-        if (isSupabaseConfigured && supabase) {
+        if (supabase) {
           await supabase.from("expenses").update({ is_deleted: true, updated_at: new Date().toISOString() }).eq("id", id);
         }
       } catch (sbDelErr) {
