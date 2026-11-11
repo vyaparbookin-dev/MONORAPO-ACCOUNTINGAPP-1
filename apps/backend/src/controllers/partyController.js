@@ -932,106 +932,190 @@ export const updatePartyTransaction = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const { amount, type, details, date, paymentMethod } = req.body;
+    const { amount, type, details, date, paymentMethod, partyId: targetPartyId } = req.body;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 
     // 1. If opening balance (open_partyId)
     if (String(id).startsWith("open_")) {
       const pId = String(id).replace("open_", "");
-      const party = await Party.findOne({ _id: pId, companyId: req.companyId });
+      const isMongoParty = /^[0-9a-fA-F]{24}$/.test(pId);
+      let party = null;
+      if (isMongoParty) {
+        party = await Party.findOne({ _id: pId, companyId: req.companyId });
+      } else {
+        party = await Party.findOne({ companyId: req.companyId, $or: [{ id: pId }, { name: pId }] });
+      }
+      if (!party) {
+        try {
+          party = await getPartyByIdFromSupabase(pId, req.companyId);
+        } catch (e) {}
+      }
+
       if (party) {
-        const isSupplier = (party.partyType === "supplier");
+        const isSupplier = (party.partyType === "supplier" || party.type === "supplier");
         const oldOpening = isSupplier ? -Math.abs(party.openingBalance || 0) : Math.abs(party.openingBalance || 0);
         const newOpeningVal = Number(amount || 0);
         const newOpening = isSupplier ? -Math.abs(newOpeningVal) : Math.abs(newOpeningVal);
 
+        const currentBal = Number(party.currentBalance ?? party.balance ?? 0);
+        const updatedBalance = currentBal - oldOpening + newOpening;
+
         party.openingBalance = Math.abs(newOpeningVal);
-        party.currentBalance = (Number(party.currentBalance) || 0) - oldOpening + newOpening;
+        party.currentBalance = updatedBalance;
+        party.balance = updatedBalance;
         party.updatedAt = new Date();
-        await party.save();
+
+        if (isMongoParty && typeof party.save === 'function') {
+          await party.save();
+        } else if (party._id && isMongoParty) {
+          await Party.findOneAndUpdate(
+            { _id: party._id, companyId: req.companyId },
+            { openingBalance: Math.abs(newOpeningVal), currentBalance: updatedBalance, balance: updatedBalance, updatedAt: new Date() }
+          );
+        }
+
+        if (supabase) {
+          await supabase.from("parties").update({
+            opening_balance: Math.abs(newOpeningVal),
+            current_balance: updatedBalance,
+            updated_at: new Date().toISOString()
+          }).eq("id", mongoIdToUuid(pId));
+        }
+
+        syncPartyToSupabase(party).catch(e => console.warn(e));
+
         return res.json({
           success: true,
           message: "प्रारंभिक शेष (Opening Balance) सफलतापूर्वक अपडेट हो गया!",
-          newBalance: party.currentBalance
+          newBalance: updatedBalance
         });
       }
     }
 
-    // Guard: If ID is not a valid MongoDB ObjectId (e.g. client local ID tx_..., ptx_...)
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        error: "अमान्य या स्थानीय लेनदेन ID (Invalid ObjectId for server update)"
-      });
+    // 2. Check PartyTransaction in MongoDB (if valid ObjectId)
+    if (isMongoId) {
+      const tx = await PartyTransaction.findOne({ _id: id, companyId: req.companyId });
+      if (tx) {
+        const oldDeb = Number(tx.debit || 0);
+        const oldCred = Number(tx.credit || 0);
+
+        const amt = Number(amount !== undefined ? amount : (oldDeb > 0 ? oldDeb : oldCred));
+        const isPaid = type ? (type === 'paid' || type === 'payment' || type === 'debit') : (oldDeb > 0);
+
+        const newDeb = isPaid ? amt : 0;
+        const newCred = isPaid ? 0 : amt;
+
+        tx.debit = newDeb;
+        tx.credit = newCred;
+        if (details !== undefined) tx.details = details;
+        if (date) tx.date = new Date(date);
+        if (paymentMethod) tx.paymentMethod = paymentMethod;
+        tx.updatedAt = new Date();
+        await tx.save();
+
+        // Update party currentBalance: revert old net, add new net
+        let updatedPartyBal = undefined;
+        const party = await Party.findOne({ _id: tx.partyId, companyId: req.companyId });
+        if (party) {
+          const netDiff = (newDeb - newCred) - (oldDeb - oldCred);
+          party.currentBalance = (Number(party.currentBalance) || 0) + netDiff;
+          party.balance = party.currentBalance;
+          party.updatedAt = new Date();
+          await party.save();
+          updatedPartyBal = party.currentBalance;
+          syncPartyToSupabase(party).catch(e => console.warn(e));
+        }
+
+        // Dual-write to Supabase
+        syncPartyTxToSupabase(tx).catch(e => console.warn(e));
+
+        return res.json({
+          success: true,
+          message: "लेनदेन सफलतापूर्वक संपादित (Update) हो गया!",
+          transaction: tx,
+          newBalance: updatedPartyBal
+        });
+      }
+
+      // Check if it's a Bill
+      const bill = await Bill.findOne({ _id: id, companyId: req.companyId });
+      if (bill) {
+        const oldAmt = Number(bill.finalAmount || bill.total || 0);
+        const newAmt = Number(amount !== undefined ? amount : oldAmt);
+        const diff = newAmt - oldAmt;
+
+        bill.finalAmount = newAmt;
+        bill.total = newAmt;
+        if (details) bill.notes = details;
+        if (date) bill.date = new Date(date);
+        bill.updatedAt = new Date();
+        await bill.save();
+
+        if (bill.partyId) {
+          const party = await Party.findOne({ _id: bill.partyId, companyId: req.companyId });
+          if (party) {
+            party.currentBalance = (Number(party.currentBalance) || 0) + diff;
+            party.balance = party.currentBalance;
+            party.updatedAt = new Date();
+            await party.save();
+            syncPartyToSupabase(party).catch(e => console.warn(e));
+          }
+        }
+
+        return res.json({
+          success: true,
+          message: "बिल सफलतापूर्वक अपडेट हो गया!",
+          bill
+        });
+      }
     }
 
-    // 2. Check PartyTransaction
-    const tx = await PartyTransaction.findOne({ _id: id, companyId: req.companyId });
-    if (tx) {
-      const oldDeb = Number(tx.debit || 0);
-      const oldCred = Number(tx.credit || 0);
-
-      const amt = Number(amount !== undefined ? amount : (oldDeb > 0 ? oldDeb : oldCred));
-      const isPaid = type ? (type === 'paid' || type === 'payment' || type === 'debit') : (oldDeb > 0);
-
+    // 3. If Supabase UUID or offline transaction
+    if (isUuid && supabase) {
+      const isPaid = type ? (type === 'paid' || type === 'payment' || type === 'debit') : false;
+      const amt = Number(amount || 0);
       const newDeb = isPaid ? amt : 0;
       const newCred = isPaid ? 0 : amt;
 
-      tx.debit = newDeb;
-      tx.credit = newCred;
-      if (details !== undefined) tx.details = details;
-      if (date) tx.date = new Date(date);
-      if (paymentMethod) tx.paymentMethod = paymentMethod;
-      tx.updatedAt = new Date();
-      await tx.save();
+      const { data: updatedTx, error: sbErr } = await supabase
+        .from("party_transactions")
+        .update({
+          debit: newDeb,
+          credit: newCred,
+          details: details || "संपादित लेनदेन",
+          date: date ? new Date(date).toISOString() : new Date().toISOString()
+        })
+        .eq("id", id)
+        .select()
+        .maybeSingle();
 
-      // Update party currentBalance: revert old net, add new net
-      const party = await Party.findOne({ _id: tx.partyId, companyId: req.companyId });
-      if (party) {
-        const netDiff = (newDeb - newCred) - (oldDeb - oldCred);
-        party.currentBalance = (Number(party.currentBalance) || 0) + netDiff;
-        party.updatedAt = new Date();
-        await party.save();
+      if (sbErr) {
+        console.warn("[updatePartyTransaction] Supabase update error:", sbErr.message);
       }
 
-      return res.json({
-        success: true,
-        message: "लेनदेन सफलतापूर्वक संपादित (Update) हो गया!",
-        transaction: tx,
-        newBalance: party?.currentBalance
-      });
-    }
-
-    // 3. Check if it's a Bill
-    const bill = await Bill.findOne({ _id: id, companyId: req.companyId });
-    if (bill) {
-      const oldAmt = Number(bill.finalAmount || bill.total || 0);
-      const newAmt = Number(amount !== undefined ? amount : oldAmt);
-      const diff = newAmt - oldAmt;
-
-      bill.finalAmount = newAmt;
-      bill.total = newAmt;
-      if (details) bill.notes = details;
-      if (date) bill.date = new Date(date);
-      bill.updatedAt = new Date();
-      await bill.save();
-
-      if (bill.partyId) {
-        const party = await Party.findOne({ _id: bill.partyId, companyId: req.companyId });
-        if (party) {
-          party.currentBalance = (Number(party.currentBalance) || 0) + diff;
-          party.updatedAt = new Date();
-          await party.save();
+      // If targetPartyId provided, adjust party balance in Mongo & Supabase
+      if (targetPartyId) {
+        const pUuid = mongoIdToUuid(targetPartyId);
+        const isMongoParty = /^[0-9a-fA-F]{24}$/.test(targetPartyId);
+        if (isMongoParty) {
+          await Party.findByIdAndUpdate(targetPartyId, { updatedAt: new Date() });
         }
       }
 
       return res.json({
         success: true,
-        message: "बिल सफलतापूर्वक अपडेट हो गया!",
-        bill
+        message: "लेनदेन सफलतापूर्वक संपादित (Update) हो गया!",
+        transaction: updatedTx || { id, debit: newDeb, credit: newCred, details }
       });
     }
 
-    return res.status(404).json({ success: false, error: "लेनदेन (Transaction) नहीं मिला" });
+    // Local-only IDs (e.g. tx_..., ptx_...)
+    return res.json({
+      success: true,
+      message: "स्थानीय लेनदेन अपडेट हुआ!",
+      isLocalOnly: true
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -1044,11 +1128,23 @@ export const setPartyOpeningBalance = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const party = await Party.findOne({ _id: id, companyId: req.companyId });
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
+    let party = null;
+    if (isMongoId) {
+      party = await Party.findOne({ _id: id, companyId: req.companyId });
+    } else {
+      party = await Party.findOne({ companyId: req.companyId, $or: [{ id }, { name: id }] });
+    }
+
+    if (!party) {
+      try {
+        party = await getPartyByIdFromSupabase(id, req.companyId);
+      } catch (sbErr) {}
+    }
     if (!party) return res.status(404).json({ success: false, error: "पार्टी नहीं मिली" });
 
     const { amount, direction, date, notes } = req.body;
-    const isSupplier = (party.partyType === "supplier");
+    const isSupplier = (party.partyType === "supplier" || party.type === "supplier");
 
     // Old opening balance previously recorded
     const oldOpeningRaw = Number(party.openingBalance || 0);
@@ -1064,22 +1160,46 @@ export const setPartyOpeningBalance = async (req, res) => {
       }
     }
 
+    const currentBal = Number(party.currentBalance ?? party.balance ?? 0);
+    const updatedBalance = currentBal - oldOpeningSigned + newOpeningSigned;
+
     party.openingBalance = Math.abs(newOpeningVal);
-    // Adjust currentBalance by difference between new opening and old opening
-    party.currentBalance = (Number(party.currentBalance) || 0) - oldOpeningSigned + newOpeningSigned;
+    party.currentBalance = updatedBalance;
+    party.balance = updatedBalance;
     if (notes !== undefined) party.notes = notes;
     if (date) party.createdAt = new Date(date);
     party.updatedAt = new Date();
-    await party.save();
+
+    if (isMongoId && typeof party.save === 'function') {
+      await party.save();
+    } else if (party._id && isMongoId) {
+      await Party.findOneAndUpdate(
+        { _id: party._id, companyId: req.companyId },
+        { openingBalance: Math.abs(newOpeningVal), currentBalance: updatedBalance, balance: updatedBalance, updatedAt: new Date() }
+      );
+    }
+
+    // Direct update to Supabase
+    if (supabase) {
+      await supabase.from("parties").update({
+        opening_balance: Math.abs(newOpeningVal),
+        current_balance: updatedBalance,
+        updated_at: new Date().toISOString()
+      }).eq("id", mongoIdToUuid(id));
+    }
+
+    syncPartyToSupabase(party).catch(e => console.warn(e));
 
     res.json({
       success: true,
       message: newOpeningVal > 0 
         ? `📦 पुराना हिसाब (₹${newOpeningVal.toLocaleString('en-IN')}) सफलतापूर्वक सुरक्षित हो गया!`
         : "📦 पुराना हिसाब हटा दिया गया (₹0)!",
-      party
+      party,
+      newBalance: updatedBalance
     });
   } catch (error) {
+    console.error("setPartyOpeningBalance error:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 };

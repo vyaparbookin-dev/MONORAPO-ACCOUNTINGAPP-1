@@ -25,6 +25,7 @@ import {
   Check
 } from "lucide-react";
 import api from "../../services/api";
+import storageManager from "../../services/storageManager";
 import { useCompany } from "../../contexts/CompanyContext";
 import { speakUpiPayment } from "../../utils/soundBox";
 
@@ -102,12 +103,15 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
   const [transferData, setTransferData] = useState({
     fromAccId: "",
     toAccId: "",
+    toPartyId: "",
     amount: "",
     date: new Date().toISOString().split("T")[0],
     referenceNo: "",
     note: ""
   });
   const [processingTransfer, setProcessingTransfer] = useState(false);
+  const [transferTarget, setTransferTarget] = useState("PARTY"); // "PARTY" or "BANK"
+  const [partiesList, setPartiesList] = useState([]);
 
   // Monthly Interest Modal (Auto Calculate vs Manual Original Entry)
   const [isInterestOpen, setIsInterestOpen] = useState(false);
@@ -790,8 +794,101 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
       alert("कृपया मान्य ट्रांसफर राशि दर्ज करें!");
       return;
     }
-    if (!transferData.fromAccId || !transferData.toAccId) {
-      alert("कृपया भेजने वाला और पाने वाला दोनों बैंक खाते चुनें!");
+    if (!transferData.fromAccId) {
+      alert("कृपया भेजने वाला बैंक खाता चुनें!");
+      return;
+    }
+
+    const refNo = transferData.referenceNo.trim() || `TRF-${Date.now().toString().slice(-6)}`;
+    const txDate = transferData.date || new Date().toISOString().split("T")[0];
+
+    // --- CASE A: TRANSFER TO VYAPARI / PARTY ---
+    if (transferTarget === "PARTY") {
+      if (!transferData.toPartyId) {
+        alert("कृपया पाने वाला व्यापारी (सप्लायर या ग्राहक) चुनें!");
+        return;
+      }
+      setProcessingTransfer(true);
+      const targetParty = partiesList.find(p => (p._id || p.id) === transferData.toPartyId);
+      const pName = targetParty?.name || "व्यापारी";
+      const fromAcc = accounts.find(a => (a._id || a.id) === transferData.fromAccId);
+
+      try {
+        await api.post("/api/bank-accounts/transfer-to-party", {
+          fromAccountId: transferData.fromAccId,
+          partyId: transferData.toPartyId,
+          amount: amt,
+          date: txDate,
+          referenceNo: refNo,
+          note: transferData.note.trim()
+        });
+
+        // Update local bank account balance
+        const updatedAccounts = accounts.map(a => {
+          const aId = a._id || a.id;
+          if (aId === transferData.fromAccId) {
+            const outTx = {
+              id: "tx_out_" + Date.now(),
+              type: "party_payment",
+              amount: amt,
+              date: txDate,
+              description: transferData.note.trim() || `व्यापारी को बैंक भुगतान ➡️ ${pName}`,
+              referenceNo: refNo,
+              createdAt: new Date().toISOString()
+            };
+            const txs = Array.isArray(a.transactions) ? [outTx, ...a.transactions] : [outTx];
+            let updatedOutstanding = Number(a.currentOutstanding || 0);
+            let updatedBalance = Number(a.balance || a.currentBalance || 0);
+            if (a.accountType === "CC_OVERDRAFT") {
+              updatedOutstanding += amt;
+            } else {
+              updatedBalance -= amt;
+            }
+            return {
+              ...a,
+              transactions: txs,
+              currentOutstanding: updatedOutstanding,
+              balance: updatedBalance,
+              currentBalance: updatedBalance
+            };
+          }
+          return a;
+        });
+
+        localStorage.setItem("vb_local_bank_accounts", JSON.stringify(updatedAccounts));
+        setAccounts(updatedAccounts);
+
+        // Update local party balance in storageManager
+        try {
+          const coId = selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId");
+          const localParties = storageManager.getParties(coId);
+          const updatedParties = localParties.map(p => {
+            if ((p._id || p.id) === transferData.toPartyId) {
+              const curBal = Number(p.currentBalance ?? p.balance ?? 0);
+              return { ...p, currentBalance: curBal + amt, balance: curBal + amt };
+            }
+            return p;
+          });
+          storageManager.saveParties(coId, updatedParties);
+        } catch (e) {}
+
+        try { speakUpiPayment(amt, pName); } catch (e) {}
+        alert(`✅ ₹${amt.toLocaleString("en-IN")} व्यापारी '${pName}' को बैंक (${fromAcc?.bankName || fromAcc?.accountName || 'खाता'}) से सफलतापूर्वक ट्रांसफर हो गए!`);
+        setIsTransferOpen(false);
+        setTransferData({ fromAccId: "", toAccId: "", toPartyId: "", amount: "", date: new Date().toISOString().split("T")[0], referenceNo: "", note: "" });
+        fetchAccounts();
+        if (typeof onAccountsChange === "function") onAccountsChange();
+      } catch (err) {
+        alert("व्यापारी को ट्रांसफर करने में त्रुटि: " + (err.response?.data?.message || err.message));
+      } finally {
+        setProcessingTransfer(false);
+      }
+      return;
+    }
+
+    // --- CASE B: BANK TO BANK TRANSFER ---
+    if (!transferData.toAccId) {
+      alert("कृपया पाने वाला बैंक खाता चुनें!");
       return;
     }
     if (transferData.fromAccId === transferData.toAccId) {
@@ -807,8 +904,6 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
     }
 
     setProcessingTransfer(true);
-    const refNo = transferData.referenceNo.trim() || `TRF-${Date.now().toString().slice(-6)}`;
-    const txDate = transferData.date || new Date().toISOString().split("T")[0];
 
     try {
       // 1. Try server endpoint
@@ -2176,6 +2271,32 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
             </div>
 
             <form onSubmit={handleSaveBankTransfer} className="space-y-3.5">
+              {/* Transfer Destination Toggle: Merchant vs Bank */}
+              <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
+                <button
+                  type="button"
+                  onClick={() => setTransferTarget("PARTY")}
+                  className={`flex-1 py-2 text-xs font-black rounded-lg transition flex items-center justify-center gap-1 cursor-pointer ${
+                    transferTarget === "PARTY"
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>👤 व्यापारी / सप्लायर को दें</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTransferTarget("BANK")}
+                  className={`flex-1 py-2 text-xs font-black rounded-lg transition flex items-center justify-center gap-1 cursor-pointer ${
+                    transferTarget === "BANK"
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>🏛️ बैंक से बैंक ट्रांसफर</span>
+                </button>
+              </div>
+
               {/* From Account Selector */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -2204,33 +2325,59 @@ export default function MobileBankCCModal({ isOpen, onClose, onAccountsChange })
                 </select>
               </div>
 
-              {/* To Account Selector */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  २. किस बैंक खाते में पैसे जमा करें (To Bank) *
-                </label>
-                <select
-                  required
-                  value={transferData.toAccId}
-                  onChange={(e) => setTransferData({ ...transferData, toAccId: e.target.value })}
-                  className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-emerald-200 bg-emerald-50/40 text-slate-900"
-                >
-                  <option value="">-- पाने वाला बैंक चुनें --</option>
-                  {accounts
-                    .filter(a => (a._id || a.id) !== transferData.fromAccId)
-                    .map(a => {
-                      const aId = a._id || a.id;
-                      const isCC = a.accountType === "CC_OVERDRAFT";
-                      const bal = Number(a.balance || a.currentBalance || 0);
-                      const out = Number(a.currentOutstanding || 0);
+              {/* To Account / Party Selector */}
+              {transferTarget === "PARTY" ? (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    २. किस व्यापारी / सप्लायर को बैंक से पैसे भेजें (To Merchant) *
+                  </label>
+                  <select
+                    required
+                    value={transferData.toPartyId || ""}
+                    onChange={(e) => setTransferData({ ...transferData, toPartyId: e.target.value })}
+                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-indigo-300 bg-indigo-50/40 text-slate-900 outline-none"
+                  >
+                    <option value="">-- व्यापारी / सप्लायर चुनें --</option>
+                    {partiesList.map(p => {
+                      const pId = p._id || p.id;
+                      const bal = Number(p.currentBalance ?? p.balance ?? 0);
+                      const isSupp = (p.partyType === "supplier" || p.type === "supplier");
                       return (
-                        <option key={aId} value={aId}>
-                          {a.bankName || a.accountName} ({isCC ? "CC लिमिट" : "करंट/सेविंग्स"}) - {isCC ? `बकाया कर्ज़: ₹${out.toLocaleString("en-IN")}` : `बैलेंस: ₹${bal.toLocaleString("en-IN")}`}
+                        <option key={pId} value={pId}>
+                          {p.name} ({isSupp ? "सप्लायर" : "ग्राहक"}) - बकाया: ₹{bal.toLocaleString("en-IN")}
                         </option>
                       );
                     })}
-                </select>
-              </div>
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    २. किस बैंक खाते में पैसे जमा करें (To Bank) *
+                  </label>
+                  <select
+                    required
+                    value={transferData.toAccId}
+                    onChange={(e) => setTransferData({ ...transferData, toAccId: e.target.value })}
+                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-emerald-200 bg-emerald-50/40 text-slate-900 outline-none"
+                  >
+                    <option value="">-- पाने वाला बैंक चुनें --</option>
+                    {accounts
+                      .filter(a => (a._id || a.id) !== transferData.fromAccId)
+                      .map(a => {
+                        const aId = a._id || a.id;
+                        const isCC = a.accountType === "CC_OVERDRAFT";
+                        const bal = Number(a.balance || a.currentBalance || 0);
+                        const out = Number(a.currentOutstanding || 0);
+                        return (
+                          <option key={aId} value={aId}>
+                            {a.bankName || a.accountName} ({isCC ? "CC लिमिट" : "करंट/सेविंग्स"}) - {isCC ? `बकाया कर्ज़: ₹${out.toLocaleString("en-IN")}` : `बैलेंस: ₹${bal.toLocaleString("en-IN")}`}
+                          </option>
+                        );
+                      })}
+                  </select>
+                </div>
+              )}
 
               {/* Transfer Amount */}
               <div>

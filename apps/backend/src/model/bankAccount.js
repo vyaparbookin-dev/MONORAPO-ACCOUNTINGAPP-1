@@ -65,6 +65,10 @@ const bankAccountSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    balance: {
+      type: Number,
+      default: 0,
+    },
     interestRate: {
       type: Number,
       default: 0,
@@ -74,7 +78,6 @@ const bankAccountSchema = new mongoose.Schema(
         date: { type: Date, default: Date.now },
         type: {
           type: String,
-          enum: ["deposit", "withdrawal", "interest_debit", "charges"],
           default: "deposit",
         },
         amount: { type: Number, required: true },

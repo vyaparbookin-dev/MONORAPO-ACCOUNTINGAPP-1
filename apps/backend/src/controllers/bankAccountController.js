@@ -1,3 +1,7 @@
+import Party from "../model/party.js";
+import PartyTransaction from "../model/PartyTransaction.js";
+import { syncPartyTxToSupabase, syncPartyToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
+import { getPartyByIdFromSupabase } from "../services/supabaseReadService.js";
 import BankAccount from "../model/bankAccount.js";
 import mongoose from "mongoose";
 
@@ -195,35 +199,27 @@ export const addAccountTransaction = async (req, res) => {
 
     account.transactions.push({
       date: date ? new Date(date) : new Date(),
-      type: type || "deposit",
+      type: normalizedType,
       amount: txAmt,
       note: note || "",
       referenceNo: referenceNo || "",
     });
 
     if (account.accountType === "CC_OVERDRAFT") {
-      if (normalizedType === "deposit" || normalizedType === "transfer_in") {
+      if (normalizedType === "deposit" || normalizedType === "transfer_in" || normalizedType === "party_collection") {
         account.currentOutstanding = Math.max(0, (Number(account.currentOutstanding) || 0) - txAmt);
-      } else if (
-        normalizedType === "withdrawal" ||
-        normalizedType === "interest_debit" ||
-        normalizedType === "charges" ||
-        normalizedType === "bank_charges" ||
-        normalizedType === "transfer_out"
-      ) {
+      } else {
         account.currentOutstanding = (Number(account.currentOutstanding) || 0) + txAmt;
       }
     } else {
-      if (normalizedType === "deposit" || normalizedType === "transfer_in") {
-        account.currentBalance = (Number(account.currentBalance) || 0) + txAmt;
-      } else if (
-        normalizedType === "withdrawal" ||
-        normalizedType === "interest_debit" ||
-        normalizedType === "charges" ||
-        normalizedType === "bank_charges" ||
-        normalizedType === "transfer_out"
-      ) {
-        account.currentBalance = (Number(account.currentBalance) || 0) - txAmt;
+      if (normalizedType === "deposit" || normalizedType === "transfer_in" || normalizedType === "party_collection") {
+        const newBal = (Number(account.currentBalance) || 0) + txAmt;
+        account.currentBalance = newBal;
+        account.balance = newBal;
+      } else {
+        const newBal = (Number(account.currentBalance) || 0) - txAmt;
+        account.currentBalance = newBal;
+        account.balance = newBal;
       }
     }
 
@@ -345,7 +341,7 @@ export const transferFunds = async (req, res) => {
     // 1. Deduct from fromAccount (Record TRANSFER_OUT)
     fromAccount.transactions.push({
       date: txDate,
-      type: "TRANSFER_OUT",
+      type: "transfer_out",
       amount: txAmt,
       note: note || `फंड ट्रांसफर दिया ➡️ ${toAccount.bankName || toAccount.accountName}`,
       referenceNo: ref,
@@ -353,14 +349,16 @@ export const transferFunds = async (req, res) => {
     if (fromAccount.accountType === "CC_OVERDRAFT") {
       fromAccount.currentOutstanding = (Number(fromAccount.currentOutstanding) || 0) + txAmt;
     } else {
-      fromAccount.currentBalance = (Number(fromAccount.currentBalance) || 0) - txAmt;
+      const fromBal = (Number(fromAccount.currentBalance) || 0) - txAmt;
+      fromAccount.currentBalance = fromBal;
+      fromAccount.balance = fromBal;
     }
     await fromAccount.save();
 
     // 2. Add to toAccount (Record TRANSFER_IN)
     toAccount.transactions.push({
       date: txDate,
-      type: "TRANSFER_IN",
+      type: "transfer_in",
       amount: txAmt,
       note: note || `फंड ट्रांसफर मिला ⬅️ ${fromAccount.bankName || fromAccount.accountName}`,
       referenceNo: ref,
@@ -368,7 +366,9 @@ export const transferFunds = async (req, res) => {
     if (toAccount.accountType === "CC_OVERDRAFT") {
       toAccount.currentOutstanding = Math.max(0, (Number(toAccount.currentOutstanding) || 0) - txAmt);
     } else {
-      toAccount.currentBalance = (Number(toAccount.currentBalance) || 0) + txAmt;
+      const toBal = (Number(toAccount.currentBalance) || 0) + txAmt;
+      toAccount.currentBalance = toBal;
+      toAccount.balance = toBal;
     }
     await toAccount.save();
 
@@ -380,6 +380,110 @@ export const transferFunds = async (req, res) => {
     });
   } catch (error) {
     console.error("Error transferring funds:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Transfer from Bank Account directly to a Merchant / Party (व्यापारी को बैंक ट्रांसफर)
+export const transferToParty = async (req, res) => {
+  try {
+    const { fromAccountId, partyId, amount, date, referenceNo, note } = req.body;
+    const txAmt = Number(amount) || 0;
+    if (txAmt <= 0) {
+      return res.status(400).json({ success: false, message: "कृपया मान्य राशि दर्ज करें!" });
+    }
+    if (!fromAccountId || !partyId) {
+      return res.status(400).json({ success: false, message: "बैंक खाता और व्यापारी दोनों चुनें!" });
+    }
+
+    // Find Bank Account
+    const fromQuery = mongoose.Types.ObjectId.isValid(fromAccountId)
+      ? { _id: fromAccountId }
+      : { $or: [{ _id: fromAccountId }, { clientTempId: fromAccountId }] };
+    const account = await BankAccount.findOne(fromQuery);
+    if (!account) {
+      return res.status(404).json({ success: false, message: "बैंक खाता नहीं मिला!" });
+    }
+
+    // Find Party
+    const isMongoParty = mongoose.Types.ObjectId.isValid(partyId);
+    let party = null;
+    if (isMongoParty) {
+      party = await Party.findOne({ _id: partyId, companyId: req.companyId });
+    } else {
+      party = await Party.findOne({ companyId: req.companyId, $or: [{ id: partyId }, { name: partyId }] });
+    }
+    if (!party) {
+      try {
+        party = await getPartyByIdFromSupabase(partyId, req.companyId);
+      } catch (e) {}
+    }
+    if (!party) {
+      return res.status(404).json({ success: false, message: "व्यापारी (पार्टी) नहीं मिला!" });
+    }
+
+    const txDate = date ? new Date(date) : new Date();
+    const ref = referenceNo || `TRF-${Date.now().toString().slice(-6)}`;
+    const pName = party.name || "व्यापारी";
+    const desc = note ? note.trim() : `व्यापारी को बैंक भुगतान ➡️ ${pName}`;
+
+    // 1. Deduct from Bank Account
+    account.transactions.push({
+      date: txDate,
+      type: "party_payment",
+      amount: txAmt,
+      note: desc,
+      referenceNo: ref,
+    });
+    if (account.accountType === "CC_OVERDRAFT") {
+      account.currentOutstanding = (Number(account.currentOutstanding) || 0) + txAmt;
+    } else {
+      const newBal = (Number(account.currentBalance) || 0) - txAmt;
+      account.currentBalance = newBal;
+      account.balance = newBal;
+    }
+    await account.save();
+
+    // 2. Record Party Transaction (Payment Out: reduces supplier debt / records party debit)
+    const currentBal = Number(party.currentBalance ?? party.balance ?? 0);
+    const updatedPartyBal = currentBal + txAmt;
+    party.currentBalance = updatedPartyBal;
+    party.balance = updatedPartyBal;
+    party.updatedAt = new Date();
+    if (typeof party.save === 'function') {
+      await party.save();
+    } else if (party._id && isMongoParty) {
+      await Party.findOneAndUpdate(
+        { _id: party._id, companyId: req.companyId },
+        { currentBalance: updatedPartyBal, balance: updatedPartyBal, updatedAt: new Date() }
+      );
+    }
+
+    const partyTx = new PartyTransaction({
+      partyId: isMongoParty ? partyId : (party._id || new mongoose.Types.ObjectId()),
+      companyId: req.companyId || account.companyId,
+      date: txDate,
+      details: `बैंक ट्रांसफर (${account.bankName || account.accountName}) - ${ref} ${note ? `| ${note}` : ''}`.trim(),
+      debit: txAmt,
+      credit: 0,
+      type: 'manual',
+      paymentMethod: 'bank'
+    });
+    await partyTx.save();
+
+    // Supabase Dual-Write
+    syncPartyTxToSupabase(partyTx).catch(e => console.warn(e));
+    syncPartyToSupabase(party).catch(e => console.warn(e));
+
+    res.status(200).json({
+      success: true,
+      account,
+      party,
+      partyTransaction: partyTx,
+      message: `✅ ₹${txAmt.toLocaleString("en-IN")} व्यापारी '${pName}' को बैंक (${account.bankName || account.accountName}) से सफलतापूर्वक ट्रांसफर हो गए!`
+    });
+  } catch (error) {
+    console.error("Error transferring to party:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

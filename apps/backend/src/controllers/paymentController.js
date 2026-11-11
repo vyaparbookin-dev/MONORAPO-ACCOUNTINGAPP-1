@@ -4,6 +4,7 @@ import crypto from "crypto";
 import Bill from "../model/bill.js";
 import Party from "../model/party.js";
 import PartyTransaction from "../model/PartyTransaction.js";
+import BankAccount from "../model/bankAccount.js";
 import fs from "fs";
 import Company from "../model/company.js"; // Import Company model
 import path from "path";
@@ -96,7 +97,7 @@ export const parseStatementImage = async (req, res) => {
 // Add manual payment entry (Udhar/Jama from Mobile App)
 export const addPaymentEntry = async (req, res) => {
   try {
-    const { partyId, amount, type, date, notes, paymentMethod } = req.body;
+    const { partyId, amount, type, date, notes, paymentMethod, bankAccountId } = req.body;
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID is missing" });
 
     let party = null;
@@ -154,7 +155,8 @@ export const addPaymentEntry = async (req, res) => {
       details: notes || (type === 'received' ? 'Payment Received' : 'Payment Given'),
       debit,
       credit,
-      type: 'manual'
+      type: 'manual',
+      paymentMethod: paymentMethod || 'cash'
     });
 
     try {
@@ -171,6 +173,64 @@ export const addPaymentEntry = async (req, res) => {
       console.warn("[addPaymentEntry] party save note:", savePartyErr.message);
     }
 
+    // 🏦 AUTO-SYNC WITH BANK ACCOUNT IF BANK OR UPI PAYMENT
+    let bankUpdated = null;
+    const normPayMethod = String(paymentMethod || '').toUpperCase();
+    if (normPayMethod === 'BANK' || normPayMethod === 'UPI' || bankAccountId) {
+      try {
+        let bQuery = { companyId: req.companyId, isDeleted: { $ne: true } };
+        if (bankAccountId) {
+          bQuery = mongoose.Types.ObjectId.isValid(bankAccountId)
+            ? { _id: bankAccountId }
+            : { $or: [{ _id: bankAccountId }, { clientTempId: bankAccountId }] };
+        } else {
+          const defaultAcc = await BankAccount.findOne({ ...bQuery, isDefaultUPI: true }) || await BankAccount.findOne(bQuery);
+          if (defaultAcc) bQuery = { _id: defaultAcc._id };
+        }
+
+        const bankAcc = await BankAccount.findOne(bQuery);
+        if (bankAcc) {
+          const pName = party.name || "व्यापारी";
+          const txDate = date ? new Date(date) : new Date();
+          if (type === 'paid') {
+            bankAcc.transactions.push({
+              date: txDate,
+              type: 'party_payment',
+              amount: numAmount,
+              note: notes || `व्यापारी भुगतान: ${pName} (${normPayMethod || 'BANK'})`,
+              referenceNo: `PAY-${Date.now().toString().slice(-6)}`
+            });
+            if (bankAcc.accountType === 'CC_OVERDRAFT') {
+              bankAcc.currentOutstanding = (Number(bankAcc.currentOutstanding) || 0) + numAmount;
+            } else {
+              const newBal = (Number(bankAcc.currentBalance) || 0) - numAmount;
+              bankAcc.currentBalance = newBal;
+              bankAcc.balance = newBal;
+            }
+          } else if (type === 'received') {
+            bankAcc.transactions.push({
+              date: txDate,
+              type: 'party_collection',
+              amount: numAmount,
+              note: notes || `व्यापारी से वसूली: ${pName} (${normPayMethod || 'BANK'})`,
+              referenceNo: `REC-${Date.now().toString().slice(-6)}`
+            });
+            if (bankAcc.accountType === 'CC_OVERDRAFT') {
+              bankAcc.currentOutstanding = Math.max(0, (Number(bankAcc.currentOutstanding) || 0) - numAmount);
+            } else {
+              const newBal = (Number(bankAcc.currentBalance) || 0) + numAmount;
+              bankAcc.currentBalance = newBal;
+              bankAcc.balance = newBal;
+            }
+          }
+          await bankAcc.save();
+          bankUpdated = bankAcc;
+        }
+      } catch (bankErr) {
+        console.warn("[addPaymentEntry] Bank update error:", bankErr.message);
+      }
+    }
+
     // Async Supabase Dual-Write
     syncPartyTxToSupabase(transaction).catch(e => console.warn("[Supabase Sync] Party Tx dual-write note:", e.message));
     syncPartyToSupabase(party).catch(e => console.warn("[Supabase Sync] Party dual-write note:", e.message));
@@ -181,6 +241,7 @@ export const addPaymentEntry = async (req, res) => {
       success: true, 
       transaction, 
       party,
+      bankAccount: bankUpdated,
       availableLimit,
       message: type === 'received' 
         ? `भुगतान दर्ज हुआ! शेष बकाया: ₹${(party.currentBalance || 0).toLocaleString('en-IN')}${party.creditLimit ? ` | बची क्रेडिट लिमिट: ₹${availableLimit.toLocaleString('en-IN')}` : ''}`

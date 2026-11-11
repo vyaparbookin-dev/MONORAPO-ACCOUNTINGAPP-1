@@ -7,6 +7,7 @@ import {
   addAccountTransaction,
   addMonthlyInterest,
   transferFunds,
+  transferToParty,
 } from "../controllers/bankAccountController.js";
 import { protect } from "../middleware/authmiddleware.js";
 
@@ -16,6 +17,7 @@ router.use(protect);
 
 router.route("/").get(getBankAccounts).post(createBankAccount);
 router.post("/transfer", transferFunds);
+router.post("/transfer-to-party", transferToParty);
 router.route("/:id").put(updateBankAccount).delete(deleteBankAccount);
 router.route("/:id/transaction").post(addAccountTransaction);
 router.route("/:id/transactions").post(addAccountTransaction);

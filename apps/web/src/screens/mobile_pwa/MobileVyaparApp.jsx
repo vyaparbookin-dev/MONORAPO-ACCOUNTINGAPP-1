@@ -420,6 +420,7 @@ function MobileVyaparAppContent() {
   const [partyTxNotes, setPartyTxNotes] = useState('');
   const [partyTxDate, setPartyTxDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [partyTxPaymentMode, setPartyTxPaymentMode] = useState('CASH');
+  const [partyTxBankAccountId, setPartyTxBankAccountId] = useState('');
   const [savingPartyTx, setSavingPartyTx] = useState(false);
 
   // Edit Party Transaction State
@@ -454,6 +455,7 @@ function MobileVyaparAppContent() {
   const [vendorIsPaidNow, setVendorIsPaidNow] = useState(false);
   const [vendorPaidAmount, setVendorPaidAmount] = useState('');
   const [vendorPaymentMode, setVendorPaymentMode] = useState('CASH');
+  const [vendorBankAccountId, setVendorBankAccountId] = useState('');
   const [vendorNotes, setVendorNotes] = useState('');
   const [vendorBillImage, setVendorBillImage] = useState('');
   const [savingVendorAction, setSavingVendorAction] = useState(false);
@@ -3805,8 +3807,17 @@ function MobileVyaparAppContent() {
           type,
           date: txDate.toISOString(),
           paymentMethod: partyTxPaymentMode || 'CASH',
+          bankAccountId: partyTxBankAccountId || undefined,
           notes
         });
+        if (res?.data?.bankAccount) {
+          const updatedB = res.data.bankAccount;
+          setBankAccounts(prev => {
+            const list = (prev || []).map(b => ((b._id || b.id) === (updatedB._id || updatedB.id) ? updatedB : b));
+            try { localStorage.setItem("vb_local_bank_accounts", JSON.stringify(list)); } catch (e) {}
+            return list;
+          });
+        }
         serverTx = res?.data?.transaction;
       } catch (apiErr) {
         console.warn("[handleSavePartyTx] Server payment sync note:", apiErr.message || apiErr);
@@ -4275,8 +4286,17 @@ function MobileVyaparAppContent() {
           type: 'paid',
           date: txDate.toISOString(),
           paymentMethod: vendorPaymentMode || 'CASH',
+          bankAccountId: vendorBankAccountId || undefined,
           notes
         });
+        if (res?.data?.bankAccount) {
+          const updatedB = res.data.bankAccount;
+          setBankAccounts(prev => {
+            const list = (prev || []).map(b => ((b._id || b.id) === (updatedB._id || updatedB.id) ? updatedB : b));
+            try { localStorage.setItem("vb_local_bank_accounts", JSON.stringify(list)); } catch (e) {}
+            return list;
+          });
+        }
         serverTx = res?.data?.transaction;
       } catch (apiErr) {
         console.warn("[handleVendorPayment] Server payment sync note:", apiErr.message || apiErr);
@@ -9777,6 +9797,32 @@ function MobileVyaparAppContent() {
                         </div>
                       </div>
 
+                      {/* 🏛️ Bank Account Selector if Bank or UPI */}
+                      {(vendorPaymentMode === 'BANK' || vendorPaymentMode === 'UPI') && (
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black text-indigo-700 uppercase tracking-wider block">
+                            🏛️ किस बैंक खाते से भुगतान काटें? (Bank Account)
+                          </label>
+                          <select
+                            value={vendorBankAccountId}
+                            onChange={(e) => setVendorBankAccountId(e.target.value)}
+                            className="w-full p-2 bg-indigo-50/60 border border-indigo-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                          >
+                            <option value="">-- मुख्य बैंक खाता (Default Account) --</option>
+                            {(bankAccounts || []).map(b => {
+                              const isCC = b.accountType === "CC_OVERDRAFT";
+                              const bal = Number(b.balance ?? b.currentBalance ?? 0);
+                              const out = Number(b.currentOutstanding ?? 0);
+                              return (
+                                <option key={b._id || b.id} value={b._id || b.id}>
+                                  {b.bankName || b.accountName} ({isCC ? `CC कर्ज़: ₹${out.toLocaleString('en-IN')}` : `बैलेंस: ₹${bal.toLocaleString('en-IN')}`})
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+                      )}
+
                       {/* Notes / Description */}
                       <div className="space-y-1">
                         <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
@@ -9885,6 +9931,32 @@ function MobileVyaparAppContent() {
                       ))}
                     </div>
                   </div>
+
+                  {/* 🏛️ Bank Account Selector if Bank or UPI */}
+                  {(partyTxPaymentMode === 'BANK' || partyTxPaymentMode === 'UPI') && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-indigo-700 uppercase tracking-wider block">
+                        🏛️ किस बैंक खाते से {partyTxType === 'paid' ? 'भुगतान काटें' : 'जमा करें'}? (Bank Account)
+                      </label>
+                      <select
+                        value={partyTxBankAccountId}
+                        onChange={(e) => setPartyTxBankAccountId(e.target.value)}
+                        className="w-full p-2 bg-indigo-50/60 border border-indigo-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                      >
+                        <option value="">-- मुख्य बैंक खाता (Default Account) --</option>
+                        {(bankAccounts || []).map(b => {
+                          const isCC = b.accountType === "CC_OVERDRAFT";
+                          const bal = Number(b.balance ?? b.currentBalance ?? 0);
+                          const out = Number(b.currentOutstanding ?? 0);
+                          return (
+                            <option key={b._id || b.id} value={b._id || b.id}>
+                              {b.bankName || b.accountName} ({isCC ? `CC कर्ज़: ₹${out.toLocaleString('en-IN')}` : `बैलेंस: ₹${bal.toLocaleString('en-IN')}`})
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  )}
 
                   {/* Notes / Description */}
                   <div className="space-y-1">
