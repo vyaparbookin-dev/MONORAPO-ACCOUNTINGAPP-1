@@ -54,6 +54,7 @@ import settingsRoutes from "./src/routes/settingsRoutes.js";
 import agingRoutes from "./src/routes/agingRoutes.js";
 import approvalRoutes from "./src/routes/approvalRoutes.js";
 import whatsappRoutes from "./src/routes/whatsappRoutes.js";
+import { autoRestoreWhatsAppSessions } from "./src/services/whatsappQrService.js";
 import reminderRoutes from "./src/routes/reminderRoutes.js";
 import brandRoutes from "./src/routes/brandRoutes.js";
 import subCategoryRoutes from "./src/routes/subCategoryRoutes.js";
@@ -330,3 +331,10 @@ const startServer = () => {
 };
 
 startServer();
+
+// Auto-restore background WhatsApp engine sessions
+try {
+  autoRestoreWhatsAppSessions();
+} catch (waErr) {
+  console.warn("WhatsApp auto-restore note:", waErr.message);
+}

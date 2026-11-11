@@ -50,7 +50,9 @@ import {
   Mic,
   FileSpreadsheet,
   LogOut,
-  UserCheck
+  UserCheck,
+  MessageSquare,
+  CheckCircle2
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useNavigate } from "react-router-dom";
@@ -472,6 +474,90 @@ function MobileVyaparAppContent() {
   const [partyPassbookFilter, setPartyPassbookFilter] = useState('all'); // 'all', 'received' (मुझे मिले / जमा), 'given' (मैंने दिए / बिक्री)
   const [partyMonthFilter, setPartyMonthFilter] = useState('all'); // 'all', 'YYYY-MM'
   const [partySiteFilter, setPartySiteFilter] = useState('all'); // 'all', site name
+
+  // 📲 WhatsApp Background QR Engine States
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [waStatus, setWaStatus] = useState({
+    isConnected: false,
+    status: 'DISCONNECTED',
+    qrDataUrl: null,
+    userPhone: null
+  });
+  const [loadingWaAction, setLoadingWaAction] = useState(false);
+
+  const fetchWhatsAppStatus = async () => {
+    try {
+      const res = await api.get('/api/whatsapp/status');
+      if (res.data?.success) {
+        setWaStatus({
+          isConnected: Boolean(res.data.isConnected),
+          status: res.data.status || 'DISCONNECTED',
+          qrDataUrl: res.data.qrDataUrl || null,
+          userPhone: res.data.userPhone || null
+        });
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    fetchWhatsAppStatus();
+  }, [selectedCompany]);
+
+  useEffect(() => {
+    let timer = null;
+    if (showWhatsAppModal && !waStatus.isConnected) {
+      timer = setInterval(fetchWhatsAppStatus, 2500);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [showWhatsAppModal, waStatus.isConnected]);
+
+  const handleOpenWhatsAppModal = () => {
+    setShowWhatsAppModal(true);
+    if (!waStatus.isConnected) {
+      handleStartWhatsAppSession(false);
+    }
+  };
+
+  const handleStartWhatsAppSession = async (forceNew = false) => {
+    setLoadingWaAction(true);
+    try {
+      const res = await api.post('/api/whatsapp/start-session', { forceNew });
+      if (res.data?.success) {
+        setWaStatus(prev => ({
+          ...prev,
+          status: res.data.status,
+          qrDataUrl: res.data.qrDataUrl,
+          isConnected: Boolean(res.data.isConnected),
+          userPhone: res.data.userPhone
+        }));
+      }
+    } catch (err) {
+      console.warn("Start WA session error:", err);
+    } finally {
+      setLoadingWaAction(false);
+    }
+  };
+
+  const handleDisconnectWhatsApp = async () => {
+    if (!window.confirm("क्या आप वाकई WhatsApp को डिस्कनेक्ट करना चाहते हैं?")) return;
+    setLoadingWaAction(true);
+    try {
+      await api.post('/api/whatsapp/disconnect');
+      setWaStatus({
+        isConnected: false,
+        status: 'DISCONNECTED',
+        qrDataUrl: null,
+        userPhone: null
+      });
+      alert("WhatsApp सफलतापूर्वक डिस्कनेक्ट हो गया!");
+    } catch (err) {
+      alert("डिस्कनेक्ट करने में त्रुटि: " + (err.response?.data?.message || err.message));
+    } finally {
+      setLoadingWaAction(false);
+    }
+  };
 
   // Sync tab & modal states to sessionStorage
   const handleTabChange = (tab) => {
@@ -2158,11 +2244,31 @@ function MobileVyaparAppContent() {
     };
   };
 
-  const handleShareWhatsAppBill = (bill) => {
+  const handleShareWhatsAppBill = async (bill) => {
     if (!bill) return;
     const itemsList = (bill.items || []).map(i => `• ${i.name || 'Item'} (x${i.qty || i.quantity || 1}) - ₹${(i.price || i.salePrice || 0) * (i.qty || i.quantity || 1)}`).join("\n");
-    const text = encodeURIComponent(`*🧾 इनवॉइस बिल नं: ${bill.id || '001'}*\n*दुकान:* ${companyDisplayName}\n*ग्राहक:* ${bill.customerName || 'नकद ग्राहक'}\n*तारीख:* ${bill.date || 'आज'}\n\n*सामान विवरण:*\n${itemsList || 'बिल उत्पाद'}\n\n*कुल राशि:* ₹${bill.amount.toLocaleString('en-IN')}\n*भुगतान प्रकार:* ${bill.type || 'CASH'}\n\n*धन्यवाद! फिर पधारें।*`);
-    window.open(`https://wa.me/${bill.phone || ''}?text=${text}`, "_blank");
+    const rawText = `*🧾 इनवॉइस बिल नं: ${bill.id || '001'}*\n*दुकान:* ${companyDisplayName}\n*ग्राहक:* ${bill.customerName || 'नकद ग्राहक'}\n*तारीख:* ${bill.date || 'आज'}\n\n*सामान विवरण:*\n${itemsList || 'बिल उत्पाद'}\n\n*कुल राशि:* ₹${Number(bill.amount || bill.finalAmount || 0).toLocaleString('en-IN')}\n*भुगतान प्रकार:* ${bill.type || 'CASH'}\n\n*धन्यवाद! फिर पधारें।*`;
+
+    const targetPhone = bill.phone || bill.customerMobile || bill.customerPhone;
+
+    // 🚀 If Background WhatsApp QR engine is connected, send directly without opening any chat!
+    if (waStatus.isConnected && targetPhone) {
+      try {
+        const res = await api.post('/api/whatsapp/send-direct', {
+          toMobile: targetPhone,
+          messageText: rawText
+        });
+        if (res.data?.success) {
+          alert(`✅ ग्राहक (${targetPhone}) को बैकग्राउंड में WhatsApp बिल सफलतापूर्वक भेज दिया गया!`);
+          return;
+        }
+      } catch (err) {
+        console.warn("Direct WA send failed, falling back to manual link:", err.message);
+      }
+    }
+
+    const text = encodeURIComponent(rawText);
+    window.open(`https://wa.me/${targetPhone || ''}?text=${text}`, "_blank");
   };
 
   // ==================== FAST BILLING CART ACTIONS ====================
@@ -4359,7 +4465,7 @@ function MobileVyaparAppContent() {
     }
   };
 
-  const handleSharePartyStatementWhatsApp = (party) => {
+  const handleSharePartyStatementWhatsApp = async (party) => {
     if (!party) return;
     const bal = Number(party.balance ?? party.currentBalance ?? 0);
     const balText = bal > 0 
@@ -4369,8 +4475,25 @@ function MobileVyaparAppContent() {
         : `हिसाब चुकता (₹0)`;
     
     const pTypeTag = (party.type || party.partyType) === 'personal' ? 'पर्सनल खाता' : 'व्यापारिक खाता';
-    const msg = `नमस्ते ${party.name} जी,\n\nयह आपका हिसाब-किताब विवरण (${pTypeTag}) है:\n${balText}\n\nधन्यवाद!`;
+    const msg = `नमस्ते ${party.name} जी,\n\nयह आपका हिसाब-किताब विवरण (${pTypeTag}) है:\n${balText}\n\nधन्यवाद!\n-${companyDisplayName}`;
     const cleanPhone = String(party.phone || party.mobileNumber || '').replace(/[^0-9]/g, '');
+
+    // 🚀 Background WhatsApp Direct Send if connected!
+    if (waStatus.isConnected && cleanPhone && cleanPhone.length >= 10) {
+      try {
+        const res = await api.post('/api/whatsapp/send-direct', {
+          toMobile: cleanPhone,
+          messageText: msg
+        });
+        if (res.data?.success) {
+          alert(`✅ ${party.name} (${cleanPhone}) को बैकग्राउंड में WhatsApp पर हिसाब भेज दिया गया!`);
+          return;
+        }
+      } catch (err) {
+        console.warn("Direct WA send failed:", err.message);
+      }
+    }
+
     const url = cleanPhone 
       ? `https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(msg)}`
       : `https://wa.me/?text=${encodeURIComponent(msg)}`;
@@ -5121,6 +5244,24 @@ function MobileVyaparAppContent() {
             className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition cursor-pointer"
           >
             <Calculator size={18} />
+          </button>
+
+          {/* 2.5 WhatsApp Background Engine Quick Icon */}
+          <button 
+            onClick={handleOpenWhatsAppModal}
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition cursor-pointer relative ${
+              waStatus.isConnected 
+                ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-600 ring-2 ring-emerald-500 shadow-sm"
+                : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+            }`}
+            title={waStatus.isConnected ? `ऑटोमैटिक WhatsApp कनेक्टेड है (${waStatus.userPhone})` : "ऑटोमैटिक WhatsApp (QR कोड स्कैन करें)"}
+          >
+            <MessageSquare size={17} />
+            {waStatus.isConnected ? (
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white" />
+            ) : (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-amber-400 rounded-full" />
+            )}
           </button>
 
           {/* 3. Refer & Earn Gift Icon */}
@@ -10442,6 +10583,108 @@ function MobileVyaparAppContent() {
                 })()}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📲 9.1.5 WHATSAPP BACKGROUND QR ENGINE MODAL */}
+      {showWhatsAppModal && (
+        <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">
+                  <MessageSquare size={20} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">ऑटोमैटिक WhatsApp इंजन</h3>
+                  <p className="text-[10px] text-slate-500 font-bold">QR स्कैन करके बैकग्राउंड सेंडिंग चालू करें</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowWhatsAppModal(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-lg hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {waStatus.isConnected ? (
+              <div className="text-center py-3 space-y-3">
+                <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                  <CheckCircle2 size={36} />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-emerald-800 text-base">WhatsApp सफलतापूर्वक कनेक्टेड है!</h4>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    लिंक मोबाइल: <span className="font-bold text-slate-900">{waStatus.userPhone}</span>
+                  </p>
+                </div>
+
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-[11px] text-emerald-900 text-left leading-relaxed">
+                  🚀 <b>बैकग्राउंड सेंडिंग एक्टिव है!</b><br />
+                  अब जब भी आप बिल बनाएंगे या पार्टी का हिसाब शेयर करेंगे, मैसेज सीधे ग्राहक के नंबर पर बैकग्राउंड में चला जाएगा। आपको WhatsApp ऐप में जाकर 'Enter' नहीं दबाना पड़ेगा।
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDisconnectWhatsApp}
+                  disabled={loadingWaAction}
+                  className="w-full py-2.5 rounded-2xl border border-rose-300 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer"
+                >
+                  {loadingWaAction ? "डिस्कनेक्ट हो रहा है..." : "डिस्कनेक्ट करें (Disconnect)"}
+                </button>
+              </div>
+            ) : (
+              <div className="text-center space-y-3">
+                {waStatus.qrDataUrl ? (
+                  <div>
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-2xl inline-block shadow-inner mb-2">
+                      <img
+                        src={waStatus.qrDataUrl}
+                        alt="WhatsApp QR Code"
+                        className="w-52 h-52 mx-auto rounded-xl object-contain"
+                      />
+                    </div>
+                    <div className="text-left bg-slate-50 p-3 rounded-2xl border border-slate-100 text-[11px] text-slate-700 space-y-1">
+                      <p className="font-extrabold text-slate-900">📲 कैसे कनेक्ट करें:</p>
+                      <p>1. फोन में अपना <b>WhatsApp</b> खोलें</p>
+                      <p>2. ऊपर 3 डॉट्स (⋮) या Settings ➔ <b>Linked Devices</b> दबाएं</p>
+                      <p>3. <b>Link a Device</b> दबाकर इस QR कोड को स्कैन करें</p>
+                    </div>
+                    <div className="flex items-center justify-center gap-1.5 text-[11px] text-emerald-600 font-bold mt-2">
+                      <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" />
+                      स्कैन होने की प्रतीक्षा कर रहा है...
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-8 space-y-2">
+                    <div className="w-10 h-10 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                    <p className="text-xs font-bold text-slate-700">QR कोड लोड हो रहा है...</p>
+                    <p className="text-[11px] text-slate-400">कृपया कुछ सेकंड प्रतीक्षा करें</p>
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleStartWhatsAppSession(true)}
+                    disabled={loadingWaAction}
+                    className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
+                  >
+                    🔄 नया QR लाएं
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowWhatsAppModal(false)}
+                    className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition cursor-pointer"
+                  >
+                    बंद करें
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
