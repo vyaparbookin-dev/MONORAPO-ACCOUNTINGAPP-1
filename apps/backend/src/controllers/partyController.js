@@ -402,12 +402,35 @@ export const getPartyStatement = async (req, res) => {
         companyId: req.companyId
       });
       if (Array.isArray(sbTxs) && sbTxs.length > 0) {
-        const existingTxIds = new Set(txRecords.map(t => String(t._id || t.id)));
+        const isDuplicate = (sbTx) => {
+          const sbId = String(sbTx._id || sbTx.id || "");
+          const sbDate = sbTx.date ? new Date(sbTx.date).toISOString().slice(0, 10) : '';
+          const sbDeb = Number(sbTx.debit || 0);
+          const sbCred = Number(sbTx.credit || 0);
+          const sbDet = (sbTx.details || '').trim().toLowerCase();
+
+          return txRecords.some(mt => {
+            const mId = String(mt._id || mt.id || "");
+            if (mId && sbId && mId === sbId) return true;
+
+            const mDate = mt.date ? new Date(mt.date).toISOString().slice(0, 10) : '';
+            const mDeb = Number(mt.debit || 0);
+            const mCred = Number(mt.credit || 0);
+            const mDet = (mt.details || '').trim().toLowerCase();
+
+            // Match if same day, same debit, same credit
+            if (mDeb === sbDeb && mCred === sbCred && mDate === sbDate) {
+              if (!sbDet || !mDet || mDet === sbDet || mDet.includes(sbDet) || sbDet.includes(mDet)) {
+                return true;
+              }
+            }
+            return false;
+          });
+        };
+
         for (const st of sbTxs) {
-          const sId = String(st._id || st.id);
-          if (!existingTxIds.has(sId)) {
+          if (!isDuplicate(st)) {
             txRecords.push(st);
-            existingTxIds.add(sId);
           }
         }
       }
@@ -820,78 +843,143 @@ export const deletePartyTransaction = async (req, res) => {
       }
     }
 
-    // Guard: If ID is not a valid MongoDB ObjectId (e.g. client local ID tx_..., ptx_...)
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.json({
-        success: true,
-        message: "स्थानीय प्रविष्टि (Local Entry) हटाई गई!",
-        isLocalOnly: true
-      });
-    }
+    let deletedTxData = null;
+    let targetPartyId = null;
 
-    // 2. Check PartyTransaction
-    const tx = await PartyTransaction.findOne({ _id: id, companyId: req.companyId });
-    if (tx) {
-      // Soft delete transaction
-      tx.isDeleted = true;
-      tx.updatedAt = new Date();
-      await tx.save();
+    // 2. Check PartyTransaction in MongoDB
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      const tx = await PartyTransaction.findOne({ _id: id, companyId: req.companyId });
+      if (tx) {
+        tx.isDeleted = true;
+        tx.updatedAt = new Date();
+        await tx.save();
+        deletedTxData = tx;
+        targetPartyId = tx.partyId;
 
-      // Revert party balance
-      const party = await Party.findOne({ _id: tx.partyId, companyId: req.companyId });
-      if (party) {
-        const deb = Number(tx.debit) || 0;
-        const cred = Number(tx.credit) || 0;
-        // Revert: subtract debit, add credit
-        party.currentBalance = (Number(party.currentBalance) || 0) - (deb - cred);
-        party.updatedAt = new Date();
-        await party.save();
-      }
+        // Also delete matching from Supabase so it does NOT reappear
+        if (supabase) {
+          try {
+            const pUuid = mongoIdToUuid(tx.partyId);
+            const dStr = tx.date ? new Date(tx.date).toISOString().slice(0, 10) : '';
+            await supabase.from("party_transactions")
+              .delete()
+              .eq("party_id", pUuid)
+              .eq("debit", Number(tx.debit || 0))
+              .eq("credit", Number(tx.credit || 0))
+              .gte("date", `${dStr}T00:00:00.000Z`)
+              .lte("date", `${dStr}T23:59:59.999Z`);
+          } catch (sbDelErr) {
+            console.warn("[deletePartyTransaction] Supabase mirror delete warning:", sbDelErr.message);
+          }
+        }
 
-      // CASCADE: If this transaction was linked to a Purchase, revert stock too
-      if (tx.referenceBillId) {
-        try {
-          const linkedPurchase = await Purchase.findOne({ 
-            _id: tx.referenceBillId, 
-            companyId: req.companyId,
-            isDeleted: { $ne: true }
-          });
-          if (linkedPurchase) {
-            // Revert inventory stock
-            if (Array.isArray(linkedPurchase.items)) {
-              for (const item of linkedPurchase.items) {
-                if (item.productId && Number(item.quantity) > 0) {
-                  await Product.findByIdAndUpdate(
-                    item.productId,
-                    { $inc: { currentStock: -Number(item.quantity) } }
-                  );
+        // CASCADE: If this transaction was linked to a Purchase, revert stock too
+        if (tx.referenceBillId) {
+          try {
+            const linkedPurchase = await Purchase.findOne({ 
+              _id: tx.referenceBillId, 
+              companyId: req.companyId,
+              isDeleted: { $ne: true }
+            });
+            if (linkedPurchase) {
+              if (Array.isArray(linkedPurchase.items)) {
+                for (const item of linkedPurchase.items) {
+                  if (item.productId && Number(item.quantity) > 0) {
+                    await Product.findByIdAndUpdate(
+                      item.productId,
+                      { $inc: { currentStock: -Number(item.quantity) } }
+                    );
+                  }
                 }
               }
+              linkedPurchase.isDeleted = true;
+              linkedPurchase.updatedAt = new Date();
+              await linkedPurchase.save();
+              await PartyTransaction.updateMany(
+                { 
+                  referenceBillId: linkedPurchase._id, 
+                  companyId: req.companyId,
+                  _id: { $ne: tx._id }
+                },
+                { $set: { isDeleted: true } }
+              );
             }
-            // Mark purchase as deleted
-            linkedPurchase.isDeleted = true;
-            linkedPurchase.updatedAt = new Date();
-            await linkedPurchase.save();
-            
-            // Also soft-delete any other PartyTransactions linked to this purchase
-            await PartyTransaction.updateMany(
-              { 
-                referenceBillId: linkedPurchase._id, 
-                companyId: req.companyId,
-                _id: { $ne: tx._id } // Don't re-process current tx
-              },
-              { $set: { isDeleted: true } }
-            );
+          } catch (cascadeErr) {
+            console.warn("Purchase cascade deletion warning:", cascadeErr.message);
           }
-        } catch (cascadeErr) {
-          console.warn("Purchase cascade deletion warning:", cascadeErr.message);
         }
+      }
+    }
+
+    // 3. If not found in MongoDB, check if it's a Supabase transaction (ID is integer or UUID)
+    const isNumeric = /^\d+$/.test(String(id));
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(id));
+
+    if (!deletedTxData && supabase && (isNumeric || isUuid)) {
+      try {
+        const { data: sbTx } = await supabase.from("party_transactions").select("*").eq("id", id).maybeSingle();
+        if (sbTx) {
+          await supabase.from("party_transactions").delete().eq("id", id);
+          deletedTxData = sbTx;
+          targetPartyId = sbTx.party_id;
+
+          // Also soft-delete matching transaction in MongoDB!
+          const dStr = sbTx.date ? new Date(sbTx.date).toISOString().slice(0, 10) : '';
+          await PartyTransaction.updateMany(
+            {
+              companyId: req.companyId,
+              debit: Number(sbTx.debit || 0),
+              credit: Number(sbTx.credit || 0),
+              date: {
+                $gte: new Date(`${dStr}T00:00:00.000Z`),
+                $lte: new Date(`${dStr}T23:59:59.999Z`)
+              }
+            },
+            { $set: { isDeleted: true, updatedAt: new Date() } }
+          );
+        }
+      } catch (sbErr) {
+        console.warn("[deletePartyTransaction] Supabase delete error:", sbErr.message);
+      }
+    }
+
+    // Revert party balance in both MongoDB and Supabase
+    if (deletedTxData && targetPartyId) {
+      const deb = Number(deletedTxData.debit) || 0;
+      const cred = Number(deletedTxData.credit) || 0;
+      const netDiff = deb - cred;
+
+      let finalBal = undefined;
+      // Revert in MongoDB
+      if (mongoose.Types.ObjectId.isValid(targetPartyId)) {
+        const party = await Party.findOne({ _id: targetPartyId, companyId: req.companyId });
+        if (party) {
+          party.currentBalance = (Number(party.currentBalance) || 0) - netDiff;
+          party.balance = party.currentBalance;
+          party.updatedAt = new Date();
+          await party.save();
+          finalBal = party.currentBalance;
+          syncPartyToSupabase(party).catch(() => {});
+        }
+      }
+
+      // Revert in Supabase
+      if (supabase) {
+        try {
+          const pUuid = mongoIdToUuid(targetPartyId);
+          const { data: curP } = await supabase.from("parties").select("current_balance").eq("id", pUuid).maybeSingle();
+          if (curP) {
+            const newBal = (Number(curP.current_balance) || 0) - netDiff;
+            await supabase.from("parties").update({ current_balance: newBal, updated_at: new Date().toISOString() }).eq("id", pUuid);
+            if (finalBal === undefined) finalBal = newBal;
+          }
+        } catch (e) {}
       }
 
       return res.json({
         success: true,
         message: "लेनदेन सफलतापूर्वक हटा दिया गया!",
-        newBalance: party?.currentBalance
+        newBalance: finalBal
       });
     }
 
@@ -935,6 +1023,7 @@ export const updatePartyTransaction = async (req, res) => {
     const { amount, type, details, date, paymentMethod, partyId: targetPartyId } = req.body;
     const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+    const isNumeric = /^\d+$/.test(id);
 
     // 1. If opening balance (open_partyId)
     if (String(id).startsWith("open_")) {
@@ -1072,7 +1161,7 @@ export const updatePartyTransaction = async (req, res) => {
     }
 
     // 3. If Supabase UUID or offline transaction
-    if (isUuid && supabase) {
+    if ((isUuid || isNumeric) && supabase) {
       const isPaid = type ? (type === 'paid' || type === 'payment' || type === 'debit') : false;
       const amt = Number(amount || 0);
       const newDeb = isPaid ? amt : 0;
