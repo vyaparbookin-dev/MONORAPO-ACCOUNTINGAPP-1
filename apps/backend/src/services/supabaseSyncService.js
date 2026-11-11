@@ -152,25 +152,62 @@ export const syncPartyToSupabase = async (party) => {
 
 /**
  * Sync Party Transaction to Supabase
+ * Note: party_transactions.id in Supabase is BIGINT (auto-incrementing serial),
+ * so we must NOT pass a UUID string into id.
  */
-export const syncPartyTxToSupabase = async (tx) => {
+export const syncPartyTxToSupabase = async (tx, explicitPartyUuid) => {
   if (!supabase || !tx) return;
   try {
-    const txId = tx._id || tx.id;
+    const pUuid = explicitPartyUuid || mongoIdToUuid(tx.partyId);
+    const coUuid = mongoIdToUuid(tx.companyId);
+    const txDate = tx.date ? new Date(tx.date).toISOString() : new Date().toISOString();
+    const deb = Number(tx.debit || 0);
+    const cred = Number(tx.credit || 0);
+    const det = tx.details || tx.description || "पार्टी खाता लेन-देन";
+
+    // If tx has numeric id, update by numeric id
+    const isNumId = tx.id && /^\d+$/.test(String(tx.id));
+    if (isNumId) {
+      await supabase.from("party_transactions").update({
+        party_id: pUuid,
+        date: txDate,
+        details: det,
+        debit: deb,
+        credit: cred,
+        type: tx.type || "manual"
+      }).eq("id", Number(tx.id));
+      return;
+    }
+
+    // Check if matching transaction already exists in Supabase to avoid duplicates
+    const dStr = txDate.slice(0, 10);
+    const { data: existing } = await supabase
+      .from("party_transactions")
+      .select("id")
+      .eq("party_id", pUuid)
+      .eq("debit", deb)
+      .eq("credit", cred)
+      .gte("date", `${dStr}T00:00:00.000Z`)
+      .lte("date", `${dStr}T23:59:59.999Z`)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      await supabase.from("party_transactions").update({ details: det, type: tx.type || "manual" }).eq("id", existing[0].id);
+      return;
+    }
+
+    // Insert new transaction without id so Postgres generates the serial integer id
     const txPayload = {
-      ...(txId ? { id: mongoIdToUuid(txId) } : {}),
-      company_id: mongoIdToUuid(tx.companyId),
-      party_id: mongoIdToUuid(tx.partyId),
-      date: tx.date ? new Date(tx.date).toISOString() : new Date().toISOString(),
-      details: tx.details || tx.description || "पार्टी खाता लेन-देन",
-      debit: Number(tx.debit || 0),
-      credit: Number(tx.credit || 0),
+      company_id: coUuid,
+      party_id: pUuid,
+      date: txDate,
+      details: det,
+      debit: deb,
+      credit: cred,
       type: tx.type || "manual",
       created_at: tx.createdAt ? new Date(tx.createdAt).toISOString() : new Date().toISOString()
     };
-    const { error } = txId
-      ? await supabase.from("party_transactions").upsert(txPayload, { onConflict: "id" })
-      : await supabase.from("party_transactions").insert(txPayload);
+    const { error } = await supabase.from("party_transactions").insert(txPayload);
     if (error) console.warn("[Supabase Sync] Party Tx sync error:", error.message);
   } catch (err) {
     console.warn("[Supabase Sync] Party Transaction sync note:", err.message);

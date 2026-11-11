@@ -125,25 +125,81 @@ export const addPaymentEntry = async (req, res) => {
 
     const numAmount = parseFloat(amount) || 0;
     let debit = 0, credit = 0;
+
+    // Resolve matching MongoDB party so partyId is always valid
+    let mongoParty = null;
+    if (party._id && mongoose.Types.ObjectId.isValid(party._id)) {
+      mongoParty = party;
+    } else if (partyId && mongoose.Types.ObjectId.isValid(partyId)) {
+      mongoParty = await Party.findOne({ _id: partyId, companyId: req.companyId });
+    }
+    if (!mongoParty) {
+      mongoParty = await Party.findOne({
+        companyId: req.companyId,
+        $or: [
+          ...(party.name ? [{ name: party.name }, { name: { $regex: new RegExp(`^${party.name.trim()}$`, 'i') } }] : []),
+          ...((party.mobile_number || party.mobileNumber) ? [{ mobileNumber: party.mobile_number || party.mobileNumber }] : [])
+        ]
+      });
+    }
+
+    if (!mongoParty) {
+      // Create matching party in MongoDB to maintain 100% database parity
+      mongoParty = new Party({
+        companyId: req.companyId,
+        name: party.name,
+        mobileNumber: party.mobile_number || party.mobileNumber || "0000000000",
+        address: party.billing_address || party.address || "Local",
+        partyType: party.party_type || party.partyType || (type === 'paid' ? 'supplier' : 'customer'),
+        openingBalance: Number(party.opening_balance || party.openingBalance || 0),
+        currentBalance: Number(party.current_balance || party.currentBalance || 0)
+      });
+      await mongoParty.save();
+    }
+
+    const isSupplier = (party.partyType === 'supplier' || party.party_type === 'supplier' || party.type === 'supplier' || mongoParty?.partyType === 'supplier');
+    let newPartyBal = 0;
+
     if (type === 'received') {
       credit = numAmount;
-      party.currentBalance = (Number(party.currentBalance) || 0) - numAmount; // Customer paid us, their outstanding balance decreases
+      const curBal = Number(mongoParty ? mongoParty.currentBalance : party.currentBalance) || 0;
+      newPartyBal = curBal - numAmount; // Customer paid us, outstanding balance decreases
 
-      // 🔓 Auto-restore and unlock Credit Limit if customer pays (even before due date)
-      if (party.isCreditLimitActive || (party.creditLimit && party.creditLimit > 0)) {
-        if (party.currentBalance <= (party.creditLimit || 0)) {
-          party.creditLimitStatus = "ACTIVE";
-          party.creditLimitLockedReason = "";
+      if (mongoParty && (mongoParty.isCreditLimitActive || (mongoParty.creditLimit && mongoParty.creditLimit > 0))) {
+        if (newPartyBal <= (mongoParty.creditLimit || 0)) {
+          mongoParty.creditLimitStatus = "ACTIVE";
+          mongoParty.creditLimitLockedReason = "";
         }
       }
     } else if (type === 'paid') {
       debit = numAmount;
-      party.currentBalance = (Number(party.currentBalance) || 0) + numAmount; // We gave udhar/paid supplier, balance increases
+      let curBal = Number(mongoParty ? mongoParty.currentBalance : (party.current_balance ?? party.currentBalance)) || 0;
+      const opBal = Math.abs(Number(mongoParty ? mongoParty.openingBalance : (party.opening_balance ?? party.openingBalance ?? 0)));
+
+      if (isSupplier) {
+        // Supplier debt owed is negative. If balance was mistakenly saved as positive opening balance, normalize to -opBal
+        if (curBal > 0 && curBal === opBal) {
+          curBal = -opBal;
+        }
+        // Paying supplier increases negative balance towards 0 (-23572 + 23572 = 0)
+        newPartyBal = curBal + numAmount;
+      } else {
+        // We gave credit/udhar to customer: balance increases
+        newPartyBal = curBal + numAmount;
+      }
     }
 
-    const safePartyId = mongoose.Types.ObjectId.isValid(party._id)
-      ? party._id
-      : (mongoose.Types.ObjectId.isValid(partyId) ? partyId : new mongoose.Types.ObjectId());
+    if (mongoParty) {
+      mongoParty.currentBalance = newPartyBal;
+      mongoParty.balance = newPartyBal;
+      mongoParty.updatedAt = new Date();
+      await mongoParty.save();
+    }
+
+    party.currentBalance = newPartyBal;
+    party.balance = newPartyBal;
+
+    const safePartyId = mongoParty._id;
     const safeCompanyId = mongoose.Types.ObjectId.isValid(req.companyId)
       ? req.companyId
       : new mongoose.Types.ObjectId();
@@ -163,14 +219,6 @@ export const addPaymentEntry = async (req, res) => {
       await transaction.save();
     } catch (saveTxErr) {
       console.warn("[addPaymentEntry] transaction save note:", saveTxErr.message);
-    }
-
-    try {
-      if (typeof party.save === 'function') {
-        await party.save();
-      }
-    } catch (savePartyErr) {
-      console.warn("[addPaymentEntry] party save note:", savePartyErr.message);
     }
 
     // 🏦 AUTO-SYNC WITH BANK ACCOUNT IF BANK OR UPI PAYMENT
@@ -232,8 +280,12 @@ export const addPaymentEntry = async (req, res) => {
     }
 
     // Async Supabase Dual-Write
-    syncPartyTxToSupabase(transaction).catch(e => console.warn("[Supabase Sync] Party Tx dual-write note:", e.message));
-    syncPartyToSupabase(party).catch(e => console.warn("[Supabase Sync] Party dual-write note:", e.message));
+    const sbPartyUuid = (party.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(party.id)))
+      ? party.id
+      : mongoIdToUuid(safePartyId);
+
+    syncPartyTxToSupabase(transaction, sbPartyUuid).catch(e => console.warn("[Supabase Sync] Party Tx dual-write note:", e.message));
+    syncPartyToSupabase(mongoParty || party).catch(e => console.warn("[Supabase Sync] Party dual-write note:", e.message));
 
     const availableLimit = party.creditLimit ? Math.max(0, party.creditLimit - (party.currentBalance || 0)) : 0;
 

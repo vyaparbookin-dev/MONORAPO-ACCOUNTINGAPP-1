@@ -860,14 +860,16 @@ export const deletePartyTransaction = async (req, res) => {
         if (supabase) {
           try {
             const pUuid = mongoIdToUuid(tx.partyId);
-            const dStr = tx.date ? new Date(tx.date).toISOString().slice(0, 10) : '';
+            const tDate = tx.date ? new Date(tx.date).getTime() : Date.now();
+            const startWindow = new Date(tDate - 86400000).toISOString();
+            const endWindow = new Date(tDate + 86400000).toISOString();
             await supabase.from("party_transactions")
               .delete()
               .eq("party_id", pUuid)
               .eq("debit", Number(tx.debit || 0))
               .eq("credit", Number(tx.credit || 0))
-              .gte("date", `${dStr}T00:00:00.000Z`)
-              .lte("date", `${dStr}T23:59:59.999Z`);
+              .gte("date", startWindow)
+              .lte("date", endWindow);
           } catch (sbDelErr) {
             console.warn("[deletePartyTransaction] Supabase mirror delete warning:", sbDelErr.message);
           }
@@ -924,19 +926,34 @@ export const deletePartyTransaction = async (req, res) => {
           targetPartyId = sbTx.party_id;
 
           // Also soft-delete matching transaction in MongoDB!
-          const dStr = sbTx.date ? new Date(sbTx.date).toISOString().slice(0, 10) : '';
-          await PartyTransaction.updateMany(
-            {
-              companyId: req.companyId,
-              debit: Number(sbTx.debit || 0),
-              credit: Number(sbTx.credit || 0),
-              date: {
-                $gte: new Date(`${dStr}T00:00:00.000Z`),
-                $lte: new Date(`${dStr}T23:59:59.999Z`)
-              }
-            },
-            { $set: { isDeleted: true, updatedAt: new Date() } }
-          );
+          let matchingMongoParty = null;
+          if (mongoose.Types.ObjectId.isValid(targetPartyId)) {
+            matchingMongoParty = { _id: targetPartyId };
+          } else {
+            const { data: sbP } = await supabase.from("parties").select("name, mobile_number").eq("id", targetPartyId).maybeSingle();
+            if (sbP) {
+              matchingMongoParty = await Party.findOne({
+                companyId: req.companyId,
+                $or: [
+                  ...(sbP.name ? [{ name: sbP.name }] : []),
+                  ...(sbP.mobile_number ? [{ mobileNumber: sbP.mobile_number }] : [])
+                ]
+              });
+            }
+          }
+
+          const sbTime = sbTx.date ? new Date(sbTx.date).getTime() : Date.now();
+          const mongoFilter = {
+            companyId: req.companyId,
+            debit: Number(sbTx.debit || 0),
+            credit: Number(sbTx.credit || 0),
+            ...(matchingMongoParty ? { partyId: matchingMongoParty._id } : {}),
+            date: {
+              $gte: new Date(sbTime - 86400000),
+              $lte: new Date(sbTime + 86400000)
+            }
+          };
+          await PartyTransaction.updateMany(mongoFilter, { $set: { isDeleted: true, updatedAt: new Date() } });
         }
       } catch (sbErr) {
         console.warn("[deletePartyTransaction] Supabase delete error:", sbErr.message);
@@ -1242,14 +1259,18 @@ export const setPartyOpeningBalance = async (req, res) => {
     const newOpeningVal = Number(amount || 0);
     let newOpeningSigned = 0;
     if (newOpeningVal > 0) {
-      if (direction === "negative") {
+      if (direction === "negative" || (!direction && isSupplier) || (direction !== "positive" && isSupplier)) {
         newOpeningSigned = -Math.abs(newOpeningVal);
       } else {
         newOpeningSigned = Math.abs(newOpeningVal);
       }
     }
 
-    const currentBal = Number(party.currentBalance ?? party.balance ?? 0);
+    let currentBal = Number(party.currentBalance ?? party.balance ?? 0);
+    // Auto-heal: if supplier currentBalance was previously stored as positive opening balance, normalize to negative debt
+    if (isSupplier && currentBal > 0 && Math.abs(currentBal) === oldOpeningRaw) {
+      currentBal = -oldOpeningRaw;
+    }
     const updatedBalance = currentBal - oldOpeningSigned + newOpeningSigned;
 
     party.openingBalance = Math.abs(newOpeningVal);
@@ -1261,20 +1282,31 @@ export const setPartyOpeningBalance = async (req, res) => {
 
     if (isMongoId && typeof party.save === 'function') {
       await party.save();
-    } else if (party._id && isMongoId) {
+    } else if (party._id && mongoose.Types.ObjectId.isValid(party._id)) {
       await Party.findOneAndUpdate(
         { _id: party._id, companyId: req.companyId },
         { openingBalance: Math.abs(newOpeningVal), currentBalance: updatedBalance, balance: updatedBalance, updatedAt: new Date() }
       );
+    } else {
+      // Find matching Mongo party by name
+      const mP = await Party.findOne({ companyId: req.companyId, name: party.name });
+      if (mP) {
+        mP.openingBalance = Math.abs(newOpeningVal);
+        mP.currentBalance = updatedBalance;
+        mP.balance = updatedBalance;
+        mP.updatedAt = new Date();
+        await mP.save();
+      }
     }
 
     // Direct update to Supabase
     if (supabase) {
+      const sbId = (isMongoId ? mongoIdToUuid(id) : id);
       await supabase.from("parties").update({
         opening_balance: Math.abs(newOpeningVal),
         current_balance: updatedBalance,
         updated_at: new Date().toISOString()
-      }).eq("id", mongoIdToUuid(id));
+      }).eq("id", sbId);
     }
 
     syncPartyToSupabase(party).catch(e => console.warn(e));
