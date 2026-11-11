@@ -3,7 +3,78 @@
 -- Run this script in your Supabase SQL Editor (Dashboard > SQL Editor)
 -- =========================================================================
 
--- 1. SALES / BILLS TABLE (Matches Mongoose Bill Schema)
+-- 1. BANK ACCOUNTS TABLE (Matches Mongoose BankAccount Schema & CC Limits)
+CREATE TABLE IF NOT EXISTS public.bank_accounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_name TEXT NOT NULL,
+    bank_name TEXT,
+    account_number TEXT,
+    ifsc_code TEXT,
+    upi_id TEXT,
+    account_type TEXT DEFAULT 'CURRENT',
+    has_cc_limit BOOLEAN DEFAULT false,
+    sanctioned_limit NUMERIC DEFAULT 0,
+    current_outstanding NUMERIC DEFAULT 0,
+    opening_balance NUMERIC DEFAULT 0,
+    current_balance NUMERIC DEFAULT 0,
+    interest_rate NUMERIC DEFAULT 0,
+    transactions JSONB DEFAULT '[]'::jsonb,
+    monthly_interests JSONB DEFAULT '[]'::jsonb,
+    company_id TEXT,
+    is_deleted BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.bank_accounts ADD COLUMN IF NOT EXISTS sanctioned_limit NUMERIC DEFAULT 0;
+ALTER TABLE public.bank_accounts ADD COLUMN IF NOT EXISTS current_outstanding NUMERIC DEFAULT 0;
+ALTER TABLE public.bank_accounts ADD COLUMN IF NOT EXISTS interest_rate NUMERIC DEFAULT 0;
+ALTER TABLE public.bank_accounts ADD COLUMN IF NOT EXISTS monthly_interests JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.bank_accounts ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
+
+
+-- 2. USERS TABLE (Matches Mongoose User Schema for Login & Auth)
+CREATE TABLE IF NOT EXISTS public.users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    password TEXT,
+    phone TEXT,
+    role TEXT DEFAULT 'admin',
+    company_id TEXT,
+    is_active BOOLEAN DEFAULT true,
+    is_verified BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'admin';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS company_id TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT false;
+
+
+-- 3. COMPANIES TABLE (Ensure all fields exist)
+CREATE TABLE IF NOT EXISTS public.companies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    email TEXT,
+    phone_number TEXT,
+    gst_number TEXT,
+    address TEXT,
+    upi_id TEXT,
+    google_review_url TEXT,
+    instagram_url TEXT,
+    facebook_url TEXT,
+    youtube_url TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+
+-- 4. SALES / BILLS TABLE
 CREATE TABLE IF NOT EXISTS public.sales (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     bill_number TEXT UNIQUE NOT NULL,
@@ -39,26 +110,8 @@ CREATE TABLE IF NOT EXISTS public.sales (
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Ensure all columns exist in sales if table was created previously
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS customer_address TEXT;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS customer_gst TEXT;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS site_name TEXT;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS tax NUMERIC DEFAULT 0;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS discount_amount NUMERIC DEFAULT 0;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS discount_percent NUMERIC DEFAULT 0;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS freight_charges NUMERIC DEFAULT 0;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS labor_charges NUMERIC DEFAULT 0;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS bill_image_url TEXT;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS bill_image_urls JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS order_type TEXT DEFAULT 'dine_in';
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS table_no TEXT DEFAULT '';
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS company_id TEXT;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS party_id TEXT;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS due_date TIMESTAMPTZ;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
 
-
--- 2. PARTIES TABLE (Matches Mongoose Party Schema)
+-- 5. PARTIES TABLE
 CREATE TABLE IF NOT EXISTS public.parties (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
@@ -83,18 +136,10 @@ CREATE TABLE IF NOT EXISTS public.parties (
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
-ALTER TABLE public.parties ADD COLUMN IF NOT EXISTS party_type TEXT DEFAULT 'both';
-ALTER TABLE public.parties ADD COLUMN IF NOT EXISTS opening_balance NUMERIC DEFAULT 0;
-ALTER TABLE public.parties ADD COLUMN IF NOT EXISTS current_balance NUMERIC DEFAULT 0;
-ALTER TABLE public.parties ADD COLUMN IF NOT EXISTS credit_limit NUMERIC DEFAULT 0;
-ALTER TABLE public.parties ADD COLUMN IF NOT EXISTS is_credit_limit_active BOOLEAN DEFAULT false;
-ALTER TABLE public.parties ADD COLUMN IF NOT EXISTS company_id TEXT;
-ALTER TABLE public.parties ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
 
-
--- 3. PARTY TRANSACTIONS TABLE (Matches Mongoose PartyTransaction Schema)
+-- 6. PARTY TRANSACTIONS TABLE
 CREATE TABLE IF NOT EXISTS public.party_transactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id BIGSERIAL PRIMARY KEY,
     party_id TEXT,
     company_id TEXT,
     date TIMESTAMPTZ DEFAULT now(),
@@ -112,43 +157,8 @@ CREATE TABLE IF NOT EXISTS public.party_transactions (
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
-ALTER TABLE public.party_transactions ADD COLUMN IF NOT EXISTS bill_image_url TEXT;
-ALTER TABLE public.party_transactions ADD COLUMN IF NOT EXISTS bill_image_urls JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE public.party_transactions ADD COLUMN IF NOT EXISTS site_name TEXT;
-ALTER TABLE public.party_transactions ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
 
-
--- 4. BANK ACCOUNTS TABLE (Matches Mongoose BankAccount Schema & CC Limits)
-CREATE TABLE IF NOT EXISTS public.bank_accounts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_name TEXT NOT NULL,
-    bank_name TEXT,
-    account_number TEXT,
-    ifsc_code TEXT,
-    upi_id TEXT,
-    account_type TEXT DEFAULT 'CURRENT',
-    has_cc_limit BOOLEAN DEFAULT false,
-    sanctioned_limit NUMERIC DEFAULT 0,
-    current_outstanding NUMERIC DEFAULT 0,
-    opening_balance NUMERIC DEFAULT 0,
-    current_balance NUMERIC DEFAULT 0,
-    interest_rate NUMERIC DEFAULT 0,
-    transactions JSONB DEFAULT '[]'::jsonb,
-    monthly_interests JSONB DEFAULT '[]'::jsonb,
-    company_id TEXT,
-    is_deleted BOOLEAN DEFAULT false,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
-);
-
-ALTER TABLE public.bank_accounts ADD COLUMN IF NOT EXISTS sanctioned_limit NUMERIC DEFAULT 0;
-ALTER TABLE public.bank_accounts ADD COLUMN IF NOT EXISTS current_outstanding NUMERIC DEFAULT 0;
-ALTER TABLE public.bank_accounts ADD COLUMN IF NOT EXISTS interest_rate NUMERIC DEFAULT 0;
-ALTER TABLE public.bank_accounts ADD COLUMN IF NOT EXISTS monthly_interests JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE public.bank_accounts ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
-
-
--- 5. EXPENSES TABLE (Matches Mongoose Expense Schema & Household Drawings)
+-- 7. EXPENSES TABLE
 CREATE TABLE IF NOT EXISTS public.expenses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
@@ -168,54 +178,14 @@ CREATE TABLE IF NOT EXISTS public.expenses (
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
-ALTER TABLE public.expenses ADD COLUMN IF NOT EXISTS expense_type TEXT DEFAULT 'operating';
-ALTER TABLE public.expenses ADD COLUMN IF NOT EXISTS family_member TEXT;
-ALTER TABLE public.expenses ADD COLUMN IF NOT EXISTS transaction_flow TEXT DEFAULT 'given';
-ALTER TABLE public.expenses ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
 
-
--- 6. COMPANIES TABLE (Matches Mongoose Company Schema)
-CREATE TABLE IF NOT EXISTS public.companies (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    email TEXT,
-    phone_number TEXT,
-    gst_number TEXT,
-    address TEXT,
-    upi_id TEXT,
-    google_review_url TEXT,
-    instagram_url TEXT,
-    facebook_url TEXT,
-    youtube_url TEXT,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
-);
-
-
--- 7. STORAGE BUCKET FOR MULTIPLE BILL IMAGES
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('bills', 'bills', true)
-ON CONFLICT (id) DO NOTHING;
-
--- Policy to allow public read access for bill photos
-DO $$
+-- 8. HELPER RPC FOR FUTURE AUTOMATIC SCHEMA EXECUTION
+CREATE OR REPLACE FUNCTION public.exec_sql(query text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies WHERE policyname = 'Public Access for Bills'
-    ) THEN
-        CREATE POLICY "Public Access for Bills" ON storage.objects
-        FOR SELECT USING (bucket_id = 'bills');
-    END IF;
-END $$;
-
--- Policy to allow authenticated uploads to bills bucket
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies WHERE policyname = 'Allow Uploads to Bills'
-    ) THEN
-        CREATE POLICY "Allow Uploads to Bills" ON storage.objects
-        FOR ALL USING (bucket_id = 'bills') WITH CHECK (bucket_id = 'bills');
-    END IF;
-END $$;
+  EXECUTE query;
+END;
+$$;

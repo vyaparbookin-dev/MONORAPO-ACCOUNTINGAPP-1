@@ -1,6 +1,6 @@
 import Party from "../model/party.js";
 import PartyTransaction from "../model/PartyTransaction.js";
-import { syncPartyTxToSupabase, syncPartyToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
+import { syncPartyTxToSupabase, syncPartyToSupabase, syncBankAccountToSupabase, syncBankAccountDeleteToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
 import { getPartyByIdFromSupabase } from "../services/supabaseReadService.js";
 import BankAccount from "../model/bankAccount.js";
 import mongoose from "mongoose";
@@ -104,6 +104,7 @@ export const createBankAccount = async (req, res) => {
     }
     const newAccount = await BankAccount.create(data);
     console.log("[BankAccount Debug] Created bank account ID:", newAccount._id);
+    syncBankAccountToSupabase(newAccount).catch(() => {});
 
     res.status(201).json({ success: true, data: newAccount, account: newAccount, message: "बैंक / CC खाता दर्ज हो गया!" });
   } catch (error) {
@@ -156,6 +157,7 @@ export const updateBankAccount = async (req, res) => {
     if (!updated) {
       return res.status(404).json({ success: false, message: "Account not found" });
     }
+    syncBankAccountToSupabase(updated).catch(() => {});
     res.status(200).json({ success: true, data: updated, account: updated, message: "खाता अपडेट हो गया!" });
   } catch (error) {
     console.error("Error updating bank account:", error);
@@ -172,6 +174,7 @@ export const deleteBankAccount = async (req, res) => {
       : { $or: [{ _id: id }, { clientTempId: id }] };
 
     await BankAccount.findOneAndUpdate(query, { isDeleted: true });
+    syncBankAccountDeleteToSupabase(id).catch(() => {});
     res.status(200).json({ success: true, message: "खाता हटा दिया गया!" });
   } catch (error) {
     console.error("Error deleting bank account:", error);
@@ -224,6 +227,7 @@ export const addAccountTransaction = async (req, res) => {
     }
 
     await account.save();
+    syncBankAccountToSupabase(account).catch(() => {});
 
     res.status(200).json({
       success: true,
@@ -293,6 +297,7 @@ export const addMonthlyInterest = async (req, res) => {
     }
 
     await account.save();
+    syncBankAccountToSupabase(account).catch(() => {});
 
     res.status(200).json({
       success: true,
@@ -371,6 +376,8 @@ export const transferFunds = async (req, res) => {
       toAccount.balance = toBal;
     }
     await toAccount.save();
+    syncBankAccountToSupabase(fromAccount).catch(() => {});
+    syncBankAccountToSupabase(toAccount).catch(() => {});
 
     res.status(200).json({
       success: true,
@@ -472,6 +479,7 @@ export const transferToParty = async (req, res) => {
     await partyTx.save();
 
     // Supabase Dual-Write
+    syncBankAccountToSupabase(account).catch(() => {});
     syncPartyTxToSupabase(partyTx).catch(e => console.warn(e));
     syncPartyToSupabase(party).catch(e => console.warn(e));
 

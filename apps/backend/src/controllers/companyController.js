@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Company from "../model/company.js";
 import Lead from "../model/lead.js";
 import { supabase } from "../config/supabase.js";
+import { syncCompanyToSupabase } from "../services/supabaseSyncService.js";
 
 export const addCompany = async (req, res) => {
   try {
@@ -16,6 +17,7 @@ export const addCompany = async (req, res) => {
     await company.save();
 
     // Sync to Supabase
+    syncCompanyToSupabase(company).catch(() => {});
     try {
       await supabase.from("companies").insert([{
         name: company.name,
@@ -122,6 +124,7 @@ export const updateCompany = async (req, res) => {
     );
     if (!company) return res.status(404).json({ success: false, message: 'Company not found' });
 
+    syncCompanyToSupabase(company).catch(() => {});
     try {
       await supabase.from("companies").update({
         name: company.name,

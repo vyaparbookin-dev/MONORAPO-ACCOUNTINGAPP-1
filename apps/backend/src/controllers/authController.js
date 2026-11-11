@@ -5,6 +5,7 @@ import { generateToken } from "../config/jwt.js";
 import sendEmail from "../utils/emailSender.js";
 import { OAuth2Client } from 'google-auth-library';
 import Company from "../model/company.js";
+import { syncUserToSupabase } from "../services/supabaseSyncService.js";
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
@@ -148,6 +149,7 @@ export const register = async (req, res) => {
       otpExpires: Date.now() + 15 * 60 * 1000
     });
     await user.save();
+    syncUserToSupabase(user).catch(() => {});
 
     const company = new Company({
       _id: companyId,
@@ -322,6 +324,7 @@ export const magicLogin = async (req, res) => {
         role: "admin",
       });
       await user.save();
+      syncUserToSupabase(user).catch(() => {});
 
       const company = new Company({
         _id: companyId,
@@ -435,6 +438,7 @@ export const quickResetPassword = async (req, res) => {
       user.otp = undefined;
       user.otpExpires = undefined;
       await user.save();
+      syncUserToSupabase(user).catch(() => {});
     }
 
     const userCompanies = await resolveUserCompanies(user);
@@ -528,6 +532,7 @@ export const resetPassword = async (req, res) => {
     user.otp = undefined;
     user.otpExpires = undefined;
     await user.save();
+    syncUserToSupabase(user).catch(() => {});
 
     return res.status(200).json({ success: true, message: "Password reset successfully. Please log in." });
   } catch (error) {
@@ -674,6 +679,7 @@ export const changePassword = async (req, res) => {
 
     user.password = await bcryptjs.hash(cleanNewPassword, 10);
     await user.save();
+    syncUserToSupabase(user).catch(() => {});
 
     console.log(`[Auth Debug] Password changed successfully for user: ${user.email}`);
     return res.status(200).json({ success: true, message: "Password updated successfully!" });

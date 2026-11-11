@@ -436,6 +436,114 @@ export const syncProductDeleteToSupabase = async (productId) => {
   }
 };
 
+/**
+ * Sync Company to Supabase
+ */
+export const syncCompanyToSupabase = async (company) => {
+  if (!supabase || !company || !company.name) return;
+  try {
+    const cUuid = mongoIdToUuid(company._id || company.id);
+    const payload = {
+      id: cUuid,
+      name: company.name,
+      email: company.email || company.ownerEmail || null,
+      phone_number: company.phone || company.phoneNumber || null,
+      gst_number: company.gstNumber || company.gstin || null,
+      pan_number: company.panNumber || company.pan || null,
+      address: company.address || null,
+      upi_id: company.upiId || null,
+      google_review_url: company.googleReviewUrl || null,
+      instagram_url: company.instagramUrl || null,
+      facebook_url: company.facebookUrl || null,
+      youtube_url: company.youtubeUrl || null,
+      is_active: company.isActive !== false,
+      created_at: company.createdAt ? new Date(company.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await supabase.from("companies").upsert(payload, { onConflict: "id" });
+    if (error) console.warn("[Supabase Sync] Company sync error:", error.message);
+  } catch (err) {
+    console.warn("[Supabase Sync] Company sync note:", err.message);
+  }
+};
+
+/**
+ * Sync User to Supabase
+ */
+export const syncUserToSupabase = async (user) => {
+  if (!supabase || !user || !user.email) return;
+  try {
+    const uUuid = mongoIdToUuid(user._id || user.id);
+    const payload = {
+      id: uUuid,
+      name: user.name || user.email.split('@')[0],
+      email: user.email.toLowerCase(),
+      password: user.password || "",
+      phone: user.phone || null,
+      role: user.role || 'admin',
+      company_id: user.companyId ? mongoIdToUuid(user.companyId) : null,
+      is_active: user.isActive !== false,
+      is_verified: Boolean(user.isVerified),
+      created_at: user.createdAt ? new Date(user.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await supabase.from("users").upsert(payload, { onConflict: "id" });
+    if (error) console.warn("[Supabase Sync] User sync error:", error.message);
+  } catch (err) {
+    console.warn("[Supabase Sync] User sync note:", err.message);
+  }
+};
+
+/**
+ * Sync Bank Account to Supabase
+ */
+export const syncBankAccountToSupabase = async (bankAccount) => {
+  if (!supabase || !bankAccount || !bankAccount.accountName) return;
+  try {
+    const bUuid = mongoIdToUuid(bankAccount._id || bankAccount.id);
+    const balanceVal = Number(bankAccount.balance ?? bankAccount.currentBalance ?? 0);
+    const payload = {
+      id: bUuid,
+      company_id: bankAccount.companyId ? mongoIdToUuid(bankAccount.companyId) : null,
+      account_name: bankAccount.accountName,
+      bank_name: bankAccount.bankName || "",
+      account_number: bankAccount.accountNumber || "",
+      ifsc_code: bankAccount.ifscCode || "",
+      upi_id: bankAccount.upiId || "",
+      account_type: bankAccount.accountType || "CURRENT",
+      has_cc_limit: Boolean(bankAccount.hasCcLimit),
+      sanctioned_limit: Number(bankAccount.sanctionedLimit || 0),
+      current_outstanding: Number(bankAccount.currentOutstanding || 0),
+      opening_balance: Number(bankAccount.openingBalance || 0),
+      current_balance: balanceVal,
+      interest_rate: Number(bankAccount.interestRate || 0),
+      transactions: Array.isArray(bankAccount.transactions) ? bankAccount.transactions : [],
+      monthly_interests: Array.isArray(bankAccount.monthlyInterests) ? bankAccount.monthlyInterests : [],
+      is_deleted: Boolean(bankAccount.isDeleted),
+      created_at: bankAccount.createdAt ? new Date(bankAccount.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await supabase.from("bank_accounts").upsert(payload, { onConflict: "id" });
+    if (error) console.warn("[Supabase Sync] BankAccount sync error:", error.message);
+  } catch (err) {
+    console.warn("[Supabase Sync] BankAccount sync note:", err.message);
+  }
+};
+
+/**
+ * Sync Bank Account Delete to Supabase
+ */
+export const syncBankAccountDeleteToSupabase = async (bankAccountId) => {
+  if (!supabase || !bankAccountId) return;
+  try {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(bankAccountId));
+    const bUuid = isUuid ? bankAccountId : mongoIdToUuid(bankAccountId);
+    await supabase.from("bank_accounts").update({ is_deleted: true, updated_at: new Date().toISOString() }).eq("id", bUuid);
+  } catch (err) {
+    console.warn("[Supabase Sync] BankAccount delete note:", err.message);
+  }
+};
+
 export default {
   syncBillToSupabase,
   syncBillDeleteToSupabase,
@@ -452,5 +560,9 @@ export default {
   syncPurchaseDeleteToSupabase,
   syncProductToSupabase,
   syncProductDeleteToSupabase,
+  syncCompanyToSupabase,
+  syncUserToSupabase,
+  syncBankAccountToSupabase,
+  syncBankAccountDeleteToSupabase,
   mongoIdToUuid
 };
