@@ -719,10 +719,17 @@ export const getPartyStatement = async (req, res) => {
     // intentionally zeroed the balance; the recalculated runningBal should already be 0 if
     // bills were properly marked paid.  If it isn't, we trust the settlement, not the recount).
     const hasSettlement = txRecords.some(t => t.type === 'settlement');
-    if (!hasSettlement && party.save && typeof party.save === 'function' && party.currentBalance !== runningBal) {
-      party.currentBalance = runningBal;
-      party.updatedAt = new Date();
-      party.save().catch(e => console.warn("Failed to auto-sync party balance:", e));
+    if (!hasSettlement && party.currentBalance !== runningBal) {
+      if (party.save && typeof party.save === 'function') {
+        party.currentBalance = runningBal;
+        party.updatedAt = new Date();
+        party.save().catch(e => console.warn("Failed to auto-sync party balance:", e));
+      } else if (party._id && mongoose.Types.ObjectId.isValid(party._id)) {
+        Party.updateOne({ _id: party._id }, { $set: { currentBalance: runningBal, updatedAt: new Date() } }).exec().catch(() => {});
+      }
+      if (supabase) {
+        supabase.from("parties").update({ current_balance: runningBal, updated_at: new Date().toISOString() }).eq("id", mongoIdToUuid(party._id || party.id)).catch(() => {});
+      }
     }
 
     res.json({
@@ -1070,6 +1077,9 @@ export const updatePartyTransaction = async (req, res) => {
         party.openingBalance = Math.abs(newOpeningVal);
         party.currentBalance = updatedBalance;
         party.balance = updatedBalance;
+        if (date) {
+          party.createdAt = new Date(date);
+        }
         party.updatedAt = new Date();
 
         if (isMongoParty && typeof party.save === 'function') {
@@ -1077,7 +1087,13 @@ export const updatePartyTransaction = async (req, res) => {
         } else if (party._id && isMongoParty) {
           await Party.findOneAndUpdate(
             { _id: party._id, companyId: req.companyId },
-            { openingBalance: Math.abs(newOpeningVal), currentBalance: updatedBalance, balance: updatedBalance, updatedAt: new Date() }
+            { 
+              openingBalance: Math.abs(newOpeningVal), 
+              currentBalance: updatedBalance, 
+              balance: updatedBalance, 
+              ...(date ? { createdAt: new Date(date) } : {}),
+              updatedAt: new Date() 
+            }
           );
         }
 
@@ -1085,6 +1101,7 @@ export const updatePartyTransaction = async (req, res) => {
           await supabase.from("parties").update({
             opening_balance: Math.abs(newOpeningVal),
             current_balance: updatedBalance,
+            ...(date ? { created_at: new Date(date).toISOString() } : {}),
             updated_at: new Date().toISOString()
           }).eq("id", mongoIdToUuid(pId));
         }
@@ -1305,6 +1322,7 @@ export const setPartyOpeningBalance = async (req, res) => {
       await supabase.from("parties").update({
         opening_balance: Math.abs(newOpeningVal),
         current_balance: updatedBalance,
+        ...(date ? { created_at: new Date(date).toISOString() } : {}),
         updated_at: new Date().toISOString()
       }).eq("id", sbId);
     }
@@ -1496,7 +1514,26 @@ export const listParties = async (req, res) => {
     try {
       const sbParties = await getPartiesFromSupabase({ companyId: req.companyId, partyType: type });
       if (sbParties && sbParties.length > 0) {
-        return res.json({ success: true, parties: sbParties, source: "supabase" });
+        // Auto-heal suppliers whose openingBalance was saved with positive currentBalance
+        const normalizedSbParties = sbParties.map(pDoc => {
+          const isSupplier = (pDoc.partyType === "supplier" || pDoc.type === "supplier");
+          let curBal = Number(pDoc.currentBalance ?? pDoc.balance ?? 0);
+          const opBal = Math.abs(Number(pDoc.openingBalance || 0));
+
+          if (isSupplier && opBal > 0) {
+            if (curBal > 0 && Math.abs(curBal) === opBal) {
+              curBal = -opBal;
+              pDoc.currentBalance = curBal;
+              pDoc.balance = curBal;
+              if (supabase) {
+                supabase.from("parties").update({ current_balance: curBal }).eq("id", pDoc.id).catch(() => {});
+              }
+            }
+          }
+          pDoc.balance = curBal;
+          return pDoc;
+        });
+        return res.json({ success: true, parties: normalizedSbParties, source: "supabase" });
       }
     } catch (sbErr) {
       console.warn("[Supabase Read] listParties error, falling back to Mongo:", sbErr.message);
@@ -1599,6 +1636,17 @@ export const updateParty = async (req, res) => {
           success: false,
           error: `पार्टी '${trimmedName}' (पता: '${trimmedAddress}') पहले से मौजूद है! एक ही नाम और पते से डुप्लीकेट नहीं बनाया जा सकता।`
         });
+      }
+    }
+
+    const isSupplier = req.body.partyType === 'supplier' || req.body.type === 'supplier';
+    if (req.body.openingBalance !== undefined) {
+      req.body.openingBalance = Math.abs(Number(req.body.openingBalance || 0));
+    }
+    const bType = String(req.body.balanceType || req.body.balanceDir || "").toUpperCase();
+    if (isSupplier && (bType.includes("PAY") || bType.includes("देने") || bType.includes("NEG"))) {
+      if (req.body.currentBalance !== undefined && req.body.currentBalance !== null) {
+        req.body.currentBalance = -Math.abs(Number(req.body.currentBalance));
       }
     }
 

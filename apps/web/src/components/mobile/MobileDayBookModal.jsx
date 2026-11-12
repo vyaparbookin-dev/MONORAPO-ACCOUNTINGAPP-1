@@ -354,11 +354,11 @@ export default function MobileDayBookModal({ isOpen, onClose, onSelectBill }) {
         }
       });
 
-      // Strictly operating business expenses (Ghar Kharch / Drawings are separated into Family Ledger)
+      // Include all expenses (Operating + Drawings/Ghar Kharch) so that no money spent from drawer is hidden!
       const serverExpenses = (Array.isArray(data?.expenses) ? data.expenses : [])
-        .filter(e => !isPersonalExp(e) && checkInRange(e.date || e.createdAt));
+        .filter(e => checkInRange(e.date || e.createdAt));
       const operatingLocalExpenses = localExpenses
-        .filter(le => !isPersonalExp(le) && checkInRange(le.date || le.createdAt));
+        .filter(le => checkInRange(le.date || le.createdAt));
       const mergedExpenses = deduplicateExpenses([...serverExpenses, ...operatingLocalExpenses]);
 
       let localPurchases = [];
@@ -1056,11 +1056,11 @@ export default function MobileDayBookModal({ isOpen, onClose, onSelectBill }) {
                   >
                     <div className="space-y-0.5">
                       <div className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5">
-                        <span>⚡ {e.title || "खर्च"}</span>
-                        <span className="text-[10px] text-slate-400 font-normal">({e.category || "General"})</span>
+                        <span>{isPersonalExp(e) ? "🏡" : "⚡"} {e.title || "खर्च"}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">({e.category || "General"}{e.familyMember ? ` • ${e.familyMember}` : ""})</span>
                       </div>
                       <p className="text-[10px] text-slate-400">
-                        दुकान खर्च
+                        {isPersonalExp(e) ? "घर खर्च / निजी निकासी" : "दुकान खर्च"}
                       </p>
                     </div>
                     <div className="text-right">

@@ -861,7 +861,13 @@ function MobileVyaparAppContent() {
 
   const [selectedFamilyMember, setSelectedFamilyMember] = useState("Self");
   const [customFamilyMember, setCustomFamilyMember] = useState("");
-  const [gharKharchDate, setGharKharchDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [gharKharchDate, setGharKharchDate] = useState(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  });
   const [gharKharchTime, setGharKharchTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [gharKharchTitle, setGharKharchTitle] = useState("");
   const [gharKharchAmount, setGharKharchAmount] = useState("");
@@ -1453,9 +1459,19 @@ function MobileVyaparAppContent() {
       : `${finalCategory} (दुकान खर्च)`;
     const finalTitle = gharKharchTitle.trim() || defaultTitle;
 
-    const finalDateTime = (gharKharchDate && gharKharchTime)
-      ? new Date(`${gharKharchDate}T${gharKharchTime}:00`)
-      : (gharKharchDate ? new Date(gharKharchDate) : new Date());
+    let finalDateTime = new Date();
+    if (gharKharchDate) {
+      if (gharKharchTime) {
+        finalDateTime = new Date(`${gharKharchDate}T${gharKharchTime}:00`);
+      } else {
+        const parts = gharKharchDate.split('-').map(Number);
+        if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+          finalDateTime = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
+        } else {
+          finalDateTime = new Date(gharKharchDate);
+        }
+      }
+    }
 
     setSavingGharKharch(true);
     try {
@@ -2670,7 +2686,7 @@ function MobileVyaparAppContent() {
           mobileNumber: payload.mobileNumber,
           balance: signedBal,
           currentBalance: signedBal,
-          openingBalance: signedBal,
+          openingBalance: Math.abs(rawBal),
           type: payload.partyType,
           partyType: payload.partyType,
           address: payload.address,
@@ -2694,7 +2710,7 @@ function MobileVyaparAppContent() {
           mobileNumber: payload.mobileNumber,
           balance: signedBal,
           currentBalance: signedBal,
-          openingBalance: signedBal,
+          openingBalance: Math.abs(rawBal),
           type: payload.partyType,
           partyType: payload.partyType,
           address: payload.address,
@@ -3592,7 +3608,16 @@ function MobileVyaparAppContent() {
     setEditPartyTxAmount(String(amt));
     setEditPartyTxType(isDebit ? 'paid' : 'received');
     setEditPartyTxNotes(tx.details || '');
-    setEditPartyTxDate(tx.date ? new Date(tx.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+    const getLocalInputDate = (d) => {
+      if (!d) return new Date().toISOString().split('T')[0];
+      const dt = d instanceof Date ? d : new Date(d);
+      if (isNaN(dt.getTime())) return new Date().toISOString().split('T')[0];
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const day = String(dt.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+    setEditPartyTxDate(getLocalInputDate(tx.date));
     setEditPartyTxPaymentMode(tx.paymentMethod || tx.paymentMode || 'CASH');
   };
 
@@ -3609,11 +3634,23 @@ function MobileVyaparAppContent() {
     try {
       const txId = editingPartyTx._id || editingPartyTx.id;
       const isClientLocalOnly = String(txId).startsWith("tx_") || String(txId).startsWith("ptx_");
+      
+      // Parse YYYY-MM-DD at 12:00:00 noon local time so timezone never shifts the calendar day
+      let isoDate = new Date().toISOString();
+      if (editPartyTxDate) {
+        const parts = editPartyTxDate.split('-').map(Number);
+        if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+          isoDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0).toISOString();
+        } else {
+          isoDate = new Date(editPartyTxDate).toISOString();
+        }
+      }
+
       const payload = {
         amount: amt,
         type: editPartyTxType,
         details: editPartyTxNotes.trim(),
-        date: editPartyTxDate ? new Date(editPartyTxDate).toISOString() : new Date().toISOString(),
+        date: isoDate,
         paymentMethod: editPartyTxPaymentMode
       };
 
@@ -6410,6 +6447,7 @@ function MobileVyaparAppContent() {
                 <div className="space-y-2">
                   {filteredParties.map((p) => {
                     const isPersonal = (p.type || p.partyType) === 'personal';
+                    const isSupplier = (p.type || p.partyType) === 'supplier';
                     const bal = Number(p.balance ?? p.currentBalance ?? 0);
                     return (
                       <div 
@@ -6451,7 +6489,7 @@ function MobileVyaparAppContent() {
                               {bal > 0 ? `+ ₹${bal.toLocaleString('en-IN')}` : bal < 0 ? `- ₹${Math.abs(bal).toLocaleString('en-IN')}` : "₹ 0"}
                             </div>
                             <span className={`text-[10px] font-bold block ${bal > 0 ? "text-emerald-600" : bal < 0 ? "text-rose-600" : "text-slate-400"}`}>
-                              {bal > 0 ? "🟢 लेने हैं" : bal < 0 ? "🔴 देने हैं" : "हिसाब चुकता"}
+                              {bal > 0 ? (isSupplier ? "🟢 एडवांस दिया" : "🟢 लेने हैं") : bal < 0 ? "🔴 देने हैं" : "हिसाब चुकता"}
                             </span>
                           </div>
                           <button
