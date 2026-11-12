@@ -3617,7 +3617,7 @@ function MobileVyaparAppContent() {
       const day = String(dt.getDate()).padStart(2, '0');
       return `${y}-${m}-${day}`;
     };
-    setEditPartyTxDate(getLocalInputDate(tx.date));
+    setEditPartyTxDate(getLocalInputDate(tx.date || tx.createdAt));
     setEditPartyTxPaymentMode(tx.paymentMethod || tx.paymentMode || 'CASH');
   };
 
@@ -3707,9 +3707,12 @@ function MobileVyaparAppContent() {
 
       alert("✅ प्रविष्टि सफलतापूर्वक अपडेट हो गई!");
       setEditingPartyTx(null);
-      const pId = selectedPartyDetail?._id || selectedPartyDetail?.id;
+      const pId = selectedPartyDetail?._id || selectedPartyDetail?.id || editingPartyTx.partyId?._id || editingPartyTx.partyId?.id || editingPartyTx.partyId;
       if (pId) {
         fetchPartyStatement(pId);
+      }
+      if (typeof fetchLiveDashboardData === 'function') {
+        fetchLiveDashboardData();
       }
     } catch (err) {
       console.error("Update transaction error:", err);
@@ -3797,10 +3800,21 @@ function MobileVyaparAppContent() {
     setSavingOldHisab(true);
     try {
       const pId = selectedPartyDetail._id || selectedPartyDetail.id;
+      // Parse YYYY-MM-DD at 12:00:00 noon local time so timezone never shifts the calendar day
+      let isoDate = new Date().toISOString();
+      if (oldHisabDate) {
+        const parts = oldHisabDate.split('-').map(Number);
+        if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+          isoDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0).toISOString();
+        } else {
+          isoDate = new Date(oldHisabDate).toISOString();
+        }
+      }
+
       const payload = {
         amount: amt,
         direction: oldHisabDirection,
-        date: oldHisabDate ? new Date(oldHisabDate).toISOString() : new Date().toISOString(),
+        date: isoDate,
         notes: oldHisabNotes.trim()
       };
 
@@ -3837,6 +3851,9 @@ function MobileVyaparAppContent() {
       alert(amt > 0 ? `✅ पुराना हिसाब (₹${amt.toLocaleString('en-IN')}) सफलतापूर्वक दर्ज हुआ!` : "✅ पुराना हिसाब हटा दिया गया!");
       setShowOldHisabModal(false);
       fetchPartyStatement(pId);
+      if (typeof fetchLiveDashboardData === 'function') {
+        fetchLiveDashboardData();
+      }
     } catch (err) {
       console.error("Save old hisab error:", err);
       alert("पुराना हिसाब सुरक्षित करने में त्रुटि: " + (err.response?.data?.message || err.message));
@@ -6090,7 +6107,9 @@ function MobileVyaparAppContent() {
                       isPositive,
                       dateObj: parseAnyDate(tx.date || tx.createdAt) || new Date(0),
                       original: tx,
-                      isPartyTx: true
+                      isPartyTx: true,
+                      isPaidOut,
+                      partyType: isSupplierTx ? 'supplier' : 'customer'
                     };
                   }),
                   ...(gharKharchList || []).map(e => {
@@ -6197,17 +6216,13 @@ function MobileVyaparAppContent() {
                           if (tx.typeCategory === 'sale') {
                             setSelectedBillDetail(tx.original);
                           } else if (tx.isPartyTx) {
-                            // If Party / Vendor transaction, open Party Statement & Ledger modal (NOT Ghar Kharch!)
+                            // Directly open Party Transaction edit modal (just like Ghar Kharch!)
                             const pId = tx.original.partyId?._id || tx.original.partyId?.id || tx.original.partyId;
                             const matched = (parties || []).find(p => (p._id || p.id) === pId);
                             if (matched) {
                               setSelectedPartyDetail(matched);
-                              fetchPartyStatement(matched._id || matched.id);
-                              setShowPartyDetailModal(true);
-                            } else if (pId) {
-                              fetchPartyStatement(pId);
-                              setShowPartyDetailModal(true);
                             }
+                            handleOpenEditPartyTx(tx.original);
                           } else {
                             handleOpenEditGharKharch(tx.original);
                           }
@@ -6238,7 +6253,9 @@ function MobileVyaparAppContent() {
                             }`}>
                               {tx.typeCategory === 'sale' 
                                 ? (tx.original.paymentStatus === 'unpaid' ? 'Unpaid' : 'Sale') 
-                                : (tx.isPartyTx ? (tx.isPositive ? 'जमा (Receipt)' : 'उधार') : 'खर्च')}
+                                : (tx.isPartyTx 
+                                    ? (tx.isPaidOut || (!tx.isPositive && tx.partyType === 'supplier') ? 'व्यापारी भुगतान' : (tx.isPositive ? 'जमा (Receipt)' : 'उधार')) 
+                                    : 'खर्च')}
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5">
@@ -6264,6 +6281,54 @@ function MobileVyaparAppContent() {
                                 title="बिल हटाएं"
                               >
                                 <Trash2 size={13} />
+                              </button>
+                            )}
+                            {tx.isPartyTx && (
+                              <>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const pId = tx.original.partyId?._id || tx.original.partyId?.id || tx.original.partyId;
+                                    const matched = (parties || []).find(p => (p._id || p.id) === pId);
+                                    if (matched) setSelectedPartyDetail(matched);
+                                    handleOpenEditPartyTx(tx.original);
+                                  }}
+                                  className="w-7 h-7 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-600 flex items-center justify-center transition cursor-pointer"
+                                  title="प्रविष्टि संपादित करें (Edit)"
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const pId = tx.original.partyId?._id || tx.original.partyId?.id || tx.original.partyId;
+                                    const matched = (parties || []).find(p => (p._id || p.id) === pId);
+                                    if (matched) {
+                                      setSelectedPartyDetail(matched);
+                                      fetchPartyStatement(matched._id || matched.id);
+                                      setShowPartyDetailModal(true);
+                                    } else if (pId) {
+                                      fetchPartyStatement(pId);
+                                      setShowPartyDetailModal(true);
+                                    }
+                                  }}
+                                  className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition cursor-pointer"
+                                  title="खाता पासबुक देखें (View Ledger)"
+                                >
+                                  <BookOpen size={13} />
+                                </button>
+                              </>
+                            )}
+                            {!tx.isPartyTx && tx.typeCategory !== 'sale' && (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenEditGharKharch(tx.original);
+                                }}
+                                className="w-7 h-7 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-600 flex items-center justify-center transition cursor-pointer"
+                                title="खर्च संपादित करें (Edit)"
+                              >
+                                <Edit2 size={13} />
                               </button>
                             )}
                           </div>
@@ -10426,8 +10491,13 @@ function MobileVyaparAppContent() {
                           badgeText = `📦 खरीद बिल #${tx.billNumber || tx.refNo}`;
                           badgeBg = 'bg-purple-100 text-purple-800';
                         } else if (tx.type === 'payment' || tx.type === 'receipt' || tx.source === 'PartyTransaction') {
-                          badgeText = isDebit ? `🔴 भुगतान #${tx.refNo || 'PAY'}` : `🟢 जमा #${tx.refNo || 'REC'}`;
-                          badgeBg = isDebit ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800';
+                          if (isSupplierParty) {
+                            badgeText = isDebit ? `💵 भुगतान #${tx.refNo || 'PAY'}` : `📦 खरीद #${tx.refNo || 'PUR'}`;
+                            badgeBg = isDebit ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-800';
+                          } else {
+                            badgeText = isDebit ? `🔴 उधार #${tx.refNo || 'PAY'}` : `🟢 जमा #${tx.refNo || 'REC'}`;
+                            badgeBg = isDebit ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800';
+                          }
                         } else if (tx.refNo) {
                           badgeText = `#${tx.refNo}`;
                         }
@@ -10437,11 +10507,19 @@ function MobileVyaparAppContent() {
                             <div className="flex justify-between items-start">
                               <div className="space-y-1 flex-1 pr-2">
                                 <div className="font-extrabold text-xs text-[#0F172A] flex items-center gap-1.5 flex-wrap">
-                                  <span className={`w-2 h-2 rounded-full shrink-0 ${isOpening ? 'bg-amber-500' : isDebit ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                                  <span className={`w-2 h-2 rounded-full shrink-0 ${isOpening ? 'bg-amber-500' : (isSupplierParty ? (isDebit ? 'bg-emerald-500' : 'bg-indigo-500') : (isDebit ? 'bg-rose-500' : 'bg-emerald-500'))}`} />
                                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${badgeBg}`}>
                                     {badgeText}
                                   </span>
-                                  <span className="text-slate-800 font-bold">{tx.details || (isDebit ? "उधारी बिक्री" : "राशि जमा")}</span>
+                                  <span className="text-slate-800 font-bold">
+                                    {tx.details && tx.details !== 'मुझे मिले' && tx.details !== 'मैंने दिए'
+                                      ? tx.details
+                                      : (isSupplierParty
+                                          ? (isDebit ? "भुगतान दिया (Payment)" : "खरीद बिल (Purchase)")
+                                          : (isDebit ? "उधारी बिक्री" : "राशि जमा")
+                                        )
+                                    }
+                                  </span>
                                 </div>
 
                                 {/* Bill Items & Breakdown (if available) */}

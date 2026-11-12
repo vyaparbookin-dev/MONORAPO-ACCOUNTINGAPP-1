@@ -568,12 +568,18 @@ export const getPartyStatement = async (req, res) => {
 
     // Process manual / direct payments
     for (const tx of txRecords) {
+      const isDebit = Number(tx.debit || 0) > 0;
       ledgerEntries.push({
         _id: tx._id,
         date: tx.date || tx.createdAt,
-        type: tx.type || (tx.credit > 0 ? "receipt" : "payment"),
-        refNo: tx.refNo || tx.billNumber || "PAY",
-        details: tx.details || (tx.credit > 0 ? "मुझे मिले (जमा)" : "मैंने दिए (भुगतान)"),
+        type: tx.type || (isDebit ? "payment" : (isSupplier ? "purchase" : "receipt")),
+        refNo: tx.refNo || tx.billNumber || (isDebit ? "PAY" : (isSupplier ? "PUR" : "REC")),
+        details: tx.details && tx.details !== "मुझे मिले" && tx.details !== "मैंने दिए"
+          ? tx.details
+          : (isSupplier 
+              ? (isDebit ? "भुगतान दिया (Payment)" : "खरीद बिल (Purchase)")
+              : (isDebit ? "मैंने दिए (उधार)" : "मुझे मिले (जमा)")
+            ),
         siteName: tx.siteName || "",
         debit: Number(tx.debit || 0),
         credit: Number(tx.credit || 0),
@@ -1302,7 +1308,13 @@ export const setPartyOpeningBalance = async (req, res) => {
     } else if (party._id && mongoose.Types.ObjectId.isValid(party._id)) {
       await Party.findOneAndUpdate(
         { _id: party._id, companyId: req.companyId },
-        { openingBalance: Math.abs(newOpeningVal), currentBalance: updatedBalance, balance: updatedBalance, updatedAt: new Date() }
+        { 
+          openingBalance: Math.abs(newOpeningVal), 
+          currentBalance: updatedBalance, 
+          balance: updatedBalance, 
+          ...(date ? { createdAt: new Date(date) } : {}),
+          updatedAt: new Date() 
+        }
       );
     } else {
       // Find matching Mongo party by name
@@ -1311,6 +1323,7 @@ export const setPartyOpeningBalance = async (req, res) => {
         mP.openingBalance = Math.abs(newOpeningVal);
         mP.currentBalance = updatedBalance;
         mP.balance = updatedBalance;
+        if (date) mP.createdAt = new Date(date);
         mP.updatedAt = new Date();
         await mP.save();
       }
