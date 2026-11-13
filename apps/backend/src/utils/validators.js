@@ -12,7 +12,13 @@ export const expenseSchema = z.object({
   paymentMethod: z.string().optional(),
   description: z.string().optional(),
   date: z.any().optional(),
-});
+  staffId: z.any().optional(),
+  staffTransactionId: z.any().optional(),
+  bankAccountId: z.any().optional(),
+  forMonth: z.string().optional(),
+  depositDetails: z.any().optional(),
+  paymentMode: z.string().optional(),
+}).passthrough();
 
 // --- Billing Schemas ---
 export const billItemSchema = z.object({

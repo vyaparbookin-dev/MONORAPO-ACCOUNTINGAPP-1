@@ -73,27 +73,47 @@ export const addExpense = async (req, res) => {
 
     if (staffDoc && amountNum > 0) {
       try {
+        const expDate = expense.date ? new Date(expense.date) : new Date();
+        const textToAnalyze = `${expense.title || ''} ${expense.category || ''} ${expense.description || ''} ${expense.notes || ''}`.toLowerCase();
+        let targetForMonth = req.body.forMonth;
+        if (!targetForMonth) {
+          if (textToAnalyze.includes('अक्टूबर') || textToAnalyze.includes('october') || textToAnalyze.includes('oct')) {
+            targetForMonth = `${expDate.getFullYear()}-10`;
+          } else if (textToAnalyze.includes('सितंबर') || textToAnalyze.includes('september') || textToAnalyze.includes('sep')) {
+            targetForMonth = `${expDate.getFullYear()}-09`;
+          } else if (textToAnalyze.includes('नवंबर') || textToAnalyze.includes('november') || textToAnalyze.includes('nov')) {
+            targetForMonth = `${expDate.getFullYear()}-11`;
+          } else if (textToAnalyze.includes('दिसंबर') || textToAnalyze.includes('december') || textToAnalyze.includes('dec')) {
+            targetForMonth = `${expDate.getFullYear()}-12`;
+          } else if (expDate.getDate() <= 10 && (/सैलरी|salary|वेतन|settlement/i.test(textToAnalyze))) {
+            const prevMonthDate = new Date(expDate.getFullYear(), expDate.getMonth() - 1, 1);
+            targetForMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+          } else {
+            targetForMonth = `${expDate.getFullYear()}-${String(expDate.getMonth() + 1).padStart(2, '0')}`;
+          }
+        }
+
+        const isSettlement = /सैलरी|salary|वेतन|settlement/i.test(textToAnalyze);
+        const txType = isSettlement ? 'salary_settlement' : 'advance';
+
         const stTx = await StaffTransaction.create({
           staffId: staffDoc._id,
           companyId: staffDoc.companyId || req.companyId,
-          type: 'advance',
-          date: expense.date ? new Date(expense.date) : new Date(),
+          type: txType,
+          salarySettlement: isSettlement,
+          forMonth: targetForMonth,
+          date: expDate,
           debit: amountNum,
           amount: amountNum,
           credit: 0,
-          paymentMode: expense.paymentMode || 'cash',
-          notes: (expense.description || expense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim(),
+          paymentMode: expense.paymentMethod || expense.paymentMode || 'cash',
+          notes: (expense.description || expense.title || `दुकान खर्च से दर्ज स्टाफ भुगतान: ${staffDoc.name}`).trim(),
           expenseId: expense._id,
           referenceExpenseId: expense._id
         });
         expense.staffTransactionId = stTx._id;
         expense.staffId = staffDoc._id;
         await expense.save();
-
-        // Sync Staff Balance: Advance reduces due salary (Negative: Advance, Positive: Due Salary)
-        staffDoc.balance = (Number(staffDoc.balance) || 0) - amountNum;
-        staffDoc.updatedAt = new Date();
-        await staffDoc.save();
 
         syncStaffTxToSupabase(stTx).catch(e => console.warn("[Supabase Sync] staff tx note:", e.message));
         syncStaffToSupabase(staffDoc).catch(e => console.warn("[Supabase Sync] staff sync note:", e.message));
@@ -293,24 +313,53 @@ export const updateExpense = async (req, res) => {
           }
           if (targetTx) {
             targetTx.debit = amountNum;
+            targetTx.amount = amountNum;
             targetTx.date = finalExpense.date ? new Date(finalExpense.date) : new Date();
-            targetTx.notes = (finalExpense.description || finalExpense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim();
+            targetTx.notes = (finalExpense.description || finalExpense.title || `दुकान खर्च से दर्ज स्टाफ भुगतान: ${staffDoc.name}`).trim();
             await targetTx.save();
+            syncStaffTxToSupabase(targetTx).catch(() => {});
           } else {
+            const expDate = finalExpense.date ? new Date(finalExpense.date) : new Date();
+            const textToAnalyze = `${finalExpense.title || ''} ${finalExpense.category || ''} ${finalExpense.description || ''}`.toLowerCase();
+            let targetForMonth = updateData.forMonth;
+            if (!targetForMonth) {
+              if (textToAnalyze.includes('अक्टूबर') || textToAnalyze.includes('october') || textToAnalyze.includes('oct')) {
+                targetForMonth = `${expDate.getFullYear()}-10`;
+              } else if (textToAnalyze.includes('सितंबर') || textToAnalyze.includes('september') || textToAnalyze.includes('sep')) {
+                targetForMonth = `${expDate.getFullYear()}-09`;
+              } else if (textToAnalyze.includes('नवंबर') || textToAnalyze.includes('november') || textToAnalyze.includes('nov')) {
+                targetForMonth = `${expDate.getFullYear()}-11`;
+              } else if (textToAnalyze.includes('दिसंबर') || textToAnalyze.includes('december') || textToAnalyze.includes('dec')) {
+                targetForMonth = `${expDate.getFullYear()}-12`;
+              } else if (expDate.getDate() <= 10 && (/सैलरी|salary|वेतन|settlement/i.test(textToAnalyze))) {
+                const prevMonthDate = new Date(expDate.getFullYear(), expDate.getMonth() - 1, 1);
+                targetForMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+              } else {
+                targetForMonth = `${expDate.getFullYear()}-${String(expDate.getMonth() + 1).padStart(2, '0')}`;
+              }
+            }
+            const isSettlement = /सैलरी|salary|वेतन|settlement/i.test(textToAnalyze);
+            const txType = isSettlement ? 'salary_settlement' : 'advance';
+
             const newStTx = await StaffTransaction.create({
               staffId: staffDoc._id,
               companyId: staffDoc.companyId || req.companyId,
-              type: 'advance',
-              date: finalExpense.date ? new Date(finalExpense.date) : new Date(),
+              type: txType,
+              salarySettlement: isSettlement,
+              forMonth: targetForMonth,
+              date: expDate,
               debit: amountNum,
+              amount: amountNum,
               credit: 0,
-              notes: (finalExpense.description || finalExpense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim(),
+              paymentMode: finalExpense.paymentMethod || 'cash',
+              notes: (finalExpense.description || finalExpense.title || `दुकान खर्च से दर्ज स्टाफ भुगतान: ${staffDoc.name}`).trim(),
               expenseId: (finalExpense._id && /^[0-9a-fA-F]{24}$/.test(String(finalExpense._id))) ? finalExpense._id : undefined
             });
             if (expense) {
               expense.staffTransactionId = newStTx._id;
               await expense.save();
             }
+            syncStaffTxToSupabase(newStTx).catch(() => {});
           }
 
           // Balance adjustment
