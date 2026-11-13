@@ -477,6 +477,8 @@ function MobileVyaparAppContent() {
   const [partyPassbookFilter, setPartyPassbookFilter] = useState('all'); // 'all', 'received' (मुझे मिले / जमा), 'given' (मैंने दिए / बिक्री)
   const [partyMonthFilter, setPartyMonthFilter] = useState('all'); // 'all', 'YYYY-MM'
   const [partySiteFilter, setPartySiteFilter] = useState('all'); // 'all', site name
+  const [partyStatementOrder, setPartyStatementOrder] = useState('desc'); // 'desc' (नया पहले) or 'asc' (स्टेटमेंट क्रम: पुराना ऊपर)
+  const [showPartyStatementModal, setShowPartyStatementModal] = useState(false);
 
   // 📲 WhatsApp Background QR Engine States
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
@@ -4567,6 +4569,60 @@ function MobileVyaparAppContent() {
       ? `https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(msg)}`
       : `https://wa.me/?text=${encodeURIComponent(msg)}`;
     window.open(url, '_blank');
+  };
+
+  const handleShareFullDetailedStatementWhatsApp = (party, txs = []) => {
+    if (!party) return;
+    const isSupplier = (party.type === 'supplier' || party.partyType === 'supplier') || Number(party.openingBalance || 0) < 0;
+    const bal = Number(party.balance ?? party.currentBalance ?? 0);
+    const balText = isSupplier
+      ? (bal < 0 ? `देने हैं: ₹${Math.abs(bal).toLocaleString('en-IN')}` : bal > 0 ? `लेने हैं: ₹${bal.toLocaleString('en-IN')}` : `हिसाब चुकता (₹0)`)
+      : (bal > 0 ? `लेने हैं: ₹${bal.toLocaleString('en-IN')}` : bal < 0 ? `देने हैं: ₹${Math.abs(bal).toLocaleString('en-IN')}` : `हिसाब चुकता (₹0)`);
+
+    let text = `📜 *खाता विवरण (Account Statement)*\n`;
+    text += `👤 *पार्टी:* ${party.name} (${isSupplier ? 'सप्लायर' : 'ग्राहक'})\n`;
+    text += `🏢 *दुकान:* ${companyDisplayName}\n`;
+    text += `📅 *दिनांक:* ${new Date().toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' })}\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
+
+    const sorted = [...txs].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+    sorted.forEach((t, i) => {
+      const dStr = t.date ? new Date(t.date).toLocaleDateString('hi-IN', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+      const deb = Number(t.debit || 0);
+      const cred = Number(t.credit || 0);
+      const amtStr = deb > 0 ? `नाम/डेबिट: +₹${deb.toLocaleString('en-IN')}` : `जमा/क्रेडिट: -₹${cred.toLocaleString('en-IN')}`;
+      const desc = t.details || t.refNo || (deb > 0 ? 'दिया' : 'मिला');
+      const running = t.runningAfter !== undefined ? t.runningAfter : t.runningBalance;
+      const runningLabel = running !== undefined
+        ? ` (बाकी: ₹${Math.abs(running).toLocaleString('en-IN')} ${running < 0 || isSupplier ? 'देने' : 'लेने'})`
+        : '';
+      text += `${i + 1}. [${dStr}] ${desc}\n   ${amtStr}${runningLabel}\n`;
+    });
+
+    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    text += `⚖️ *अंतिम कुल शुद्ध शेष: ${balText}*\n`;
+    text += `\n_धन्यवाद! - ${companyDisplayName}_`;
+
+    const cleanPhone = String(party.phone || party.mobileNumber || '').replace(/[^0-9]/g, '');
+    if (waStatus.isConnected && cleanPhone && cleanPhone.length >= 10) {
+      api.post('/api/whatsapp/send-direct', {
+        toMobile: cleanPhone,
+        messageText: text
+      }).then(res => {
+        if (res.data?.success) {
+          alert(`✅ ${party.name} को WhatsApp पर पूरा खाता विवरण भेज दिया गया!`);
+        } else {
+          window.open(`https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(text)}`, '_blank');
+        }
+      }).catch(() => {
+        window.open(`https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(text)}`, '_blank');
+      });
+    } else if (cleanPhone) {
+      window.open(`https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(text)}`, '_blank');
+    } else {
+      try { navigator.clipboard?.writeText(text); } catch (e) {}
+      alert("📋 स्टेटमेंट टेक्स्ट कॉपी हो गया! आप सीधे WhatsApp चैट में पेस्ट कर सकते हैं।");
+    }
   };
 
   // ==================== FAST MANUAL DAILY SALE HANDLER ====================
@@ -9557,6 +9613,14 @@ function MobileVyaparAppContent() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setShowPartyStatementModal(true)}
+                  className="py-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition shadow-xs"
+                  title="पूरा खाता विवरण / पासबुक (Statement) देखें"
+                >
+                  📜 खाता विवरण
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleSharePartyStatementWhatsApp(selectedPartyDetail)}
                   className="flex-1 py-2 bg-[#25D366] hover:bg-green-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition min-w-[100px]"
                 >
@@ -10525,6 +10589,32 @@ function MobileVyaparAppContent() {
                 );
               })()}
 
+              {/* Order Mode Switch: हालिया पहले vs स्टेटमेंट क्रम (पुराना ऊपर) */}
+              <div className="flex items-center justify-between bg-slate-100 p-1 rounded-2xl text-[11px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => setPartyStatementOrder('desc')}
+                  className={`flex-1 py-1.5 rounded-xl text-center transition cursor-pointer flex items-center justify-center gap-1 ${
+                    partyStatementOrder === 'desc'
+                      ? 'bg-white text-slate-900 shadow-xs font-black'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <span>⬇️ हालिया पहले (नया ऊपर)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPartyStatementOrder('asc')}
+                  className={`flex-1 py-1.5 rounded-xl text-center transition cursor-pointer flex items-center justify-center gap-1 ${
+                    partyStatementOrder === 'asc'
+                      ? 'bg-indigo-600 text-white shadow-xs font-black'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <span>📖 स्टेटमेंट क्रम (पुराना ऊपर)</span>
+                </button>
+              </div>
+
               {/* Detailed Passbook Ledger List with Running Balance */}
               <div className="space-y-2">
                 {partyTransactions.length === 0 ? (
@@ -10546,12 +10636,12 @@ function MobileVyaparAppContent() {
                     return { ...tx, runningAfter: running };
                   });
 
-                  // Display latest transactions first
-                  const txWithRunningDesc = [...txWithRunning].reverse();
+                  // Display according to partyStatementOrder (desc: latest first, asc: statement order oldest first)
+                  const txWithRunningOrdered = partyStatementOrder === 'asc' ? [...txWithRunning] : [...txWithRunning].reverse();
                   const isSupplierParty = (selectedPartyDetail.type === 'supplier' || selectedPartyDetail.partyType === 'supplier') || Number(selectedPartyDetail.openingBalance || 0) < 0;
 
                   // Apply active filters
-                  const filteredPartyTxs = txWithRunningDesc.filter(tx => {
+                  const filteredPartyTxs = txWithRunningOrdered.filter(tx => {
                     if (partyPassbookFilter === 'received') {
                       const isCredit = Number(tx.credit || 0) > 0;
                       const isReturn = tx.type === 'sales_return' || tx.type === 'return';
@@ -11059,6 +11149,167 @@ function MobileVyaparAppContent() {
                 {savingOldHisab ? "⏳ सहेजा जा रहा है..." : "💾 सुरक्षित करें"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📱 9.3 DEDICATED FULL-SCREEN ACCOUNT STATEMENT & PASSBOOK MODAL */}
+      {showPartyStatementModal && selectedPartyDetail && (
+        <div className="fixed inset-0 z-[95] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-xl w-full p-4 sm:p-6 space-y-4 shadow-2xl max-h-[94vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="shrink-0 flex justify-between items-start border-b border-slate-100 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-base">
+                    📜
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-[#0F172A]">खाता विवरण (Party Statement / Passbook)</h3>
+                    <p className="text-[11px] text-slate-500 font-bold">
+                      {selectedPartyDetail.name} • {(selectedPartyDetail.type === 'supplier' || selectedPartyDetail.partyType === 'supplier') ? 'सप्लायर / वेंडर' : 'ग्राहक (Customer)'}
+                      {(selectedPartyDetail.phone || selectedPartyDetail.mobileNumber) ? ` • 📞 ${selectedPartyDetail.phone || selectedPartyDetail.mobileNumber}` : ''}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPartyStatementModal(false)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer p-1"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Calculations for Statement Summary */}
+            {(() => {
+              const sortedAsc = [...partyTransactions].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+              const hasOpeningTx = sortedAsc.some(t => t.refNo === 'OPENING' || String(t._id || '').startsWith('open_') || String(t.details || '').includes('प्रारंभिक'));
+              let initialBal = Number(selectedPartyDetail.openingBalance || 0);
+              let running = hasOpeningTx ? 0 : initialBal;
+
+              const statementRows = sortedAsc.map((tx) => {
+                const debit = Number(tx.debit || 0);
+                const credit = Number(tx.credit || 0);
+                running = running + debit - credit;
+                return { ...tx, runningAfter: running };
+              });
+
+              const isSupplier = (selectedPartyDetail.type === 'supplier' || selectedPartyDetail.partyType === 'supplier') || initialBal < 0;
+              const totalDeb = statementRows.reduce((s, r) => s + (Number(r.debit) || 0), 0);
+              const totalCred = statementRows.reduce((s, r) => s + (Number(r.credit) || 0), 0);
+              const finalBal = statementRows.length > 0 ? statementRows[statementRows.length - 1].runningAfter : initialBal;
+
+              const isDeneHai = isSupplier ? (finalBal < 0 || initialBal < 0) : (finalBal < 0);
+              const isLeneHai = !isDeneHai && finalBal > 0;
+
+              return (
+                <>
+                  {/* Summary Ribbon */}
+                  <div className="shrink-0 grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-2xl border border-slate-200 text-center">
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase">कुल नाम (Debit)</div>
+                      <div className="font-black text-xs sm:text-sm text-slate-800 font-mono mt-0.5">₹{totalDeb.toLocaleString('en-IN')}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase">कुल जमा (Credit)</div>
+                      <div className="font-black text-xs sm:text-sm text-emerald-700 font-mono mt-0.5">₹{totalCred.toLocaleString('en-IN')}</div>
+                    </div>
+                    <div className={`p-1.5 rounded-xl border ${
+                      isDeneHai ? 'bg-amber-100/80 border-amber-300 text-amber-950' : isLeneHai ? 'bg-emerald-100/80 border-emerald-300 text-emerald-950' : 'bg-slate-200 text-slate-800'
+                    }`}>
+                      <div className="text-[10px] font-black uppercase">
+                        {isDeneHai ? 'देने हैं' : isLeneHai ? 'लेने हैं' : 'हिसाब चुकता'}
+                      </div>
+                      <div className="font-black text-sm sm:text-base font-mono">
+                        ₹{Math.abs(finalBal).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Statement Table View: Chronological (Oldest at Top -> Newest at Bottom) */}
+                  <div className="flex-1 min-h-0 overflow-y-auto rounded-2xl border border-slate-200 bg-white">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-100 text-slate-700 font-black text-[11px] sticky top-0 border-b border-slate-200 z-10">
+                        <tr>
+                          <th className="p-2.5">#</th>
+                          <th className="p-2.5">तारीख</th>
+                          <th className="p-2.5">विवरण</th>
+                          <th className="p-2.5 text-right">नाम / दिया (₹)</th>
+                          <th className="p-2.5 text-right">जमा / मिला (₹)</th>
+                          <th className="p-2.5 text-right">बकाया शेष (₹)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {statementRows.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="p-6 text-center text-slate-400 font-bold">
+                              कोई लेन-देन दर्ज नहीं है।
+                            </td>
+                          </tr>
+                        ) : (
+                          statementRows.map((row, idx) => {
+                            const deb = Number(row.debit || 0);
+                            const cred = Number(row.credit || 0);
+                            const run = Number(row.runningAfter || 0);
+                            const rowDene = isSupplier ? run <= 0 : run < 0;
+                            const dStr = row.date ? new Date(row.date).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                            const isOpening = row.refNo === 'OPENING' || String(row._id || '').startsWith('open_') || String(row.details || '').includes('प्रारंभिक');
+
+                            return (
+                              <tr key={row._id || idx} className={`hover:bg-slate-50 transition ${isOpening ? 'bg-amber-50/40 font-bold' : ''}`}>
+                                <td className="p-2.5 text-[10px] text-slate-400 font-mono">{idx + 1}</td>
+                                <td className="p-2.5 text-[11px] font-bold text-slate-700 whitespace-nowrap">{dStr}</td>
+                                <td className="p-2.5 text-xs font-bold text-slate-800">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span>{row.details || (deb > 0 ? (isSupplier ? 'भुगतान दिया' : 'सामान दिया') : (isSupplier ? 'खरीद बिल' : 'जमा मिला'))}</span>
+                                    {row.refNo && row.refNo !== 'OPENING' && (
+                                      <span className="text-[9px] px-1 py-0.2 bg-slate-100 rounded text-slate-600 font-mono">#{row.refNo}</span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="p-2.5 text-right font-black text-slate-900 font-mono whitespace-nowrap">
+                                  {deb > 0 ? `₹${deb.toLocaleString('en-IN')}` : '—'}
+                                </td>
+                                <td className="p-2.5 text-right font-black text-emerald-700 font-mono whitespace-nowrap">
+                                  {cred > 0 ? `₹${cred.toLocaleString('en-IN')}` : '—'}
+                                </td>
+                                <td className="p-2.5 text-right whitespace-nowrap">
+                                  <span className={`inline-block px-1.5 py-0.5 rounded-md font-black text-xs font-mono ${
+                                    rowDene ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'
+                                  }`}>
+                                    ₹{Math.abs(run).toLocaleString('en-IN')} {rowDene ? 'देने' : 'लेने'}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Actions: Print and WhatsApp Share */}
+                  <div className="shrink-0 flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Printer size={15} /> 🖨️ प्रिंट / PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleShareFullDetailedStatementWhatsApp(selectedPartyDetail, statementRows)}
+                      className="flex-2 py-2.5 bg-[#25D366] hover:bg-green-600 text-white font-black text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                    >
+                      <MessageSquare size={15} /> 💬 WhatsApp पर पूरा स्टेटमेंट भेजें
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
