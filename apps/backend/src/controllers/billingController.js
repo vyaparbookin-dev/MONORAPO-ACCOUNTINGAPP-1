@@ -5,7 +5,8 @@ import mongoose from "mongoose";
 import fs from "fs";
 import path from "path";
 import os from "os";
-// Tesseract worker removed to protect server from Leptonica memory/format crashes
+import sharp from "sharp";
+// Tesseract removed — sharp handles all image format conversion safely
 import { generateInvoicePdf } from "../utils/invoicePdfGenerator.js";
 import Product from "../model/product.js";
 import Party from "../model/party.js";
@@ -1063,6 +1064,28 @@ CRITICAL ZERO-HALLUCINATION RULES:
       if (!isPdf) {
         if (mimeType === "image/jpg" || mimeType === "image/pjpeg" || !["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mimeType)) {
           mimeType = "image/jpeg";
+        }
+      }
+
+      // -------------------------------------------------------
+      // FORCE CONVERT to JPEG using sharp — handles ALL formats:
+      // HEIC (iPhone), BMP, TIFF, WebP, PNG, unknown binaries.
+      // OpenAI Vision ONLY accepts jpeg/png/gif/webp.
+      // This is the definitive fix for "unsupported image" errors.
+      // -------------------------------------------------------
+      if (!isPdf && pureB64 && pureB64.length > 50) {
+        try {
+          const rawBuffer = Buffer.from(pureB64, "base64");
+          const jpegBuffer = await sharp(rawBuffer)
+            .rotate() // Auto-orient from EXIF (fixes rotated mobile photos)
+            .jpeg({ quality: 85 })
+            .toBuffer();
+          pureB64 = jpegBuffer.toString("base64");
+          mimeType = "image/jpeg";
+          console.log(`[parseBillImage] sharp converted image to JPEG (${jpegBuffer.length} bytes)`);
+        } catch (sharpErr) {
+          // If sharp fails (very unlikely), proceed with original — still better than crashing
+          console.warn("[parseBillImage] sharp conversion skipped:", sharpErr.message);
         }
       }
 
