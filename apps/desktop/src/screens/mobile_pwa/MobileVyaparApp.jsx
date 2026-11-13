@@ -2524,13 +2524,19 @@ function MobileVyaparAppContent() {
 
     setSavingStatement(true);
     try {
+      const selectedPartyObj = parties.find(p => String(p._id || p.id) === String(pId))
+        || parties.find(p => p.name && (p.name.trim().toLowerCase() === (currentDoc.partyName || "").trim().toLowerCase()))
+        || selectedPartyDetail;
+
       await api.post('/api/payment/bulk-entry', {
         partyId: pId,
+        partyName: selectedPartyObj?.name || currentDoc.partyName || "",
+        partyType: selectedPartyObj?.partyType || selectedPartyObj?.type || 'customer',
         transactions: currentDoc.transactions
       });
       alert(`🎉 ${currentDoc.transactions.length} खाता प्रविष्टियां सफलतापूर्वक पार्टी लेज़र में दर्ज हो गईं!`);
       setShowScannedReviewModal(false);
-      if (selectedPartyDetail && (selectedPartyDetail._id === pId || selectedPartyDetail.id === pId)) {
+      if (selectedPartyDetail && (String(selectedPartyDetail._id) === String(pId) || String(selectedPartyDetail.id) === String(pId))) {
         if (typeof loadPartyStatement === 'function') loadPartyStatement(selectedPartyDetail);
       }
       fetchParties();
@@ -5033,7 +5039,7 @@ function MobileVyaparAppContent() {
             <div className="space-y-3 text-left">
               <div>
                 <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
-                  🤖 OpenAI API Key (ChatGPT 4o Mini):
+                  🤖 AI API Key (OpenAI):
                 </label>
                 <input 
                   type="password" 

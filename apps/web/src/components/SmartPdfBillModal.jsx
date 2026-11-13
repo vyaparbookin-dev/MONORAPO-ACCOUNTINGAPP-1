@@ -1131,7 +1131,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                     type="button"
                     onClick={() => {
                       const currentKey = localStorage.getItem("OPENAI_API_KEY") || "";
-                      const newKey = window.prompt("🔑 OpenAI ChatGPT API Key दर्ज / अपडेट करें:", currentKey);
+                      const newKey = window.prompt("🔑 AI API Key दर्ज / अपडेट करें:", currentKey);
                       if (newKey !== null) {
                         localStorage.setItem("OPENAI_API_KEY", newKey.trim());
                         alert("✅ OpenAI API Key सफलतापूर्वक सेव हो गई!");
@@ -1257,7 +1257,7 @@ export default function SmartPdfBillModal({ isOpen, onClose, onBillsSaved, compa
                                 ? "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"
                                 : "bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-transparent hover:from-purple-700 hover:to-indigo-700 shadow-2xs"
                             }`}
-                            title="AI Vision (Gemini / ChatGPT) से इस पेज का सामान, दर और विवरण निकालें"
+                            title="AI से इस पेज का सामान, दर और विवरण निकालें"
                           >
                             {aiScanningPages[idx] ? (
                               <>

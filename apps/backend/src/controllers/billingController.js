@@ -922,10 +922,15 @@ export const parseBillImage = async (req, res) => {
 
     const openAiKey = req.body?.openaiApiKey || process.env.OPENAI_API_KEY;
 
-    // Helper to robustly clean & parse numeric currency amounts (handles "1,500.00", "₹1,500", "1500/-", "1500 Dr", etc.)
+    // Helper to robustly clean & parse numeric currency amounts (handles "1,500.00", "₹1,500", "1500/-", "1500 Dr", objects, etc.)
     const parseAmountClean = (val) => {
       if (val === null || val === undefined) return 0;
       if (typeof val === 'number') return isNaN(val) ? 0 : val;
+      if (typeof val === 'object' && val !== null) {
+        if ('amount' in val) return parseAmountClean(val.amount);
+        if ('value' in val) return parseAmountClean(val.value);
+        if ('total' in val) return parseAmountClean(val.total);
+      }
       if (typeof val === 'string') {
         const cleaned = val.replace(/,/g, '').replace(/[^\d.-]/g, '').trim();
         const parsed = parseFloat(cleaned);
@@ -1198,10 +1203,27 @@ CRITICAL ZERO-HALLUCINATION RULES:
       let metaFromOcr = {};
       let itemsFromOcr = [];
 
-      const userPromptText = `Examine this Indian bill, tax invoice, purchase receipt, cash memo, or party account statement image carefully.
+      const isStatementMode = req.body?.scannerType === 'statement' || req.body?.mode === 'statement';
+
+      const userPromptText = isStatementMode
+        ? `CRITICAL STATEMENT INSTRUCTION:
+This image is an Indian Party Account Statement, Bank Passbook, Khata-Bahi, or Transaction Ledger Sheet.
+Set documentType: 'statement'.
+1. PARTY NAME: Find and extract the party / business / customer / account holder name as 'partyName'.
+2. TRANSACTIONS: Extract EVERY single visible row into the 'transactions' array:
+   - "date": Date printed on this row (DD/MM/YYYY or YYYY-MM-DD)
+   - "details": Description / Particulars / Narration / Cheque / Voucher details
+   - "debit": Amount paid/given/debit/dr/withdrawal/naam (Whole Indian Rupees integer)
+   - "credit": Amount received/jama/cr/deposit/credit (Whole Indian Rupees integer)
+   - "balance": Running balance (Whole Indian Rupees integer)
+3. ZERO-ZERO PROHIBITION: If an amount is visible on that row, NEVER return both debit=0 and credit=0! Put the amount in debit or credit according to the column header (Debit/Withdrawal vs Credit/Deposit).
+4. CRITICAL RUPEE RULE: All numbers are Indian Rupees (₹). Commas are thousands separators (e.g. 21,341 is 21341 Rupees, 5,182 is 5182 Rupees). NEVER divide by 100! NEVER output paise or decimals where none exist.
+Return strictly valid JSON matching the schema.`
+        : `Examine this Indian bill, tax invoice, purchase receipt, cash memo, or party account statement image carefully.
 Read all visible text, line items, quantities, rates, amounts, totals, party names, bill numbers, and dates directly from the image.
 Detect documentType: 'bill' for purchase/sale bills or kacchi parchi, or 'statement' for party passbook/ledger sheets.
 CRITICAL RUPEE RULE: All numbers are Indian Rupees (₹). Commas are thousands separators (e.g. 21,341 is 21341 Rupees, 5,182 is 5182 Rupees). NEVER divide amounts by 100 and NEVER insert a decimal point where none exists on paper!
+If this is a statement or ledger sheet, populate the 'transactions' array with all rows, dates, descriptions, and debit/credit amounts.
 Extract all visible fields according to the schema.`;
 
       // Helper to recover from accidental 100x division by LLM on Indian whole rupee amounts
@@ -1229,34 +1251,78 @@ Extract all visible fields according to the schema.`;
                 {
                   role: "user",
                   content: isPdf
-                    ? `Examine this Indian party account statement / passbook / bill document text extracted directly from the uploaded PDF:\n\n${pdfExtractedText || rawOcrText}\n\nDetect documentType: 'statement' for party ledger/passbook transactions, or 'bill' for purchase/sale invoice. Extract partyName, openingBalance, closingBalance, and all transactions (date, details, debit, credit, balance) or items strictly according to the schema.`
+                    ? (isStatementMode
+                        ? `Examine this Indian party account statement / passbook / ledger text extracted directly from the uploaded PDF:\n\n${pdfExtractedText || rawOcrText}\n\nSet documentType: 'statement'. Extract partyName, openingBalance, closingBalance, and all transaction rows into 'transactions' (date, details, debit, credit, balance) strictly according to the schema.`
+                        : `Examine this Indian party account statement / passbook / bill document text extracted directly from the uploaded PDF:\n\n${pdfExtractedText || rawOcrText}\n\nDetect documentType: 'statement' for party ledger/passbook transactions, or 'bill' for purchase/sale invoice. Extract partyName, openingBalance, closingBalance, and all transactions (date, details, debit, credit, balance) or items strictly according to the schema.`)
                     : [
                         { type: "text", text: userPromptText },
-                        { type: "image_url", image_url: { url: fullDataUri } }
+                        { type: "image_url", image_url: { url: fullDataUri, detail: "high" } }
                       ]
                 }
               ],
-              max_tokens: 1500
+              max_tokens: 4000
             },
             {
               headers: { "Authorization": `Bearer ${openAiKey}`, "Content-Type": "application/json" },
-              timeout: 25000
+              timeout: 30000
             }
           );
           const content = openAiRes.data?.choices?.[0]?.message?.content;
           if (content) {
             const parsed = JSON.parse(content);
-            if (parsed.documentType === 'statement' || (Array.isArray(parsed.transactions) && parsed.transactions.length > 0)) {
-              const cleanedTxs = (parsed.transactions || []).map((t, idx) => {
-                let d = parseAmountClean(t.debit ?? t.dr ?? t.naam);
-                let c = parseAmountClean(t.credit ?? t.cr ?? t.jama);
-                let b = parseAmountClean(t.balance ?? t.bal ?? t.shesh ?? t.baki);
-                const gAmt = parseAmountClean(t.amount ?? t.value ?? t.total);
+            const isStatementResult = isStatementMode || parsed.documentType === 'statement' || (Array.isArray(parsed.transactions) && parsed.transactions.length > 0);
+
+            if (isStatementResult) {
+              let rawTxList = Array.isArray(parsed.transactions) && parsed.transactions.length > 0 ? parsed.transactions : [];
+
+              // Fallback: If AI put statement rows in items array instead of transactions
+              if (rawTxList.length === 0 && Array.isArray(parsed.items) && parsed.items.length > 0) {
+                rawTxList = parsed.items.map(it => ({
+                  date: parsed.date || metaFromOcr.billDate || '',
+                  details: it.name || 'खाता प्रविष्टि',
+                  debit: it.total || it.price || 0,
+                  credit: 0,
+                  balance: 0
+                }));
+              }
+
+              const cleanedTxs = rawTxList.map((t, idx) => {
+                let d = parseAmountClean(
+                  t.debit ?? t.dr ?? t.naam ?? t.withdrawal ?? t.withdraw ?? t.paid ?? t.payment ?? t.out ?? t.dr_amount ?? t.debit_amount ?? t.drAmount ?? t.debitAmount
+                );
+                let c = parseAmountClean(
+                  t.credit ?? t.cr ?? t.jama ?? t.deposit ?? t.received ?? t.receipt ?? t.in ?? t.cr_amount ?? t.credit_amount ?? t.crAmount ?? t.creditAmount
+                );
+                let b = parseAmountClean(
+                  t.balance ?? t.bal ?? t.shesh ?? t.baki ?? t.closing_balance ?? t.current_balance
+                );
+                let gAmt = parseAmountClean(
+                  t.amount ?? t.value ?? t.total ?? t.amt ?? t.txn_amount ?? t.txnAmount ?? t.net_amount
+                );
+
+                // Deep scan: If both d and c are 0, inspect any numeric keys on t
+                if (d === 0 && c === 0) {
+                  for (const [key, val] of Object.entries(t)) {
+                    const k = key.toLowerCase();
+                    if (k.includes('date') || k.includes('detail') || k.includes('desc') || k.includes('partic') || k.includes('id') || k.includes('bal')) continue;
+                    const num = parseAmountClean(val);
+                    if (num > 0) {
+                      if (k.includes('cr') || k.includes('cred') || k.includes('jam') || k.includes('dep') || k.includes('rec')) {
+                        c = num;
+                      } else if (k.includes('dr') || k.includes('deb') || k.includes('naam') || k.includes('with') || k.includes('paid')) {
+                        d = num;
+                      } else if (gAmt === 0) {
+                        gAmt = num;
+                      }
+                    }
+                  }
+                }
 
                 if (d === 0 && c === 0 && gAmt > 0) {
-                  const typeStr = String(t.type || t.transactionType || t.crDr || '').toLowerCase();
-                  const detStr = String(t.details || '').toLowerCase();
-                  if (typeStr.includes('cr') || typeStr.includes('credit') || typeStr.includes('jama') || detStr.includes('जमा') || detStr.includes('received') || detStr.includes('मिला') || detStr.includes('cr')) {
+                  const typeStr = String(t.type || t.transactionType || t.crDr || t.mode || t.direction || '').toLowerCase();
+                  const detStr = String(t.details || t.particulars || t.description || '').toLowerCase();
+                  if (typeStr.includes('cr') || typeStr.includes('credit') || typeStr.includes('jama') || typeStr.includes('dep') || typeStr.includes('rec') ||
+                      detStr.includes('जमा') || detStr.includes('received') || detStr.includes('मिला') || detStr.includes('deposit') || detStr.includes('cr')) {
                     c = gAmt;
                   } else {
                     d = gAmt;
@@ -1270,12 +1336,24 @@ Extract all visible fields according to the schema.`;
                 return {
                   id: `tx_${Date.now()}_${idx}`,
                   date: t.date || metaFromOcr.billDate || '',
-                  details: (t.details || 'खाता प्रविष्टि').trim(),
+                  details: (t.details || t.particulars || t.description || 'खाता प्रविष्टि').trim(),
                   debit: d,
                   credit: c,
                   balance: b
                 };
               });
+
+              // If still no transaction rows found, but totalAmount exists, create 1 initial entry
+              if (cleanedTxs.length === 0 && (parsed.totalAmount || parsed.closingBalance)) {
+                cleanedTxs.push({
+                  id: `tx_${Date.now()}_0`,
+                  date: parsed.date || metaFromOcr.billDate || new Date().toISOString().split("T")[0],
+                  details: 'खाता विवरण कुल राशि',
+                  debit: parseAmountClean(parsed.totalAmount || parsed.closingBalance),
+                  credit: 0,
+                  balance: parseAmountClean(parsed.closingBalance)
+                });
+              }
 
               const totalDebit = cleanedTxs.reduce((s, t) => s + (t.debit || 0), 0);
               const totalCredit = cleanedTxs.reduce((s, t) => s + (t.credit || 0), 0);

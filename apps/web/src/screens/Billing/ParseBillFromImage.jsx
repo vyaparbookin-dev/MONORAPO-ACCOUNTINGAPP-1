@@ -32,7 +32,7 @@ export default function ParseBillFromImage() {
 
       setImages(base64List);
       setProgress(50);
-      setStatusText(`🤖 AI Vision (ChatGPT / Gemini) ${files.length} बिलों को पढ़ रहा है...`);
+      setStatusText(`🤖 AI पढ़ रहा है (${files.length} दस्तावेज़)...`);
 
       const openAiKey = localStorage.getItem("OPENAI_API_KEY") || "";
       const geminiKey = localStorage.getItem("GEMINI_API_KEY") || "";

@@ -371,25 +371,96 @@ export const addPaymentEntry = async (req, res) => {
 // Bulk entry from OCR Statement Parser
 export const addBulkPaymentEntry = async (req, res) => {
   try {
-    const { partyId, transactions } = req.body;
+    const { partyId, partyName, partyType, transactions } = req.body;
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID is missing" });
-    if (!partyId) return res.status(400).json({ success: false, message: "पार्टी चुनना आवश्यक है।" });
+    if (!partyId && !partyName) return res.status(400).json({ success: false, message: "पार्टी चुनना आवश्यक है।" });
     if (!Array.isArray(transactions) || transactions.length === 0) {
       return res.status(400).json({ success: false, message: "कोई खाता प्रविष्टि नहीं मिली।" });
     }
 
-    // Resilient party lookup by ObjectId or name
+    // 1. Resilient party lookup across MongoDB & Supabase
     let party = null;
-    if (mongoose.Types.ObjectId.isValid(partyId)) {
+
+    // Check MongoDB by ObjectId
+    if (partyId && mongoose.Types.ObjectId.isValid(partyId)) {
       party = await Party.findOne({ _id: partyId, companyId: req.companyId }) || await Party.findById(partyId);
     }
-    if (!party) {
+
+    // Check Supabase by partyId
+    if (!party && partyId) {
+      try {
+        const sbParty = await getPartyByIdFromSupabase(partyId, req.companyId);
+        if (sbParty) party = sbParty;
+      } catch (sbErr) {
+        console.warn("[addBulkPaymentEntry] Supabase fallback search warning:", sbErr.message);
+      }
+    }
+
+    // Search by name (either partyName passed or partyId passed as name)
+    const searchName = (partyName && partyName.trim()) || (partyId && typeof partyId === 'string' && !mongoose.Types.ObjectId.isValid(partyId) && !partyId.includes('-') ? partyId.trim() : null);
+    if (!party && searchName) {
       party = await Party.findOne({
-        name: new RegExp(`^${partyId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+        name: new RegExp(`^${searchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
         companyId: req.companyId
       });
     }
-    if (!party) return res.status(404).json({ success: false, message: "पार्टी नहीं मिली।" });
+
+    // Search Supabase by name if still not found
+    if (!party && searchName) {
+      try {
+        const { supabase } = await import("../config/supabase.js");
+        if (supabase) {
+          const { data: sbP } = await supabase
+            .from("parties")
+            .select("*")
+            .eq("company_id", req.companyId)
+            .ilike("name", searchName)
+            .maybeSingle();
+          if (sbP) party = sbP;
+        }
+      } catch (sbErr2) {
+        console.warn("[addBulkPaymentEntry] Supabase name search warning:", sbErr2.message);
+      }
+    }
+
+    // If partyId might be string match on id field
+    if (!party && partyId) {
+      party = await Party.findOne({ id: partyId, companyId: req.companyId });
+    }
+
+    // Resolve or create matching MongoDB party so partyId is ALWAYS a valid MongoDB ObjectId
+    let mongoParty = null;
+    if (party && party._id && mongoose.Types.ObjectId.isValid(party._id)) {
+      mongoParty = party;
+    } else if (partyId && mongoose.Types.ObjectId.isValid(partyId)) {
+      mongoParty = await Party.findOne({ _id: partyId, companyId: req.companyId });
+    }
+
+    const effectiveName = (party?.name || searchName || partyName || "").trim();
+    if (!mongoParty && effectiveName) {
+      mongoParty = await Party.findOne({
+        companyId: req.companyId,
+        name: new RegExp(`^${effectiveName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+      });
+    }
+
+    if (!mongoParty && (party || effectiveName)) {
+      // Create matching party in MongoDB to maintain 100% database parity
+      mongoParty = new Party({
+        companyId: req.companyId,
+        name: effectiveName || "अज्ञात पार्टी",
+        mobileNumber: party?.mobile_number || party?.mobileNumber || "0000000000",
+        address: party?.billing_address || party?.address || "Local",
+        partyType: party?.party_type || party?.partyType || partyType || 'customer',
+        openingBalance: Number(party?.opening_balance || party?.openingBalance || 0),
+        currentBalance: Number(party?.current_balance || party?.currentBalance || 0)
+      });
+      await mongoParty.save();
+    }
+
+    if (!mongoParty) {
+      return res.status(404).json({ success: false, message: "पार्टी नहीं मिली।" });
+    }
 
     // Helper to safely parse Indian dates (DD/MM/YYYY, DD-MM-YYYY, etc.)
     const parseSafeDate = (dStr) => {
@@ -397,7 +468,6 @@ export const addBulkPaymentEntry = async (req, res) => {
       if (dStr instanceof Date && !isNaN(dStr.getTime())) return dStr;
       if (typeof dStr === 'string') {
         const trimmed = dStr.trim();
-        // Check DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
         const dmy = trimmed.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
         if (dmy) {
           const day = parseInt(dmy[1], 10);
@@ -413,7 +483,7 @@ export const addBulkPaymentEntry = async (req, res) => {
       return new Date();
     };
 
-    const isSupplier = party.partyType === 'supplier' || party.type === 'supplier';
+    const isSupplier = (mongoParty.partyType === 'supplier' || mongoParty.type === 'supplier' || party?.party_type === 'supplier');
     let netBalanceChange = 0;
 
     const docsToInsert = transactions.map(t => {
@@ -425,7 +495,7 @@ export const addBulkPaymentEntry = async (req, res) => {
         netBalanceChange += (deb - cred);
       }
       return {
-        partyId: party._id,
+        partyId: mongoParty._id,
         companyId: req.companyId,
         date: parseSafeDate(t.date),
         details: (t.details && String(t.details).trim()) || 'खाता प्रविष्टि',
@@ -436,17 +506,25 @@ export const addBulkPaymentEntry = async (req, res) => {
     });
 
     const insertedDocs = await PartyTransaction.insertMany(docsToInsert);
-    party.currentBalance = (Number(party.currentBalance) || 0) + netBalanceChange;
-    party.updatedAt = new Date();
-    await party.save();
+    mongoParty.currentBalance = (Number(mongoParty.currentBalance) || 0) + netBalanceChange;
+    mongoParty.updatedAt = new Date();
+    await mongoParty.save();
 
     // Async sync to Supabase
-    syncPartyToSupabase(party).catch(e => console.warn("[Supabase Sync] Bulk party note:", e.message));
+    const sbPartyUuid = (party && party.id && String(party.id).includes('-')) ? party.id : null;
+    syncPartyToSupabase(mongoParty).catch(e => console.warn("[Supabase Sync] Bulk party note:", e.message));
     insertedDocs.forEach(doc => {
-      syncPartyTxToSupabase(doc).catch(e => console.warn("[Supabase Sync] Bulk tx note:", e.message));
+      syncPartyTxToSupabase(doc, sbPartyUuid).catch(e => console.warn("[Supabase Sync] Bulk tx note:", e.message));
     });
 
-    res.status(201).json({ success: true, message: "Bulk entries recorded successfully", count: insertedDocs.length });
+    res.status(201).json({
+      success: true,
+      message: "Bulk entries recorded successfully",
+      count: insertedDocs.length,
+      partyId: mongoParty._id,
+      partyName: mongoParty.name,
+      currentBalance: mongoParty.currentBalance
+    });
   } catch (error) {
     console.error("[addBulkPaymentEntry] Error:", error);
     res.status(500).json({ success: false, error: error.message, message: error.message });
