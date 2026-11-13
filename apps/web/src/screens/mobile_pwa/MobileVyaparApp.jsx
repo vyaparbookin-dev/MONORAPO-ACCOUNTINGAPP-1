@@ -396,6 +396,7 @@ function MobileVyaparAppContent() {
 
   const cameraInputRef = useRef(null);
   const galleryInputRef = useRef(null);
+  const pdfInputRef = useRef(null);
 
   // Quick Party Modal
   const [showAddPartyModal, setShowAddPartyModal] = useState(false);
@@ -4970,14 +4971,26 @@ function MobileVyaparAppContent() {
 
         // 📜 STATEMENT / PASSBOOK DETECTION & HANDLING
         if (rawBill.documentType === 'statement' || (Array.isArray(rawBill.transactions) && rawBill.transactions.length > 0)) {
+          const cleanAmt = (v) => {
+            if (v === null || v === undefined) return 0;
+            if (typeof v === "number") return isNaN(v) ? 0 : v;
+            const n = parseFloat(String(v).replace(/,/g, "").replace(/[^\d.-]/g, "").trim());
+            return isNaN(n) ? 0 : n;
+          };
+
           const txs = (rawBill.transactions || []).map((t, tIdx) => ({
-            id: `tx_${Date.now()}_${tIdx}`,
+            id: t.id || `tx_${Date.now()}_${tIdx}`,
             date: t.date || new Date().toISOString().split("T")[0],
-            details: t.details || "खाता प्रविष्टि",
-            debit: Number(t.debit) || 0,
-            credit: Number(t.credit) || 0,
-            balance: Number(t.balance) || 0
+            details: (t.details || "खाता प्रविष्टि").trim(),
+            debit: cleanAmt(t.debit),
+            credit: cleanAmt(t.credit),
+            balance: cleanAmt(t.balance)
           }));
+
+          const totalDebit = txs.reduce((s, t) => s + (t.debit || 0), 0);
+          const totalCredit = txs.reduce((s, t) => s + (t.credit || 0), 0);
+          const finalStatementTotal = cleanAmt(rawBill.totalAmount) || totalDebit || totalCredit || 0;
+
           return {
             id: `batch-statement-${Date.now()}-${billIdx}`,
             documentType: 'statement',
@@ -4987,7 +5000,7 @@ function MobileVyaparAppContent() {
             transactions: txs,
             items: [],
             imagePreview: base64List[billIdx] || null,
-            totalAmount: txs.reduce((s, t) => s + (Number(t.debit) || 0), 0),
+            totalAmount: finalStatementTotal,
             needsReview: true,
             reviewReasons: rawBill.reviewReasons || ["खाता स्टेटमेंट (Statement) पहचाना गया।"]
           };
@@ -5111,7 +5124,11 @@ function MobileVyaparAppContent() {
         if (selectedPartyDetail) {
           setStatementPartyId(selectedPartyDetail._id || selectedPartyDetail.id);
         } else if (firstDoc.partyName) {
-          const matchedP = parties.find(p => p.name?.toLowerCase().trim() === firstDoc.partyName?.toLowerCase().trim());
+          const rawSearch = firstDoc.partyName.toLowerCase().replace(/^(m\/s|shri|shree|mr|mrs|sri)\.?\s+/i, '').trim();
+          const matchedP = parties.find(p => {
+            const pName = (p.name || '').toLowerCase().trim();
+            return pName === rawSearch || pName.includes(rawSearch) || rawSearch.includes(pName);
+          });
           if (matchedP) setStatementPartyId(matchedP._id || matchedP.id);
         }
       }
@@ -8059,10 +8076,10 @@ function MobileVyaparAppContent() {
               </button>
             </div>
 
-            {/* Hidden File Inputs: Camera & Gallery */}
+            {/* Hidden File Inputs: Camera, Gallery & PDF */}
             <input 
               type="file" 
-              accept="image/jpeg,image/png,image/webp,image/*" 
+              accept="image/*" 
               capture="environment"
               ref={cameraInputRef}
               onChange={handleProcessBillImages}
@@ -8070,9 +8087,17 @@ function MobileVyaparAppContent() {
             />
             <input 
               type="file" 
-              accept="image/jpeg,image/png,image/webp,image/*,application/pdf,.pdf" 
+              accept="image/*" 
               multiple
               ref={galleryInputRef}
+              onChange={handleProcessBillImages}
+              className="hidden" 
+            />
+            <input 
+              type="file" 
+              accept="application/pdf,.pdf" 
+              multiple
+              ref={pdfInputRef}
               onChange={handleProcessBillImages}
               className="hidden" 
             />
@@ -8084,10 +8109,10 @@ function MobileVyaparAppContent() {
 
               <div>
                 <h4 className="font-extrabold text-xs text-[#065F46]">
-                  {ocrBillType === 'sale' ? 'कागजी पर्ची या हाथ से लिखे बिल की फोटो लें' : 'सप्लायर का पक्का इनवॉइस या बिल अपलोड करें'}
+                  {ocrScannerMode === 'statement' ? 'खाता स्टेटमेंट / पासबुक की फोटो या PDF अपलोड करें' : (ocrBillType === 'sale' ? 'कागजी पर्ची या हाथ से लिखे बिल की फोटो लें' : 'सप्लायर का पक्का इनवॉइस या बिल अपलोड करें')}
                 </h4>
                 <p className="text-[10px] text-slate-500 mt-1">
-                  AI खुद-ब-खुद सामान, मात्रा व रेट पढ़कर आपके 1600+ कैटलॉग से मिला देगा। एक साथ कई फोटो भी चुन सकते हैं!
+                  AI खुद-ब-खुद तारीख, सामान, पार्टी नाम व रकम पहचानकर सेट कर देगा। एक साथ कई फोटो भी चुन सकते हैं!
                 </p>
               </div>
 
@@ -8107,22 +8132,35 @@ function MobileVyaparAppContent() {
                 </div>
               )}
 
-              {/* 2 ACTION BUTTONS: CAMERA & GALLERY (MULTIPLE) */}
+              {/* 3 ACTION BUTTONS: CAMERA, PURE PHOTO GALLERY & PDF */}
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
+                  type="button"
                   onClick={() => cameraInputRef.current?.click()}
                   disabled={ocrLoading}
-                  className="py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
+                  className="py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 transition"
                 >
-                  <Camera size={15} /> 📸 कैमरा खोलें
+                  <Camera size={15} /> 📸 कैमरा से फोटो लें
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => galleryInputRef.current?.click()}
                   disabled={ocrLoading}
-                  className="py-3 bg-gradient-to-r from-[#4338CA] to-[#6366F1] hover:from-[#3730A3] hover:to-[#4F46E5] text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
+                  className="py-3 bg-gradient-to-r from-[#4338CA] to-[#6366F1] hover:from-[#3730A3] hover:to-[#4F46E5] text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 transition"
                 >
-                  <Upload size={15} /> 🖼️ गैलरी (Multiple)
+                  <Upload size={15} /> 🖼️ गैलरी से फोटो चुनें
+                </button>
+              </div>
+
+              <div className="pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => pdfInputRef.current?.click()}
+                  disabled={ocrLoading}
+                  className="w-full py-2.5 bg-white hover:bg-slate-100 text-slate-800 font-extrabold text-xs rounded-xl border border-slate-300 shadow-sm cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 transition"
+                >
+                  <FileText size={14} className="text-rose-600" /> 📄 PDF / फाइल दस्तावेज़ अपलोड करें
                 </button>
               </div>
             </div>

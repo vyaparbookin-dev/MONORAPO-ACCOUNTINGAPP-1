@@ -922,9 +922,21 @@ export const parseBillImage = async (req, res) => {
 
     const openAiKey = req.body?.openaiApiKey || process.env.OPENAI_API_KEY;
 
+    // Helper to robustly clean & parse numeric currency amounts (handles "1,500.00", "₹1,500", "1500/-", "1500 Dr", etc.)
+    const parseAmountClean = (val) => {
+      if (val === null || val === undefined) return 0;
+      if (typeof val === 'number') return isNaN(val) ? 0 : val;
+      if (typeof val === 'string') {
+        const cleaned = val.replace(/,/g, '').replace(/[^\d.-]/g, '').trim();
+        const parsed = parseFloat(cleaned);
+        return isNaN(parsed) ? 0 : parsed;
+      }
+      return 0;
+    };
+
     // STRICT ZERO-HALLUCINATION SYSTEM PROMPT:
     // AI MUST ONLY EXTRACT VALUES LITERALLY READABLE. NO GUESSING, NO PLACEHOLDERS, NO INVENTED PRODUCTS.
-    const promptSystem = `You are a literal, zero-hallucination OCR parser specialized in Indian retail and wholesale bills, tax invoices, and receipts.
+    const promptSystem = `You are a literal, zero-hallucination OCR parser specialized in Indian retail and wholesale bills, tax invoices, party statements, and passbooks.
 CRITICAL ZERO-HALLUCINATION RULES:
 1. ONLY extract values that are LITERALLY VISIBLE and readable in the provided image and grounded in the raw OCR text.
 2. If any field (partyName, invoiceNumber, date, price, quantity, HSN, bank details, carriage/freight) is missing, unclear, blurry, or unreadable, leave it null or empty string ("").
@@ -940,7 +952,17 @@ CRITICAL ZERO-HALLUCINATION RULES:
 9. DOCUMENT CLASSIFICATION:
    - If image is a Single Bill, Purchase Invoice, Sale Bill, Receipt, or Kacchi Parchi: "documentType": "bill".
    - If image is a Party Account Statement, Passbook, Ledger, or Multi-row Transaction Sheet: "documentType": "statement".
-10. Return STRICTLY a valid JSON object without markdown fences:
+10. PARTY STATEMENT & PASSBOOK RULES (When documentType is 'statement'):
+   - PARTY NAME: Check the top header, title line, or account holder field (e.g. 'M/s XYZ', 'श्री ...', 'A/c Name:', 'खाता धारक:', 'Name:', 'Party:'). Extract the party or business name as 'partyName'.
+   - TRANSACTIONS & AMOUNTS: For EVERY transaction row:
+     a) Read the Date, Details/Particulars, and NUMERIC amounts.
+     b) Extract amounts strictly as plain numbers (e.g. 1500 instead of "1,500" or "₹1,500").
+     c) Map columns: Debit (नामे, खर्च, दिया, DR, निकासी), Credit (जमा, आवक, मिला, CR, प्राप्ति), and Balance (शेष, बकाया, BAL).
+     d) If there is a single amount column with transaction context or Dr/Cr indicator, map it to debit (if Dr/sales/given) or credit (if Cr/payment/received).
+     e) NEVER return debit=0 and credit=0 both if an amount is visibly printed on that row!
+   - Extract openingBalance and closingBalance if printed.
+   - Set totalAmount to the sum of debits or credits or closing balance.
+11. Return STRICTLY a valid JSON object without markdown fences:
 {
   "documentType": "bill" | "statement",
   "partyName": string or null,
@@ -1204,20 +1226,45 @@ Extract all visible fields according to the schema.`;
           if (content) {
             const parsed = JSON.parse(content);
             if (parsed.documentType === 'statement' || (Array.isArray(parsed.transactions) && parsed.transactions.length > 0)) {
+              const cleanedTxs = (parsed.transactions || []).map((t, idx) => {
+                let d = parseAmountClean(t.debit ?? t.dr ?? t.naam);
+                let c = parseAmountClean(t.credit ?? t.cr ?? t.jama);
+                let b = parseAmountClean(t.balance ?? t.bal ?? t.shesh ?? t.baki);
+                const gAmt = parseAmountClean(t.amount ?? t.value ?? t.total);
+
+                if (d === 0 && c === 0 && gAmt > 0) {
+                  const typeStr = String(t.type || t.transactionType || t.crDr || '').toLowerCase();
+                  const detStr = String(t.details || '').toLowerCase();
+                  if (typeStr.includes('cr') || typeStr.includes('credit') || typeStr.includes('jama') || detStr.includes('जमा') || detStr.includes('received') || detStr.includes('मिला') || detStr.includes('cr')) {
+                    c = gAmt;
+                  } else {
+                    d = gAmt;
+                  }
+                }
+
+                return {
+                  id: `tx_${Date.now()}_${idx}`,
+                  date: t.date || metaFromOcr.billDate || '',
+                  details: (t.details || 'खाता प्रविष्टि').trim(),
+                  debit: d,
+                  credit: c,
+                  balance: b
+                };
+              });
+
+              const totalDebit = cleanedTxs.reduce((s, t) => s + (t.debit || 0), 0);
+              const totalCredit = cleanedTxs.reduce((s, t) => s + (t.credit || 0), 0);
+              const calcStatementTotal = parsed.totalAmount ? parseAmountClean(parsed.totalAmount) : (totalDebit || totalCredit || parseAmountClean(parsed.closingBalance));
+
               return {
                 success: true,
                 documentType: 'statement',
                 source: 'openai-gpt-4o-mini',
-                partyName: (parsed.partyName || metaFromOcr.partyName || '').trim(),
-                openingBalance: Number(parsed.openingBalance) || 0,
-                closingBalance: Number(parsed.closingBalance) || 0,
-                transactions: (parsed.transactions || []).map(t => ({
-                  date: t.date || metaFromOcr.billDate || '',
-                  details: t.details || 'खाता प्रविष्टि',
-                  debit: Number(t.debit) || 0,
-                  credit: Number(t.credit) || 0,
-                  balance: Number(t.balance) || 0
-                })),
+                partyName: (parsed.partyName || parsed.accountName || parsed.customerName || parsed.supplierName || metaFromOcr.partyName || '').trim(),
+                openingBalance: parseAmountClean(parsed.openingBalance),
+                closingBalance: parseAmountClean(parsed.closingBalance),
+                totalAmount: calcStatementTotal,
+                transactions: cleanedTxs,
                 rawText: rawOcrText || (parsed.rawText || content),
                 needsReview: true,
                 reviewReasons: ['खाता विवरण (Statement) AI द्वारा पढ़ा गया। कृपया जांच कर लेज़र में आयात करें।']
