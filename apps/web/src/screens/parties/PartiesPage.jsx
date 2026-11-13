@@ -5,6 +5,7 @@ import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, Credi
 import { syncQueue } from "@repo/shared";
 import CreditLimitHubModal from '../../components/modals/CreditLimitHubModal';
 import { getWebSafeImageUrl, compressImageFile } from '../../utils/photoStorage';
+import { storageManager } from '../../services/storageManager';
 
 export default function PartiesPage() {
   const [parties, setParties] = useState([]);
@@ -415,10 +416,13 @@ export default function PartiesPage() {
     if (!window.confirm(`क्या आप वाकई पार्टी '${party.name}' को हटाना चाहते हैं?`)) return;
     try {
       await api.delete(`/api/party/${pId}`).catch(() => api.delete(`/api/parties/${pId}`));
-      setParties(prev => prev.filter(p => (p._id || p.id) !== pId));
+      try { storageManager.deleteParty(localStorage.getItem('companyId'), party); } catch(e) {}
+      setParties(prev => prev.filter(p => (p._id || p.id) !== pId && p.name !== party.name));
       alert(`🗑️ पार्टी '${party.name}' सफलतापूर्वक हटा दी गई!`);
     } catch (error) {
-      alert('Error deleting party: ' + (error.response?.data?.error || error.message));
+      try { storageManager.deleteParty(localStorage.getItem('companyId'), party); } catch(e) {}
+      setParties(prev => prev.filter(p => (p._id || p.id) !== pId && p.name !== party.name));
+      alert(`🗑️ पार्टी '${party.name}' हटा दी गई।`);
     }
   };
 

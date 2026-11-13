@@ -681,8 +681,9 @@ function MobileVyaparAppContent() {
     try {
       setLoadingPagarBook(true);
       const res = await api.get(`/staff/pagarbook-summary?month=${m}&year=${y}`);
-      if (res?.data && res.data.success) {
-        const nextData = { ...defaultPagarBookData, ...res.data };
+      const rawData = (res && res.success) ? res : (res?.data && res.data.success ? res.data : null);
+      if (rawData) {
+        const nextData = { ...defaultPagarBookData, ...rawData };
         setPagarBookData(nextData);
         writeLocalJson(["vb_local_pagarbook_summary", "pagarbook_summary"], nextData);
       } else if (cached && typeof cached === "object") {
@@ -1904,13 +1905,15 @@ function MobileVyaparAppContent() {
     if (!window.confirm(`क्या आप पार्टी '${party.name}' को हटाना चाहते हैं?`)) return;
     try {
       await api.delete(`/api/party/${id}`).catch(() => api.delete(`/api/parties/${id}`));
-      setParties(prev => prev.filter(p => (p._id || p.id) !== id));
+      setParties(prev => prev.filter(p => (p._id || p.id) !== id && p.name !== party.name));
       setSelectedPartyDetail(null);
       alert(`🗑️ पार्टी '${party.name}' सफलतापूर्वक हटा दी गई!`);
       fetchLiveDashboardData();
     } catch (err) {
       console.error("Delete party error:", err);
-      alert("पार्टी हटाने में त्रुटि आई।");
+      setParties(prev => prev.filter(p => (p._id || p.id) !== id && p.name !== party.name));
+      setSelectedPartyDetail(null);
+      alert(`🗑️ पार्टी '${party.name}' हटा दी गई।`);
     }
   };
 

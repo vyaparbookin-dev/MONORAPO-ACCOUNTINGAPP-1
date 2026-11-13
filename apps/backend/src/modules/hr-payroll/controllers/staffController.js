@@ -145,51 +145,61 @@ export const autoBackfillStaffExpenses = async (companyId) => {
         });
       }
 
-      if (!existingTx) {
-        let targetStaff = null;
-        if (exp.staffId && staffIdMap.has(exp.staffId.toString())) {
-          targetStaff = staffIdMap.get(exp.staffId.toString());
+      if (existingTx) {
+        const expAmt = Number(exp.amount) || 0;
+        if (expAmt > 0 && (!existingTx.debit || existingTx.debit === 0)) {
+          existingTx.debit = expAmt;
+          existingTx.amount = expAmt;
+          await existingTx.save();
         }
-        if (!targetStaff) {
-          const text = `${exp.title || ''} ${exp.description || ''} ${exp.notes || ''}`.toLowerCase();
-          for (const s of staffMembers) {
-            if (s.name && text.includes(s.name.trim().toLowerCase())) {
-              targetStaff = s;
-              break;
-            }
+        if (!exp.staffTransactionId || String(exp.staffTransactionId) !== String(existingTx._id)) {
+          exp.staffTransactionId = existingTx._id;
+          await exp.save();
+        }
+        continue;
+      }
+
+      let targetStaff = null;
+      if (exp.staffId && staffIdMap.has(exp.staffId.toString())) {
+        targetStaff = staffIdMap.get(exp.staffId.toString());
+      }
+      if (!targetStaff) {
+        const text = `${exp.title || ''} ${exp.description || ''} ${exp.notes || ''}`.toLowerCase();
+        for (const s of staffMembers) {
+          if (s.name && text.includes(s.name.trim().toLowerCase())) {
+            targetStaff = s;
+            break;
           }
         }
-        if (!targetStaff && staffMembers.length === 1) {
-          targetStaff = staffMembers[0];
-        }
+      }
+      if (!targetStaff && staffMembers.length === 1) {
+        targetStaff = staffMembers[0];
+      }
 
-        if (targetStaff) {
-          const amt = Number(exp.amount) || 0;
-          if (amt > 0) {
-            const stTx = await StaffTransaction.create({
-              staffId: targetStaff._id,
-              companyId,
-              type: 'advance',
-              date: exp.date ? new Date(exp.date) : (exp.createdAt ? new Date(exp.createdAt) : new Date()),
-              debit: amt,
-              amount: amt,
-              credit: 0,
-              paymentMode: exp.paymentMode || 'cash',
-              notes: (exp.description || exp.title || `दुकान खर्च से बैकफिल्ड स्टाफ भुगतान: ${targetStaff.name}`).trim(),
-              expenseId: exp._id,
-              referenceExpenseId: exp._id
-            });
-            exp.staffTransactionId = stTx._id;
-            exp.staffId = targetStaff._id;
-            await exp.save();
+      if (targetStaff) {
+        const amt = Number(exp.amount) || 0;
+        if (amt > 0) {
+          const expDate = exp.date ? new Date(exp.date) : (exp.createdAt ? new Date(exp.createdAt) : new Date());
+          const forMonthStr = `${expDate.getFullYear()}-${String(expDate.getMonth() + 1).padStart(2, '0')}`;
+          const stTx = await StaffTransaction.create({
+            staffId: targetStaff._id,
+            companyId,
+            type: 'advance',
+            date: expDate,
+            forMonth: forMonthStr,
+            debit: amt,
+            amount: amt,
+            credit: 0,
+            paymentMode: exp.paymentMode || 'cash',
+            notes: (exp.description || exp.title || `दुकान खर्च से बैकफिल्ड स्टाफ भुगतान: ${targetStaff.name}`).trim(),
+            expenseId: exp._id,
+            referenceExpenseId: exp._id
+          });
+          exp.staffTransactionId = stTx._id;
+          exp.staffId = targetStaff._id;
+          await exp.save();
 
-            targetStaff.balance = (Number(targetStaff.balance) || 0) - amt;
-            targetStaff.updatedAt = new Date();
-            await targetStaff.save();
-
-            syncStaffTxToSupabase(stTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
-            syncStaffToSupabase(targetStaff).catch(e => console.warn("[Supabase Dual-Write] Staff sync note:", e.message));
-          }
+          syncStaffTxToSupabase(stTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
         }
       }
     }
@@ -397,12 +407,17 @@ export const getPagarBookSummary = async (req, res) => {
             }, 0);
 
           const pmNetDue = (pmEarned + pmCredits) - pmDebits;
-          // If month was settled or paid down, previous balance resets to NIL (0)
+          // If month was settled or paid down, previous balance resets to NIL (0) unless overpaid
           const isPmSettled = pmTx.some(t => t.type === 'salary_settlement' || t.salarySettlement) || pmNetDue <= 0;
           if (isPmSettled) {
-            cumulativePreviousDue = 0;
+            // If staff took excess advances / was overpaid in prior month, carry forward the advance balance
+            if (pmNetDue < 0) {
+              cumulativePreviousDue = cumulativePreviousDue + pmNetDue;
+            } else {
+              cumulativePreviousDue = 0;
+            }
           } else {
-            cumulativePreviousDue = Math.max(0, cumulativePreviousDue + pmNetDue);
+            cumulativePreviousDue = cumulativePreviousDue + pmNetDue;
           }
         }
 

@@ -1730,42 +1730,66 @@ export const deleteParty = async (req, res) => {
     }
 
     const { id } = req.params;
-    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
+    const isMongoId = mongoose.Types.ObjectId.isValid(id) && /^[0-9a-fA-F]{24}$/.test(id);
 
-    let party = null;
+    // 1. Find party in MongoDB (by _id, id string, or name)
+    let mongoParty = null;
     if (isMongoId) {
-      party = await Party.findOne({ _id: id, companyId: req.companyId });
-    } else {
-      party = await getPartyByIdFromSupabase(id, req.companyId);
+      mongoParty = await Party.findOne({ _id: id, companyId: req.companyId }) || await Party.findById(id);
     }
-    if (!party) return res.status(404).json({ success: false, error: "Party not found" });
-
-    // Check if the party has any bills or transactions
-    let txCount = 0;
-    let billCount = 0;
-    if (isMongoId) {
-      txCount = await PartyTransaction.countDocuments({ partyId: id, isDeleted: { $ne: true } });
-      billCount = await Bill.countDocuments({ partyId: id, isDeleted: { $ne: true } });
+    if (!mongoParty) {
+      mongoParty = await Party.findOne({ companyId: req.companyId, $or: [{ id: id }, { name: id }] });
     }
 
-    if (isMongoId) {
+    // 2. Find party in Supabase
+    let sbParty = null;
+    try {
+      sbParty = await getPartyByIdFromSupabase(id, req.companyId);
+    } catch (e) {}
+
+    // Match counterpart across DBs if one was found
+    if (!mongoParty && sbParty?.name) {
+      mongoParty = await Party.findOne({ companyId: req.companyId, name: sbParty.name });
+    }
+
+    const partyName = mongoParty?.name || sbParty?.name || id;
+
+    // 3. Delete or deactivate in MongoDB
+    if (mongoParty) {
+      const mId = mongoParty._id;
+      const txCount = await PartyTransaction.countDocuments({ partyId: mId, isDeleted: { $ne: true } });
+      const billCount = await Bill.countDocuments({ partyId: mId, isDeleted: { $ne: true } });
+
       if (txCount === 0 && billCount === 0) {
-        await Party.deleteOne({ _id: id, companyId: req.companyId });
+        await Party.deleteOne({ _id: mId });
       } else {
-        party.isActive = false;
-        party.mobileNumber = `${party.mobileNumber}_del_${Date.now()}`;
-        await party.save();
+        mongoParty.isActive = false;
+        mongoParty.mobileNumber = `${mongoParty.mobileNumber}_del_${Date.now()}`;
+        await mongoParty.save();
         await PartyTransaction.updateMany(
-          { partyId: id, companyId: req.companyId },
+          { partyId: mId, companyId: req.companyId },
           { $set: { isDeleted: true } }
         );
       }
     }
 
-    // Always deactivate in Supabase
-    syncPartyDeleteToSupabase(id).catch(e => console.warn("[Supabase Sync] deleteParty sync note:", e.message));
+    // 4. Delete or deactivate in Supabase
+    try {
+      const sbId = sbParty?.id || (mongoParty ? mongoIdToUuid(mongoParty._id) : (isMongoId ? mongoIdToUuid(id) : id));
+      if (supabase && sbId) {
+        const { error: delErr } = await supabase.from("parties").delete().eq("id", sbId);
+        if (delErr) {
+          await supabase.from("parties").update({
+            is_active: false,
+            updated_at: new Date().toISOString()
+          }).eq("id", sbId);
+        }
+      }
+    } catch (sbDelErr) {
+      console.warn("[Supabase Sync] deleteParty error:", sbDelErr.message);
+    }
 
-    res.json({ success: true, message: "पार्टी सफलतापूर्वक हटा दी गई!" });
+    res.json({ success: true, message: `पार्टी '${partyName}' सफलतापूर्वक हटा दी गई!` });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

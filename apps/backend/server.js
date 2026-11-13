@@ -313,53 +313,70 @@ const startServer = () => {
         for (const exp of staffExpenses) {
           const existingTx = await StaffTransaction.findOne({
             $or: [
+              ...(exp.staffTransactionId ? [{ _id: exp.staffTransactionId }] : []),
               { expenseId: exp._id },
               { referenceExpenseId: exp._id }
             ],
             isDeleted: { $ne: true }
           });
-          if (!existingTx) {
-            let staffDoc = exp.staffId ? await Staff.findById(exp.staffId) : null;
-            if (!staffDoc) {
-              const text = `${exp.title || ''} ${exp.description || ''} ${exp.notes || ''}`.toLowerCase();
-              for (const s of allActiveStaff) {
-                if (s.name && text.includes(s.name.trim().toLowerCase())) {
-                  staffDoc = s;
-                  break;
-                }
-              }
-              if (!staffDoc && allActiveStaff.length === 1) {
-                staffDoc = allActiveStaff[0];
+          if (existingTx) {
+            const expAmt = Number(exp.amount || 0);
+            if (expAmt > 0 && (!existingTx.debit || existingTx.debit === 0)) {
+              existingTx.debit = expAmt;
+              existingTx.amount = expAmt;
+              await existingTx.save();
+            }
+            if (!exp.staffTransactionId || String(exp.staffTransactionId) !== String(existingTx._id)) {
+              exp.staffTransactionId = existingTx._id;
+              await exp.save();
+            }
+            continue;
+          }
+
+          let staffDoc = exp.staffId ? await Staff.findById(exp.staffId) : null;
+          if (!staffDoc) {
+            const text = `${exp.title || ''} ${exp.description || ''} ${exp.notes || ''}`.toLowerCase();
+            for (const s of allActiveStaff) {
+              if (s.name && text.includes(s.name.trim().toLowerCase())) {
+                staffDoc = s;
+                break;
               }
             }
+            if (!staffDoc && allActiveStaff.length === 1) {
+              staffDoc = allActiveStaff[0];
+            }
+          }
 
-            const resolvedCompanyId = exp.companyId || staffDoc?.companyId;
-            if (staffDoc && resolvedCompanyId) {
-              const amt = Number(exp.amount || 0);
-              if (amt > 0) {
-                const newStTx = await StaffTransaction.create({
-                  companyId: resolvedCompanyId,
-                  staffId: staffDoc._id,
-                  type: "advance",
-                  debit: amt,
-                  amount: amt,
-                  credit: 0,
-                  paymentMode: exp.paymentMode || "cash",
-                  notes: (exp.description || exp.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim(),
-                  date: exp.date || exp.createdAt || new Date(),
-                  expenseId: exp._id,
-                  referenceExpenseId: exp._id
-                });
-                exp.staffId = staffDoc._id;
-                exp.staffTransactionId = newStTx._id;
-                await exp.save();
+          const resolvedCompanyId = exp.companyId || staffDoc?.companyId;
+          if (staffDoc && resolvedCompanyId) {
+            const amt = Number(exp.amount || 0);
+            if (amt > 0) {
+              const expDate = exp.date ? new Date(exp.date) : (exp.createdAt ? new Date(exp.createdAt) : new Date());
+              const forMonthStr = `${expDate.getFullYear()}-${String(expDate.getMonth() + 1).padStart(2, '0')}`;
+              const newStTx = await StaffTransaction.create({
+                companyId: resolvedCompanyId,
+                staffId: staffDoc._id,
+                type: "advance",
+                debit: amt,
+                amount: amt,
+                credit: 0,
+                forMonth: forMonthStr,
+                paymentMode: exp.paymentMode || "cash",
+                notes: (exp.description || exp.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim(),
+                date: expDate,
+                expenseId: exp._id,
+                referenceExpenseId: exp._id
+              });
+              exp.staffId = staffDoc._id;
+              exp.staffTransactionId = newStTx._id;
+              await exp.save();
 
-                staffDoc.balance = (Number(staffDoc.balance) || 0) - amt;
-                staffDoc.updatedAt = new Date();
-                await staffDoc.save();
+              try {
+                const { syncStaffTxToSupabase } = await import("./src/services/supabaseSyncService.js");
+                syncStaffTxToSupabase(newStTx).catch(() => {});
+              } catch (e) {}
 
-                console.log(`✅ Synced missing staff advance transaction for staff: ${staffDoc.name} (Amount: ${amt})`);
-              }
+              console.log(`✅ Synced missing staff advance transaction for staff: ${staffDoc.name} (Amount: ${amt})`);
             }
           }
         }

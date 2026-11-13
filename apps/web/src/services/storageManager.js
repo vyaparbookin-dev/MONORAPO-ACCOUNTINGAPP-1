@@ -163,6 +163,29 @@ class StorageManager {
     return norm;
   }
 
+  deleteParty(companyId, partyIdOrParty) {
+    if (typeof localStorage === "undefined") return [];
+    const cid = String(companyId || localStorage.getItem("companyId") || "default").trim();
+    const targetId = typeof partyIdOrParty === 'object' ? String(partyIdOrParty?._id || partyIdOrParty?.id || '').trim() : String(partyIdOrParty || '').trim();
+    const targetName = typeof partyIdOrParty === 'object' ? String(partyIdOrParty?.name || partyIdOrParty?.partyName || '').trim().toLowerCase() : '';
+    const targetPhone = typeof partyIdOrParty === 'object' ? String(partyIdOrParty?.phone || partyIdOrParty?.mobileNumber || '').replace(/\D/g, '').slice(-10) : '';
+
+    const current = this.getParties(cid);
+    const filtered = current.filter(p => {
+      const pId = String(p._id || p.id || '').trim();
+      const pName = String(p.name || p.partyName || '').trim().toLowerCase();
+      const pPhone = String(p.phone || p.mobileNumber || '').replace(/\D/g, '').slice(-10);
+
+      if (targetId && pId && targetId === pId) return false;
+      if (targetName && pName && targetName === pName) return false;
+      if (targetPhone && pPhone && targetPhone.length === 10 && targetPhone === pPhone && targetPhone !== "9999999999") return false;
+      return true;
+    });
+
+    this.saveParties(cid, filtered);
+    return filtered;
+  }
+
   mergeParties(companyId, serverParties = []) {
     const localParties = this.getParties(companyId);
     const partyList = [];
