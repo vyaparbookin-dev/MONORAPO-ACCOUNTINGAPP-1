@@ -1000,23 +1000,53 @@ CRITICAL ZERO-HALLUCINATION RULES:
 
     const parseSingleImage = async (b64) => {
       let mimeType = "image/jpeg";
-      let pureB64 = b64;
+      let pureB64 = "";
+
       if (typeof b64 === "string" && (b64.startsWith("http://") || b64.startsWith("https://"))) {
         try {
           const downloadRes = await axios.get(b64, { responseType: "arraybuffer", timeout: 20000 });
           const contentType = downloadRes.headers["content-type"] || "image/jpeg";
-          mimeType = contentType.split(";")[0].trim();
+          mimeType = contentType.split(";")[0].trim().toLowerCase();
           pureB64 = Buffer.from(downloadRes.data).toString("base64");
         } catch (dlErr) {
           console.warn("[parseBillImage] Failed to download image from URL:", dlErr.message);
         }
       } else if (typeof b64 === "string") {
-        const match = b64.match(/^data:([a-zA-Z0-9.+/-]+);base64,(.+)$/);
-        if (match) {
-          mimeType = match[1];
-          pureB64 = match[2];
+        let cleanStr = b64.trim();
+        const base64Index = cleanStr.indexOf("base64,");
+        if (base64Index !== -1) {
+          const prefix = cleanStr.substring(0, base64Index);
+          pureB64 = cleanStr.substring(base64Index + 7).replace(/\s+/g, "");
+          const mimeMatch = prefix.match(/data:([a-zA-Z0-9.+/-]+)/i);
+          if (mimeMatch) {
+            mimeType = mimeMatch[1].trim().toLowerCase();
+          }
+        } else {
+          pureB64 = cleanStr.replace(/\s+/g, "");
         }
       }
+
+      // Auto-detect exact mimeType from image magic bytes
+      if (pureB64 && pureB64.length > 20) {
+        try {
+          const headerBuffer = Buffer.from(pureB64.slice(0, 48), "base64");
+          if (headerBuffer.length >= 3 && headerBuffer[0] === 0xFF && headerBuffer[1] === 0xD8 && headerBuffer[2] === 0xFF) {
+            mimeType = "image/jpeg";
+          } else if (headerBuffer.length >= 4 && headerBuffer[0] === 0x89 && headerBuffer[1] === 0x50 && headerBuffer[2] === 0x4E && headerBuffer[3] === 0x47) {
+            mimeType = "image/png";
+          } else if (headerBuffer.length >= 4 && headerBuffer[0] === 0x47 && headerBuffer[1] === 0x49 && headerBuffer[2] === 0x46) {
+            mimeType = "image/gif";
+          } else if (headerBuffer.length >= 12 && headerBuffer.toString("ascii", 0, 4) === "RIFF" && headerBuffer.toString("ascii", 8, 12) === "WEBP") {
+            mimeType = "image/webp";
+          }
+        } catch (bufErr) {}
+      }
+
+      // Ensure valid standard MIME format for OpenAI & Gemini Vision models
+      if (mimeType === "image/jpg" || mimeType === "image/pjpeg" || !["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mimeType)) {
+        mimeType = "image/jpeg";
+      }
+
       const fullDataUri = `data:${mimeType};base64,${pureB64}`;
 
       // -------------------------------------------------------------
@@ -1184,8 +1214,8 @@ Extract all visible fields according to the schema.`;
           }
         } catch (oErr) {
           const openAiErrMsg = oErr.response?.data?.error?.message || oErr.message;
-          console.warn("[parseBillImage] OpenAI GPT-4o-mini error:", openAiErrMsg);
-          throw new Error("OpenAI ChatGPT-4o-mini त्रुटि: " + openAiErrMsg);
+          console.warn("[parseBillImage] OpenAI GPT-4o-mini warning (cascading to Gemini/fallback):", openAiErrMsg);
+          // Gracefully cascade to Google Gemini or Step 3 instead of crashing the batch
         }
       }
 
@@ -1297,6 +1327,9 @@ Extract all visible fields according to the schema.`;
           const filepath = path.join(tmpDir, `ocr_fallback_${Date.now()}_${Math.random().toString(36).slice(2, 6)}${ext}`);
           fs.writeFileSync(filepath, buffer);
           const worker = await createWorker("eng");
+          if (worker && typeof worker.on === "function") {
+            worker.on("error", (wErr) => console.warn("[Safe OCR Worker error]:", wErr?.message || wErr));
+          }
           const { data: { text } } = await worker.recognize(filepath);
           await worker.terminate();
           try { fs.unlinkSync(filepath); } catch (e) {}
