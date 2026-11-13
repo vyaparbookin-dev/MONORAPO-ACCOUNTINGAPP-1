@@ -10,6 +10,8 @@ import Company from "../model/company.js"; // Import Company model
 import path from "path";
 import os from "os";
 import { createWorker } from "tesseract.js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { parseStatementRows } from "../bill-scanner/ocrExtractor.js";
 import { syncPartyTxToSupabase, syncPartyToSupabase } from "../services/supabaseSyncService.js";
 import { getPartyByIdFromSupabase } from "../services/supabaseReadService.js";
 
@@ -55,41 +57,102 @@ export const parseStatementImage = async (req, res) => {
     const b64 = req.body?.image;
     if (!b64) return res.status(400).json({ success: false, error: "No image provided" });
 
-    const match = b64.match(/^data:(image\/.+);base64,(.+)$/);
-    const dataPart = match ? match[2] : b64;
-    const buffer = Buffer.from(dataPart, "base64");
+    const openAiKey = req.body?.openaiApiKey || process.env.OPENAI_API_KEY;
+    const geminiKey = req.body?.geminiApiKey || process.env.GEMINI_API_KEY;
 
+    let mimeType = "image/png";
+    let dataPart = b64;
+    const match = b64.match(/^data:(image\/[a-zA-Z0-9.+/-]+);base64,(.+)$/);
+    if (match) {
+      mimeType = match[1];
+      dataPart = match[2];
+    }
+
+    // 1. Try Gemini Vision for Multimodal Statement Parsing
+    if (geminiKey) {
+      const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-8b", "gemini-1.5-pro"];
+      const genAI = new GoogleGenerativeAI(geminiKey);
+      const statementPrompt = `You are an expert Indian accounting ledger and party statement parser.
+Read this statement/passbook/khata image carefully.
+Extract the party name, and all transaction rows.
+For each transaction row:
+- date: formatted as YYYY-MM-DD or DD/MM/YYYY
+- details: particulars / bill no / payment method / narration
+- debit: amount in debit/Dr column (goods purchased or payment given) as a number, or 0
+- credit: amount in credit/Cr column (goods returned or payment received/jama) as a number, or 0
+- balance: running balance amount as a number, or 0
+
+Return strictly valid JSON without markdown fences:
+{
+  "partyName": string or null,
+  "openingBalance": number or null,
+  "closingBalance": number or null,
+  "transactions": [
+    { "date": "YYYY-MM-DD", "details": string, "debit": number, "credit": number, "balance": number }
+  ]
+}`;
+
+      for (const modelName of candidateModels) {
+        try {
+          const model = genAI.getGenerativeModel({ model: modelName });
+          const imagePart = { inlineData: { data: dataPart, mimeType } };
+          const result = await model.generateContent([statementPrompt, imagePart]);
+          const respText = result.response.text();
+          const cleanJson = respText.replace(/```json/gi, "").replace(/```/g, "").trim();
+          const parsed = JSON.parse(cleanJson);
+
+          if (parsed && Array.isArray(parsed.transactions) && parsed.transactions.length > 0) {
+            return res.json({
+              success: true,
+              source: `ai-vision-${modelName}`,
+              partyName: (parsed.partyName || "").trim(),
+              openingBalance: parsed.openingBalance || 0,
+              closingBalance: parsed.closingBalance || 0,
+              parsedTransactions: parsed.transactions.map(t => ({
+                date: t.date || new Date().toISOString().split("T")[0],
+                details: t.details || "खाता प्रविष्टि",
+                debit: Number(t.debit) || 0,
+                credit: Number(t.credit) || 0,
+                balance: Number(t.balance) || 0
+              })),
+              text: respText
+            });
+          }
+        } catch (gErr) {
+          console.warn(`[parseStatementImage] Gemini ${modelName} note:`, gErr.message);
+        }
+      }
+    }
+
+    // 2. System Engine Fallback with Tesseract v5 & Smart Statement Parser
+    const buffer = Buffer.from(dataPart, "base64");
     const tmpDir = os.tmpdir();
     const filepath = path.join(tmpDir, `statement_${Date.now()}.png`);
     fs.writeFileSync(filepath, buffer);
 
-    const worker = createWorker();
-    await worker.load();
-    await worker.loadLanguage("eng");
-    await worker.initialize("eng");
-    const { data: { text } } = await worker.recognize(filepath);
-    await worker.terminate();
-
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    const parsedTransactions = [];
-    
-    for (const line of lines) {
-      const dateMatch = line.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/);
-      const nums = line.match(/\d+[.,]?\d*/g) || [];
-      
-      if (dateMatch && nums.length >= 1) {
-        const date = dateMatch[0];
-        const amount = parseFloat(nums[nums.length - 1].replace(/,/g, "")) || 0;
-        const details = line.replace(date, "").replace(nums[nums.length - 1], "").trim() || "Parsed Entry";
-        
-        // Hum by default ise Udhar (debit) me daalenge. User app me review karke theek kar sakta hai.
-        parsedTransactions.push({ date, details, debit: amount, credit: 0 });
-      }
+    let text = "";
+    try {
+      const worker = await createWorker("eng");
+      const result = await worker.recognize(filepath);
+      await worker.terminate();
+      text = result?.data?.text || "";
+    } catch (tessErr) {
+      console.warn("[parseStatementImage] Tesseract note:", tessErr.message);
+    } finally {
+      try { fs.unlinkSync(filepath); } catch (e) {}
     }
 
-    try { fs.unlinkSync(filepath); } catch (e) {}
-    return res.json({ success: true, text, parsedTransactions });
+    const parsedTransactions = parseStatementRows(text);
+
+    return res.json({
+      success: true,
+      source: "system-engine",
+      partyName: "",
+      text,
+      parsedTransactions
+    });
   } catch (error) {
+    console.error("[parseStatementImage] error:", error);
     return res.status(500).json({ success: false, error: error.message });
   }
 };

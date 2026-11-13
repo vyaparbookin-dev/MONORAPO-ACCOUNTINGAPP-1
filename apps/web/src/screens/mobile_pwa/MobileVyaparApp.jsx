@@ -388,6 +388,8 @@ function MobileVyaparAppContent() {
   
   // Multi-Bill Batch Review Modal State
   const [showScannedReviewModal, setShowScannedReviewModal] = useState(false);
+  const [statementPartyId, setStatementPartyId] = useState("");
+  const [savingStatement, setSavingStatement] = useState(false);
   const [scannedBillsBatch, setScannedBillsBatch] = useState([]); // Array of bills: [{ id, partyName, partyPhone, billType, paymentMode, items: [], imagePreview, totalAmount }]
   const [activeScannedIndex, setActiveScannedIndex] = useState(0);
   const [savingScannedBill, setSavingScannedBill] = useState(false);
@@ -4075,6 +4077,12 @@ function MobileVyaparAppContent() {
   };
 
   const handleVendorAiScanBill = async (e) => {
+    setOcrBillType('purchase');
+    setShowOcrModal(false);
+    handleProcessBillImages(e);
+  };
+
+  const handleVendorAiScanBillLegacy = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsAiScanningBill(true);
@@ -4937,7 +4945,7 @@ function MobileVyaparAppContent() {
       let rawResults = [];
       if (responseData?.batch && Array.isArray(responseData.bills)) {
         rawResults = responseData.bills;
-      } else if ((responseData?.success || res?.success) && (responseData?.parsedItems || res?.parsedItems)) {
+      } else if (responseData?.success || res?.success || responseData?.parsedItems || res?.parsedItems || responseData?.transactions || res?.transactions) {
         rawResults = [responseData || res];
       } else {
         // STRICT ZERO-GUESSING: If scan failed or unreadable, NEVER generate fake items or dummy party!
@@ -4959,6 +4967,33 @@ function MobileVyaparAppContent() {
 
       // Process each bill with STRICT Zero-Hallucination & Exact/Alias Matching ONLY
       const processedBatch = rawResults.map((rawBill, billIdx) => {
+        const detectedParty = (rawBill.partyName || "").trim();
+
+        // 📜 STATEMENT / PASSBOOK DETECTION & HANDLING
+        if (rawBill.documentType === 'statement' || (Array.isArray(rawBill.transactions) && rawBill.transactions.length > 0)) {
+          const txs = (rawBill.transactions || []).map((t, tIdx) => ({
+            id: `tx_${Date.now()}_${tIdx}`,
+            date: t.date || new Date().toISOString().split("T")[0],
+            details: t.details || "खाता प्रविष्टि",
+            debit: Number(t.debit) || 0,
+            credit: Number(t.credit) || 0,
+            balance: Number(t.balance) || 0
+          }));
+          return {
+            id: `batch-statement-${Date.now()}-${billIdx}`,
+            documentType: 'statement',
+            partyName: detectedParty,
+            partyPhone: "",
+            billDate: rawBill.billDate || new Date().toISOString().split("T")[0],
+            transactions: txs,
+            items: [],
+            imagePreview: base64List[billIdx] || null,
+            totalAmount: txs.reduce((s, t) => s + (Number(t.debit) || 0), 0),
+            needsReview: true,
+            reviewReasons: rawBill.reviewReasons || ["खाता स्टेटमेंट (Statement) पहचाना गया।"]
+          };
+        }
+
         const extractedItems = rawBill.parsedItems || [];
         const processedItems = extractedItems.map((it, itemIdx) => {
           const rawName = (it.name || '').trim();
@@ -5016,7 +5051,6 @@ function MobileVyaparAppContent() {
         });
 
         // STRICT: Never fabricate "कच्ची पर्ची ग्राहक" or "सप्लायर" - leave empty if not on bill!
-        const detectedParty = (rawBill.partyName || "").trim();
         const charges = rawBill.additionalCharges || [];
         const chargesTotal = charges.reduce((s, c) => s + (Number(c.amount) || 0), 0);
         const roundOffVal = Number(rawBill.roundOff || 0);
@@ -5072,6 +5106,16 @@ function MobileVyaparAppContent() {
       setOcrProgress(100);
       setShowOcrModal(false);
       setShowScannedReviewModal(true);
+
+      const firstDoc = processedBatch[0];
+      if (firstDoc?.documentType === 'statement') {
+        if (selectedPartyDetail) {
+          setStatementPartyId(selectedPartyDetail._id || selectedPartyDetail.id);
+        } else if (firstDoc.partyName) {
+          const matchedP = parties.find(p => p.name?.toLowerCase().trim() === firstDoc.partyName?.toLowerCase().trim());
+          if (matchedP) setStatementPartyId(matchedP._id || matchedP.id);
+        }
+      }
 
     } catch (err) {
       console.error("Batch OCR error:", err);
@@ -5144,6 +5188,78 @@ function MobileVyaparAppContent() {
     currentBill.items = [...currentBill.items, newItem];
     updated[activeScannedIndex] = currentBill;
     setScannedBillsBatch(updated);
+  };
+
+  const handleUpdateStatementTx = (txIdx, field, value) => {
+    const updated = [...scannedBillsBatch];
+    const currentDoc = { ...updated[activeScannedIndex] };
+    const txs = [...(currentDoc.transactions || [])];
+    if (!txs[txIdx]) return;
+    txs[txIdx] = {
+      ...txs[txIdx],
+      [field]: (field === 'debit' || field === 'credit' || field === 'balance') ? (parseFloat(value) || 0) : value
+    };
+    currentDoc.transactions = txs;
+    currentDoc.totalAmount = txs.reduce((s, t) => s + (Number(t.debit) || 0), 0);
+    updated[activeScannedIndex] = currentDoc;
+    setScannedBillsBatch(updated);
+  };
+
+  const handleRemoveStatementTx = (txIdx) => {
+    const updated = [...scannedBillsBatch];
+    const currentDoc = { ...updated[activeScannedIndex] };
+    currentDoc.transactions = (currentDoc.transactions || []).filter((_, idx) => idx !== txIdx);
+    currentDoc.totalAmount = currentDoc.transactions.reduce((s, t) => s + (Number(t.debit) || 0), 0);
+    updated[activeScannedIndex] = currentDoc;
+    setScannedBillsBatch(updated);
+  };
+
+  const handleAddStatementTx = () => {
+    const updated = [...scannedBillsBatch];
+    const currentDoc = { ...updated[activeScannedIndex] };
+    const newTx = {
+      id: `tx_${Date.now()}_new`,
+      date: new Date().toISOString().split("T")[0],
+      details: "नई प्रविष्टि",
+      debit: 0,
+      credit: 0,
+      balance: 0
+    };
+    currentDoc.transactions = [...(currentDoc.transactions || []), newTx];
+    updated[activeScannedIndex] = currentDoc;
+    setScannedBillsBatch(updated);
+  };
+
+  const handleImportStatementToLedger = async () => {
+    const currentDoc = scannedBillsBatch[activeScannedIndex];
+    if (!currentDoc || !currentDoc.transactions || currentDoc.transactions.length === 0) {
+      alert("स्टेटमेंट में कोई प्रविष्टि नहीं है।");
+      return;
+    }
+    const pId = statementPartyId || selectedPartyDetail?._id || selectedPartyDetail?.id;
+    if (!pId) {
+      alert("कृपया वह पार्टी चुनें जिसके खाते में यह स्टेटमेंट दर्ज करना है!");
+      return;
+    }
+
+    setSavingStatement(true);
+    try {
+      await api.post('/api/payment/bulk-entry', {
+        partyId: pId,
+        transactions: currentDoc.transactions
+      });
+      alert(`🎉 ${currentDoc.transactions.length} खाता प्रविष्टियां सफलतापूर्वक पार्टी लेज़र में दर्ज हो गईं!`);
+      setShowScannedReviewModal(false);
+      if (selectedPartyDetail && (selectedPartyDetail._id === pId || selectedPartyDetail.id === pId)) {
+        if (typeof loadPartyStatement === 'function') loadPartyStatement(selectedPartyDetail);
+      }
+      fetchParties();
+    } catch (err) {
+      console.error("Bulk entry save error:", err);
+      alert("स्टेटमेंट दर्ज करने में त्रुटि: " + (err.response?.data?.message || err.message));
+    } finally {
+      setSavingStatement(false);
+    }
   };
 
   // Merge All Bills of Same Party into 1 Single Master Bill
@@ -7879,29 +7995,40 @@ function MobileVyaparAppContent() {
               </div>
             </div>
 
-            {/* Scanner Mode Selector: Printed Computer Bill vs Handwritten Kacchi Parchi */}
-            <div className="bg-slate-100 p-1 rounded-2xl flex text-xs font-black">
+            {/* Scanner Mode Selector: Auto-Detect vs Printed vs Handwritten vs Statement */}
+            <div className="bg-slate-100 p-1 rounded-2xl grid grid-cols-3 gap-1 text-[11px] font-black">
               <button
                 type="button"
                 onClick={() => setOcrScannerMode('printed')}
-                className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                className={`py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1 ${
                   ocrScannerMode === 'printed'
                     ? 'bg-indigo-600 text-white shadow-sm'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <span>🧾 कंप्यूटर / पक्का बिल (Printed / PDF)</span>
+                <span>🧾 पक्का बिल</span>
               </button>
               <button
                 type="button"
                 onClick={() => setOcrScannerMode('handwritten')}
-                className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                className={`py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1 ${
                   ocrScannerMode === 'handwritten'
                     ? 'bg-amber-600 text-white shadow-sm'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <span>✍️ हाथ की कच्ची पर्ची (Handwritten)</span>
+                <span>✍️ कच्ची पर्ची</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setOcrScannerMode('statement')}
+                className={`py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1 ${
+                  ocrScannerMode === 'statement'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>📜 खाता स्टेटमेंट</span>
               </button>
             </div>
 
@@ -8047,8 +8174,145 @@ function MobileVyaparAppContent() {
               </div>
             )}
 
-            {/* ACTIVE BILL EDIT FORM */}
+            {/* ACTIVE BILL / STATEMENT EDIT FORM */}
             {scannedBillsBatch[activeScannedIndex] && (
+              scannedBillsBatch[activeScannedIndex].documentType === 'statement' ? (
+                <div className="space-y-3">
+                  {/* Statement Banner */}
+                  <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">📜</span>
+                      <div className="text-left">
+                        <h4 className="font-extrabold text-xs text-blue-950">पार्टी खाता विवरण (Statement)</h4>
+                        <p className="text-[10px] text-blue-700 font-semibold">कुल {scannedBillsBatch[activeScannedIndex].transactions?.length || 0} प्रविष्टियां पहचानी गईं</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-black bg-blue-600 text-white px-2 py-0.5 rounded-full">
+                      Passbook Mode
+                    </span>
+                  </div>
+
+                  {/* Party Selection Card */}
+                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2 text-left">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-black text-slate-700">पार्टी चुनें (जिसके खाते में दर्ज करना है):</label>
+                      {scannedBillsBatch[activeScannedIndex].partyName && (
+                        <span className="text-[9px] font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                          दस्तावेज़ में नाम: {scannedBillsBatch[activeScannedIndex].partyName}
+                        </span>
+                      )}
+                    </div>
+                    <select
+                      value={statementPartyId}
+                      onChange={(e) => setStatementPartyId(e.target.value)}
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none"
+                    >
+                      <option value="">-- कृपया पार्टी / व्यापारी चुनें --</option>
+                      {parties.map(p => (
+                        <option key={p._id || p.id} value={p._id || p.id}>
+                          {p.name} ({p.partyType === 'supplier' || p.type === 'supplier' ? 'सप्लायर' : 'ग्राहक'}) - शेष: ₹{p.currentBalance || 0}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Transactions Table */}
+                  <div className="space-y-1.5 text-left">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] font-extrabold text-slate-700">
+                        खाता प्रविष्टियां ({scannedBillsBatch[activeScannedIndex].transactions?.length || 0}):
+                      </span>
+                      <button
+                        onClick={handleAddStatementTx}
+                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus size={13} /> नई एंट्री जोड़ें
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {scannedBillsBatch[activeScannedIndex].transactions?.map((tx, txIdx) => (
+                        <div key={tx.id || txIdx} className="p-2.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <input
+                              type="text"
+                              value={tx.date}
+                              onChange={(e) => handleUpdateStatementTx(txIdx, 'date', e.target.value)}
+                              placeholder="तारीख..."
+                              className="w-24 bg-white px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none"
+                            />
+                            <input
+                              type="text"
+                              value={tx.details}
+                              onChange={(e) => handleUpdateStatementTx(txIdx, 'details', e.target.value)}
+                              placeholder="विवरण / बिल नं. / चेक..."
+                              className="flex-1 bg-white px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none"
+                            />
+                            <button
+                              onClick={() => handleRemoveStatementTx(txIdx)}
+                              className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-slate-200">
+                              <span className="text-[10px] font-bold text-amber-700 whitespace-nowrap">नाम / दिया ₹:</span>
+                              <input
+                                type="number"
+                                value={tx.debit}
+                                onChange={(e) => handleUpdateStatementTx(txIdx, 'debit', e.target.value)}
+                                placeholder="0"
+                                className="w-full text-right font-black text-amber-800 outline-none bg-transparent"
+                              />
+                            </div>
+                            <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-slate-200">
+                              <span className="text-[10px] font-bold text-emerald-700 whitespace-nowrap">जमा / मिला ₹:</span>
+                              <input
+                                type="number"
+                                value={tx.credit}
+                                onChange={(e) => handleUpdateStatementTx(txIdx, 'credit', e.target.value)}
+                                placeholder="0"
+                                className="w-full text-right font-black text-emerald-800 outline-none bg-transparent"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Statement Totals Summary */}
+                  <div className="p-3 bg-slate-100 rounded-2xl flex items-center justify-between text-xs font-black">
+                    <div className="text-left">
+                      <span className="text-amber-800 block">कुल नाम (Debit): ₹{(scannedBillsBatch[activeScannedIndex].transactions || []).reduce((s, t) => s + (Number(t.debit) || 0), 0).toLocaleString('en-IN')}</span>
+                      <span className="text-emerald-800 block">कुल जमा (Credit): ₹{(scannedBillsBatch[activeScannedIndex].transactions || []).reduce((s, t) => s + (Number(t.credit) || 0), 0).toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-500 block">प्रविष्टियां</span>
+                      <span className="text-base text-indigo-700">{scannedBillsBatch[activeScannedIndex].transactions?.length || 0} Rows</span>
+                    </div>
+                  </div>
+
+                  {/* Statement Action Button */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      onClick={() => setShowScannedReviewModal(false)}
+                      className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl cursor-pointer"
+                    >
+                      रद्द करें
+                    </button>
+                    <button
+                      onClick={handleImportStatementToLedger}
+                      disabled={savingStatement}
+                      className="py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      {savingStatement ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                      {savingStatement ? "दर्ज हो रहा है..." : "💾 लेज़र में दर्ज करें"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <div className="space-y-3">
                 {/* REVIEW VERIFICATION CHECKLIST (Alerts if fields were missing or math discrepancy) */}
                 {scannedBillsBatch[activeScannedIndex].reviewReasons?.length > 0 && (
@@ -8444,9 +8708,40 @@ function MobileVyaparAppContent() {
                     {savingScannedBill ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle size={14} />}
                     {savingScannedBill ? "सेव हो रहा है..." : (scannedBillsBatch.length > 1 ? `💾 सभी ${scannedBillsBatch.length} बिल सेव करें` : "💾 1-Click बिल बनाएं")}
                   </button>
+
+                  {(scannedBillsBatch[activeScannedIndex].billType === 'purchase' || selectedPartyDetail) && (
+                    <button
+                      onClick={() => {
+                        const cur = scannedBillsBatch[activeScannedIndex];
+                        const itemsToSet = (cur.items || []).map((it, idx) => ({
+                          id: `it_${Date.now()}_${idx}`,
+                          name: it.name || `सामान ${idx + 1}`,
+                          quantity: Number(it.qty) || 1,
+                          rate: Number(it.price) || 0,
+                          total: Number(it.total) || ((Number(it.qty) || 1) * (Number(it.price) || 0))
+                        }));
+                        setVendorPurchaseItems(itemsToSet);
+                        setVendorPurchaseMode('items');
+                        const goodsSum = itemsToSet.reduce((s, it) => s + (Number(it.total) || 0), 0);
+                        setVendorBillAmount(String(goodsSum));
+                        if (cur.additionalCharges?.length > 0) {
+                          const freightVal = cur.additionalCharges.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+                          setVendorFreight(String(freightVal));
+                        }
+                        if (cur.billNumber) setVendorBillNo(cur.billNumber);
+                        if (cur.billDate) setVendorBillDate(cur.billDate);
+                        if (cur.imagePreview) setVendorBillImage(cur.imagePreview);
+                        setShowScannedReviewModal(false);
+                        setShowVendorPurchaseModal(true);
+                      }}
+                      className="col-span-2 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-extrabold text-xs rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      🚚 वेंडर खरीद बिल में लागू करें (Apply to Vendor Purchase)
+                    </button>
+                  )}
                 </div>
               </div>
-            )}
+            ))}
           </div>
         </div>
       )}

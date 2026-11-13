@@ -21,7 +21,7 @@ import { syncBillToSupabase, syncBillDeleteToSupabase, mongoIdToUuid } from "../
 import { supabase } from "../config/supabase.js";
 import { getBillsFromSupabase, getBillByIdFromSupabase } from "../services/supabaseReadService.js";
 import { scanBillToEntry } from "../bill-scanner/index.js";
-import { parseBillMetadata, parseLineItems } from "../bill-scanner/ocrExtractor.js";
+import { parseBillMetadata, parseLineItems, parseStatementRows } from "../bill-scanner/ocrExtractor.js";
 
 export const createBill = async (req, res) => {
   try {
@@ -935,8 +935,12 @@ CRITICAL ZERO-HALLUCINATION RULES:
    - For each line item: total must mathematically equal quantity * price (or tax-adjusted total).
    - Reconcile the sum of all line item totals against totalAmount: sum(items.total) + additionalCharges + roundOff + taxes ≈ totalAmount.
    - NEVER include summary rows (Subtotal, Grand Total, Tax Total, Round Off) inside the "items" array.
-9. Return STRICTLY a valid JSON object without markdown fences:
+9. DOCUMENT CLASSIFICATION:
+   - If image is a Single Bill, Purchase Invoice, Sale Bill, Receipt, or Kacchi Parchi: "documentType": "bill".
+   - If image is a Party Account Statement, Passbook, Ledger, or Multi-row Transaction Sheet: "documentType": "statement".
+10. Return STRICTLY a valid JSON object without markdown fences:
 {
+  "documentType": "bill" | "statement",
   "partyName": string or null,
   "partyType": "customer" | "supplier",
   "billType": "sale" | "purchase",
@@ -956,6 +960,17 @@ CRITICAL ZERO-HALLUCINATION RULES:
       "total": number or null
     }
   ],
+  "transactions": [
+    {
+      "date": "YYYY-MM-DD or readable date",
+      "details": string,
+      "debit": number,
+      "credit": number,
+      "balance": number
+    }
+  ],
+  "openingBalance": number or null,
+  "closingBalance": number or null,
   "additionalCharges": [
     { "name": string, "amount": number }
   ],
@@ -1112,6 +1127,26 @@ NEVER infer, guess, or invent products or prices.${ocrContextSnippet}`;
           const content = openAiRes.data?.choices?.[0]?.message?.content;
           if (content) {
             const parsed = JSON.parse(content);
+            if (parsed.documentType === 'statement' || (Array.isArray(parsed.transactions) && parsed.transactions.length > 0)) {
+              return {
+                success: true,
+                documentType: 'statement',
+                source: 'openai-gpt-4o-mini',
+                partyName: (parsed.partyName || metaFromOcr.partyName || '').trim(),
+                openingBalance: Number(parsed.openingBalance) || 0,
+                closingBalance: Number(parsed.closingBalance) || 0,
+                transactions: (parsed.transactions || []).map(t => ({
+                  date: t.date || metaFromOcr.billDate || '',
+                  details: t.details || 'खाता प्रविष्टि',
+                  debit: Number(t.debit) || 0,
+                  credit: Number(t.credit) || 0,
+                  balance: Number(t.balance) || 0
+                })),
+                rawText: rawOcrText || (parsed.rawText || content),
+                needsReview: true,
+                reviewReasons: ['खाता विवरण (Statement) AI द्वारा पढ़ा गया। कृपया जांच कर लेज़र में आयात करें।']
+              };
+            }
             const itemsList = (parsed.items || [])
               .filter(it => it && it.name && typeof it.name === "string" && it.name.trim().length > 1)
               .map(it => {
@@ -1193,6 +1228,26 @@ NEVER infer, guess, or invent products or prices.${ocrContextSnippet}`;
             const respText = result.response.text();
             const cleanJson = respText.replace(/```json/gi, "").replace(/```/g, "").trim();
             const parsed = JSON.parse(cleanJson);
+            if (parsed.documentType === 'statement' || (Array.isArray(parsed.transactions) && parsed.transactions.length > 0)) {
+              return {
+                success: true,
+                documentType: 'statement',
+                source: modelName,
+                partyName: (parsed.partyName || metaFromOcr.partyName || '').trim(),
+                openingBalance: Number(parsed.openingBalance) || 0,
+                closingBalance: Number(parsed.closingBalance) || 0,
+                transactions: (parsed.transactions || []).map(t => ({
+                  date: t.date || metaFromOcr.billDate || '',
+                  details: t.details || 'खाता प्रविष्टि',
+                  debit: Number(t.debit) || 0,
+                  credit: Number(t.credit) || 0,
+                  balance: Number(t.balance) || 0
+                })),
+                rawText: rawOcrText || (parsed.rawText || respText),
+                needsReview: true,
+                reviewReasons: ['खाता विवरण (Statement) AI द्वारा पढ़ा गया। कृपया जांच कर लेज़र में आयात करें।']
+              };
+            }
             const itemsList = (parsed.items || [])
               .filter(it => it && it.name && typeof it.name === "string" && it.name.trim().length > 1)
               .map(it => {
@@ -1256,8 +1311,23 @@ NEVER infer, guess, or invent products or prices.${ocrContextSnippet}`;
       }
 
       // -------------------------------------------------------------
-      if (!openAiKey && !geminiKey) {
-        throw new Error("OpenAI API Key सेट नहीं है। कृपया ऐप सेटिंग्स में जाकर अपनी OpenAI ChatGPT API Key दर्ज करें।");
+      // STEP 3: SMART SYSTEM ENGINE FALLBACK (When AI Key not set or offline)
+      const isStatementDoc = /\b(statement|passbook|ledger|khata|खाता|बही|debit|credit|dr\.?|cr\.?|jama|जमा|naam|नाम|balance|बकाया)\b/i.test(rawOcrText);
+      const statementRows = parseStatementRows(rawOcrText);
+
+      if (statementRows.length > 0 && (isStatementDoc || itemsFromOcr.length === 0)) {
+        return {
+          success: true,
+          documentType: 'statement',
+          source: 'system-smart-engine',
+          partyName: (metaFromOcr.partyName || '').trim(),
+          openingBalance: 0,
+          closingBalance: 0,
+          transactions: statementRows,
+          rawText: rawOcrText,
+          needsReview: true,
+          reviewReasons: ['खाता विवरण सिस्टम इंजन द्वारा पहचाना गया। कृपया जांच कर लेज़र में आयात करें।']
+        };
       }
 
       // STEP 3: STRICT OCR-GROUNDED EXTRACTION (NO FAKE / DUMMY FALLBACKS)

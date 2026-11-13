@@ -215,8 +215,11 @@ export function parseLineItems(rawText) {
   const items = [];
   const skipWords = /invoice|bill|subtotal|total|cgst|sgst|igst|cess|tax|round\s*off|discount|gstin|fssai|phone|mobile|mob|tel|contact|date|dated|cashier|welcome|thank|pin[\s\:\-\.]*\d{4,6}|pincode|address|road|street|nagar|colony|ward|plot|shop\s*no|near|opp|state\s*code|bill\s*to|buyer|consignee|ship\s*to|transport|vehicle|challan|lr\s*no|bank\s*name|ifsc|a\/c|terms\s*&|authorised|authorized|rupees\s*in\s*words|amount\s*in\s*words/i;
 
-  for (const line of lines) {
-    if (skipWords.test(line)) continue;
+  for (const origLine of lines) {
+    if (skipWords.test(origLine)) continue;
+    // Clean noisy delimiters like pipes, commas in numbers, currency symbols
+    const line = origLine.replace(/[|│]/g, " ").replace(/₹|Rs\.?/gi, "").replace(/(\d),(\d)/g, "$1$2").replace(/\s+/g, " ").trim();
+    if (!line || line.length < 3) continue;
 
     // Check 6 columns: Name, HSN, Qty, Unit, Rate, Amount
     const match6 = line.match(itemLineRegex6);
@@ -284,7 +287,7 @@ export function parseLineItems(rawText) {
       }
     }
 
-    // Check 3 columns fallback
+    // Check 3 columns fallback: Name, Qty, Total
     const match3 = line.match(itemLineRegex3);
     if (match3) {
       const rawName = match3[1].trim();
@@ -299,9 +302,125 @@ export function parseLineItems(rawText) {
           rate,
           amount: total,
         });
+        continue;
+      }
+    }
+
+    // Flexible Trailing Number Heuristic (for bills where spacing/columns vary)
+    const tokens = line.split(" ");
+    if (tokens.length >= 3) {
+      const lastToken = tokens[tokens.length - 1];
+      const secondLast = tokens[tokens.length - 2];
+      const thirdLast = tokens[tokens.length - 3];
+
+      const numLast = parseFloat(lastToken);
+      const numSecond = parseFloat(secondLast);
+      const numThird = parseFloat(thirdLast);
+
+      // Check if ends with [Qty, Rate, Total]
+      if (!isNaN(numLast) && !isNaN(numSecond) && !isNaN(numThird) && numLast > 0 && numSecond > 0 && numThird > 0) {
+        const namePart = tokens.slice(0, tokens.length - 3).join(" ").trim();
+        if (namePart.length >= 2 && !/^\d+$/.test(namePart)) {
+          items.push({
+            rawName: namePart,
+            hsn: "",
+            qty: numThird,
+            rate: numSecond,
+            amount: numLast
+          });
+          continue;
+        }
+      }
+
+      // Check if ends with [Qty, Total]
+      if (!isNaN(numLast) && !isNaN(numSecond) && numLast > 0 && numSecond > 0) {
+        const namePart = tokens.slice(0, tokens.length - 2).join(" ").trim();
+        if (namePart.length >= 2 && !/^\d+$/.test(namePart)) {
+          const qty = numSecond;
+          const total = numLast;
+          const rate = qty > 0 ? +(total / qty).toFixed(2) : total;
+          items.push({
+            rawName: namePart,
+            hsn: "",
+            qty,
+            rate,
+            amount: total
+          });
+          continue;
+        }
       }
     }
   }
 
   return items;
+}
+
+/**
+ * 3. PARSE STATEMENT / PASSBOOK ROWS
+ * Detects rows like:
+ * "12/04/2024 By Cash Payment 5000.00 0.00 12500.00"
+ * "15/04/2024 To Purchase Bill #634 0.00 4150.00 16650.00"
+ * "20-04-2024 Cheque Deposit 2000.00"
+ */
+export function parseStatementRows(rawText) {
+  if (!rawText || typeof rawText !== "string") return [];
+  const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const rows = [];
+  const dateRegex = /\b([0-3]?\d[\/\-\.][0-1]?\d[\/\-\.](?:20)?\d{2,4})\b/;
+
+  for (const line of lines) {
+    const cleaned = line.replace(/[|│]/g, " ").trim();
+    const dMatch = cleaned.match(dateRegex);
+    if (!dMatch) continue;
+
+    const dateStr = dMatch[1];
+    const afterDate = cleaned.replace(dateStr, " ").trim();
+    const numMatches = [...afterDate.matchAll(/(?:₹|Rs\.?)?\s*([+-]?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/g)]
+      .map(m => parseFloat(m[1].replace(/,/g, "")))
+      .filter(n => !isNaN(n) && n > 0);
+
+    if (numMatches.length === 0) continue;
+
+    let narration = afterDate;
+    numMatches.forEach(n => {
+      narration = narration.replace(new RegExp(`(?:₹|Rs\\.?)?\\s*${n.toString()}`, 'g'), " ");
+    });
+    narration = narration.replace(/[\s\-_]+/g, " ").trim() || "खाता प्रविष्टि";
+
+    const isCredit = /\b(cr|credit|jama|जमा|received|rec|rcpt|deposit|by\s+cash|by\s+bank|by\s+chq|by\s+neft|by\s+rtgs|by\s+upi)\b/i.test(cleaned);
+    const isDebit = /\b(dr|debit|naam|नाम|paid|payment|given|bill|inv|purchase|sale|to\s+bill|to\s+goods)\b/i.test(cleaned);
+
+    let debit = 0;
+    let credit = 0;
+    let balance = 0;
+
+    if (numMatches.length >= 3) {
+      debit = numMatches[0];
+      credit = numMatches[1];
+      balance = numMatches[2];
+    } else if (numMatches.length === 2) {
+      if (isCredit && !isDebit) {
+        credit = numMatches[0];
+      } else {
+        debit = numMatches[0];
+      }
+      balance = numMatches[1];
+    } else if (numMatches.length === 1) {
+      if (isCredit && !isDebit) {
+        credit = numMatches[0];
+      } else {
+        debit = numMatches[0];
+      }
+    }
+
+    rows.push({
+      date: dateStr,
+      details: narration,
+      debit,
+      credit,
+      balance
+    });
+  }
+
+  return rows;
 }
