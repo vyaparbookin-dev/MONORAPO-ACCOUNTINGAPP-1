@@ -5,7 +5,12 @@ const companySchema = new mongoose.Schema({
   email: String,
   phone: String,
   gstNumber: String,
-  gstType: { type: String, enum: ['regular', 'composition', 'unregistered'], default: 'regular' },
+  gstType: { 
+    type: String, 
+    enum: ['regular', 'composition', 'unregistered', 'REGULAR', 'COMPOSITION', 'UNREGISTERED'], 
+    default: 'regular',
+    set: (v) => v ? v.toLowerCase() : v 
+  },
   enableGst: { type: Boolean, default: true }, // Added to store GST ON/OFF state
   address: String,
   upiId: String, // Merchant UPI ID for QR Code Payments

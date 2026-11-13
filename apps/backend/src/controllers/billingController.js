@@ -910,8 +910,10 @@ export const parseBillImage = async (req, res) => {
               message: `निःशुल्क ${maxScans} AI बिल स्कैन की सीमा समाप्त हो गई है। असीमित AI बिल स्कैनिंग के लिए कृपया 1-वर्षीय प्रीमियम प्लान (Yearly Plan) में अपग्रेड करें।`
             });
           }
-          company.freeAiScanCount = currentScans + images.length;
-          await company.save();
+          await Company.updateOne(
+            { _id: company._id },
+            { $inc: { freeAiScanCount: images.length } }
+          );
         }
       }
     }

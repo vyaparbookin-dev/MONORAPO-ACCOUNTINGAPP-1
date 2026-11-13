@@ -7441,7 +7441,19 @@ function MobileVyaparAppContent() {
                   <p className="text-[10px] text-slate-400">नाम ऑप्शनल है • 1600+ सामान खोजें</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOcrBillType('sale');
+                    setShowOcrModal(true);
+                  }}
+                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-[11px] rounded-lg border border-emerald-200 transition cursor-pointer flex items-center gap-1"
+                  title="कागजी पर्ची या बिल की फोटो से भरें (कैमरा + गैलरी)"
+                >
+                  <Camera size={12} className="text-emerald-600" />
+                  <span>📸 फोटो से भरें</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -9970,29 +9982,31 @@ function MobileVyaparAppContent() {
                           </div>
                           <p className="text-[10px] text-indigo-200 mt-0.5">कंप्यूटर बिल या कच्चा पर्चा तुरंत पढ़ें</p>
                         </div>
-                        <label className={`px-3 py-2 rounded-xl text-xs font-black cursor-pointer shadow-md flex items-center gap-1.5 transition active:scale-95 ${
-                          isAiScanningBill ? 'bg-indigo-400 text-white cursor-wait' : 'bg-amber-400 hover:bg-amber-300 text-slate-900'
-                        }`}>
-                          {isAiScanningBill ? (
-                            <>
-                              <RefreshCw size={13} className="animate-spin" />
-                              <span>स्कैन हो रहा है...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Camera size={13} />
-                              <span>📸 फोटो लें</span>
-                            </>
-                          )}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            capture="environment"
-                            disabled={isAiScanningBill}
-                            onChange={handleVendorAiScanBill}
-                            className="hidden"
-                          />
-                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <label className="px-2.5 py-1.5 rounded-xl text-[11px] font-black cursor-pointer shadow-md flex items-center gap-1 transition active:scale-95 bg-amber-400 hover:bg-amber-300 text-slate-900">
+                            {isAiScanningBill ? <RefreshCw size={12} className="animate-spin" /> : <Camera size={12} />}
+                            <span>📸 कैमरा</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              disabled={isAiScanningBill}
+                              onChange={handleVendorAiScanBill}
+                              className="hidden"
+                            />
+                          </label>
+                          <label className="px-2.5 py-1.5 rounded-xl text-[11px] font-black cursor-pointer shadow-md flex items-center gap-1 transition active:scale-95 bg-white hover:bg-slate-100 text-indigo-900 border border-indigo-200">
+                            <Upload size={12} />
+                            <span>🖼️ गैलरी</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              disabled={isAiScanningBill}
+                              onChange={handleVendorAiScanBill}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
                       </div>
 
                       {/* Entry Mode Selector */}
@@ -10411,13 +10425,23 @@ function MobileVyaparAppContent() {
                           )}
                         </label>
                         <div className="flex items-center gap-2">
-                          <label className="flex-1 py-2 px-3 bg-white border border-dashed border-indigo-300 rounded-xl flex items-center justify-center gap-2 cursor-pointer hover:bg-indigo-50 transition text-xs font-bold text-indigo-700 shadow-2xs">
+                          <label className="flex-1 py-2 px-2 bg-white border border-dashed border-indigo-300 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer hover:bg-indigo-50 transition text-xs font-bold text-indigo-700 shadow-2xs">
                             <Camera size={14} />
-                            <span>{vendorBillImage ? "✓ बिल फोटो लोड हो गई (बदलें)" : "📷 कैमरा खोलें / बिल फोटो लें"}</span>
+                            <span>{vendorBillImage ? "✓ बदलें (कैमरा)" : "📸 कैमरा खोलें"}</span>
                             <input
                               type="file"
                               accept="image/*"
                               capture="environment"
+                              onChange={handleVendorImageCapture}
+                              className="hidden"
+                            />
+                          </label>
+                          <label className="flex-1 py-2 px-2 bg-white border border-dashed border-indigo-300 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer hover:bg-indigo-50 transition text-xs font-bold text-indigo-700 shadow-2xs">
+                            <Upload size={14} />
+                            <span>{vendorBillImage ? "✓ बदलें (गैलरी)" : "🖼️ गैलरी से चुनें"}</span>
+                            <input
+                              type="file"
+                              accept="image/*"
                               onChange={handleVendorImageCapture}
                               className="hidden"
                             />
