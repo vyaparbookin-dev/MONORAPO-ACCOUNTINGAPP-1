@@ -1061,45 +1061,20 @@ CRITICAL ZERO-HALLUCINATION RULES:
       }
 
       // -------------------------------------------------------------
-      // STEP 1: RAW OCR GROUNDING ENGINE (Extract Raw Text from Image)
-      // Extracts raw text tokens to ground AI Vision model & prevent hallucination
+      // DIRECT MULTIMODAL AI VISION (OpenAI GPT-4o-mini & Google Gemini)
+      // Takes image directly - eliminates brittle/crash-prone Tesseract pre-processing
       // -------------------------------------------------------------
       let rawOcrText = (req.body?.rawText && typeof req.body.rawText === "string" && req.body.rawText.trim().length > 10)
         ? req.body.rawText.trim()
         : "";
 
-      if (!rawOcrText && pureB64 && pureB64.length > 50) {
-        try {
-          const buffer = Buffer.from(pureB64, "base64");
-          const tmpDir = os.tmpdir();
-          const filename = `ocr_ground_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.png`;
-          const filepath = path.join(tmpDir, filename);
-          fs.writeFileSync(filepath, buffer);
-          const worker = await createWorker("eng");
-          const { data: { text } } = await worker.recognize(filepath);
-          await worker.terminate();
-          try { fs.unlinkSync(filepath); } catch (e) {}
-          rawOcrText = text || "";
-        } catch (ocrErr) {
-          console.warn("[parseBillImage] Step 1 OCR Grounding note:", ocrErr.message);
-        }
-      }
+      let metaFromOcr = {};
+      let itemsFromOcr = [];
 
-      // Parse metadata & tabular items from raw OCR text
-      const metaFromOcr = parseBillMetadata(rawOcrText);
-      const itemsFromOcr = parseLineItems(rawOcrText);
-
-      // -------------------------------------------------------------
-      // STEP 2: AI VISION MODEL WITH OCR GROUNDING CONTEXT
-      // -------------------------------------------------------------
-      const ocrContextSnippet = rawOcrText && rawOcrText.trim().length > 5
-        ? `\n\n[VERBATIM OCR GROUNDING TEXT FROM IMAGE - USE ONLY THESE TOKENS AND VISIBLE DETAILS]:\n${rawOcrText.trim()}\n[END OCR GROUNDING TEXT]`
-        : "";
-
-      const userPromptText = `Parse this bill/receipt image into structured JSON according to the strict zero-hallucination rules.
-Extract ONLY values that are literally visible in the image or grounded in the OCR text below.
-If any field is missing, unclear, or unreadable, leave it null or empty string ("").
-NEVER infer, guess, or invent products or prices.${ocrContextSnippet}`;
+      const userPromptText = `Examine this Indian bill, tax invoice, purchase receipt, cash memo, or party account statement image carefully.
+Read all visible text, line items, quantities, rates, amounts, totals, party names, bill numbers, and dates directly from the image.
+Detect documentType: 'bill' for purchase/sale bills or kacchi parchi, or 'statement' for party passbook/ledger sheets.
+Extract all visible fields according to the schema.`;
 
       // 1. Try OpenAI GPT-4o Mini First
       if (openAiKey) {
@@ -1216,7 +1191,7 @@ NEVER infer, guess, or invent products or prices.${ocrContextSnippet}`;
 
       // 2. Try Google Gemini (Cascading modern models)
       if (geminiKey) {
-        const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-8b", "gemini-1.5-pro"];
+        const candidateModels = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-pro"];
         const genAI = new GoogleGenerativeAI(geminiKey);
         for (const modelName of candidateModels) {
           try {
@@ -1314,6 +1289,26 @@ NEVER infer, guess, or invent products or prices.${ocrContextSnippet}`;
 
       // -------------------------------------------------------------
       // STEP 3: SMART SYSTEM ENGINE FALLBACK (When AI Key not set or offline)
+      if (!rawOcrText && pureB64 && pureB64.length > 50) {
+        try {
+          const ext = mimeType.includes("jpeg") || mimeType.includes("jpg") ? ".jpg" : mimeType.includes("webp") ? ".webp" : ".png";
+          const buffer = Buffer.from(pureB64, "base64");
+          const tmpDir = os.tmpdir();
+          const filepath = path.join(tmpDir, `ocr_fallback_${Date.now()}_${Math.random().toString(36).slice(2, 6)}${ext}`);
+          fs.writeFileSync(filepath, buffer);
+          const worker = await createWorker("eng");
+          const { data: { text } } = await worker.recognize(filepath);
+          await worker.terminate();
+          try { fs.unlinkSync(filepath); } catch (e) {}
+          rawOcrText = text || "";
+        } catch (ocrErr) {
+          console.warn("[parseBillImage] Safe OCR Fallback note:", ocrErr.message);
+        }
+      }
+
+      metaFromOcr = parseBillMetadata(rawOcrText);
+      itemsFromOcr = parseLineItems(rawOcrText);
+
       const isStatementDoc = /\b(statement|passbook|ledger|khata|खाता|बही|debit|credit|dr\.?|cr\.?|jama|जमा|naam|नाम|balance|बकाया)\b/i.test(rawOcrText);
       const statementRows = parseStatementRows(rawOcrText);
 
