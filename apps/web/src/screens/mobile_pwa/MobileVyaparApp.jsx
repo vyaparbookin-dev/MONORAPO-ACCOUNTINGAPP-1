@@ -4926,7 +4926,7 @@ function MobileVyaparAppContent() {
       );
 
       setOcrProgress(35);
-      setOcrStatusText(`🤖 AI Vision ${files.length} बिलों को पढ़ रहा है...`);
+      setOcrStatusText(`🤖 AI पढ़ रहा है (${files.length} दस्तावेज़)...`);
 
       // Call Backend Multi-Image Scanner Endpoint (Powered by OpenAI GPT-4o-mini Vision)
       const res = await api.post("/api/billing/parse-image", {
@@ -5211,9 +5211,21 @@ function MobileVyaparAppContent() {
     const currentDoc = { ...updated[activeScannedIndex] };
     const txs = [...(currentDoc.transactions || [])];
     if (!txs[txIdx]) return;
+
+    let parsedVal = value;
+    if (field === 'debit' || field === 'credit' || field === 'balance') {
+      if (value === '' || value === null || value === undefined) {
+        parsedVal = 0;
+      } else {
+        const cleaned = String(value).replace(/,/g, '').replace(/[^\d.-]/g, '');
+        const n = parseFloat(cleaned);
+        parsedVal = isNaN(n) ? 0 : n;
+      }
+    }
+
     txs[txIdx] = {
       ...txs[txIdx],
-      [field]: (field === 'debit' || field === 'credit' || field === 'balance') ? (parseFloat(value) || 0) : value
+      [field]: parsedVal
     };
     currentDoc.transactions = txs;
     currentDoc.totalAmount = txs.reduce((s, t) => s + (Number(t.debit) || 0), 0);
@@ -8309,7 +8321,8 @@ function MobileVyaparAppContent() {
                               <span className="text-[10px] font-bold text-amber-700 whitespace-nowrap">नाम / दिया ₹:</span>
                               <input
                                 type="number"
-                                value={tx.debit}
+                                value={tx.debit === 0 || tx.debit === "0" ? "" : tx.debit}
+                                onFocus={(e) => e.target.select()}
                                 onChange={(e) => handleUpdateStatementTx(txIdx, 'debit', e.target.value)}
                                 placeholder="0"
                                 className="w-full text-right font-black text-amber-800 outline-none bg-transparent"
@@ -8319,7 +8332,8 @@ function MobileVyaparAppContent() {
                               <span className="text-[10px] font-bold text-emerald-700 whitespace-nowrap">जमा / मिला ₹:</span>
                               <input
                                 type="number"
-                                value={tx.credit}
+                                value={tx.credit === 0 || tx.credit === "0" ? "" : tx.credit}
+                                onFocus={(e) => e.target.select()}
                                 onChange={(e) => handleUpdateStatementTx(txIdx, 'credit', e.target.value)}
                                 placeholder="0"
                                 className="w-full text-right font-black text-emerald-800 outline-none bg-transparent"

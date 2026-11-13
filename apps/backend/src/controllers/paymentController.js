@@ -373,25 +373,83 @@ export const addBulkPaymentEntry = async (req, res) => {
   try {
     const { partyId, transactions } = req.body;
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID is missing" });
+    if (!partyId) return res.status(400).json({ success: false, message: "पार्टी चुनना आवश्यक है।" });
+    if (!Array.isArray(transactions) || transactions.length === 0) {
+      return res.status(400).json({ success: false, message: "कोई खाता प्रविष्टि नहीं मिली।" });
+    }
 
-    const party = await Party.findOne({ _id: partyId, companyId: req.companyId });
-    if (!party) return res.status(404).json({ success: false, message: "Party not found" });
+    // Resilient party lookup by ObjectId or name
+    let party = null;
+    if (mongoose.Types.ObjectId.isValid(partyId)) {
+      party = await Party.findOne({ _id: partyId, companyId: req.companyId }) || await Party.findById(partyId);
+    }
+    if (!party) {
+      party = await Party.findOne({
+        name: new RegExp(`^${partyId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+        companyId: req.companyId
+      });
+    }
+    if (!party) return res.status(404).json({ success: false, message: "पार्टी नहीं मिली।" });
 
+    // Helper to safely parse Indian dates (DD/MM/YYYY, DD-MM-YYYY, etc.)
+    const parseSafeDate = (dStr) => {
+      if (!dStr) return new Date();
+      if (dStr instanceof Date && !isNaN(dStr.getTime())) return dStr;
+      if (typeof dStr === 'string') {
+        const trimmed = dStr.trim();
+        // Check DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+        const dmy = trimmed.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+        if (dmy) {
+          const day = parseInt(dmy[1], 10);
+          const month = parseInt(dmy[2], 10) - 1;
+          let year = parseInt(dmy[3], 10);
+          if (year < 100) year += 2000;
+          const dt = new Date(year, month, day);
+          if (!isNaN(dt.getTime())) return dt;
+        }
+        const dt = new Date(trimmed);
+        if (!isNaN(dt.getTime())) return dt;
+      }
+      return new Date();
+    };
+
+    const isSupplier = party.partyType === 'supplier' || party.type === 'supplier';
     let netBalanceChange = 0;
+
     const docsToInsert = transactions.map(t => {
       const deb = parseFloat(t.debit) || 0;
       const cred = parseFloat(t.credit) || 0;
-      netBalanceChange += (deb - cred);
-      return { partyId, companyId: req.companyId, date: t.date ? new Date(t.date) : new Date(), details: t.details || 'Parsed Entry', debit: deb, credit: cred, type: 'manual' };
+      if (isSupplier) {
+        netBalanceChange += (cred - deb);
+      } else {
+        netBalanceChange += (deb - cred);
+      }
+      return {
+        partyId: party._id,
+        companyId: req.companyId,
+        date: parseSafeDate(t.date),
+        details: (t.details && String(t.details).trim()) || 'खाता प्रविष्टि',
+        debit: deb,
+        credit: cred,
+        type: 'manual'
+      };
     });
 
-    await PartyTransaction.insertMany(docsToInsert);
-    party.currentBalance += netBalanceChange;
+    const insertedDocs = await PartyTransaction.insertMany(docsToInsert);
+    party.currentBalance = (Number(party.currentBalance) || 0) + netBalanceChange;
+    party.updatedAt = new Date();
     await party.save();
 
-    res.status(201).json({ success: true, message: "Bulk entries recorded successfully" });
+    // Async sync to Supabase
+    syncPartyToSupabase(party).catch(e => console.warn("[Supabase Sync] Bulk party note:", e.message));
+    insertedDocs.forEach(doc => {
+      syncPartyTxToSupabase(doc).catch(e => console.warn("[Supabase Sync] Bulk tx note:", e.message));
+    });
+
+    res.status(201).json({ success: true, message: "Bulk entries recorded successfully", count: insertedDocs.length });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    console.error("[addBulkPaymentEntry] Error:", error);
+    res.status(500).json({ success: false, error: error.message, message: error.message });
   }
 };
 

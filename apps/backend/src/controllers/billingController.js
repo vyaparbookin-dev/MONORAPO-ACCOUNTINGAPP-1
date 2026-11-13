@@ -954,12 +954,20 @@ CRITICAL ZERO-HALLUCINATION RULES:
    - If image is a Party Account Statement, Passbook, Ledger, or Multi-row Transaction Sheet: "documentType": "statement".
 10. PARTY STATEMENT & PASSBOOK RULES (When documentType is 'statement'):
    - PARTY NAME: Check the top header, title line, or account holder field (e.g. 'M/s XYZ', 'श्री ...', 'A/c Name:', 'खाता धारक:', 'Name:', 'Party:'). Extract the party or business name as 'partyName'.
-   - TRANSACTIONS & AMOUNTS: For EVERY transaction row:
-     a) Read the Date, Details/Particulars, and NUMERIC amounts.
-     b) Extract amounts strictly as plain numbers (e.g. 1500 instead of "1,500" or "₹1,500").
-     c) Map columns: Debit (नामे, खर्च, दिया, DR, निकासी), Credit (जमा, आवक, मिला, CR, प्राप्ति), and Balance (शेष, बकाया, BAL).
-     d) If there is a single amount column with transaction context or Dr/Cr indicator, map it to debit (if Dr/sales/given) or credit (if Cr/payment/received).
-     e) NEVER return debit=0 and credit=0 both if an amount is visibly printed on that row!
+   - CRITICAL RUPEE AMOUNT INTEGRITY (NO 100x DIVISION / NO PAISE INSERTION):
+     a) IN INDIAN KHATA-BAHI & PASSBOOKS, AMOUNTS ARE IN FULL WHOLE RUPEES (INR ₹), NEVER PAISE!
+     b) NEVER DIVIDE ANY AMOUNT BY 100!
+     c) NEVER INSERT A DECIMAL POINT BEFORE THE LAST TWO DIGITS!
+     d) Commas in Indian numbers (e.g. 21,341 or 5,182 or 9,281) are THOUSAND SEPARATORS, NOT decimals! Remove the comma and output the full integer!
+        - If the document shows 21341 or 21,341: output EXACTLY 21341, NEVER 21.34 or 213.41!
+        - If the document shows 5182 or 5,182: output EXACTLY 5182, NEVER 51.82!
+        - If the document shows 9281 or 9,281: output EXACTLY 9281, NEVER 9.28 or 92.81!
+        - If the document shows 1500 or 1,500: output EXACTLY 1500, NEVER 15.00!
+     e) TRANSACTIONS & AMOUNTS: For EVERY transaction row:
+        - Read the Date, Details/Particulars, and NUMERIC amounts.
+        - Map columns: Debit (नामे, खर्च, दिया, DR, निकासी), Credit (जमा, आवक, मिला, CR, प्राप्ति), and Balance (शेष, बकाया, BAL).
+        - If there is a single amount column with transaction context or Dr/Cr indicator, map it to debit (if Dr/sales/given) or credit (if Cr/payment/received).
+        - NEVER return debit=0 and credit=0 both if an amount is visibly printed on that row!
    - Extract openingBalance and closingBalance if printed.
    - Set totalAmount to the sum of debits or credits or closing balance.
 11. Return STRICTLY a valid JSON object without markdown fences:
@@ -1193,7 +1201,20 @@ CRITICAL ZERO-HALLUCINATION RULES:
       const userPromptText = `Examine this Indian bill, tax invoice, purchase receipt, cash memo, or party account statement image carefully.
 Read all visible text, line items, quantities, rates, amounts, totals, party names, bill numbers, and dates directly from the image.
 Detect documentType: 'bill' for purchase/sale bills or kacchi parchi, or 'statement' for party passbook/ledger sheets.
+CRITICAL RUPEE RULE: All numbers are Indian Rupees (₹). Commas are thousands separators (e.g. 21,341 is 21341 Rupees, 5,182 is 5182 Rupees). NEVER divide amounts by 100 and NEVER insert a decimal point where none exists on paper!
 Extract all visible fields according to the schema.`;
+
+      // Helper to recover from accidental 100x division by LLM on Indian whole rupee amounts
+      const fixPossiblePaiseDivision = (num) => {
+        if (typeof num !== 'number' || isNaN(num) || num <= 0) return 0;
+        const cents = Math.round((num - Math.floor(num)) * 100);
+        if (cents > 0 && cents !== 50 && cents !== 25 && cents !== 75 && num < 1000) {
+          const candidateInt = Math.round(num * 100);
+          console.log(`[parseBillImage] Auto-correcting 100x divided amount: ${num} -> ${candidateInt}`);
+          return candidateInt;
+        }
+        return num;
+      };
 
       // 1. Try OpenAI GPT-4o Mini First
       if (openAiKey) {
@@ -1241,6 +1262,10 @@ Extract all visible fields according to the schema.`;
                     d = gAmt;
                   }
                 }
+
+                d = fixPossiblePaiseDivision(d);
+                c = fixPossiblePaiseDivision(c);
+                b = fixPossiblePaiseDivision(b);
 
                 return {
                   id: `tx_${Date.now()}_${idx}`,
