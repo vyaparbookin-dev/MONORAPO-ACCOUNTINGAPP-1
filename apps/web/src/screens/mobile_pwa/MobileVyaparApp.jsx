@@ -8063,7 +8063,7 @@ function MobileVyaparAppContent() {
             {/* Hidden File Inputs: Camera & Gallery */}
             <input 
               type="file" 
-              accept="image/*" 
+              accept="image/jpeg,image/png,image/webp,image/*" 
               capture="environment"
               ref={cameraInputRef}
               onChange={handleProcessBillImages}
@@ -8071,7 +8071,7 @@ function MobileVyaparAppContent() {
             />
             <input 
               type="file" 
-              accept="image/*" 
+              accept="image/jpeg,image/png,image/webp,image/*,application/pdf,.pdf" 
               multiple
               ref={galleryInputRef}
               onChange={handleProcessBillImages}

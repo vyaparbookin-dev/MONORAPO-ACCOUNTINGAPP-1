@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { createWorker } from "tesseract.js";
+// Tesseract worker removed to protect server from Leptonica memory/format crashes
 import { generateInvoicePdf } from "../utils/invoicePdfGenerator.js";
 import Product from "../model/product.js";
 import Party from "../model/party.js";
@@ -1026,11 +1026,28 @@ CRITICAL ZERO-HALLUCINATION RULES:
         }
       }
 
-      // Auto-detect exact mimeType from image magic bytes
+      let isPdf = false;
+      let pdfExtractedText = "";
+
+      // Auto-detect exact mimeType & PDF format from magic bytes
       if (pureB64 && pureB64.length > 20) {
         try {
           const headerBuffer = Buffer.from(pureB64.slice(0, 48), "base64");
-          if (headerBuffer.length >= 3 && headerBuffer[0] === 0xFF && headerBuffer[1] === 0xD8 && headerBuffer[2] === 0xFF) {
+          if (headerBuffer.toString("ascii", 0, 4) === "%PDF" || mimeType === "application/pdf") {
+            isPdf = true;
+            mimeType = "application/pdf";
+            try {
+              const { PDFParse } = await import("pdf-parse");
+              const pdfBuffer = Buffer.from(pureB64, "base64");
+              const parser = new PDFParse(new Uint8Array(pdfBuffer));
+              await parser.load();
+              const textObj = await parser.getText();
+              pdfExtractedText = (textObj?.text || "").trim();
+              console.log("[parseBillImage] Extracted text from PDF statement length:", pdfExtractedText.length);
+            } catch (pdfErr) {
+              console.warn("[parseBillImage] PDF extraction warning:", pdfErr.message);
+            }
+          } else if (headerBuffer.length >= 3 && headerBuffer[0] === 0xFF && headerBuffer[1] === 0xD8 && headerBuffer[2] === 0xFF) {
             mimeType = "image/jpeg";
           } else if (headerBuffer.length >= 4 && headerBuffer[0] === 0x89 && headerBuffer[1] === 0x50 && headerBuffer[2] === 0x4E && headerBuffer[3] === 0x47) {
             mimeType = "image/png";
@@ -1042,9 +1059,11 @@ CRITICAL ZERO-HALLUCINATION RULES:
         } catch (bufErr) {}
       }
 
-      // Ensure valid standard MIME format for OpenAI & Gemini Vision models
-      if (mimeType === "image/jpg" || mimeType === "image/pjpeg" || !["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mimeType)) {
-        mimeType = "image/jpeg";
+      // Ensure valid standard MIME format for images
+      if (!isPdf) {
+        if (mimeType === "image/jpg" || mimeType === "image/pjpeg" || !["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mimeType)) {
+          mimeType = "image/jpeg";
+        }
       }
 
       const fullDataUri = `data:${mimeType};base64,${pureB64}`;
@@ -1118,10 +1137,12 @@ Extract all visible fields according to the schema.`;
                 { role: "system", content: promptSystem },
                 {
                   role: "user",
-                  content: [
-                    { type: "text", text: userPromptText },
-                    { type: "image_url", image_url: { url: fullDataUri } }
-                  ]
+                  content: isPdf
+                    ? `Examine this Indian party account statement / passbook / bill document text extracted directly from the uploaded PDF:\n\n${pdfExtractedText || rawOcrText}\n\nDetect documentType: 'statement' for party ledger/passbook transactions, or 'bill' for purchase/sale invoice. Extract partyName, openingBalance, closingBalance, and all transactions (date, details, debit, credit, balance) or items strictly according to the schema.`
+                    : [
+                        { type: "text", text: userPromptText },
+                        { type: "image_url", image_url: { url: fullDataUri } }
+                      ]
                 }
               ],
               max_tokens: 1500
@@ -1226,12 +1247,10 @@ Extract all visible fields according to the schema.`;
         for (const modelName of candidateModels) {
           try {
             const model = genAI.getGenerativeModel({ model: modelName });
-            const imagePart = { inlineData: { data: pureB64, mimeType: mimeType } };
-            const result = await model.generateContent([
-              promptSystem,
-              userPromptText,
-              imagePart
-            ]);
+            const geminiParts = isPdf
+              ? [promptSystem, `Examine this PDF statement/bill document text:\n\n${pdfExtractedText || rawOcrText}`]
+              : [promptSystem, userPromptText, { inlineData: { data: pureB64, mimeType: mimeType } }];
+            const result = await model.generateContent(geminiParts);
             const respText = result.response.text();
             const cleanJson = respText.replace(/```json/gi, "").replace(/```/g, "").trim();
             const parsed = JSON.parse(cleanJson);
@@ -1319,24 +1338,8 @@ Extract all visible fields according to the schema.`;
 
       // -------------------------------------------------------------
       // STEP 3: SMART SYSTEM ENGINE FALLBACK (When AI Key not set or offline)
-      if (!rawOcrText && pureB64 && pureB64.length > 50) {
-        try {
-          const ext = mimeType.includes("jpeg") || mimeType.includes("jpg") ? ".jpg" : mimeType.includes("webp") ? ".webp" : ".png";
-          const buffer = Buffer.from(pureB64, "base64");
-          const tmpDir = os.tmpdir();
-          const filepath = path.join(tmpDir, `ocr_fallback_${Date.now()}_${Math.random().toString(36).slice(2, 6)}${ext}`);
-          fs.writeFileSync(filepath, buffer);
-          const worker = await createWorker("eng");
-          if (worker && typeof worker.on === "function") {
-            worker.on("error", (wErr) => console.warn("[Safe OCR Worker error]:", wErr?.message || wErr));
-          }
-          const { data: { text } } = await worker.recognize(filepath);
-          await worker.terminate();
-          try { fs.unlinkSync(filepath); } catch (e) {}
-          rawOcrText = text || "";
-        } catch (ocrErr) {
-          console.warn("[parseBillImage] Safe OCR Fallback note:", ocrErr.message);
-        }
+      if (!rawOcrText && pdfExtractedText) {
+        rawOcrText = pdfExtractedText;
       }
 
       metaFromOcr = parseBillMetadata(rawOcrText);

@@ -118,6 +118,20 @@ export const getPhotosFromIndexedDB = async (targetId) => {
 export const compressImageFile = async (fileOrDataUrl, maxWidth = 1200, quality = 0.75) => {
   if (!fileOrDataUrl) return null;
 
+  // For PDF files, do not try to render into an <img>/canvas; read directly as DataURL
+  if (
+    (typeof fileOrDataUrl === "object" && (fileOrDataUrl.type === "application/pdf" || (fileOrDataUrl.name && fileOrDataUrl.name.toLowerCase().endsWith(".pdf")))) ||
+    (typeof fileOrDataUrl === "string" && (fileOrDataUrl.startsWith("data:application/pdf") || fileOrDataUrl.toLowerCase().endsWith(".pdf")))
+  ) {
+    if (typeof fileOrDataUrl === "string") return fileOrDataUrl;
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(fileOrDataUrl);
+    });
+  }
+
   return new Promise((resolve) => {
     try {
       const img = new Image();
