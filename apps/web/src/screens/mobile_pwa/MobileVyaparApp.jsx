@@ -5215,11 +5215,10 @@ function MobileVyaparAppContent() {
     let parsedVal = value;
     if (field === 'debit' || field === 'credit' || field === 'balance') {
       if (value === '' || value === null || value === undefined) {
-        parsedVal = 0;
+        parsedVal = '';
       } else {
         const cleaned = String(value).replace(/,/g, '').replace(/[^\d.-]/g, '');
-        const n = parseFloat(cleaned);
-        parsedVal = isNaN(n) ? 0 : n;
+        parsedVal = cleaned;
       }
     }
 
@@ -5228,7 +5227,7 @@ function MobileVyaparAppContent() {
       [field]: parsedVal
     };
     currentDoc.transactions = txs;
-    currentDoc.totalAmount = txs.reduce((s, t) => s + (Number(t.debit) || 0), 0);
+    currentDoc.totalAmount = txs.reduce((s, t) => s + (parseFloat(t.debit) || 0), 0);
     updated[activeScannedIndex] = currentDoc;
     setScannedBillsBatch(updated);
   };
@@ -5237,7 +5236,7 @@ function MobileVyaparAppContent() {
     const updated = [...scannedBillsBatch];
     const currentDoc = { ...updated[activeScannedIndex] };
     currentDoc.transactions = (currentDoc.transactions || []).filter((_, idx) => idx !== txIdx);
-    currentDoc.totalAmount = currentDoc.transactions.reduce((s, t) => s + (Number(t.debit) || 0), 0);
+    currentDoc.totalAmount = currentDoc.transactions.reduce((s, t) => s + (parseFloat(t.debit) || 0), 0);
     updated[activeScannedIndex] = currentDoc;
     setScannedBillsBatch(updated);
   };
@@ -5249,9 +5248,9 @@ function MobileVyaparAppContent() {
       id: `tx_${Date.now()}_new`,
       date: new Date().toISOString().split("T")[0],
       details: "नई प्रविष्टि",
-      debit: 0,
-      credit: 0,
-      balance: 0
+      debit: "",
+      credit: "",
+      balance: ""
     };
     currentDoc.transactions = [...(currentDoc.transactions || []), newTx];
     updated[activeScannedIndex] = currentDoc;
@@ -5276,13 +5275,20 @@ function MobileVyaparAppContent() {
         || parties.find(p => p.name && (p.name.trim().toLowerCase() === (currentDoc.partyName || "").trim().toLowerCase()))
         || selectedPartyDetail;
 
+      const cleanedTransactions = (currentDoc.transactions || []).map(t => ({
+        ...t,
+        debit: parseFloat(t.debit) || 0,
+        credit: parseFloat(t.credit) || 0,
+        balance: parseFloat(t.balance) || 0
+      }));
+
       await api.post('/api/payment/bulk-entry', {
         partyId: pId,
         partyName: selectedPartyObj?.name || currentDoc.partyName || "",
         partyType: selectedPartyObj?.partyType || selectedPartyObj?.type || 'customer',
-        transactions: currentDoc.transactions
+        transactions: cleanedTransactions
       });
-      alert(`🎉 ${currentDoc.transactions.length} खाता प्रविष्टियां सफलतापूर्वक पार्टी लेज़र में दर्ज हो गईं!`);
+      alert(`🎉 ${cleanedTransactions.length} खाता प्रविष्टियां सफलतापूर्वक पार्टी लेज़र में दर्ज हो गईं!`);
       setShowScannedReviewModal(false);
       if (selectedPartyDetail && (String(selectedPartyDetail._id) === String(pId) || String(selectedPartyDetail.id) === String(pId))) {
         if (typeof loadPartyStatement === 'function') loadPartyStatement(selectedPartyDetail);
@@ -8322,27 +8328,38 @@ function MobileVyaparAppContent() {
                               <Trash2 size={14} />
                             </button>
                           </div>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-slate-200">
-                              <span className="text-[10px] font-bold text-amber-700 whitespace-nowrap">नाम / दिया ₹:</span>
+                          <div className="grid grid-cols-2 gap-2 mt-1">
+                            {/* Debit / Diya Box */}
+                            <div className="bg-amber-50/70 border border-amber-300 rounded-xl p-2 text-left shadow-sm">
+                              <div className="flex items-center justify-between text-[11px] font-extrabold text-amber-900 mb-1">
+                                <span>🔴 नामे / दिया (Dr)</span>
+                                <span className="text-[10px] text-amber-700">₹</span>
+                              </div>
                               <input
-                                type="number"
+                                type="text"
+                                inputMode="decimal"
                                 value={tx.debit === 0 || tx.debit === "0" ? "" : tx.debit}
                                 onFocus={(e) => e.target.select()}
                                 onChange={(e) => handleUpdateStatementTx(txIdx, 'debit', e.target.value)}
                                 placeholder="0"
-                                className="w-full text-right font-black text-amber-800 outline-none bg-transparent"
+                                className="w-full bg-white px-2.5 py-1.5 rounded-lg border border-amber-300 font-black text-sm text-amber-950 outline-none shadow-sm focus:ring-2 focus:ring-amber-500 text-left"
                               />
                             </div>
-                            <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-slate-200">
-                              <span className="text-[10px] font-bold text-emerald-700 whitespace-nowrap">जमा / मिला ₹:</span>
+
+                            {/* Credit / Jama Box */}
+                            <div className="bg-emerald-50/70 border border-emerald-300 rounded-xl p-2 text-left shadow-sm">
+                              <div className="flex items-center justify-between text-[11px] font-extrabold text-emerald-900 mb-1">
+                                <span>🟢 जमा / मिला (Cr)</span>
+                                <span className="text-[10px] text-emerald-700">₹</span>
+                              </div>
                               <input
-                                type="number"
+                                type="text"
+                                inputMode="decimal"
                                 value={tx.credit === 0 || tx.credit === "0" ? "" : tx.credit}
                                 onFocus={(e) => e.target.select()}
                                 onChange={(e) => handleUpdateStatementTx(txIdx, 'credit', e.target.value)}
                                 placeholder="0"
-                                className="w-full text-right font-black text-emerald-800 outline-none bg-transparent"
+                                className="w-full bg-white px-2.5 py-1.5 rounded-lg border border-emerald-300 font-black text-sm text-emerald-950 outline-none shadow-sm focus:ring-2 focus:ring-emerald-500 text-left"
                               />
                             </div>
                           </div>

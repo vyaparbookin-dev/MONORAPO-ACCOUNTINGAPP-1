@@ -436,15 +436,17 @@ export const addBulkPaymentEntry = async (req, res) => {
       mongoParty = await Party.findOne({ _id: partyId, companyId: req.companyId });
     }
 
-    const effectiveName = (party?.name || searchName || partyName || "").trim();
+    const effectiveName = (party?.name || searchName || partyName || (partyId && !mongoose.Types.ObjectId.isValid(partyId) ? partyId : "") || "अज्ञात पार्टी").trim();
     if (!mongoParty && effectiveName) {
       mongoParty = await Party.findOne({
         companyId: req.companyId,
         name: new RegExp(`^${effectiveName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+      }) || await Party.findOne({
+        name: new RegExp(`^${effectiveName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
       });
     }
 
-    if (!mongoParty && (party || effectiveName)) {
+    if (!mongoParty) {
       // Create matching party in MongoDB to maintain 100% database parity
       mongoParty = new Party({
         companyId: req.companyId,
