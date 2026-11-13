@@ -4927,12 +4927,11 @@ function MobileVyaparAppContent() {
       setOcrProgress(35);
       setOcrStatusText(`🤖 AI Vision ${files.length} बिलों को पढ़ रहा है...`);
 
-      // Call Backend Multi-Image Scanner Endpoint (Supports both Printed POS & Handwritten Slip)
+      // Call Backend Multi-Image Scanner Endpoint (Powered by OpenAI GPT-4o-mini Vision)
       const res = await api.post("/api/billing/parse-image", {
         images: base64List,
         scannerType: ocrScannerMode,
-        openaiApiKey: openaiApiKey.trim() || undefined,
-        geminiApiKey: geminiApiKey.trim() || undefined
+        openaiApiKey: openaiApiKey.trim() || undefined
       }).catch(err => {
         console.warn("Backend batch OCR error:", err);
         return null;

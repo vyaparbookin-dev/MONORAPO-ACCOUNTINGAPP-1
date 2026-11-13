@@ -1,5 +1,5 @@
 import axios from "axios";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+// GoogleGenerativeAI removed — pure OpenAI architecture (uses OPENAI_API_KEY from Render)
 import Bill from "../model/bill.js";
 import mongoose from "mongoose";
 import fs from "fs";
@@ -921,7 +921,6 @@ export const parseBillImage = async (req, res) => {
     // --- END LICENSING CHECK ---
 
     const openAiKey = req.body?.openaiApiKey || process.env.OPENAI_API_KEY;
-    const geminiKey = req.body?.geminiApiKey || process.env.GEMINI_API_KEY;
 
     // STRICT ZERO-HALLUCINATION SYSTEM PROMPT:
     // AI MUST ONLY EXTRACT VALUES LITERALLY READABLE. NO GUESSING, NO PLACEHOLDERS, NO INVENTED PRODUCTS.
@@ -1068,24 +1067,50 @@ CRITICAL ZERO-HALLUCINATION RULES:
       }
 
       // -------------------------------------------------------
-      // FORCE CONVERT to JPEG using sharp — handles ALL formats:
-      // HEIC (iPhone), BMP, TIFF, WebP, PNG, unknown binaries.
-      // OpenAI Vision ONLY accepts jpeg/png/gif/webp.
-      // This is the definitive fix for "unsupported image" errors.
+      // ROBUST IMAGE CONVERSION FOR OPENAI VISION:
+      // 1. Checks magic bytes for HEIC/HEIF (e.g. ftypheic, ftypmif1, ftypmsf1)
+      // 2. Tries pure-JS heic-convert if available to convert HEIC to JPEG
+      // 3. Otherwise uses sharp to normalize/rotate and ensure valid JPEG
       // -------------------------------------------------------
       if (!isPdf && pureB64 && pureB64.length > 50) {
-        try {
-          const rawBuffer = Buffer.from(pureB64, "base64");
-          const jpegBuffer = await sharp(rawBuffer)
-            .rotate() // Auto-orient from EXIF (fixes rotated mobile photos)
-            .jpeg({ quality: 85 })
-            .toBuffer();
-          pureB64 = jpegBuffer.toString("base64");
-          mimeType = "image/jpeg";
-          console.log(`[parseBillImage] sharp converted image to JPEG (${jpegBuffer.length} bytes)`);
-        } catch (sharpErr) {
-          // If sharp fails (very unlikely), proceed with original — still better than crashing
-          console.warn("[parseBillImage] sharp conversion skipped:", sharpErr.message);
+        let converted = false;
+        const rawBuffer = Buffer.from(pureB64, "base64");
+
+        // Check if rawBuffer is HEIC/HEIF
+        const isHeic = rawBuffer.length > 12 && (
+          rawBuffer.toString("ascii", 4, 8) === "ftyp" &&
+          ["heic", "heix", "hevc", "heim", "heis", "mif1", "msf1"].some(sub => rawBuffer.toString("ascii", 8, 12).includes(sub))
+        );
+
+        if (isHeic) {
+          try {
+            const { default: heicConvert } = await import("heic-convert");
+            const jpegOut = await heicConvert({
+              buffer: rawBuffer,
+              format: "JPEG",
+              quality: 0.85
+            });
+            pureB64 = Buffer.from(jpegOut).toString("base64");
+            mimeType = "image/jpeg";
+            converted = true;
+            console.log(`[parseBillImage] heic-convert successfully converted HEIC to JPEG (${jpegOut.length} bytes)`);
+          } catch (heicErr) {
+            console.warn("[parseBillImage] heic-convert fallback note:", heicErr.message);
+          }
+        }
+
+        if (!converted) {
+          try {
+            const jpegBuffer = await sharp(rawBuffer)
+              .rotate() // Auto-orient from EXIF (fixes rotated mobile photos)
+              .jpeg({ quality: 85 })
+              .toBuffer();
+            pureB64 = jpegBuffer.toString("base64");
+            mimeType = "image/jpeg";
+            console.log(`[parseBillImage] sharp converted image to JPEG (${jpegBuffer.length} bytes)`);
+          } catch (sharpErr) {
+            console.warn("[parseBillImage] sharp conversion skipped:", sharpErr.message);
+          }
         }
       }
 
@@ -1258,104 +1283,7 @@ Extract all visible fields according to the schema.`;
           }
         } catch (oErr) {
           const openAiErrMsg = oErr.response?.data?.error?.message || oErr.message;
-          console.warn("[parseBillImage] OpenAI GPT-4o-mini warning (cascading to Gemini/fallback):", openAiErrMsg);
-          // Gracefully cascade to Google Gemini or Step 3 instead of crashing the batch
-        }
-      }
-
-      // 2. Try Google Gemini (Cascading modern models)
-      if (geminiKey) {
-        const candidateModels = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-pro"];
-        const genAI = new GoogleGenerativeAI(geminiKey);
-        for (const modelName of candidateModels) {
-          try {
-            const model = genAI.getGenerativeModel({ model: modelName });
-            const geminiParts = isPdf
-              ? [promptSystem, `Examine this PDF statement/bill document text:\n\n${pdfExtractedText || rawOcrText}`]
-              : [promptSystem, userPromptText, { inlineData: { data: pureB64, mimeType: mimeType } }];
-            const result = await model.generateContent(geminiParts);
-            const respText = result.response.text();
-            const cleanJson = respText.replace(/```json/gi, "").replace(/```/g, "").trim();
-            const parsed = JSON.parse(cleanJson);
-            if (parsed.documentType === 'statement' || (Array.isArray(parsed.transactions) && parsed.transactions.length > 0)) {
-              return {
-                success: true,
-                documentType: 'statement',
-                source: modelName,
-                partyName: (parsed.partyName || metaFromOcr.partyName || '').trim(),
-                openingBalance: Number(parsed.openingBalance) || 0,
-                closingBalance: Number(parsed.closingBalance) || 0,
-                transactions: (parsed.transactions || []).map(t => ({
-                  date: t.date || metaFromOcr.billDate || '',
-                  details: t.details || 'खाता प्रविष्टि',
-                  debit: Number(t.debit) || 0,
-                  credit: Number(t.credit) || 0,
-                  balance: Number(t.balance) || 0
-                })),
-                rawText: rawOcrText || (parsed.rawText || respText),
-                needsReview: true,
-                reviewReasons: ['खाता विवरण (Statement) AI द्वारा पढ़ा गया। कृपया जांच कर लेज़र में आयात करें।']
-              };
-            }
-            const itemsList = (parsed.items || [])
-              .filter(it => it && it.name && typeof it.name === "string" && it.name.trim().length > 1)
-              .map(it => {
-                const qty = (it.quantity !== null && it.quantity !== undefined && !isNaN(it.quantity)) ? Number(it.quantity) : null;
-                const price = (it.price !== null && it.price !== undefined && !isNaN(it.price)) ? Number(it.price) : null;
-                const total = (it.total !== null && it.total !== undefined && !isNaN(it.total))
-                  ? Number(it.total)
-                  : (qty !== null && price !== null ? +(qty * price).toFixed(2) : null);
-                return {
-                  name: it.name.trim(),
-                  hsn: it.hsn ? String(it.hsn).trim() : (metaFromOcr.hsn || ""),
-                  quantity: qty,
-                  unit: it.unit || "Pcs",
-                  price: price,
-                  total: total,
-                  source: "extracted"
-                };
-              });
-
-            const mergedCharges = Array.isArray(parsed.additionalCharges) && parsed.additionalCharges.length > 0
-              ? parsed.additionalCharges
-              : (metaFromOcr.additionalCharges || []);
-
-            const extractedObj = {
-              success: true,
-              source: modelName,
-              partyName: (parsed.partyName || metaFromOcr.partyName || "").trim(),
-              partyType: parsed.partyType || "customer",
-              billType: parsed.billType || "sale",
-              date: parsed.date || metaFromOcr.billDate || "",
-              billDate: parsed.date || metaFromOcr.billDate || "",
-              invoiceNumber: parsed.invoiceNumber || metaFromOcr.invoiceNumber || "",
-              gstin: parsed.gstin || metaFromOcr.gstin || "",
-              sellerGst: parsed.sellerGst || metaFromOcr.sellerGst || "",
-              buyerGst: parsed.buyerGst || metaFromOcr.buyerGst || "",
-              challanNo: metaFromOcr.challanNo || "",
-              biltyNo: metaFromOcr.biltyNo || "",
-              vehicleNo: metaFromOcr.vehicleNo || "",
-              roundOff: parsed.roundOff !== null && parsed.roundOff !== undefined ? Number(parsed.roundOff) : (metaFromOcr.roundOff || 0),
-              bankDetails: parsed.bankDetails && Object.keys(parsed.bankDetails).length > 0 ? parsed.bankDetails : (metaFromOcr.bankDetails || {}),
-              additionalCharges: mergedCharges,
-              parsedItems: itemsList,
-              totalAmount: parsed.totalAmount !== null && parsed.totalAmount !== undefined
-                ? Number(parsed.totalAmount)
-                : itemsList.reduce((s, it) => s + (Number(it.total) || 0), 0),
-              rawText: rawOcrText || (parsed.rawText || respText)
-            };
-
-            const validation = validateExtractedBill(extractedObj);
-            return {
-              ...extractedObj,
-              fieldSources: validation.fieldSources,
-              validation,
-              needsReview: validation.needsReview,
-              reviewReasons: validation.reviewReasons
-            };
-          } catch (gErr) {
-            console.warn(`Gemini ${modelName} failed:`, gErr.message);
-          }
+          console.warn("[parseBillImage] OpenAI GPT-4o-mini warning:", openAiErrMsg);
         }
       }
 

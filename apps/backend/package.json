@@ -38,7 +38,8 @@
     "tesseract.js": "^5.1.0",
     "twilio": "^5.13.0",
     "uuid": "^11.1.0",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "heic-convert": "^2.1.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
