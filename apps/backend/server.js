@@ -321,10 +321,19 @@ const startServer = () => {
           });
           if (existingTx) {
             const expAmt = Number(exp.amount || 0);
-            if (expAmt > 0 && (!existingTx.debit || existingTx.debit === 0)) {
-              existingTx.debit = expAmt;
-              existingTx.amount = expAmt;
+            const textToAnalyze = `${exp.title || ''} ${exp.category || ''} ${exp.description || ''} ${exp.notes || ''} ${existingTx.notes || ''}`;
+            const isBonus = existingTx.type === 'bonus' || /इनाम|inam|bonus|बोनस|gift|गिफ्ट|dewali|diwali|दिवाली|त्योहार|festival|reward/i.test(textToAnalyze);
+            if (isBonus) {
+              existingTx.type = 'bonus';
+              existingTx.debit = 0;
+              existingTx.amount = expAmt || existingTx.amount || 0;
               await existingTx.save();
+            } else {
+              if (expAmt > 0 && (!existingTx.debit || existingTx.debit === 0)) {
+                existingTx.debit = expAmt;
+                existingTx.amount = expAmt;
+                await existingTx.save();
+              }
             }
             if (!exp.staffTransactionId || String(exp.staffTransactionId) !== String(existingTx._id)) {
               exp.staffTransactionId = existingTx._id;
@@ -353,16 +362,22 @@ const startServer = () => {
             if (amt > 0) {
               const expDate = exp.date ? new Date(exp.date) : (exp.createdAt ? new Date(exp.createdAt) : new Date());
               const forMonthStr = `${expDate.getFullYear()}-${String(expDate.getMonth() + 1).padStart(2, '0')}`;
+              const textToAnalyze = `${exp.title || ''} ${exp.category || ''} ${exp.description || ''} ${exp.notes || ''}`;
+              const isBonus = /इनाम|inam|bonus|बोनस|gift|गिफ्ट|dewali|diwali|दिवाली|त्योहार|festival|reward/i.test(textToAnalyze);
+              const isSettlement = /salary|वेतन|settle|चुक्ता/i.test(textToAnalyze);
+              const txType = isBonus ? "bonus" : (isSettlement ? "salary_settlement" : "advance");
+              const debitAmt = isBonus ? 0 : amt;
+
               const newStTx = await StaffTransaction.create({
                 companyId: resolvedCompanyId,
                 staffId: staffDoc._id,
-                type: "advance",
-                debit: amt,
+                type: txType,
+                debit: debitAmt,
                 amount: amt,
                 credit: 0,
                 forMonth: forMonthStr,
                 paymentMode: exp.paymentMode || "cash",
-                notes: (exp.description || exp.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim(),
+                notes: (exp.description || exp.title || `${isBonus ? 'स्टाफ बोनस / इनाम' : 'दुकान खर्च से दर्ज स्टाफ भुगतान'}: ${staffDoc.name}`).trim(),
                 date: expDate,
                 expenseId: exp._id,
                 referenceExpenseId: exp._id
@@ -376,7 +391,7 @@ const startServer = () => {
                 syncStaffTxToSupabase(newStTx).catch(() => {});
               } catch (e) {}
 
-              console.log(`✅ Synced missing staff advance transaction for staff: ${staffDoc.name} (Amount: ${amt})`);
+              console.log(`✅ Synced missing staff transaction for staff: ${staffDoc.name} (Type: ${txType}, Amount: ${amt})`);
             }
           }
         }

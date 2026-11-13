@@ -147,10 +147,19 @@ export const autoBackfillStaffExpenses = async (companyId) => {
 
       if (existingTx) {
         const expAmt = Number(exp.amount) || 0;
-        if (expAmt > 0 && (!existingTx.debit || existingTx.debit === 0)) {
-          existingTx.debit = expAmt;
-          existingTx.amount = expAmt;
+        const textToAnalyze = `${exp.title || ''} ${exp.category || ''} ${exp.description || ''} ${exp.notes || ''} ${existingTx.notes || ''}`;
+        const isBonus = existingTx.type === 'bonus' || /इनाम|inam|bonus|बोनस|gift|गिफ्ट|dewali|diwali|दिवाली|त्योहार|festival|reward/i.test(textToAnalyze);
+        if (isBonus) {
+          existingTx.type = 'bonus';
+          existingTx.debit = 0;
+          existingTx.amount = expAmt || existingTx.amount || 0;
           await existingTx.save();
+        } else {
+          if (expAmt > 0 && (!existingTx.debit || existingTx.debit === 0)) {
+            existingTx.debit = expAmt;
+            existingTx.amount = expAmt;
+            await existingTx.save();
+          }
         }
         if (!exp.staffTransactionId || String(exp.staffTransactionId) !== String(existingTx._id)) {
           exp.staffTransactionId = existingTx._id;
@@ -181,17 +190,23 @@ export const autoBackfillStaffExpenses = async (companyId) => {
         if (amt > 0) {
           const expDate = exp.date ? new Date(exp.date) : (exp.createdAt ? new Date(exp.createdAt) : new Date());
           const forMonthStr = `${expDate.getFullYear()}-${String(expDate.getMonth() + 1).padStart(2, '0')}`;
+          const textToAnalyze = `${exp.title || ''} ${exp.category || ''} ${exp.description || ''} ${exp.notes || ''}`;
+          const isBonus = /इनाम|inam|bonus|बोनस|gift|गिफ्ट|dewali|diwali|दिवाली|त्योहार|festival|reward/i.test(textToAnalyze);
+          const isSettlement = /salary|वेतन|settle|चुक्ता/i.test(textToAnalyze);
+          const txType = isBonus ? 'bonus' : (isSettlement ? 'salary_settlement' : 'advance');
+          const debitAmt = isBonus ? 0 : amt;
+
           const stTx = await StaffTransaction.create({
             staffId: targetStaff._id,
             companyId,
-            type: 'advance',
+            type: txType,
             date: expDate,
             forMonth: forMonthStr,
-            debit: amt,
+            debit: debitAmt,
             amount: amt,
             credit: 0,
             paymentMode: exp.paymentMode || 'cash',
-            notes: (exp.description || exp.title || `दुकान खर्च से बैकफिल्ड स्टाफ भुगतान: ${targetStaff.name}`).trim(),
+            notes: (exp.description || exp.title || `${isBonus ? 'बोनस / इनाम' : 'दुकान खर्च से बैकफिल्ड स्टाफ भुगतान'}: ${targetStaff.name}`).trim(),
             expenseId: exp._id,
             referenceExpenseId: exp._id
           });
@@ -438,6 +453,10 @@ export const getPagarBookSummary = async (req, res) => {
       const commTransactions = staffTx.filter(t => t.type === 'commission' || t.type === 'incentive');
       const commEarnings = commTransactions.reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
 
+      // Bonuses & Festival Rewards for current month (Do NOT deduct from salary)
+      const bonusTransactions = staffTx.filter(t => t.type === 'bonus');
+      const totalBonus = bonusTransactions.reduce((sum, t) => sum + (Number(t.amount) || Number(t.credit) || Number(t.debit) || 0), 0);
+
       // Debits in current month (deduplicating identical timestamp entries)
       const seenCurDebits = new Set();
       const uniqueDebits = staffTx
@@ -505,6 +524,16 @@ export const getPagarBookSummary = async (req, res) => {
         commEarnings,
         commissionEarnings: commEarnings,
         grossSalary,
+        totalBonus,
+        bonusList: bonusTransactions.map(t => ({
+          _id: t._id,
+          amount: Number(t.amount) || Number(t.credit) || Number(t.debit) || 0,
+          date: t.date,
+          paymentMode: t.paymentMode || 'cash',
+          type: 'bonus',
+          notes: t.notes || 'त्योहार बोनस/इनाम (सैलरी से नहीं कटेगा)',
+          forMonth: t.forMonth
+        })),
         totalAdvance,
         totalSalaryPaid,
         totalPaid,
@@ -540,6 +569,7 @@ export const getPagarBookSummary = async (req, res) => {
     const totalCompanySalaryEarned = staffSummaries.reduce((sum, s) => sum + s.earnedSalary, 0);
     const totalCompanyAdvanceGiven = staffSummaries.reduce((sum, s) => sum + s.totalAdvance, 0);
     const totalCompanySalaryPaid = staffSummaries.reduce((sum, s) => sum + (s.totalSalaryPaid || 0), 0);
+    const totalCompanyBonusGiven = staffSummaries.reduce((sum, s) => sum + (s.totalBonus || 0), 0);
     const totalCompanyPreviousBalance = staffSummaries.reduce((sum, s) => sum + (s.previousBalance || 0), 0);
     const totalCompanyNetPayable = staffSummaries.reduce((sum, s) => sum + s.netPayable, 0);
     res.json({
@@ -552,6 +582,7 @@ export const getPagarBookSummary = async (req, res) => {
       totalCompanySalaryEarned,
       totalCompanyAdvanceGiven,
       totalCompanySalaryPaid,
+      totalCompanyBonusGiven,
       totalCompanyPreviousBalance,
       totalCompanyNetPayable,
       staff: staffSummaries
@@ -699,7 +730,7 @@ export const addStaffAdvance = async (req, res) => {
     await staff.save();
 
     // Async Supabase Dual-Write
-    syncStaffTxToSupabase(advanceTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
+    syncStaffTxToSupabase(otTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
     syncStaffToSupabase(staff).catch(e => console.warn("[Supabase Dual-Write] Staff sync note:", e.message));
 
     res.status(201).json({ 
@@ -743,7 +774,7 @@ export const addStaffOvertime = async (req, res) => {
     await staff.save();
 
     // Async Supabase Dual-Write
-    syncStaffTxToSupabase(advanceTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
+    syncStaffTxToSupabase(otTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
     syncStaffToSupabase(staff).catch(e => console.warn("[Supabase Dual-Write] Staff sync note:", e.message));
 
     res.status(201).json({ success: true, message: `₹${Math.round(totalOtPay)} ओवरटाइम दर्ज हुआ!`, transaction: otTx });
@@ -781,10 +812,83 @@ export const addStaffCommission = async (req, res) => {
     await staff.save();
 
     // Async Supabase Dual-Write
-    syncStaffTxToSupabase(advanceTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
+    syncStaffTxToSupabase(commTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
     syncStaffToSupabase(staff).catch(e => console.warn("[Supabase Dual-Write] Staff sync note:", e.message));
 
     res.status(201).json({ success: true, message: `₹${amount} कमीशन दर्ज हुआ!`, transaction: commTx });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// 1-Tap Record Staff Bonus / Festival Reward (Does NOT deduct from salary)
+export const addStaffBonus = async (req, res) => {
+  try {
+    const { staffId, amount, notes, date, paymentMode, forMonth } = req.body;
+    if (!staffId || !amount || Number(amount) <= 0) {
+      return res.status(400).json({ success: false, error: "Valid staff ID and amount are required" });
+    }
+
+    const staff = await Staff.findOne({ _id: staffId, companyId: req.companyId });
+    if (!staff) return res.status(404).json({ success: false, error: "Staff not found" });
+
+    const txDate = date ? new Date(date) : new Date();
+    const effectiveForMonth = forMonth && /^\d{4}-\d{2}$/.test(forMonth)
+      ? forMonth
+      : `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}`;
+
+    const defaultNotes = 'त्योहार बोनस / इनाम (सैलरी से नहीं कटेगा)';
+
+    const bonusTx = new StaffTransaction({
+      staffId,
+      companyId: req.companyId,
+      type: 'bonus',
+      date: txDate,
+      debit: 0, // IMPORTANT: Bonus does not deduct from salary!
+      credit: 0,
+      amount: Number(amount),
+      notes: (notes || defaultNotes).trim(),
+      forMonth: effectiveForMonth,
+      paymentMode: (paymentMode || 'cash').toLowerCase()
+    });
+
+    await bonusTx.save();
+
+    // Auto-record as Shop Expense (Operating) under Salary category for 2-way sync
+    try {
+      const linkedExpense = await Expense.create({
+        companyId: req.companyId,
+        title: `स्टाफ बोनस / इनाम - ${staff.name}`,
+        amount: Number(amount),
+        category: "Salary",
+        expenseType: "operating",
+        familyMember: "",
+        date: txDate,
+        paymentMethod: (paymentMode || 'cash').toLowerCase(),
+        description: `PagarBook से दर्ज बोनस/इनाम: ${staff.name} (${(notes || defaultNotes).trim()}) [सैलरी से कटौती नहीं होगी]`,
+        staffId: staff._id,
+        staffTransactionId: bonusTx._id
+      });
+      bonusTx.expenseId = linkedExpense._id;
+      bonusTx.referenceExpenseId = linkedExpense._id;
+      await bonusTx.save();
+    } catch (expErr) {
+      console.warn("Auto shop expense creation warning for staff bonus:", expErr.message);
+    }
+
+    // Note: staff.balance is NOT decremented because bonus is an extra gift/reward, not an advance!
+    staff.updatedAt = new Date();
+    await staff.save();
+
+    // Async Supabase Dual-Write
+    syncStaffTxToSupabase(bonusTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
+    syncStaffToSupabase(staff).catch(e => console.warn("[Supabase Dual-Write] Staff sync note:", e.message));
+
+    res.status(201).json({ 
+      success: true, 
+      message: `₹${amount} बोनस/इनाम सफलतापूर्वक दर्ज हुआ! (सैलरी से नहीं कटेगा)`, 
+      transaction: bonusTx 
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

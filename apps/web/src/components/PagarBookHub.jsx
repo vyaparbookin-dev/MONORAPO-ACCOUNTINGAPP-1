@@ -21,6 +21,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     staff: [],
     totalCompanySalaryEarned: 0,
     totalCompanyAdvanceGiven: 0,
+    totalCompanyBonusGiven: 0,
     totalCompanyNetPayable: 0,
     daysInMonth: 30,
     daysConsidered: new Date().getDate()
@@ -150,6 +151,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
           ...rawData,
           staff: finalStaff,
           totalCompanySalaryEarned: rawData.totalCompanySalaryEarned || finalStaff.reduce((sum, s) => sum + (s.earnedSalary || 0), 0),
+          totalCompanyBonusGiven: rawData.totalCompanyBonusGiven || finalStaff.reduce((sum, s) => sum + (s.totalBonus || 0), 0),
           totalCompanyNetPayable: rawData.totalCompanyNetPayable || finalStaff.reduce((sum, s) => sum + (s.netPayable || 0), 0)
         };
         setSummaryData(nextData);
@@ -405,9 +407,10 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     setSavingAdvance(true);
     try {
       const isSettlement = (loanAdvanceTab === "settlement");
+      const isBonus = (loanAdvanceTab === "bonus");
       const isLoan = (loanAdvanceTab === "loan");
       
-      const targetMonthStr = isSettlement 
+      const targetMonthStr = (isSettlement || isBonus)
         ? (settlementMonth || `${currentYear}-${String(currentMonth).padStart(2, "0")}`)
         : `${currentYear}-${String(currentMonth).padStart(2, "0")}`;
 
@@ -416,6 +419,8 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
 
       const finalNotes = isSettlement
         ? (advanceNotes.trim() || `${targetMonthName} वेतन भुगतान`)
+        : isBonus
+        ? (advanceNotes.trim() || `त्योहार बोनस / इनाम (सैलरी से नहीं कटेगा)`)
         : isLoan
         ? `स्टाफ लोन (${loanEmiMonths} माह ईएमआई) - ${advanceNotes || "व्यक्तिगत जरूरत"}`
         : (advanceNotes.trim() || "बीच में लिया गया एडवांस");
@@ -424,16 +429,20 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
         staffId: selectedStaffId,
         amount: Number(advanceAmount),
         paymentMode: advancePaymentMode,
-        type: isSettlement ? "salary_settlement" : (isLoan ? "loan" : "advance"),
+        type: isSettlement ? "salary_settlement" : (isBonus ? "bonus" : (isLoan ? "loan" : "advance")),
         isSettlement,
         forMonth: targetMonthStr,
         notes: finalNotes,
         date: paymentDate ? new Date(paymentDate) : new Date()
       };
 
-      await api.post("/api/staff/advance", payload).catch(() => api.post("/staff/advance", payload));
+      if (isBonus) {
+        await api.post("/api/staff/bonus", payload).catch(() => api.post("/staff/bonus", payload));
+      } else {
+        await api.post("/api/staff/advance", payload).catch(() => api.post("/staff/advance", payload));
+      }
 
-      const typeLabel = isSettlement ? "वेतन भुगतान (Salary Payment)" : (isLoan ? "लोन" : "एडवांस");
+      const typeLabel = isSettlement ? "वेतन भुगतान (Salary Payment)" : isBonus ? "🎁 बोनस / इनाम (सैलरी से नहीं कटेगा)" : (isLoan ? "लोन" : "एडवांस");
       alert(`✅ ${typeLabel} ₹${advanceAmount} सफलतापूर्वक दर्ज हो गया!`);
       setAdvanceAmount("");
       setAdvanceNotes("");
@@ -483,6 +492,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
       `  💵 बना मूल वेतन: ₹${(staff.earnedSalary || 0).toLocaleString('en-IN')}`,
       staff.overtimeEarnings > 0 ? `  ⏱️ ओवर-टाइम कमाई: +₹${(staff.overtimeEarnings || 0).toLocaleString('en-IN')}` : null,
       `  ✨ कुल ग्रॉस वेतन: ₹${(staff.grossSalary || staff.earnedSalary || 0).toLocaleString('en-IN')}`,
+      staff.totalBonus > 0 ? `  🎁 त्योहार बोनस/इनाम (Bonus): ₹${(staff.totalBonus || 0).toLocaleString('en-IN')} (सैलरी से नहीं कटेगा)` : null,
       staff.totalAdvance > 0 ? `  💸 बीच में लिया एडवांस: -₹${(staff.totalAdvance || 0).toLocaleString('en-IN')}` : null,
       ...(staff.paymentsList && staff.paymentsList.length > 0 ? [
         `━━━━━━━━━━━━━━━━━━━━`,
@@ -1054,7 +1064,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2 pt-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
                     <button
                       onClick={() => {
                         setLoanAdvanceTab("settlement");
@@ -1081,6 +1091,18 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                     </button>
 
                     <button
+                      onClick={() => {
+                        setLoanAdvanceTab("bonus");
+                        setAdvanceAmount("");
+                        setShowLoanAdvanceModal(true);
+                      }}
+                      className="py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
+                    >
+                      <Award className="w-3.5 h-3.5" />
+                      <span>🎁 बोनस / इनाम</span>
+                    </button>
+
+                    <button
                       onClick={() => setShowSalarySlipModal(true)}
                       className="py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1 border border-indigo-200 shadow-xs transition cursor-pointer"
                     >
@@ -1090,14 +1112,15 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                   </div>
                 </div>
 
-                {/* Advance & Salary Payment Passbook Table */}
-                {((currentStaff.paymentsList && currentStaff.paymentsList.length > 0) || (currentStaff.advancesList && currentStaff.advancesList.length > 0)) && (
+                {/* Advance, Bonus & Salary Payment Passbook Table */}
+                {((currentStaff.paymentsList && currentStaff.paymentsList.length > 0) || (currentStaff.advancesList && currentStaff.advancesList.length > 0) || (currentStaff.bonusList && currentStaff.bonusList.length > 0)) && (
                   <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs space-y-3 mt-4">
                     <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                      <span className="text-xs font-bold text-slate-800">भुगतान व एडवांस लेजर ({monthShortName} {currentYear})</span>
+                      <span className="text-xs font-bold text-slate-800">भुगतान, बोनस व एडवांस लेजर ({monthShortName} {currentYear})</span>
                       <div className="flex items-center gap-2 text-xs">
                         {currentStaff.totalSalaryPaid > 0 && <span className="font-extrabold text-emerald-700">वेतन: ₹{currentStaff.totalSalaryPaid}</span>}
-                        {currentStaff.totalAdvance > 0 && <span className="font-extrabold text-amber-600">एडवांस: ₹{currentStaff.totalAdvance}</span>}
+                        {currentStaff.totalBonus > 0 && <span className="font-extrabold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">🎁 बोनस: ₹{currentStaff.totalBonus}</span>}
+                        {currentStaff.totalAdvance > 0 && <span className="font-extrabold text-rose-600">एडवांस: ₹{currentStaff.totalAdvance}</span>}
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -1124,12 +1147,36 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                         </div>
                       ))}
 
-                      {/* Advances & Loans */}
-                      {(currentStaff.advancesList || []).map((adv, idx) => (
-                        <div key={adv._id || `adv_${idx}`} className="flex items-center justify-between text-xs py-2 px-2.5 bg-amber-50/50 rounded-xl border border-amber-100">
+                      {/* Bonuses / Rewards (Not deducted from salary) */}
+                      {(currentStaff.bonusList || []).map((b, idx) => (
+                        <div key={b._id || `bon_${idx}`} className="flex items-center justify-between text-xs py-2 px-2.5 bg-amber-50/70 rounded-xl border border-amber-200">
                           <div>
                             <div className="flex items-center gap-1.5">
-                              <span className="px-1.5 py-0.5 bg-amber-500 text-white rounded text-[10px] font-extrabold">💳 एडवांस</span>
+                              <span className="px-1.5 py-0.5 bg-amber-500 text-white rounded text-[10px] font-extrabold">🎁 बोनस / इनाम</span>
+                              <span className="font-bold text-slate-800">
+                                {new Date(b.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                              </span>
+                              <span className="text-[10px] text-amber-700 font-bold">(सैलरी से नहीं कटेगा)</span>
+                            </div>
+                            <span className="text-[11px] text-slate-600 block mt-0.5">{b.notes || "त्योहार बोनस/इनाम"} ({b.paymentMode === 'cash' ? 'नकद' : b.paymentMode})</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-extrabold text-amber-700 text-sm">+₹{b.amount}</span>
+                            {b._id && (
+                              <button onClick={() => handleDeleteAdvance(b._id)} title="हटाएं" className="text-slate-300 hover:text-rose-500 p-1 cursor-pointer">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Advances & Loans */}
+                      {(currentStaff.advancesList || []).map((adv, idx) => (
+                        <div key={adv._id || `adv_${idx}`} className="flex items-center justify-between text-xs py-2 px-2.5 bg-rose-50/50 rounded-xl border border-rose-100">
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 bg-rose-500 text-white rounded text-[10px] font-extrabold">💳 एडवांस</span>
                               <span className="font-bold text-slate-800">
                                 {new Date(adv.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
                               </span>
@@ -1137,7 +1184,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                             <span className="text-[11px] text-slate-500 block mt-0.5">{adv.notes || "Advance"} ({adv.paymentMode === 'cash' ? 'नकद' : adv.paymentMode})</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="font-extrabold text-amber-700 text-sm">-₹{adv.amount}</span>
+                            <span className="font-extrabold text-rose-700 text-sm">-₹{adv.amount}</span>
                             {adv._id && (
                               <button onClick={() => handleDeleteAdvance(adv._id)} title="हटाएं" className="text-slate-300 hover:text-rose-500 p-1 cursor-pointer">
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -1427,6 +1474,13 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                   </div>
                 )}
 
+                {currentStaff.totalBonus > 0 && (
+                  <div className="flex justify-between text-amber-700 bg-amber-50 p-2 rounded-xl font-bold border border-amber-200">
+                    <span className="flex items-center gap-1">🎁 त्योहार बोनस / इनाम (Bonus):</span>
+                    <span>+₹ {(currentStaff.totalBonus || 0).toLocaleString('en-IN')} <span className="text-[10px] text-amber-600 font-normal">(सैलरी से नहीं कटेगा)</span></span>
+                  </div>
+                )}
+
                 {/* Salary Payments in Slip */}
                 {currentStaff.paymentsList && currentStaff.paymentsList.length > 0 && (
                   <div className="border-t border-slate-200 pt-1.5 space-y-1">
@@ -1483,19 +1537,26 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
             <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-100 space-y-4">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <h3 className="text-base font-extrabold text-slate-900">
-                  {loanAdvanceTab === "settlement" ? "वेतन भुगतान (Salary Settle)" : "एडवांस व लोन एंट्री"}
+                  {loanAdvanceTab === "settlement" ? "वेतन भुगतान (Salary Settle)" : loanAdvanceTab === "bonus" ? "🎁 बोनस / त्योहार इनाम एंट्री" : "एडवांस व लोन एंट्री"}
                 </h3>
                 <button onClick={() => setShowLoanAdvanceModal(false)} className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2 text-xs text-blue-900 font-semibold">
-                <span>⚡</span>
-                <span>यह भुगतान <b>दुकान के बिजनेस खर्च (Shop Expense / Salary)</b> में भी अपने आप दर्ज होगा (2 जगह डालने की जरूरत नहीं)।</span>
-              </div>
+              {loanAdvanceTab === "bonus" ? (
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-xs text-amber-900 font-semibold">
+                  <span>🎁</span>
+                  <span>बोनस या त्योहार इनाम <b>दुकान के बिजनेस खर्च</b> में दर्ज होगा, लेकिन <b>स्टाफ की सैलरी से नहीं कटेगा</b>।</span>
+                </div>
+              ) : (
+                <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2 text-xs text-blue-900 font-semibold">
+                  <span>⚡</span>
+                  <span>यह भुगतान <b>दुकान के बिजनेस खर्च (Shop Expense / Salary)</b> में भी अपने आप दर्ज होगा (2 जगह डालने की जरूरत नहीं)।</span>
+                </div>
+              )}
 
-              {/* 3-Tab Switcher: Settlement vs Advance vs Loan */}
+              {/* 4-Tab Switcher: Settlement vs Advance vs Bonus vs Loan */}
               <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold gap-1">
                 <button
                   type="button"
@@ -1506,7 +1567,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                   className={`flex-1 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 ${loanAdvanceTab === "settlement" ? "bg-white text-emerald-700 shadow-xs font-extrabold" : "text-slate-500"}`}
                 >
                   <DollarSign className="w-3.5 h-3.5" />
-                  <span>1. वेतन भुगतान</span>
+                  <span>1. वेतन</span>
                 </button>
                 <button
                   type="button"
@@ -1518,19 +1579,29 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setLoanAdvanceTab("bonus")}
+                  className={`flex-1 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 ${loanAdvanceTab === "bonus" ? "bg-white text-amber-700 shadow-xs font-extrabold" : "text-slate-500"}`}
+                >
+                  <Award className="w-3.5 h-3.5" />
+                  <span>3. 🎁 बोनस</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setLoanAdvanceTab("loan")}
-                  className={`flex-1 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 ${loanAdvanceTab === "loan" ? "bg-white text-indigo-700 shadow-xs font-extrabold" : "text-slate-500"}`}
+                  className={`flex-1 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 ${loanAdvanceTab === "loan" ? "bg-white text-purple-700 shadow-xs font-extrabold" : "text-slate-500"}`}
                 >
                   <Landmark className="w-3.5 h-3.5" />
-                  <span>3. लोन</span>
+                  <span>4. लोन</span>
                 </button>
               </div>
 
               <form onSubmit={handleSaveLoanOrAdvance} className="space-y-3.5 text-xs font-bold text-slate-700">
-                {/* Month Selector for Salary Settlement */}
-                {loanAdvanceTab === "settlement" && (
+                {/* Month Selector for Salary Settlement or Bonus */}
+                {(loanAdvanceTab === "settlement" || loanAdvanceTab === "bonus") && (
                   <div>
-                    <label className="block mb-1">किस माह का वेतन चुकता कर रहे हैं? (Salary Month)</label>
+                    <label className="block mb-1">
+                      {loanAdvanceTab === "settlement" ? "किस माह का वेतन चुकता कर रहे हैं? (Salary Month)" : "किस माह का बोनस/इनाम है? (Bonus Month)"}
+                    </label>
                     <select
                       value={settlementMonth || `${currentYear}-${String(currentMonth).padStart(2, "0")}`}
                       onChange={(e) => setSettlementMonth(e.target.value)}
@@ -1552,7 +1623,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label>
-                      {loanAdvanceTab === 'settlement' ? 'वेतन भुगतान राशि (Payment ₹) *' : loanAdvanceTab === 'loan' ? 'लोन राशि (Loan Amount ₹) *' : 'एडवांस राशि (Advance ₹) *'}
+                      {loanAdvanceTab === 'settlement' ? 'वेतन भुगतान राशि (Payment ₹) *' : loanAdvanceTab === 'bonus' ? '🎁 बोनस / इनाम राशि (Bonus ₹) *' : loanAdvanceTab === 'loan' ? 'लोन राशि (Loan Amount ₹) *' : 'एडवांस राशि (Advance ₹) *'}
                     </label>
                     {loanAdvanceTab === 'settlement' && currentStaff.netPayable > 0 && (
                       <button
@@ -1618,7 +1689,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                   <label className="block mb-1">विवरण / टिप्पणी (Notes)</label>
                   <input 
                     type="text"
-                    placeholder={loanAdvanceTab === 'settlement' ? "उदा. सितंबर वेतन चुकता किया" : "उदा. त्योहार खर्च / राशन"}
+                    placeholder={loanAdvanceTab === 'settlement' ? "उदा. सितंबर वेतन चुकता किया" : loanAdvanceTab === 'bonus' ? "उदा. दिवाली बोनस, त्यौहार इनाम..." : "उदा. त्योहार खर्च / राशन"}
                     value={advanceNotes}
                     onChange={(e) => setAdvanceNotes(e.target.value)}
                     className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
@@ -1628,12 +1699,14 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                 <button
                   type="submit"
                   disabled={savingAdvance}
-                  className={`w-full py-3 text-white rounded-xl font-bold text-sm shadow-md transition disabled:opacity-50 cursor-pointer ${loanAdvanceTab === 'settlement' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                  className={`w-full py-3 text-white rounded-xl font-bold text-sm shadow-md transition disabled:opacity-50 cursor-pointer ${loanAdvanceTab === 'settlement' ? 'bg-emerald-600 hover:bg-emerald-700' : loanAdvanceTab === 'bonus' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'}`}
                 >
                   {savingAdvance 
                     ? "सुरक्षित हो रहा है..." 
                     : loanAdvanceTab === 'settlement' 
                     ? "💵 वेतन भुगतान सुरक्षित करें (Settle)" 
+                    : loanAdvanceTab === 'bonus' 
+                    ? "🎁 बोनस / इनाम सुरक्षित करें (सैलरी से नहीं कटेगा)" 
                     : loanAdvanceTab === 'loan' 
                     ? "लोन सुरक्षित करें" 
                     : "एडवांस सुरक्षित करें"}

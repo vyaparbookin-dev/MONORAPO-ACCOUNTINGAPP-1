@@ -819,6 +819,18 @@ function MobileVyaparAppContent() {
           date: new Date()
         });
         alert(`💵 ₹${actionAmount} एडवांस दर्ज हो गया!`);
+      } else if (actionType === "bonus") {
+        if (!actionAmount || Number(actionAmount) <= 0) {
+          alert("कृपया सही बोनस/इनाम राशि (₹) दर्ज करें!");
+          return;
+        }
+        await api.post("/api/staff/bonus", {
+          staffId: actionStaffTarget._id,
+          amount: Number(actionAmount),
+          notes: actionNotes.trim() || "त्योहार बोनस / इनाम (सैलरी से नहीं कटेगा)",
+          date: new Date()
+        });
+        alert(`🎁 ₹${actionAmount} बोनस/इनाम दर्ज हो गया! (सैलरी से नहीं कटेगा)`);
       } else if (actionType === "overtime") {
         await api.post("/api/staff/overtime", {
           staffId: actionStaffTarget._id,
@@ -880,6 +892,7 @@ function MobileVyaparAppContent() {
       "💵 *बनी हुई सैलरी:* ₹" + (staff.earnedSalary || 0).toLocaleString('en-IN'),
       (staff.otEarnings > 0 ? ("⏱️ *ओवरटाइम:* +₹" + staff.otEarnings.toLocaleString('en-IN')) : null),
       (staff.commEarnings > 0 ? ("🎯 *कमीशन:* +₹" + staff.commEarnings.toLocaleString('en-IN')) : null),
+      (staff.totalBonus > 0 ? ("🎁 *त्योहार बोनस/इनाम:* ₹" + staff.totalBonus.toLocaleString('en-IN') + " (सैलरी से नहीं कटेगा)") : null),
       "💸 *लिया गया एडवांस:* -₹" + (staff.totalAdvance || 0).toLocaleString('en-IN'),
       "--------------------------------",
       "⚖️ *शुद्ध देय बाकी वेतन (Net Payable):* *₹" + (staff.netPayable || 0).toLocaleString('en-IN') + "*",
@@ -6613,6 +6626,13 @@ function MobileVyaparAppContent() {
                   <span>-₹{(selectedStaffForSlip.totalAdvance || 0).toLocaleString('en-IN')}</span>
                 </div>
 
+                {selectedStaffForSlip.totalBonus > 0 && (
+                  <div className="flex justify-between text-amber-700 bg-amber-50 p-2 rounded-xl font-bold border border-amber-200">
+                    <span>🎁 त्योहार बोनस / इनाम (Bonus):</span>
+                    <span>+₹{(selectedStaffForSlip.totalBonus || 0).toLocaleString('en-IN')} <span className="text-[10px] text-amber-600 font-normal">(सैलरी से नहीं कटेगा)</span></span>
+                  </div>
+                )}
+
                 <div className="flex justify-between items-center bg-indigo-600 text-white p-2.5 rounded-xl font-black text-sm mt-2 shadow-sm">
                   <span>⚖️ शुद्ध देय बाकी वेतन (Net Payable):</span>
                   <span className="text-base">₹{(selectedStaffForSlip.netPayable || 0).toLocaleString('en-IN')}</span>
@@ -6626,16 +6646,28 @@ function MobileVyaparAppContent() {
                 <span className="text-xs font-black text-slate-800">
                   📝 एडवांस व भुगतान पासबुक ({(selectedStaffForSlip.transactions || []).length}):
                 </span>
-                <button
-                  onClick={() => {
-                    setActionStaffTarget(selectedStaffForSlip);
-                    setActionType("advance");
-                    setShowStaffActionModal(true);
-                  }}
-                  className="px-2 py-0.5 bg-rose-50 text-rose-700 rounded-lg text-[10px] font-bold border border-rose-200"
-                >
-                  + नया एडवांस
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      setActionStaffTarget(selectedStaffForSlip);
+                      setActionType("bonus");
+                      setShowStaffActionModal(true);
+                    }}
+                    className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded-lg text-[10px] font-bold border border-amber-200 cursor-pointer"
+                  >
+                    + 🎁 बोनस
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActionStaffTarget(selectedStaffForSlip);
+                      setActionType("advance");
+                      setShowStaffActionModal(true);
+                    }}
+                    className="px-2 py-0.5 bg-rose-50 text-rose-700 rounded-lg text-[10px] font-bold border border-rose-200 cursor-pointer"
+                  >
+                    + एडवांस
+                  </button>
+                </div>
               </div>
 
               <div className="max-h-36 overflow-y-auto space-y-1.5 bg-slate-50 p-2 rounded-2xl border border-slate-200">
@@ -6646,15 +6678,15 @@ function MobileVyaparAppContent() {
                     <div key={idx} className="p-2 bg-white rounded-xl border border-slate-200 flex justify-between items-center text-xs">
                       <div>
                         <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                          <span>{t.type === 'advance' ? '💸 एडवांस' : t.type === 'overtime' ? '⏱️ ओवरटाइम' : '🎯 कमीशन'}</span>
+                          <span>{t.type === 'bonus' ? '🎁 बोनस' : t.type === 'advance' ? '💸 एडवांस' : t.type === 'overtime' ? '⏱️ ओवरटाइम' : '🎯 कमीशन'}</span>
                           <span className="text-[10px] text-slate-400 font-normal">
                             {new Date(t.date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short' })}
                           </span>
                         </div>
                         {t.notes && <p className="text-[10px] text-slate-500 mt-0.5">{t.notes}</p>}
                       </div>
-                      <span className={`font-black ${t.debit > 0 ? "text-rose-600" : "text-emerald-600"}`}>
-                        {t.debit > 0 ? `-₹${t.debit}` : `+₹${t.credit}`}
+                      <span className={`font-black ${t.type === 'bonus' ? 'text-amber-600' : t.debit > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                        {t.type === 'bonus' ? `+₹${t.amount || t.credit || 0} (इनाम)` : t.debit > 0 ? `-₹${t.debit}` : `+₹${t.credit}`}
                       </span>
                     </div>
                   ))
@@ -6948,11 +6980,11 @@ function MobileVyaparAppContent() {
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
-                  {actionType === "advance" ? "💸" : actionType === "overtime" ? "⏱️" : "🎯"}
+                  {actionType === "advance" ? "💸" : actionType === "bonus" ? "🎁" : actionType === "overtime" ? "⏱️" : "🎯"}
                 </div>
                 <div>
                   <h3 className="font-extrabold text-sm text-[#0F172A]">
-                    {actionType === "advance" ? "एडवांस पेमेंट दर्ज करें" : actionType === "overtime" ? "ओवरटाइम दर्ज करें" : "कमीशन दर्ज करें"}
+                    {actionType === "advance" ? "एडवांस पेमेंट दर्ज करें" : actionType === "bonus" ? "🎁 बोनस / त्योहार इनाम दर्ज करें" : actionType === "overtime" ? "ओवरटाइम दर्ज करें" : "कमीशन दर्ज करें"}
                   </h3>
                   <p className="text-[10px] text-slate-400">स्टाफ: {actionStaffTarget.name}</p>
                 </div>
@@ -6961,6 +6993,45 @@ function MobileVyaparAppContent() {
                 <X size={18} />
               </button>
             </div>
+
+            {/* Action Type Tabs */}
+            <div className="flex bg-slate-100 p-1 rounded-xl gap-1 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setActionType("advance")}
+                className={`flex-1 py-1.5 rounded-lg transition cursor-pointer ${actionType === "advance" ? "bg-white text-rose-700 shadow-xs font-extrabold" : "text-slate-500"}`}
+              >
+                💸 एडवांस
+              </button>
+              <button
+                type="button"
+                onClick={() => setActionType("bonus")}
+                className={`flex-1 py-1.5 rounded-lg transition cursor-pointer ${actionType === "bonus" ? "bg-white text-amber-700 shadow-xs font-extrabold" : "text-slate-500"}`}
+              >
+                🎁 बोनस
+              </button>
+              <button
+                type="button"
+                onClick={() => setActionType("overtime")}
+                className={`flex-1 py-1.5 rounded-lg transition cursor-pointer ${actionType === "overtime" ? "bg-white text-indigo-700 shadow-xs font-extrabold" : "text-slate-500"}`}
+              >
+                ⏱️ overtime
+              </button>
+              <button
+                type="button"
+                onClick={() => setActionType("commission")}
+                className={`flex-1 py-1.5 rounded-lg transition cursor-pointer ${actionType === "commission" ? "bg-white text-emerald-700 shadow-xs font-extrabold" : "text-slate-500"}`}
+              >
+                🎯 कमीशन
+              </button>
+            </div>
+
+            {actionType === "bonus" && (
+              <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 font-semibold flex items-center gap-1.5">
+                <span>🎁</span>
+                <span><b>बोनस / इनाम:</b> यह दुकान खर्च में दर्ज होगा, लेकिन स्टाफ की सैलरी से नहीं कटेगा।</span>
+              </div>
+            )}
 
             <form onSubmit={handleSaveStaffAction} className="space-y-3">
               {actionType === "overtime" && (
@@ -6977,7 +7048,9 @@ function MobileVyaparAppContent() {
               )}
 
               <div>
-                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">राशि (₹ Amount) *</label>
+                <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                  {actionType === "bonus" ? "🎁 बोनस / इनाम राशि (₹) *" : "राशि (₹ Amount) *"}
+                </label>
                 <input
                   type="number"
                   placeholder="₹ 1000"
@@ -6992,7 +7065,7 @@ function MobileVyaparAppContent() {
                 <label className="text-[11px] font-extrabold text-slate-700 block mb-1">विवरण / नोट्स (Notes)</label>
                 <input
                   type="text"
-                  placeholder="उदा. घर के काम हेतु लिया, रात की शिफ्ट..."
+                  placeholder={actionType === "bonus" ? "उदा. दिवाली बोनस, त्यौहार इनाम..." : actionType === "overtime" ? "उदा. रात की शिफ्ट..." : "उदा. घर के काम हेतु लिया..."}
                   value={actionNotes}
                   onChange={(e) => setActionNotes(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
@@ -7002,10 +7075,10 @@ function MobileVyaparAppContent() {
               <button
                 type="submit"
                 disabled={savingStaffAction}
-                className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-sm rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
+                className={`w-full py-3.5 text-white font-extrabold text-sm rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-2 ${actionType === 'bonus' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
               >
                 {savingStaffAction ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-                {savingStaffAction ? "दर्ज हो रहा है..." : "💾 सेव करें"}
+                {savingStaffAction ? "दर्ज हो रहा है..." : actionType === 'bonus' ? "🎁 बोनस सुरक्षित करें" : "💾 सेव करें"}
               </button>
             </form>
           </div>

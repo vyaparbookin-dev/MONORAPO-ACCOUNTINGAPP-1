@@ -94,7 +94,9 @@ export const addExpense = async (req, res) => {
         }
 
         const isSettlement = /सैलरी|salary|वेतन|settlement/i.test(textToAnalyze);
-        const txType = isSettlement ? 'salary_settlement' : 'advance';
+        const isBonus = /इनाम|inam|bonus|बोनस|gift|गिफ्ट|dewali|diwali|दिवाली|त्योहार|festival|reward/i.test(textToAnalyze);
+        const txType = isBonus ? 'bonus' : (isSettlement ? 'salary_settlement' : 'advance');
+        const debitAmt = isBonus ? 0 : amountNum;
 
         const stTx = await StaffTransaction.create({
           staffId: staffDoc._id,
@@ -103,17 +105,23 @@ export const addExpense = async (req, res) => {
           salarySettlement: isSettlement,
           forMonth: targetForMonth,
           date: expDate,
-          debit: amountNum,
+          debit: debitAmt,
           amount: amountNum,
           credit: 0,
           paymentMode: expense.paymentMethod || expense.paymentMode || 'cash',
-          notes: (expense.description || expense.title || `दुकान खर्च से दर्ज स्टाफ भुगतान: ${staffDoc.name}`).trim(),
+          notes: (expense.description || expense.title || `${isBonus ? 'स्टाफ बोनस / इनाम' : 'दुकान खर्च से दर्ज स्टाफ भुगतान'}: ${staffDoc.name}`).trim(),
           expenseId: expense._id,
           referenceExpenseId: expense._id
         });
         expense.staffTransactionId = stTx._id;
         expense.staffId = staffDoc._id;
         await expense.save();
+
+        if (!isBonus) {
+          staffDoc.balance = (Number(staffDoc.balance) || 0) - amountNum;
+          staffDoc.updatedAt = new Date();
+          await staffDoc.save();
+        }
 
         syncStaffTxToSupabase(stTx).catch(e => console.warn("[Supabase Sync] staff tx note:", e.message));
         syncStaffToSupabase(staffDoc).catch(e => console.warn("[Supabase Sync] staff sync note:", e.message));
@@ -311,16 +319,22 @@ export const updateExpense = async (req, res) => {
           if (!targetTx && finalExpense._id && /^[0-9a-fA-F]{24}$/.test(String(finalExpense._id))) {
             targetTx = await StaffTransaction.findOne({ expenseId: finalExpense._id, isDeleted: { $ne: true } });
           }
+          const textToAnalyze = `${finalExpense.title || ''} ${finalExpense.category || ''} ${finalExpense.description || ''} ${updateData.notes || ''}`.toLowerCase();
+          const isBonus = /इनाम|inam|bonus|बोनस|gift|गिफ्ट|dewali|diwali|दिवाली|त्योहार|festival|reward/i.test(textToAnalyze);
+          const isSettlement = /सैलरी|salary|वेतन|settlement/i.test(textToAnalyze);
+          const txType = isBonus ? 'bonus' : (isSettlement ? 'salary_settlement' : 'advance');
+          const debitAmt = isBonus ? 0 : amountNum;
+
           if (targetTx) {
-            targetTx.debit = amountNum;
+            targetTx.type = txType;
+            targetTx.debit = debitAmt;
             targetTx.amount = amountNum;
             targetTx.date = finalExpense.date ? new Date(finalExpense.date) : new Date();
-            targetTx.notes = (finalExpense.description || finalExpense.title || `दुकान खर्च से दर्ज स्टाफ भुगतान: ${staffDoc.name}`).trim();
+            targetTx.notes = (finalExpense.description || finalExpense.title || `${isBonus ? 'स्टाफ बोनस / इनाम' : 'दुकान खर्च से दर्ज स्टाफ भुगतान'}: ${staffDoc.name}`).trim();
             await targetTx.save();
             syncStaffTxToSupabase(targetTx).catch(() => {});
           } else {
             const expDate = finalExpense.date ? new Date(finalExpense.date) : new Date();
-            const textToAnalyze = `${finalExpense.title || ''} ${finalExpense.category || ''} ${finalExpense.description || ''}`.toLowerCase();
             let targetForMonth = updateData.forMonth;
             if (!targetForMonth) {
               if (textToAnalyze.includes('अक्टूबर') || textToAnalyze.includes('october') || textToAnalyze.includes('oct')) {
@@ -338,8 +352,6 @@ export const updateExpense = async (req, res) => {
                 targetForMonth = `${expDate.getFullYear()}-${String(expDate.getMonth() + 1).padStart(2, '0')}`;
               }
             }
-            const isSettlement = /सैलरी|salary|वेतन|settlement/i.test(textToAnalyze);
-            const txType = isSettlement ? 'salary_settlement' : 'advance';
 
             const newStTx = await StaffTransaction.create({
               staffId: staffDoc._id,
@@ -348,11 +360,11 @@ export const updateExpense = async (req, res) => {
               salarySettlement: isSettlement,
               forMonth: targetForMonth,
               date: expDate,
-              debit: amountNum,
+              debit: debitAmt,
               amount: amountNum,
               credit: 0,
               paymentMode: finalExpense.paymentMethod || 'cash',
-              notes: (finalExpense.description || finalExpense.title || `दुकान खर्च से दर्ज स्टाफ भुगतान: ${staffDoc.name}`).trim(),
+              notes: (finalExpense.description || finalExpense.title || `${isBonus ? 'स्टाफ बोनस / इनाम' : 'दुकान खर्च से दर्ज स्टाफ भुगतान'}: ${staffDoc.name}`).trim(),
               expenseId: (finalExpense._id && /^[0-9a-fA-F]{24}$/.test(String(finalExpense._id))) ? finalExpense._id : undefined
             });
             if (expense) {
@@ -362,21 +374,23 @@ export const updateExpense = async (req, res) => {
             syncStaffTxToSupabase(newStTx).catch(() => {});
           }
 
-          // Balance adjustment
-          if (oldStaffId === String(staffDoc._id)) {
-            staffDoc.balance = (Number(staffDoc.balance) || 0) + oldAmount - amountNum;
-            staffDoc.updatedAt = new Date();
-            await staffDoc.save();
-          } else {
-            staffDoc.balance = (Number(staffDoc.balance) || 0) - amountNum;
-            staffDoc.updatedAt = new Date();
-            await staffDoc.save();
-            if (oldStaffId) {
-              const oldStaff = await Staff.findOne({ _id: oldStaffId, companyId: req.companyId }) || await Staff.findById(oldStaffId);
-              if (oldStaff) {
-                oldStaff.balance = (Number(oldStaff.balance) || 0) + oldAmount;
-                oldStaff.updatedAt = new Date();
-                await oldStaff.save();
+          // Balance adjustment (Bonuses do not affect staff balance)
+          if (!isBonus) {
+            if (oldStaffId === String(staffDoc._id)) {
+              staffDoc.balance = (Number(staffDoc.balance) || 0) + oldAmount - amountNum;
+              staffDoc.updatedAt = new Date();
+              await staffDoc.save();
+            } else {
+              staffDoc.balance = (Number(staffDoc.balance) || 0) - amountNum;
+              staffDoc.updatedAt = new Date();
+              await staffDoc.save();
+              if (oldStaffId) {
+                const oldStaff = await Staff.findOne({ _id: oldStaffId, companyId: req.companyId }) || await Staff.findById(oldStaffId);
+                if (oldStaff) {
+                  oldStaff.balance = (Number(oldStaff.balance) || 0) + oldAmount;
+                  oldStaff.updatedAt = new Date();
+                  await oldStaff.save();
+                }
               }
             }
           }

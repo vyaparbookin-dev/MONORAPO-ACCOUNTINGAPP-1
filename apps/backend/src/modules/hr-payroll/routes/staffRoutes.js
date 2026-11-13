@@ -13,7 +13,8 @@ import {
   quickMarkAttendance,
   addStaffAdvance,
   addStaffOvertime,
-  addStaffCommission
+  addStaffCommission,
+  addStaffBonus
 } from "../controllers/staffController.js";
 import { protect, requireCompany } from "../../../middleware/authmiddleware.js";
 
@@ -27,6 +28,7 @@ router.use(requireCompany);
 router.get("/pagarbook-summary", getPagarBookSummary);
 router.post("/quick-attendance", quickMarkAttendance);
 router.post("/advance", addStaffAdvance);
+router.post("/bonus", addStaffBonus);
 router.post("/overtime", addStaffOvertime);
 router.post("/commission", addStaffCommission);
 
