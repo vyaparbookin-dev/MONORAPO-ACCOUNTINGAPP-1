@@ -1021,8 +1021,9 @@ CRITICAL ZERO-HALLUCINATION RULES:
   "rawText": string
 }`;
 
-    // Fetch product catalog for tenant once to enable smart product matching & alias memory
+    // Fetch product catalog and party list for tenant once to enable smart matching
     let productCatalog = [];
+    let partyNamesList = [];
     if (req.companyId) {
       try {
         productCatalog = await Product.find({ companyId: req.companyId })
@@ -1030,6 +1031,15 @@ CRITICAL ZERO-HALLUCINATION RULES:
           .lean();
       } catch (catErr) {
         console.warn("[parseBillImage] Catalog fetch note:", catErr.message);
+      }
+      try {
+        const partyDocs = await Party.find({ companyId: req.companyId, isDeleted: { $ne: true } })
+          .select("name mobileNumber")
+          .limit(100)
+          .lean();
+        partyNamesList = partyDocs.map(p => (p.name || '').trim()).filter(Boolean);
+      } catch (pErr) {
+        console.warn("[parseBillImage] Party list fetch note:", pErr.message);
       }
     }
 
@@ -1205,21 +1215,31 @@ CRITICAL ZERO-HALLUCINATION RULES:
 
       const isStatementMode = req.body?.scannerType === 'statement' || req.body?.mode === 'statement';
 
+      const partyHint = partyNamesList.length > 0
+        ? `\nREGISTERED PARTIES IN THIS BUSINESS:\n${partyNamesList.slice(0, 50).join(', ')}\nIf the statement or bill belongs to any of these parties (or a close name/alias), set 'partyName' to the EXACT name from this registered list!`
+        : '';
+
       const userPromptText = isStatementMode
         ? `CRITICAL STATEMENT INSTRUCTION:
 This image is an Indian Party Account Statement, Bank Passbook, Khata-Bahi, or Transaction Ledger Sheet.
 Set documentType: 'statement'.
-1. PARTY NAME: Find and extract the party / business / customer / account holder name as 'partyName'.
-2. TRANSACTIONS: Extract EVERY single visible row into the 'transactions' array:
-   - "date": Date printed on this row (DD/MM/YYYY or YYYY-MM-DD)
-   - "details": Description / Particulars / Narration / Cheque / Voucher details
-   - "debit": Amount paid/given/debit/dr/withdrawal/naam (Whole Indian Rupees integer)
-   - "credit": Amount received/jama/cr/deposit/credit (Whole Indian Rupees integer)
-   - "balance": Running balance (Whole Indian Rupees integer)
-3. ZERO-ZERO PROHIBITION: If an amount is visible on that row, NEVER return both debit=0 and credit=0! Put the amount in debit or credit according to the column header (Debit/Withdrawal vs Credit/Deposit).
-4. CRITICAL RUPEE RULE: All numbers are Indian Rupees (₹). Commas are thousands separators (e.g. 21,341 is 21341 Rupees, 5,182 is 5182 Rupees). NEVER divide by 100! NEVER output paise or decimals where none exist.
+${partyHint}
+1. PARTY NAME: Find and extract the party / business / customer / account holder name at the top or header. Match to the registered parties list if applicable, and set as 'partyName'.
+2. TRANSACTIONS TABLE (CRITICAL COLUMN INTEGRITY):
+   - Look at the table structure carefully row by row.
+   - For EACH row, extract:
+     * "date": Date printed on this row (DD/MM/YYYY or YYYY-MM-DD)
+     * "details": Description / Particulars / Narration / Cheque / Voucher details
+     * "debit": Amount in the Debit / Diya / Naame / Dr / Withdrawal column (Whole Rupees number)
+     * "credit": Amount in the Credit / Jama / Aaya / Cr / Deposit column (Whole Rupees number)
+     * "balance": Running balance (Whole Rupees number)
+   - DO NOT CONFUSE BALANCE WITH TRANSACTION AMOUNT: If a row has an amount in Debit/Credit AND a running Balance, make sure Debit/Credit gets the transaction amount, not the running balance!
+   - DO NOT SWAP COLUMNS: Strictly check whether the number is under the Debit column or Credit column!
+   - ZERO-ZERO PROHIBITION: If an amount is visible on that row, NEVER return both debit=0 and credit=0! Put the amount in debit or credit according to the column header.
+   - CRITICAL RUPEE RULE: All numbers are Indian Rupees (₹). Commas are thousands separators (e.g. 21,341 is 21341 Rupees, 5,182 is 5182 Rupees). NEVER divide by 100! NEVER output paise or decimals where none exist.
 Return strictly valid JSON matching the schema.`
         : `Examine this Indian bill, tax invoice, purchase receipt, cash memo, or party account statement image carefully.
+${partyHint}
 Read all visible text, line items, quantities, rates, amounts, totals, party names, bill numbers, and dates directly from the image.
 Detect documentType: 'bill' for purchase/sale bills or kacchi parchi, or 'statement' for party passbook/ledger sheets.
 CRITICAL RUPEE RULE: All numbers are Indian Rupees (₹). Commas are thousands separators (e.g. 21,341 is 21341 Rupees, 5,182 is 5182 Rupees). NEVER divide amounts by 100 and NEVER insert a decimal point where none exists on paper!

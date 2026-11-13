@@ -293,30 +293,73 @@ const startServer = () => {
         console.warn("Expense auto-migration:", cleanErr.message);
       }
 
-      // Auto-sync staff advance transactions from operating expenses that have staffId
+      // Auto-sync staff advance transactions from operating expenses that have staffId or mention staff
       try {
+        try {
+          await StaffTransaction.updateMany({ debit: 0, amount: { $gt: 0 } }, [{ $set: { debit: "$amount" } }]);
+        } catch (hErr) {}
+
+        const allActiveStaff = await Staff.find({ isActive: true });
         const staffExpenses = await Expense.find({
           expenseType: "operating",
-          staffId: { $exists: true, $ne: null },
-          isDeleted: { $ne: true }
+          isDeleted: { $ne: true },
+          $or: [
+            { staffId: { $exists: true, $ne: null } },
+            { category: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी|advance|एडवांस/i } },
+            { title: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी|advance|एडवांस|सतीश|satish/i } },
+            { description: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी|advance|एडवांस|सतीश|satish/i } }
+          ]
         });
         for (const exp of staffExpenses) {
-          const existingTx = await StaffTransaction.findOne({ referenceExpenseId: exp._id });
+          const existingTx = await StaffTransaction.findOne({
+            $or: [
+              { expenseId: exp._id },
+              { referenceExpenseId: exp._id }
+            ],
+            isDeleted: { $ne: true }
+          });
           if (!existingTx) {
-            const staffDoc = await Staff.findById(exp.staffId);
+            let staffDoc = exp.staffId ? await Staff.findById(exp.staffId) : null;
+            if (!staffDoc) {
+              const text = `${exp.title || ''} ${exp.description || ''} ${exp.notes || ''}`.toLowerCase();
+              for (const s of allActiveStaff) {
+                if (s.name && text.includes(s.name.trim().toLowerCase())) {
+                  staffDoc = s;
+                  break;
+                }
+              }
+              if (!staffDoc && allActiveStaff.length === 1) {
+                staffDoc = allActiveStaff[0];
+              }
+            }
+
             const resolvedCompanyId = exp.companyId || staffDoc?.companyId;
             if (staffDoc && resolvedCompanyId) {
-              await StaffTransaction.create({
-                companyId: resolvedCompanyId,
-                staffId: exp.staffId,
-                type: "advance",
-                amount: Number(exp.amount || 0),
-                paymentMode: exp.paymentMode || "cash",
-                notes: `Advance from Expense: ${exp.title || "Staff Expense"}`,
-                date: exp.date || new Date(),
-                referenceExpenseId: exp._id
-              });
-              console.log(`✅ Synced missing staff advance transaction for staff: ${staffDoc.name} (Amount: ${exp.amount})`);
+              const amt = Number(exp.amount || 0);
+              if (amt > 0) {
+                const newStTx = await StaffTransaction.create({
+                  companyId: resolvedCompanyId,
+                  staffId: staffDoc._id,
+                  type: "advance",
+                  debit: amt,
+                  amount: amt,
+                  credit: 0,
+                  paymentMode: exp.paymentMode || "cash",
+                  notes: (exp.description || exp.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim(),
+                  date: exp.date || exp.createdAt || new Date(),
+                  expenseId: exp._id,
+                  referenceExpenseId: exp._id
+                });
+                exp.staffId = staffDoc._id;
+                exp.staffTransactionId = newStTx._id;
+                await exp.save();
+
+                staffDoc.balance = (Number(staffDoc.balance) || 0) - amt;
+                staffDoc.updatedAt = new Date();
+                await staffDoc.save();
+
+                console.log(`✅ Synced missing staff advance transaction for staff: ${staffDoc.name} (Amount: ${amt})`);
+              }
             }
           }
         }

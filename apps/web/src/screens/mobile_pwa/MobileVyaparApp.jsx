@@ -5124,10 +5124,12 @@ function MobileVyaparAppContent() {
         if (selectedPartyDetail) {
           setStatementPartyId(selectedPartyDetail._id || selectedPartyDetail.id);
         } else if (firstDoc.partyName) {
-          const rawSearch = firstDoc.partyName.toLowerCase().replace(/^(m\/s|shri|shree|mr|mrs|sri)\.?\s+/i, '').trim();
+          const rawSearch = firstDoc.partyName.toLowerCase().replace(/^(m\/s|shri|shree|mr|mrs|sri|ms|dr)\.?\s+/i, '').trim();
+          const cleanTokens = rawSearch.split(/\s+/).filter(w => w.length > 2);
           const matchedP = parties.find(p => {
             const pName = (p.name || '').toLowerCase().trim();
-            return pName === rawSearch || pName.includes(rawSearch) || rawSearch.includes(pName);
+            if (pName === rawSearch || pName.includes(rawSearch) || rawSearch.includes(pName)) return true;
+            return cleanTokens.some(token => pName.includes(token));
           });
           if (matchedP) setStatementPartyId(matchedP._id || matchedP.id);
         }
@@ -5293,7 +5295,7 @@ function MobileVyaparAppContent() {
       if (selectedPartyDetail && (String(selectedPartyDetail._id) === String(pId) || String(selectedPartyDetail.id) === String(pId))) {
         if (typeof loadPartyStatement === 'function') loadPartyStatement(selectedPartyDetail);
       }
-      fetchParties();
+      if (typeof fetchLiveDashboardData === 'function') fetchLiveDashboardData();
     } catch (err) {
       console.error("Bulk entry save error:", err);
       alert("स्टेटमेंट दर्ज करने में त्रुटि: " + (err.response?.data?.message || err.message));

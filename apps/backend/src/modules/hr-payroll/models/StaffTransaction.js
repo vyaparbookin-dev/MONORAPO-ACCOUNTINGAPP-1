@@ -8,11 +8,13 @@ const staffTransactionSchema = new mongoose.Schema({
   status: String,
   debit: { type: Number, default: 0 },
   credit: { type: Number, default: 0 },
+  amount: { type: Number, default: 0 },
   notes: String,
   forMonth: { type: String }, // Target salary month in 'YYYY-MM' format (e.g. '2026-09')
   paymentMode: { type: String, default: 'cash' }, // 'cash', 'online', 'bank'
   salarySettlement: { type: Boolean, default: false },
   expenseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Expense' },
+  referenceExpenseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Expense' },
   isDeleted: { type: Boolean, default: false }
 }, { timestamps: true });
 

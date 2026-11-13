@@ -123,7 +123,9 @@ export const autoBackfillStaffExpenses = async (companyId) => {
       isDeleted: { $ne: true },
       $or: [
         { staffId: { $exists: true, $ne: null } },
-        { category: { $in: ['Salary', 'Staff', 'वेतन', 'स्टाफ', 'स्टाफ खर्च', 'salary', 'staff', 'Advance', 'Staff Payment'] } }
+        { category: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी|advance|एडवांस/i } },
+        { title: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी|advance|एडवांस|सतीश|satish/i } },
+        { description: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी|advance|एडवांस|सतीश|satish/i } }
       ]
     };
 
@@ -134,7 +136,13 @@ export const autoBackfillStaffExpenses = async (companyId) => {
         existingTx = await StaffTransaction.findOne({ _id: exp.staffTransactionId, isDeleted: { $ne: true } });
       }
       if (!existingTx) {
-        existingTx = await StaffTransaction.findOne({ expenseId: exp._id, isDeleted: { $ne: true } });
+        existingTx = await StaffTransaction.findOne({
+          $or: [
+            { expenseId: exp._id },
+            { referenceExpenseId: exp._id }
+          ],
+          isDeleted: { $ne: true }
+        });
       }
 
       if (!existingTx) {
@@ -143,7 +151,7 @@ export const autoBackfillStaffExpenses = async (companyId) => {
           targetStaff = staffIdMap.get(exp.staffId.toString());
         }
         if (!targetStaff) {
-          const text = `${exp.title || ''} ${exp.description || ''}`.toLowerCase();
+          const text = `${exp.title || ''} ${exp.description || ''} ${exp.notes || ''}`.toLowerCase();
           for (const s of staffMembers) {
             if (s.name && text.includes(s.name.trim().toLowerCase())) {
               targetStaff = s;
@@ -164,9 +172,12 @@ export const autoBackfillStaffExpenses = async (companyId) => {
               type: 'advance',
               date: exp.date ? new Date(exp.date) : (exp.createdAt ? new Date(exp.createdAt) : new Date()),
               debit: amt,
+              amount: amt,
               credit: 0,
+              paymentMode: exp.paymentMode || 'cash',
               notes: (exp.description || exp.title || `दुकान खर्च से बैकफिल्ड स्टाफ भुगतान: ${targetStaff.name}`).trim(),
-              expenseId: exp._id
+              expenseId: exp._id,
+              referenceExpenseId: exp._id
             });
             exp.staffTransactionId = stTx._id;
             exp.staffId = targetStaff._id;
@@ -175,6 +186,9 @@ export const autoBackfillStaffExpenses = async (companyId) => {
             targetStaff.balance = (Number(targetStaff.balance) || 0) - amt;
             targetStaff.updatedAt = new Date();
             await targetStaff.save();
+
+            syncStaffTxToSupabase(stTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
+            syncStaffToSupabase(targetStaff).catch(e => console.warn("[Supabase Dual-Write] Staff sync note:", e.message));
           }
         }
       }

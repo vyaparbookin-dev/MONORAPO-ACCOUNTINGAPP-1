@@ -5,7 +5,7 @@ import Staff from "../model/staff.js";
 import StaffTransaction from "../model/StaffTransaction.js";
 import { logActivity } from "../utils/logger.js";
 import { supabase } from "../config/supabase.js";
-import { syncExpenseToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
+import { syncExpenseToSupabase, syncStaffToSupabase, syncStaffTxToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
 import { getExpensesFromSupabase, getExpenseByIdFromSupabase, mapSupabaseExpenseToExpense } from "../services/supabaseReadService.js";
 
 export const addExpense = async (req, res) => {
@@ -43,36 +43,60 @@ export const addExpense = async (req, res) => {
 
     const expense = await Expense.create(expanceData);
 
-    // Auto-sync Staff Transaction if staffId is provided (e.g. staff advance / payment from expense form)
-    if (expanceData.staffId && amountNum > 0) {
-      try {
-        let staffDoc = null;
-        if (mongoose.Types.ObjectId.isValid(expanceData.staffId)) {
-          staffDoc = await Staff.findOne({ _id: expanceData.staffId, companyId: req.companyId }) || await Staff.findById(expanceData.staffId);
-        }
-        if (!staffDoc && expanceData.staffId) {
-          staffDoc = await Staff.findOne({ companyId: req.companyId, name: new RegExp(`^${expanceData.staffId}$`, "i") });
-        }
-        if (staffDoc) {
-          const stTx = await StaffTransaction.create({
-            staffId: staffDoc._id,
-            companyId: staffDoc.companyId || req.companyId,
-            type: 'advance',
-            date: expense.date ? new Date(expense.date) : new Date(),
-            debit: amountNum,
-            credit: 0,
-            notes: (expense.description || expense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim(),
-            expenseId: expense._id
-          });
-          expense.staffTransactionId = stTx._id;
-          expense.staffId = staffDoc._id;
-          await expense.save();
+    // Auto-sync Staff Transaction if staffId is provided or detected from name / category
+    let staffDoc = null;
+    if (expanceData.staffId) {
+      if (mongoose.Types.ObjectId.isValid(expanceData.staffId)) {
+        staffDoc = await Staff.findOne({ _id: expanceData.staffId, companyId: req.companyId }) || await Staff.findById(expanceData.staffId);
+      }
+      if (!staffDoc) {
+        staffDoc = await Staff.findOne({ companyId: req.companyId, name: new RegExp(`^${expanceData.staffId}$`, "i") });
+      }
+    }
 
-          // Sync Staff Balance: Advance reduces due salary (Negative: Advance, Positive: Due Salary)
-          staffDoc.balance = (Number(staffDoc.balance) || 0) - amountNum;
-          staffDoc.updatedAt = new Date();
-          await staffDoc.save();
+    if (!staffDoc && amountNum > 0) {
+      const allActiveStaff = await Staff.find({ companyId: req.companyId, isActive: true });
+      const text = `${expanceData.title || ''} ${expanceData.description || ''} ${expanceData.notes || ''}`.toLowerCase();
+      const expCategory = (expanceData.category || '').toLowerCase();
+      for (const s of allActiveStaff) {
+        if (s.name && text.includes(s.name.trim().toLowerCase())) {
+          staffDoc = s;
+          break;
         }
+      }
+      if (!staffDoc && allActiveStaff.length === 1 && (
+        expCategory.includes('staff') || expCategory.includes('salary') || expCategory.includes('स्टाफ') || expCategory.includes('वेतन') || expCategory.includes('एडवांस') || expCategory.includes('advance') || expCategory.includes('मजदूरी')
+      )) {
+        staffDoc = allActiveStaff[0];
+      }
+    }
+
+    if (staffDoc && amountNum > 0) {
+      try {
+        const stTx = await StaffTransaction.create({
+          staffId: staffDoc._id,
+          companyId: staffDoc.companyId || req.companyId,
+          type: 'advance',
+          date: expense.date ? new Date(expense.date) : new Date(),
+          debit: amountNum,
+          amount: amountNum,
+          credit: 0,
+          paymentMode: expense.paymentMode || 'cash',
+          notes: (expense.description || expense.title || `दुकान खर्च से दर्ज स्टाफ एडवांस: ${staffDoc.name}`).trim(),
+          expenseId: expense._id,
+          referenceExpenseId: expense._id
+        });
+        expense.staffTransactionId = stTx._id;
+        expense.staffId = staffDoc._id;
+        await expense.save();
+
+        // Sync Staff Balance: Advance reduces due salary (Negative: Advance, Positive: Due Salary)
+        staffDoc.balance = (Number(staffDoc.balance) || 0) - amountNum;
+        staffDoc.updatedAt = new Date();
+        await staffDoc.save();
+
+        syncStaffTxToSupabase(stTx).catch(e => console.warn("[Supabase Sync] staff tx note:", e.message));
+        syncStaffToSupabase(staffDoc).catch(e => console.warn("[Supabase Sync] staff sync note:", e.message));
       } catch (staffTxErr) {
         console.warn("Auto-sync staff transaction warning:", staffTxErr.message);
       }
