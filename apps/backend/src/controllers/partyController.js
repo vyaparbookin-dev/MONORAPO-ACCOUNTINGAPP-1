@@ -354,6 +354,8 @@ export const getPartyStatement = async (req, res) => {
     }
     if (!party) return res.status(404).json({ success: false, error: "Party not found" });
 
+    const isSupplier = (party.partyType === "supplier" || party.type === "supplier");
+
     const escapeRegex = (s) => (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const nameRegex = new RegExp(`^${escapeRegex(party.name)}$`, "i");
 
@@ -384,6 +386,9 @@ export const getPartyStatement = async (req, res) => {
 
     // 1. Direct Party Transactions (Cash/Bank Payments & Receipts from Mongo + Supabase)
     let txRecords = [];
+    const deletedMongoTxIds = new Set();
+    const seenTxKeys = new Set();
+
     if (validMongoPartyIds.length > 0 && validMongoCoIds.length > 0) {
       try {
         txRecords = await PartyTransaction.find({
@@ -391,6 +396,32 @@ export const getPartyStatement = async (req, res) => {
           companyId: { $in: validMongoCoIds },
           isDeleted: { $ne: true }
         }).lean();
+
+        // Also fetch deleted transaction IDs and fingerprint keys so Supabase never resurrects deleted records
+        const delTxs = await PartyTransaction.find({
+          partyId: { $in: validMongoPartyIds },
+          companyId: { $in: validMongoCoIds },
+          isDeleted: true
+        }, { _id: 1, date: 1, debit: 1, credit: 1, details: 1 }).lean();
+
+        delTxs.forEach(dt => {
+          deletedMongoTxIds.add(String(dt._id));
+          const dtDate = dt.date ? new Date(dt.date).toISOString().slice(0, 10) : '';
+          const dtDeb = Number(dt.debit || 0);
+          const dtCred = Number(dt.credit || 0);
+          const dtDet = (dt.details || '').trim().toLowerCase();
+          deletedMongoTxIds.add(`${dtDate}_${dtDeb}_${dtCred}_${dtDet}`);
+        });
+
+        txRecords.forEach(t => {
+          const tId = String(t._id || t.id || '');
+          if (tId) seenTxKeys.add(tId);
+          const tDate = t.date ? new Date(t.date).toISOString().slice(0, 10) : '';
+          const tDeb = Number(t.debit || 0);
+          const tCred = Number(t.credit || 0);
+          const tDet = (t.details || '').trim().toLowerCase();
+          seenTxKeys.add(`${tDate}_${tDeb}_${tCred}_${tDet}`);
+        });
       } catch (e) {
         console.warn("[getPartyStatement] Mongo txRecords error:", e.message);
       }
@@ -402,36 +433,25 @@ export const getPartyStatement = async (req, res) => {
         companyId: req.companyId
       });
       if (Array.isArray(sbTxs) && sbTxs.length > 0) {
-        const isDuplicate = (sbTx) => {
-          const sbId = String(sbTx._id || sbTx.id || "");
-          const sbDate = sbTx.date ? new Date(sbTx.date).toISOString().slice(0, 10) : '';
-          const sbDeb = Number(sbTx.debit || 0);
-          const sbCred = Number(sbTx.credit || 0);
-          const sbDet = (sbTx.details || '').trim().toLowerCase();
-
-          return txRecords.some(mt => {
-            const mId = String(mt._id || mt.id || "");
-            if (mId && sbId && mId === sbId) return true;
-
-            const mDate = mt.date ? new Date(mt.date).toISOString().slice(0, 10) : '';
-            const mDeb = Number(mt.debit || 0);
-            const mCred = Number(mt.credit || 0);
-            const mDet = (mt.details || '').trim().toLowerCase();
-
-            // Match if same day, same debit, same credit
-            if (mDeb === sbDeb && mCred === sbCred && mDate === sbDate) {
-              if (!sbDet || !mDet || mDet === sbDet || mDet.includes(sbDet) || sbDet.includes(mDet)) {
-                return true;
-              }
-            }
-            return false;
-          });
-        };
-
         for (const st of sbTxs) {
-          if (!isDuplicate(st)) {
-            txRecords.push(st);
+          const sbId = String(st._id || st.id || "");
+          const sbDate = st.date ? new Date(st.date).toISOString().slice(0, 10) : '';
+          const sbDeb = Number(st.debit || 0);
+          const sbCred = Number(st.credit || 0);
+          const sbDet = (st.details || '').trim().toLowerCase();
+          const sbKey = `${sbDate}_${sbDeb}_${sbCred}_${sbDet}`;
+
+          // Skip if deleted in Mongo or already seen (in Mongo or earlier Supabase row)
+          if (deletedMongoTxIds.has(sbId) || deletedMongoTxIds.has(sbKey)) {
+            continue;
           }
+          if (seenTxKeys.has(sbId) || seenTxKeys.has(sbKey)) {
+            continue;
+          }
+
+          seenTxKeys.add(sbId);
+          seenTxKeys.add(sbKey);
+          txRecords.push(st);
         }
       }
     } catch (sbTxErr) {
@@ -562,6 +582,14 @@ export const getPartyStatement = async (req, res) => {
       if (t.referenceBillId) existingRefBillIds.add(String(t.referenceBillId));
       if (t.billNumber) existingRefBillIds.add(String(t.billNumber));
       if (t.refNo) existingRefBillIds.add(String(t.refNo));
+      const hashMatch = (t.details || '').match(/#([A-Za-z0-9_-]+)/);
+      if (hashMatch) {
+        existingRefBillIds.add(hashMatch[1]);
+      }
+      const numMatch = (t.details || '').match(/(?:bill|invoice|inv|pur|खरीद|बिल)\s*[:#\- ]*([A-Za-z0-9_-]+)/i);
+      if (numMatch) {
+        existingRefBillIds.add(numMatch[1]);
+      }
     });
 
     const ledgerEntries = [];
@@ -675,7 +703,6 @@ export const getPartyStatement = async (req, res) => {
     // Sort chronologically ascending (oldest first) to compute running balance accurately
     ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    const isSupplier = (party.partyType === "supplier");
     const rawOpening = Number(party.openingBalance || 0);
     // Opening balance for supplier is payable (negative / credit)
     const openingBal = isSupplier ? -Math.abs(rawOpening) : Math.abs(rawOpening);
@@ -734,7 +761,7 @@ export const getPartyStatement = async (req, res) => {
         Party.updateOne({ _id: party._id }, { $set: { currentBalance: runningBal, updatedAt: new Date() } }).exec().catch(() => {});
       }
       if (supabase) {
-        supabase.from("parties").update({ current_balance: runningBal, updated_at: new Date().toISOString() }).eq("id", mongoIdToUuid(party._id || party.id)).catch(() => {});
+        supabase.from("parties").update({ current_balance: runningBal, updated_at: new Date().toISOString() }).eq("id", mongoIdToUuid(party._id || party.id)).then(() => {}, () => {});
       }
     }
 
@@ -1539,7 +1566,7 @@ export const listParties = async (req, res) => {
               pDoc.currentBalance = curBal;
               pDoc.balance = curBal;
               if (supabase) {
-                supabase.from("parties").update({ current_balance: curBal }).eq("id", pDoc.id).catch(() => {});
+                supabase.from("parties").update({ current_balance: curBal }).eq("id", pDoc.id).then(() => {}, () => {});
               }
             }
           }

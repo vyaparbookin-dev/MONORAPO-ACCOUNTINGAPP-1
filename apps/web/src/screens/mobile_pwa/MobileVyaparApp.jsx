@@ -452,6 +452,9 @@ function MobileVyaparAppContent() {
   const [vendorActionType, setVendorActionType] = useState('purchase'); // 'purchase' (माल आया) or 'payment' (भुगतान दिया)
   const [vendorBillAmount, setVendorBillAmount] = useState('');
   const [vendorItemDesc, setVendorItemDesc] = useState('');
+  const [vendorItemQty, setVendorItemQty] = useState('');
+  const [vendorItemRate, setVendorItemRate] = useState('');
+  const [vendorItemUnit, setVendorItemUnit] = useState('Pcs');
   const [vendorBillNo, setVendorBillNo] = useState('');
   const [vendorBillDate, setVendorBillDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [vendorIsPaidNow, setVendorIsPaidNow] = useState(false);
@@ -909,7 +912,6 @@ function MobileVyaparAppContent() {
   const isPersonalExpense = (e) => {
     if (!e) return false;
     const t = String(e.expenseType || '').toLowerCase();
-    if (t === 'operating' || t === 'business') return false;
     const c = String(e.category || '').toLowerCase();
     const tit = String(e.title || '').toLowerCase();
     const desc = String(e.description || e.notes || '').toLowerCase();
@@ -917,14 +919,23 @@ function MobileVyaparAppContent() {
     // 🛑 Vendor / Supplier / Shop payments must NEVER be treated as personal / house expense!
     if (tit.includes('vendor') || tit.includes('vender') || tit.includes('सप्लायर') || tit.includes('वेंडर') || tit.includes('व्यापारी') ||
         desc.includes('vendor') || desc.includes('vender') || desc.includes('सप्लायर') || desc.includes('वेंडर') || desc.includes('व्यापारी') ||
-        c.includes('सप्लायर') || c.includes('वेंडर') || c.includes('व्यापारी')) {
+        c.includes('सप्लायर') || c.includes('वेंडर') || c.includes('व्यापारी') ||
+        c.includes('बिजनेस') || tit.includes('बिजनेस') || tit.includes('shop') || c.includes('मजदूरी')) {
       return false;
+    }
+
+    if (t === 'operating' || t === 'business') {
+      // If marked operating but specifically a household category and has a family member, respect family member
+      const mem = String(e.familyMember || e.member || '').trim();
+      if (!mem || mem === 'Admin' || mem === 'Shop') return false;
     }
 
     const mem = String(e.familyMember || e.member || '').trim();
     return t === 'drawings' || t === 'ghar_kharch' || t === 'personal' ||
            c.includes('घर खर्च') || c.includes('family') || c.includes('personal') ||
-           tit.includes('घर खर्च') || (mem !== '' && mem !== 'Admin' && mem !== 'Shop');
+           c.includes('घरेलू') || c.includes('पेट्रोल') || c.includes('वाहन') || c.includes('दवाई') || c.includes('राशन') || c.includes('स्कूल') || c.includes('कपड़े') ||
+           tit.includes('घर खर्च') || tit.includes('servicing') || tit.includes('सर्विसिंग') ||
+           (mem !== '' && mem !== 'Admin' && mem !== 'Shop');
   };
 
   const shopExpensesOnly = (gharKharchList || []).filter(e => !isPersonalExpense(e));
@@ -4221,9 +4232,10 @@ function MobileVyaparAppContent() {
           }))
         : [{
             name: vendorItemDesc.trim() || 'सप्लायर से माल खरीद',
-            quantity: 1,
-            rate: goodsAmt,
-            price: goodsAmt,
+            quantity: Number(vendorItemQty) || 1,
+            rate: Number(vendorItemRate) || (Number(vendorItemQty) > 0 ? (goodsAmt / Number(vendorItemQty)) : goodsAmt),
+            price: Number(vendorItemRate) || (Number(vendorItemQty) > 0 ? (goodsAmt / Number(vendorItemQty)) : goodsAmt),
+            unit: vendorItemUnit || 'Pcs',
             total: goodsAmt
           }];
 
@@ -4402,6 +4414,9 @@ function MobileVyaparAppContent() {
       setShowVendorForm(false);
       setVendorBillAmount('');
       setVendorItemDesc('');
+      setVendorItemQty('');
+      setVendorItemRate('');
+      setVendorItemUnit('Pcs');
       setVendorBillNo('');
       setVendorFreight('');
       setLocalFreight('');
@@ -7242,7 +7257,7 @@ function MobileVyaparAppContent() {
 
       {/* 📱 5. ULTRA-FAST VYAPAR/MYBILLBOOK STYLE BILLING MODAL */}
       {showQuickBillModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 space-y-3.5 shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
               <div className="flex items-center gap-2">
@@ -7670,8 +7685,35 @@ function MobileVyaparAppContent() {
               {showItemSuggestions && itemSearchTerm.trim().length > 0 && (
                 <div className="absolute left-0 right-0 z-50 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-48 overflow-y-auto divide-y divide-slate-100">
                   {filteredProducts.length === 0 ? (
-                    <div className="p-3 text-center text-xs text-slate-400 font-bold">
-                      कोई सामान नहीं मिला • <span onClick={() => setShowAddItemModal(true)} className="text-[#4338CA] underline cursor-pointer">+ नया सामान बनाएं</span>
+                    <div className="p-3 text-center text-xs text-slate-500 font-bold space-y-2">
+                      <div>कोई सामान नहीं मिला</div>
+                      <div className="flex gap-1.5 justify-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const directItem = {
+                              id: `custom_${Date.now()}`,
+                              name: itemSearchTerm.trim(),
+                              salePrice: 0,
+                              qty: 1,
+                              unit: 'Pcs'
+                            };
+                            setBillCart(prev => [...prev, directItem]);
+                            setItemSearchTerm("");
+                            setShowItemSuggestions(false);
+                          }}
+                          className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs cursor-pointer shadow-xs active:scale-95 transition"
+                        >
+                          + सीधे बिल में जोड़ें (1 Qty)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddItemModal(true)}
+                          className="px-2.5 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl font-bold text-xs cursor-pointer active:scale-95 transition"
+                        >
+                          + कैटलॉग बनाएं
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     filteredProducts.map(it => (
@@ -9486,15 +9528,22 @@ function MobileVyaparAppContent() {
                 <button
                   type="button"
                   onClick={() => {
-                    setBillCustomer(selectedPartyDetail.name || '');
-                    setBillCustomerPhone(selectedPartyDetail.phone || selectedPartyDetail.mobileNumber || '');
-                    setBillCustomerAddress(selectedPartyDetail.address || '');
-                    setSelectedPartyObject(selectedPartyDetail);
-                    setBillPaymentMode("UDHAR");
-                    setShowQuickBillModal(true);
+                    const isSup = (selectedPartyDetail.type === 'supplier' || selectedPartyDetail.partyType === 'supplier');
+                    if (isSup) {
+                      setVendorActionType('purchase');
+                      setShowVendorForm(true);
+                      setShowPartyTxForm(false);
+                    } else {
+                      setBillCustomer(selectedPartyDetail.name || '');
+                      setBillCustomerPhone(selectedPartyDetail.phone || selectedPartyDetail.mobileNumber || '');
+                      setBillCustomerAddress(selectedPartyDetail.address || '');
+                      setSelectedPartyObject(selectedPartyDetail);
+                      setBillPaymentMode("UDHAR");
+                      setShowQuickBillModal(true);
+                    }
                   }}
                   className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition shadow-xs"
-                  title="इस पार्टी का नया बिल बनाएं"
+                  title="इस पार्टी का नया बिल / खरीद बिल बनाएं"
                 >
                   🧾 + नया बिल बनाएं
                 </button>
@@ -9685,8 +9734,81 @@ function MobileVyaparAppContent() {
                           </div>
                         </div>
                       ) : (
-                        /* Mode: Lump sum */
+                        /* Mode: Lump sum / Simple Item */
                         <div className="space-y-2">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                              सामान का विवरण / माल (Goods Description / Name)
+                            </label>
+                            <input 
+                              type="text"
+                              placeholder="उदा. 20 बोरी सीमेंट, 5 पेटी तेल, हार्डवेयर सामान"
+                              value={vendorItemDesc}
+                              onChange={(e) => setVendorItemDesc(e.target.value)}
+                              className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-indigo-500 shadow-xs"
+                            />
+                          </div>
+
+                          {/* 📦 मात्रा (Qty), खरीद रेट (Rate) व इकाई (Unit) */}
+                          <div className="grid grid-cols-3 gap-2 bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100">
+                            <div>
+                              <label className="text-[10px] font-black text-indigo-900 block mb-0.5">
+                                मात्रा (Quantity / Qty)
+                              </label>
+                              <input 
+                                type="number"
+                                inputMode="decimal"
+                                placeholder="1"
+                                value={vendorItemQty}
+                                onChange={(e) => {
+                                  const q = e.target.value;
+                                  setVendorItemQty(q);
+                                  const qNum = parseFloat(q) || 0;
+                                  const rNum = parseFloat(vendorItemRate) || 0;
+                                  if (qNum > 0 && rNum > 0) {
+                                    setVendorBillAmount((qNum * rNum).toFixed(2));
+                                  }
+                                }}
+                                className="w-full p-1.5 bg-white border border-indigo-200 rounded-lg text-xs font-black text-slate-900 outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-indigo-900 block mb-0.5">
+                                खरीद रेट (Rate ₹)
+                              </label>
+                              <input 
+                                type="number"
+                                inputMode="decimal"
+                                placeholder="₹ 0.00"
+                                value={vendorItemRate}
+                                onChange={(e) => {
+                                  const r = e.target.value;
+                                  setVendorItemRate(r);
+                                  const rNum = parseFloat(r) || 0;
+                                  const qNum = parseFloat(vendorItemQty) || 1;
+                                  if (rNum > 0) {
+                                    setVendorBillAmount((qNum * rNum).toFixed(2));
+                                  }
+                                }}
+                                className="w-full p-1.5 bg-white border border-indigo-200 rounded-lg text-xs font-black text-slate-900 outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-indigo-900 block mb-0.5">
+                                इकाई (Unit)
+                              </label>
+                              <select
+                                value={vendorItemUnit}
+                                onChange={(e) => setVendorItemUnit(e.target.value)}
+                                className="w-full p-1.5 bg-white border border-indigo-200 rounded-lg text-xs font-bold text-slate-800 outline-none"
+                              >
+                                {["Pcs", "Nos", "Kg", "Ltr", "Box", "Bag", "Ft", "Mtr", "Set", "Dozen", "Nag", "Cartoon"].map(u => (
+                                  <option key={u} value={u}>{u}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
                           <div className="space-y-1">
                             <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
                               माल का कुल मूल्य / Subtotal (₹) *
@@ -9698,22 +9820,18 @@ function MobileVyaparAppContent() {
                                 inputMode="decimal"
                                 placeholder="0.00"
                                 value={vendorBillAmount}
-                                onChange={(e) => setVendorBillAmount(e.target.value)}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setVendorBillAmount(v);
+                                  const vNum = parseFloat(v) || 0;
+                                  const qNum = parseFloat(vendorItemQty) || 0;
+                                  if (vNum > 0 && qNum > 0) {
+                                    setVendorItemRate((vNum / qNum).toFixed(2));
+                                  }
+                                }}
                                 className="w-full pl-7 pr-3 py-2.5 bg-white border-2 border-indigo-200 rounded-xl text-base font-black text-[#0F172A] outline-none focus:border-indigo-500 shadow-xs"
                               />
                             </div>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
-                              सामान का विवरण / माल (Goods Description)
-                            </label>
-                            <input 
-                              type="text"
-                              placeholder="उदा. 20 बोरी सीमेंट, 5 पेटी तेल, हार्डवेयर सामान"
-                              value={vendorItemDesc}
-                              onChange={(e) => setVendorItemDesc(e.target.value)}
-                              className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-indigo-500 shadow-xs"
-                            />
                           </div>
                         </div>
                       )}

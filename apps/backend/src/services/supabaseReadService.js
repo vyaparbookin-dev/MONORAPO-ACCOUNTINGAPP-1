@@ -135,11 +135,15 @@ export const mapSupabaseExpenseToExpense = (row) => {
   }
 
   // Heuristic fallbacks if meta is not present
-  const isDrawingsCategory = /घर खर्च|personal|family|राशन|किराना|सब्जी|दवाई|अस्पताल|फीस|कपड़े|drawings/i.test(row.category || "") ||
-                             /घरेलू खर्च|राशन|किराना|दवाई|स्कूल|कॉलेज फीस|drawings/i.test(row.title || "");
+  const isExplicitOperating = /बिजनेस|दुकान|सैलरी|मजदूरी|स्टाफ|Salary|ट्रांसपोर्ट|भाड़ा|बिजली बिल|ऑपरेटिंग|operating/i.test(row.category || "") ||
+                              /बिजनेस|दुकान|सैलरी|मजदूरी|स्टाफ|Salary|ट्रांसपोर्ट|भाड़ा|operating/i.test(row.title || "");
+  const isDrawingsCategory = !isExplicitOperating && (
+    /घर खर्च|घरेलू|personal|family|राशन|किराना|सब्जी|दवाई|अस्पताल|फीस|स्कूल|कॉलेज|कपड़े|शॉपिंग|पेट्रोल|वाहन|गाड़ी|कार|सर्विसिंग|बिजली\/पानी|drawings/i.test(row.category || "") ||
+    /घर खर्च|घरेलू खर्च|राशन|किराना|सब्जी|दवाई|अस्पताल|स्कूल|कॉलेज फीस|पेट्रोल|सर्विसिंग|गाड़ी|कार|drawings/i.test(row.title || "")
+  );
   const familyMemberMatch = (row.title || "").match(/-\s*(Mummy|Wife|Papa|Self|Brother|Sister|Children|Family|अन्य)/i);
-  const inferredFamilyMember = familyMemberMatch ? familyMemberMatch[1] : (isDrawingsCategory ? "Family" : "");
-  const inferredExpenseType = isDrawingsCategory || Boolean(inferredFamilyMember) ? "drawings" : "operating";
+  const inferredFamilyMember = familyMemberMatch ? familyMemberMatch[1] : (isDrawingsCategory ? "Self" : "");
+  const inferredExpenseType = isDrawingsCategory || Boolean(familyMemberMatch) ? "drawings" : "operating";
 
   return {
     _id: row.id,

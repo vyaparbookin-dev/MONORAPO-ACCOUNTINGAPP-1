@@ -326,39 +326,6 @@ export const listExpenses = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    // --- PHASE 2: SUPABASE PRIMARY READ ---
-    try {
-      const sbExpenses = await getExpensesFromSupabase({
-        companyId: req.companyId,
-        category: req.query.category && req.query.category !== 'all' ? req.query.category : undefined,
-        startDate: req.query.startDate,
-        endDate: req.query.endDate,
-        limit: req.query.limit === 'all' ? 1000 : (parseInt(req.query.limit) || 500)
-      });
-
-      if (sbExpenses && sbExpenses.length > 0) {
-        let filtered = sbExpenses;
-        if (req.query.expenseType && req.query.expenseType !== 'all') {
-          filtered = filtered.filter(e => e.expenseType === req.query.expenseType);
-        }
-        if (req.query.familyMember && req.query.familyMember !== 'all') {
-          filtered = filtered.filter(e => e.familyMember === req.query.familyMember);
-        }
-        const page = parseInt(req.query.page) || 1;
-        const limit = (req.query.limit === 'all' || parseInt(req.query.limit) >= 500) ? (parseInt(req.query.limit) || 1000) : (parseInt(req.query.limit) || 200);
-        const total = filtered.length;
-        const paged = limit === 'all' || limit >= 1000 ? filtered : filtered.slice((page - 1) * limit, page * limit);
-        return res.json({
-          success: true,
-          expenses: paged,
-          pagination: { total, page, limit, totalPages: Math.ceil(total / limit) || 1 },
-          source: "supabase"
-        });
-      }
-    } catch (sbErr) {
-      console.warn("[Expenses Controller] Supabase read fallback to Mongo:", sbErr.message);
-    }
-    
     const page = parseInt(req.query.page) || 1;
     const limit = (req.query.limit === 'all' || parseInt(req.query.limit) >= 500) ? (parseInt(req.query.limit) || 1000) : (parseInt(req.query.limit) || 200);
     const skip = (page - 1) * limit;
@@ -387,15 +354,60 @@ export const listExpenses = async (req, res) => {
       filter.$or = [{ date: { $gte: s, $lte: e } }, { createdAt: { $gte: s, $lte: e } }];
     }
 
-    const [expenses, totalExpenses] = await Promise.all([
-      Expense.find(filter).sort({ date: -1, createdAt: -1 }).skip(skip).limit(limit),
-      Expense.countDocuments(filter)
-    ]);
+    // 1. Authoritative Primary Read: MongoDB (contains full schema fields like expenseType, familyMember)
+    try {
+      const [expenses, totalExpenses] = await Promise.all([
+        Expense.find(filter).sort({ date: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
+        Expense.countDocuments(filter)
+      ]);
 
-    res.json({ 
+      if (expenses && expenses.length > 0) {
+        return res.json({ 
+          success: true, 
+          expenses,
+          pagination: { total: totalExpenses, page, limit, totalPages: Math.ceil(totalExpenses / limit) || 1 },
+          source: "mongo"
+        });
+      }
+    } catch (mErr) {
+      console.warn("[Expenses Controller] Mongo read error, falling back to Supabase:", mErr.message);
+    }
+
+    // 2. High-Availability Fallback: Supabase Read
+    try {
+      const sbExpenses = await getExpensesFromSupabase({
+        companyId: req.companyId,
+        category: req.query.category && req.query.category !== 'all' ? req.query.category : undefined,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+        limit: req.query.limit === 'all' ? 1000 : (parseInt(req.query.limit) || 500)
+      });
+
+      if (sbExpenses && sbExpenses.length > 0) {
+        let filtered = sbExpenses;
+        if (req.query.expenseType && req.query.expenseType !== 'all') {
+          filtered = filtered.filter(e => e.expenseType === req.query.expenseType);
+        }
+        if (req.query.familyMember && req.query.familyMember !== 'all') {
+          filtered = filtered.filter(e => e.familyMember === req.query.familyMember);
+        }
+        const total = filtered.length;
+        const paged = limit === 'all' || limit >= 1000 ? filtered : filtered.slice((page - 1) * limit, page * limit);
+        return res.json({
+          success: true,
+          expenses: paged,
+          pagination: { total, page, limit, totalPages: Math.ceil(total / limit) || 1 },
+          source: "supabase"
+        });
+      }
+    } catch (sbErr) {
+      console.warn("[Expenses Controller] Supabase read fallback error:", sbErr.message);
+    }
+
+    return res.json({ 
       success: true, 
-      expenses,
-      pagination: { total: totalExpenses, page, limit, totalPages: Math.ceil(totalExpenses / limit) }
+      expenses: [],
+      pagination: { total: 0, page: 1, limit, totalPages: 1 }
     });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
