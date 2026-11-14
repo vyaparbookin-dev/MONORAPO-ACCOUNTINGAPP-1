@@ -70,6 +70,10 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
   const [multiMonthData, setMultiMonthData] = useState(null);
   const [loadingMultiMonth, setLoadingMultiMonth] = useState(false);
 
+  // Payment Breakdown Modal State (तारीख-वार दिया गया पेमेंट व एडवांस पॉपअप)
+  const [showPaymentBreakdownModal, setShowPaymentBreakdownModal] = useState(false);
+  const [paymentBreakdownData, setPaymentBreakdownData] = useState(null);
+
   // Add / Edit Staff Modal State
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [isEditingStaff, setIsEditingStaff] = useState(false);
@@ -1400,6 +1404,95 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                     </div>
                   </div>
 
+                  {/* 📦 3-BOX FINANCIAL SUMMARY: 1. बनता वेतन | 2. दिया पेमेंट (कितनी बार) | 3. जो देना बचा है */}
+                  <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                    {/* Box 1: कुल बनता वेतन (देने वाला पेमेंट) */}
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50/80 p-3 sm:p-3.5 rounded-2xl border border-blue-200 shadow-xs flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] sm:text-[11px] font-black text-blue-900 uppercase tracking-wider block">
+                          1. बनता वेतन (देना है)
+                        </span>
+                        <div className="text-base sm:text-xl font-black text-blue-700 mt-1">
+                          ₹{(currentStaff.earnedSalary || 0).toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-blue-600 font-bold mt-1 block truncate">
+                        {currentStaff.presentDays || currentStaff.presentCount || 0} दिन काम @ ₹{currentStaff.dailyRate || 320}
+                      </span>
+                    </div>
+
+                    {/* Box 2: दिया गया पेमेंट (एडवांस + वेतन भुगतान / कितनी बार लिया) */}
+                    <div 
+                      onClick={() => {
+                        const allPayments = [
+                          ...(currentStaff.advancesList || []).map(a => ({ ...a, category: 'advance' })),
+                          ...(currentStaff.paymentsList || []).map(p => ({ ...p, category: 'settlement' })),
+                          ...(currentStaff.bonusList || []).map(b => ({ ...b, category: 'bonus' }))
+                        ];
+                        setPaymentBreakdownData({
+                          staffName: currentStaff.name,
+                          monthLabel: `${monthShortName} ${currentYear}`,
+                          earnedSalary: currentStaff.earnedSalary || 0,
+                          totalPaid: (currentStaff.totalAdvance || 0) + (currentStaff.totalSalaryPaid || 0),
+                          totalBonus: currentStaff.totalBonus || 0,
+                          netPayable: currentStaff.netPayable || 0,
+                          payments: allPayments
+                        });
+                        setShowPaymentBreakdownModal(true);
+                      }}
+                      className="bg-gradient-to-br from-amber-50 to-orange-50/80 p-3 sm:p-3.5 rounded-2xl border border-amber-200 shadow-xs flex flex-col justify-between cursor-pointer hover:border-amber-400 hover:shadow-sm transition active:scale-[0.98] group"
+                      title="क्लिक करके तारीख-वार भुगतान विवरण देखें"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] sm:text-[11px] font-black text-amber-900 uppercase tracking-wider">
+                            2. दिया पेमेंट (लिया)
+                          </span>
+                          <span className="text-[9px] bg-amber-200 text-amber-900 font-black px-1.5 py-0.2 rounded-full">
+                            👆 तारीख देखें
+                          </span>
+                        </div>
+                        <div className="text-base sm:text-xl font-black text-amber-800 mt-1">
+                          ₹{((currentStaff.totalAdvance || 0) + (currentStaff.totalSalaryPaid || 0)).toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-amber-700 font-bold mt-1 block truncate group-hover:underline">
+                        {((currentStaff.advancesList || []).length + (currentStaff.paymentsList || []).length) > 0
+                          ? `कुल ${((currentStaff.advancesList || []).length + (currentStaff.paymentsList || []).length)} बार लिया 🔍`
+                          : "कोई भुगतान नहीं (0 बार)"}
+                      </span>
+                    </div>
+
+                    {/* Box 3: जो देना बचा है (शुद्ध बाकी) */}
+                    <div className={`p-3 sm:p-3.5 rounded-2xl border shadow-xs flex flex-col justify-between ${
+                      currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
+                        ? "bg-gradient-to-br from-emerald-50 to-teal-50/70 border-emerald-300"
+                        : "bg-gradient-to-br from-rose-50 to-red-50/70 border-rose-300"
+                    }`}>
+                      <div>
+                        <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider block text-slate-800">
+                          3. जो देना बचा है
+                        </span>
+                        <div className={`text-base sm:text-xl font-black mt-1 ${
+                          currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
+                            ? "text-emerald-700"
+                            : "text-rose-700"
+                        }`}>
+                          ₹{(currentStaff.netPayable || 0).toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                      <span className={`text-[10px] font-extrabold mt-1 block truncate ${
+                        currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
+                          ? "text-emerald-700"
+                          : "text-rose-600"
+                      }`}>
+                        {currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
+                          ? "✅ पूरा चुकता (NIL)"
+                          : "शुद्ध बकाया राशि"}
+                      </span>
+                    </div>
+                  </div>
+
                   <p className="text-[11px] text-slate-500 font-medium">
                     💡 <b>हाजिरी सुधारें:</b> यदि किसी भी तारीख का डेटा मिसमैच हुआ हो, तो नीचे सीधे उस तारीख के बटन पर दबाकर तुरंत सही (P / ½ / ✕) कर सकते हैं।
                   </p>
@@ -1517,6 +1610,95 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                 <button onClick={() => handleMonthChange(1)} className="p-1 hover:bg-slate-100 rounded-lg cursor-pointer">
                   <ChevronRight className="w-5 h-5 text-slate-500" />
                 </button>
+              </div>
+
+              {/* 📦 3-BOX FINANCIAL SUMMARY: 1. बनता वेतन | 2. दिया पेमेंट (कितनी बार) | 3. जो देना बचा है */}
+              <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                {/* Box 1: कुल बनता वेतन (देने वाला पेमेंट) */}
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50/80 p-3 sm:p-3.5 rounded-2xl border border-blue-200 shadow-xs flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] sm:text-[11px] font-black text-blue-900 uppercase tracking-wider block">
+                      1. बनता वेतन (देना है)
+                    </span>
+                    <div className="text-base sm:text-xl font-black text-blue-700 mt-1">
+                      ₹{(currentStaff.earnedSalary || 0).toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-blue-600 font-bold mt-1 block truncate">
+                    {currentStaff.presentDays || currentStaff.presentCount || 0} दिन काम @ ₹{currentStaff.dailyRate || 320}
+                  </span>
+                </div>
+
+                {/* Box 2: दिया गया पेमेंट (एडवांस + वेतन भुगतान / कितनी बार लिया) */}
+                <div 
+                  onClick={() => {
+                    const allPayments = [
+                      ...(currentStaff.advancesList || []).map(a => ({ ...a, category: 'advance' })),
+                      ...(currentStaff.paymentsList || []).map(p => ({ ...p, category: 'settlement' })),
+                      ...(currentStaff.bonusList || []).map(b => ({ ...b, category: 'bonus' }))
+                    ];
+                    setPaymentBreakdownData({
+                      staffName: currentStaff.name,
+                      monthLabel: `${monthShortName} ${currentYear}`,
+                      earnedSalary: currentStaff.earnedSalary || 0,
+                      totalPaid: (currentStaff.totalAdvance || 0) + (currentStaff.totalSalaryPaid || 0),
+                      totalBonus: currentStaff.totalBonus || 0,
+                      netPayable: currentStaff.netPayable || 0,
+                      payments: allPayments
+                    });
+                    setShowPaymentBreakdownModal(true);
+                  }}
+                  className="bg-gradient-to-br from-amber-50 to-orange-50/80 p-3 sm:p-3.5 rounded-2xl border border-amber-200 shadow-xs flex flex-col justify-between cursor-pointer hover:border-amber-400 hover:shadow-sm transition active:scale-[0.98] group"
+                  title="क्लिक करके तारीख-वार भुगतान विवरण देखें"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] sm:text-[11px] font-black text-amber-900 uppercase tracking-wider">
+                        2. दिया पेमेंट (लिया)
+                      </span>
+                      <span className="text-[9px] bg-amber-200 text-amber-900 font-black px-1.5 py-0.2 rounded-full">
+                        👆 तारीख देखें
+                      </span>
+                    </div>
+                    <div className="text-base sm:text-xl font-black text-amber-800 mt-1">
+                      ₹{((currentStaff.totalAdvance || 0) + (currentStaff.totalSalaryPaid || 0)).toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-amber-700 font-bold mt-1 block truncate group-hover:underline">
+                    {((currentStaff.advancesList || []).length + (currentStaff.paymentsList || []).length) > 0
+                      ? `कुल ${((currentStaff.advancesList || []).length + (currentStaff.paymentsList || []).length)} बार लिया 🔍`
+                      : "कोई भुगतान नहीं (0 बार)"}
+                  </span>
+                </div>
+
+                {/* Box 3: जो देना बचा है (शुद्ध बाकी) */}
+                <div className={`p-3 sm:p-3.5 rounded-2xl border shadow-xs flex flex-col justify-between ${
+                  currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
+                    ? "bg-gradient-to-br from-emerald-50 to-teal-50/80 border-emerald-300"
+                    : "bg-gradient-to-br from-rose-50 to-red-50/80 border-rose-300"
+                }`}>
+                  <div>
+                    <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider block text-slate-800">
+                      3. जो देना बचा है
+                    </span>
+                    <div className={`text-base sm:text-xl font-black mt-1 ${
+                      currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
+                        ? "text-emerald-700"
+                        : "text-rose-700"
+                    }`}>
+                      ₹{(currentStaff.netPayable || 0).toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                  <span className={`text-[10px] font-extrabold mt-1 block truncate ${
+                    currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
+                      ? "text-emerald-700"
+                      : "text-rose-600"
+                  }`}>
+                    {currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
+                      ? "✅ पूरा चुकता (NIL)"
+                      : "शुद्ध बकाया राशि"}
+                  </span>
+                </div>
               </div>
 
               {/* 3x3 Metric Grid (Screenshot 2) */}
@@ -2497,6 +2679,58 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                             </div>
                           </div>
 
+                          {/* 📦 3-BOX FINANCIAL SUMMARY: 1. देने वाला पेमेंट | 2. दिया वो वाला (कितनी बार) | 3. जो देना बचा है */}
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="bg-blue-50/80 p-2.5 rounded-xl border border-blue-200">
+                              <span className="text-[10px] font-black text-blue-900 uppercase block">1. देने वाला पेमेंट</span>
+                              <span className="text-sm sm:text-base font-black text-blue-700 block mt-0.5">₹{m.earnedSalary.toLocaleString('en-IN')}</span>
+                              <span className="text-[9px] text-blue-600 font-bold block truncate">{m.presentDays} दिन काम @ ₹{m.rate}</span>
+                            </div>
+
+                            <div 
+                              onClick={() => {
+                                setPaymentBreakdownData({
+                                  staffName: multiMonthStaff?.name || currentStaff?.name,
+                                  monthLabel: m.label,
+                                  earnedSalary: m.earnedSalary,
+                                  totalPaid: (m.advanceGiven || 0) + (m.salaryPaid || 0),
+                                  totalBonus: m.bonusGiven || 0,
+                                  netPayable: m.netPayable || 0,
+                                  payments: (m.transactions || []).map(t => ({
+                                    ...t,
+                                    category: t.type === 'bonus' ? 'bonus' : t.type === 'salary_settlement' ? 'settlement' : 'advance'
+                                  }))
+                                });
+                                setShowPaymentBreakdownModal(true);
+                              }}
+                              className="bg-amber-50/80 p-2.5 rounded-xl border border-amber-200 cursor-pointer hover:border-amber-400 hover:shadow-2xs transition group"
+                              title="क्लिक करके तारीख-वार भुगतान विवरण देखें"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black text-amber-900 uppercase block">2. दिया वो वाला</span>
+                                <span className="text-[8px] bg-amber-200 text-amber-900 font-black px-1.5 py-0.2 rounded">👆 तारीख देखें</span>
+                              </div>
+                              <span className="text-sm sm:text-base font-black text-amber-800 block mt-0.5">
+                                ₹{((m.advanceGiven || 0) + (m.salaryPaid || 0)).toLocaleString('en-IN')}
+                              </span>
+                              <span className="text-[9px] text-amber-700 font-bold block truncate group-hover:underline">
+                                {m.transactions && m.transactions.length > 0 ? `कुल ${m.transactions.length} बार लिया 🔍` : '0 बार भुगतान'}
+                              </span>
+                            </div>
+
+                            <div className={`p-2.5 rounded-xl border ${
+                              m.isSettled ? "bg-emerald-50/80 border-emerald-300" : "bg-rose-50/80 border-rose-300"
+                            }`}>
+                              <span className="text-[10px] font-black uppercase block text-slate-800">3. जो देना बचा है</span>
+                              <span className={`text-sm sm:text-base font-black block mt-0.5 ${m.isSettled ? "text-emerald-700" : "text-rose-700"}`}>
+                                ₹{m.netPayable.toLocaleString('en-IN')}
+                              </span>
+                              <span className={`text-[9px] font-bold block truncate ${m.isSettled ? "text-emerald-700" : "text-rose-600"}`}>
+                                {m.isSettled ? "✅ चुकता (NIL)" : "देय बाकी"}
+                              </span>
+                            </div>
+                          </div>
+
                           {/* 5 Column Metric Grid */}
                           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
                             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
@@ -2752,6 +2986,117 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                   className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold cursor-pointer transition shadow-xs"
                 >
                   बंद करें (Close)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* MODAL 5: PAYMENT BREAKDOWN MODAL (तारीख-वार दिया गया पेमेंट व एडवांस पॉपअप) */}
+        {/* ========================================================================= */}
+        {showPaymentBreakdownModal && paymentBreakdownData && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 z-50 animate-fadeIn">
+            <div className="bg-white rounded-3xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+              {/* Header */}
+              <div className="p-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl font-bold">
+                    💵
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-black">
+                      दिया गया पेमेंट विवरण (तारीख सहित)
+                    </h3>
+                    <span className="text-[11px] text-amber-100 font-medium">
+                      {paymentBreakdownData.staffName} • {paymentBreakdownData.monthLabel}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowPaymentBreakdownModal(false)}
+                  className="p-1 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Summary Row */}
+              <div className="bg-amber-50/80 p-3.5 sm:p-4 border-b border-amber-200 flex items-center justify-between text-xs">
+                <div>
+                  <span className="text-slate-500 font-medium block">कुल दिया गया पेमेंट:</span>
+                  <span className="text-base sm:text-lg font-black text-amber-900">
+                    ₹{(paymentBreakdownData.totalPaid || 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-slate-500 font-medium block">कुल कितनी बार लिया:</span>
+                  <span className="text-base sm:text-lg font-black text-slate-800">
+                    {(paymentBreakdownData.payments || []).filter(p => p.category !== 'bonus').length} बार
+                  </span>
+                </div>
+              </div>
+
+              {/* List of Payments with Dates and Notes */}
+              <div className="p-4 overflow-y-auto space-y-2.5 flex-1 bg-slate-50/50">
+                {paymentBreakdownData.payments && paymentBreakdownData.payments.length > 0 ? (
+                  paymentBreakdownData.payments.map((p, idx) => (
+                    <div
+                      key={p._id || `pmt_item_${idx}`}
+                      className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between text-xs hover:border-amber-300 transition"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                            p.category === 'bonus' || p.type === 'bonus'
+                              ? 'bg-purple-100 text-purple-800'
+                              : p.category === 'settlement' || p.type === 'salary_settlement'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {p.category === 'bonus' || p.type === 'bonus' ? '🎁 बोनस' : p.category === 'settlement' || p.type === 'salary_settlement' ? '✅ वेतन भुगतान' : '💳 एडवांस'}
+                          </span>
+                          <span className="font-extrabold text-slate-900">
+                            {new Date(p.date).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-slate-600 block pl-0.5">
+                          {p.notes || (p.category === 'settlement' || p.type === 'salary_settlement' ? 'वेतन भुगतान' : 'बीच में लिया गया एडवांस')}
+                        </span>
+                        <span className="text-[10px] text-slate-400 block pl-0.5">
+                          माध्यम: {p.paymentMode === 'cash' ? 'नकद (Cash)' : p.paymentMode || 'Online / UPI'}
+                        </span>
+                      </div>
+
+                      <div className="text-right">
+                        <span className={`text-base font-black ${
+                          p.category === 'bonus' || p.type === 'bonus' ? 'text-purple-700' : 'text-slate-900'
+                        }`}>
+                          ₹{Number(p.amount || p.debit || 0).toLocaleString('en-IN')}
+                        </span>
+                        {(p.category === 'bonus' || p.type === 'bonus') && (
+                          <span className="text-[9px] text-purple-600 block font-semibold">(सैलरी से नहीं कटेगा)</span>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-8 text-center text-slate-400 text-xs">
+                    इस महीने कोई एडवांस या वेतन भुगतान दर्ज नहीं है।
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-3.5 bg-white border-t border-slate-200 flex items-center justify-between shrink-0">
+                <span className="text-xs text-slate-500 font-medium">
+                  देना शेष: <b className="text-slate-900">₹{(paymentBreakdownData.netPayable || 0).toLocaleString('en-IN')}</b>
+                </span>
+                <button
+                  onClick={() => setShowPaymentBreakdownModal(false)}
+                  className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+                >
+                  ठीक है (बंद करें)
                 </button>
               </div>
             </div>
