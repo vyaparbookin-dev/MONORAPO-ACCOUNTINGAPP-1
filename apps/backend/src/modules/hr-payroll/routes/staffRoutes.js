@@ -14,7 +14,8 @@ import {
   addStaffAdvance,
   addStaffOvertime,
   addStaffCommission,
-  addStaffBonus
+  addStaffBonus,
+  getStaffMultiMonthStatement
 } from "../controllers/staffController.js";
 import { protect, requireCompany } from "../../../middleware/authmiddleware.js";
 
@@ -36,6 +37,8 @@ router.post("/", createStaff);
 router.get("/", listStaff);
 router.post("/payment", addPayment);
 router.post("/attendance", markAttendance);
+router.get("/multi-month-statement", getStaffMultiMonthStatement);
+router.get("/:id/multi-month-statement", getStaffMultiMonthStatement);
 router.get("/:id/statement", getStaffStatement);
 router.get("/:id", getStaffById);
 router.put("/:id", updateStaff);

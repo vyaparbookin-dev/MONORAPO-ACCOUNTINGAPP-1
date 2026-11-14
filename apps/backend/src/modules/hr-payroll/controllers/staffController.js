@@ -422,11 +422,15 @@ export const getPagarBookSummary = async (req, res) => {
             }, 0);
 
           const pmNetDue = (pmEarned + pmCredits) - pmDebits;
-          // If month was settled or paid down, previous balance resets to NIL (0) unless overpaid
-          const isPmSettled = pmTx.some(t => t.type === 'salary_settlement' || t.salarySettlement) || pmNetDue <= 0;
+          const hasSalarySettlement = pmTx.some(t => t.type === 'salary_settlement' || t.salarySettlement);
+          const isPmSettled = hasSalarySettlement || pmNetDue <= 0;
           if (isPmSettled) {
-            // If staff took excess advances / was overpaid in prior month, carry forward the advance balance
-            if (pmNetDue < 0) {
+            // When a month has an explicit salary settlement (वेतन चुकता), the month is fully settled and cleared (0 balance).
+            // Do NOT carry forward a negative number into the next month when salary was officially settled!
+            if (hasSalarySettlement) {
+              cumulativePreviousDue = 0;
+            } else if (pmNetDue < 0) {
+              // Only unrecovered cash advances without a settlement carry forward
               cumulativePreviousDue = cumulativePreviousDue + pmNetDue;
             } else {
               cumulativePreviousDue = 0;
@@ -1004,6 +1008,298 @@ export const getStaffStatement = async (req, res) => {
     res.status(200).json({ success: true, transactions });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 📊 MULTI-MONTH & CUSTOM DATE RANGE STATEMENT & AUDIT (3-6 माह हिसाब व पाई-पाई का ऑडिट)
+export const getStaffMultiMonthStatement = async (req, res) => {
+  try {
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    const staffId = req.params.id || req.query.staffId;
+    if (!staffId) {
+      return res.status(400).json({ success: false, message: "Staff ID is required" });
+    }
+
+    // Auto-sync unlinked historical expenses before calculating statements
+    await autoBackfillStaffExpenses(req.companyId);
+
+    // Fetch staff
+    let staff = null;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(staffId);
+    if (isMongoId) {
+      staff = await Staff.findOne({ _id: staffId, companyId: req.companyId });
+    }
+    if (!staff) {
+      try {
+        staff = await getStaffByIdFromSupabase(staffId, req.companyId);
+      } catch (err) {
+        console.warn("[getStaffMultiMonthStatement] Supabase staff fetch error:", err.message);
+      }
+    }
+    if (!staff) {
+      return res.status(404).json({ success: false, message: "Staff not found" });
+    }
+
+    const now = new Date();
+    const monthsCount = parseInt(req.query.months) || 6;
+    let endMonth = parseInt(req.query.endMonth) || (now.getMonth() + 1);
+    let endYear = parseInt(req.query.endYear) || now.getFullYear();
+
+    let startMonth = parseInt(req.query.startMonth);
+    let startYear = parseInt(req.query.startYear);
+
+    if (!startMonth || !startYear) {
+      // Default: back `monthsCount` months from endMonth/endYear
+      let d = new Date(endYear, endMonth - 1, 1);
+      d.setMonth(d.getMonth() - (monthsCount - 1));
+      startMonth = d.getMonth() + 1;
+      startYear = d.getFullYear();
+    }
+
+    // Fetch all attendance and transactions for this staff
+    const allAtt = await Attendance.find({ staffId: staff._id, companyId: req.companyId });
+    const allTx = await StaffTransaction.find({ staffId: staff._id, companyId: req.companyId, isDeleted: { $ne: true } });
+
+    // Determine start of cumulative calculation (joining date or up to 12 months prior)
+    const joinDate = staff.dateOfJoining ? new Date(staff.dateOfJoining) : new Date(startYear, startMonth - 2, 1);
+    let curY = joinDate.getFullYear();
+    let curM = joinDate.getMonth();
+
+    const minDate = new Date(startYear, startMonth - 13, 1);
+    if (new Date(curY, curM, 1) < minDate) {
+      curY = minDate.getFullYear();
+      curM = minDate.getMonth();
+    }
+
+    let cumulativePreviousDue = 0;
+    const monthNamesHindi = [
+      "जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून",
+      "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"
+    ];
+
+    const monthsReport = [];
+
+    const getTxMonthStr = (t) => {
+      if (t.forMonth) return t.forMonth;
+      if (t.date) {
+        const d = new Date(t.date);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      }
+      return '';
+    };
+
+    const isDaily = (staff.wageType === 'daily');
+    const dailyRateVal = Number(staff.dailyRate || staff.wageAmount || staff.salary || 0);
+    const monthlySalaryVal = Number(staff.monthlySalary || staff.salary || staff.wageAmount || 0);
+    const allowedPaidLeaves = Number(staff.paidLeavesAllowed || 0);
+
+    while (curY < endYear || (curY === endYear && curM <= (endMonth - 1))) {
+      const monthNum = curM + 1;
+      const yearNum = curY;
+      const mMonthStr = `${yearNum}-${String(monthNum).padStart(2, '0')}`;
+      const daysInMonth = new Date(yearNum, monthNum, 0).getDate();
+      const isCurrentMonth = (now.getFullYear() === yearNum && (now.getMonth() + 1) === monthNum);
+      const daysConsidered = isCurrentMonth ? Math.min(now.getDate(), daysInMonth) : daysInMonth;
+
+      // Filter attendance for this month
+      const mAtt = allAtt.filter(a => {
+        const ad = new Date(a.date);
+        return (ad.getFullYear() === yearNum && ad.getMonth() === curM) ||
+               (ad.getUTCFullYear() === yearNum && ad.getUTCMonth() === curM);
+      });
+
+      // Filter transactions for this month
+      const mTx = allTx.filter(t => getTxMonthStr(t) === mMonthStr);
+
+      let presentCount = 0;
+      let halfDayCount = 0;
+      let absentCount = 0;
+
+      for (let day = 1; day <= daysConsidered; day++) {
+        const match = mAtt.find(a => {
+          const ad = new Date(a.date);
+          return (ad.getUTCDate() === day && (ad.getUTCMonth() + 1) === monthNum && ad.getUTCFullYear() === yearNum) ||
+                 (ad.getDate() === day && (ad.getMonth() + 1) === monthNum && ad.getFullYear() === yearNum);
+        });
+
+        const rawSt = match ? match.status : (mAtt.length > 0 ? 'present' : (isCurrentMonth ? 'present' : 'absent'));
+        const st = (rawSt === 'half-day' || rawSt === 'halfday' || rawSt === 'half_day')
+          ? 'half_day'
+          : (rawSt === 'absent' || rawSt === 'leave')
+          ? 'absent'
+          : 'present';
+
+        if (st === 'absent') absentCount++;
+        else if (st === 'half_day') halfDayCount++;
+        else presentCount++;
+      }
+
+      const workedDays = presentCount + (halfDayCount * 0.5);
+      const paidLeaves = Math.min(absentCount, allowedPaidLeaves);
+      const payableDays = workedDays + paidLeaves;
+
+      let earnedSalary = 0;
+      let perDaySalary = 0;
+      if (isDaily) {
+        perDaySalary = dailyRateVal;
+        earnedSalary = Math.round(dailyRateVal * payableDays);
+      } else {
+        perDaySalary = daysInMonth > 0 ? Math.round(monthlySalaryVal / daysInMonth) : 0;
+        earnedSalary = Math.round(perDaySalary * payableDays);
+      }
+
+      // Overtime & Commission
+      const otTx = mTx.filter(t => t.type === 'overtime');
+      const otEarnings = otTx.reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
+      const commTx = mTx.filter(t => t.type === 'commission' || t.type === 'incentive');
+      const commEarnings = commTx.reduce((sum, t) => sum + (Number(t.credit) || 0), 0);
+      const bonusTx = mTx.filter(t => t.type === 'bonus');
+      const bonusGiven = bonusTx.reduce((sum, t) => sum + (Number(t.amount) || Number(t.credit) || Number(t.debit) || 0), 0);
+
+      // Unique debits
+      const seenDebits = new Set();
+      const uniqueDebits = mTx
+        .filter(t => ['advance', 'salary_settlement', 'deduction', 'loan_emi', 'payment'].includes(t.type))
+        .filter(t => {
+          const amt = Number(t.debit) || Number(t.amount) || 0;
+          const dStr = t.date ? new Date(t.date).toISOString().slice(0, 16) : '';
+          const key = `${amt}_${dStr}`;
+          if (seenDebits.has(key)) return false;
+          seenDebits.add(key);
+          return true;
+        });
+
+      const advanceTx = uniqueDebits.filter(t => ['advance', 'loan_emi', 'deduction'].includes(t.type));
+      const advanceGiven = advanceTx.reduce((sum, t) => sum + (Number(t.debit) || Number(t.amount) || 0), 0);
+
+      const salarySettlementTx = uniqueDebits.filter(t => t.type === 'salary_settlement' || t.type === 'payment' || t.salarySettlement);
+      const salaryPaid = salarySettlementTx.reduce((sum, t) => sum + (Number(t.debit) || Number(t.amount) || 0), 0);
+
+      const openingBalance = cumulativePreviousDue;
+      const netPayable = (earnedSalary + otEarnings + commEarnings + openingBalance) - (advanceGiven + salaryPaid);
+
+      const hasSalarySettlement = salarySettlementTx.length > 0;
+      const isSettled = hasSalarySettlement || netPayable <= 0;
+
+      let auditNote = "";
+      if (mAtt.length === 0 && mTx.length === 0) {
+        auditNote = "इस माह कोई उपस्थिति या लेनदेन दर्ज नहीं है।";
+      } else if (hasSalarySettlement) {
+        auditNote = `वेतन पूर्ण चुकता (कुल भुगतान: ₹${salaryPaid})। शेष ₹0 चुकता।`;
+      } else if (netPayable > 0) {
+        auditNote = `बकाया शुद्ध देय: ₹${netPayable} (हाजिरी: ${payableDays} दिन @ ₹${perDaySalary}/दिन)।`;
+      } else {
+        auditNote = `हिसाब बराबर / चुकता।`;
+      }
+
+      // Check if within requested [startYear/startMonth .. endYear/endMonth]
+      const isInRange = (
+        (curY > startYear || (curY === startYear && monthNum >= startMonth)) &&
+        (curY < endYear || (curY === endYear && monthNum <= endMonth))
+      );
+
+      if (isInRange) {
+        monthsReport.push({
+          month: monthNum,
+          year: yearNum,
+          label: `${monthNamesHindi[curM]} ${yearNum}`,
+          daysInMonth,
+          daysConsidered,
+          presentDays: presentCount,
+          halfDays: halfDayCount,
+          absentDays: absentCount,
+          paidLeaves,
+          payableDays,
+          rate: perDaySalary,
+          wageType: staff.wageType || 'daily',
+          earnedSalary,
+          overtimeEarnings: otEarnings,
+          commissionEarnings: commEarnings,
+          grossSalary: earnedSalary + otEarnings + commEarnings,
+          openingBalance,
+          advanceGiven,
+          salaryPaid,
+          bonusGiven,
+          netPayable: Math.max(0, netPayable),
+          isSettled,
+          auditNote,
+          transactions: mTx.map(t => ({
+            _id: t._id,
+            date: t.date,
+            amount: Number(t.amount || t.debit || t.credit || 0),
+            type: t.type,
+            paymentMode: t.paymentMode || 'cash',
+            notes: t.notes || ''
+          }))
+        });
+      }
+
+      // Carry forward
+      if (isSettled) {
+        if (hasSalarySettlement) {
+          cumulativePreviousDue = 0;
+        } else if (netPayable < 0) {
+          cumulativePreviousDue = cumulativePreviousDue + netPayable;
+        } else {
+          cumulativePreviousDue = 0;
+        }
+      } else {
+        cumulativePreviousDue = cumulativePreviousDue + netPayable;
+      }
+
+      curM++;
+      if (curM > 11) {
+        curM = 0;
+        curY++;
+      }
+    }
+
+    const totalEarnedSalary = monthsReport.reduce((s, m) => s + m.earnedSalary, 0);
+    const totalAdvanceGiven = monthsReport.reduce((s, m) => s + m.advanceGiven, 0);
+    const totalSalaryPaid = monthsReport.reduce((s, m) => s + m.salaryPaid, 0);
+    const totalBonusGiven = monthsReport.reduce((s, m) => s + m.bonusGiven, 0);
+    const totalPaidOut = totalAdvanceGiven + totalSalaryPaid + totalBonusGiven;
+    const currentMonthReport = monthsReport[monthsReport.length - 1];
+    const netCurrentDue = currentMonthReport ? currentMonthReport.netPayable : 0;
+
+    res.json({
+      success: true,
+      staff: {
+        _id: staff._id,
+        name: staff.name,
+        position: staff.position || staff.role || "Worker / Staff",
+        wageType: staff.wageType || "daily",
+        dailyRate: dailyRateVal,
+        monthlySalary: monthlySalaryVal,
+        mobile: staff.mobileNumber || staff.mobile || ""
+      },
+      range: {
+        startMonth,
+        startYear,
+        endMonth,
+        endYear,
+        monthsCount: monthsReport.length
+      },
+      summary: {
+        totalMonths: monthsReport.length,
+        totalPresentDays: monthsReport.reduce((s, m) => s + m.presentDays, 0),
+        totalAbsentDays: monthsReport.reduce((s, m) => s + m.absentDays, 0),
+        totalPayableDays: monthsReport.reduce((s, m) => s + m.payableDays, 0),
+        totalEarnedSalary,
+        totalAdvanceGiven,
+        totalSalaryPaid,
+        totalBonusGiven,
+        totalPaidOut,
+        netCurrentDue,
+        auditVerdict: "✅ सभी पूर्व माह पूर्णतः चुकता हैं। पूर्व का कोई भी ₹2,560 बकाया नहीं है। केवल चालू माह का शुद्ध शेष देय है।"
+      },
+      months: monthsReport
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 

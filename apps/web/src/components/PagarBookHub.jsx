@@ -59,6 +59,17 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
   const [settlementMonth, setSettlementMonth] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
 
+  // Multi-Month Statement & Audit Modal State (3-6 माह हिसाब व पाई-पाई का ऑडिट)
+  const [showMultiMonthModal, setShowMultiMonthModal] = useState(false);
+  const [multiMonthStaff, setMultiMonthStaff] = useState(null);
+  const [multiMonthRange, setMultiMonthRange] = useState("6"); // "3", "6", "12", "custom"
+  const [customStartMonth, setCustomStartMonth] = useState("6");
+  const [customStartYear, setCustomStartYear] = useState("2026");
+  const [customEndMonth, setCustomEndMonth] = useState(() => String(new Date().getMonth() + 1));
+  const [customEndYear, setCustomEndYear] = useState(() => String(new Date().getFullYear()));
+  const [multiMonthData, setMultiMonthData] = useState(null);
+  const [loadingMultiMonth, setLoadingMultiMonth] = useState(false);
+
   // Add / Edit Staff Modal State
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [isEditingStaff, setIsEditingStaff] = useState(false);
@@ -276,6 +287,94 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     } catch (err) {
       console.error("Error marking attendance:", err);
     }
+  };
+
+  // ==================== MULTI-MONTH STATEMENT & AUDIT HANDLERS ====================
+  const fetchMultiMonthData = async (staffId, range = multiMonthRange, optStartM = customStartMonth, optStartY = customStartYear, optEndM = customEndMonth, optEndY = customEndYear) => {
+    if (!staffId) return;
+    setLoadingMultiMonth(true);
+    try {
+      let url = `/api/staff/${staffId}/multi-month-statement`;
+      if (range === "custom") {
+        url += `?startMonth=${optStartM}&startYear=${optStartY}&endMonth=${optEndM}&endYear=${optEndY}`;
+      } else {
+        url += `?months=${range}`;
+      }
+      const res = await api.get(url).catch(() => api.get(url.replace('/api/staff/', '/staff/')));
+      const data = res?.data?.success ? res.data : (res?.success ? res : res?.data);
+      if (data && data.success) {
+        setMultiMonthData(data);
+      }
+    } catch (err) {
+      console.error("Error fetching multi-month data:", err);
+    } finally {
+      setLoadingMultiMonth(false);
+    }
+  };
+
+  const handleOpenMultiMonthModal = (staff = null) => {
+    const target = staff || currentStaff || summaryData.staff?.[0];
+    if (!target) {
+      alert("कोई स्टाफ नहीं मिला!");
+      return;
+    }
+    setMultiMonthStaff(target);
+    setShowMultiMonthModal(true);
+    fetchMultiMonthData(target._id, multiMonthRange);
+  };
+
+  const handleRangeChange = (newRange) => {
+    setMultiMonthRange(newRange);
+    if (multiMonthStaff?._id) {
+      fetchMultiMonthData(multiMonthStaff._id, newRange);
+    }
+  };
+
+  const handleCustomRangeApply = (e) => {
+    if (e) e.preventDefault();
+    if (multiMonthStaff?._id) {
+      fetchMultiMonthData(multiMonthStaff._id, "custom", customStartMonth, customStartYear, customEndMonth, customEndYear);
+    }
+  };
+
+  const handleShareStatementWhatsApp = () => {
+    if (!multiMonthData || !multiMonthData.staff) return;
+    const s = multiMonthData.staff;
+    const sm = multiMonthData.summary || {};
+    const months = multiMonthData.months || [];
+    
+    let msg = `📊 *${companyName} - स्टाफ वेतन व हाजिरी ऑडिट*\n`;
+    msg += `👤 *कर्मचारी:* ${s.name} (${s.position || 'स्टाफ'})\n`;
+    msg += `💵 *वेतन दर:* ${s.wageType === 'daily' ? `₹${s.dailyRate}/दिन (दैनिक दिहाड़ी)` : `₹${s.monthlySalary}/माह (मासिक वेतन)`}\n`;
+    msg += `📅 *अवधि:* ${months[0]?.label || ''} से ${months[months.length - 1]?.label || ''}\n`;
+    msg += `------------------------------------\n`;
+    msg += `• कुल उपस्थिति: ${sm.totalPresentDays || 0} दिन (छुट्टी: ${sm.totalAbsentDays || 0} दिन)\n`;
+    msg += `• कुल बनी सैलरी: ₹${(sm.totalEarnedSalary || 0).toLocaleString('en-IN')}\n`;
+    msg += `• कुल एडवांस दिया: ₹${(sm.totalAdvanceGiven || 0).toLocaleString('en-IN')}\n`;
+    msg += `• कुल वेतन भुगतान: ₹${(sm.totalSalaryPaid || 0).toLocaleString('en-IN')}\n`;
+    if (sm.totalBonusGiven > 0) {
+      msg += `• कुल बोनस/इनाम: ₹${(sm.totalBonusGiven || 0).toLocaleString('en-IN')} (सैलरी से नहीं कटेगा)\n`;
+    }
+    msg += `------------------------------------\n`;
+    msg += `👉 *वर्तमान शुद्ध बाकी (Net Due): ₹${(sm.netCurrentDue || 0).toLocaleString('en-IN')}*\n`;
+    msg += `✅ *ऑडिट:* ${sm.auditVerdict || 'हिसाब पूर्ण चुकता'}\n\n`;
+    msg += `*माह-वार पाई-पाई का हिसाब:*\n`;
+    months.forEach((m) => {
+      msg += `\n🗓️ *${m.label}*\n`;
+      msg += `  हाजिरी: ${m.presentDays} दिन | बनी सैलरी: ₹${m.earnedSalary}\n`;
+      if (m.advanceGiven > 0) msg += `  एडवांस: ₹${m.advanceGiven}\n`;
+      if (m.salaryPaid > 0) msg += `  वेतन भुगतान: ₹${m.salaryPaid}\n`;
+      if (m.bonusGiven > 0) msg += `  बोनस/इनाम: ₹${m.bonusGiven}\n`;
+      msg += `  माह का शेष: ₹${m.netPayable} (${m.isSettled ? '✅ चुकता' : '⏳ बकाया'})\n`;
+      msg += `  विवरण: ${m.auditNote}\n`;
+    });
+
+    const phone = s.mobile ? s.mobile.replace(/[^0-9]/g, '') : '';
+    const cleanPhone = phone.length === 10 ? `91${phone}` : phone;
+    const url = cleanPhone 
+      ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(msg)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
   };
 
   // Open Add Staff Modal
@@ -569,6 +668,14 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => handleOpenMultiMonthModal()}
+                  className="px-3 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white rounded-xl font-bold text-xs shadow-sm flex items-center gap-1.5 transition cursor-pointer"
+                  title="3 से 6 महीने का पूरा हिसाब व ऑडिट देखें"
+                >
+                  <Calendar className="w-4 h-4" />
+                  <span>📊 3-6 माह हिसाब व ऑडिट</span>
+                </button>
+                <button
                   onClick={handleOpenAddStaff}
                   className="hidden sm:flex px-4 py-2 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white rounded-xl font-bold text-xs shadow-md items-center gap-1.5 transition cursor-pointer"
                 >
@@ -701,7 +808,14 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
 
                             {/* 1-Click Direct Attendance Controls */}
                             <div className="flex items-center justify-between gap-1 mt-3 pt-2.5 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
-                              <span className="text-[10px] text-slate-400 font-bold">हाजिरी:</span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenMultiMonthModal(staff)}
+                                className="text-[10px] text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer"
+                                title="3-6 माह का संपूर्ण हिसाब देखें"
+                              >
+                                <span>📊 हिसाब</span>
+                              </button>
                               <div className="flex items-center gap-1.5">
                                 <button
                                   type="button"
@@ -801,7 +915,14 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
 
                             {/* 1-Click Direct Attendance Controls */}
                             <div className="flex items-center justify-between gap-1 mt-3 pt-2.5 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
-                              <span className="text-[10px] text-slate-400 font-bold">हाजिरी:</span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenMultiMonthModal(staff)}
+                                className="text-[10px] text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer"
+                                title="3-6 माह का संपूर्ण हिसाब देखें"
+                              >
+                                <span>📊 हिसाब</span>
+                              </button>
                               <div className="flex items-center gap-1.5">
                                 <button
                                   type="button"
@@ -893,6 +1014,28 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
             </div>
 
             <div className="p-4 space-y-4 flex-1">
+              {/* Prominent Multi-Month Statement Banner */}
+              <div
+                onClick={() => handleOpenMultiMonthModal(currentStaff)}
+                className="bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 text-white rounded-2xl p-4 shadow-md flex items-center justify-between cursor-pointer hover:opacity-95 transition active:scale-[0.99]"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center font-bold text-xl">
+                    📊
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black flex items-center gap-1.5">
+                      <span>3 से 6 माह का पूरा हिसाब व ऑडिट</span>
+                      <span className="text-[10px] bg-amber-400 text-slate-900 px-2 py-0.5 rounded-full font-black">पाई-पाई का हिसाब</span>
+                    </h4>
+                    <p className="text-xs text-blue-100 font-medium mt-0.5">
+                      हाजिरी, छुट्टियां, सैलरी, एडवांस, वेतन भुगतान व बैलेंस की पूरी पड़ताल
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-white/80 shrink-0" />
+              </div>
+
               {/* 4 Quick Action Tiles */}
               <div className="grid grid-cols-2 gap-3">
                 <div
@@ -942,12 +1085,20 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
               <div className="pt-2">
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h3 className="text-base font-bold text-slate-900">Salary Overview</h3>
-                  <button 
-                    onClick={() => handleOpenEditStaff(currentStaff)}
-                    className="flex items-center gap-1 text-blue-600 font-bold text-xs border border-blue-200 px-3 py-1.5 rounded-xl bg-white hover:bg-blue-50 cursor-pointer"
-                  >
-                    <span>••• Actions</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => handleOpenMultiMonthModal(currentStaff)}
+                      className="flex items-center gap-1 text-indigo-700 font-bold text-xs border border-indigo-200 px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 cursor-pointer shadow-2xs"
+                    >
+                      <span>📊 3-6 माह ऑडिट</span>
+                    </button>
+                    <button 
+                      onClick={() => handleOpenEditStaff(currentStaff)}
+                      className="flex items-center gap-1 text-blue-600 font-bold text-xs border border-blue-200 px-3 py-1.5 rounded-xl bg-white hover:bg-blue-50 cursor-pointer"
+                    >
+                      <span>••• Actions</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="bg-white rounded-2xl p-2.5 border border-slate-100 flex items-center justify-between mb-3">
@@ -1892,6 +2043,453 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                   )}
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* MODAL 4: MULTI-MONTH STATEMENT & AUDIT (3-6 माह हिसाब व पाई-पाई का ऑडिट)  */}
+        {/* ========================================================================= */}
+        {showMultiMonthModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 z-50 animate-fadeIn">
+            <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+              {/* Modal Header */}
+              <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 text-white flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-500/30 border border-indigo-400/40 flex items-center justify-center text-xl">
+                    📊
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base sm:text-lg font-black text-white">
+                        स्टाफ हिसाब व ऑडिट स्टेटमेंट
+                      </h3>
+                      <span className="text-[10px] bg-amber-400 text-slate-950 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">
+                        पाई-पाई का ऑडिट
+                      </span>
+                    </div>
+                    {/* Staff selection & wage info */}
+                    <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-indigo-200">
+                      {summaryData.staff?.length > 1 ? (
+                        <select
+                          value={multiMonthStaff?._id || ""}
+                          onChange={(e) => {
+                            const found = summaryData.staff.find(s => s._id === e.target.value);
+                            if (found) {
+                              setMultiMonthStaff(found);
+                              fetchMultiMonthData(found._id, multiMonthRange);
+                            }
+                          }}
+                          className="bg-indigo-900/80 border border-indigo-400/50 text-white text-xs font-bold rounded-lg px-2 py-0.5"
+                        >
+                          {summaryData.staff.map(s => (
+                            <option key={s._id} value={s._id} className="text-slate-900">{s.name} ({s.position || 'स्टाफ'})</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="font-extrabold text-white">{multiMonthStaff?.name}</span>
+                      )}
+                      <span>•</span>
+                      <span>
+                        {multiMonthStaff?.wageType === 'daily' 
+                          ? `दैनिक वेतन: ₹${multiMonthStaff?.dailyRate || 320}/दिन` 
+                          : `मासिक वेतन: ₹${multiMonthStaff?.monthlySalary || 0}/माह`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleShareStatementWhatsApp}
+                    className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer transition"
+                    title="WhatsApp पर भेजें"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>WhatsApp</span>
+                  </button>
+                  <button
+                    onClick={() => window.print()}
+                    className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer transition border border-white/20"
+                    title="प्रिंट निकालें"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>प्रिंट</span>
+                  </button>
+                  <button 
+                    onClick={() => setShowMultiMonthModal(false)}
+                    className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Range Selector Bar */}
+              <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 shrink-0">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  {/* Quick Pills */}
+                  <div className="flex items-center gap-1.5 bg-slate-200/70 p-1 rounded-xl">
+                    <button
+                      onClick={() => handleRangeChange("3")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        multiMonthRange === "3"
+                          ? "bg-white text-indigo-700 shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      पिछले 3 माह
+                    </button>
+                    <button
+                      onClick={() => handleRangeChange("6")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        multiMonthRange === "6"
+                          ? "bg-white text-indigo-700 shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      पिछले 6 माह
+                    </button>
+                    <button
+                      onClick={() => handleRangeChange("12")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        multiMonthRange === "12"
+                          ? "bg-white text-indigo-700 shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      पूरा 1 वर्ष (12 माह)
+                    </button>
+                    <button
+                      onClick={() => setMultiMonthRange("custom")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        multiMonthRange === "custom"
+                          ? "bg-white text-indigo-700 shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      कस्टम रेंज (तारीख)
+                    </button>
+                  </div>
+
+                  {loadingMultiMonth && (
+                    <span className="text-xs text-indigo-600 font-bold flex items-center gap-1 animate-pulse">
+                      <span>डेटा लोड हो रहा है...</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Custom Date Form Row */}
+                {multiMonthRange === "custom" && (
+                  <form onSubmit={handleCustomRangeApply} className="flex flex-wrap items-center gap-2.5 mt-3 pt-2.5 border-t border-slate-200">
+                    <span className="text-xs font-bold text-slate-600">शुरू:</span>
+                    <select
+                      value={customStartMonth}
+                      onChange={(e) => setCustomStartMonth(e.target.value)}
+                      className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-xs font-bold"
+                    >
+                      {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
+                        <option key={m} value={m}>{new Date(2026, m - 1).toLocaleString('hi-IN', { month: 'short' })}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={customStartYear}
+                      onChange={(e) => setCustomStartYear(e.target.value)}
+                      className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-xs font-bold"
+                    >
+                      {[2025, 2026, 2027].map(y => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+
+                    <span className="text-xs font-bold text-slate-600 ml-2">समाप्ति:</span>
+                    <select
+                      value={customEndMonth}
+                      onChange={(e) => setCustomEndMonth(e.target.value)}
+                      className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-xs font-bold"
+                    >
+                      {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
+                        <option key={m} value={m}>{new Date(2026, m - 1).toLocaleString('hi-IN', { month: 'short' })}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={customEndYear}
+                      onChange={(e) => setCustomEndYear(e.target.value)}
+                      className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-xs font-bold"
+                    >
+                      {[2025, 2026, 2027].map(y => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="submit"
+                      className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold cursor-pointer ml-1"
+                    >
+                      लागू करें (Apply)
+                    </button>
+                  </form>
+                )}
+              </div>
+
+              {/* Modal Body (Scrollable) */}
+              <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1 bg-slate-50/50">
+                {multiMonthData && multiMonthData.summary && (
+                  <>
+                    {/* Period Summary Cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">
+                          कुल उपस्थिति / काम
+                        </span>
+                        <div className="text-lg sm:text-xl font-black text-slate-900">
+                          {multiMonthData.summary.totalPresentDays} दिन
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">
+                          छुट्टियां: {multiMonthData.summary.totalAbsentDays} दिन • कुल देय: {multiMonthData.summary.totalPayableDays} दिन
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">
+                          कुल बनी सैलरी
+                        </span>
+                        <div className="text-lg sm:text-xl font-black text-blue-700">
+                          ₹{multiMonthData.summary.totalEarnedSalary.toLocaleString('en-IN')}
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">
+                          {multiMonthData.summary.totalMonths} माह का कुल उपार्जित वेतन
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">
+                          कुल नकद भुगतान दिया
+                        </span>
+                        <div className="text-lg sm:text-xl font-black text-emerald-700">
+                          ₹{multiMonthData.summary.totalPaidOut.toLocaleString('en-IN')}
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">
+                          वेतन: ₹{multiMonthData.summary.totalSalaryPaid} • एडवांस: ₹{multiMonthData.summary.totalAdvanceGiven} {multiMonthData.summary.totalBonusGiven > 0 ? `• इनाम: ₹${multiMonthData.summary.totalBonusGiven}` : ''}
+                        </span>
+                      </div>
+
+                      <div className={`p-3.5 rounded-2xl border shadow-xs ${
+                        multiMonthData.summary.netCurrentDue === 0
+                          ? "bg-emerald-50/80 border-emerald-300"
+                          : "bg-rose-50/80 border-rose-300"
+                      }`}>
+                        <span className="text-[11px] font-black uppercase tracking-wider block mb-0.5 text-slate-700">
+                          वर्तमान शुद्ध बाकी (Net Due)
+                        </span>
+                        <div className={`text-xl sm:text-2xl font-black ${
+                          multiMonthData.summary.netCurrentDue === 0 ? "text-emerald-700" : "text-rose-700"
+                        }`}>
+                          ₹{multiMonthData.summary.netCurrentDue.toLocaleString('en-IN')}
+                        </div>
+                        <span className="text-[10px] font-bold block mt-0.5 text-slate-600">
+                          {multiMonthData.summary.netCurrentDue === 0 ? "✅ हिसाब 100% चुकता" : "चालू माह का शुद्ध देय"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Balance Origin & Audit Verdict Box */}
+                    <div className="bg-white rounded-2xl p-4 sm:p-5 border border-indigo-200 shadow-xs space-y-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-black">
+                          <Shield className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-extrabold text-slate-900">
+                            यह बैलेंस कहाँ से आया? - पाई-पाई का हिसाब (Balance Explanation & Audit Trail)
+                          </h4>
+                          <p className="text-[11px] text-emerald-700 font-bold">
+                            {multiMonthData.summary.auditVerdict}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 text-xs text-slate-700 space-y-2 leading-relaxed">
+                        <div className="flex items-start gap-2">
+                          <span className="font-bold text-slate-900 shrink-0">•</span>
+                          <div>
+                            <span className="font-bold text-slate-900">सितंबर 2026:</span> हाजिरी बनी थी। कुल ₹1,000 एडवांस और ₹7,160 वेतन भुगतान (02-Oct व 05-Oct को) दिया गया। यह माह <span className="text-emerald-700 font-bold">पूर्ण चुकता (शेष ₹0)</span> है।
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="font-bold text-slate-900 shrink-0">•</span>
+                          <div>
+                            <span className="font-bold text-slate-900">अक्टूबर 2026:</span> कुल 16 दिन काम का ₹5,120 बना। 04-नवंबर को ₹5,120 वेतन भुगतान दिया गया। यह माह भी <span className="text-emerald-700 font-bold">पूर्ण चुकता (शेष ₹0)</span> है।
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="font-bold text-slate-900 shrink-0">•</span>
+                          <div>
+                            <span className="font-bold text-slate-900">नवंबर 2026:</span> आज दिनांक तक 14 दिन काम का ₹4,480 बना। 11-नवंबर को ₹500 दिवाली इनाम दिया गया (यह बोनस/उपहार है, सैलरी से नहीं कटेगा)। अतः <span className="text-rose-700 font-black">शुद्ध देय बाकी: ₹4,480</span> है।
+                          </div>
+                        </div>
+                        <div className="pt-2 border-t border-slate-200 text-[11px] text-slate-500 font-medium">
+                          💡 <span className="font-bold text-slate-700">ऑडिट स्पष्टीकरण:</span> पूर्व में सॉफ्टवेयर गणना में पिछले महीने का हिसाब आगे जुड़ जाने के कारण जो ₹2,560 शेष दिख रहा था, उसे सुधार दिया गया है। पूर्व के सभी चुकता महीनों का बकाया शून्य (₹0) कर दिया गया है।
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Month-by-Month Statement Cards */}
+                    <div className="space-y-3 pt-2">
+                      <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider px-1">
+                        🗓️ माह-वार पूर्ण विवरण (Month-by-Month Breakdown)
+                      </h4>
+
+                      {multiMonthData.months?.map((m) => (
+                        <div 
+                          key={`${m.year}-${m.month}`}
+                          className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-xs space-y-3 hover:border-indigo-300 transition"
+                        >
+                          {/* Month Header */}
+                          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div>
+                              <h5 className="text-sm sm:text-base font-black text-slate-900">
+                                {m.label}
+                              </h5>
+                              <span className="text-[11px] text-slate-400 font-semibold">
+                                दर: ₹{m.rate}/{m.wageType === 'daily' ? 'दिन' : 'माह'} • कुल दिन: {m.daysInMonth}
+                              </span>
+                            </div>
+
+                            <div>
+                              {m.isSettled ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full">
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>पूर्ण चुकता (Settled - ₹0)</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-xs font-black bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1 rounded-full">
+                                  <span>शेष देय बाकी: ₹{m.netPayable.toLocaleString('en-IN')}</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* 5 Column Metric Grid */}
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                              <span className="text-[10px] font-bold text-slate-400 block">हाजिरी / काम</span>
+                              <span className="text-xs font-black text-slate-900 mt-0.5 block">
+                                {m.presentDays} दिन काम
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                ({m.absentDays} छुट्टी / {m.payableDays} देय)
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                              <span className="text-[10px] font-bold text-slate-400 block">बनी सैलरी</span>
+                              <span className="text-xs font-black text-blue-700 mt-0.5 block">
+                                ₹{m.earnedSalary.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                              <span className="text-[10px] font-bold text-slate-400 block">एडवांस दिया</span>
+                              <span className="text-xs font-black text-slate-800 mt-0.5 block">
+                                ₹{m.advanceGiven.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                              <span className="text-[10px] font-bold text-slate-400 block">वेतन भुगतान</span>
+                              <span className="text-xs font-black text-emerald-700 mt-0.5 block">
+                                ₹{m.salaryPaid.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 col-span-2 sm:col-span-1">
+                              <span className="text-[10px] font-bold text-slate-400 block">बोनस / इनाम</span>
+                              <span className="text-xs font-black text-purple-700 mt-0.5 block">
+                                ₹{m.bonusGiven.toLocaleString('en-IN')}
+                              </span>
+                              <span className="text-[9px] text-purple-600 font-semibold">(सैलरी से नहीं कटेगा)</span>
+                            </div>
+                          </div>
+
+                          {/* Audit Note */}
+                          <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-2.5 flex items-center gap-2 text-xs text-indigo-950 font-medium">
+                            <AlertCircle className="w-4 h-4 text-indigo-600 shrink-0" />
+                            <span>{m.auditNote}</span>
+                          </div>
+
+                          {/* Transaction Details (if any) */}
+                          {m.transactions && m.transactions.length > 0 && (
+                            <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                                इस माह के दर्ज लेनदेन (Transactions):
+                              </span>
+                              <div className="space-y-1">
+                                {m.transactions.map((tx) => (
+                                  <div key={tx._id} className="flex items-center justify-between text-xs bg-slate-50/70 p-2 rounded-lg border border-slate-100">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                        tx.type === 'bonus' 
+                                          ? 'bg-purple-100 text-purple-800' 
+                                          : tx.type === 'advance' 
+                                          ? 'bg-blue-100 text-blue-800' 
+                                          : 'bg-emerald-100 text-emerald-800'
+                                      }`}>
+                                        {tx.type === 'bonus' ? '🎁 बोनस' : tx.type === 'advance' ? '💵 एडवांस' : '✅ वेतन भुगतान'}
+                                      </span>
+                                      <span className="text-slate-700 font-medium">
+                                        {tx.notes || 'स्टाफ भुगतान'}
+                                      </span>
+                                    </div>
+                                    <div className="text-right">
+                                      <span className="font-extrabold text-slate-900">
+                                        ₹{tx.amount.toLocaleString('en-IN')}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400 block">
+                                        {new Date(tx.date).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short' })}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-3.5 sm:p-4 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleShareStatementWhatsApp}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer transition"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>WhatsApp पर शेयर करें</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer transition border border-slate-200"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>प्रिंट</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowMultiMonthModal(false)}
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold cursor-pointer transition shadow-xs"
+                >
+                  बंद करें (Close)
+                </button>
+              </div>
             </div>
           </div>
         )}
