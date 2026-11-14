@@ -337,6 +337,35 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
     }
   };
 
+  const handleUpdateAttendanceAndRefresh = async (staffId, dayNum, monthNum, yearNum, status) => {
+    const sId = staffId || multiMonthStaff?._id || currentStaff?._id;
+    if (!sId) return;
+    try {
+      const targetDate = new Date(Date.UTC(yearNum, monthNum - 1, dayNum, 12, 0, 0));
+      await api.post("/api/staff/quick-attendance", {
+        staffId: sId,
+        status,
+        date: targetDate,
+        day: dayNum,
+        month: monthNum,
+        year: yearNum
+      }).catch(() => api.post("/staff/quick-attendance", {
+        staffId: sId,
+        status,
+        date: targetDate,
+        day: dayNum,
+        month: monthNum,
+        year: yearNum
+      }));
+
+      // Refresh both multi-month statement and monthly summary data
+      fetchMultiMonthData(sId, multiMonthRange);
+      fetchData(currentMonth, currentYear);
+    } catch (err) {
+      console.error("Error updating attendance:", err);
+    }
+  };
+
   const handleShareStatementWhatsApp = () => {
     if (!multiMonthData || !multiMonthData.staff) return;
     const s = multiMonthData.staff;
@@ -1347,6 +1376,104 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                     </div>
                   </div>
                 )}
+
+                {/* 📅 Date-by-Date Attendance Overview for Current Staff (कौन-कौन से दिन आया था व सुधारें) */}
+                <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-100 shadow-xs space-y-3 mt-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-black text-slate-800">
+                        📅 {monthShortName} {currentYear} की दैनिक हाजिरी (कौन-कौन से दिन आया था)
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs font-bold">
+                      <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">
+                        {currentStaff.presentDays || currentStaff.presentCount || 0} दिन उपस्थित (P)
+                      </span>
+                      {(currentStaff.halfDays || currentStaff.halfDayCount || 0) > 0 && (
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full">
+                          {currentStaff.halfDays || currentStaff.halfDayCount} आधा दिन (HD)
+                        </span>
+                      )}
+                      <span className="px-2.5 py-0.5 bg-rose-100 text-rose-800 rounded-full">
+                        {currentStaff.absentDays || currentStaff.absentCount || 0} दिन गैरहाजिर (AB)
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    💡 <b>हाजिरी सुधारें:</b> यदि किसी भी तारीख का डेटा मिसमैच हुआ हो, तो नीचे सीधे उस तारीख के बटन पर दबाकर तुरंत सही (P / ½ / ✕) कर सकते हैं।
+                  </p>
+
+                  <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 pt-1">
+                    {Array.from({ length: activeDaysCount }, (_, i) => i + 1).map((dayNum) => {
+                      const st = currentStaff.dailyAttendanceMap?.[dayNum] || "present";
+                      const dayName = getDayShortName(currentYear, currentMonth, dayNum);
+
+                      return (
+                        <div
+                          key={dayNum}
+                          className={`p-2 rounded-xl border text-center transition flex flex-col justify-between ${
+                            st === "present"
+                              ? "bg-emerald-50/70 border-emerald-300"
+                              : st === "half_day"
+                              ? "bg-amber-50/70 border-amber-300"
+                              : "bg-rose-50/70 border-rose-300"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-black text-slate-900">{dayNum}</span>
+                            <span className="text-[9px] font-bold text-slate-400">{dayName}</span>
+                          </div>
+
+                          <div className="my-1">
+                            <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${
+                              st === "present"
+                                ? "bg-emerald-600 text-white"
+                                : st === "half_day"
+                                ? "bg-amber-500 text-white"
+                                : "bg-rose-600 text-white"
+                            }`}>
+                              {st === "present" ? "हाजिर" : st === "half_day" ? "आधा दिन" : "गैरहाजिर"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-center gap-1 mt-1 pt-1 border-t border-slate-200/60">
+                            <button
+                              type="button"
+                              onClick={() => handleMarkDayAttendance(currentStaff._id, dayNum, "present")}
+                              className={`text-[9px] px-1.5 py-0.5 rounded font-black transition cursor-pointer ${
+                                st === "present" ? "bg-emerald-600 text-white shadow-2xs" : "text-slate-400 hover:text-emerald-700 hover:bg-emerald-100"
+                              }`}
+                              title="हाजिर लगाएं"
+                            >
+                              P
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMarkDayAttendance(currentStaff._id, dayNum, "half_day")}
+                              className={`text-[9px] px-1.5 py-0.5 rounded font-black transition cursor-pointer ${
+                                st === "half_day" ? "bg-amber-500 text-white shadow-2xs" : "text-slate-400 hover:text-amber-700 hover:bg-amber-100"
+                              }`}
+                              title="आधा दिन लगाएं"
+                            >
+                              ½
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMarkDayAttendance(currentStaff._id, dayNum, "absent")}
+                              className={`text-[9px] px-1.5 py-0.5 rounded font-black transition cursor-pointer ${
+                                st === "absent" ? "bg-rose-600 text-white shadow-2xs" : "text-slate-400 hover:text-rose-700 hover:bg-rose-100"
+                              }`}
+                              title="गैरहाजिर / छुट्टी लगाएं"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -2416,6 +2543,143 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                           <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-2.5 flex items-center gap-2 text-xs text-indigo-950 font-medium">
                             <AlertCircle className="w-4 h-4 text-indigo-600 shrink-0" />
                             <span>{m.auditNote}</span>
+                          </div>
+
+                          {/* 📅 Date-by-Date Attendance (कौन-कौन से दिन आया था व तारीख-वार सुधारें) */}
+                          <div className="pt-2.5 border-t border-slate-100 space-y-2.5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                                <span>📅 कौन-कौन से दिन आया था (दैनिक हाजिरी विवरण):</span>
+                              </span>
+                              <div className="flex items-center gap-1.5 text-[11px] font-bold">
+                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md">
+                                  {m.presentDays} दिन उपस्थित (P)
+                                </span>
+                                {m.halfDays > 0 && (
+                                  <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md">
+                                    {m.halfDays} आधा दिन (HD)
+                                  </span>
+                                )}
+                                <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded-md">
+                                  {m.absentDays} दिन अनुपस्थित (AB)
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Summary Badges: Dates of Present / Absent */}
+                            <div className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                              {m.presentDates && m.presentDates.length > 0 && (
+                                <div className="flex flex-wrap items-start gap-1.5 text-xs">
+                                  <span className="font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded shrink-0">
+                                    ✓ उपस्थित तारीखें ({m.presentDates.length} दिन):
+                                  </span>
+                                  <div className="flex flex-wrap gap-1">
+                                    {m.presentDates.map(d => (
+                                      <span key={d} className="px-1.5 py-0.5 bg-white text-emerald-700 border border-emerald-300 rounded font-bold text-[11px] shadow-2xs">
+                                        {d} तारीख
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {m.halfDayDates && m.halfDayDates.length > 0 && (
+                                <div className="flex flex-wrap items-start gap-1.5 text-xs">
+                                  <span className="font-extrabold text-amber-800 bg-amber-100 px-2 py-0.5 rounded shrink-0">
+                                    ½ आधा दिन तारीखें ({m.halfDayDates.length} दिन):
+                                  </span>
+                                  <div className="flex flex-wrap gap-1">
+                                    {m.halfDayDates.map(d => (
+                                      <span key={d} className="px-1.5 py-0.5 bg-white text-amber-700 border border-amber-300 rounded font-bold text-[11px] shadow-2xs">
+                                        {d} तारीख
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {m.absentDates && m.absentDates.length > 0 && (
+                                <div className="flex flex-wrap items-start gap-1.5 text-xs">
+                                  <span className="font-extrabold text-rose-800 bg-rose-100 px-2 py-0.5 rounded shrink-0">
+                                    ✕ अनुपस्थित / छुट्टी तारीखें ({m.absentDates.length} दिन):
+                                  </span>
+                                  <div className="flex flex-wrap gap-1">
+                                    {m.absentDates.map(d => (
+                                      <span key={d} className="px-1.5 py-0.5 bg-white text-rose-700 border border-rose-300 rounded font-bold text-[11px] shadow-2xs">
+                                        {d} तारीख
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* 1-Tap Quick Fix Calendar Grid */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 px-0.5">
+                                <span>तारीख-वार हाजिरी बदलें या सुधारें (1-Tap):</span>
+                                <span className="text-[10px] text-slate-400">P = हाजिर | ½ = आधा दिन | ✕ = छुट्टी</span>
+                              </div>
+
+                              <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
+                                {Array.from({ length: m.daysConsidered || m.daysInMonth }, (_, i) => i + 1).map(dayNum => {
+                                  const curStatus = m.dailyAttendanceMap?.[dayNum] || (m.presentDates?.includes(dayNum) ? 'present' : (m.absentDates?.includes(dayNum) ? 'absent' : 'present'));
+                                  const dayDate = new Date(m.year, m.month - 1, dayNum);
+                                  const dayShort = dayDate.toLocaleDateString('hi-IN', { weekday: 'narrow' });
+
+                                  return (
+                                    <div 
+                                      key={dayNum}
+                                      className={`p-1.5 rounded-lg border text-center transition flex flex-col justify-between ${
+                                        curStatus === 'present'
+                                          ? 'bg-emerald-50/70 border-emerald-300'
+                                          : curStatus === 'half_day'
+                                          ? 'bg-amber-50/70 border-amber-300'
+                                          : 'bg-rose-50/70 border-rose-300'
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between px-0.5">
+                                        <span className="text-[11px] font-black text-slate-900">{dayNum}</span>
+                                        <span className="text-[9px] text-slate-400 font-bold">{dayShort}</span>
+                                      </div>
+
+                                      <div className="flex items-center justify-center gap-0.5 mt-1 pt-1 border-t border-slate-200/50">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUpdateAttendanceAndRefresh(multiMonthStaff?._id, dayNum, m.month, m.year, 'present')}
+                                          className={`text-[9px] px-1 py-0.5 rounded font-black cursor-pointer transition ${
+                                            curStatus === 'present' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-slate-400 hover:text-emerald-700 hover:bg-emerald-100'
+                                          }`}
+                                          title="हाजिर लगाएं"
+                                        >
+                                          P
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUpdateAttendanceAndRefresh(multiMonthStaff?._id, dayNum, m.month, m.year, 'half_day')}
+                                          className={`text-[9px] px-1 py-0.5 rounded font-black cursor-pointer transition ${
+                                            curStatus === 'half_day' ? 'bg-amber-500 text-white shadow-2xs' : 'text-slate-400 hover:text-amber-700 hover:bg-amber-100'
+                                          }`}
+                                          title="आधा दिन लगाएं"
+                                        >
+                                          ½
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUpdateAttendanceAndRefresh(multiMonthStaff?._id, dayNum, m.month, m.year, 'absent')}
+                                          className={`text-[9px] px-1 py-0.5 rounded font-black cursor-pointer transition ${
+                                            curStatus === 'absent' ? 'bg-rose-600 text-white shadow-2xs' : 'text-slate-400 hover:text-rose-700 hover:bg-rose-100'
+                                          }`}
+                                          title="छुट्टी / अनुपस्थित लगाएं"
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           </div>
 
                           {/* Transaction Details (if any) */}

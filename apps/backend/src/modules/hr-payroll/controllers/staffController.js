@@ -1114,6 +1114,10 @@ export const getStaffMultiMonthStatement = async (req, res) => {
       // Filter transactions for this month
       const mTx = allTx.filter(t => getTxMonthStr(t) === mMonthStr);
 
+      const dailyAttendanceMap = {};
+      const presentDates = [];
+      const halfDayDates = [];
+      const absentDates = [];
       let presentCount = 0;
       let halfDayCount = 0;
       let absentCount = 0;
@@ -1132,9 +1136,18 @@ export const getStaffMultiMonthStatement = async (req, res) => {
           ? 'absent'
           : 'present';
 
-        if (st === 'absent') absentCount++;
-        else if (st === 'half_day') halfDayCount++;
-        else presentCount++;
+        dailyAttendanceMap[day] = st;
+
+        if (st === 'absent') {
+          absentCount++;
+          absentDates.push(day);
+        } else if (st === 'half_day') {
+          halfDayCount++;
+          halfDayDates.push(day);
+        } else {
+          presentCount++;
+          presentDates.push(day);
+        }
       }
 
       const workedDays = presentCount + (halfDayCount * 0.5);
@@ -1211,6 +1224,10 @@ export const getStaffMultiMonthStatement = async (req, res) => {
           presentDays: presentCount,
           halfDays: halfDayCount,
           absentDays: absentCount,
+          dailyAttendanceMap,
+          presentDates,
+          halfDayDates,
+          absentDates,
           paidLeaves,
           payableDays,
           rate: perDaySalary,
