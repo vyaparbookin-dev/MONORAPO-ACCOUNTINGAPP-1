@@ -257,11 +257,13 @@ export default function PartiesPage() {
       } else {
         const res = await api.get('/api/party').catch(() => api.get('/api/parties'));
         const rawList = res.data?.parties || res.parties || (Array.isArray(res) ? res : []);
+        const currentCoId = String(localStorage.getItem("companyId") || "").trim();
         const sanitized = rawList.map(p => {
           const isSupplier = (p.partyType || p.type) === 'supplier';
           let bal = Number(p.currentBalance ?? p.balance ?? 0);
           const op = Math.abs(Number(p.openingBalance || 0));
-          if (isSupplier && op > 0 && (bal === 0 || (bal > 0 && Math.abs(bal) === op))) {
+          // DO NOT revert if bal === 0 (settled / paid off)
+          if (isSupplier && op > 0 && bal > 0 && Math.abs(bal) === op) {
             bal = -op;
           }
           // Reconcile doubled Rajkamal balance (₹7,23,000 + ₹7,23,000 = ₹14,46,000)
@@ -271,11 +273,23 @@ export default function PartiesPage() {
           }
           return {
             ...p,
+            id: p._id || p.id,
+            _id: p._id || p.id,
             currentBalance: bal,
             balance: bal
           };
         });
-        setParties(sanitized);
+
+        // Merge local parties & offline payments from storageManager
+        let merged = sanitized;
+        if (currentCoId) {
+          try {
+            merged = storageManager.mergeParties(currentCoId, sanitized);
+          } catch (e) {
+            console.warn("Local party merge note:", e.message);
+          }
+        }
+        setParties(merged);
       }
     } catch (error) {
       console.error("Error fetching parties", error);
@@ -462,16 +476,43 @@ export default function PartiesPage() {
         notes
       });
 
-      // Update party in local state
+      // Update party in local state and persistent storage
       const diff = paymentType === 'paid' ? amt : -amt;
-      setParties(prev => prev.map(p => {
-        const id = p._id || p.id;
-        if (id === partyId) {
-          const currentBal = Number(p.currentBalance ?? p.balance ?? 0);
-          return { ...p, currentBalance: currentBal + diff, balance: currentBal + diff };
+      const currentCoId = String(localStorage.getItem("companyId") || "").trim();
+      let updatedParties = [];
+      setParties(prev => {
+        updatedParties = prev.map(p => {
+          const id = p._id || p.id;
+          if (id === partyId) {
+            const currentBal = Number(p.currentBalance ?? p.balance ?? 0);
+            return { ...p, currentBalance: currentBal + diff, balance: currentBal + diff };
+          }
+          return p;
+        });
+        if (currentCoId) {
+          try { storageManager.saveParties(currentCoId, updatedParties); } catch (e) {}
         }
-        return p;
-      }));
+        return updatedParties;
+      });
+
+      // Record local transaction doc for instant offline reconciliation
+      const newTxDoc = {
+        _id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        partyId,
+        date: txDate.toISOString(),
+        createdAt: txDate.toISOString(),
+        details: notes,
+        debit: paymentType === 'paid' ? amt : 0,
+        credit: paymentType === 'received' ? amt : 0,
+        amount: amt,
+        type: paymentType === 'paid' ? 'payment' : 'receipt',
+        source: 'PartiesPagePayment',
+        paymentMethod: paymentMode
+      };
+      try {
+        const storedTxs = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+        localStorage.setItem("vb_local_party_txs", JSON.stringify([newTxDoc, ...storedTxs]));
+      } catch (e) {}
 
       const formattedDate = txDate.toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' });
       alert(`✅ ₹${amt.toLocaleString('en-IN')} का भुगतान (${paymentType === 'paid' ? 'मैंने दिए / किस्त' : 'मुझे मिले / किस्त'}) दिनांक ${formattedDate} को सफलतापूर्वक दर्ज हुआ!`);
@@ -481,6 +522,41 @@ export default function PartiesPage() {
       alert('Error recording payment: ' + (error.response?.data?.error || error.message));
     } finally {
       setSavingPayment(false);
+    }
+  };
+
+  // Clear Party Balance (हिसाब चुकता / ₹0 करना)
+  const handleClearBalance = async (party) => {
+    if (!party) return;
+    const pId = party._id || party.id;
+    const pName = party.name || "पार्टी";
+    const curBal = Number(party.currentBalance ?? party.balance ?? 0);
+    const confirmMsg = `क्या आप '${pName}' का हिसाब-किताब चुकता (Clear Balance) करके ₹0 करना चाहते हैं?\n\nवर्तमान बकाया: ₹${Math.abs(curBal).toLocaleString('en-IN')} ${curBal > 0 ? '(लेने हैं)' : curBal < 0 ? '(देने हैं)' : '(₹0)'}`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      await api.post(`/api/party/${pId}/clear-balance`).catch(() => api.post(`/api/parties/${pId}/clear-balance`));
+
+      // 1. Purge local transactions for this party from vb_local_party_txs
+      try {
+        const storedTxs = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+        if (Array.isArray(storedTxs)) {
+          const filtered = storedTxs.filter(t => String(t.partyId?._id || t.partyId?.id || t.partyId || "") !== String(pId));
+          localStorage.setItem("vb_local_party_txs", JSON.stringify(filtered));
+        }
+      } catch (e) {}
+
+      // 2. Update local state & storageManager
+      const currentCoId = String(localStorage.getItem("companyId") || "").trim();
+      const updated = parties.map(p => ((p._id || p.id) === pId ? { ...p, balance: 0, currentBalance: 0, openingBalance: 0 } : p));
+      setParties(updated);
+      if (currentCoId) {
+        try { storageManager.saveParties(currentCoId, updated); } catch (e) {}
+      }
+
+      alert(`✅ '${pName}' का हिसाब चुकता (₹0) कर दिया गया!`);
+    } catch (err) {
+      alert("हिसाब चुकता करने में त्रुटि: " + (err.response?.data?.error || err.message));
     }
   };
 
@@ -680,19 +756,35 @@ export default function PartiesPage() {
   const filteredParties = parties.filter(p => {
     const matchesSearch = String(p?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || String(p?.mobileNumber || p?.phone || '').includes(searchTerm);
     const pType = (p?.partyType || p?.type || 'customer').toLowerCase();
+    const isSupplier = pType === 'supplier';
     const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
 
     let matchesType = true;
-    if (filterType === 'to_collect') matchesType = bal > 0;
-    else if (filterType === 'to_pay') matchesType = bal < 0;
-    else if (filterType === 'customer') matchesType = pType === 'customer' || pType === 'both';
-    else if (filterType === 'supplier') matchesType = pType === 'supplier' || pType === 'both';
-    else if (filterType === 'personal') matchesType = pType === 'personal';
+    if (filterType === 'to_collect') {
+      matchesType = bal > 0;
+    } else if (filterType === 'to_pay') {
+      matchesType = isSupplier ? bal < 0 : bal < 0;
+    } else if (filterType === 'customer') {
+      matchesType = pType === 'customer' || pType === 'both';
+    } else if (filterType === 'supplier') {
+      matchesType = isSupplier || pType === 'both';
+    } else if (filterType === 'personal') {
+      matchesType = pType === 'personal';
+    }
     return matchesSearch && matchesType;
   });
 
-  const totalToCollect = parties.filter(p => Number(p.currentBalance ?? p.balance ?? 0) > 0).reduce((sum, p) => sum + Number(p.currentBalance ?? p.balance ?? 0), 0);
-  const totalToPay = Math.abs(parties.filter(p => Number(p.currentBalance ?? p.balance ?? 0) < 0).reduce((sum, p) => sum + Number(p.currentBalance ?? p.balance ?? 0), 0));
+  const totalToCollect = parties.filter(p => {
+    const isSupplier = (p?.partyType || p?.type) === 'supplier';
+    const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
+    return !isSupplier && bal > 0;
+  }).reduce((sum, p) => sum + Number(p?.currentBalance ?? p?.balance ?? 0), 0);
+
+  const totalToPay = Math.abs(parties.filter(p => {
+    const isSupplier = (p?.partyType || p?.type) === 'supplier';
+    const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
+    return isSupplier && bal < 0;
+  }).reduce((sum, p) => sum + Number(p?.currentBalance ?? p?.balance ?? 0), 0));
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
@@ -829,11 +921,11 @@ export default function PartiesPage() {
                           {p.address && <div className="text-[11px] text-gray-400 mt-0.5">📍 {p.address}</div>}
                         </td>
                         <td className="px-4 py-3.5">
-                          <div className={`font-black text-sm ${bal > 0 ? 'text-emerald-600' : bal < 0 ? 'text-rose-600' : 'text-gray-600'}`}>
+                          <div className={`font-black text-sm ${bal > 0 ? 'text-emerald-600' : bal < 0 ? (isSupplier ? 'text-rose-600' : 'text-teal-600') : 'text-gray-500'}`}>
                             {bal > 0 ? `+ ₹${bal.toLocaleString('en-IN')}` : bal < 0 ? `- ₹${Math.abs(bal).toLocaleString('en-IN')}` : '₹ 0'}
                           </div>
-                          <span className={`text-[10px] font-bold block ${bal > 0 ? 'text-emerald-700' : bal < 0 ? 'text-rose-700' : 'text-gray-400'}`}>
-                            {bal > 0 ? '🟢 लेने हैं' : bal < 0 ? '🔴 देने हैं' : 'हिसाब चुकता'}
+                          <span className={`text-[10px] font-bold block ${bal > 0 ? 'text-emerald-700' : bal < 0 ? (isSupplier ? 'text-rose-700' : 'text-teal-700') : 'text-gray-400'}`}>
+                            {bal > 0 ? (isSupplier ? '🟢 एडवांस दिया' : '🟢 लेने हैं') : bal < 0 ? (isSupplier ? '🔴 देने हैं' : '🔵 एडवांस जमा (ग्राहक)') : '⚪ हिसाब चुकता'}
                           </span>
                         </td>
                         <td className="px-4 py-3.5 text-center">
@@ -859,6 +951,15 @@ export default function PartiesPage() {
                             >
                               🟢 मिले
                             </button>
+                            {bal !== 0 && (
+                              <button
+                                onClick={() => handleClearBalance(p)}
+                                className="px-2 py-1 bg-gray-50 hover:bg-emerald-50 text-gray-600 hover:text-emerald-700 border border-gray-200 hover:border-emerald-300 rounded-lg text-xs font-bold cursor-pointer transition"
+                                title="हिसाब-किताब चुकता (₹0) करें"
+                              >
+                                ⚪ चुकता
+                              </button>
+                            )}
                           </div>
                         </td>
                         <td className="px-4 py-3.5 text-right">

@@ -1497,6 +1497,15 @@ export const clearPartyBalance = async (req, res) => {
     party.updatedAt = new Date();
     await party.save();
 
+    // Dual-write zeroed balance to Supabase
+    syncPartyToSupabase(party).catch(e => console.warn("[Supabase Sync] Party clear-balance dual-write note:", e.message));
+    if (supabase) {
+      const pUuid = (party.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(party.id)))
+        ? party.id
+        : mongoIdToUuid(party._id);
+      supabase.from("parties").update({ current_balance: 0, opening_balance: 0, updated_at: new Date().toISOString() }).eq("id", pUuid).then(() => {}, () => {});
+    }
+
     res.json({
       success: true,
       message: `पार्टी '${party.name}' का हिसाब सफलतापूर्वक चुकता (₹0) कर दिया गया!`,

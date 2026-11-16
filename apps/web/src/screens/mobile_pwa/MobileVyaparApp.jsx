@@ -2268,135 +2268,40 @@ function MobileVyaparAppContent() {
     }
   };
 
-  // Helper to compute authoritative live dynamic balance for any party from all known bills and transactions
-  const computePartyLiveBalance = useCallback((p) => {
+  // Authoritative party balance helper: respects recorded balance and integrates any offline/unsynced bills
+  const getPartyDisplayBalance = useCallback((p) => {
     if (!p) return 0;
-    const pId = String(p._id || p.id || '').trim().toLowerCase();
+    const baseBal = Number(p.balance ?? p.currentBalance ?? p.openingBalance ?? 0);
+    const pId = String(p._id || p.id || '').trim();
     const pName = String(p.name || p.partyName || '').trim().toLowerCase();
-    const pPhone = String(p.phone || p.mobileNumber || '').replace(/\D/g, '').slice(-10);
     const isSupplier = (p.type === 'supplier' || p.partyType === 'supplier');
-    const opBal = Number(p.openingBalance || 0);
 
-    const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
-    let allB = Array.isArray(bills) ? [...bills] : [];
-    if (currentCoId) {
-      try {
-        const stored = storageManager.getBills(currentCoId);
-        if (Array.isArray(stored)) {
-          const seen = new Set(allB.map(b => String(b._id || b.id || b.billNumber || '').toLowerCase()));
-          stored.forEach(sb => {
-            const id = String(sb._id || sb.id || sb.billNumber || '').toLowerCase();
-            if (id && !seen.has(id)) {
-              allB.push(sb);
-              seen.add(id);
-            }
-          });
-        }
-      } catch (e) {}
-    }
-
-    let allT = Array.isArray(allPartyTransactions) ? [...allPartyTransactions] : [];
-    try {
-      const storedT = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
-      if (Array.isArray(storedT)) {
-        const seen = new Set(allT.map(t => String(t._id || t.id || '').toLowerCase()));
-        storedT.forEach(st => {
-          const id = String(st._id || st.id || '').toLowerCase();
-          if (id && !seen.has(id)) {
-            allT.push(st);
-            seen.add(id);
-          }
-        });
-      }
-    } catch (e) {}
-
-    // Exclude blacklisted deleted IDs
-    let deletedIds = new Set();
-    try {
-      const dArr = JSON.parse(localStorage.getItem("vb_deleted_entry_ids") || "[]");
-      deletedIds = new Set(dArr.map(d => String(d).toLowerCase()));
-    } catch (e) {}
-
-    const matchingBills = allB.filter(b => {
-      if (!b || b.isDeleted) return false;
-      const bId = String(b._id || b.id || '').toLowerCase();
-      const bNum = String(b.billNumber || b.invoiceNumber || '').toLowerCase();
-      if (bId && deletedIds.has(bId)) return false;
-      if (bNum && deletedIds.has(bNum)) return false;
-
-      const bPartyId = String(b.partyId || b.party?._id || b.party?.id || b.party || '').trim().toLowerCase();
+    // Only add local offline bills created on this device that have NOT yet updated the party record
+    const unsyncedBills = (bills || []).filter(b => {
+      if (!b || !b.isOfflineCreated || b.isDeleted) return false;
+      const bPartyId = String(b.partyId || b.party?._id || b.party?.id || b.party || '').trim();
       const bCust = String(b.customerName || b.partyName || b.customer || '').trim().toLowerCase();
-      const bPhone = String(b.customerMobile || b.customerPhone || b.phone || '').replace(/\D/g, '').slice(-10);
-
-      const idMatch = pId && bPartyId && (bPartyId === pId || bPartyId.includes(pId) || pId.includes(bPartyId));
-      const nameMatch = Boolean(bCust && pName && (bCust === pName || bCust.includes(pName) || pName.includes(bCust)));
-      const phoneMatch = Boolean(pPhone && bPhone && pPhone === bPhone);
-      return idMatch || nameMatch || phoneMatch;
+      const match = (pId && bPartyId && bPartyId === pId) || (bCust && pName && bCust === pName);
+      return match;
     });
 
-    const matchingTxs = allT.filter(t => {
-      if (!t || t.isDeleted) return false;
-      const tId = String(t._id || t.id || '').toLowerCase();
-      const tRef = String(t.refNo || t.billNumber || '').toLowerCase();
-      if (tId && deletedIds.has(tId)) return false;
-      if (tRef && deletedIds.has(tRef)) return false;
+    if (unsyncedBills.length === 0) return baseBal;
 
-      const tPartyId = String(t.partyId?._id || t.partyId?.id || t.partyId || '').trim().toLowerCase();
-      const tCust = String(t.partyName || t.customerName || '').trim().toLowerCase();
-
-      const idMatch = pId && tPartyId && (tPartyId === pId || tPartyId.includes(pId) || pId.includes(tPartyId));
-      const nameMatch = Boolean(tCust && pName && (tCust === pName || tCust.includes(pName) || pName.includes(tCust)));
-      return idMatch || nameMatch;
-    });
-
-    // If no transactions and no bills, return recorded balance
-    if (matchingBills.length === 0 && matchingTxs.length === 0) {
-      return Number(p.balance ?? p.currentBalance ?? (isSupplier ? -Math.abs(opBal) : Math.abs(opBal)));
-    }
-
-    // Running balance starts with opening balance
-    let running = isSupplier ? -Math.abs(opBal) : Math.abs(opBal);
-    const processedBillRefs = new Set();
-
-    matchingBills.forEach(b => {
-      const ref = String(b.billNumber || b.invoiceNumber || b._id || b.id || '').trim().toLowerCase();
-      if (ref && processedBillRefs.has(ref)) return;
-      if (ref) processedBillRefs.add(ref);
-
-      const finalAmt = Number(b.finalAmount ?? b.total ?? b.amount ?? b.totalAmount ?? 0);
+    let extra = 0;
+    unsyncedBills.forEach(b => {
+      const finalAmt = Number(b.finalAmount ?? b.total ?? b.amount ?? 0);
       const isPaid = String(b.paymentStatus || b.status || '').toLowerCase() === 'paid';
       const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
-
+      const unpaid = Math.max(0, finalAmt - paidAmt);
       if (isSupplier) {
-        running -= finalAmt;
-        running += paidAmt;
+        extra -= unpaid;
       } else {
-        running += finalAmt;
-        running -= paidAmt;
+        extra += unpaid;
       }
     });
 
-    matchingTxs.forEach(t => {
-      const ref = String(t.refNo || t.billNumber || '').trim().toLowerCase();
-      if (ref && processedBillRefs.has(ref)) return;
-
-      const deb = Number(t.debit || 0);
-      const cred = Number(t.credit || 0);
-      const amt = Number(t.amount || deb || cred || 0);
-      const isPaid = t.type === 'paid' || deb > 0;
-      const isRecv = t.type === 'received' || cred > 0;
-
-      if (isSupplier) {
-        if (isPaid) running += amt;
-        else if (isRecv) running -= amt;
-      } else {
-        if (isPaid) running += amt;
-        else if (isRecv) running -= amt;
-      }
-    });
-
-    return running;
-  }, [bills, allPartyTransactions, selectedCompany]);
+    return baseBal + extra;
+  }, [bills]);
 
   // Metrics: strictly deduplicate parties by normalized name and ID to guarantee zero double-counting
   const deduplicatedParties = useMemo(() => {
@@ -2406,8 +2311,8 @@ function MobileVyaparAppContent() {
       const nameKey = String(p.name || p.partyName || '').trim().toLowerCase();
       const phoneKey = String(p.phone || p.mobileNumber || '').replace(/\D/g, '').slice(-10);
       const key = nameKey || (phoneKey && phoneKey.length === 10 ? `phone_${phoneKey}` : String(p._id || p.id));
-      const liveBal = computePartyLiveBalance(p);
-      const enrichedP = { ...p, balance: liveBal, currentBalance: liveBal };
+      const bal = getPartyDisplayBalance(p);
+      const enrichedP = { ...p, balance: bal, currentBalance: bal };
       if (!map.has(key)) {
         map.set(key, enrichedP);
       } else {
@@ -2418,10 +2323,13 @@ function MobileVyaparAppContent() {
       }
     });
     return Array.from(map.values());
-  }, [parties, computePartyLiveBalance]);
+  }, [parties, getPartyDisplayBalance]);
 
   const toCollect = deduplicatedParties.filter(p => Number(p.balance || 0) > 0).reduce((sum, p) => sum + Number(p.balance || 0), 0);
-  const toPay = Math.abs(deduplicatedParties.filter(p => Number(p.balance || 0) < 0).reduce((sum, p) => sum + Number(p.balance || 0), 0));
+  const toPay = Math.abs(deduplicatedParties.filter(p => {
+    const isSupplier = (p.type === 'supplier' || p.partyType === 'supplier');
+    return isSupplier && Number(p.balance || 0) < 0;
+  }).reduce((sum, p) => sum + Number(p.balance || 0), 0));
   const stockValue = items.reduce((sum, it) => {
     const qty = Number(it.currentStock ?? it.stock ?? 0) || 0;
     const price = Number(it.salePrice ?? it.sellingPrice ?? it.price ?? it.costPrice ?? 0) || 0;
@@ -7489,13 +7397,14 @@ function MobileVyaparAppContent() {
             if (hasSearch) return matchesSearch;
 
             const pType = (p?.type || p?.partyType || 'customer').toLowerCase();
-            const bal = computePartyLiveBalance(p);
+            const bal = getPartyDisplayBalance(p);
 
             let matchesFilter = true;
             if (partyFilterTab === "to_collect") {
               matchesFilter = bal > 0;
             } else if (partyFilterTab === "to_pay") {
-              matchesFilter = bal < 0;
+              const isSupplier = (pType === 'supplier');
+              matchesFilter = isSupplier && bal < 0;
             } else if (partyFilterTab === "settled") {
               matchesFilter = bal === 0;
             } else if (partyFilterTab === "customer") {
@@ -7682,7 +7591,7 @@ function MobileVyaparAppContent() {
                               {bal > 0 ? `+ ₹${bal.toLocaleString('en-IN')}` : bal < 0 ? `- ₹${Math.abs(bal).toLocaleString('en-IN')}` : "₹ 0"}
                             </div>
                             <span className={`text-[10px] font-bold block ${bal > 0 ? "text-emerald-600" : bal < 0 ? (isSupplier ? "text-rose-600" : "text-teal-600") : "text-slate-400"}`}>
-                              {bal > 0 ? (isSupplier ? "🟢 एडवांस दिया" : "🟢 लेने हैं") : bal < 0 ? (isSupplier ? "🔴 देने हैं" : "🔵 एडवांस जमा") : "हिसाब चुकता"}
+                              {bal > 0 ? (isSupplier ? "🟢 एडवांस दिया" : "🟢 लेने हैं") : bal < 0 ? (isSupplier ? "🔴 देने हैं" : "🔵 एडवांस जमा (ग्राहक)") : "हिसाब चुकता"}
                             </span>
                           </div>
                           <button
@@ -10962,7 +10871,7 @@ function MobileVyaparAppContent() {
                 const totalCredit = (partyTransactions || []).reduce((s, t) => s + Number(t.credit || 0), 0);
                 const rawBal = Number(selectedPartyDetail.balance ?? selectedPartyDetail.currentBalance ?? 0);
                 // When transactions exist, the net ledger balance (debit - credit) is the definitive balance
-                const bal = (partyTransactions && partyTransactions.length > 0) ? (totalDebit - totalCredit) : rawBal;
+                const bal = (selectedPartyDetail?.balance !== undefined && selectedPartyDetail?.balance !== null) ? Number(selectedPartyDetail.balance) : ((partyTransactions && partyTransactions.length > 0) ? (totalDebit - totalCredit) : rawBal);
 
                 return (
                   <div className={`p-3.5 rounded-2xl border text-center transition ${

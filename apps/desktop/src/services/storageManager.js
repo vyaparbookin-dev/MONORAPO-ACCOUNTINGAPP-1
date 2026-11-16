@@ -236,18 +236,48 @@ class StorageManager {
           const pId = String(localP._id || localP.id || '').trim();
           return (pId && bPartyId && pId === bPartyId) || (pName && bCust && pName === bCust);
         });
-        const shouldKeepLocalBalance = localP.hasLocalEdits || hasBillsForParty || (localUpdated > serverUpdated && localP.balance !== undefined);
+        let hasLocalTxs = false;
+        try {
+          const storedTxs = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+          if (Array.isArray(storedTxs)) {
+            const pId = String(localP._id || localP.id || '').trim();
+            const pName = String(localP.name || localP.partyName || '').trim().toLowerCase();
+            hasLocalTxs = storedTxs.some(t => {
+              if (!t || t.isDeleted) return false;
+              const tPartyId = String(t.partyId?._id || t.partyId?.id || t.partyId || '').trim();
+              const tName = String(t.partyName || t.customerName || t.party || '').trim().toLowerCase();
+              return (pId && tPartyId && pId === tPartyId) || (pName && tName && pName === tName);
+            });
+          }
+        } catch (e) {}
+
+        const shouldKeepLocalBalance = Boolean(
+          localP.hasLocalEdits ||
+          hasBillsForParty ||
+          hasLocalTxs ||
+          (localUpdated > serverUpdated) ||
+          (localP.balance !== undefined && localP.balance !== null && (hasBillsForParty || hasLocalTxs))
+        );
+
         partyList[idx] = {
           ...normServer,
           ...localP,
-          ...normServer,
+          id: normServer.id || localP.id,
+          _id: normServer._id || localP._id,
+          name: normServer.name || localP.name,
+          partyType: normServer.partyType || localP.partyType,
+          type: normServer.type || localP.type,
           ...(shouldKeepLocalBalance ? {
             balance: localP.balance ?? localP.currentBalance,
             currentBalance: localP.currentBalance ?? localP.balance,
             openingBalance: localP.openingBalance ?? normServer.openingBalance,
             openingBalanceDate: localP.openingBalanceDate ?? normServer.openingBalanceDate,
             hasLocalEdits: true
-          } : {})
+          } : {
+            balance: normServer.balance ?? normServer.currentBalance,
+            currentBalance: normServer.currentBalance ?? normServer.balance,
+            openingBalance: normServer.openingBalance
+          })
         };
       } else {
         partyList.push(normServer);
