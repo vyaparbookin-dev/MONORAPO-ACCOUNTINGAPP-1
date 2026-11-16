@@ -7,6 +7,38 @@ import { mongoIdToUuid } from "./supabaseSyncService.js";
 const isSupabaseConfigured = Boolean(supabase);
 
 /**
+ * Execute a Supabase query with automatic retry on clock-skew / transient gateway errors (e.g. PGRST303 "JWT issued at future")
+ */
+export const executeSupabaseQuery = async (buildQueryFn, maxRetries = 2, delayMs = 600) => {
+  let attempt = 0;
+  while (true) {
+    try {
+      const q = buildQueryFn();
+      const res = await q;
+      if (res?.error) {
+        const msg = String(res.error.message || '').toLowerCase();
+        if ((msg.includes('jwt issued at future') || msg.includes('pgrst303') || msg.includes('clock') || msg.includes('jwt')) && attempt < maxRetries) {
+          attempt++;
+          console.warn(`[Supabase Read] Transient clock skew error (${res.error.message}), retrying attempt ${attempt}/${maxRetries}...`);
+          await new Promise(r => setTimeout(r, delayMs * attempt));
+          continue;
+        }
+      }
+      return res;
+    } catch (err) {
+      const msg = String(err.message || '').toLowerCase();
+      if ((msg.includes('jwt issued at future') || msg.includes('jwt')) && attempt < maxRetries) {
+        attempt++;
+        console.warn(`[Supabase Read] Transient exception (${err.message}), retrying attempt ${attempt}/${maxRetries}...`);
+        await new Promise(r => setTimeout(r, delayMs * attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+};
+
+/**
  * Universal Supabase Read Service
  * Enables Supabase as Primary READ Data Store with seamless Mongoose fallbacks.
  */
@@ -255,7 +287,7 @@ export const getBillsFromSupabase = async ({ companyId, search, startDate, endDa
 
     q = q.range(from, to);
 
-    const { data, count, error } = await q;
+    const { data, count, error } = await executeSupabaseQuery(() => q);
     if (error) {
       console.warn("[Supabase Read] getBills error:", error.message);
       return null;
@@ -322,7 +354,7 @@ export const getPartiesFromSupabase = async ({ companyId, search, partyType }) =
       q = q.or(`name.ilike.%${search}%,mobile_number.ilike.%${search}%`);
     }
 
-    const { data, error } = await q;
+    const { data, error } = await executeSupabaseQuery(() => q);
     if (error) {
       console.warn("[Supabase Read] getParties error:", error.message);
       return null;

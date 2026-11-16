@@ -1132,12 +1132,20 @@ export const updatePartyTransaction = async (req, res) => {
         }
 
         if (supabase) {
-          await supabase.from("parties").update({
-            opening_balance: Math.abs(newOpeningVal),
-            current_balance: updatedBalance,
-            ...(date ? { created_at: new Date(date).toISOString() } : {}),
-            updated_at: new Date().toISOString()
-          }).eq("id", mongoIdToUuid(pId));
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const { error: sbErr } = await supabase.from("parties").update({
+              opening_balance: Math.abs(newOpeningVal),
+              current_balance: updatedBalance,
+              ...(date ? { created_at: new Date(date).toISOString() } : {}),
+              updated_at: new Date().toISOString()
+            }).eq("id", mongoIdToUuid(pId));
+
+            if (sbErr && (sbErr.message.includes('JWT') || sbErr.message.includes('future'))) {
+              await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+              continue;
+            }
+            break;
+          }
         }
 
         syncPartyToSupabase(party).catch(e => console.warn(e));
@@ -1235,17 +1243,36 @@ export const updatePartyTransaction = async (req, res) => {
       const newDeb = isPaid ? amt : 0;
       const newCred = isPaid ? 0 : amt;
 
-      const { data: updatedTx, error: sbErr } = await supabase
-        .from("party_transactions")
-        .update({
-          debit: newDeb,
-          credit: newCred,
-          details: details || "संपादित लेनदेन",
-          date: date ? new Date(date).toISOString() : new Date().toISOString()
-        })
-        .eq("id", id)
-        .select()
-        .maybeSingle();
+      let updatedTx = null;
+      let sbErr = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const res = await supabase
+          .from("party_transactions")
+          .update({
+            debit: newDeb,
+            credit: newCred,
+            details: details || "संपादित लेनदेन",
+            date: date ? new Date(date).toISOString() : new Date().toISOString()
+          })
+          .eq("id", id)
+          .select()
+          .maybeSingle();
+
+        if (res.error && (res.error.message.includes('JWT') || res.error.message.includes('future') || res.error.message.includes('clock'))) {
+          await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+          continue;
+        }
+        updatedTx = res.data;
+        sbErr = res.error;
+        break;
+      }
+
+      // If linked to a sale/bill, also sync sale date
+      if (updatedTx?.sale_id && date && supabase) {
+        await supabase.from("sales").update({
+          date: new Date(date).toISOString()
+        }).eq("id", updatedTx.sale_id).catch(() => {});
+      }
 
       if (sbErr) {
         console.warn("[updatePartyTransaction] Supabase update error:", sbErr.message);
