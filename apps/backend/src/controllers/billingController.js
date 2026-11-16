@@ -18,7 +18,7 @@ import { Parser } from "json2csv";
 import { logActivity } from "../utils/logger.js";
 import { sendAutoWhatsappMessage } from "../services/whatsappService.js";
 import { processStampAwardOnBill } from "./stampController.js";
-import { syncBillToSupabase, syncBillDeleteToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
+import { syncBillToSupabase, syncBillDeleteToSupabase, syncPartyToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
 import { supabase } from "../config/supabase.js";
 import { getBillsFromSupabase, getBillByIdFromSupabase } from "../services/supabaseReadService.js";
 import { scanBillToEntry } from "../bill-scanner/index.js";
@@ -70,6 +70,21 @@ export const createBill = async (req, res) => {
     const pMobile = (customerMobile || req.body.customerPhone || req.body.phone || "").trim();
     if (partyId && mongoose.Types.ObjectId.isValid(partyId)) {
       matchedParty = await Party.findOne({ _id: partyId, companyId: req.companyId });
+    }
+    if (!matchedParty && partyId && supabase) {
+      try {
+        const pUuid = mongoIdToUuid(partyId);
+        const { data: sbP } = await supabase.from("parties").select("*").eq("id", pUuid).maybeSingle();
+        if (sbP) {
+          matchedParty = await Party.findOne({
+            $or: [
+              { name: new RegExp(`^${(sbP.name || '').replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&")}$`, "i") },
+              ...(sbP.mobile_number ? [{ mobileNumber: sbP.mobile_number }] : [])
+            ],
+            companyId: req.companyId
+          });
+        }
+      } catch (e) {}
     }
     if (!matchedParty && pMobile) {
       matchedParty = await Party.findOne({ mobileNumber: pMobile, companyId: req.companyId });
@@ -242,6 +257,7 @@ _(कृपया यह OTP दुकानदार को तभी बता
           matchedParty.creditLimitLockedReason = `बिल #${bill.billNumber} स्वीकृति पेंडिंग`;
         }
         await matchedParty.save();
+        syncPartyToSupabase(matchedParty).catch(() => {});
       } else if (isUdhar && pName && !["नकद ग्राहक", "walk-in customer", "walk-in guest"].includes(pName.toLowerCase())) {
         const dummyPhone = pMobile || `9${Math.floor(100000000 + Math.random() * 900000000)}`;
         const autoP = await Party.create({
@@ -256,9 +272,24 @@ _(कृपया यह OTP दुकानदार को तभी बता
           console.warn("Auto-create party warning:", pErr.message);
           return null;
         });
-        if (autoP && !bill.partyId) {
-          bill.partyId = autoP._id;
-          await bill.save().catch(() => null);
+        if (autoP) {
+          syncPartyToSupabase(autoP).catch(() => {});
+          if (!bill.partyId) {
+            bill.partyId = autoP._id;
+            await bill.save().catch(() => null);
+          }
+        }
+      }
+
+      // Dual-write Udhar balance update directly to Supabase parties table
+      if (isUdhar && supabase) {
+        const resolvedPartyUuid = mongoIdToUuid(partyId || matchedParty?._id || matchedParty?.id);
+        if (resolvedPartyUuid) {
+          const { data: curSbP } = await supabase.from("parties").select("current_balance").eq("id", resolvedPartyUuid).maybeSingle();
+          if (curSbP) {
+            const updatedBal = (Number(curSbP.current_balance) || 0) + finalBillAmount;
+            await supabase.from("parties").update({ current_balance: updatedBal, updated_at: new Date().toISOString() }).eq("id", resolvedPartyUuid);
+          }
         }
       }
     } catch (partySyncErr) {
@@ -723,9 +754,12 @@ export const deleteBill = async (req, res) => {
       const partyId = oldBill.partyId || oldBill.customer;
       const finalAmt = Number(oldBill.finalAmount || oldBill.total || 0);
       if (finalAmt > 0 && /^[0-9a-fA-F]{24}$/.test(String(partyId))) {
-        await Party.findByIdAndUpdate(partyId, {
-          $inc: { currentBalance: -finalAmt }
-        });
+        const updatedParty = await Party.findByIdAndUpdate(partyId, {
+          $inc: { currentBalance: -finalAmt, balance: -finalAmt }
+        }, { new: true });
+        if (updatedParty) {
+          syncPartyToSupabase(updatedParty).catch(e => console.warn("[Supabase Dual-Write] deleteBill party sync note:", e.message));
+        }
       }
     }
 

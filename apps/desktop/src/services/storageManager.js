@@ -227,7 +227,16 @@ class StorageManager {
         const localP = partyList[idx];
         const localUpdated = new Date(localP.updatedAt || localP.updated_at || localP.openingBalanceDate || 0).getTime();
         const serverUpdated = new Date(normServer.updatedAt || normServer.updated_at || 0).getTime();
-        const shouldKeepLocalBalance = localP.hasLocalEdits || (localUpdated > serverUpdated && localP.balance !== undefined);
+        const localBills = this.getBills(companyId) || [];
+        const hasBillsForParty = localBills.some(b => {
+          if (!b || b.isDeleted) return false;
+          const bPartyId = String(b.partyId || '').trim();
+          const bCust = String(b.customerName || b.partyName || '').trim().toLowerCase();
+          const pName = String(localP.name || '').trim().toLowerCase();
+          const pId = String(localP._id || localP.id || '').trim();
+          return (pId && bPartyId && pId === bPartyId) || (pName && bCust && pName === bCust);
+        });
+        const shouldKeepLocalBalance = localP.hasLocalEdits || hasBillsForParty || (localUpdated > serverUpdated && localP.balance !== undefined);
         partyList[idx] = {
           ...normServer,
           ...localP,
@@ -236,7 +245,8 @@ class StorageManager {
             balance: localP.balance ?? localP.currentBalance,
             currentBalance: localP.currentBalance ?? localP.balance,
             openingBalance: localP.openingBalance ?? normServer.openingBalance,
-            openingBalanceDate: localP.openingBalanceDate ?? normServer.openingBalanceDate
+            openingBalanceDate: localP.openingBalanceDate ?? normServer.openingBalanceDate,
+            hasLocalEdits: true
           } : {})
         };
       } else {
