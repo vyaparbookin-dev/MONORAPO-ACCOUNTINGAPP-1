@@ -112,12 +112,12 @@ Sentry.init({
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
   Sentry.captureException(err, { level: 'fatal' });
-  process.exit(1); // Force exit, so nodemon can restart cleanly
+  // Prevent process exit to keep Render online
 });
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
   Sentry.captureException(reason, { level: 'fatal' });
-  process.exit(1); // Force exit, so nodemon can restart cleanly
+  // Prevent process exit to keep Render online
 });
 const app = express();
 
@@ -127,14 +127,14 @@ app.set('trust proxy', 1);
 
 // --- Secure CORS Configuration ---
 const allowedOrigins = [
-  'http://localhost:5173', // Web Dev (Vite)
-  'http://localhost:3000', // Web Dev (Create React App)
-  'http://localhost:8082', // Mobile Dev
-  'http://localhost:5174', // Desktop Dev
-  'https://monorapo-accountingapp-1-web.vercel.app' // Vercel URL ko permanently add kar dein
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:8082',
+  'http://localhost:5174',
+  'https://monorapo-accountingapp-1-web.vercel.app',
+  'https://monorapo-accountingapp-1.vercel.app'
 ];
 
-// Dynamically add the production frontend URL from environment variables
 if (process.env.FRONTEND_URL) {
   allowedOrigins.push(process.env.FRONTEND_URL);
 }
@@ -142,17 +142,24 @@ if (process.env.FRONTEND_URL) {
 /** @type {import("cors").CorsOptions} */
 const corsOptions = {
   origin: (origin, callback) => {
-    const isAllowed = !origin || allowedOrigins.includes(origin) || (typeof origin === 'string' && origin.endsWith('.vercel.app'));
+    if (!origin) return callback(null, true);
+    const isAllowed = allowedOrigins.includes(origin) || 
+      (typeof origin === 'string' && (origin.endsWith('.vercel.app') || origin.endsWith('.onrender.com') || origin.includes('localhost') || origin.includes('127.0.0.1')));
     if (isAllowed) {
       callback(null, true);
     } else {
-      console.error(`CORS Blocked Origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
+      console.warn('CORS non-whitelisted Origin:', origin);
+      callback(null, true);
     }
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-business-id', 'x-company-id', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
@@ -160,7 +167,7 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 // Apply API Rate Limiting (DDoS Protection)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500, // Limit each IP to 500 requests per 15 minutes
+  max: 3000, // Generous limit: 3000 requests per 15 minutes
   message: { success: false, message: "Too many requests from this IP, please try again after 15 minutes" },
   validate: { xForwardedForHeader: false } // FIX: Stops the 'trust proxy' error on Render
 });
@@ -404,6 +411,26 @@ const startServer = () => {
     }
   });
 };
+
+
+// Global fallback error handler with CORS support
+app.use((err, req, res, next) => {
+  console.error('Unhandled API Error:', err);
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,x-business-id,x-company-id,X-Requested-With,Accept,Origin');
+  }
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal Server Error'
+  });
+});
 
 startServer();
 

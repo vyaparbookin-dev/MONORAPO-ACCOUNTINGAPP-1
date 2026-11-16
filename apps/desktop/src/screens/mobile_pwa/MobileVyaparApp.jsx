@@ -7550,7 +7550,7 @@ function MobileVyaparAppContent() {
                   {filteredParties.map((p) => {
                     const isPersonal = (p.type || p.partyType) === 'personal';
                     const isSupplier = (p.type || p.partyType) === 'supplier';
-                    const bal = computePartyLiveBalance(p);
+                    const bal = getPartyDisplayBalance(p);
                     return (
                       <div 
                         key={p.id || p._id}
