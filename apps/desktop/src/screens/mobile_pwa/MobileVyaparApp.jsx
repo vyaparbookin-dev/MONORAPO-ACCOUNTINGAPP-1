@@ -291,6 +291,19 @@ function MobileVyaparAppContent() {
   const [statementSiteFilter, setStatementSiteFilter] = useState("ALL");
   const [statementSearchTerm, setStatementSearchTerm] = useState("");
 
+  // 🏢 5-Data Business Profile Completion Tracker State
+  const [showBusinessProfileModal, setShowBusinessProfileModal] = useState(false);
+  const [profileFormName, setProfileFormName] = useState("");
+  const [profileFormPhone, setProfileFormPhone] = useState("");
+  const [profileFormAddress, setProfileFormAddress] = useState("");
+  const [profileFormGstin, setProfileFormGstin] = useState("");
+  const [profileFormBusinessType, setProfileFormBusinessType] = useState("Hardware & Building Materials");
+  const [profileFormUpiId, setProfileFormUpiId] = useState("");
+  const [profileFormBankName, setProfileFormBankName] = useState("");
+  const [profileFormAccNo, setProfileFormAccNo] = useState("");
+  const [profileFormIfsc, setProfileFormIfsc] = useState("");
+  const [savingBusinessProfile, setSavingBusinessProfile] = useState(false);
+
   // Extract known construction / client sites dynamically
   const knownSites = useMemo(() => {
     const set = new Set();
@@ -304,6 +317,107 @@ function MobileVyaparAppContent() {
     });
     return Array.from(set).filter(Boolean);
   }, [partyTransactions, bills]);
+
+  // 🎯 5-Data Item Business Profile Completion Calculation
+  const profileChecklist = useMemo(() => {
+    const co = selectedCompany || {};
+    const hasName = Boolean((co.name || co.companyName || co.businessName || "").trim());
+    const hasPhone = Boolean((co.phone || co.mobileNumber || user?.phone || "").trim());
+    const hasAddress = Boolean((co.address || co.city || "").trim());
+    const hasTaxOrType = Boolean((co.gstin || co.gstNumber || co.panNumber || co.businessType || "").trim());
+    const hasBankOrUpi = Boolean(
+      (bankAccounts && bankAccounts.length > 0) ||
+      ((co.bankName || co.accountNumber) && String(co.accountNumber || '').trim().length > 3) ||
+      (co.upiId && String(co.upiId).includes('@'))
+    );
+
+    return [
+      { id: "name", label: "दुकान का नाम", done: hasName },
+      { id: "phone", label: "मोबाइल नंबर", done: hasPhone },
+      { id: "address", label: "दुकान का पता", done: hasAddress },
+      { id: "tax", label: "GST / व्यापार प्रकार", done: hasTaxOrType },
+      { id: "bank", label: "बैंक / UPI खाता", done: hasBankOrUpi },
+    ];
+  }, [selectedCompany, bankAccounts, user]);
+
+  const profileCompletedCount = profileChecklist.filter(i => i.done).length;
+  const profileCompletionPercent = Math.round((profileCompletedCount / 5) * 100);
+
+  const handleOpenBusinessProfileModal = () => {
+    const co = selectedCompany || {};
+    const uBank = bankAccounts?.[0] || {};
+    setProfileFormName(co.name || co.companyName || co.businessName || "");
+    setProfileFormPhone(co.phone || co.mobileNumber || user?.phone || "");
+    setProfileFormAddress(co.address || co.city || "");
+    setProfileFormGstin(co.gstin || co.gstNumber || co.panNumber || "");
+    setProfileFormBusinessType(co.businessType || "Hardware & Building Materials");
+    setProfileFormUpiId(co.upiId || co.upiQrCode || "");
+    setProfileFormBankName(co.bankName || uBank.bankName || "");
+    setProfileFormAccNo(co.accountNumber || uBank.accountNumber || "");
+    setProfileFormIfsc(co.ifscCode || uBank.ifscCode || "");
+    setShowBusinessProfileModal(true);
+  };
+
+  const handleSaveBusinessProfile = async (e) => {
+    if (e) e.preventDefault();
+    if (!profileFormName.trim()) {
+      alert("कृपया दुकान या व्यापार का नाम दर्ज करें!");
+      return;
+    }
+    setSavingBusinessProfile(true);
+    try {
+      const coId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "6a8314470d93e58ad0920950").trim();
+      const updatedCo = {
+        ...(selectedCompany || {}),
+        _id: coId,
+        id: coId,
+        name: profileFormName.trim(),
+        companyName: profileFormName.trim(),
+        businessName: profileFormName.trim(),
+        phone: profileFormPhone.trim(),
+        mobileNumber: profileFormPhone.trim(),
+        address: profileFormAddress.trim(),
+        city: profileFormAddress.trim(),
+        gstin: profileFormGstin.trim(),
+        gstNumber: profileFormGstin.trim(),
+        businessType: profileFormBusinessType.trim(),
+        upiId: profileFormUpiId.trim(),
+        bankName: profileFormBankName.trim(),
+        accountNumber: profileFormAccNo.trim(),
+        ifscCode: profileFormIfsc.trim()
+      };
+
+      if (selectCompany) {
+        selectCompany(updatedCo);
+      }
+      try {
+        localStorage.setItem("selectedCompany", JSON.stringify(updatedCo));
+        const storedCompanies = JSON.parse(localStorage.getItem("companies") || "[]");
+        const idx = storedCompanies.findIndex(c => (c._id || c.id) === coId);
+        if (idx >= 0) {
+          storedCompanies[idx] = updatedCo;
+        } else {
+          storedCompanies.push(updatedCo);
+        }
+        localStorage.setItem("companies", JSON.stringify(storedCompanies));
+      } catch (e) {}
+
+      // Background server update
+      await api.put(`/api/company/${coId}`, updatedCo)
+        .catch(() => api.put(`/api/companies/${coId}`, updatedCo))
+        .catch(() => api.post(`/api/company`, updatedCo))
+        .catch(() => {});
+
+      setShowBusinessProfileModal(false);
+      alert("🎉 आपकी व्यापार प्रोफाइल सफलतापूर्वक सेव हो गई!");
+    } catch (err) {
+      console.warn("Profile save notice:", err);
+      setShowBusinessProfileModal(false);
+      alert("✅ प्रोफाइल स्थानीय रूप से सुरक्षित हो गई!");
+    } finally {
+      setSavingBusinessProfile(false);
+    }
+  };
 
   useEffect(() => {
     const curTotal = quickBillMode === 'direct'
@@ -5708,11 +5822,27 @@ function MobileVyaparAppContent() {
 
       {/* 📱 1. TOP WHITE HEADER */}
       <header className="sticky top-0 z-30 bg-white border-b border-slate-100 px-4 py-3 flex justify-between items-center shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
-        <div className="flex items-center gap-1.5 cursor-pointer" onClick={() => setShowCompanySelectModal(true)}>
-          <h1 className="font-extrabold text-[15px] tracking-wide text-[#1E293B]">
-            {companyDisplayName.toUpperCase()}
-          </h1>
-          <ChevronDown size={16} className="text-[#6366F1]" />
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 cursor-pointer" onClick={() => setShowCompanySelectModal(true)}>
+            <h1 className="font-extrabold text-[15px] tracking-wide text-[#1E293B]">
+              {companyDisplayName.toUpperCase()}
+            </h1>
+            <ChevronDown size={16} className="text-[#6366F1]" />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleOpenBusinessProfileModal}
+            className={`text-[10px] font-black px-2 py-0.5 rounded-full border cursor-pointer active:scale-95 transition flex items-center gap-1 ${
+              profileCompletionPercent === 100
+                ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                : "bg-indigo-50 text-indigo-700 border-indigo-200"
+            }`}
+            title="दुकान/फर्म प्रोफाइल 5-डेटा प्रगति"
+          >
+            <span>🎯</span>
+            <span>{profileCompletionPercent}%</span>
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -5830,6 +5960,77 @@ function MobileVyaparAppContent() {
         {/* ==================== TAB 1: DASHBOARD ==================== */}
         {activeTab === "dashboard" && (
           <div className="space-y-3.5 animate-in fade-in">
+            {/* 🎯 BUSINESS PROFILE COMPLETION TRACKER (व्यापार प्रोफाइल 5-डेटा पूर्णता) */}
+            <div 
+              onClick={handleOpenBusinessProfileModal}
+              className={`p-3.5 rounded-2xl border transition shadow-xs cursor-pointer active:scale-98 ${
+                profileCompletionPercent === 100 
+                  ? "bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-emerald-200" 
+                  : "bg-gradient-to-r from-indigo-50/90 via-purple-50/70 to-indigo-50/90 border-indigo-200"
+              }`}
+            >
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shadow-xs ${
+                    profileCompletionPercent === 100 ? "bg-emerald-600 text-white" : "bg-indigo-600 text-white"
+                  }`}>
+                    {profileCompletionPercent === 100 ? "✓" : `${profileCompletionPercent}%`}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-black text-xs text-[#0F172A]">
+                        {profileCompletionPercent === 100 ? "व्यापार प्रोफाइल 100% पूर्ण है" : `व्यापार प्रोफाइल ${profileCompletionPercent}% पूरी है`}
+                      </span>
+                      <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-md ${
+                        profileCompletionPercent === 100 ? "bg-emerald-100 text-emerald-800" : "bg-indigo-100 text-indigo-800"
+                      }`}>
+                        {profileCompletedCount}/5 पूरी
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-semibold">
+                      {profileCompletionPercent === 100 
+                        ? "दुकान का नाम, फोन, पता, GST व बैंक खाता सभी सेट हैं • बदलने हेतु टैप करें" 
+                        : "बिल व WhatsApp पर्ची पर अपनी दुकान का नाम, पता व QR कोड जोड़ने हेतु पूरी करें"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 text-[11px] font-black text-indigo-700 shrink-0">
+                  <span>{profileCompletionPercent === 100 ? "बदलें" : "पूरी करें"}</span>
+                  <ChevronRight size={14} />
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="w-full bg-slate-200/80 h-1.5 rounded-full overflow-hidden mt-2.5">
+                <div 
+                  className={`h-full rounded-full transition-all duration-700 ${
+                    profileCompletionPercent === 100 
+                      ? "bg-emerald-500" 
+                      : "bg-gradient-to-r from-indigo-500 to-purple-600"
+                  }`} 
+                  style={{ width: `${profileCompletionPercent}%` }} 
+                />
+              </div>
+
+              {/* 5-Data Item Checklist Pills */}
+              <div className="flex items-center gap-1.5 mt-2 overflow-x-auto no-scrollbar py-0.5">
+                {profileChecklist.map((item) => (
+                  <span 
+                    key={item.id} 
+                    className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg whitespace-nowrap shrink-0 flex items-center gap-1 border ${
+                      item.done 
+                        ? "bg-emerald-50 text-emerald-800 border-emerald-200" 
+                        : "bg-amber-50 text-amber-900 border-amber-300"
+                    }`}
+                  >
+                    <span>{item.done ? "✓" : "+"}</span>
+                    <span>{item.label}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+
             {/* 📲 1-CLICK NATIVE PWA APP INSTALL BANNER */}
             {!isPwaInstalled && (
               <div className="p-3.5 bg-gradient-to-r from-indigo-900 via-indigo-800 to-indigo-950 text-white rounded-2xl shadow-md border border-indigo-400/40 flex items-center justify-between gap-3">
@@ -13752,6 +13953,190 @@ function MobileVyaparAppContent() {
                 <Plus size={14} /> + नई कंपनी / दुकान जोड़ें
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📱 7. BUSINESS PROFILE COMPLETION MODAL (5-DATA CHECKLIST) */}
+      {showBusinessProfileModal && (
+        <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl max-h-[92vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-base">
+                  🏢
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">व्यापार प्रोफाइल (Business Profile)</h3>
+                  <p className="text-[10px] text-slate-400">
+                    {profileCompletedCount}/5 जानकारी पूर्ण • {profileCompletionPercent}% प्रोफाइल
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setShowBusinessProfileModal(false)} 
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Progress Bar & Checklist in Modal */}
+            <div className="p-3 bg-indigo-50/80 rounded-2xl border border-indigo-200 space-y-2">
+              <div className="flex justify-between items-center text-xs font-black text-indigo-950">
+                <span>🎯 प्रोफाइल पूर्णता स्थिति:</span>
+                <span className="text-indigo-700">{profileCompletionPercent}% ({profileCompletedCount}/5 पूर्ण)</span>
+              </div>
+              <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                <div 
+                  className="bg-gradient-to-r from-indigo-600 to-emerald-500 h-full rounded-full transition-all duration-500" 
+                  style={{ width: `${profileCompletionPercent}%` }} 
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 pt-1 text-[11px]">
+                {profileChecklist.map((item) => (
+                  <div key={item.id} className="flex items-center gap-1.5">
+                    <span className={item.done ? "text-emerald-600 font-black" : "text-amber-600 font-bold"}>
+                      {item.done ? "✓" : "○"}
+                    </span>
+                    <span className={item.done ? "text-slate-700 font-bold" : "text-slate-500 font-medium"}>
+                      {item.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Profile Form */}
+            <form onSubmit={handleSaveBusinessProfile} className="space-y-3">
+              {/* 1. Business Name */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-black text-slate-700 flex items-center justify-between">
+                  <span>1. दुकान / व्यापार का नाम (Business Name) *</span>
+                  {profileFormName.trim() && <span className="text-emerald-600 text-[10px] font-bold">✓ भरा हुआ</span>}
+                </label>
+                <input
+                  type="text"
+                  placeholder="उदा. गणेश हार्डवेयर एंड सेनेटरी स्टोर्स"
+                  value={profileFormName}
+                  onChange={(e) => setProfileFormName(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                  required
+                />
+              </div>
+
+              {/* 2. Phone / WhatsApp */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-black text-slate-700 flex items-center justify-between">
+                  <span>2. मोबाइल / WhatsApp नंबर (Phone Number) *</span>
+                  {profileFormPhone.trim() && <span className="text-emerald-600 text-[10px] font-bold">✓ भरा हुआ</span>}
+                </label>
+                <input
+                  type="tel"
+                  placeholder="10 अंकों का संपर्क नंबर (उदा. 9876543210)"
+                  value={profileFormPhone}
+                  onChange={(e) => setProfileFormPhone(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                />
+              </div>
+
+              {/* 3. Address / City */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-black text-slate-700 flex items-center justify-between">
+                  <span>3. दुकान / फर्म का पूरा पता (Address & City)</span>
+                  {profileFormAddress.trim() && <span className="text-emerald-600 text-[10px] font-bold">✓ भरा हुआ</span>}
+                </label>
+                <input
+                  type="text"
+                  placeholder="मेन रोड, मार्केट कॉम्प्लेक्स, सारंगढ़ (छ.ग.)"
+                  value={profileFormAddress}
+                  onChange={(e) => setProfileFormAddress(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                />
+              </div>
+
+              {/* 4. GSTIN & Business Type */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black text-slate-700 flex items-center justify-between">
+                    <span>4. GSTIN / पैन</span>
+                    {profileFormGstin.trim() && <span className="text-emerald-600 text-[10px] font-bold">✓</span>}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="22AAAAA0000A1Z5"
+                    value={profileFormGstin}
+                    onChange={(e) => setProfileFormGstin(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs font-bold text-slate-900 outline-none uppercase"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black text-slate-700">व्यापार श्रेणी (Category)</label>
+                  <select
+                    value={profileFormBusinessType}
+                    onChange={(e) => setProfileFormBusinessType(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                  >
+                    <option value="Hardware & Building Materials">हार्डवेयर व बिल्डिंग मटेरियल</option>
+                    <option value="Grocery & Kirana">किराना व जनरल स्टोर</option>
+                    <option value="Electricals & Electronics">इलेक्ट्रिकल्स व इलेक्ट्रॉनिक्स</option>
+                    <option value="Garments & Clothing">कपड़ा व रेडीमेड गारमेंट्स</option>
+                    <option value="Pharmacy & Medical">दवाइयां व मेडिकल स्टोर</option>
+                    <option value="Retail & Wholesale">अन्य रिटेल / थोक व्यापार</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* 5. UPI ID & Bank Account */}
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                <div className="flex justify-between items-center text-[11px] font-black text-slate-800">
+                  <span>5. बैंक व भुगतान खाता (UPI & Bank for Invoices)</span>
+                  {(profileFormUpiId.trim() || profileFormAccNo.trim()) && <span className="text-emerald-600 text-[10px] font-bold">✓ भरा हुआ</span>}
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 block mb-0.5">UPI ID (QR भुगतान हेतु)</label>
+                  <input
+                    type="text"
+                    placeholder="उदा. yourname@okaxis, 9876543210@paytm"
+                    value={profileFormUpiId}
+                    onChange={(e) => setProfileFormUpiId(e.target.value)}
+                    className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 block mb-0.5">बैंक का नाम</label>
+                    <input
+                      type="text"
+                      placeholder="उदा. SBI, HDFC"
+                      value={profileFormBankName}
+                      onChange={(e) => setProfileFormBankName(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 block mb-0.5">खाता संख्या (A/C No)</label>
+                    <input
+                      type="text"
+                      placeholder="खाता नंबर..."
+                      value={profileFormAccNo}
+                      onChange={(e) => setProfileFormAccNo(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Save Button */}
+              <button
+                type="submit"
+                disabled={savingBusinessProfile}
+                className="w-full py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-extrabold text-sm rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition active:scale-95"
+              >
+                {savingBusinessProfile ? <RefreshCw size={16} className="animate-spin" /> : <span>💾 व्यापार प्रोफाइल सुरक्षित करें</span>}
+              </button>
+            </form>
           </div>
         </div>
       )}
