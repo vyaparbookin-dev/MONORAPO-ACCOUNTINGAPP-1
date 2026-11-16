@@ -286,6 +286,8 @@ function MobileVyaparAppContent() {
   const [directBillNotes, setDirectBillNotes] = useState("");
   const [directBillDate, setDirectBillDate] = useState(getLocalYmd);
   const [directBillImage, setDirectBillImage] = useState("");
+  const [directBillCarrierName, setDirectBillCarrierName] = useState(""); // सामान ले जाने वाले का नाम
+  const [directBillCarrierPhone, setDirectBillCarrierPhone] = useState(""); // सामान ले जाने वाले का मोबाइल
 
   // 📜 Multi-Site & 100+ Bills Statement Filters
   const [statementSiteFilter, setStatementSiteFilter] = useState("ALL");
@@ -577,6 +579,9 @@ function MobileVyaparAppContent() {
   const [editPartyTxNotes, setEditPartyTxNotes] = useState('');
   const [editPartyTxDate, setEditPartyTxDate] = useState('');
   const [editPartyTxPaymentMode, setEditPartyTxPaymentMode] = useState('CASH');
+  const [editPartyTxSite, setEditPartyTxSite] = useState('');
+  const [editPartyTxCarrierName, setEditPartyTxCarrierName] = useState('');
+  const [editPartyTxCarrierPhone, setEditPartyTxCarrierPhone] = useState('');
   const [savingEditPartyTx, setSavingEditPartyTx] = useState(false);
 
   // 📦 Party Old Hisab (Opening Balance) Dedicated States
@@ -2564,8 +2569,8 @@ function MobileVyaparAppContent() {
 
     const isDirectEffective = isDirectMode || (billCart.length === 0 && directAmt > 0);
     const effectiveAmount = isDirectEffective ? directAmt : (totalBillAmount || directAmt);
-    const effectiveSite = isDirectEffective ? directBillSite.trim() : "";
-    const effectiveNotes = isDirectEffective ? directBillNotes.trim() : "";
+    const effectiveSite = directBillSite.trim();
+    const effectiveNotes = directBillNotes.trim();
     const effectiveImage = isDirectEffective ? (directBillImage || "") : "";
     const effectiveDate = (isDirectEffective && directBillDate) ? new Date(directBillDate) : new Date();
 
@@ -2609,11 +2614,29 @@ function MobileVyaparAppContent() {
       finalAmount: effectiveAmount,
       siteName: effectiveSite,
       site: effectiveSite,
+      carrierName: directBillCarrierName.trim(),
+      carrierPhone: directBillCarrierPhone.trim(),
+      receiverName: directBillCarrierName.trim(),
+      receiverPhone: directBillCarrierPhone.trim(),
       notes: effectiveNotes,
       billImageUrl: effectiveImage || undefined,
       billImageUrls: effectiveImage ? [effectiveImage] : [],
       date: effectiveDate
     };
+
+    // Auto-update phone in existing party profile if it was missing previously
+    if (existingParty && finalPhone && !existingParty.phone && !existingParty.mobileNumber) {
+      const updatedPartyWithPhone = {
+        ...existingParty,
+        phone: finalPhone,
+        mobileNumber: finalPhone
+      };
+      setParties(prev => prev.map(p => ((p._id || p.id) === (existingParty._id || existingParty.id)) ? updatedPartyWithPhone : p));
+      try {
+        storageManager.saveParty(currentCoId, updatedPartyWithPhone);
+        api.put(`/api/party/${existingParty._id || existingParty.id}`, { mobileNumber: finalPhone, phone: finalPhone }).catch(() => {});
+      } catch (e) {}
+    }
 
     // Auto-create party locally if it doesn't exist
     if (finalCustomer && finalCustomer !== "नकद ग्राहक (Walk-in)" && !parties.some(p => String(p?.name || '').toLowerCase() === String(finalCustomer || '').toLowerCase())) {
@@ -2725,6 +2748,10 @@ function MobileVyaparAppContent() {
         type: 'sale',
         siteName: effectiveSite,
         site: effectiveSite,
+        carrierName: directBillCarrierName.trim(),
+        carrierPhone: directBillCarrierPhone.trim(),
+        receiverName: directBillCarrierName.trim(),
+        receiverPhone: directBillCarrierPhone.trim(),
         billImageUrl: effectiveImage || '',
         billImageUrls: effectiveImage ? [effectiveImage] : [],
         source: 'QuickBill',
@@ -2753,6 +2780,8 @@ function MobileVyaparAppContent() {
     setDirectBillSite("");
     setDirectBillNotes("");
     setDirectBillImage("");
+    setDirectBillCarrierName("");
+    setDirectBillCarrierPhone("");
     setBillAppliedReward(null);
     setMobileStampStatus(null);
     setShowQuickBillModal(false);
@@ -3202,8 +3231,18 @@ function MobileVyaparAppContent() {
 
         if (!imgUrl && imgUrls.length > 0) imgUrl = imgUrls[0];
 
+        const derivedSite = (st.siteName || st.site || billMatch?.siteName || billMatch?.site || localMatch?.siteName || localMatch?.site || '').trim();
+        const derivedCarrierName = (st.carrierName || st.receiverName || billMatch?.carrierName || billMatch?.receiverName || localMatch?.carrierName || localMatch?.receiverName || '').trim();
+        const derivedCarrierPhone = (st.carrierPhone || st.receiverPhone || billMatch?.carrierPhone || billMatch?.receiverPhone || localMatch?.carrierPhone || localMatch?.receiverPhone || '').trim();
+
         return {
           ...st,
+          siteName: derivedSite,
+          site: derivedSite,
+          carrierName: derivedCarrierName,
+          carrierPhone: derivedCarrierPhone,
+          receiverName: derivedCarrierName,
+          receiverPhone: derivedCarrierPhone,
           billImageUrl: imgUrl,
           billImageUrls: imgUrls
         };
@@ -3244,6 +3283,12 @@ function MobileVyaparAppContent() {
             debit: lt.debit !== undefined ? Number(lt.debit) : (isPaid ? amt : 0),
             credit: lt.credit !== undefined ? Number(lt.credit) : (isPaid ? 0 : amt),
             amount: amt,
+            siteName: lt.siteName || lt.site || '',
+            site: lt.siteName || lt.site || '',
+            carrierName: lt.carrierName || lt.receiverName || '',
+            carrierPhone: lt.carrierPhone || lt.receiverPhone || '',
+            receiverName: lt.carrierName || lt.receiverName || '',
+            receiverPhone: lt.carrierPhone || lt.receiverPhone || '',
             billImageUrl: lt.billImageUrl || (rawImgs[0] || ''),
             billImageUrls: rawImgs,
             source: 'PartyTransaction',
@@ -3285,6 +3330,8 @@ function MobileVyaparAppContent() {
         const bImgs = b.billImageUrls || (b.billImageUrl ? [b.billImageUrl] : []);
 
         const bSite = (b.siteName || b.site || '').trim();
+        const bCarrier = (b.carrierName || b.receiverName || '').trim();
+        const bCarrierPhone = (b.carrierPhone || b.receiverPhone || '').trim();
         combinedTxs.push({
           _id: b._id || b.id,
           date: b.date || b.createdAt,
@@ -3296,6 +3343,10 @@ function MobileVyaparAppContent() {
           details: b.details || (bSite ? `[${bSite}] ${b.notes || ('बिल #' + bNum)}` : (b.notes || `बिल #${bNum} (${(b.items || []).length} सामान)`)),
           siteName: bSite,
           site: bSite,
+          carrierName: bCarrier,
+          carrierPhone: bCarrierPhone,
+          receiverName: bCarrier,
+          receiverPhone: bCarrierPhone,
           items: b.items || [],
           debit: isSupplier ? 0 : finalAmt,
           credit: isSupplier ? finalAmt : 0,
@@ -3894,6 +3945,9 @@ function MobileVyaparAppContent() {
     setEditPartyTxAmount(String(amt));
     setEditPartyTxType(isDebit ? 'paid' : 'received');
     setEditPartyTxNotes(tx.details || '');
+    setEditPartyTxSite(tx.siteName || tx.site || '');
+    setEditPartyTxCarrierName(tx.carrierName || tx.receiverName || '');
+    setEditPartyTxCarrierPhone(tx.carrierPhone || tx.receiverPhone || '');
     const getLocalInputDate = (d) => {
       if (!d) return new Date().toISOString().split('T')[0];
       const dt = d instanceof Date ? d : new Date(d);
@@ -3937,7 +3991,13 @@ function MobileVyaparAppContent() {
         type: editPartyTxType,
         details: editPartyTxNotes.trim(),
         date: isoDate,
-        paymentMethod: editPartyTxPaymentMode
+        paymentMethod: editPartyTxPaymentMode,
+        siteName: editPartyTxSite.trim(),
+        site: editPartyTxSite.trim(),
+        carrierName: editPartyTxCarrierName.trim(),
+        carrierPhone: editPartyTxCarrierPhone.trim(),
+        receiverName: editPartyTxCarrierName.trim(),
+        receiverPhone: editPartyTxCarrierPhone.trim()
       };
 
       if (!isClientLocalOnly) {
@@ -3947,6 +4007,27 @@ function MobileVyaparAppContent() {
       // Also update local storage and purge any old un-updated local duplicate
       const oldAmt = Number(editingPartyTx.amount || editingPartyTx.debit || editingPartyTx.credit || 0);
       const targetPartyId = String(editingPartyTx.partyId?._id || editingPartyTx.partyId || selectedPartyDetail?._id || selectedPartyDetail?.id || "");
+
+      // If associated with a bill, update the bill's site & carrier details as well
+      try {
+        const billRef = String(editingPartyTx.refNo || editingPartyTx.billNumber || txId || '').trim();
+        if (billRef && billRef !== 'OPENING' && billRef !== 'PAY-ENTRY') {
+          const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+          const storedBills = storageManager.getBills(currentCoId);
+          if (Array.isArray(storedBills)) {
+            const billIdx = storedBills.findIndex(b => String(b.billNumber || b.invoiceNumber || b._id || b.id).toLowerCase() === billRef.toLowerCase());
+            if (billIdx >= 0) {
+              storedBills[billIdx].siteName = payload.siteName;
+              storedBills[billIdx].site = payload.site;
+              storedBills[billIdx].carrierName = payload.carrierName;
+              storedBills[billIdx].carrierPhone = payload.carrierPhone;
+              storedBills[billIdx].receiverName = payload.carrierName;
+              storedBills[billIdx].receiverPhone = payload.carrierPhone;
+              storageManager.saveBill(currentCoId, storedBills[billIdx]);
+            }
+          }
+        }
+      } catch (be) {}
 
       try {
         const stored = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
@@ -3965,7 +4046,13 @@ function MobileVyaparAppContent() {
               credit: editPartyTxType === 'received' ? amt : 0,
               details: payload.details,
               date: payload.date,
-              paymentMethod: editPartyTxPaymentMode
+              paymentMethod: editPartyTxPaymentMode,
+              siteName: payload.siteName,
+              site: payload.site,
+              carrierName: payload.carrierName,
+              carrierPhone: payload.carrierPhone,
+              receiverName: payload.carrierName,
+              receiverPhone: payload.carrierPhone
             };
           }
           return t;
@@ -3985,7 +4072,13 @@ function MobileVyaparAppContent() {
             credit: editPartyTxType === 'received' ? amt : 0,
             details: payload.details,
             date: payload.date,
-            paymentMethod: editPartyTxPaymentMode
+            paymentMethod: editPartyTxPaymentMode,
+            siteName: payload.siteName,
+            site: payload.site,
+            carrierName: payload.carrierName,
+            carrierPhone: payload.carrierPhone,
+            receiverName: payload.carrierName,
+            receiverPhone: payload.carrierPhone
           };
         }
         return t;
@@ -4902,10 +4995,14 @@ function MobileVyaparAppContent() {
         const dStr = t.date ? new Date(t.date).toLocaleDateString('hi-IN', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
         const deb = Number(t.debit || 0);
         const cred = Number(t.credit || 0);
-        const amtStr = deb > 0 ? `नाम: +₹${deb.toLocaleString('en-IN')}` : `जमा: -₹${cred.toLocaleString('en-IN')}`;
-        const siteTag = (t.siteName || t.site) ? `[${t.siteName || t.site}] ` : '';
+        const amtStr = deb > 0 ? `नाम/डेबिट: +₹${deb.toLocaleString('en-IN')}` : `जमा/क्रेडिट: -₹${cred.toLocaleString('en-IN')}`;
+        const sName = (t.siteName || t.site || '').trim();
+        const cName = (t.carrierName || t.receiverName || '').trim();
+        const cPhone = (t.carrierPhone || t.receiverPhone || '').trim();
+        const siteLine = sName ? `\n   🏗️ साइट: *${sName}*` : '';
+        const carrierLine = cName ? `\n   🚚 ले जाने वाला: *${cName}*${cPhone ? ` (${cPhone})` : ''}` : '';
         const desc = t.details || t.refNo || (deb > 0 ? 'सामान' : 'जमा');
-        text += `${i + 1}. [${dStr}] ${siteTag}${desc}\n   ${amtStr}\n`;
+        text += `${i + 1}. 📅 [${dStr}] ${desc}${siteLine}${carrierLine}\n   💰 ${amtStr}\n`;
       });
 
       text += `\n*(कुल ${sorted.length} में से हालिया 15 बिल ऊपर दिखाए गए हैं)*\n`;
@@ -4916,13 +5013,17 @@ function MobileVyaparAppContent() {
         const deb = Number(t.debit || 0);
         const cred = Number(t.credit || 0);
         const amtStr = deb > 0 ? `नाम/डेबिट: +₹${deb.toLocaleString('en-IN')}` : `जमा/क्रेडिट: -₹${cred.toLocaleString('en-IN')}`;
-        const siteTag = (t.siteName || t.site) ? `[${t.siteName || t.site}] ` : '';
+        const sName = (t.siteName || t.site || '').trim();
+        const cName = (t.carrierName || t.receiverName || '').trim();
+        const cPhone = (t.carrierPhone || t.receiverPhone || '').trim();
+        const siteLine = sName ? `\n   🏗️ साइट: *${sName}*` : '';
+        const carrierLine = cName ? `\n   🚚 ले जाने वाला: *${cName}*${cPhone ? ` (${cPhone})` : ''}` : '';
         const desc = t.details || t.refNo || (deb > 0 ? 'दिया' : 'मिला');
         const running = t.runningAfter !== undefined ? t.runningAfter : t.runningBalance;
         const runningLabel = running !== undefined
-          ? ` (बाकी: ₹${Math.abs(running).toLocaleString('en-IN')} ${running < 0 || isSupplier ? 'देने' : 'लेने'})`
+          ? ` (खाता बाकी: ₹${Math.abs(running).toLocaleString('en-IN')} ${running < 0 || isSupplier ? 'देने' : 'लेने'})`
           : '';
-        text += `${i + 1}. [${dStr}] ${siteTag}${desc}\n   ${amtStr}${runningLabel}\n`;
+        text += `${i + 1}. 📅 [${dStr}] ${desc}${siteLine}${carrierLine}\n   💰 ${amtStr}${runningLabel}\n`;
       });
     }
 
@@ -8008,9 +8109,28 @@ function MobileVyaparAppContent() {
 
                 <input 
                   type="tel" 
-                  placeholder="WhatsApp नंबर (ऑप्शनल)..." 
+                  placeholder="WhatsApp नंबर (टाइप करते ही पार्टी ऑटो-सर्च होगी)..." 
                   value={billCustomerPhone}
-                  onChange={(e) => setBillCustomerPhone(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setBillCustomerPhone(val);
+                    const clean = val.replace(/\D/g, "");
+                    if (clean.length >= 10) {
+                      const match = (parties || []).find(p => {
+                        const pPhone = String(p.phone || p.mobileNumber || '').replace(/\D/g, '');
+                        return pPhone.length >= 10 && pPhone.slice(-10) === clean.slice(-10);
+                      });
+                      if (match) {
+                        if (!billCustomer || billCustomer === "नकद ग्राहक (Walk-in)") {
+                          setBillCustomer(match.name);
+                        }
+                        if (match.address && (!billCustomerAddress || billCustomerAddress === "Local")) {
+                          setBillCustomerAddress(match.address);
+                        }
+                        setSelectedPartyObject(match);
+                      }
+                    }
+                  }}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
                 />
 
@@ -8368,6 +8488,32 @@ function MobileVyaparAppContent() {
                   </div>
                 </div>
 
+                {/* 🚚 Carrier / Receiver / Transporter (ले जाने वाले का विवरण) */}
+                <div className="p-2.5 bg-blue-50/60 rounded-xl border border-blue-200/80 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] font-black text-blue-950 flex items-center gap-1">
+                      <span>🚚 सामान ले जाने वाला (Carrier / Driver)</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-medium">वैकल्पिक / Optional</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      placeholder="ले जाने वाले का नाम (ड्राइवर/मिस्त्री)..."
+                      value={directBillCarrierName}
+                      onChange={(e) => setDirectBillCarrierName(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-200 focus:border-blue-500 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                    />
+                    <input
+                      type="tel"
+                      placeholder="मोबाइल नंबर (10 अंक)..."
+                      value={directBillCarrierPhone}
+                      onChange={(e) => setDirectBillCarrierPhone(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-200 focus:border-blue-500 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                    />
+                  </div>
+                </div>
+
                 {/* Optional Bill Photo */}
                 <div className="p-2.5 bg-white rounded-xl border border-dashed border-amber-300 space-y-1.5">
                   <div className="flex justify-between items-center">
@@ -8605,6 +8751,30 @@ function MobileVyaparAppContent() {
                 ऊपर सर्च बार से सामान चुनें या नीचे से जोड़ें
               </div>
             )}
+
+            {/* 🏗️ Optional Site & 🚚 Carrier in Items Mode */}
+            <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div>
+                <label className="text-[10px] font-bold text-slate-600 block mb-0.5">🏗️ साइट (Site):</label>
+                <input
+                  type="text"
+                  placeholder="उदा. सीतापुर..."
+                  value={directBillSite}
+                  onChange={(e) => setDirectBillSite(e.target.value)}
+                  className="w-full p-2 bg-white border border-slate-200 focus:border-indigo-500 rounded-lg text-xs font-bold text-slate-800 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-600 block mb-0.5">🚚 ले जाने वाला (Carrier):</label>
+                <input
+                  type="text"
+                  placeholder="नाम व मोबाइल..."
+                  value={directBillCarrierName}
+                  onChange={(e) => setDirectBillCarrierName(e.target.value)}
+                  className="w-full p-2 bg-white border border-slate-200 focus:border-indigo-500 rounded-lg text-xs font-bold text-slate-800 outline-none"
+                />
+              </div>
+            </div>
               </>
             )}
 
@@ -9446,7 +9616,7 @@ function MobileVyaparAppContent() {
       {/* 📱 6.2 AI API KEYS SETTINGS MODAL */}
       {showApiKeyModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3.5 shadow-2xl">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3.5 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
               <h3 className="font-extrabold text-sm text-[#0F172A]">⚙️ AI Vision API Keys</h3>
               <button onClick={() => setShowApiKeyModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
@@ -10215,7 +10385,7 @@ function MobileVyaparAppContent() {
       {/* 📱 9. ADD / EDIT PARTY MODAL */}
       {showAddPartyModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3.5 shadow-2xl">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3.5 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
               <h3 className="font-extrabold text-sm text-[#0F172A]">
                 {editingParty ? "✏️ Edit Party / पार्टी संपादित करें" : "+ Add Party / नया खाता जोड़ें"}
@@ -10592,6 +10762,8 @@ function MobileVyaparAppContent() {
                       setDirectBillAmount("");
                       setDirectBillSite("");
                       setDirectBillNotes("");
+                      setDirectBillCarrierName("");
+                      setDirectBillCarrierPhone("");
                       setDirectBillDate(getLocalYmd());
                       setDirectBillImage("");
                       setShowQuickBillModal(true);
@@ -10617,6 +10789,10 @@ function MobileVyaparAppContent() {
                       setSelectedPartyObject(selectedPartyDetail);
                       setBillPaymentMode("UDHAR");
                       setQuickBillMode("items");
+                      setDirectBillAmount("");
+                      setDirectBillSite("");
+                      setDirectBillCarrierName("");
+                      setDirectBillCarrierPhone("");
                       setShowQuickBillModal(true);
                     }
                   }}
@@ -12403,10 +12579,25 @@ function MobileVyaparAppContent() {
                                           🏗️ {rowSite}
                                         </span>
                                       )}
+                                      {(row.carrierName || row.receiverName) && (
+                                        <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-900 font-bold rounded-md inline-flex items-center gap-0.5">
+                                          🚚 ले जाने वाला: {row.carrierName || row.receiverName} {row.carrierPhone || row.receiverPhone ? `(${row.carrierPhone || row.receiverPhone})` : ''}
+                                        </span>
+                                      )}
                                     </div>
 
-                                    {/* 📷 View or Attach Bill Image */}
+                                    {/* 📷 View or Attach Bill Image & ✏️ Edit Site / Details */}
                                     <div className="flex items-center gap-1.5 flex-wrap">
+                                      {!isOpening && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenEditPartyTx(row)}
+                                          className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer transition active:scale-95 shadow-2xs"
+                                          title="साइट का नाम, विवरण या ले जाने वाले का नाम बदलें"
+                                        >
+                                          <span>✏️ {rowSite ? 'साइट/विवरण बदलें' : '+ साइट/विवरण जोड़ें'}</span>
+                                        </button>
+                                      )}
                                       {validImgs.length > 0 ? (
                                         <button
                                           type="button"
@@ -12489,7 +12680,7 @@ function MobileVyaparAppContent() {
       {/* 📱 EDIT PARTY TRANSACTION MODAL */}
       {editingPartyTx && (
         <div className="fixed inset-0 z-[90] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3.5 shadow-2xl">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-3.5 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
@@ -12575,6 +12766,42 @@ function MobileVyaparAppContent() {
                   placeholder="उदा. नकद भुगतान, फोनपे ट्रांसफर..."
                   className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
                 />
+              </div>
+
+              {/* Site / Project Name */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 block mb-1">🏗️ साइट / प्रोजेक्ट का नाम (Site Name):</label>
+                <input
+                  type="text"
+                  value={editPartyTxSite}
+                  onChange={(e) => setEditPartyTxSite(e.target.value)}
+                  placeholder="उदा. सीतापुर साइट, प्रोजेक्ट-A..."
+                  className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Carrier / Transporter */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 block mb-1">🚚 ले जाने वाले का नाम:</label>
+                  <input
+                    type="text"
+                    value={editPartyTxCarrierName}
+                    onChange={(e) => setEditPartyTxCarrierName(e.target.value)}
+                    placeholder="उदा. ड्राइवर, मिस्त्री..."
+                    className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 block mb-1">📞 ले जाने वाले का मोबाइल:</label>
+                  <input
+                    type="tel"
+                    value={editPartyTxCarrierPhone}
+                    onChange={(e) => setEditPartyTxCarrierPhone(e.target.value)}
+                    placeholder="10 अंकों का नंबर..."
+                    className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
               </div>
 
               {/* Payment Mode */}
