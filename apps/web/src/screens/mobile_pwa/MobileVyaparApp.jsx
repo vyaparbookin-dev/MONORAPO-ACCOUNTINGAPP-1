@@ -97,9 +97,14 @@ class MobileErrorBoundary extends React.Component {
             📱
           </div>
           <h2 className="text-lg font-black text-[#0F172A] mb-1">VyaparBook मोबाइल</h2>
-          <p className="text-xs text-slate-500 mb-4 max-w-xs">
+          <p className="text-xs text-slate-500 mb-2 max-w-xs">
             सिस्टम को सुचारू रूप से चलाने के लिए कृपया रीलोड करें। आपका डेटा पूरी तरह सुरक्षित है।
           </p>
+          {this.state.error?.message && (
+            <div className="text-[11px] text-red-600 bg-red-50 p-2.5 rounded-lg border border-red-200 font-mono text-left mb-3 max-w-xs break-all">
+              ⚠️ {this.state.error.message}
+            </div>
+          )}
           <div className="flex flex-col gap-2.5 w-full max-w-xs">
             <button
               onClick={() => {
@@ -117,6 +122,19 @@ class MobileErrorBoundary extends React.Component {
               className="w-full py-3 bg-white border border-slate-300 text-slate-700 font-extrabold text-xs rounded-xl hover:bg-slate-100 transition cursor-pointer"
             >
               ⚡ पुनः प्रयास करें (Retry)
+            </button>
+            <button
+              onClick={() => {
+                try {
+                  localStorage.removeItem("mobile_active_report");
+                  localStorage.removeItem("vb_local_bank_accounts");
+                  sessionStorage.clear();
+                } catch (e) {}
+                window.location.reload();
+              }}
+              className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold text-[11px] rounded-xl transition cursor-pointer"
+            >
+              🧹 कैश साफ़ करके रीलोड करें (Clear Cache)
             </button>
           </div>
         </div>
@@ -793,56 +811,77 @@ function MobileVyaparAppContent() {
 
   // Extract known construction / client sites dynamically
   const knownSites = useMemo(() => {
-    const set = new Set();
-    (partyTransactions || []).forEach(t => {
-      if (t.siteName) set.add(String(t.siteName).trim());
-      if (t.site) set.add(String(t.site).trim());
-    });
-    (bills || []).forEach(b => {
-      if (b.siteName) set.add(String(b.siteName).trim());
-      if (b.site) set.add(String(b.site).trim());
-    });
-    return Array.from(set).filter(Boolean);
+    try {
+      const set = new Set();
+      (Array.isArray(partyTransactions) ? partyTransactions : []).forEach(t => {
+        if (t && t.siteName) set.add(String(t.siteName).trim());
+        if (t && t.site) set.add(String(t.site).trim());
+      });
+      (Array.isArray(bills) ? bills : []).forEach(b => {
+        if (b && b.siteName) set.add(String(b.siteName).trim());
+        if (b && b.site) set.add(String(b.site).trim());
+      });
+      return Array.from(set).filter(Boolean);
+    } catch (e) {
+      console.warn("knownSites calc error:", e);
+      return [];
+    }
   }, [partyTransactions, bills]);
 
   // 🎯 5-Data Item Business Profile Completion Calculation
   const profileChecklist = useMemo(() => {
-    const co = selectedCompany || {};
-    const hasName = Boolean((co.name || co.companyName || co.businessName || "").trim());
-    const hasPhone = Boolean((co.phone || co.mobileNumber || user?.phone || "").trim());
-    const hasAddress = Boolean((co.address || co.city || "").trim());
-    const hasTaxOrType = Boolean((co.gstin || co.gstNumber || co.panNumber || co.businessType || "").trim());
-    const hasBankOrUpi = Boolean(
-      (bankAccounts && bankAccounts.length > 0) ||
-      ((co.bankName || co.accountNumber) && String(co.accountNumber || '').trim().length > 3) ||
-      (co.upiId && String(co.upiId).includes('@'))
-    );
+    try {
+      const co = (selectedCompany && typeof selectedCompany === "object") ? selectedCompany : {};
+      const hasName = Boolean(String(co.name || co.companyName || co.businessName || "").trim());
+      const hasPhone = Boolean(String(co.phone || co.mobileNumber || user?.phone || "").trim());
+      const hasAddress = Boolean(String(co.address || co.city || "").trim());
+      const hasTaxOrType = Boolean(String(co.gstin || co.gstNumber || co.panNumber || co.businessType || "").trim());
+      const hasBankOrUpi = Boolean(
+        (Array.isArray(bankAccounts) && bankAccounts.length > 0) ||
+        ((co.bankName || co.accountNumber) && String(co.accountNumber || '').trim().length > 3) ||
+        (co.upiId && String(co.upiId).includes('@'))
+      );
 
-    return [
-      { id: "name", label: "दुकान का नाम", done: hasName },
-      { id: "phone", label: "मोबाइल नंबर", done: hasPhone },
-      { id: "address", label: "दुकान का पता", done: hasAddress },
-      { id: "tax", label: "GST / व्यापार प्रकार", done: hasTaxOrType },
-      { id: "bank", label: "बैंक / UPI खाता", done: hasBankOrUpi },
-    ];
+      return [
+        { id: "name", label: "दुकान का नाम", done: hasName },
+        { id: "phone", label: "मोबाइल नंबर", done: hasPhone },
+        { id: "address", label: "दुकान का पता", done: hasAddress },
+        { id: "tax", label: "GST / व्यापार प्रकार", done: hasTaxOrType },
+        { id: "bank", label: "बैंक / UPI खाता", done: hasBankOrUpi },
+      ];
+    } catch (e) {
+      console.warn("profileChecklist error:", e);
+      return [
+        { id: "name", label: "दुकान का नाम", done: false },
+        { id: "phone", label: "मोबाइल नंबर", done: false },
+        { id: "address", label: "दुकान का पता", done: false },
+        { id: "tax", label: "GST / व्यापार प्रकार", done: false },
+        { id: "bank", label: "बैंक / UPI खाता", done: false },
+      ];
+    }
   }, [selectedCompany, bankAccounts, user]);
 
-  const profileCompletedCount = profileChecklist.filter(i => i.done).length;
-  const profileCompletionPercent = Math.round((profileCompletedCount / 5) * 100);
+  const profileCompletedCount = (profileChecklist || []).filter(i => i && i.done).length;
+  const profileCompletionPercent = Math.round((profileCompletedCount / 5) * 100) || 0;
 
   const handleOpenBusinessProfileModal = () => {
-    const co = selectedCompany || {};
-    const uBank = bankAccounts?.[0] || {};
-    setProfileFormName(co.name || co.companyName || co.businessName || "");
-    setProfileFormPhone(co.phone || co.mobileNumber || user?.phone || "");
-    setProfileFormAddress(co.address || co.city || "");
-    setProfileFormGstin(co.gstin || co.gstNumber || co.panNumber || "");
-    setProfileFormBusinessType(co.businessType || "Hardware & Building Materials");
-    setProfileFormUpiId(co.upiId || co.upiQrCode || "");
-    setProfileFormBankName(co.bankName || uBank.bankName || "");
-    setProfileFormAccNo(co.accountNumber || uBank.accountNumber || "");
-    setProfileFormIfsc(co.ifscCode || uBank.ifscCode || "");
-    setShowBusinessProfileModal(true);
+    try {
+      const co = (selectedCompany && typeof selectedCompany === "object") ? selectedCompany : {};
+      const uBank = (Array.isArray(bankAccounts) && bankAccounts[0]) || {};
+      setProfileFormName(String(co.name || co.companyName || co.businessName || ""));
+      setProfileFormPhone(String(co.phone || co.mobileNumber || user?.phone || ""));
+      setProfileFormAddress(String(co.address || co.city || ""));
+      setProfileFormGstin(String(co.gstin || co.gstNumber || co.panNumber || ""));
+      setProfileFormBusinessType(String(co.businessType || "Hardware & Building Materials"));
+      setProfileFormUpiId(String(co.upiId || co.upiQrCode || ""));
+      setProfileFormBankName(String(co.bankName || uBank.bankName || ""));
+      setProfileFormAccNo(String(co.accountNumber || uBank.accountNumber || ""));
+      setProfileFormIfsc(String(co.ifscCode || uBank.ifscCode || ""));
+      setShowBusinessProfileModal(true);
+    } catch (e) {
+      console.warn("handleOpenBusinessProfileModal error:", e);
+      setShowBusinessProfileModal(true);
+    }
   };
 
   const handleSaveBusinessProfile = async (e) => {
