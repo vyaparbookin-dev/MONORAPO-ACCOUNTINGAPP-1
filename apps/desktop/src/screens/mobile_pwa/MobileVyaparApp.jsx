@@ -3167,7 +3167,14 @@ function MobileVyaparAppContent() {
         console.warn("Server statement fetch failed or offline, continuing with local data:", netErr);
       }
       
-      const pObj = (parties || []).find(p => (p._id === partyId || p.id === partyId)) || selectedPartyDetail;
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      let freshStoredParties = [];
+      try {
+        if (currentCoId) freshStoredParties = storageManager.getParties(currentCoId) || [];
+      } catch (e) {}
+      const pObj = (freshStoredParties || []).find(p => (p._id === partyId || p.id === partyId))
+        || (parties || []).find(p => (p._id === partyId || p.id === partyId)) 
+        || selectedPartyDetail;
       const opBal = Number(pObj?.openingBalance ?? 0);
       const isSupplier = (pObj?.type === "supplier" || pObj?.partyType === "supplier") || opBal < 0;
 
@@ -11952,7 +11959,11 @@ function MobileVyaparAppContent() {
                   </div>
                 ) : (() => {
                   // Compute chronological running balance
-                  const sortedAsc = [...partyTransactions].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+                  const getTxTimeAsc = (tx) => {
+                    const d = parseAnyDate(tx?.date || tx?.createdAt);
+                    return d ? d.getTime() : 0;
+                  };
+                  const sortedAsc = [...partyTransactions].sort((a, b) => getTxTimeAsc(a) - getTxTimeAsc(b));
                   
                   const hasOpeningTx = sortedAsc.some(t => t.refNo === 'OPENING' || String(t._id || '').startsWith('open_') || String(t.details || '').includes('प्रारंभिक'));
                   let initialBal = Number(selectedPartyDetail.openingBalance || 0);
