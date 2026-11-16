@@ -31,6 +31,7 @@ const partySchema = new mongoose.Schema({
   creditLimitLockedReason: { type: String, default: "" },
   paymentTerms: String,
   openingBalance: { type: Number, default: 0 },
+  openingBalanceDate: { type: Date },
   currentBalance: { type: Number, default: 0 },
   website: String,
   bankDetails: {
@@ -51,4 +52,3 @@ const partySchema = new mongoose.Schema({
 partySchema.index({ companyId: 1, mobileNumber: 1 }, { unique: true, partialFilterExpression: { isActive: true } });
 
 export default mongoose.model("Party", partySchema);
-

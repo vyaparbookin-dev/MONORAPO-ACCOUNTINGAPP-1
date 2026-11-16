@@ -144,13 +144,86 @@ class MobileErrorBoundary extends React.Component {
   }
 }
 
+const parseAnyDate = (val) => {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  if (typeof val === "number") {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const str = String(val).trim();
+  if (!str || str.toLowerCase() === "today" || str === "आज") return new Date();
+
+  // 1. Strict YYYY-MM-DD or YYYY/MM/DD - parse at noon local time
+  const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if (ymd) {
+    const parsed = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]), 12, 0, 0);
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+
+  // 2. Strict DD/MM/YYYY or DD-MM-YYYY - parse at noon local time
+  const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmy) {
+    const parsed = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]), 12, 0, 0);
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+
+  // 3. If it has 'T' or ISO timestamp
+  if (str.includes("T")) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // 4. Try standard Date parsing (strictly preserve 4-digit year!)
+  const has4DigitYear = /\b(19\d{2}|20\d{2})\b/.test(str);
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    if (has4DigitYear) return d;
+    const currentYear = new Date().getFullYear();
+    const withYear = new Date(`${str} ${currentYear}`);
+    if (!isNaN(withYear.getTime())) return withYear;
+    return d;
+  }
+
+  return null;
+};
+
 const getLocalYmd = (dateInput = new Date()) => {
-  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
-  if (isNaN(d.getTime())) return new Date().toISOString().split("T")[0];
+  if (!dateInput) return new Date().toISOString().split("T")[0];
+  const d = dateInput instanceof Date ? dateInput : (parseAnyDate(dateInput) || new Date(dateInput));
+  if (!d || isNaN(d.getTime())) return new Date().toISOString().split("T")[0];
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+};
+
+const toSafeIsoDate = (ymdOrDate) => {
+  if (!ymdOrDate) return new Date().toISOString();
+  if (ymdOrDate instanceof Date) return isNaN(ymdOrDate.getTime()) ? new Date().toISOString() : ymdOrDate.toISOString();
+  const str = String(ymdOrDate).trim();
+  const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if (ymd) {
+    return new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]), 12, 0, 0).toISOString();
+  }
+  const parsed = parseAnyDate(str);
+  if (parsed && !isNaN(parsed.getTime())) {
+    return parsed.toISOString();
+  }
+  return new Date().toISOString();
+};
+
+const formatSafeDate = (dateVal, options) => {
+  if (!dateVal) return "आज";
+  const str = String(dateVal).trim().toLowerCase();
+  if (str === "today" || str === "आज") return "आज";
+  const d = parseAnyDate(dateVal);
+  if (!d || isNaN(d.getTime())) return String(dateVal);
+  try {
+    return d.toLocaleDateString("en-IN", options || { day: "numeric", month: "short", year: "numeric" });
+  } catch (e) {
+    return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+  }
 };
 
 function MobileVyaparAppContent() {
@@ -2175,55 +2248,6 @@ function MobileVyaparAppContent() {
     return 0;
   };
 
-  const parseAnyDate = (val) => {
-    if (!val) return null;
-    if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
-    if (typeof val === "number") {
-      const d = new Date(val);
-      return isNaN(d.getTime()) ? null : d;
-    }
-    const str = String(val).trim();
-    if (!str || str.toLowerCase() === "today" || str === "आज") return new Date();
-
-    // 1. If it has 'T' or ISO timestamp, parse via Date constructor first to preserve timezone
-    if (str.includes("T")) {
-      const d = new Date(str);
-      if (!isNaN(d.getTime())) return d;
-    }
-
-    // 2. Strict YYYY-MM-DD or YYYY/MM/DD (MUST have $)
-    const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
-    if (ymd) {
-      // Use noon (12:00:00) so timezone shifts never change the calendar day
-      const parsed = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]), 12, 0, 0);
-      if (!isNaN(parsed.getTime())) return parsed;
-    }
-
-    // 3. Strict DD/MM/YYYY or DD-MM-YYYY (MUST have $)
-    const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-    if (dmy) {
-      const parsed = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]), 12, 0, 0);
-      if (!isNaN(parsed.getTime())) return parsed;
-    }
-
-    // Try standard Date parsing
-    const d = new Date(str);
-    if (!isNaN(d.getTime())) {
-      if (d.getFullYear() > 2020) return d;
-      // If year defaulted to e.g. 2001 because format was "28 Sep", attach current year!
-      const currentYear = new Date().getFullYear();
-      const withYear = new Date(`${str} ${currentYear}`);
-      if (!isNaN(withYear.getTime())) return withYear;
-    }
-
-    // Fallback: try parsing with current year appended
-    const currentYear = new Date().getFullYear();
-    const tryWithYear = new Date(`${str} ${currentYear}`);
-    if (!isNaN(tryWithYear.getTime())) return tryWithYear;
-
-    return null;
-  };
-
   const getBillDateObj = (b) => {
     if (!b) return null;
     if (b.date) {
@@ -2611,7 +2635,8 @@ function MobileVyaparAppContent() {
     const effectiveSite = directBillSite.trim();
     const effectiveNotes = directBillNotes.trim();
     const effectiveImage = isDirectEffective ? (directBillImage || "") : "";
-    const effectiveDate = (isDirectEffective && directBillDate) ? new Date(directBillDate) : new Date();
+    const billIsoDate = toSafeIsoDate(directBillDate || getLocalYmd());
+    const effectiveDate = new Date(billIsoDate);
 
     const genBillNo = `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
     const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "6a8314470d93e58ad0920950").trim();
@@ -2660,7 +2685,7 @@ function MobileVyaparAppContent() {
       notes: effectiveNotes,
       billImageUrl: effectiveImage || undefined,
       billImageUrls: effectiveImage ? [effectiveImage] : [],
-      date: effectiveDate
+      date: billIsoDate
     };
 
     // Auto-update phone in existing party profile if it was missing previously
@@ -2723,8 +2748,8 @@ function MobileVyaparAppContent() {
       phone: finalPhone,
       customerPhone: finalPhone,
       customerMobile: finalPhone,
-      date: effectiveDate ? effectiveDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "Today",
-      rawDate: effectiveDate.toISOString(),
+      date: billIsoDate,
+      rawDate: billIsoDate,
       amount: billPayload.finalAmount || effectiveAmount,
       finalAmount: billPayload.finalAmount || effectiveAmount,
       total: billPayload.finalAmount || effectiveAmount,
@@ -2740,7 +2765,7 @@ function MobileVyaparAppContent() {
       billImageUrl: effectiveImage || "",
       billImageUrls: effectiveImage ? [effectiveImage] : [],
       isOfflineCreated: true,
-      createdAt: effectiveDate.toISOString()
+      createdAt: billIsoDate
     };
 
     const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
@@ -2777,7 +2802,8 @@ function MobileVyaparAppContent() {
       const txDoc = {
         _id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         partyId: resolvedPartyId,
-        date: effectiveDate.toISOString(),
+        date: billIsoDate,
+        createdAt: billIsoDate,
         details: effectiveSite ? `[${effectiveSite}] ${effectiveNotes || 'सामग्री बिल'}` : (effectiveNotes || `बिल #${genBillNo}`),
         refNo: genBillNo,
         billNumber: genBillNo,
@@ -3163,7 +3189,7 @@ function MobileVyaparAppContent() {
         const absOp = Math.abs(opBal);
         combinedTxs.push({
           _id: `open_${partyId}`,
-          date: pObj?.createdAt || new Date(2026, 0, 1).toISOString(),
+          date: pObj?.openingBalanceDate || pObj?.createdAt || new Date().toISOString(),
           type: isSupplier ? "purchase" : "sale",
           refNo: "OPENING",
           billNumber: "OPENING-BILL",
@@ -3177,14 +3203,16 @@ function MobileVyaparAppContent() {
         });
       }
 
-      // Ensure existing opening tx also gets photos if available on party or cache
+      // Ensure existing opening tx also gets photos and exact opening date
       combinedTxs = combinedTxs.map(t => {
         if (t.refNo === "OPENING" || String(t._id || '').startsWith("open_")) {
           const existingPhotos = (t.billImageUrls && t.billImageUrls.length > 0)
             ? t.billImageUrls
             : (t.billImageUrl ? [t.billImageUrl] : partyOpPhotos);
+          const opDate = pObj?.openingBalanceDate || t.date || pObj?.createdAt || new Date().toISOString();
           return {
             ...t,
+            date: opDate,
             billImageUrl: existingPhotos[0] || t.billImageUrl || "",
             billImageUrls: existingPhotos
           };
@@ -3411,12 +3439,16 @@ function MobileVyaparAppContent() {
         }
       }
 
-      // Sort descending (latest on top)
-      combinedTxs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      // Sort descending (latest on top) using safe timestamp
+      const getTxTime = (tx) => {
+        const d = parseAnyDate(tx?.date || tx?.createdAt);
+        return d ? d.getTime() : 0;
+      };
+      combinedTxs.sort((a, b) => getTxTime(b) - getTxTime(a));
       setPartyTransactions(combinedTxs);
 
       // Calculate true running balance from all transactions
-      const sortedChronological = [...combinedTxs].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+      const sortedChronological = [...combinedTxs].sort((a, b) => getTxTime(a) - getTxTime(b));
       let running = 0;
       sortedChronological.forEach(tx => {
         running += (Number(tx.debit || 0) - Number(tx.credit || 0));
@@ -3987,16 +4019,7 @@ function MobileVyaparAppContent() {
     setEditPartyTxSite(tx.siteName || tx.site || '');
     setEditPartyTxCarrierName(tx.carrierName || tx.receiverName || '');
     setEditPartyTxCarrierPhone(tx.carrierPhone || tx.receiverPhone || '');
-    const getLocalInputDate = (d) => {
-      if (!d) return new Date().toISOString().split('T')[0];
-      const dt = d instanceof Date ? d : new Date(d);
-      if (isNaN(dt.getTime())) return new Date().toISOString().split('T')[0];
-      const y = dt.getFullYear();
-      const m = String(dt.getMonth() + 1).padStart(2, '0');
-      const day = String(dt.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
-    };
-    setEditPartyTxDate(getLocalInputDate(tx.date || tx.createdAt));
+    setEditPartyTxDate(getLocalYmd(tx.date || tx.createdAt));
     setEditPartyTxPaymentMode(tx.paymentMethod || tx.paymentMode || 'CASH');
   };
 
@@ -4012,18 +4035,10 @@ function MobileVyaparAppContent() {
     setSavingEditPartyTx(true);
     try {
       const txId = editingPartyTx._id || editingPartyTx.id;
+      const isOpeningTx = String(txId).startsWith("open_") || editingPartyTx.refNo === 'OPENING' || String(editingPartyTx.details || '').includes('प्रारंभिक');
       const isClientLocalOnly = String(txId).startsWith("tx_") || String(txId).startsWith("ptx_");
       
-      // Parse YYYY-MM-DD at 12:00:00 noon local time so timezone never shifts the calendar day
-      let isoDate = new Date().toISOString();
-      if (editPartyTxDate) {
-        const parts = editPartyTxDate.split('-').map(Number);
-        if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
-          isoDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0).toISOString();
-        } else {
-          isoDate = new Date(editPartyTxDate).toISOString();
-        }
-      }
+      const isoDate = toSafeIsoDate(editPartyTxDate);
 
       const payload = {
         amount: amt,
@@ -4039,13 +4054,57 @@ function MobileVyaparAppContent() {
         receiverPhone: editPartyTxCarrierPhone.trim()
       };
 
-      if (!isClientLocalOnly) {
+      const targetPartyId = String(editingPartyTx.partyId?._id || editingPartyTx.partyId || selectedPartyDetail?._id || selectedPartyDetail?.id || "");
+
+      if (isOpeningTx) {
+        const pId = targetPartyId || String(txId).replace("open_", "") || selectedPartyDetail?._id || selectedPartyDetail?.id;
+        const openDir = editPartyTxType === 'paid' ? 'positive' : 'negative';
+        await api.post(`/api/party/${pId}/opening-balance`, {
+          amount: amt,
+          direction: openDir,
+          date: isoDate,
+          notes: editPartyTxNotes.trim()
+        }).catch(() => api.put(`/api/party/transaction/${txId}`, payload).catch(() => {}));
+
+        setSelectedPartyDetail(prev => prev ? ({
+          ...prev,
+          openingBalance: amt,
+          openingBalanceDate: isoDate,
+          notes: editPartyTxNotes.trim()
+        }) : prev);
+
+        setParties(prev => prev.map(p => {
+          if ((p._id || p.id) === pId) {
+            return { ...p, openingBalance: amt, openingBalanceDate: isoDate, notes: editPartyTxNotes.trim() };
+          }
+          return p;
+        }));
+      } else if (!isClientLocalOnly) {
         await api.put(`/api/party/transaction/${txId}`, payload).catch(() => api.put(`/api/parties/transaction/${txId}`, payload));
       }
 
+      // Also update local state so date changes reflect immediately
+      setAllPartyTransactions(prev => (prev || []).map(t => {
+        if ((t._id || t.id) === txId) {
+          return {
+            ...t,
+            amount: amt,
+            debit: editPartyTxType === 'paid' ? amt : 0,
+            credit: editPartyTxType === 'received' ? amt : 0,
+            details: editPartyTxNotes.trim(),
+            date: isoDate,
+            createdAt: isoDate,
+            siteName: editPartyTxSite.trim(),
+            site: editPartyTxSite.trim(),
+            carrierName: editPartyTxCarrierName.trim(),
+            carrierPhone: editPartyTxCarrierPhone.trim()
+          };
+        }
+        return t;
+      }));
+
       // Also update local storage and purge any old un-updated local duplicate
       const oldAmt = Number(editingPartyTx.amount || editingPartyTx.debit || editingPartyTx.credit || 0);
-      const targetPartyId = String(editingPartyTx.partyId?._id || editingPartyTx.partyId || selectedPartyDetail?._id || selectedPartyDetail?.id || "");
 
       // If associated with a bill, update the bill's site & carrier details as well
       try {
@@ -4202,7 +4261,8 @@ function MobileVyaparAppContent() {
     const rawOp = Number(party.openingBalance || 0);
     setOldHisabAmount(rawOp > 0 ? String(rawOp) : '');
     setOldHisabDirection(isSupplier || rawOp < 0 ? 'negative' : 'positive');
-    setOldHisabDate(party.createdAt ? new Date(party.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+    const opDate = party.openingBalanceDate || party.openingDate || party.createdAt;
+    setOldHisabDate(getLocalYmd(opDate));
     setOldHisabNotes(party.notes || 'प्रारंभिक पुराना हिसाब / बहीखाता बकाया');
     setShowOldHisabModal(true);
   };
@@ -4218,16 +4278,7 @@ function MobileVyaparAppContent() {
     setSavingOldHisab(true);
     try {
       const pId = selectedPartyDetail._id || selectedPartyDetail.id;
-      // Parse YYYY-MM-DD at 12:00:00 noon local time so timezone never shifts the calendar day
-      let isoDate = new Date().toISOString();
-      if (oldHisabDate) {
-        const parts = oldHisabDate.split('-').map(Number);
-        if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
-          isoDate = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0).toISOString();
-        } else {
-          isoDate = new Date(oldHisabDate).toISOString();
-        }
-      }
+      const isoDate = toSafeIsoDate(oldHisabDate);
 
       const payload = {
         amount: amt,
@@ -4245,6 +4296,7 @@ function MobileVyaparAppContent() {
       setSelectedPartyDetail(prev => prev ? ({
         ...prev,
         openingBalance: amt,
+        openingBalanceDate: isoDate,
         notes: payload.notes
       }) : prev);
 
@@ -4255,6 +4307,7 @@ function MobileVyaparAppContent() {
             return {
               ...p,
               openingBalance: amt,
+              openingBalanceDate: isoDate,
               notes: payload.notes
             };
           }
@@ -4319,7 +4372,7 @@ function MobileVyaparAppContent() {
 
       (txs || []).forEach(tx => {
         rows.push([
-          tx.date ? new Date(tx.date).toLocaleDateString('hi-IN') : '-',
+          formatSafeDate(tx.date || tx.createdAt),
           tx.details || '-',
           tx.refNo || tx.billNumber || '-',
           Number(tx.debit || 0),
@@ -4355,7 +4408,7 @@ function MobileVyaparAppContent() {
     setShowPartyTxForm(false);
     setPartyTxAmount('');
     setPartyTxNotes('');
-    setPartyTxDate(new Date().toISOString().split('T')[0]);
+    setPartyTxDate(getLocalYmd());
     setPartyTxPaymentMode('CASH');
     const pId = party.id || party._id;
     if (pId) {
@@ -4375,7 +4428,8 @@ function MobileVyaparAppContent() {
       const partyId = selectedPartyDetail.id || selectedPartyDetail._id;
       const type = partyTxType === 'paid' ? 'paid' : 'received';
       const notes = partyTxNotes.trim() || (type === 'paid' ? 'मैंने दिए' : 'मुझे मिले');
-      const txDate = partyTxDate ? new Date(partyTxDate) : new Date();
+      const isoDate = toSafeIsoDate(partyTxDate || getLocalYmd());
+      const txDate = new Date(isoDate);
 
       let serverTx = null;
       try {
@@ -4383,7 +4437,7 @@ function MobileVyaparAppContent() {
           partyId,
           amount: amt,
           type,
-          date: txDate.toISOString(),
+          date: isoDate,
           paymentMethod: partyTxPaymentMode || 'CASH',
           bankAccountId: partyTxBankAccountId || undefined,
           notes
@@ -4430,7 +4484,8 @@ function MobileVyaparAppContent() {
       const newTxDoc = {
         _id: actualTxId,
         partyId,
-        date: txDate.toISOString(),
+        date: isoDate,
+        createdAt: isoDate,
         details: notes,
         debit: type === 'paid' ? amt : 0,
         credit: type === 'received' ? amt : 0,
@@ -4447,7 +4502,7 @@ function MobileVyaparAppContent() {
 
       setPartyTxAmount('');
       setPartyTxNotes('');
-      setPartyTxDate(new Date().toISOString().split('T')[0]);
+      setPartyTxDate(getLocalYmd());
       setShowPartyTxForm(false);
       fetchPartyStatement(partyId);
       
@@ -4455,7 +4510,7 @@ function MobileVyaparAppContent() {
         speakUpiPayment(amt, "व्यापार");
       }
 
-      const formattedDate = txDate.toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      const formattedDate = formatSafeDate(isoDate);
       alert(`✅ ₹${amt.toLocaleString('en-IN')} का भुगतान (${type === 'paid' ? 'मैंने दिए / किस्त' : 'मुझे मिले / किस्त'}) दिनांक ${formattedDate} को दर्ज हुआ!`);
     } catch (err) {
       console.error("Party transaction error:", err);
@@ -4996,7 +5051,11 @@ function MobileVyaparAppContent() {
     text += `📅 *दिनांक:* ${new Date().toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' })}\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
 
-    const sorted = [...txs].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+    const getTxTime = (tx) => {
+      const d = parseAnyDate(tx?.date || tx?.createdAt);
+      return d ? d.getTime() : 0;
+    };
+    const sorted = [...txs].sort((a, b) => getTxTime(a) - getTxTime(b));
     const totalDeb = sorted.reduce((s, r) => s + (Number(r.debit) || 0), 0);
     const totalCred = sorted.reduce((s, r) => s + (Number(r.credit) || 0), 0);
 
@@ -5031,7 +5090,7 @@ function MobileVyaparAppContent() {
 
       const recentTxs = sorted.slice(-15);
       recentTxs.forEach((t, i) => {
-        const dStr = t.date ? new Date(t.date).toLocaleDateString('hi-IN', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+        const dStr = formatSafeDate(t.date || t.createdAt, { day: '2-digit', month: '2-digit', year: 'numeric' });
         const deb = Number(t.debit || 0);
         const cred = Number(t.credit || 0);
         const amtStr = deb > 0 ? `नाम/डेबिट: +₹${deb.toLocaleString('en-IN')}` : `जमा/क्रेडिट: -₹${cred.toLocaleString('en-IN')}`;
@@ -5048,7 +5107,7 @@ function MobileVyaparAppContent() {
       text += `📸 *सभी ${sorted.length} बिलों की मूल पर्ची/फोटो व पूरा खाता डिजिटल सिस्टम में सुरक्षित है।*\n`;
     } else {
       sorted.forEach((t, i) => {
-        const dStr = t.date ? new Date(t.date).toLocaleDateString('hi-IN', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+        const dStr = formatSafeDate(t.date || t.createdAt, { day: '2-digit', month: '2-digit', year: 'numeric' });
         const deb = Number(t.debit || 0);
         const cred = Number(t.credit || 0);
         const amtStr = deb > 0 ? `नाम/डेबिट: +₹${deb.toLocaleString('en-IN')}` : `जमा/क्रेडिट: -₹${cred.toLocaleString('en-IN')}`;
@@ -5225,10 +5284,7 @@ function MobileVyaparAppContent() {
   const handleOpenEditBill = (bill) => {
     if (!bill) return;
     const d = getBillDateObj(bill) || parseAnyDate(bill.rawDate || bill.date || bill.createdAt) || new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    setEditBillDate(`${y}-${m}-${day}`);
+    setEditBillDate(getLocalYmd(d));
     setEditBillCustomer(bill.customerName || bill.partyName || "");
     setEditBillPhone(bill.phone || bill.customerPhone || bill.customerMobile || "");
     setEditBillAmount(String(getBillAmount(bill) || ""));
@@ -5253,10 +5309,8 @@ function MobileVyaparAppContent() {
       const partyTitle = editBillCustomer.trim() || (pMode === 'CASH' ? "काउंटर नकद ग्राहक" : pMode === 'UPI' ? "UPI ग्राहक" : "उधारी ग्राहक");
 
       const isTodayEdit = !editBillDate || editBillDate === getLocalYmd();
-      const billDateDisplay = isTodayEdit
-        ? "Today"
-        : (editBillDate ? new Date(`${editBillDate}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "Today");
-      const billRawDate = editBillDate ? `${editBillDate}T12:00:00+05:30` : new Date().toISOString();
+      const billRawDate = toSafeIsoDate(editBillDate || getLocalYmd());
+      const billDateDisplay = isTodayEdit ? "Today" : formatSafeDate(billRawDate);
 
       const updatedBill = {
         ...selectedBillDetail,
@@ -5294,6 +5348,31 @@ function MobileVyaparAppContent() {
       setBills(updatedBills);
       setSelectedBillDetail(updatedBill);
       setIsEditingBill(false);
+
+      // Also update any matching ledger transaction so passbook reflects new date immediately
+      const bRef = String(selectedBillDetail.billNumber || selectedBillDetail.invoiceNumber || selectedBillDetail._id || selectedBillDetail.id || '').trim();
+      setAllPartyTransactions(prev => (prev || []).map(tx => {
+        if (String(tx.billNumber || tx.refNo || tx._id || tx.id).trim() === bRef) {
+          return { ...tx, date: billRawDate, createdAt: billRawDate, amount: amt, debit: isUdhar ? amt : tx.debit };
+        }
+        return tx;
+      }));
+      setPartyTransactions(prev => (prev || []).map(tx => {
+        if (String(tx.billNumber || tx.refNo || tx._id || tx.id).trim() === bRef) {
+          return { ...tx, date: billRawDate, createdAt: billRawDate, amount: amt, debit: isUdhar ? amt : tx.debit };
+        }
+        return tx;
+      }));
+      try {
+        const storedTxs = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+        const nextStored = storedTxs.map(tx => {
+          if (String(tx.billNumber || tx.refNo || tx._id || tx.id).trim() === bRef) {
+            return { ...tx, date: billRawDate, createdAt: billRawDate, amount: amt, debit: isUdhar ? amt : tx.debit };
+          }
+          return tx;
+        });
+        localStorage.setItem("vb_local_party_txs", JSON.stringify(nextStored));
+      } catch (e) {}
 
       // Background API sync
       const serverId = selectedBillDetail._id || selectedBillDetail.id;
@@ -6876,7 +6955,7 @@ function MobileVyaparAppContent() {
                       _id: tx._id || `ptx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
                       typeCategory,
                       title: `${pName} • ${tx.details || defaultLabel}`,
-                      subtitle: `${isPaidOut ? '🏭' : '🤝'} ${isPaidOut ? 'व्यापारी भुगतान (गल्ले से कटा)' : 'पार्टी लेनदेन'} • ${tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}`,
+                      subtitle: `${isPaidOut ? '🏭' : '🤝'} ${isPaidOut ? 'व्यापारी भुगतान (गल्ले से कटा)' : 'पार्टी लेनदेन'} • ${formatSafeDate(tx.date || tx.createdAt)}`,
                       amount: amt,
                       isPositive,
                       dateObj: parseAnyDate(tx.date || tx.createdAt) || new Date(0),
@@ -6894,8 +6973,8 @@ function MobileVyaparAppContent() {
                       typeCategory: 'expense',
                       title: e.title || (isPersonal ? `${e.category || 'घरेलू खर्च'} ${e.familyMember ? `(${e.familyMember})` : ''}` : `${e.category || 'दुकान खर्च'}${matchedStaff ? ` (${matchedStaff.name})` : ''}`),
                       subtitle: isPersonal
-                        ? `🏡 घर खर्च • ${e.familyMember ? `[${e.familyMember}] • ` : ''}${e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}`
-                        : `🏢 दुकान खर्च • ${matchedStaff ? `[${matchedStaff.name} एडवांस] • ` : ''}${e.category || 'संचालन'} • ${e.date ? new Date(e.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}`,
+                        ? `🏡 घर खर्च • ${e.familyMember ? `[${e.familyMember}] • ` : ''}${formatSafeDate(e.date || e.createdAt)}`
+                        : `🏢 दुकान खर्च • ${matchedStaff ? `[${matchedStaff.name} एडवांस] • ` : ''}${e.category || 'संचालन'} • ${formatSafeDate(e.date || e.createdAt)}`,
                       amount: Number(e.amount || 0),
                       isPositive: false,
                       dateObj: parseAnyDate(e.date || e.createdAt) || new Date(0),
@@ -10317,7 +10396,7 @@ function MobileVyaparAppContent() {
                               <div className="text-[10px] text-slate-400 flex items-center gap-2">
                                 <span>🏷️ {exp.category || (isPersonal ? "घरेलू खर्च" : "दुकान खर्च")}</span>
                                 <span>•</span>
-                                <span>📅 {exp.date ? new Date(exp.date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}</span>
+                                <span>📅 {formatSafeDate(exp.date || exp.createdAt)}</span>
                                 <span>•</span>
                                 <span className="uppercase">{exp.paymentMethod || 'cash'}</span>
                               </div>
@@ -11669,7 +11748,7 @@ function MobileVyaparAppContent() {
               {partyTransactions.length > 0 && (() => {
                 const monthMap = new Map();
                 partyTransactions.forEach(tx => {
-                  const d = new Date(tx.date || Date.now());
+                  const d = parseAnyDate(tx.date || tx.createdAt) || new Date();
                   const mKey = isNaN(d.getTime()) ? 'अन्य' : d.toLocaleDateString('hi-IN', { month: 'short', year: 'numeric' });
                   if (!monthMap.has(mKey)) {
                     monthMap.set(mKey, { month: mKey, sales: 0, received: 0, count: 0 });
@@ -11724,10 +11803,11 @@ function MobileVyaparAppContent() {
               {/* 🎯 LEDGER CONTROLS & FILTERS: मैंने दिए, मुझे मिले, Month, Site */}
               {(() => {
                 const availableMonths = Array.from(new Set((partyTransactions || []).map(t => {
-                  const raw = t.date || t.createdAt;
-                  if (!raw) return null;
-                  const d = new Date(raw);
-                  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 7);
+                  const d = parseAnyDate(t?.date || t?.createdAt);
+                  if (!d || isNaN(d.getTime())) return null;
+                  const y = d.getFullYear();
+                  const mo = String(d.getMonth() + 1).padStart(2, '0');
+                  return `${y}-${mo}`;
                 }).filter(Boolean))).sort().reverse();
 
                 const availableSites = Array.from(new Set((partyTransactions || []).map(t => (t.siteName || t.site || '').trim()).filter(Boolean)));
@@ -11902,13 +11982,12 @@ function MobileVyaparAppContent() {
                     }
 
                     if (partyMonthFilter !== 'all') {
-                      const raw = tx.date || tx.createdAt;
-                      if (raw) {
-                        const d = new Date(raw);
-                        if (!isNaN(d.getTime())) {
-                          const ym = d.toISOString().slice(0, 7);
-                          if (ym !== partyMonthFilter) return false;
-                        }
+                      const d = parseAnyDate(tx.date || tx.createdAt);
+                      if (d && !isNaN(d.getTime())) {
+                        const y = d.getFullYear();
+                        const mo = String(d.getMonth() + 1).padStart(2, '0');
+                        const ym = `${y}-${mo}`;
+                        if (ym !== partyMonthFilter) return false;
                       }
                     }
 
@@ -12007,7 +12086,7 @@ function MobileVyaparAppContent() {
 
                                 <div className="text-[10px] text-slate-500 flex items-center justify-between pt-1 gap-2 flex-wrap">
                                   <div className="flex items-center gap-2">
-                                    <span>📅 {tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'आज'}</span>
+                                    <span>📅 {formatSafeDate(tx.date || tx.createdAt)}</span>
                                     <span className="px-1.5 py-0.2 bg-slate-200/60 rounded text-[9px] font-bold text-slate-700">
                                       {mode === 'UPI' ? '📱 UPI' : mode === 'BANK' ? '🏛️ Bank' : '💵 Cash'}
                                     </span>
@@ -12584,7 +12663,7 @@ function MobileVyaparAppContent() {
                             const cred = Number(row.credit || 0);
                             const run = Number(row.runningAfter || 0);
                             const rowDene = isSupplier ? run <= 0 : run < 0;
-                            const dStr = row.date ? new Date(row.date).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                            const dStr = formatSafeDate(row.date || row.createdAt);
                             const isOpening = row.refNo === 'OPENING' || String(row._id || '').startsWith('open_') || String(row.details || '').includes('प्रारंभिक');
                             const rowSite = (row.siteName || row.site || '').trim();
 
@@ -13568,7 +13647,7 @@ function MobileVyaparAppContent() {
                         <div className="font-bold text-slate-800 flex items-center gap-1.5">
                           <span>{t.type === 'bonus' ? '🎁 बोनस' : t.type === 'advance' ? '💸 एडवांस' : t.type === 'overtime' ? '⏱️ ओवरटाइम' : '🎯 कमीशन'}</span>
                           <span className="text-[10px] text-slate-400 font-normal">
-                            {new Date(t.date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' })}
+                            {formatSafeDate(t.date || t.createdAt)}
                           </span>
                         </div>
                         {t.notes && <p className="text-[10px] text-slate-500 mt-0.5">{t.notes}</p>}

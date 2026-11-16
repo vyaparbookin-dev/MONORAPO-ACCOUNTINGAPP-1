@@ -718,7 +718,7 @@ export const getPartyStatement = async (req, res) => {
       const openingImgs = (party.billImageUrls && party.billImageUrls.length > 0) ? party.billImageUrls : (openingImg ? [openingImg] : []);
       formattedTransactions.push({
         _id: `open_${party._id}`,
-        date: party.createdAt || new Date(2026, 0, 1),
+        date: party.openingBalanceDate || party.createdAt || new Date(),
         type: isPayable ? "purchase" : "sale",
         refNo: "OPENING",
         billNumber: "OPENING-BILL",
@@ -1111,6 +1111,7 @@ export const updatePartyTransaction = async (req, res) => {
         party.currentBalance = updatedBalance;
         party.balance = updatedBalance;
         if (date) {
+          party.openingBalanceDate = new Date(date);
           party.createdAt = new Date(date);
         }
         party.updatedAt = new Date();
@@ -1124,7 +1125,7 @@ export const updatePartyTransaction = async (req, res) => {
               openingBalance: Math.abs(newOpeningVal), 
               currentBalance: updatedBalance, 
               balance: updatedBalance, 
-              ...(date ? { createdAt: new Date(date) } : {}),
+              ...(date ? { openingBalanceDate: new Date(date), createdAt: new Date(date) } : {}),
               updatedAt: new Date() 
             }
           );
@@ -1327,7 +1328,10 @@ export const setPartyOpeningBalance = async (req, res) => {
     party.currentBalance = updatedBalance;
     party.balance = updatedBalance;
     if (notes !== undefined) party.notes = notes;
-    if (date) party.createdAt = new Date(date);
+    if (date) {
+      party.openingBalanceDate = new Date(date);
+      party.createdAt = new Date(date);
+    }
     party.updatedAt = new Date();
 
     if (isMongoId && typeof party.save === 'function') {
@@ -1339,7 +1343,7 @@ export const setPartyOpeningBalance = async (req, res) => {
           openingBalance: Math.abs(newOpeningVal), 
           currentBalance: updatedBalance, 
           balance: updatedBalance, 
-          ...(date ? { createdAt: new Date(date) } : {}),
+          ...(date ? { openingBalanceDate: new Date(date), createdAt: new Date(date) } : {}),
           updatedAt: new Date() 
         }
       );
@@ -1350,7 +1354,10 @@ export const setPartyOpeningBalance = async (req, res) => {
         mP.openingBalance = Math.abs(newOpeningVal);
         mP.currentBalance = updatedBalance;
         mP.balance = updatedBalance;
-        if (date) mP.createdAt = new Date(date);
+        if (date) {
+          mP.openingBalanceDate = new Date(date);
+          mP.createdAt = new Date(date);
+        }
         mP.updatedAt = new Date();
         await mP.save();
       }
