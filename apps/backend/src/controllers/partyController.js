@@ -1278,19 +1278,42 @@ export const updatePartyTransaction = async (req, res) => {
         console.warn("[updatePartyTransaction] Supabase update error:", sbErr.message);
       }
 
-      // If targetPartyId provided, adjust party balance in Mongo & Supabase
-      if (targetPartyId) {
-        const pUuid = mongoIdToUuid(targetPartyId);
-        const isMongoParty = /^[0-9a-fA-F]{24}$/.test(targetPartyId);
-        if (isMongoParty) {
-          await Party.findByIdAndUpdate(targetPartyId, { updatedAt: new Date() });
+      // Rebalance party balance in Supabase & Mongo so party ledger stays 100% accurate
+      let updatedPartyBal = undefined;
+      const effectivePartyId = targetPartyId || updatedTx?.party_id;
+      if (effectivePartyId && supabase) {
+        try {
+          const { data: partyRow } = await supabase.from("parties").select("*").eq("id", effectivePartyId).maybeSingle();
+          if (partyRow) {
+            const isSup = (partyRow.party_type === "supplier");
+            const op = Number(partyRow.opening_balance || 0);
+            const openBal = isSup ? -Math.abs(op) : Math.abs(op);
+            const { data: allTxs } = await supabase.from("party_transactions").select("debit, credit").eq("party_id", effectivePartyId);
+            let running = openBal;
+            if (Array.isArray(allTxs)) {
+              allTxs.forEach(t => {
+                running += (Number(t.debit || 0) - Number(t.credit || 0));
+              });
+            }
+            await supabase.from("parties").update({ current_balance: running, updated_at: new Date().toISOString() }).eq("id", effectivePartyId);
+            updatedPartyBal = running;
+
+            // Also update Mongo party if exists
+            await Party.updateMany(
+              { companyId: req.companyId, $or: [{ name: partyRow.name }, { _id: effectivePartyId }] },
+              { $set: { currentBalance: running, balance: running, updatedAt: new Date() } }
+            );
+          }
+        } catch (rebalErr) {
+          console.warn("[updatePartyTransaction] Rebalance error:", rebalErr.message);
         }
       }
 
       return res.json({
         success: true,
         message: "लेनदेन सफलतापूर्वक संपादित (Update) हो गया!",
-        transaction: updatedTx || { id, debit: newDeb, credit: newCred, details }
+        transaction: updatedTx || { id, debit: newDeb, credit: newCred, details },
+        newBalance: updatedPartyBal
       });
     }
 

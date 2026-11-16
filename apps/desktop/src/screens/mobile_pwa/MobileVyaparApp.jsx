@@ -2268,40 +2268,11 @@ function MobileVyaparAppContent() {
     }
   };
 
-  // Authoritative party balance helper: respects recorded balance and integrates any offline/unsynced bills
+  // Authoritative party balance helper: strictly return party balance without double counting bills
   const getPartyDisplayBalance = useCallback((p) => {
     if (!p) return 0;
-    const baseBal = Number(p.balance ?? p.currentBalance ?? p.openingBalance ?? 0);
-    const pId = String(p._id || p.id || '').trim();
-    const pName = String(p.name || p.partyName || '').trim().toLowerCase();
-    const isSupplier = (p.type === 'supplier' || p.partyType === 'supplier');
-
-    // Only add local offline bills created on this device that have NOT yet updated the party record
-    const unsyncedBills = (bills || []).filter(b => {
-      if (!b || !b.isOfflineCreated || b.isDeleted) return false;
-      const bPartyId = String(b.partyId || b.party?._id || b.party?.id || b.party || '').trim();
-      const bCust = String(b.customerName || b.partyName || b.customer || '').trim().toLowerCase();
-      const match = (pId && bPartyId && bPartyId === pId) || (bCust && pName && bCust === pName);
-      return match;
-    });
-
-    if (unsyncedBills.length === 0) return baseBal;
-
-    let extra = 0;
-    unsyncedBills.forEach(b => {
-      const finalAmt = Number(b.finalAmount ?? b.total ?? b.amount ?? 0);
-      const isPaid = String(b.paymentStatus || b.status || '').toLowerCase() === 'paid';
-      const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
-      const unpaid = Math.max(0, finalAmt - paidAmt);
-      if (isSupplier) {
-        extra -= unpaid;
-      } else {
-        extra += unpaid;
-      }
-    });
-
-    return baseBal + extra;
-  }, [bills]);
+    return Number(p.balance ?? p.currentBalance ?? p.openingBalance ?? 0);
+  }, []);
 
   // Metrics: strictly deduplicate parties by normalized name and ID to guarantee zero double-counting
   const deduplicatedParties = useMemo(() => {
@@ -4227,7 +4198,10 @@ function MobileVyaparAppContent() {
       
       const isoDate = toSafeIsoDate(editPartyTxDate);
 
+      const targetPartyId = String(editingPartyTx.partyId?._id || editingPartyTx.partyId || selectedPartyDetail?._id || selectedPartyDetail?.id || "");
+
       const payload = {
+        partyId: targetPartyId,
         amount: amt,
         type: editPartyTxType,
         details: editPartyTxNotes.trim(),
@@ -4240,8 +4214,6 @@ function MobileVyaparAppContent() {
         receiverName: editPartyTxCarrierName.trim(),
         receiverPhone: editPartyTxCarrierPhone.trim()
       };
-
-      const targetPartyId = String(editingPartyTx.partyId?._id || editingPartyTx.partyId || selectedPartyDetail?._id || selectedPartyDetail?.id || "");
 
       if (isOpeningTx) {
         const pId = targetPartyId || String(txId).replace("open_", "") || selectedPartyDetail?._id || selectedPartyDetail?.id;
