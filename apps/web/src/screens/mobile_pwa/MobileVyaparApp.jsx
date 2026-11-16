@@ -2032,9 +2032,26 @@ function MobileVyaparAppContent() {
         const dv = daybookRes.value;
         const txs = dv?.data?.partyTransactions || dv?.partyTransactions || [];
         if (Array.isArray(txs) && txs.length > 0) {
-          setAllPartyTransactions(txs);
+          let mergedLocalTxs = [...txs];
           try {
-            localStorage.setItem("vb_local_party_txs", JSON.stringify(txs));
+            const existingLocal = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+            if (Array.isArray(existingLocal)) {
+              const serverIds = new Set(
+                txs.map(t => String(t._id || t.id || t.transactionId || '').toLowerCase()).filter(Boolean)
+              );
+              existingLocal.forEach(lt => {
+                const lid = String(lt?._id || lt?.id || lt?.transactionId || '').toLowerCase();
+                if (lid && !serverIds.has(lid)) {
+                  mergedLocalTxs.push(lt);
+                } else if (!lid && lt) {
+                  mergedLocalTxs.push(lt);
+                }
+              });
+            }
+          } catch (e) {}
+          setAllPartyTransactions(mergedLocalTxs);
+          try {
+            localStorage.setItem("vb_local_party_txs", JSON.stringify(mergedLocalTxs));
           } catch (e) {}
         }
         const dbBills = dv?.data?.bills || dv?.bills || [];

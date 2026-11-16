@@ -218,13 +218,27 @@ class StorageManager {
       }
     });
 
-    // 2. Authoritative server merge (server data takes precedence)
+    // 2. Authoritative server merge with smart local protection
     (Array.isArray(serverParties) ? serverParties : []).forEach(sp => {
       const normServer = this.normalizeParty(sp);
       if (!normServer || normServer.isActive === false || normServer.isDeleted === true) return;
       const idx = findMatchIndex(normServer);
       if (idx >= 0) {
-        partyList[idx] = { ...partyList[idx], ...normServer };
+        const localP = partyList[idx];
+        const localUpdated = new Date(localP.updatedAt || localP.updated_at || localP.openingBalanceDate || 0).getTime();
+        const serverUpdated = new Date(normServer.updatedAt || normServer.updated_at || 0).getTime();
+        const shouldKeepLocalBalance = localP.hasLocalEdits || (localUpdated > serverUpdated && localP.balance !== undefined);
+        partyList[idx] = {
+          ...normServer,
+          ...localP,
+          ...normServer,
+          ...(shouldKeepLocalBalance ? {
+            balance: localP.balance ?? localP.currentBalance,
+            currentBalance: localP.currentBalance ?? localP.balance,
+            openingBalance: localP.openingBalance ?? normServer.openingBalance,
+            openingBalanceDate: localP.openingBalanceDate ?? normServer.openingBalanceDate
+          } : {})
+        };
       } else {
         partyList.push(normServer);
       }
