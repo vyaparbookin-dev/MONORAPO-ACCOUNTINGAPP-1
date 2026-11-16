@@ -249,13 +249,19 @@ function MobileVyaparAppContent() {
       navigate("/login", { replace: true });
     }
 
-    // Auto-heal companyId to primary Ganesh Hardware company if missing or invalid
+    // Sync companyId with selectedCompany or valid user company
     const currentCo = localStorage.getItem("companyId");
-    if (!currentCo || currentCo === "demo_company_guest" || currentCo === "my_primary_company" || currentCo === "undefined") {
-      localStorage.setItem("companyId", "6a8314470d93e58ad0920950");
-      localStorage.setItem("selectedCompany", "6a8314470d93e58ad0920950");
+    if (!currentCo || currentCo === "demo_company_guest" || currentCo === "my_primary_company" || currentCo === "undefined" || currentCo === "6a8314470d93e58ad0920950") {
+      if (selectedCompany?._id && selectedCompany._id !== "6a8314470d93e58ad0920950") {
+        localStorage.setItem("companyId", selectedCompany._id);
+        localStorage.setItem("selectedCompany", selectedCompany._id);
+      } else if (companies && companies.length > 0 && !companies[0].isDemo) {
+        const validCoId = companies[0]._id || companies[0].id;
+        localStorage.setItem("companyId", validCoId);
+        localStorage.setItem("selectedCompany", validCoId);
+      }
     }
-  }, [navigate]);
+  }, [navigate, selectedCompany, companies]);
 
   const isGuestMode = localStorage.getItem("isGuestMode") === "true";
 
@@ -272,7 +278,7 @@ function MobileVyaparAppContent() {
   };
 
   const companyDisplayName = selectedCompany?.name || selectedCompany?.companyName || selectedCompany?.businessName || "VyaparBook";
-  const companyId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "6a8314470d93e58ad0920950").trim();
+  const companyId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || (user?._id ? `co_${user._id}` : "")).trim();
 
   const [activeTab, setActiveTab] = useState(() => {
     const role = (user?.role || '').toLowerCase();
@@ -965,7 +971,7 @@ function MobileVyaparAppContent() {
     }
     setSavingBusinessProfile(true);
     try {
-      const coId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "6a8314470d93e58ad0920950").trim();
+      const coId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || (user?._id ? `co_${user._id}` : "")).trim();
       const updatedCo = {
         ...(selectedCompany || {}),
         _id: coId,
@@ -2822,7 +2828,7 @@ function MobileVyaparAppContent() {
     const effectiveDate = new Date(billIsoDate);
 
     const genBillNo = `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
-    const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "6a8314470d93e58ad0920950").trim();
+    const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || (user?._id ? `co_${user._id}` : "")).trim();
 
     const effectiveItems = isDirectEffective ? [{
       productId: `custom_direct_${Date.now()}`,
@@ -5473,7 +5479,7 @@ function MobileVyaparAppContent() {
       });
       const resolvedManualPartyId = foundParty?._id || foundParty?.id || undefined;
 
-      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "6a8314470d93e58ad0920950").trim();
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || (user?._id ? `co_${user._id}` : "")).trim();
 
       const payload = {
         companyId: currentCoId,
@@ -6175,7 +6181,7 @@ function MobileVyaparAppContent() {
     setSavingScannedBill(true);
 
     try {
-      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "6a8314470d93e58ad0920950").trim();
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || (user?._id ? `co_${user._id}` : "")).trim();
       const createdList = [];
       for (const [idx, b] of scannedBillsBatch.entries()) {
         if (b.items.length === 0) continue;
@@ -6320,25 +6326,6 @@ function MobileVyaparAppContent() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans pb-28 select-none">
-      {/* 🧪 SANDBOX DEMO STICKY BANNER */}
-      {(selectedCompany?.isDemo || (typeof localStorage !== 'undefined' && localStorage.getItem("isDemoActive") === "true")) && (
-        <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-slate-900 px-3 py-2 font-bold text-xs flex items-center justify-between gap-2 shadow-md sticky top-0 z-50">
-          <div className="flex items-center gap-1.5 truncate">
-            <span className="bg-slate-900 text-amber-300 text-[9px] px-1.5 py-0.5 rounded font-black uppercase shrink-0">डेमो मोड</span>
-            <span className="truncate text-[11px] font-extrabold">{companyDisplayName} (सैंडबॉक्स)</span>
-          </div>
-          <button
-            onClick={() => {
-              if (exitDemoModule) exitDemoModule();
-              setTimeout(() => window.location.reload(), 100);
-            }}
-            className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-black rounded-lg transition shrink-0 cursor-pointer shadow"
-          >
-            ⬅️ असली बिज़नेस
-          </button>
-        </div>
-      )}
-
       {/* 📱 1. TOP WHITE HEADER */}
       <header className="sticky top-0 z-30 bg-white border-b border-slate-100 px-4 py-3 flex justify-between items-center shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
         <div className="flex items-center gap-2">
@@ -6762,18 +6749,6 @@ function MobileVyaparAppContent() {
                       + बिल बनाएं
                     </span>
                   </div>
-                </div>
-
-                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-indigo-200">
-                  <span>💡 ऐप को टेस्ट करना चाहते हैं?</span>
-                  <button
-                    onClick={() => {
-                      if (enterDemoModule) enterDemoModule("hardware");
-                    }}
-                    className="font-black text-amber-300 hover:text-amber-200 underline cursor-pointer"
-                  >
-                    🧪 सैंपल डेमो चलाकर देखें
-                  </button>
                 </div>
               </div>
             )}
@@ -14589,31 +14564,6 @@ function MobileVyaparAppContent() {
                       );
                     });
                   })()}
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-slate-100">
-                <div className="text-[10px] font-black uppercase text-amber-600 tracking-wider mb-1 px-1">
-                  🧪 टेस्टिंग व डेमो मॉड्यूल्स (सैंपल डेटा)
-                </div>
-                <div className="space-y-1.5">
-                  {(allDemoCompanies || []).map(demoCo => {
-                    const isSelected = selectedCompany?._id === demoCo._id;
-                    return (
-                      <div
-                        key={demoCo._id}
-                        onClick={() => {
-                          if (enterDemoModule) enterDemoModule(demoCo.industryType);
-                          setShowCompanySelectModal(false);
-                          setTimeout(() => window.location.reload(), 100);
-                        }}
-                        className={`p-2.5 rounded-xl border flex justify-between items-center cursor-pointer transition ${isSelected ? 'bg-amber-100 border-amber-300 text-amber-900 font-extrabold' : 'bg-amber-50/50 border-amber-200/60 text-slate-700 hover:bg-amber-100/50 font-medium'}`}
-                      >
-                        <span className="text-xs">{demoCo.name}</span>
-                        {isSelected && <CheckCircle size={15} className="text-amber-700" />}
-                      </div>
-                    );
-                  })}
                 </div>
               </div>
             </div>

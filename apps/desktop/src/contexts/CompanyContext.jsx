@@ -18,12 +18,82 @@ export const CompanyProvider = ({ children }) => {
       isDemo: true
     },
     {
+      _id: "demo_company_trading",
+      name: "🏢 श्री गणेश ट्रेडर्स व जनरल स्टोर",
+      businessType: "retail",
+      industryType: "retail",
+      address: "मेन मार्केट, व्यापार भवन",
+      phone: "9876543210",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_gamezone",
+      name: "🎮 FunZone Arcade, VR & Bowling",
+      businessType: "gamezone",
+      industryType: "gamezone",
+      address: "Phoenix Mall, 3rd Floor, Bangalore",
+      phone: "9876543219",
+      gstin: "29AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_bharat",
+      name: "🔧 भारत हार्डवेयर व सेनेटरी (डेमो)",
+      businessType: "hardware",
+      industryType: "hardware",
+      address: "मेन रोड, बस स्टैंड के पास",
+      phone: "9876543215",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
       _id: "demo_company_supermarket",
       name: "🛒 Apna Bazaar Supermarket & Kirana",
       businessType: "supermarket",
       industryType: "supermarket",
       address: "Main Market, Gandhi Chowk",
       phone: "9876543213",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_banquet",
+      name: "🏨 Royal Palace Hotel & Banquet",
+      businessType: "banquet",
+      industryType: "banquet",
+      address: "Ring Road, Civil Lines, Jaipur",
+      phone: "9876543211",
+      gstin: "08AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_mobile",
+      name: "📱 Galaxy Mobile & Electronics Store",
+      businessType: "mobile",
+      industryType: "mobile",
+      address: "Nehru Place IT Hub, Shop 14",
+      phone: "9876543212",
+      gstin: "07AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_salon",
+      name: "💇‍♀️ Glamour Look Salon & Spa",
+      businessType: "salon",
+      industryType: "salon",
+      address: "Link Road, Bandra West, Mumbai",
+      phone: "9876543214",
+      gstin: "27AAAAA0000A1Z5",
+      isDemo: true
+    },
+    {
+      _id: "demo_company_core",
+      name: "📖 Shri Ganesh Trading Co. (डे-बुक व रोकड़)",
+      businessType: "core",
+      industryType: "core",
+      address: "Naya Bazaar, Chandni Chowk, Delhi",
+      phone: "9876543216",
       gstin: "07AAAAA0000A1Z5",
       isDemo: true
     }
@@ -34,22 +104,33 @@ export const CompanyProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken") || localStorage.getItem("token");
-    if (token && token !== "null" && token !== "undefined") {
+    const checkAndFetch = () => {
       fetchCompanies();
-    } else {
-      console.log("[Company Debug] No token found, skipping company fetch.");
-      setLoading(false);
-    }
+    };
+
+    checkAndFetch();
+    window.addEventListener("storage", checkAndFetch);
+    return () => window.removeEventListener("storage", checkAndFetch);
   }, []);
 
   const fetchCompanies = async () => {
     try {
-      const isGuestMode = localStorage.getItem("isGuestMode") === "true";
       const token = localStorage.getItem("authToken") || localStorage.getItem("token");
+      const isRealUser = token && !token.includes("demo_guest");
+
+      // 🛡️ Authenticated real users should NEVER be in demo/guest mode
+      if (isRealUser) {
+        try {
+          localStorage.removeItem("isDemoActive");
+          localStorage.removeItem("isGuestMode");
+        } catch (e) {}
+      }
+
+      const isGuestMode = !isRealUser && localStorage.getItem("isGuestMode") === "true";
+      const isDemoActive = !isRealUser && localStorage.getItem("isDemoActive") === "true";
       const isDemoGuest = token && token.includes("demo_guest");
 
-      if (isGuestMode || isDemoGuest) {
+      if (isDemoActive || isGuestMode || isDemoGuest) {
         setCompanies(allDemoCompanies);
         const storedCoId = localStorage.getItem("companyId");
         const found = allDemoCompanies.find(c => c._id === storedCoId) || allDemoCompanies[0];
@@ -65,7 +146,9 @@ export const CompanyProvider = ({ children }) => {
       const serverCompanies = Array.isArray(rawList) ? rawList : (Array.isArray(rawList?.companies) ? rawList.companies : []);
 
       if (serverCompanies.length > 0) {
-        setCompanies(serverCompanies);
+        const realCompanies = serverCompanies.filter(c => !c.isDemo && !(c._id || c.id || '').toString().startsWith('demo_'));
+        const candidateCompanies = realCompanies.length > 0 ? realCompanies : serverCompanies;
+        setCompanies(candidateCompanies);
 
         // Check user object in localStorage for default companyId
         let defaultCompanyId = localStorage.getItem("companyId") || localStorage.getItem("selectedCompany");
@@ -77,57 +160,72 @@ export const CompanyProvider = ({ children }) => {
           }
         } catch (e) {}
 
-        const matchedCo = serverCompanies.find(c => 
-          c._id === defaultCompanyId || 
-          c._id?.toString() === defaultCompanyId?.toString() ||
-          c.id === defaultCompanyId
-        ) || serverCompanies[0];
+        const storedCoId = String(defaultCompanyId || '').trim();
+        const matchedCo = candidateCompanies.find(c => 
+          (c._id || c.id)?.toString() === storedCoId ||
+          (c._id || c.id)?.toString() === String(defaultCompanyId || '') ||
+          c.name === storedCoId
+        ) || candidateCompanies.find(c => !(c._id || c.id || '').toString().startsWith('demo_')) || candidateCompanies[0];
 
         setSelectedCompany(matchedCo);
         localStorage.setItem("companyId", matchedCo._id || matchedCo.id);
         localStorage.setItem("selectedCompany", matchedCo._id || matchedCo.id);
       } else {
-        // Create user fallback company representation from localStorage
-        let fallbackName = "My Business";
-        let fallbackCoId = localStorage.getItem("companyId") || "my_primary_company";
+        // Check if user is logged in
+        let userCo = null;
         try {
           const userStr = localStorage.getItem("user");
           if (userStr) {
             const u = JSON.parse(userStr);
-            if (u.companyName) fallbackName = u.companyName;
-            else if (u.name) fallbackName = `${u.name}'s Business`;
-            if (u.companyId) fallbackCoId = u.companyId;
+            if (u.companyId || u._id) {
+              userCo = {
+                _id: u.companyId || `co_${u._id}`,
+                name: u.businessName || `${u.name || 'मेरी'} दुकान`,
+                phone: u.phone || "",
+                businessType: u.businessType || "Hardware & Building Materials",
+                industryType: u.industryType || "hardware",
+                isDemo: false
+              };
+            }
           }
         } catch (e) {}
 
-        const fallbackUserCo = {
-          _id: fallbackCoId,
-          name: fallbackName,
-          businessType: "general",
-          industryType: "general",
-          isDemo: false
-        };
-
-        setCompanies([fallbackUserCo]);
-        setSelectedCompany(fallbackUserCo);
-        localStorage.setItem("companyId", fallbackCoId);
+        if (userCo) {
+          setCompanies([userCo]);
+          setSelectedCompany(userCo);
+          localStorage.setItem("companyId", userCo._id);
+        } else {
+          setCompanies([]);
+          setSelectedCompany(null);
+        }
       }
     } catch (error) {
       console.warn('[CompanyContext] Error fetching companies:', error);
-      // Don't overwrite real user company on transient error
-      const storedCoId = localStorage.getItem("companyId");
-      if (storedCoId && !storedCoId.includes("demo_")) {
-        let coName = "My Business";
-        try {
-          const u = JSON.parse(localStorage.getItem("user") || "{}");
-          if (u.name) coName = `${u.name}'s Business`;
-        } catch (e) {}
-        const preservedCo = { _id: storedCoId, name: coName, isDemo: false };
-        setCompanies([preservedCo]);
-        setSelectedCompany(preservedCo);
+      let userCo = null;
+      try {
+        const userStr = localStorage.getItem("user");
+        if (userStr) {
+          const u = JSON.parse(userStr);
+          if (u.companyId || u._id) {
+            userCo = {
+              _id: u.companyId || `co_${u._id}`,
+              name: u.businessName || `${u.name || 'मेरी'} दुकान`,
+              phone: u.phone || "",
+              businessType: u.businessType || "Hardware & Building Materials",
+              industryType: u.industryType || "hardware",
+              isDemo: false
+            };
+          }
+        }
+      } catch (e) {}
+
+      if (userCo) {
+        setCompanies([userCo]);
+        setSelectedCompany(userCo);
+        localStorage.setItem("companyId", userCo._id);
       } else {
-        setCompanies(allDemoCompanies);
-        setSelectedCompany(allDemoCompanies[0]);
+        setCompanies([]);
+        setSelectedCompany(null);
       }
     } finally {
       setLoading(false);
@@ -135,21 +233,29 @@ export const CompanyProvider = ({ children }) => {
   };
 
   const selectCompany = (company) => {
-    setSelectedCompany(company);
-    const coId = company._id || company.id;
-    localStorage.setItem("companyId", coId);
-    localStorage.setItem("selectedCompany", coId);
+    if (!company) return;
+    const coId = typeof company === 'string' ? company : (company._id || company.id || '');
+    const fullCompany = typeof company === 'object' && company !== null ? company : (companies.find(c => c._id === coId || c.id === coId) || { _id: coId, name: 'My Business' });
+
+    setSelectedCompany(fullCompany);
+    if (coId) {
+      localStorage.setItem("companyId", coId);
+      localStorage.setItem("selectedCompany", coId);
+    }
   };
 
   const addCompany = (company) => {
-    setCompanies(prev => [...prev, company]);
+    if (!company) return false;
+    setCompanies(prev => Array.isArray(prev) ? [...prev, company] : [company]);
     if (!selectedCompany) setSelectedCompany(company);
     return true;
   };
 
   const updateCompany = (updatedCompany) => {
-    setCompanies(prev => prev.map(c => (c._id === updatedCompany._id || c.id === updatedCompany.id) ? updatedCompany : c));
-    if (selectedCompany && (selectedCompany._id === updatedCompany._id || selectedCompany.id === updatedCompany.id)) {
+    if (!updatedCompany) return;
+    const upId = updatedCompany._id || updatedCompany.id;
+    setCompanies(prev => Array.isArray(prev) ? prev.map(c => (c._id === upId || c.id === upId) ? updatedCompany : c) : [updatedCompany]);
+    if (selectedCompany && (selectedCompany._id === upId || selectedCompany.id === upId)) {
       setSelectedCompany(updatedCompany);
     }
   };
@@ -174,6 +280,72 @@ export const CompanyProvider = ({ children }) => {
     }
   };
 
+  const enterDemoModule = (industry = "retail") => {
+    const cleanInd = String(industry).toLowerCase();
+    const matched = allDemoCompanies.find(c => 
+      c.industryType?.toLowerCase() === cleanInd || 
+      c.businessType?.toLowerCase() === cleanInd ||
+      c._id?.toLowerCase().includes(cleanInd) ||
+      c.name?.toLowerCase().includes(cleanInd)
+    ) || allDemoCompanies[0]; // default to general retail
+
+    // If currently in a real company, safely back it up
+    if (selectedCompany && !selectedCompany.isDemo) {
+      if (selectedCompany._id) {
+        localStorage.setItem("real_backup_companyId", selectedCompany._id);
+      }
+      const realToken = localStorage.getItem("authToken") || localStorage.getItem("token");
+      if (realToken && !realToken.includes("demo_guest")) {
+        localStorage.setItem("real_backup_token", realToken);
+      }
+    }
+
+    // If guest visitor without auth token, provide instant safe guest token
+    const currentToken = localStorage.getItem("authToken") || localStorage.getItem("token");
+    if (!currentToken) {
+      const demoUser = {
+        _id: "demo_guest_user_101",
+        name: "Guest Explorer (सैंडबॉक्स)",
+        email: "demo@vyaparbook.in",
+        role: "admin",
+        companyId: matched._id,
+        isGuest: true
+      };
+      localStorage.setItem("authToken", "demo_guest_token_2026_valid");
+      localStorage.setItem("token", "demo_guest_token_2026_valid");
+      localStorage.setItem("user", JSON.stringify(demoUser));
+    }
+
+    localStorage.setItem("isDemoActive", "true");
+    localStorage.setItem("companyId", matched._id);
+    localStorage.setItem("selectedCompany", matched._id);
+    setSelectedCompany(matched);
+    return matched;
+  };
+
+  const exitDemoModule = () => {
+    localStorage.removeItem("isDemoActive");
+    const realCoId = localStorage.getItem("real_backup_companyId");
+    localStorage.removeItem("real_backup_companyId");
+
+    const realToken = localStorage.getItem("real_backup_token");
+    if (realToken) {
+      localStorage.setItem("authToken", realToken);
+      localStorage.setItem("token", realToken);
+      localStorage.removeItem("real_backup_token");
+    }
+
+    const realCo = (realCoId && companies.find(c => c._id === realCoId || c.id === realCoId)) || 
+                   companies.find(c => !c.isDemo) || 
+                   companies[0];
+    if (realCo) {
+      const id = realCo._id || realCo.id;
+      localStorage.setItem("companyId", id);
+      localStorage.setItem("selectedCompany", id);
+      setSelectedCompany(realCo);
+    }
+  };
+
   return (
     <CompanyContext.Provider value={{
       companies,
@@ -183,6 +355,9 @@ export const CompanyProvider = ({ children }) => {
       addCompany,
       updateCompany,
       deleteCompany,
+      enterDemoModule,
+      exitDemoModule,
+      allDemoCompanies: [],
       refetchCompanies: fetchCompanies
     }}>
       {children}

@@ -174,8 +174,7 @@ export default function DashboardLayout() {
       const explicitSet = new Set(linkedModules.map((m) => String(m).toLowerCase()));
 
       if (explicitSet.has('hardware')) return [
-        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Home, label: "🔧 Hardware Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "📊 डैशबोर्ड (Dashboard)", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
         { icon: ShoppingCart, label: "⚡ Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: FileText, label: "🧾 Retail & Counter Bills", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: Briefcase, label: "🏢 B2B GST Invoices", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
@@ -194,8 +193,7 @@ export default function DashboardLayout() {
       ];
 
       if (explicitSet.has('restaurant')) return [
-        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Home, label: "🍽️ Restaurant Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "📊 डैशबोर्ड (Dashboard)", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
         { icon: ShoppingCart, label: "⚡ Table KOT & Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: Building2, label: "🏰 बैंक्वेट हॉल व इवेंट्स", href: "/banquet", color: "text-amber-500", roles: ['admin', 'manager'] },
         { icon: FileText, label: "🧾 Bills & Invoices", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
@@ -213,8 +211,7 @@ export default function DashboardLayout() {
     // 2. RESTAURANT & CAFE
     if (business.isRestaurant) {
       return [
-        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Home, label: "🍽️ Restaurant Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "📊 डैशबोर्ड (Dashboard)", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
         { icon: ShoppingCart, label: "⚡ Table KOT & Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: Building2, label: "🏰 बैंक्वेट हॉल व इवेंट्स", href: "/banquet", color: "text-amber-500", roles: ['admin', 'manager'] },
         { icon: FileText, label: "🧾 Bills & Invoices", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
@@ -232,8 +229,7 @@ export default function DashboardLayout() {
     // 3. GAMEZONE & VR PARK
     if (business.isGamezone) {
       return [
-        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Home, label: "🎮 Gamezone Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "📊 डैशबोर्ड (Dashboard)", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
         { icon: Bot, label: "🕹️ RFID & PS5 Arena Hub", href: "/gamezone-operations", color: "text-cyan-400", roles: ['admin', 'manager', 'cashier'] },
         { icon: ShoppingCart, label: "⚡ Recharge & Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: FileText, label: "🧾 Player Receipts", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
@@ -248,8 +244,7 @@ export default function DashboardLayout() {
     // 4. HARDWARE, PLYWOOD & PAINTS
     if (business.isHardware) {
       return [
-        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Home, label: "🔧 Hardware Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "📊 डैशबोर्ड (Dashboard)", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
         { icon: ShoppingCart, label: "⚡ Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: FileText, label: "🧾 Retail & Counter Bills", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: Briefcase, label: "🏢 B2B GST Invoices", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
@@ -271,8 +266,7 @@ export default function DashboardLayout() {
     // 5. MOBILE & ELECTRONICS
     if (business.isElectronics) {
       return [
-        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Home, label: "📱 Electronics Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "📊 डैशबोर्ड (Dashboard)", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
         { icon: Smartphone, label: "🔍 IMEI / Serial Tracking", href: "/serial-tracking", color: "text-cyan-400", roles: ['admin', 'manager'] },
         { icon: ShieldCheck, label: "🛡️ Warranty & Service Cards", href: "/warranty", color: "text-emerald-500", roles: ['admin', 'manager'] },
         { icon: ShoppingCart, label: "⚡ Counter POS Billing", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
@@ -289,8 +283,7 @@ export default function DashboardLayout() {
     // 6. SUPERMARKET & KIRANA
     if (business.isKirana) {
       return [
-        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Home, label: "🛒 Supermarket Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "📊 डैशबोर्ड (Dashboard)", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
         { icon: ShoppingCart, label: "⚡ Barcode POS & Scanner", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: FileText, label: "🧾 Customer Bills", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: Package, label: "📦 FMCG Stock & Expiry", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
@@ -305,8 +298,7 @@ export default function DashboardLayout() {
     // 7. HOTEL & BANQUET
     if (business.isBanquet) {
       return [
-        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Home, label: "🏨 Banquet Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "📊 डैशबोर्ड (Dashboard)", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
         { icon: Building2, label: "🏰 बैंक्वेट हॉल व इवेंट्स (Hub)", href: "/banquet", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: FileText, label: "🎉 Event Bookings & Bills", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: FileText, label: "📝 Pax Quotations & Proposal", href: "/quotations", color: "text-orange-500", roles: ['admin', 'manager'] },
@@ -322,8 +314,7 @@ export default function DashboardLayout() {
     // 8. SALON, SPA & BEAUTY
     if (business.isService) {
       return [
-        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Home, label: "💇‍♀️ Salon Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "📊 डैशबोर्ड (Dashboard)", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
         { icon: ShoppingCart, label: "⚡ Fast Appointment POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: FileText, label: "🧾 Service Invoices", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: Users, label: "👑 VIP Club & Packages", href: "/membership", color: "text-teal-400", roles: ['admin', 'manager', 'cashier'] },
@@ -338,8 +329,7 @@ export default function DashboardLayout() {
     // 9. GARMENTS & FOOTWEAR
     if (business.isGarments) {
       return [
-        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Home, label: "👗 Garments Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "📊 डैशबोर्ड (Dashboard)", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
         { icon: ShoppingCart, label: "⚡ Fast Barcode POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: FileText, label: "🧾 Counter Bills", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: Package, label: "👗 Size / Color Matrix Stock", href: "/inventory", color: "text-purple-500", roles: ['admin', 'manager'] },
@@ -354,8 +344,7 @@ export default function DashboardLayout() {
     // 10. PHARMA & HEALTHCARE
     if (business.isPharma) {
       return [
-        { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-        { icon: Home, label: "💊 Pharmacy Dashboard", href: "/dashboard", color: "text-blue-500", roles: ['admin', 'manager', 'cashier'] },
+        { icon: Home, label: "📊 डैशबोर्ड (Dashboard)", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
         { icon: ShoppingCart, label: "⚡ Medical POS & Batch Billing", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: FileText, label: "🧾 Prescription Invoices", href: "/billing", color: "text-green-500", roles: ['admin', 'manager', 'cashier'] },
         { icon: Package, label: "💊 Medicine Batch & Expiry", href: "/inventory/batch", color: "text-rose-500", roles: ['admin', 'manager'] },
@@ -367,8 +356,7 @@ export default function DashboardLayout() {
 
     // DEFAULT / GENERAL TRADING
     return [
-      { icon: Sparkles, label: "🚀 Landing Showcase", href: "/landing", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] },
-      { icon: Home, label: "Dashboard", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
+      { icon: Home, label: "📊 डैशबोर्ड (Dashboard)", href: "/dashboard", color: "text-blue-600", roles: ['admin', 'manager', 'cashier'] },
       { icon: ShoppingCart, label: "⚡ Fast POS", href: "/fast-pos", color: "text-amber-500", roles: ['admin', 'manager', 'cashier'] },
       { icon: FileText, label: "Invoices", href: "/billing", color: "text-green-600", roles: ['admin', 'manager', 'cashier'] },
       { icon: Briefcase, label: "B2B Bills", href: "/billing/b2b", color: "text-blue-500", roles: ['admin', 'manager'] },
@@ -501,30 +489,6 @@ export default function DashboardLayout() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden md:ml-0" style={{ marginLeft: sidebarOpen ? 0 : 0 }}>
-        {/* Sandbox Demo Sticky Alert */}
-        {(selectedCompany?.isDemo || localStorage.getItem("isDemoActive") === "true") && (
-          <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-slate-900 px-4 py-2 font-bold text-xs flex flex-wrap items-center justify-between gap-2 shadow-md z-40 sticky top-0">
-            <div className="flex items-center gap-2">
-              <span className="bg-slate-900 text-amber-300 text-[10px] px-2 py-0.5 rounded font-black tracking-wide uppercase">
-                ⚡ सैंडबॉक्स टेस्ट मोड (Sandbox Demo)
-              </span>
-              <span>
-                आप अभी <b>{selectedCompany?.name || "डेमो मॉड्यूल"}</b> टेस्ट कर रहे हैं। आपका असली बिज़नेस डेटा 100% सुरक्षित और अलग है।
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  if (exitDemoModule) exitDemoModule();
-                  navigate("/dashboard");
-                }}
-                className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white text-xs font-black rounded-lg transition shadow flex items-center gap-1 cursor-pointer"
-              >
-                <span>⬅️ वापस अपने असली बिज़नेस पर जाएं</span>
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Top Header */}
         <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-30">
@@ -653,27 +617,6 @@ export default function DashboardLayout() {
                             >
                               <div className="font-medium text-xs sm:text-sm">{company.name}</div>
                               <div className="text-[10px] text-gray-500 capitalize">{Array.isArray(company.businessType) ? company.businessType.join(', ') : (company.businessType || 'business')}</div>
-                            </button>
-                          );
-                        })}
-
-                        <div className="px-2 pt-3 pb-1 text-[11px] font-black uppercase text-amber-600 tracking-wider border-t border-slate-100 mt-2">
-                          🧪 परीक्षण / डेमो मॉड्यूल्स (सुरक्षित सैंडबॉक्स)
-                        </div>
-                        {(allDemoCompanies || []).map((demoCo) => {
-                          const isSelected = selectedCompany?._id === demoCo._id;
-                          return (
-                            <button
-                              key={demoCo._id}
-                              onClick={() => {
-                                if (enterDemoModule) enterDemoModule(demoCo.industryType);
-                                setCompanyMenuOpen(false);
-                              }}
-                              className={`w-full text-left px-3 py-1.5 rounded-lg hover:bg-amber-50 transition ${
-                                isSelected ? "bg-amber-100 text-amber-900 font-bold" : "text-slate-600"
-                              }`}
-                            >
-                              <div className="font-semibold text-xs">{demoCo.name}</div>
                             </button>
                           );
                         })}

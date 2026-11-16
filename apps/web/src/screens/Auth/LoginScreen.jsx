@@ -23,6 +23,7 @@ export default function LoginScreen() {
   const handleSuccessfulAuth = (token, userObj) => {
     localStorage.removeItem("isGuestMode");
     localStorage.removeItem("isDemoActive");
+    localStorage.removeItem("real_backup_companyId");
 
     // Clean stale offline cache from previous user sessions to ensure strict multi-tenant isolation
     const legacyKeysToWipe = [
@@ -40,25 +41,28 @@ export default function LoginScreen() {
     localStorage.setItem("last_login_timestamp", String(Date.now()));
 
     if (userObj) {
+      const rawCoId = userObj.companyId || userObj.company || userObj.company_id;
       const normalizedUser = {
         ...userObj,
         _id: userObj._id || userObj.id,
-        companyId: userObj.companyId || userObj.company || userObj.company_id,
-        company: userObj.companyId || userObj.company || userObj.company_id,
+        companyId: rawCoId,
+        company: rawCoId,
       };
-      localStorage.setItem("user", JSON.stringify(normalizedUser));
 
-      const DEFAULT_CO_ID = "6a8314470d93e58ad0920950";
-      const companyId = normalizedUser.companyId || normalizedUser.company || DEFAULT_CO_ID;
-      normalizedUser.companyId = companyId;
-      normalizedUser.company = companyId;
+      if (rawCoId && rawCoId !== "6a8314470d93e58ad0920950" && rawCoId !== "demo_company_guest") {
+        localStorage.setItem("companyId", String(rawCoId));
+        localStorage.setItem("selectedCompany", String(rawCoId));
+      } else {
+        localStorage.removeItem("companyId");
+        localStorage.removeItem("selectedCompany");
+      }
       localStorage.setItem("user", JSON.stringify(normalizedUser));
-      localStorage.setItem("companyId", String(companyId));
-      localStorage.setItem("selectedCompany", String(companyId));
     }
 
-    // Check if mobile device
-    const isMobile = window.innerWidth < 768;
+    // Check if mobile device or user preferred mobile PWA mode
+    const isStandalone = typeof window !== "undefined" && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+    const preferredMode = typeof localStorage !== "undefined" ? localStorage.getItem("preferred_app_mode") : null;
+    const isMobile = window.innerWidth < 768 || isStandalone || preferredMode === "mobile";
     if (isMobile) {
       navigate("/m");
     } else {

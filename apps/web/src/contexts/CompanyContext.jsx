@@ -115,9 +115,19 @@ export const CompanyProvider = ({ children }) => {
 
   const fetchCompanies = async () => {
     try {
-      const isGuestMode = localStorage.getItem("isGuestMode") === "true";
-      const isDemoActive = localStorage.getItem("isDemoActive") === "true";
       const token = localStorage.getItem("authToken") || localStorage.getItem("token");
+      const isRealUser = token && !token.includes("demo_guest");
+
+      // 🛡️ Authenticated real users should NEVER be in demo/guest mode
+      if (isRealUser) {
+        try {
+          localStorage.removeItem("isDemoActive");
+          localStorage.removeItem("isGuestMode");
+        } catch (e) {}
+      }
+
+      const isGuestMode = !isRealUser && localStorage.getItem("isGuestMode") === "true";
+      const isDemoActive = !isRealUser && localStorage.getItem("isDemoActive") === "true";
       const isDemoGuest = token && token.includes("demo_guest");
 
       if (isDemoActive || isGuestMode || isDemoGuest) {
@@ -172,22 +182,21 @@ export const CompanyProvider = ({ children }) => {
                 _id: u.companyId || `co_${u._id}`,
                 name: u.businessName || `${u.name || 'मेरी'} दुकान`,
                 phone: u.phone || "",
+                businessType: u.businessType || "Hardware & Building Materials",
+                industryType: u.industryType || "hardware",
                 isDemo: false
               };
             }
           }
         } catch (e) {}
 
-        if (userCo && !localStorage.getItem("isGuestMode") && !localStorage.getItem("isDemoActive")) {
+        if (userCo) {
           setCompanies([userCo]);
           setSelectedCompany(userCo);
           localStorage.setItem("companyId", userCo._id);
         } else {
-          const storedCoId = localStorage.getItem("companyId");
-          const matchedDemo = allDemoCompanies.find(c => c._id === storedCoId) || allDemoCompanies[0];
-          setCompanies(allDemoCompanies);
-          setSelectedCompany(matchedDemo);
-          localStorage.setItem("companyId", matchedDemo._id);
+          setCompanies([]);
+          setSelectedCompany(null);
         }
       }
     } catch (error) {
@@ -202,22 +211,21 @@ export const CompanyProvider = ({ children }) => {
               _id: u.companyId || `co_${u._id}`,
               name: u.businessName || `${u.name || 'मेरी'} दुकान`,
               phone: u.phone || "",
+              businessType: u.businessType || "Hardware & Building Materials",
+              industryType: u.industryType || "hardware",
               isDemo: false
             };
           }
         }
       } catch (e) {}
 
-      if (userCo && !localStorage.getItem("isGuestMode") && !localStorage.getItem("isDemoActive")) {
+      if (userCo) {
         setCompanies([userCo]);
         setSelectedCompany(userCo);
         localStorage.setItem("companyId", userCo._id);
       } else {
-        const storedCoId = localStorage.getItem("companyId");
-        const matchedDemo = allDemoCompanies.find(c => c._id === storedCoId) || allDemoCompanies[0];
-        setCompanies(allDemoCompanies);
-        setSelectedCompany(matchedDemo);
-        localStorage.setItem("companyId", matchedDemo._id);
+        setCompanies([]);
+        setSelectedCompany(null);
       }
     } finally {
       setLoading(false);
@@ -349,7 +357,7 @@ export const CompanyProvider = ({ children }) => {
       deleteCompany,
       enterDemoModule,
       exitDemoModule,
-      allDemoCompanies,
+      allDemoCompanies: [],
       refetchCompanies: fetchCompanies
     }}>
       {children}

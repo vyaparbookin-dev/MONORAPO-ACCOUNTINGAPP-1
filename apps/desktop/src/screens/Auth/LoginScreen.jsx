@@ -22,28 +22,47 @@ export default function LoginScreen() {
 
   const handleSuccessfulAuth = (token, userObj) => {
     localStorage.removeItem("isGuestMode");
+    localStorage.removeItem("isDemoActive");
+    localStorage.removeItem("real_backup_companyId");
+
+    // Clean stale offline cache from previous user sessions to ensure strict multi-tenant isolation
+    const legacyKeysToWipe = [
+      "vb_local_manual_bills", "vb_local_parties", "vb_local_expenses",
+      "vb_local_products", "vb_local_purchases", "vb_local_party_txs",
+      "vb_local_pagarbook_summary", "vb_local_bank_accounts",
+      "bills", "parties", "expenses", "products", "inventory", "sales", "local_bills"
+    ];
+    legacyKeysToWipe.forEach(k => {
+      try { localStorage.removeItem(k); } catch (e) {}
+    });
+
     localStorage.setItem("authToken", token);
     localStorage.setItem("token", token);
     localStorage.setItem("last_login_timestamp", String(Date.now()));
 
     if (userObj) {
+      const rawCoId = userObj.companyId || userObj.company || userObj.company_id;
       const normalizedUser = {
         ...userObj,
         _id: userObj._id || userObj.id,
-        companyId: userObj.companyId || userObj.company || userObj.company_id,
-        company: userObj.companyId || userObj.company || userObj.company_id,
+        companyId: rawCoId,
+        company: rawCoId,
       };
-      localStorage.setItem("user", JSON.stringify(normalizedUser));
 
-      const companyId = normalizedUser.companyId || normalizedUser.company;
-      if (companyId) {
-        localStorage.setItem("companyId", companyId);
-        localStorage.setItem("selectedCompany", companyId);
+      if (rawCoId && rawCoId !== "6a8314470d93e58ad0920950" && rawCoId !== "demo_company_guest") {
+        localStorage.setItem("companyId", String(rawCoId));
+        localStorage.setItem("selectedCompany", String(rawCoId));
+      } else {
+        localStorage.removeItem("companyId");
+        localStorage.removeItem("selectedCompany");
       }
+      localStorage.setItem("user", JSON.stringify(normalizedUser));
     }
 
-    // Check if mobile device
-    const isMobile = window.innerWidth < 768;
+    // Check if mobile device or user preferred mobile PWA mode
+    const isStandalone = typeof window !== "undefined" && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+    const preferredMode = typeof localStorage !== "undefined" ? localStorage.getItem("preferred_app_mode") : null;
+    const isMobile = window.innerWidth < 768 || isStandalone || preferredMode === "mobile";
     if (isMobile) {
       navigate("/m");
     } else {
@@ -59,7 +78,7 @@ export default function LoginScreen() {
       const token = response?.token || response?.data?.token;
       const userObj = response?.user || response?.data?.user;
       if (token) {
-        handleSuccessfulAuth(token, userObj);
+        handleSuccessfulAuth(token, userObj, companies);
       } else {
         setError("Google लॉगिन पूरा नहीं हो सका। कृपया '⚡ 1-Click डायरेक्ट लॉगिन' का उपयोग करें।");
       }
@@ -72,27 +91,28 @@ export default function LoginScreen() {
   };
 
   const handleGuestLogin = () => {
+    localStorage.clear();
+    sessionStorage.clear();
+
     const demoUser = {
       _id: "demo_guest_user_101",
       name: "Guest Explorer (अतिथि)",
-      email: "demo@vyaparbook.in",
-      role: "admin",
-      companyId: "demo_company_101",
-      company: "demo_company_101",
+      email: "guest@vyaparbook.in",
+      role: "guest",
+      companyId: "6a8314470d93e58ad0920950",
+      company: "6a8314470d93e58ad0920950",
       isGuest: true
     };
     localStorage.setItem("authToken", "demo_guest_token_2026_valid");
     localStorage.setItem("token", "demo_guest_token_2026_valid");
     localStorage.setItem("user", JSON.stringify(demoUser));
-    localStorage.setItem("companyId", "demo_company_101");
-    localStorage.setItem("selectedCompany", "demo_company_101");
+    localStorage.setItem("companyId", "6a8314470d93e58ad0920950");
+    localStorage.setItem("selectedCompany", "6a8314470d93e58ad0920950");
     localStorage.setItem("isGuestMode", "true");
+    localStorage.setItem("isDemoActive", "true");
     
-    if (window.innerWidth < 768) {
-      navigate("/m");
-    } else {
-      navigate("/dashboard");
-    }
+    const target = window.innerWidth < 768 ? "/m" : "/dashboard";
+    window.location.href = target;
   };
 
   const handleFillDemo = () => {
@@ -124,6 +144,7 @@ export default function LoginScreen() {
       
       const token = response?.token || response?.data?.token || response?.data?.data?.token;
       const userObj = response?.user || response?.data?.user || response?.data?.data?.user;
+      const companies = response?.companies || response?.data?.companies || [];
       
       if (token) {
         handleSuccessfulAuth(token, userObj);
