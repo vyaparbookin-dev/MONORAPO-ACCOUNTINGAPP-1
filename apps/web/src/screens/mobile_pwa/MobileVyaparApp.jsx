@@ -279,10 +279,38 @@ function MobileVyaparAppContent() {
   const [showCreditLimitHub, setShowCreditLimitHub] = useState(false);
   const [bypassCreditLock, setBypassCreditLock] = useState(false);
 
+  // ⚡ Direct Lump-Sum Amount Bill & Site Tagging States
+  const [quickBillMode, setQuickBillMode] = useState("direct"); // "direct" or "items"
+  const [directBillAmount, setDirectBillAmount] = useState("");
+  const [directBillSite, setDirectBillSite] = useState("");
+  const [directBillNotes, setDirectBillNotes] = useState("");
+  const [directBillDate, setDirectBillDate] = useState(getLocalYmd);
+  const [directBillImage, setDirectBillImage] = useState("");
+
+  // 📜 Multi-Site & 100+ Bills Statement Filters
+  const [statementSiteFilter, setStatementSiteFilter] = useState("ALL");
+  const [statementSearchTerm, setStatementSearchTerm] = useState("");
+
+  // Extract known construction / client sites dynamically
+  const knownSites = useMemo(() => {
+    const set = new Set();
+    (partyTransactions || []).forEach(t => {
+      if (t.siteName) set.add(String(t.siteName).trim());
+      if (t.site) set.add(String(t.site).trim());
+    });
+    (bills || []).forEach(b => {
+      if (b.siteName) set.add(String(b.siteName).trim());
+      if (b.site) set.add(String(b.site).trim());
+    });
+    return Array.from(set).filter(Boolean);
+  }, [partyTransactions, bills]);
+
   useEffect(() => {
-    const curTotal = billCart.reduce((sum, item) => sum + ((Number(item.salePrice) || 0) * (Number(item.qty) || 1)), 0);
+    const curTotal = quickBillMode === 'direct'
+      ? (Number(directBillAmount) || 0)
+      : billCart.reduce((sum, item) => sum + ((Number(item.salePrice) || 0) * (Number(item.qty) || 1)), 0);
     setIsUdharProtectionChecked(curTotal > udharOtpThreshold);
-  }, [billCart, udharOtpThreshold, showQuickBillModal]);
+  }, [billCart, directBillAmount, quickBillMode, udharOtpThreshold, showQuickBillModal]);
 
   useEffect(() => {
     const clean = String(billCustomerPhone || "").replace(/\D/g, "").slice(-10);
@@ -2381,12 +2409,28 @@ function MobileVyaparAppContent() {
     setBillCart(billCart.filter(i => i.id !== productId));
   };
 
-  const totalBillAmount = billCart.reduce((sum, item) => sum + (item.salePrice * item.qty), 0);
+  const totalBillAmount = quickBillMode === 'direct'
+    ? (Number(directBillAmount) || 0)
+    : billCart.reduce((sum, item) => sum + (item.salePrice * item.qty), 0);
 
   const handleSaveAndGenerateBill = async () => {
-    if (billCart.length === 0) {
-      alert("कृपया बिल में कम से कम 1 सामान जोड़ें!");
-      return;
+    const isDirectMode = quickBillMode === 'direct';
+    const directAmt = Number(directBillAmount) || 0;
+
+    if (isDirectMode) {
+      if (directAmt <= 0) {
+        alert("कृपया सही बिल राशि (₹) दर्ज करें!");
+        return;
+      }
+    } else {
+      if (billCart.length === 0) {
+        if (directAmt > 0) {
+          // Fallback if direct amount was provided
+        } else {
+          alert("कृपया बिल में कम से कम 1 सामान जोड़ें या '⚡ सीधा बिल' मोड चुनें!");
+          return;
+        }
+      }
     }
 
     setSavingBill(true);
@@ -2404,8 +2448,30 @@ function MobileVyaparAppContent() {
     });
     const resolvedPartyId = existingParty?._id || existingParty?.id || undefined;
 
+    const isDirectEffective = isDirectMode || (billCart.length === 0 && directAmt > 0);
+    const effectiveAmount = isDirectEffective ? directAmt : (totalBillAmount || directAmt);
+    const effectiveSite = isDirectEffective ? directBillSite.trim() : "";
+    const effectiveNotes = isDirectEffective ? directBillNotes.trim() : "";
+    const effectiveImage = isDirectEffective ? (directBillImage || "") : "";
+    const effectiveDate = (isDirectEffective && directBillDate) ? new Date(directBillDate) : new Date();
+
     const genBillNo = `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
     const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "6a8314470d93e58ad0920950").trim();
+
+    const effectiveItems = isDirectEffective ? [{
+      productId: `custom_direct_${Date.now()}`,
+      name: effectiveSite ? `${effectiveSite} - ${effectiveNotes || 'सामग्री बिल'}` : (effectiveNotes || "सामग्री बिक्री बिल"),
+      quantity: 1,
+      price: effectiveAmount,
+      total: effectiveAmount
+    }] : billCart.map(i => ({ 
+      productId: i.id, 
+      name: i.name, 
+      quantity: Number(i.qty) || 1, 
+      price: Number(i.salePrice) || 0, 
+      total: (Number(i.salePrice) || 0) * (Number(i.qty) || 1) 
+    }));
+
     const billPayload = {
       companyId: currentCoId,
       billNumber: genBillNo,
@@ -2424,16 +2490,15 @@ function MobileVyaparAppContent() {
       udharOtpThreshold: udharOtpThreshold,
       partyId: resolvedPartyId,
       bypassPendingLock: Boolean(bypassCreditLock),
-      items: billCart.map(i => ({ 
-        productId: i.id, 
-        name: i.name, 
-        quantity: Number(i.qty) || 1, 
-        price: Number(i.salePrice) || 0, 
-        total: (Number(i.salePrice) || 0) * (Number(i.qty) || 1) 
-      })),
-      total: totalBillAmount,
-      finalAmount: totalBillAmount,
-      date: new Date()
+      items: effectiveItems,
+      total: effectiveAmount,
+      finalAmount: effectiveAmount,
+      siteName: effectiveSite,
+      site: effectiveSite,
+      notes: effectiveNotes,
+      billImageUrl: effectiveImage || undefined,
+      billImageUrls: effectiveImage ? [effectiveImage] : [],
+      date: effectiveDate
     };
 
     // Auto-create party locally if it doesn't exist
@@ -2443,7 +2508,7 @@ function MobileVyaparAppContent() {
         name: finalCustomer,
         phone: finalPhone,
         address: finalAddress,
-        balance: billPaymentMode === "UDHAR" ? totalBillAmount : 0,
+        balance: billPaymentMode === "UDHAR" ? effectiveAmount : 0,
         type: "customer"
       };
       setParties(prev => {
@@ -2459,11 +2524,11 @@ function MobileVyaparAppContent() {
     if (billAppliedReward) {
       billPayload.couponCode = billAppliedReward.code;
       if (billAppliedReward.rewardType === "percentage") {
-        billPayload.discountAmount = Math.round((totalBillAmount * (billAppliedReward.discountPercentage || 0)) / 100);
+        billPayload.discountAmount = Math.round((effectiveAmount * (billAppliedReward.discountPercentage || 0)) / 100);
       } else if (billAppliedReward.rewardType === "flat_discount") {
         billPayload.discountAmount = billAppliedReward.discountAmount || 0;
       }
-      billPayload.finalAmount = Math.max(0, totalBillAmount - (billPayload.discountAmount || 0));
+      billPayload.finalAmount = Math.max(0, effectiveAmount - (billPayload.discountAmount || 0));
     }
 
     try {
@@ -2482,28 +2547,98 @@ function MobileVyaparAppContent() {
       phone: finalPhone,
       customerPhone: finalPhone,
       customerMobile: finalPhone,
-      date: "Today",
-      rawDate: new Date().toISOString(),
-      amount: billPayload.finalAmount || totalBillAmount,
-      finalAmount: billPayload.finalAmount || totalBillAmount,
-      total: billPayload.finalAmount || totalBillAmount,
+      date: effectiveDate ? effectiveDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "Today",
+      rawDate: effectiveDate.toISOString(),
+      amount: billPayload.finalAmount || effectiveAmount,
+      finalAmount: billPayload.finalAmount || effectiveAmount,
+      total: billPayload.finalAmount || effectiveAmount,
       type: billPaymentMode,
       paymentMode: billPaymentMode,
       paymentMethod: billPaymentMode === "UDHAR" ? "credit" : "cash",
       paymentStatus: billPaymentMode === "UDHAR" ? "unpaid" : "paid",
       status: billPaymentMode === "UDHAR" ? "issued" : "paid",
-      items: billCart,
+      items: effectiveItems,
+      siteName: effectiveSite,
+      site: effectiveSite,
+      notes: effectiveNotes,
+      billImageUrl: effectiveImage || "",
+      billImageUrls: effectiveImage ? [effectiveImage] : [],
       isOfflineCreated: true,
-      createdAt: new Date().toISOString()
+      createdAt: effectiveDate.toISOString()
     };
 
     const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
     const updatedBillsList = storageManager.saveBill(currentCoId, createdBill);
     setBills(updatedBillsList);
 
+    // If UDHAR, immediately update party balance and add transaction to ledger
+    if (billPaymentMode === "UDHAR" && resolvedPartyId) {
+      const billAmtVal = Number(billPayload.finalAmount || effectiveAmount);
+      setParties(prev => {
+        const next = prev.map(p => {
+          if ((p._id || p.id) === resolvedPartyId) {
+            const oldBal = Number(p.balance ?? p.currentBalance ?? 0);
+            const newBal = oldBal + billAmtVal;
+            return { ...p, balance: newBal, currentBalance: newBal };
+          }
+          return p;
+        });
+        try {
+          storageManager.saveParties(currentCoId, next);
+          localStorage.setItem("vb_local_parties", JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
+
+      if (selectedPartyDetail && ((selectedPartyDetail._id || selectedPartyDetail.id) === resolvedPartyId)) {
+        setSelectedPartyDetail(prev => ({
+          ...prev,
+          balance: Number(prev.balance ?? prev.currentBalance ?? 0) + billAmtVal,
+          currentBalance: Number(prev.currentBalance ?? prev.balance ?? 0) + billAmtVal
+        }));
+      }
+
+      const txDoc = {
+        _id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        partyId: resolvedPartyId,
+        date: effectiveDate.toISOString(),
+        details: effectiveSite ? `[${effectiveSite}] ${effectiveNotes || 'सामग्री बिल'}` : (effectiveNotes || `बिल #${genBillNo}`),
+        refNo: genBillNo,
+        billNumber: genBillNo,
+        debit: billAmtVal,
+        credit: 0,
+        amount: billAmtVal,
+        type: 'sale',
+        siteName: effectiveSite,
+        site: effectiveSite,
+        billImageUrl: effectiveImage || '',
+        billImageUrls: effectiveImage ? [effectiveImage] : [],
+        source: 'QuickBill',
+        paymentMethod: 'UDHAR'
+      };
+      setAllPartyTransactions(prev => [txDoc, ...(prev || [])]);
+      try {
+        const storedTxs = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+        localStorage.setItem("vb_local_party_txs", JSON.stringify([txDoc, ...storedTxs]));
+      } catch (e) {}
+
+      if (effectiveImage) {
+        try {
+          const c = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
+          c[genBillNo] = [effectiveImage];
+          c[txDoc._id] = [effectiveImage];
+          localStorage.setItem("vb_tx_photos_cache", JSON.stringify(c));
+        } catch (e) {}
+      }
+    }
+
     setBillCart([]);
     setBillCustomer("");
     setBillCustomerPhone("");
+    setDirectBillAmount("");
+    setDirectBillSite("");
+    setDirectBillNotes("");
+    setDirectBillImage("");
     setBillAppliedReward(null);
     setMobileStampStatus(null);
     setShowQuickBillModal(false);
@@ -2516,7 +2651,7 @@ function MobileVyaparAppContent() {
     }
 
     if (billPaymentMode === "UPI" || billPaymentMode === "ONLINE") {
-      speakUpiPayment(billPayload.finalAmount || totalBillAmount, "व्यापार");
+      speakUpiPayment(billPayload.finalAmount || effectiveAmount, "व्यापार");
     }
 
     // 2. BACKGROUND SERVER SYNC
@@ -3035,6 +3170,7 @@ function MobileVyaparAppContent() {
         const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
         const bImgs = b.billImageUrls || (b.billImageUrl ? [b.billImageUrl] : []);
 
+        const bSite = (b.siteName || b.site || '').trim();
         combinedTxs.push({
           _id: b._id || b.id,
           date: b.date || b.createdAt,
@@ -3043,7 +3179,9 @@ function MobileVyaparAppContent() {
           billNumber: bNum,
           billAmount: finalAmt,
           paidAmount: paidAmt,
-          details: `बिल #${bNum} (${(b.items || []).length} सामान)`,
+          details: b.details || (bSite ? `[${bSite}] ${b.notes || ('बिल #' + bNum)}` : (b.notes || `बिल #${bNum} (${(b.items || []).length} सामान)`)),
+          siteName: bSite,
+          site: bSite,
           items: b.items || [],
           debit: isSupplier ? 0 : finalAmt,
           credit: isSupplier ? finalAmt : 0,
@@ -4613,18 +4751,66 @@ function MobileVyaparAppContent() {
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
 
     const sorted = [...txs].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-    sorted.forEach((t, i) => {
-      const dStr = t.date ? new Date(t.date).toLocaleDateString('hi-IN', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
-      const deb = Number(t.debit || 0);
-      const cred = Number(t.credit || 0);
-      const amtStr = deb > 0 ? `नाम/डेबिट: +₹${deb.toLocaleString('en-IN')}` : `जमा/क्रेडिट: -₹${cred.toLocaleString('en-IN')}`;
-      const desc = t.details || t.refNo || (deb > 0 ? 'दिया' : 'मिला');
-      const running = t.runningAfter !== undefined ? t.runningAfter : t.runningBalance;
-      const runningLabel = running !== undefined
-        ? ` (बाकी: ₹${Math.abs(running).toLocaleString('en-IN')} ${running < 0 || isSupplier ? 'देने' : 'लेने'})`
-        : '';
-      text += `${i + 1}. [${dStr}] ${desc}\n   ${amtStr}${runningLabel}\n`;
+    const totalDeb = sorted.reduce((s, r) => s + (Number(r.debit) || 0), 0);
+    const totalCred = sorted.reduce((s, r) => s + (Number(r.credit) || 0), 0);
+
+    // Site-wise breakdown if multiple sites exist
+    const siteMap = {};
+    sorted.forEach(t => {
+      const sName = (t.siteName || t.site || '').trim();
+      if (sName) {
+        if (!siteMap[sName]) siteMap[sName] = { deb: 0, cred: 0, count: 0 };
+        siteMap[sName].deb += Number(t.debit || 0);
+        siteMap[sName].cred += Number(t.credit || 0);
+        siteMap[sName].count += 1;
+      }
     });
+    const sitesList = Object.keys(siteMap);
+
+    if (sitesList.length > 0) {
+      text += `🏗️ *साइट-वार कुल विवरण (Site-wise Summary):*\n`;
+      sitesList.forEach(sName => {
+        const sInfo = siteMap[sName];
+        text += `• *${sName}:* ₹${sInfo.deb.toLocaleString('en-IN')} (${sInfo.count} बिल)\n`;
+      });
+      text += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    }
+
+    if (sorted.length > 20) {
+      text += `📊 *कुल प्रविष्टियां:* ${sorted.length} लेन-देन\n`;
+      text += `➕ *कुल नाम (डेबिट):* ₹${totalDeb.toLocaleString('en-IN')}\n`;
+      text += `➖ *कुल जमा (क्रेडिट):* ₹${totalCred.toLocaleString('en-IN')}\n`;
+      text += `━━━━━━━━━━━━━━━━━━━━━\n`;
+      text += `📋 *हालिया 15 लेन-देन (Recent Bills):*\n`;
+
+      const recentTxs = sorted.slice(-15);
+      recentTxs.forEach((t, i) => {
+        const dStr = t.date ? new Date(t.date).toLocaleDateString('hi-IN', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+        const deb = Number(t.debit || 0);
+        const cred = Number(t.credit || 0);
+        const amtStr = deb > 0 ? `नाम: +₹${deb.toLocaleString('en-IN')}` : `जमा: -₹${cred.toLocaleString('en-IN')}`;
+        const siteTag = (t.siteName || t.site) ? `[${t.siteName || t.site}] ` : '';
+        const desc = t.details || t.refNo || (deb > 0 ? 'सामान' : 'जमा');
+        text += `${i + 1}. [${dStr}] ${siteTag}${desc}\n   ${amtStr}\n`;
+      });
+
+      text += `\n*(कुल ${sorted.length} में से हालिया 15 बिल ऊपर दिखाए गए हैं)*\n`;
+      text += `📸 *सभी ${sorted.length} बिलों की मूल पर्ची/फोटो व पूरा खाता डिजिटल सिस्टम में सुरक्षित है।*\n`;
+    } else {
+      sorted.forEach((t, i) => {
+        const dStr = t.date ? new Date(t.date).toLocaleDateString('hi-IN', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+        const deb = Number(t.debit || 0);
+        const cred = Number(t.credit || 0);
+        const amtStr = deb > 0 ? `नाम/डेबिट: +₹${deb.toLocaleString('en-IN')}` : `जमा/क्रेडिट: -₹${cred.toLocaleString('en-IN')}`;
+        const siteTag = (t.siteName || t.site) ? `[${t.siteName || t.site}] ` : '';
+        const desc = t.details || t.refNo || (deb > 0 ? 'दिया' : 'मिला');
+        const running = t.runningAfter !== undefined ? t.runningAfter : t.runningBalance;
+        const runningLabel = running !== undefined
+          ? ` (बाकी: ₹${Math.abs(running).toLocaleString('en-IN')} ${running < 0 || isSupplier ? 'देने' : 'लेने'})`
+          : '';
+        text += `${i + 1}. [${dStr}] ${siteTag}${desc}\n   ${amtStr}${runningLabel}\n`;
+      });
+    }
 
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
     text += `⚖️ *अंतिम कुल शुद्ध शेष: ${balText}*\n`;
@@ -7532,6 +7718,32 @@ function MobileVyaparAppContent() {
               </div>
             </div>
 
+            {/* Quick Bill Mode Selector: ⚡ सीधा बिल (Lump sum) vs 📦 सामान जोड़कर बिल (Catalog) */}
+            <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setQuickBillMode("direct")}
+                className={`py-2 px-2 text-xs font-black rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                  quickBillMode === "direct"
+                    ? "bg-white text-amber-800 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <span>⚡ सीधा बिल (Lump sum ₹)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuickBillMode("items")}
+                className={`py-2 px-2 text-xs font-black rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                  quickBillMode === "items"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <span>📦 सामान जोड़कर ({billCart.length})</span>
+              </button>
+            </div>
+
             {/* Customer Name, Search Dropdown & Phone */}
             <div className="space-y-1.5">
               <div className="flex justify-between items-center text-[11px] font-extrabold text-slate-700">
@@ -7873,6 +8085,178 @@ function MobileVyaparAppContent() {
               )}
             </div>
 
+            {/* ⚡ DIRECT LUMP-SUM BILL AMOUNT & SITE SECTION */}
+            {quickBillMode === "direct" && (
+              <div className="space-y-3 p-3.5 bg-gradient-to-br from-amber-50/70 via-orange-50/40 to-amber-50/60 rounded-2xl border-2 border-amber-200 animate-in fade-in shadow-xs">
+                {/* Bill Amount */}
+                <div>
+                  <label className="text-xs font-black text-amber-950 block mb-1">
+                    💰 कुल बिल राशि (Bill Amount ₹) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-black text-lg">₹</span>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="उदा. 5000"
+                      value={directBillAmount}
+                      onChange={(e) => setDirectBillAmount(e.target.value)}
+                      className="w-full pl-9 pr-3 py-3 bg-white border-2 border-amber-300 focus:border-amber-600 rounded-xl text-xl font-black text-slate-900 outline-none shadow-xs"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                {/* Site / Project Name */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[11px] font-black text-slate-700 flex items-center gap-1">
+                      <span>🏗️ साइट / प्रोजेक्ट का नाम (Site / Project)</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-medium">वैकल्पिक / Optional</span>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="उदा. सीतापुर साइट, प्रोजेक्ट-A, घर..."
+                    value={directBillSite}
+                    onChange={(e) => setDirectBillSite(e.target.value)}
+                    className="w-full p-2.5 bg-white border border-slate-200 focus:border-amber-500 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                  />
+                  {/* Quick suggestions of known sites */}
+                  {knownSites.length > 0 && (
+                    <div className="flex items-center gap-1.5 mt-1.5 overflow-x-auto no-scrollbar py-0.5">
+                      <span className="text-[10px] text-slate-400 shrink-0 font-bold">हालिया साइट:</span>
+                      {knownSites.slice(0, 5).map((st, sIdx) => (
+                        <button
+                          key={sIdx}
+                          type="button"
+                          onClick={() => setDirectBillSite(st)}
+                          className="px-2 py-0.5 bg-white border border-amber-200 text-amber-900 rounded-lg text-[10px] font-bold hover:bg-amber-100 shrink-0 cursor-pointer"
+                        >
+                          {st}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Bill Date & Description */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-black text-slate-700 block mb-1">
+                      📅 बिल तारीख (Date)
+                    </label>
+                    <input
+                      type="date"
+                      value={directBillDate}
+                      onChange={(e) => setDirectBillDate(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-200 focus:border-amber-500 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-black text-slate-700 block mb-1">
+                      📝 सामान / विवरण (Notes)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="उदा. सीमेंट, सरिया, बजरी आदि"
+                      value={directBillNotes}
+                      onChange={(e) => setDirectBillNotes(e.target.value)}
+                      className="w-full p-2 bg-white border border-slate-200 focus:border-amber-500 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Optional Bill Photo */}
+                <div className="p-2.5 bg-white rounded-xl border border-dashed border-amber-300 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] font-black text-slate-700 flex items-center gap-1">
+                      <span>📷 बिल या पर्ची का फोटो</span>
+                      <span className="text-[10px] text-emerald-700 font-bold">(वैकल्पिक / Optional)</span>
+                    </span>
+                    {directBillImage && (
+                      <button
+                        type="button"
+                        onClick={() => setDirectBillImage("")}
+                        className="text-[10px] text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
+                      >
+                        ✕ फोटो हटाएं
+                      </button>
+                    )}
+                  </div>
+
+                  {directBillImage ? (
+                    <div className="flex items-center gap-2 p-1 bg-amber-50 rounded-lg">
+                      <img
+                        src={getWebSafeImageUrl(directBillImage)}
+                        alt="Bill Preview"
+                        onClick={() => setPreviewBillImage(directBillImage)}
+                        className="w-12 h-12 rounded-lg object-cover border border-amber-300 cursor-pointer shadow-xs"
+                      />
+                      <div className="text-[10px] text-slate-600">
+                        <span className="font-bold text-emerald-700 block">✓ पर्ची फोटो संलग्न है</span>
+                        <span className="text-slate-400">टैप करके बड़ा देखें</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <label className="flex-1 py-1.5 px-2 bg-amber-100/70 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-bold cursor-pointer flex items-center justify-center gap-1.5 transition">
+                        <Camera size={13} />
+                        <span>कैमरा से लें</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              try {
+                                const compressed = await compressImageFile(file);
+                                setDirectBillImage(compressed);
+                              } catch (err) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => setDirectBillImage(reader.result);
+                                reader.readAsDataURL(file);
+                              }
+                            }
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                      <label className="flex-1 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-bold cursor-pointer flex items-center justify-center gap-1.5 transition">
+                        <Upload size={13} />
+                        <span>गैलरी से चुनें</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              try {
+                                const compressed = await compressImageFile(file);
+                                setDirectBillImage(compressed);
+                              } catch (err) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => setDirectBillImage(reader.result);
+                                reader.readAsDataURL(file);
+                              }
+                            }
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-slate-400">
+                    💡 अगर अभी फोटो नहीं है तो खाली छोड़ सकते हैं। बाद में खाता विवरण में कभी भी पर्ची जोड़ सकते हैं।
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 📦 ITEM-WISE BILLING SECTION */}
+            {quickBillMode === "items" && (
+              <>
             {/* ⚡ TOP 20-30 DAILY FREQUENT / TOP SELLING QUICK-PICK ITEMS BAR */}
             <div className="space-y-1.5 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 p-2.5 rounded-2xl border border-amber-300/60">
               <div className="flex justify-between items-center text-[11px] font-black text-amber-950">
@@ -8020,20 +8404,26 @@ function MobileVyaparAppContent() {
                 ऊपर सर्च बार से सामान चुनें या नीचे से जोड़ें
               </div>
             )}
+              </>
+            )}
 
             {/* Total Amount & Submit Button */}
             <div className="flex justify-between items-center border-t border-slate-100 pt-2">
               <span className="font-bold text-xs text-slate-600">कुल बिल राशि:</span>
-              <span className="font-black text-xl text-[#059669]">₹ {totalBillAmount.toLocaleString('en-IN')}</span>
+              <span className="font-black text-xl text-[#059669]">
+                ₹ {(quickBillMode === 'direct' ? Number(directBillAmount || 0) : totalBillAmount).toLocaleString('en-IN')}
+              </span>
             </div>
 
             <button
               onClick={handleSaveAndGenerateBill}
               disabled={savingBill}
-              className="w-full py-3.5 bg-gradient-to-r from-[#059669] to-[#047857] hover:from-[#047857] hover:to-[#065F46] text-white font-extrabold text-sm rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition"
+              className="w-full py-3.5 bg-gradient-to-r from-[#059669] to-[#047857] hover:from-[#047857] hover:to-[#065F46] text-white font-extrabold text-sm rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition active:scale-95"
             >
               {savingBill ? <RefreshCw size={16} className="animate-spin" /> : <Send size={16} />} 
-              {savingBill ? "लाइव बिल सेव हो रहा है..." : "बिल सेव करें व WhatsApp भेजें →"}
+              {savingBill 
+                ? "लाइव बिल सेव हो रहा है..." 
+                : `बिल सेव करें ${(quickBillMode === 'direct' ? Number(directBillAmount || 0) : totalBillAmount) > 0 ? `(₹${(quickBillMode === 'direct' ? Number(directBillAmount || 0) : totalBillAmount).toLocaleString('en-IN')})` : ''} →`}
             </button>
           </div>
         </div>
@@ -9988,6 +10378,7 @@ function MobileVyaparAppContent() {
                     const isSup = (selectedPartyDetail.type === 'supplier' || selectedPartyDetail.partyType === 'supplier');
                     if (isSup) {
                       setVendorActionType('purchase');
+                      setVendorPurchaseMode('quick');
                       setShowVendorForm(true);
                       setShowPartyTxForm(false);
                     } else {
@@ -9996,6 +10387,35 @@ function MobileVyaparAppContent() {
                       setBillCustomerAddress(selectedPartyDetail.address || '');
                       setSelectedPartyObject(selectedPartyDetail);
                       setBillPaymentMode("UDHAR");
+                      setQuickBillMode("direct");
+                      setDirectBillAmount("");
+                      setDirectBillSite("");
+                      setDirectBillNotes("");
+                      setDirectBillDate(getLocalYmd());
+                      setDirectBillImage("");
+                      setShowQuickBillModal(true);
+                    }
+                  }}
+                  className="py-2 px-3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition shadow-xs"
+                  title="बिना सामान जोड़े सीधा कुल बिल राशि (लंपसम) दर्ज करें"
+                >
+                  ⚡ सीधा बिल (Direct ₹)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const isSup = (selectedPartyDetail.type === 'supplier' || selectedPartyDetail.partyType === 'supplier');
+                    if (isSup) {
+                      setVendorActionType('purchase');
+                      setShowVendorForm(true);
+                      setShowPartyTxForm(false);
+                    } else {
+                      setBillCustomer(selectedPartyDetail.name || '');
+                      setBillCustomerPhone(selectedPartyDetail.phone || selectedPartyDetail.mobileNumber || '');
+                      setBillCustomerAddress(selectedPartyDetail.address || '');
+                      setSelectedPartyObject(selectedPartyDetail);
+                      setBillPaymentMode("UDHAR");
+                      setQuickBillMode("items");
                       setShowQuickBillModal(true);
                     }
                   }}
@@ -11617,6 +12037,24 @@ function MobileVyaparAppContent() {
               const isDeneHai = isSupplier ? (finalBal < 0 || initialBal < 0) : (finalBal < 0);
               const isLeneHai = !isDeneHai && finalBal > 0;
 
+              // Extract unique sites from all rows for site filtering
+              const availableSites = Array.from(new Set(statementRows.map(r => (r.siteName || r.site || '').trim()).filter(Boolean)));
+
+              // Multi-criteria filter: Site Filter + 100+ Bills Search
+              const filteredRows = statementRows.filter(r => {
+                const rSite = (r.siteName || r.site || '').trim();
+                if (statementSiteFilter !== 'ALL' && rSite !== statementSiteFilter) return false;
+                if (statementSearchTerm.trim()) {
+                  const q = statementSearchTerm.trim().toLowerCase();
+                  const matchDesc = String(r.details || '').toLowerCase().includes(q);
+                  const matchRef = String(r.refNo || r.billNumber || '').toLowerCase().includes(q);
+                  const matchSite = rSite.toLowerCase().includes(q);
+                  const matchAmt = String(r.debit || r.credit || r.amount || '').includes(q);
+                  if (!matchDesc && !matchRef && !matchSite && !matchAmt) return false;
+                }
+                return true;
+              });
+
               return (
                 <>
                   {/* Summary Ribbon */}
@@ -11641,6 +12079,69 @@ function MobileVyaparAppContent() {
                     </div>
                   </div>
 
+                  {/* 🔍 Search & Multi-Site Filter Ribbon for 100+ Bills */}
+                  <div className="shrink-0 space-y-2">
+                    <div className="flex gap-2 items-center">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                        <input
+                          type="text"
+                          placeholder="🔍 100+ बिल खोजें (बिल #, विवरण, साइट, राशि)..."
+                          value={statementSearchTerm}
+                          onChange={(e) => setStatementSearchTerm(e.target.value)}
+                          className="w-full pl-8 pr-7 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-400"
+                        />
+                        {statementSearchTerm && (
+                          <button
+                            type="button"
+                            onClick={() => setStatementSearchTerm("")}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+                      </div>
+                      <span className="text-[11px] font-black text-slate-600 whitespace-nowrap bg-slate-100 px-2.5 py-1.5 rounded-xl border border-slate-200">
+                        {filteredRows.length} / {statementRows.length} बिल
+                      </span>
+                    </div>
+
+                    {/* Multi-Site Filter Bar */}
+                    {availableSites.length > 0 && (
+                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                        <span className="text-[10px] font-black text-slate-400 shrink-0">साइट:</span>
+                        <button
+                          type="button"
+                          onClick={() => setStatementSiteFilter("ALL")}
+                          className={`px-2.5 py-1 rounded-lg font-black text-[11px] shrink-0 transition cursor-pointer ${
+                            statementSiteFilter === "ALL"
+                              ? "bg-indigo-600 text-white shadow-xs"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          }`}
+                        >
+                          🏗️ सभी साइटें ({statementRows.length})
+                        </button>
+                        {availableSites.map((siteName, sIdx) => {
+                          const count = statementRows.filter(r => (r.siteName || r.site || '').trim() === siteName).length;
+                          return (
+                            <button
+                              key={sIdx}
+                              type="button"
+                              onClick={() => setStatementSiteFilter(siteName)}
+                              className={`px-2.5 py-1 rounded-lg font-black text-[11px] shrink-0 transition cursor-pointer ${
+                                statementSiteFilter === siteName
+                                  ? "bg-amber-600 text-white shadow-xs"
+                                  : "bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100"
+                              }`}
+                            >
+                              📍 {siteName} ({count})
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Statement Table View: Chronological (Oldest at Top -> Newest at Bottom) */}
                   <div className="flex-1 min-h-0 overflow-y-auto rounded-2xl border border-slate-200 bg-white">
                     <table className="w-full text-left text-xs border-collapse">
@@ -11648,38 +12149,95 @@ function MobileVyaparAppContent() {
                         <tr>
                           <th className="p-2.5">#</th>
                           <th className="p-2.5">तारीख</th>
-                          <th className="p-2.5">विवरण</th>
+                          <th className="p-2.5">विवरण व पर्ची</th>
                           <th className="p-2.5 text-right">नाम / दिया (₹)</th>
                           <th className="p-2.5 text-right">जमा / मिला (₹)</th>
                           <th className="p-2.5 text-right">बकाया शेष (₹)</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {statementRows.length === 0 ? (
+                        {filteredRows.length === 0 ? (
                           <tr>
                             <td colSpan={6} className="p-6 text-center text-slate-400 font-bold">
-                              कोई लेन-देन दर्ज नहीं है।
+                              कोई लेन-देन या बिल नहीं मिला।
                             </td>
                           </tr>
                         ) : (
-                          statementRows.map((row, idx) => {
+                          filteredRows.map((row, idx) => {
                             const deb = Number(row.debit || 0);
                             const cred = Number(row.credit || 0);
                             const run = Number(row.runningAfter || 0);
                             const rowDene = isSupplier ? run <= 0 : run < 0;
                             const dStr = row.date ? new Date(row.date).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
                             const isOpening = row.refNo === 'OPENING' || String(row._id || '').startsWith('open_') || String(row.details || '').includes('प्रारंभिक');
+                            const rowSite = (row.siteName || row.site || '').trim();
+
+                            // Retrieve attached photos
+                            const targetTxId = row._id || row.id || row.refNo || row.billNumber;
+                            const cachedPhotos = (() => {
+                              try {
+                                const cache = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
+                                const cleanId = String(targetTxId).replace(/^(pay_|open_|tx_|ptx_)/, '').trim();
+                                return cache[targetTxId] || (cleanId ? cache[cleanId] : null) || [];
+                              } catch (e) { return []; }
+                            })();
+                            const rawImgs = (row.billImageUrls && row.billImageUrls.length > 0)
+                              ? row.billImageUrls
+                              : (row.billImageUrl ? [row.billImageUrl] : (Array.isArray(cachedPhotos) ? cachedPhotos : []));
+                            const validImgs = Array.from(new Set(rawImgs.filter(Boolean)));
 
                             return (
                               <tr key={row._id || idx} className={`hover:bg-slate-50 transition ${isOpening ? 'bg-amber-50/40 font-bold' : ''}`}>
                                 <td className="p-2.5 text-[10px] text-slate-400 font-mono">{idx + 1}</td>
                                 <td className="p-2.5 text-[11px] font-bold text-slate-700 whitespace-nowrap">{dStr}</td>
                                 <td className="p-2.5 text-xs font-bold text-slate-800">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span>{row.details || (deb > 0 ? (isSupplier ? 'भुगतान दिया' : 'सामान दिया') : (isSupplier ? 'खरीद बिल' : 'जमा मिला'))}</span>
-                                    {row.refNo && row.refNo !== 'OPENING' && (
-                                      <span className="text-[9px] px-1 py-0.2 bg-slate-100 rounded text-slate-600 font-mono">#{row.refNo}</span>
-                                    )}
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span>{row.details || (deb > 0 ? (isSupplier ? 'भुगतान दिया' : 'सामान दिया') : (isSupplier ? 'खरीद बिल' : 'जमा मिला'))}</span>
+                                      {row.refNo && row.refNo !== 'OPENING' && (
+                                        <span className="text-[9px] px-1 py-0.2 bg-slate-100 rounded text-slate-600 font-mono">#{row.refNo}</span>
+                                      )}
+                                      {rowSite && (
+                                        <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-900 font-black rounded-md inline-flex items-center gap-0.5">
+                                          🏗️ {rowSite}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* 📷 View or Attach Bill Image */}
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      {validImgs.length > 0 ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setPreviewBillImage(validImgs[0]);
+                                            setPreviewImageList(validImgs);
+                                            setPreviewImageIndex(0);
+                                            setPreviewTargetTxId(targetTxId);
+                                          }}
+                                          className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[10px] font-black inline-flex items-center gap-1 cursor-pointer transition active:scale-95 shadow-2xs"
+                                          title="बिल की फोटो / पर्ची देखें"
+                                        >
+                                          <Camera size={11} className="text-emerald-600" />
+                                          <span>📷 पर्ची देखें ({validImgs.length})</span>
+                                        </button>
+                                      ) : (
+                                        <label className="px-1.5 py-0.5 bg-slate-50 hover:bg-slate-100 text-slate-500 border border-dashed border-slate-300 rounded text-[9px] font-bold inline-flex items-center gap-1 cursor-pointer transition" title="इस बिल की पर्ची/फोटो अपलोड करें">
+                                          <Camera size={9} />
+                                          <span>+ पर्ची जोड़ें</span>
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={(e) => {
+                                              if (e.target.files && e.target.files.length > 0) {
+                                                handleAttachPartyImage(targetTxId, e.target.files);
+                                              }
+                                            }}
+                                            className="hidden"
+                                          />
+                                        </label>
+                                      )}
+                                    </div>
                                   </div>
                                 </td>
                                 <td className="p-2.5 text-right font-black text-slate-900 font-mono whitespace-nowrap">
@@ -11714,7 +12272,7 @@ function MobileVyaparAppContent() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleShareFullDetailedStatementWhatsApp(selectedPartyDetail, statementRows)}
+                      onClick={() => handleShareFullDetailedStatementWhatsApp(selectedPartyDetail, filteredRows.length > 0 ? filteredRows : statementRows)}
                       className="flex-2 py-2.5 bg-[#25D366] hover:bg-green-600 text-white font-black text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                     >
                       <MessageSquare size={15} /> 💬 WhatsApp पर पूरा स्टेटमेंट भेजें
