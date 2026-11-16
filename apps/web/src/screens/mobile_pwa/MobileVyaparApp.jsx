@@ -306,121 +306,6 @@ function MobileVyaparAppContent() {
   const [profileFormIfsc, setProfileFormIfsc] = useState("");
   const [savingBusinessProfile, setSavingBusinessProfile] = useState(false);
 
-  // Extract known construction / client sites dynamically
-  const knownSites = useMemo(() => {
-    const set = new Set();
-    (partyTransactions || []).forEach(t => {
-      if (t.siteName) set.add(String(t.siteName).trim());
-      if (t.site) set.add(String(t.site).trim());
-    });
-    (bills || []).forEach(b => {
-      if (b.siteName) set.add(String(b.siteName).trim());
-      if (b.site) set.add(String(b.site).trim());
-    });
-    return Array.from(set).filter(Boolean);
-  }, [partyTransactions, bills]);
-
-  // 🎯 5-Data Item Business Profile Completion Calculation
-  const profileChecklist = useMemo(() => {
-    const co = selectedCompany || {};
-    const hasName = Boolean((co.name || co.companyName || co.businessName || "").trim());
-    const hasPhone = Boolean((co.phone || co.mobileNumber || user?.phone || "").trim());
-    const hasAddress = Boolean((co.address || co.city || "").trim());
-    const hasTaxOrType = Boolean((co.gstin || co.gstNumber || co.panNumber || co.businessType || "").trim());
-    const hasBankOrUpi = Boolean(
-      (bankAccounts && bankAccounts.length > 0) ||
-      ((co.bankName || co.accountNumber) && String(co.accountNumber || '').trim().length > 3) ||
-      (co.upiId && String(co.upiId).includes('@'))
-    );
-
-    return [
-      { id: "name", label: "दुकान का नाम", done: hasName },
-      { id: "phone", label: "मोबाइल नंबर", done: hasPhone },
-      { id: "address", label: "दुकान का पता", done: hasAddress },
-      { id: "tax", label: "GST / व्यापार प्रकार", done: hasTaxOrType },
-      { id: "bank", label: "बैंक / UPI खाता", done: hasBankOrUpi },
-    ];
-  }, [selectedCompany, bankAccounts, user]);
-
-  const profileCompletedCount = profileChecklist.filter(i => i.done).length;
-  const profileCompletionPercent = Math.round((profileCompletedCount / 5) * 100);
-
-  const handleOpenBusinessProfileModal = () => {
-    const co = selectedCompany || {};
-    const uBank = bankAccounts?.[0] || {};
-    setProfileFormName(co.name || co.companyName || co.businessName || "");
-    setProfileFormPhone(co.phone || co.mobileNumber || user?.phone || "");
-    setProfileFormAddress(co.address || co.city || "");
-    setProfileFormGstin(co.gstin || co.gstNumber || co.panNumber || "");
-    setProfileFormBusinessType(co.businessType || "Hardware & Building Materials");
-    setProfileFormUpiId(co.upiId || co.upiQrCode || "");
-    setProfileFormBankName(co.bankName || uBank.bankName || "");
-    setProfileFormAccNo(co.accountNumber || uBank.accountNumber || "");
-    setProfileFormIfsc(co.ifscCode || uBank.ifscCode || "");
-    setShowBusinessProfileModal(true);
-  };
-
-  const handleSaveBusinessProfile = async (e) => {
-    if (e) e.preventDefault();
-    if (!profileFormName.trim()) {
-      alert("कृपया दुकान या व्यापार का नाम दर्ज करें!");
-      return;
-    }
-    setSavingBusinessProfile(true);
-    try {
-      const coId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "6a8314470d93e58ad0920950").trim();
-      const updatedCo = {
-        ...(selectedCompany || {}),
-        _id: coId,
-        id: coId,
-        name: profileFormName.trim(),
-        companyName: profileFormName.trim(),
-        businessName: profileFormName.trim(),
-        phone: profileFormPhone.trim(),
-        mobileNumber: profileFormPhone.trim(),
-        address: profileFormAddress.trim(),
-        city: profileFormAddress.trim(),
-        gstin: profileFormGstin.trim(),
-        gstNumber: profileFormGstin.trim(),
-        businessType: profileFormBusinessType.trim(),
-        upiId: profileFormUpiId.trim(),
-        bankName: profileFormBankName.trim(),
-        accountNumber: profileFormAccNo.trim(),
-        ifscCode: profileFormIfsc.trim()
-      };
-
-      if (selectCompany) {
-        selectCompany(updatedCo);
-      }
-      try {
-        localStorage.setItem("selectedCompany", JSON.stringify(updatedCo));
-        const storedCompanies = JSON.parse(localStorage.getItem("companies") || "[]");
-        const idx = storedCompanies.findIndex(c => (c._id || c.id) === coId);
-        if (idx >= 0) {
-          storedCompanies[idx] = updatedCo;
-        } else {
-          storedCompanies.push(updatedCo);
-        }
-        localStorage.setItem("companies", JSON.stringify(storedCompanies));
-      } catch (e) {}
-
-      // Background server update
-      await api.put(`/api/company/${coId}`, updatedCo)
-        .catch(() => api.put(`/api/companies/${coId}`, updatedCo))
-        .catch(() => api.post(`/api/company`, updatedCo))
-        .catch(() => {});
-
-      setShowBusinessProfileModal(false);
-      alert("🎉 आपकी व्यापार प्रोफाइल सफलतापूर्वक सेव हो गई!");
-    } catch (err) {
-      console.warn("Profile save notice:", err);
-      setShowBusinessProfileModal(false);
-      alert("✅ प्रोफाइल स्थानीय रूप से सुरक्षित हो गई!");
-    } finally {
-      setSavingBusinessProfile(false);
-    }
-  };
-
   useEffect(() => {
     const curTotal = quickBillMode === 'direct'
       ? (Number(directBillAmount) || 0)
@@ -905,6 +790,121 @@ function MobileVyaparAppContent() {
   useEffect(() => {
     fetchBankAccounts();
   }, [selectedCompany, showBankCCModal]);
+
+  // Extract known construction / client sites dynamically
+  const knownSites = useMemo(() => {
+    const set = new Set();
+    (partyTransactions || []).forEach(t => {
+      if (t.siteName) set.add(String(t.siteName).trim());
+      if (t.site) set.add(String(t.site).trim());
+    });
+    (bills || []).forEach(b => {
+      if (b.siteName) set.add(String(b.siteName).trim());
+      if (b.site) set.add(String(b.site).trim());
+    });
+    return Array.from(set).filter(Boolean);
+  }, [partyTransactions, bills]);
+
+  // 🎯 5-Data Item Business Profile Completion Calculation
+  const profileChecklist = useMemo(() => {
+    const co = selectedCompany || {};
+    const hasName = Boolean((co.name || co.companyName || co.businessName || "").trim());
+    const hasPhone = Boolean((co.phone || co.mobileNumber || user?.phone || "").trim());
+    const hasAddress = Boolean((co.address || co.city || "").trim());
+    const hasTaxOrType = Boolean((co.gstin || co.gstNumber || co.panNumber || co.businessType || "").trim());
+    const hasBankOrUpi = Boolean(
+      (bankAccounts && bankAccounts.length > 0) ||
+      ((co.bankName || co.accountNumber) && String(co.accountNumber || '').trim().length > 3) ||
+      (co.upiId && String(co.upiId).includes('@'))
+    );
+
+    return [
+      { id: "name", label: "दुकान का नाम", done: hasName },
+      { id: "phone", label: "मोबाइल नंबर", done: hasPhone },
+      { id: "address", label: "दुकान का पता", done: hasAddress },
+      { id: "tax", label: "GST / व्यापार प्रकार", done: hasTaxOrType },
+      { id: "bank", label: "बैंक / UPI खाता", done: hasBankOrUpi },
+    ];
+  }, [selectedCompany, bankAccounts, user]);
+
+  const profileCompletedCount = profileChecklist.filter(i => i.done).length;
+  const profileCompletionPercent = Math.round((profileCompletedCount / 5) * 100);
+
+  const handleOpenBusinessProfileModal = () => {
+    const co = selectedCompany || {};
+    const uBank = bankAccounts?.[0] || {};
+    setProfileFormName(co.name || co.companyName || co.businessName || "");
+    setProfileFormPhone(co.phone || co.mobileNumber || user?.phone || "");
+    setProfileFormAddress(co.address || co.city || "");
+    setProfileFormGstin(co.gstin || co.gstNumber || co.panNumber || "");
+    setProfileFormBusinessType(co.businessType || "Hardware & Building Materials");
+    setProfileFormUpiId(co.upiId || co.upiQrCode || "");
+    setProfileFormBankName(co.bankName || uBank.bankName || "");
+    setProfileFormAccNo(co.accountNumber || uBank.accountNumber || "");
+    setProfileFormIfsc(co.ifscCode || uBank.ifscCode || "");
+    setShowBusinessProfileModal(true);
+  };
+
+  const handleSaveBusinessProfile = async (e) => {
+    if (e) e.preventDefault();
+    if (!profileFormName.trim()) {
+      alert("कृपया दुकान या व्यापार का नाम दर्ज करें!");
+      return;
+    }
+    setSavingBusinessProfile(true);
+    try {
+      const coId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "6a8314470d93e58ad0920950").trim();
+      const updatedCo = {
+        ...(selectedCompany || {}),
+        _id: coId,
+        id: coId,
+        name: profileFormName.trim(),
+        companyName: profileFormName.trim(),
+        businessName: profileFormName.trim(),
+        phone: profileFormPhone.trim(),
+        mobileNumber: profileFormPhone.trim(),
+        address: profileFormAddress.trim(),
+        city: profileFormAddress.trim(),
+        gstin: profileFormGstin.trim(),
+        gstNumber: profileFormGstin.trim(),
+        businessType: profileFormBusinessType.trim(),
+        upiId: profileFormUpiId.trim(),
+        bankName: profileFormBankName.trim(),
+        accountNumber: profileFormAccNo.trim(),
+        ifscCode: profileFormIfsc.trim()
+      };
+
+      if (selectCompany) {
+        selectCompany(updatedCo);
+      }
+      try {
+        localStorage.setItem("selectedCompany", JSON.stringify(updatedCo));
+        const storedCompanies = JSON.parse(localStorage.getItem("companies") || "[]");
+        const idx = storedCompanies.findIndex(c => (c._id || c.id) === coId);
+        if (idx >= 0) {
+          storedCompanies[idx] = updatedCo;
+        } else {
+          storedCompanies.push(updatedCo);
+        }
+        localStorage.setItem("companies", JSON.stringify(storedCompanies));
+      } catch (e) {}
+
+      // Background server update
+      await api.put(`/api/company/${coId}`, updatedCo)
+        .catch(() => api.put(`/api/companies/${coId}`, updatedCo))
+        .catch(() => api.post(`/api/company`, updatedCo))
+        .catch(() => {});
+
+      setShowBusinessProfileModal(false);
+      alert("🎉 आपकी व्यापार प्रोफाइल सफलतापूर्वक सेव हो गई!");
+    } catch (err) {
+      console.warn("Profile save notice:", err);
+      setShowBusinessProfileModal(false);
+      alert("✅ प्रोफाइल स्थानीय रूप से सुरक्षित हो गई!");
+    } finally {
+      setSavingBusinessProfile(false);
+    }
+  };
 
   const [activeMobileReport, setActiveMobileReport] = useState(() => {
     try {
