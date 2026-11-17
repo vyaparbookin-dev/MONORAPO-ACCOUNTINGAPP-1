@@ -467,14 +467,20 @@ export default function PartiesPage() {
       const defaultNotes = paymentType === 'paid' ? 'किस्त भुगतान (Payment Given)' : 'किस्त वसूली (Payment Received)';
       const notes = paymentNotes.trim() || defaultNotes;
 
-      await api.post("/api/payment/entry", {
-        partyId,
-        amount: amt,
-        type: paymentType,
-        date: txDate.toISOString(),
-        paymentMethod: paymentMode,
-        notes
-      });
+      let serverTx = null;
+      try {
+        const res = await api.post("/api/payment/entry", {
+          partyId,
+          amount: amt,
+          type: paymentType,
+          date: txDate.toISOString(),
+          paymentMethod: paymentMode,
+          notes
+        });
+        serverTx = res?.data?.transaction || res?.data;
+      } catch (postErr) {
+        console.warn("[PartiesPage] api.post payment error:", postErr.message);
+      }
 
       // Update party in local state and persistent storage
       const diff = paymentType === 'paid' ? amt : -amt;
@@ -496,8 +502,10 @@ export default function PartiesPage() {
       });
 
       // Record local transaction doc for instant offline reconciliation
+      const actualTxId = serverTx?._id || serverTx?.id || `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const newTxDoc = {
-        _id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        _id: actualTxId,
+        id: actualTxId,
         partyId,
         date: txDate.toISOString(),
         createdAt: txDate.toISOString(),
@@ -507,7 +515,8 @@ export default function PartiesPage() {
         amount: amt,
         type: paymentType === 'paid' ? 'payment' : 'receipt',
         source: 'PartiesPagePayment',
-        paymentMethod: paymentMode
+        paymentMethod: paymentMode,
+        isSynced: Boolean(serverTx?._id || serverTx?.id)
       };
       try {
         const storedTxs = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");

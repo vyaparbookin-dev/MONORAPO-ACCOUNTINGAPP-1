@@ -144,6 +144,21 @@ class MobileErrorBoundary extends React.Component {
   }
 }
 
+const HINDI_MONTH_MAP = {
+  "जन": 0, "जनवरी": 0, "jan": 0, "january": 0,
+  "फर": 1, "फ़र": 1, "फरवरी": 1, "फ़रवरी": 1, "feb": 1, "february": 1,
+  "मार्च": 2, "mar": 2, "march": 2,
+  "अप्रैल": 3, "अप्रै": 3, "apr": 3, "april": 3,
+  "मई": 4, "may": 4,
+  "जून": 5, "jun": 5, "june": 5,
+  "जुलाई": 6, "जुला": 6, "jul": 6, "july": 6,
+  "अगस्त": 7, "अग": 7, "aug": 7, "august": 7,
+  "सितंबर": 8, "सितम्बर": 8, "सित": 8, "sep": 8, "september": 8,
+  "अक्टूबर": 9, "अक्तूबर": 9, "अक्टू": 9, "oct": 9, "october": 9,
+  "नवंबर": 10, "नवम्बर": 10, "नवं": 10, "nov": 10, "november": 10,
+  "दिसंबर": 11, "दिसम्बर": 11, "दिसं": 11, "दिस": 11, "dec": 11, "december": 11
+};
+
 const parseAnyDate = (val) => {
   if (!val) return null;
   if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
@@ -151,7 +166,7 @@ const parseAnyDate = (val) => {
     const d = new Date(val);
     return isNaN(d.getTime()) ? null : d;
   }
-  const str = String(val).trim();
+  let str = String(val).trim();
   if (!str || str.toLowerCase() === "today" || str === "आज") return new Date();
 
   // 1. Strict YYYY-MM-DD or YYYY/MM/DD (with or without time) - parse at noon local time to avoid timezone drift
@@ -161,20 +176,35 @@ const parseAnyDate = (val) => {
     if (!isNaN(parsed.getTime())) return parsed;
   }
 
-  // 2. Strict DD/MM/YYYY or DD-MM-YYYY (with or without time) - parse at noon local time
-  const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:T|\s|$)/);
+  // 2. Strict DD/MM/YYYY or DD-MM-YYYY or 2-digit year DD-MM-YY - parse at noon local time
+  const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:T|\s|$)/);
   if (dmy) {
-    const parsed = new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]), 12, 0, 0);
+    let year = Number(dmy[3]);
+    if (year < 100) year = year < 50 ? 2000 + year : 1900 + year;
+    const parsed = new Date(year, Number(dmy[2]) - 1, Number(dmy[1]), 12, 0, 0);
     if (!isNaN(parsed.getTime())) return parsed;
   }
 
-  // 3. If it has 'T' or ISO timestamp
+  // 3. Text date with English or Hindi month names (e.g. "16 Nov 2026", "16 नवं 2026", "7 दिसंबर 2024")
+  for (const [mName, mIdx] of Object.entries(HINDI_MONTH_MAP)) {
+    if (str.includes(mName)) {
+      const parts = str.match(/(\d{1,2})[^\d]+(\d{2,4})/);
+      if (parts) {
+        let year = Number(parts[2]);
+        if (year < 100) year = year < 50 ? 2000 + year : 1900 + year;
+        const parsed = new Date(year, mIdx, Number(parts[1]), 12, 0, 0);
+        if (!isNaN(parsed.getTime())) return parsed;
+      }
+    }
+  }
+
+  // 4. If it has 'T' or ISO timestamp
   if (str.includes("T")) {
     const d = new Date(str);
     if (!isNaN(d.getTime())) return d;
   }
 
-  // 4. Try standard Date parsing (strictly preserve 4-digit year!)
+  // 5. Try standard Date parsing (strictly preserve 4-digit year!)
   const has4DigitYear = /\b(19\d{2}|20\d{2})\b/.test(str);
   const d = new Date(str);
   if (!isNaN(d.getTime())) {
@@ -441,6 +471,7 @@ function MobileVyaparAppContent() {
     const queue = readLocalJson(["vb_offline_sync_queue", "sync_queue"], []);
     return Array.isArray(queue) ? queue.length : 0;
   });
+  const [isSyncingPartyTxs, setIsSyncingPartyTxs] = useState(false);
 
   const enqueueOfflineSync = (action) => {
     try {
@@ -453,32 +484,114 @@ function MobileVyaparAppContent() {
     }
   };
 
+  // ☁️ Auto-sync stranded local party transactions (मैंने दिए / मुझे मिले) to Cloud Server
+  const syncLocalPartyTransactionsToServer = async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return { synced: 0, failed: 0 };
+    try {
+      const stored = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+      if (!Array.isArray(stored) || stored.length === 0) return { synced: 0, failed: 0 };
+
+      // Find unsynced local-only transactions (IDs starting with tx_ or ptx_)
+      const unsynced = stored.filter(t => {
+        const id = String(t._id || t.id || '');
+        return id.startsWith("tx_") || id.startsWith("ptx_");
+      });
+
+      if (unsynced.length === 0) return { synced: 0, failed: 0 };
+
+      let syncedCount = 0;
+      let failedCount = 0;
+      let updatedStored = [...stored];
+
+      for (const t of unsynced) {
+        const localId = t._id || t.id;
+        const targetPartyId = String(t.partyId?._id || t.partyId?.id || t.partyId || "");
+        if (!targetPartyId) continue;
+
+        const amt = Number(t.amount || t.debit || t.credit || 0);
+        if (amt <= 0) continue;
+
+        const isDebit = Number(t.debit || 0) > 0 || t.type === 'paid';
+        const type = isDebit ? 'paid' : 'received';
+        const isoDate = toSafeIsoDate(t.date || t.createdAt);
+
+        try {
+          const res = await api.post("/api/payment/entry", {
+            partyId: targetPartyId,
+            amount: amt,
+            type,
+            date: isoDate,
+            paymentMethod: t.paymentMethod || t.paymentMode || 'CASH',
+            notes: t.details || (type === 'paid' ? 'मैंने दिए' : 'मुझे मिले'),
+            siteName: t.siteName || t.site || '',
+            carrierName: t.carrierName || t.receiverName || '',
+            carrierPhone: t.carrierPhone || t.receiverPhone || ''
+          });
+
+          const serverTx = res?.data?.transaction || res?.data;
+          const serverId = serverTx?._id || serverTx?.id;
+          if (serverId) {
+            syncedCount++;
+            updatedStored = updatedStored.map(item => {
+              if ((item._id || item.id) === localId) {
+                return {
+                  ...item,
+                  _id: serverId,
+                  id: serverId,
+                  date: isoDate,
+                  isSynced: true
+                };
+              }
+              return item;
+            });
+          }
+        } catch (postErr) {
+          console.warn("[syncLocalPartyTransactionsToServer] sync defer for:", localId, postErr.message);
+          failedCount++;
+        }
+      }
+
+      if (syncedCount > 0) {
+        localStorage.setItem("vb_local_party_txs", JSON.stringify(updatedStored));
+        setAllPartyTransactions(updatedStored);
+      }
+      return { synced: syncedCount, failed: failedCount };
+    } catch (e) {
+      console.error("[syncLocalPartyTransactionsToServer] error:", e);
+      return { synced: 0, failed: 0 };
+    }
+  };
+
   const processOfflineSyncQueue = async () => {
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     try {
       const stored = readLocalJson(["vb_offline_sync_queue", "sync_queue"], []);
       const queue = Array.isArray(stored) ? stored : [];
-      if (queue.length === 0) return;
-
-      const remaining = [];
-      for (const action of queue) {
-        try {
-          if (action.type === 'CREATE_BILL') {
-            await api.post("/api/billing", action.payload);
-          } else if (action.type === 'CREATE_PARTY') {
-            await api.post("/api/party", action.payload).catch(() => api.post("/api/parties", action.payload));
-          } else if (action.type === 'CREATE_ITEM') {
-            await api.post("/api/inventory", action.payload).catch(() => api.post("/inventory", action.payload));
-          } else if (action.type === 'CREATE_EXPENSE') {
-            await api.post("/api/expenses", action.payload);
+      if (queue.length > 0) {
+        const remaining = [];
+        for (const action of queue) {
+          try {
+            if (action.type === 'CREATE_BILL') {
+              await api.post("/api/billing", action.payload);
+            } else if (action.type === 'CREATE_PARTY') {
+              await api.post("/api/party", action.payload).catch(() => api.post("/api/parties", action.payload));
+            } else if (action.type === 'CREATE_ITEM') {
+              await api.post("/api/inventory", action.payload).catch(() => api.post("/inventory", action.payload));
+            } else if (action.type === 'CREATE_EXPENSE') {
+              await api.post("/api/expenses", action.payload);
+            } else if (action.type === 'CREATE_PARTY_TX' || action.type === 'PAYMENT_ENTRY') {
+              await api.post("/api/payment/entry", action.payload);
+            }
+          } catch (syncErr) {
+            console.warn("Sync queue item defer:", syncErr);
+            remaining.push(action);
           }
-        } catch (syncErr) {
-          console.warn("Sync queue item defer:", syncErr);
-          remaining.push(action);
         }
+        writeLocalJson(["vb_offline_sync_queue", "sync_queue"], remaining);
+        setSyncQueueCount(remaining.length);
       }
-      writeLocalJson(["vb_offline_sync_queue", "sync_queue"], remaining);
-      setSyncQueueCount(remaining.length);
+      // Also sync any stranded local party transactions
+      await syncLocalPartyTransactionsToServer();
     } catch (e) {
       console.error("processOfflineSyncQueue error:", e);
     }
@@ -488,6 +601,7 @@ function MobileVyaparAppContent() {
     const handleOnline = () => {
       setIsOnline(true);
       processOfflineSyncQueue();
+      syncLocalPartyTransactionsToServer();
       fetchLiveDashboardData();
     };
     const handleOffline = () => {
@@ -4290,7 +4404,30 @@ function MobileVyaparAppContent() {
           }
           return up;
         });
-      } else if (!isClientLocalOnly) {
+      } else if (isClientLocalOnly) {
+        // ✅ FIX: Local-only transaction being edited — sync/save to server immediately!
+        try {
+          const res = await api.post("/api/payment/entry", {
+            partyId: targetPartyId,
+            amount: amt,
+            type: editPartyTxType,
+            date: isoDate,
+            paymentMethod: editPartyTxPaymentMode || 'CASH',
+            notes: editPartyTxNotes.trim(),
+            siteName: editPartyTxSite.trim(),
+            carrierName: editPartyTxCarrierName.trim(),
+            carrierPhone: editPartyTxCarrierPhone.trim()
+          });
+          const serverTx = res?.data?.transaction || res?.data;
+          const serverId = serverTx?._id || serverTx?.id;
+          if (serverId) {
+            payload._id = serverId;
+            payload.id = serverId;
+          }
+        } catch (postErr) {
+          console.warn("[handleSaveEditPartyTx] Local transaction sync deferred:", postErr.message);
+        }
+      } else {
         // ✅ FIX: Capture API response so we use server-confirmed date/data
         const updateRes = await api.put(`/api/party/transaction/${txId}`, payload)
           .catch(() => api.put(`/api/parties/transaction/${txId}`, payload));
@@ -4302,10 +4439,13 @@ function MobileVyaparAppContent() {
       }
 
       // Also update local state so date changes reflect immediately
+      const effectiveTxId = payload._id || txId;
       setAllPartyTransactions(prev => (prev || []).map(t => {
         if ((t._id || t.id) === txId) {
           return {
             ...t,
+            _id: effectiveTxId,
+            id: effectiveTxId,
             amount: amt,
             debit: editPartyTxType === 'paid' ? amt : 0,
             credit: editPartyTxType === 'received' ? amt : 0,
@@ -4315,7 +4455,8 @@ function MobileVyaparAppContent() {
             siteName: editPartyTxSite.trim(),
             site: editPartyTxSite.trim(),
             carrierName: editPartyTxCarrierName.trim(),
-            carrierPhone: editPartyTxCarrierPhone.trim()
+            carrierPhone: editPartyTxCarrierPhone.trim(),
+            isSynced: Boolean(payload._id)
           };
         }
         return t;
@@ -4372,6 +4513,8 @@ function MobileVyaparAppContent() {
             matched = true;
             return {
               ...t,
+              _id: payload._id || t._id,
+              id: payload.id || t.id,
               amount: amt,
               debit: editPartyTxType === 'paid' ? amt : 0,
               credit: editPartyTxType === 'received' ? amt : 0,
@@ -4383,7 +4526,8 @@ function MobileVyaparAppContent() {
               carrierName: payload.carrierName,
               carrierPhone: payload.carrierPhone,
               receiverName: payload.carrierName,
-              receiverPhone: payload.carrierPhone
+              receiverPhone: payload.carrierPhone,
+              isSynced: Boolean(payload._id)
             };
           }
           return t;
@@ -4391,8 +4535,8 @@ function MobileVyaparAppContent() {
 
         if (!matched) {
           updatedList.unshift({
-            _id: txId,
-            id: txId,
+            _id: payload._id || txId,
+            id: payload.id || txId,
             partyId: targetPartyId,
             amount: amt,
             debit: editPartyTxType === 'paid' ? amt : 0,
@@ -4407,7 +4551,8 @@ function MobileVyaparAppContent() {
             carrierPhone: payload.carrierPhone,
             receiverName: payload.carrierName,
             receiverPhone: payload.carrierPhone,
-            source: 'PartyTransaction'
+            source: 'PartyTransaction',
+            isSynced: Boolean(payload._id)
           });
         }
         localStorage.setItem("vb_local_party_txs", JSON.stringify(updatedList));
@@ -4668,6 +4813,10 @@ function MobileVyaparAppContent() {
     const pId = party.id || party._id;
     if (pId) {
       fetchPartyStatement(pId);
+      // Auto-sync any stranded offline transactions in background
+      syncLocalPartyTransactionsToServer().then(res => {
+        if (res?.synced > 0) fetchPartyStatement(pId);
+      }).catch(() => {});
     }
   };
 
@@ -4711,6 +4860,21 @@ function MobileVyaparAppContent() {
       }
 
       const actualTxId = serverTx?._id || `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      if (!serverTx) {
+        enqueueOfflineSync({
+          type: 'PAYMENT_ENTRY',
+          payload: {
+            partyId,
+            amount: amt,
+            type,
+            date: isoDate,
+            paymentMethod: partyTxPaymentMode || 'CASH',
+            bankAccountId: partyTxBankAccountId || undefined,
+            notes
+          },
+          localId: actualTxId
+        });
+      }
 
       // 'paid' increases outstanding (+amt, You'll Get), 'received' decreases outstanding (-amt)
       const diff = type === 'paid' ? amt : -amt;
@@ -5224,6 +5388,21 @@ function MobileVyaparAppContent() {
       });
 
       const actualTxId = serverTx?._id || `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      if (!serverTx) {
+        enqueueOfflineSync({
+          type: 'PAYMENT_ENTRY',
+          payload: {
+            partyId,
+            amount: amt,
+            type,
+            date: isoDate,
+            paymentMethod: partyTxPaymentMode || 'CASH',
+            bankAccountId: partyTxBankAccountId || undefined,
+            notes
+          },
+          localId: actualTxId
+        });
+      }
       const newTxDoc = {
         _id: actualTxId,
         partyId,
@@ -11163,6 +11342,27 @@ function MobileVyaparAppContent() {
                 </button>
                 <button
                   type="button"
+                  disabled={isSyncingPartyTxs}
+                  onClick={async () => {
+                    setIsSyncingPartyTxs(true);
+                    const res = await syncLocalPartyTransactionsToServer();
+                    const pId = selectedPartyDetail?.id || selectedPartyDetail?._id;
+                    if (pId) await fetchPartyStatement(pId);
+                    setIsSyncingPartyTxs(false);
+                    if (res.synced > 0) {
+                      alert(`🎉 ${res.synced} ऑफ़लाइन लेन-देन सर्वर पर सिंक हो गए!`);
+                    } else {
+                      alert("✅ सभी लेन-देन पहले से ही सर्वर से सिंक हैं!");
+                    }
+                  }}
+                  className="py-2 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition shadow-xs"
+                  title="मोबाइल के ऑफ़लाइन लेन-देन सर्वर (डेस्कटॉप) पर सिंक करें"
+                >
+                  <RefreshCw size={12} className={isSyncingPartyTxs ? "animate-spin" : ""} />
+                  <span>{isSyncingPartyTxs ? "सिंक..." : "☁️ सर्वर सिंक"}</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleSharePartyStatementWhatsApp(selectedPartyDetail)}
                   className="flex-1 py-2 bg-[#25D366] hover:bg-green-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition min-w-[100px]"
                 >
@@ -12743,13 +12943,36 @@ function MobileVyaparAppContent() {
                   </div>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowPartyStatementModal(false)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer p-1"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={isSyncingPartyTxs}
+                  onClick={async () => {
+                    setIsSyncingPartyTxs(true);
+                    const res = await syncLocalPartyTransactionsToServer();
+                    const pId = selectedPartyDetail?.id || selectedPartyDetail?._id;
+                    if (pId) await fetchPartyStatement(pId);
+                    setIsSyncingPartyTxs(false);
+                    if (res.synced > 0) {
+                      alert(`🎉 ${res.synced} ऑफ़लाइन लेन-देन सर्वर पर सिंक हो गए!`);
+                    } else {
+                      alert("✅ सभी लेन-देन पहले से ही सर्वर से सिंक हैं!");
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold rounded-lg border border-indigo-200 flex items-center gap-1 transition cursor-pointer"
+                  title="ऑफ़लाइन लेन-देन सर्वर पर सिंक करें"
+                >
+                  <RefreshCw size={12} className={isSyncingPartyTxs ? "animate-spin" : ""} />
+                  <span>{isSyncingPartyTxs ? "सिंक..." : "☁️ सर्वर सिंक"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPartyStatementModal(false)}
+                  className="text-slate-400 hover:text-slate-700 cursor-pointer p-1"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             {/* Calculations for Statement Summary */}
