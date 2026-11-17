@@ -1117,7 +1117,7 @@ export const updatePartyTransaction = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const { amount, type, details, date, paymentMethod, partyId: targetPartyId } = req.body;
+    const { amount, type, details, date, paymentMethod, siteName, site, partyId: targetPartyId } = req.body;
     const cleanId = String(id).replace(/^(pay_|tx_|ptx_)/, '').trim();
     const isMongoId = /^[0-9a-fA-F]{24}$/.test(id) || /^[0-9a-fA-F]{24}$/.test(cleanId);
     const targetId = /^[0-9a-fA-F]{24}$/.test(id) ? id : cleanId;
@@ -1221,6 +1221,7 @@ export const updatePartyTransaction = async (req, res) => {
         if (details !== undefined) tx.details = details;
         if (date) tx.date = new Date(date);
         if (paymentMethod) tx.paymentMethod = paymentMethod;
+        if (siteName !== undefined || site !== undefined) tx.siteName = (siteName ?? site ?? '').trim();
         tx.updatedAt = new Date();
         await tx.save();
 
@@ -1336,6 +1337,7 @@ export const updatePartyTransaction = async (req, res) => {
             debit: newDeb,
             credit: newCred,
             details: details || "संपादित लेनदेन",
+            ...((siteName !== undefined || site !== undefined) ? { site_name: (siteName ?? site ?? '').trim() } : {}),
             date: date ? new Date(date).toISOString() : new Date().toISOString()
           })
           .eq("id", queryId)

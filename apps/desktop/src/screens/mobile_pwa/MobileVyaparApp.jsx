@@ -491,10 +491,14 @@ function MobileVyaparAppContent() {
       const stored = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
       if (!Array.isArray(stored) || stored.length === 0) return { synced: 0, failed: 0 };
 
-      // Find unsynced local-only transactions (IDs starting with tx_ or ptx_)
+      // Find unsynced local-only transactions (non-Mongo/non-UUID or explicitly offline created)
       const unsynced = stored.filter(t => {
+        if (!t) return false;
+        if (t.isSynced === true) return false;
         const id = String(t._id || t.id || '');
-        return id.startsWith("tx_") || id.startsWith("ptx_");
+        const isMongoId = id.length === 24 && !id.includes('-') && !id.includes('_') && /^[0-9a-fA-F]{24}$/.test(id);
+        const isSbUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+        return (!isMongoId && !isSbUuid) || t.isOfflineCreated || t.isOffline || id.startsWith("tx_") || id.startsWith("ptx_") || id.startsWith("temp_");
       });
 
       if (unsynced.length === 0) return { synced: 0, failed: 0 };
@@ -502,11 +506,26 @@ function MobileVyaparAppContent() {
       let syncedCount = 0;
       let failedCount = 0;
       let updatedStored = [...stored];
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+      const allLocalParties = parties || storageManager.getParties(currentCoId) || [];
 
       for (const t of unsynced) {
         const localId = t._id || t.id;
-        const targetPartyId = String(t.partyId?._id || t.partyId?.id || t.partyId || "");
-        if (!targetPartyId) continue;
+        let targetPartyId = String(t.partyId?._id || t.partyId?.id || t.partyId || "");
+        const partyName = String(t.partyName || t.customerName || t.party || (typeof t.partyId === 'object' ? t.partyId?.name : '') || "").trim();
+
+        // Match against known parties to resolve authoritative server partyId
+        const matchedParty = allLocalParties.find(p => {
+          const pId = String(p._id || p.id || "");
+          const pName = String(p.name || p.partyName || "").trim().toLowerCase();
+          return (pId && pId === targetPartyId) || (partyName && pName === partyName.toLowerCase());
+        });
+
+        if (matchedParty) {
+          targetPartyId = String(matchedParty._id || matchedParty.id || targetPartyId);
+        }
+
+        if (!targetPartyId && !partyName) continue;
 
         const amt = Number(t.amount || t.debit || t.credit || 0);
         if (amt <= 0) continue;
@@ -518,6 +537,7 @@ function MobileVyaparAppContent() {
         try {
           const res = await api.post("/api/payment/entry", {
             partyId: targetPartyId,
+            partyName: partyName || matchedParty?.name,
             amount: amt,
             type,
             date: isoDate,
@@ -528,7 +548,7 @@ function MobileVyaparAppContent() {
             carrierPhone: t.carrierPhone || t.receiverPhone || ''
           });
 
-          const serverTx = res?.data?.transaction || res?.data;
+          const serverTx = res?.transaction || res?.data?.transaction || res?.data;
           const serverId = serverTx?._id || serverTx?.id;
           if (serverId) {
             syncedCount++;
@@ -539,7 +559,8 @@ function MobileVyaparAppContent() {
                   _id: serverId,
                   id: serverId,
                   date: isoDate,
-                  isSynced: true
+                  isSynced: true,
+                  isOfflineCreated: false
                 };
               }
               return item;
@@ -608,6 +629,35 @@ function MobileVyaparAppContent() {
       const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
 
       // --- PHASE 1: LOCAL -> SERVER (Push any unsynced offline records) ---
+      // 0. Push any offline-created parties first so transactions can link
+      if (currentCoId) {
+        try {
+          const localParties = storageManager.getParties(currentCoId) || [];
+          const unsyncedParties = localParties.filter(p => {
+            const pId = String(p._id || p.id || "");
+            return p.isOfflineCreated || pId.startsWith("party_") || pId.startsWith("party-");
+          });
+          for (const up of unsyncedParties) {
+            try {
+              const res = await api.post("/api/party", {
+                name: up.name,
+                mobileNumber: up.phone || up.mobileNumber || "9999999999",
+                address: up.address || "Local",
+                openingBalance: up.openingBalance || 0,
+                currentBalance: up.currentBalance || up.balance || 0,
+                partyType: up.type || up.partyType || "customer"
+              });
+              const serverParty = res?.party || res?.data?.party || res?.data;
+              if (serverParty?._id) {
+                storageManager.saveParty(currentCoId, { ...up, ...serverParty, isOfflineCreated: false });
+              }
+            } catch (pe) {
+              console.warn("[AutoSync] Party push defer:", pe.message);
+            }
+          }
+        } catch (pe) {}
+      }
+
       // 1. Unsynced manual party transactions (vb_local_party_txs)
       await syncLocalPartyTransactionsToServer();
 

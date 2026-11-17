@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import api from '../../services/api';
-import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2, Download, FileSpreadsheet, Upload, AlertCircle, MapPin, RotateCcw, Filter } from 'lucide-react';
+import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2, Download, FileSpreadsheet, Upload, AlertCircle, MapPin, RotateCcw, Filter, ArrowLeft } from 'lucide-react';
 import { syncQueue } from "@repo/shared";
 import CreditLimitHubModal from '../../components/modals/CreditLimitHubModal';
 import { getWebSafeImageUrl, compressImageFile } from '../../utils/photoStorage';
@@ -48,6 +48,16 @@ export default function PartiesPage() {
   const [statementPeriodFilter, setStatementPeriodFilter] = useState('all'); // 'all', 'FY2425', 'FY2526', 'FY2627', 'custom'
   const [statementStartDate, setStatementStartDate] = useState('');
   const [statementEndDate, setStatementEndDate] = useState('');
+  const [statementSearch, setStatementSearch] = useState('');
+
+  // Transaction Edit inside Statement
+  const [editingTx, setEditingTx] = useState(null);
+  const [editingTxDate, setEditingTxDate] = useState('');
+  const [editingTxAmount, setEditingTxAmount] = useState('');
+  const [editingTxType, setEditingTxType] = useState('received');
+  const [editingTxDetails, setEditingTxDetails] = useState('');
+  const [editingTxSite, setEditingTxSite] = useState('');
+  const [savingTx, setSavingTx] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -548,6 +558,9 @@ export default function PartiesPage() {
       alert(`✅ ₹${amt.toLocaleString('en-IN')} का भुगतान (${paymentType === 'paid' ? 'मैंने दिए / किस्त' : 'मुझे मिले / किस्त'}) दिनांक ${formattedDate} को सफलतापूर्वक दर्ज हुआ!`);
       setShowPaymentModal(false);
       setPaymentParty(null);
+      if (statementParty) {
+        handleOpenStatement(statementParty);
+      }
     } catch (error) {
       alert('Error recording payment: ' + (error.response?.data?.error || error.message));
     } finally {
@@ -597,14 +610,16 @@ export default function PartiesPage() {
     setStatementPeriodFilter('all');
     setStatementStartDate('');
     setStatementEndDate('');
+    setStatementSearch('');
     setShowStatementModal(true);
     setStatementLoading(true);
     setStatementData(null);
     try {
       const pId = party._id || party.id;
       const res = await api.get(`/api/party/${pId}/statement`);
-      if (res?.data) {
-        setStatementData(res.data);
+      const data = res?.data || res;
+      if (data) {
+        setStatementData(data);
       }
     } catch (err) {
       console.error("Statement fetch error", err);
@@ -627,7 +642,7 @@ export default function PartiesPage() {
     return Array.from(siteMap.entries()).map(([name, count]) => ({ name, count }));
   }, [statementData]);
 
-  // Filtered transactions for active party statement (by Site, FY, and Custom Date)
+  // Filtered transactions for active party statement (by Site, FY, Custom Date & Search)
   const filteredStatementTransactions = useMemo(() => {
     if (!statementData?.transactions) return [];
     let list = [...statementData.transactions];
@@ -672,8 +687,21 @@ export default function PartiesPage() {
       }
     }
 
+    // 3. Search filter
+    if (statementSearch && statementSearch.trim()) {
+      const q = statementSearch.trim().toLowerCase();
+      list = list.filter(t => {
+        const ref = String(t.refNo || '').toLowerCase();
+        const details = String(t.details || '').toLowerCase();
+        const site = String(t.siteName || '').toLowerCase();
+        const debit = String(t.debit || '');
+        const credit = String(t.credit || '');
+        return ref.includes(q) || details.includes(q) || site.includes(q) || debit.includes(q) || credit.includes(q);
+      });
+    }
+
     return list;
-  }, [statementData, statementSiteFilter, statementPeriodFilter, statementStartDate, statementEndDate]);
+  }, [statementData, statementSiteFilter, statementPeriodFilter, statementStartDate, statementEndDate, statementSearch]);
 
   const filteredDebit = useMemo(() => {
     return filteredStatementTransactions.reduce((acc, t) => acc + (Number(t.debit) || 0), 0);
@@ -684,6 +712,101 @@ export default function PartiesPage() {
   }, [filteredStatementTransactions]);
 
   const filteredNet = filteredDebit - filteredCredit;
+
+  // Open Edit Transaction Dialog
+  const handleOpenEditTx = (tx) => {
+    setEditingTx(tx);
+    const dStr = tx.date ? new Date(tx.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+    setEditingTxDate(dStr);
+    const amt = Number(tx.debit || 0) > 0 ? Number(tx.debit) : Number(tx.credit || 0);
+    setEditingTxAmount(String(amt || ''));
+    setEditingTxType(Number(tx.debit || 0) > 0 ? 'paid' : 'received');
+    setEditingTxDetails(tx.details || '');
+    setEditingTxSite(tx.siteName || '');
+  };
+
+  // Save Edited Transaction
+  const handleSaveEditTx = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!editingTx) return;
+    const amt = parseFloat(editingTxAmount);
+    if (!editingTxAmount || isNaN(amt) || amt <= 0) {
+      alert("कृपया मान्य राशि (₹) दर्ज करें!");
+      return;
+    }
+    setSavingTx(true);
+    try {
+      const txId = editingTx._id || editingTx.id;
+      const payload = {
+        date: editingTxDate,
+        amount: amt,
+        type: editingTxType,
+        details: editingTxDetails.trim(),
+        siteName: editingTxSite.trim()
+      };
+      const res = await api.put(`/api/party/transaction/${txId}`, payload);
+      alert(res?.data?.message || "लेनदेन सफलतापूर्वक अपडेट हो गया!");
+      setEditingTx(null);
+      if (statementParty) {
+        handleOpenStatement(statementParty);
+      }
+      fetchParties();
+    } catch (err) {
+      alert("अपडेट में त्रुटि: " + (err.response?.data?.error || err.message));
+    } finally {
+      setSavingTx(false);
+    }
+  };
+
+  // Export Statement to Excel (.xlsx)
+  const handleExportStatementExcel = () => {
+    if (!statementParty || !filteredStatementTransactions.length) {
+      alert("एक्सपोर्ट करने के लिए कोई लेन-देन उपलब्ध नहीं है!");
+      return;
+    }
+    try {
+      const pName = statementParty.name || "पार्टी";
+      const rows = filteredStatementTransactions.map((tx, idx) => {
+        const isReceipt = tx.type === 'receipt' || tx.credit > 0;
+        const typeLabel = tx.type === 'sale' ? 'बिक्री बिल' :
+                          tx.type === 'purchase' ? 'खरीद बिल' :
+                          isReceipt ? 'मुझे मिले (जमा)' : 'मैंने दिए (बिल/किस्त)';
+        const dateStr = tx.date ? new Date(tx.date).toLocaleDateString('en-GB') : '-';
+        return {
+          "क्र. सं.": idx + 1,
+          "दिनांक": dateStr,
+          "प्रकार": typeLabel,
+          "रेफरेंस / बिल #": tx.refNo || '-',
+          "विवरण / नोट्स": tx.details || '-',
+          "साइट (Site)": tx.siteName || '-',
+          "बिल (डेबिट ₹)": tx.debit || 0,
+          "जमा (क्रेडिट ₹)": tx.credit || 0,
+          "बैलेंस (₹)": Math.abs(Number(tx.runningBalance || 0)) + (Number(tx.runningBalance || 0) >= 0 ? ' Dr' : ' Cr')
+        };
+      });
+
+      // Add summary row
+      rows.push({
+        "क्र. सं.": "",
+        "दिनांक": "",
+        "प्रकार": "कुल योग (Total)",
+        "रेफरेंस / बिल #": "",
+        "विवरण / नोट्स": `कुल प्रविष्टियाँ: ${filteredStatementTransactions.length}`,
+        "साइट (Site)": "",
+        "बिल (डेबिट ₹)": filteredDebit,
+        "जमा (क्रेडिट ₹)": filteredCredit,
+        "बैलेंस (₹)": Math.abs(filteredNet) + (filteredNet >= 0 ? ' (लेने हैं)' : ' (देने हैं)')
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "खाता_स्टेटमेंट");
+      const safeName = pName.replace(/[^a-zA-Z0-9_\u0900-\u097F]/g, '_');
+      XLSX.writeFile(wb, `${safeName}_खाता_स्टेटमेंट.xlsx`);
+    } catch (e) {
+      alert("Excel एक्सपोर्ट में त्रुटि: " + e.message);
+    }
+  };
 
   // Attach Bill Photo / Receipt Image to Transaction
   const handleAttachImage = async (txId, file) => {
@@ -724,8 +847,8 @@ export default function PartiesPage() {
     if (!window.confirm("क्या आप इस प्रविष्टि (Transaction) को हटाना चाहते हैं? इससे पार्टी का बैलेंस भी स्वतः सही हो जाएगा।")) return;
     try {
       const res = await api.delete(`/api/party/transaction/${txId}`);
-      if (res?.data?.success) {
-        alert(res.data.message || "लेनदेन हटा दिया गया!");
+      if (res?.data?.success || res?.success) {
+        alert(res?.data?.message || res?.message || "लेनदेन हटा दिया गया!");
         if (statementParty) {
           handleOpenStatement(statementParty);
         }
@@ -829,6 +952,659 @@ export default function PartiesPage() {
     const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
     return bal < 0;
   }).reduce((sum, p) => sum + Number(p?.currentBalance ?? p?.balance ?? 0), 0));
+
+  // 📄 If viewing statement for a specific party, render dedicated full-page Ledger Statement View
+  if (statementParty) {
+    const isFilterActive = statementSiteFilter !== 'all' || statementPeriodFilter !== 'all' || Boolean(statementStartDate) || Boolean(statementEndDate) || Boolean(statementSearch.trim());
+    const overallBal = Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0);
+    const displayedNet = isFilterActive ? filteredNet : overallBal;
+
+    return (
+      <div className="p-3 sm:p-6 bg-slate-100 min-h-screen flex flex-col space-y-4">
+        {/* Top Navigation & Action Header */}
+        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { setStatementParty(null); setShowStatementModal(false); }}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl flex items-center gap-2 cursor-pointer transition text-xs sm:text-sm border border-slate-300"
+              title="पार्टी सूची पर वापस जाएं"
+            >
+              <ArrowLeft size={16} /> वापस सभी पार्टियां
+            </button>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-xl sm:text-2xl font-black text-slate-800">{statementParty.name}</h1>
+                <span className="text-[10px] sm:text-xs px-2.5 py-0.5 rounded-full font-bold bg-indigo-100 text-indigo-700 capitalize">
+                  {statementParty.partyType === 'supplier' ? '🏢 सप्लायर' : statementParty.partyType === 'personal' ? '👤 पर्सनल खाता' : '🛒 ग्राहक'}
+                </span>
+                {statementParty.priceLevel && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-md font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                    रेट: {statementParty.priceLevel}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-3 flex-wrap">
+                <span>📞 {statementParty.mobileNumber && statementParty.mobileNumber !== '9999999999' ? statementParty.mobileNumber : 'कोई मोबाइल नंबर नहीं'}</span>
+                {statementParty.address && <span>• 📍 {statementParty.address}</span>}
+                {statementParty.gstin && <span>• GST: {statementParty.gstin}</span>}
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Action Buttons */}
+          <div className="flex items-center gap-2 flex-wrap w-full lg:w-auto justify-end">
+            <button
+              onClick={() => handleOpenPayment(statementParty, 'received')}
+              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow cursor-pointer transition"
+              title="ग्राहक या पार्टी से किस्त / पेमेंट प्राप्त दर्ज करें"
+            >
+              <Plus size={14} /> <span>🟢 मुझे मिले</span>
+            </button>
+            <button
+              onClick={() => handleOpenPayment(statementParty, 'paid')}
+              className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow cursor-pointer transition"
+              title="पार्टी या सप्लायर को भुगतान दर्ज करें"
+            >
+              <Plus size={14} /> <span>🔴 मैंने दिए</span>
+            </button>
+            <button
+              onClick={handleExportStatementExcel}
+              className="px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow cursor-pointer transition"
+              title="संपूर्ण खाता स्टेटमेंट Excel (.xlsx) फ़ाइल में डाउनलोड करें"
+            >
+              <FileSpreadsheet size={14} /> <span>📥 Excel डाउनलोड</span>
+            </button>
+            <button
+              onClick={handleShareWhatsApp}
+              className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow cursor-pointer transition"
+              title="व्हाट्सएप पर खाता विवरण भेजें"
+            >
+              <Share2 size={14} /> <span>WhatsApp</span>
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow cursor-pointer transition"
+              title="स्टेटमेंट प्रिंट करें या PDF सुरक्षित करें"
+            >
+              <Printer size={14} /> <span>प्रिंट / PDF</span>
+            </button>
+            <button
+              onClick={() => handleOpenStatement(statementParty)}
+              className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer border border-slate-300 transition"
+              title="स्टेटमेंट रिफ्रेश करें"
+            >
+              <RotateCcw size={15} />
+            </button>
+          </div>
+        </div>
+
+        {/* Financial KPI Summary Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-xs">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">शुरूआती बैलेंस (Opening)</span>
+            <p className="text-lg font-black text-slate-800 mt-1">
+              ₹{(statementData?.openingBalance || statementParty.openingBalance || 0).toLocaleString('en-IN')}
+            </p>
+          </div>
+          <div className="p-3.5 bg-white rounded-2xl border border-indigo-100 shadow-xs">
+            <span className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider block">
+              कुल बिल (Total Debit) {isFilterActive && <span className="text-amber-600 font-normal">(फ़िल्टर)</span>}
+            </span>
+            <p className="text-lg font-black text-indigo-700 mt-1">
+              ₹{(isFilterActive ? filteredDebit : (statementData?.totalDebit || 0)).toLocaleString('en-IN')}
+            </p>
+            {isFilterActive && (
+              <span className="text-[10px] text-slate-400">कुल योग: ₹{(statementData?.totalDebit || 0).toLocaleString('en-IN')}</span>
+            )}
+          </div>
+          <div className="p-3.5 bg-white rounded-2xl border border-emerald-100 shadow-xs">
+            <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider block">
+              कुल जमा (Total Credit) {isFilterActive && <span className="text-amber-600 font-normal">(फ़िल्टर)</span>}
+            </span>
+            <p className="text-lg font-black text-emerald-700 mt-1">
+              ₹{(isFilterActive ? filteredCredit : (statementData?.totalCredit || 0)).toLocaleString('en-IN')}
+            </p>
+            {isFilterActive && (
+              <span className="text-[10px] text-slate-400">कुल योग: ₹{(statementData?.totalCredit || 0).toLocaleString('en-IN')}</span>
+            )}
+          </div>
+          <div className={`p-3.5 bg-white rounded-2xl border shadow-xs ${
+            displayedNet > 0 ? 'border-rose-200' : displayedNet < 0 ? 'border-emerald-200' : 'border-slate-200'
+          }`}>
+            <span className="text-[11px] font-bold uppercase tracking-wider block text-slate-600">
+              {isFilterActive ? 'फ़िल्टर अवधि बकाया (Period Net)' : 'मौजूदा शुद्ध बकाया (Net Due)'}
+            </span>
+            <p className={`text-lg font-black mt-1 ${displayedNet > 0 ? 'text-rose-600' : displayedNet < 0 ? 'text-emerald-700' : 'text-slate-700'}`}>
+              ₹{Math.abs(displayedNet).toLocaleString('en-IN')}
+              <span className="text-xs font-bold ml-1.5">
+                {displayedNet > 0 ? '(लेने हैं / Due)' : displayedNet < 0 ? '(देने हैं / Adv)' : '(हिसाब चुकता)'}
+              </span>
+            </p>
+            {isFilterActive && (
+              <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                समग्र बकाया: ₹{Math.abs(overallBal).toLocaleString('en-IN')} {overallBal >= 0 ? '(लेने हैं)' : '(देने हैं)'}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Filter and Search Controls Bar */}
+        <div className="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Search Input */}
+            <div className="relative min-w-[220px]">
+              <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="बिल #, विवरण, साइट, राशि खोजें..."
+                value={statementSearch}
+                onChange={(e) => setStatementSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            {/* Site Filter */}
+            <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+              <MapPin size={13} className="text-indigo-600 shrink-0" />
+              <span className="font-bold text-slate-600 text-[11px]">साइट:</span>
+              <select
+                value={statementSiteFilter}
+                onChange={(e) => setStatementSiteFilter(e.target.value)}
+                className="bg-transparent font-bold text-indigo-700 outline-none cursor-pointer text-xs"
+              >
+                <option value="all">सभी साइटें ({statementData?.transactions?.length || 0})</option>
+                {availableSites.map(s => (
+                  <option key={s.name} value={s.name}>
+                    {s.name} ({s.count})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Period Filter */}
+            <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+              <Calendar size={13} className="text-indigo-600 shrink-0" />
+              <span className="font-bold text-slate-600 text-[11px]">अवधि:</span>
+              <select
+                value={statementPeriodFilter}
+                onChange={(e) => setStatementPeriodFilter(e.target.value)}
+                className="bg-transparent font-bold text-indigo-700 outline-none cursor-pointer text-xs"
+              >
+                <option value="all">सभी समय (All Time)</option>
+                <option value="FY2425">FY 2024-25 (01/04/24 - 31/03/25)</option>
+                <option value="FY2526">FY 2025-26 (01/04/25 - 31/03/26)</option>
+                <option value="FY2627">FY 2026-27 (01/04/26 - 31/03/27)</option>
+                <option value="custom">📅 कस्टम तारीख चुनें (Custom Date)</option>
+              </select>
+            </div>
+
+            {/* Custom Date Pickers */}
+            {statementPeriodFilter === 'custom' && (
+              <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200">
+                <input
+                  type="date"
+                  value={statementStartDate}
+                  onChange={(e) => setStatementStartDate(e.target.value)}
+                  className="border border-slate-200 rounded px-1.5 py-0.5 text-xs text-slate-700 outline-none bg-white"
+                />
+                <span className="text-slate-400 font-bold text-[11px]">से</span>
+                <input
+                  type="date"
+                  value={statementEndDate}
+                  onChange={(e) => setStatementEndDate(e.target.value)}
+                  className="border border-slate-200 rounded px-1.5 py-0.5 text-xs text-slate-700 outline-none bg-white"
+                />
+              </div>
+            )}
+
+            {/* Reset Filters */}
+            {isFilterActive && (
+              <button
+                onClick={() => {
+                  setStatementSiteFilter('all');
+                  setStatementPeriodFilter('all');
+                  setStatementStartDate('');
+                  setStatementEndDate('');
+                  setStatementSearch('');
+                }}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold cursor-pointer transition text-[11px]"
+                title="फ़िल्टर हटाएं"
+              >
+                <RotateCcw size={12} /> रीसेट फ़िल्टर
+              </button>
+            )}
+          </div>
+
+          <div className="text-[11px] font-bold text-slate-500 ml-auto">
+            प्रदर्शित प्रविष्टियाँ: <span className="text-indigo-700 font-black text-xs">{filteredStatementTransactions.length}</span> / {statementData?.transactions?.length || 0}
+          </div>
+        </div>
+
+        {/* 📊 Dedicated Full-Width Scrollable Ledger Table */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col">
+          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] min-h-[400px]">
+            {statementLoading ? (
+              <div className="py-24 text-center text-slate-400 font-bold text-base flex flex-col items-center justify-center gap-2">
+                <RotateCcw size={24} className="animate-spin text-indigo-600" />
+                <span>लेजर स्टेटमेंट लोड हो रहा है...</span>
+              </div>
+            ) : filteredStatementTransactions.length === 0 ? (
+              <div className="py-24 text-center text-slate-400 font-medium text-sm">
+                चयनित फ़िल्टर के अनुसार कोई प्रविष्टि नहीं मिली।
+              </div>
+            ) : (
+              <table className="w-full text-xs text-left min-w-[1250px] border-collapse">
+                <thead className="bg-slate-100 text-slate-700 font-black uppercase text-[11px] border-b border-slate-200 sticky top-0 z-10 shadow-xs">
+                  <tr>
+                    <th className="px-3.5 py-3 text-center w-12">#</th>
+                    <th className="px-4 py-3 whitespace-nowrap">दिनांक (Date)</th>
+                    <th className="px-4 py-3 whitespace-nowrap">प्रकार (Type)</th>
+                    <th className="px-4 py-3 whitespace-nowrap">रेफरेंस / बिल #</th>
+                    <th className="px-4 py-3">विवरण (Details / Notes)</th>
+                    <th className="px-4 py-3 text-center whitespace-nowrap">साइट (Site)</th>
+                    <th className="px-4 py-3 text-right whitespace-nowrap">बिल (Debit ₹)</th>
+                    <th className="px-4 py-3 text-right whitespace-nowrap">जमा (Credit ₹)</th>
+                    <th className="px-4 py-3 text-right whitespace-nowrap">बाकी (Balance ₹)</th>
+                    <th className="px-4 py-3 text-center whitespace-nowrap">बिल फोटो</th>
+                    <th className="px-4 py-3 text-center whitespace-nowrap">कार्रवाई</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredStatementTransactions.map((tx, idx) => {
+                    const isSale = tx.type === 'sale';
+                    const isPurchase = tx.type === 'purchase';
+                    const isReceipt = tx.type === 'receipt' || tx.credit > 0;
+                    const formattedDate = tx.date ? new Date(tx.date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
+                    const siteStr = (tx.siteName || '').trim();
+
+                    return (
+                      <tr key={tx._id || idx} className="hover:bg-indigo-50/40 transition group">
+                        <td className="px-3.5 py-2.5 text-center text-slate-400 font-mono text-[11px]">
+                          {idx + 1}
+                        </td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-slate-800">{formattedDate}</span>
+                            <button
+                              onClick={() => handleOpenEditTx(tx)}
+                              className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-indigo-600 rounded transition cursor-pointer"
+                              title="तारीख या विवरण बदलें (Edit Date/Details)"
+                            >
+                              <Edit size={12} />
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                            isSale ? 'bg-indigo-100 text-indigo-700' :
+                            isPurchase ? 'bg-amber-100 text-amber-800' :
+                            isReceipt ? 'bg-emerald-100 text-emerald-800' :
+                            'bg-rose-100 text-rose-800'
+                          }`}>
+                            {isSale ? '🛒 बिक्री बिल' : isPurchase ? '🏢 खरीद बिल' : isReceipt ? '🟢 मुझे मिले' : '🔴 मैंने दिए'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 font-bold text-slate-800 whitespace-nowrap font-mono">
+                          {tx.refNo || '-'}
+                        </td>
+                        <td className="px-4 py-2.5 text-slate-600 max-w-sm truncate" title={tx.details}>
+                          {tx.details || '-'}
+                        </td>
+                        <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                          {siteStr ? (
+                            <span className={`px-2.5 py-0.5 rounded-md font-bold text-[10px] ${
+                              siteStr === 'COMPLEX' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
+                              siteStr === 'PWD' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                              siteStr === 'PAINT' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                              siteStr === 'S' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                              'bg-slate-100 text-slate-700 border border-slate-200'
+                            }`}>
+                              🏗️ {siteStr}
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleOpenEditTx(tx)}
+                              className="text-slate-400 hover:text-indigo-600 text-[10px] underline cursor-pointer"
+                              title="साइट नाम जोड़ें"
+                            >
+                              + साइट जोड़ें
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-black text-rose-600 whitespace-nowrap text-sm">
+                          {tx.debit > 0 ? `₹${tx.debit.toLocaleString('en-IN')}` : '-'}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-black text-emerald-700 whitespace-nowrap text-sm">
+                          {tx.credit > 0 ? `₹${tx.credit.toLocaleString('en-IN')}` : '-'}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-black text-slate-900 whitespace-nowrap text-sm">
+                          ₹{Math.abs(Number(tx.runningBalance || 0)).toLocaleString('en-IN')}
+                          <span className="text-[10px] font-bold ml-1 text-slate-400">
+                            {Number(tx.runningBalance || 0) >= 0 ? 'Dr' : 'Cr'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1">
+                            {(() => {
+                              const primaryImg = tx.billImageUrl || (tx.billImageUrls && tx.billImageUrls[0]);
+                              const safeImg = getWebSafeImageUrl(primaryImg);
+                              return safeImg ? (
+                                <div className="flex items-center gap-1">
+                                  <img
+                                    src={safeImg}
+                                    alt="Bill"
+                                    onClick={() => setPreviewImage(safeImg)}
+                                    className="w-8 h-8 rounded-lg object-cover border border-indigo-200 cursor-pointer hover:scale-110 shadow-xs transition"
+                                    title="बिल फोटो बड़ी देखें"
+                                  />
+                                  <button
+                                    onClick={() => setPreviewImage(safeImg)}
+                                    className="p-1 text-indigo-600 hover:bg-indigo-50 rounded cursor-pointer"
+                                    title="बड़ा देखें"
+                                  >
+                                    <Eye size={13} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <label className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 px-2 py-1 rounded-lg border border-dashed border-slate-300 cursor-pointer transition">
+                                  <UploadCloud size={11} />
+                                  <span>फोटो</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => handleAttachImage(tx._id, e.target.files[0])}
+                                  />
+                                </label>
+                              );
+                            })()}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => handleOpenEditTx(tx)}
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
+                              title="तारीख, राशि, साइट या विवरण संपादित करें (Edit)"
+                            >
+                              <Edit size={13} />
+                            </button>
+                            {tx.type !== 'bill' && tx.type !== 'purchase' && tx.source !== 'BillPayment' && (
+                              <button
+                                onClick={() => handleDeleteStatementTransaction(tx._id)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                title="यह प्रविष्टि हटाएं (Delete Transaction)"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Statement Page Footer */}
+          <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs text-slate-600">
+            <span>
+              दिखाई गई प्रविष्टियाँ: <strong className="text-slate-800">{filteredStatementTransactions.length}</strong> / कुल: <strong>{(statementData?.transactions || []).length}</strong>
+            </span>
+            <div className="flex items-center gap-3">
+              <span className="font-semibold">
+                कुल बिल: <span className="text-rose-600 font-black">₹{filteredDebit.toLocaleString('en-IN')}</span> | कुल जमा: <span className="text-emerald-700 font-black">₹{filteredCredit.toLocaleString('en-IN')}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* ✏️ EDIT TRANSACTION MODAL (Date, Site, Amount, Notes) */}
+        {editingTx && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-center items-center z-50 p-4 animate-in fade-in">
+            <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 space-y-4">
+              <div className="flex justify-between items-center pb-2 border-b">
+                <h3 className="font-black text-slate-800 text-sm flex items-center gap-2">
+                  <Edit size={16} className="text-indigo-600" /> लेन-देन संपादित करें (Edit Entry)
+                </h3>
+                <button onClick={() => setEditingTx(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEditTx} className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">📅 दिनांक (Transaction Date)</label>
+                  <input
+                    type="date"
+                    required
+                    value={editingTxDate}
+                    onChange={(e) => setEditingTxDate(e.target.value)}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">🏗️ साइट का नाम (Site Name)</label>
+                  <input
+                    type="text"
+                    placeholder="उदा. COMPLEX, PWD, PAINT, SITE-A"
+                    value={editingTxSite}
+                    onChange={(e) => setEditingTxSite(e.target.value)}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none uppercase"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">💰 राशि (Amount ₹)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={editingTxAmount}
+                    onChange={(e) => setEditingTxAmount(e.target.value)}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">प्रकार (Transaction Type)</label>
+                  <select
+                    value={editingTxType}
+                    onChange={(e) => setEditingTxType(e.target.value)}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold outline-none"
+                  >
+                    <option value="received">🟢 मुझे मिले (Payment Received / Credit)</option>
+                    <option value="paid">🔴 मैंने दिए (Payment Given / Debit)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">विवरण / नोट्स (Remarks)</label>
+                  <input
+                    type="text"
+                    placeholder="विवरण या नोट्स दर्ज करें..."
+                    value={editingTxDetails}
+                    onChange={(e) => setEditingTxDetails(e.target.value)}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <button
+                    type="button"
+                    onClick={() => setEditingTx(null)}
+                    className="px-4 py-2 border rounded-xl text-slate-600 hover:bg-slate-50 font-bold cursor-pointer"
+                  >
+                    रद्द करें
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingTx}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer shadow transition"
+                  >
+                    {savingTx ? 'सेव हो रहा है...' : 'सुरक्षित करें (Save Changes)'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* 💳 Payment Modal directly available in Statement page */}
+        {showPaymentModal && paymentParty && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-center items-center z-50 p-4 animate-in fade-in">
+            <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+              <div className="flex justify-between items-center pb-3 border-b">
+                <div>
+                  <h3 className="text-lg font-black text-gray-800">
+                    {paymentType === 'paid' ? '🔴 मैंने दिए (Payment Given)' : '🟢 मुझे मिले (Payment Received)'}
+                  </h3>
+                  <p className="text-xs text-gray-500">पार्टी: <strong className="text-gray-800">{paymentParty.name}</strong></p>
+                </div>
+                <button onClick={() => setShowPaymentModal(false)} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <form onSubmit={handlePaymentSubmit} className="space-y-4 mt-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">भुगतान प्रकार</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentType('received')}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                        paymentType === 'received' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm' : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      🟢 मुझे मिले
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentType('paid')}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                        paymentType === 'paid' ? 'bg-rose-600 text-white border-rose-600 shadow-sm' : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      🔴 मैंने दिए
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">राशि (₹) *</label>
+                  <input 
+                    type="number" 
+                    step="any"
+                    required 
+                    placeholder="उदा. 5000" 
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-gray-800 focus:ring-2 focus:ring-indigo-500 outline-none" 
+                    value={paymentAmount} 
+                    onChange={e => setPaymentAmount(e.target.value)} 
+                    autoFocus
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">दिनांक (Date)</label>
+                    <input 
+                      type="date" 
+                      required 
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none" 
+                      value={paymentDate} 
+                      onChange={e => setPaymentDate(e.target.value)} 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">भुगतान माध्यम</label>
+                    <select 
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-gray-700" 
+                      value={paymentMode} 
+                      onChange={e => setPaymentMode(e.target.value)}
+                    >
+                      <option value="CASH">💵 नकद (CASH)</option>
+                      <option value="UPI">📱 ऑनलाइन (UPI)</option>
+                      <option value="BANK">🏦 बैंक (BANK / NEFT)</option>
+                      <option value="CHEQUE">📜 चेक (CHEQUE)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">विवरण / नोट्स (वैकल्पिक)</label>
+                  <input 
+                    type="text" 
+                    placeholder="उदा. किस्त भुगतान, साईट कॉम्प्लेक्स पेमेंट..." 
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" 
+                    value={paymentNotes} 
+                    onChange={e => setPaymentNotes(e.target.value)} 
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 mt-6 pt-2 border-t">
+                  <button type="button" onClick={() => setShowPaymentModal(false)} className="px-4 py-2 border rounded-xl text-gray-600 hover:bg-gray-50 text-xs font-bold cursor-pointer">
+                    रद्द करें
+                  </button>
+                  <button 
+                    type="submit" 
+                    disabled={savingPayment}
+                    className={`px-5 py-2 text-white rounded-xl font-bold text-xs cursor-pointer shadow transition ${
+                      paymentType === 'paid' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                    }`}
+                  >
+                    {savingPayment ? 'सेव हो रहा है...' : 'सुरक्षित करें (Save Payment)'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* 🖼️ High-Res Bill Image Preview Modal */}
+        {previewImage && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-50 p-4 animate-in fade-in">
+            <div className="bg-slate-900 rounded-3xl max-w-2xl w-full p-4 flex flex-col gap-3 shadow-2xl border border-slate-700">
+              <div className="flex justify-between items-center text-white pb-2 border-b border-slate-800">
+                <span className="text-sm font-bold flex items-center gap-2">
+                  <ImageIcon size={18} className="text-indigo-400" /> मूल बिल / रसीद की फोटो (Bill Document)
+                </span>
+                <button
+                  onClick={() => setPreviewImage(null)}
+                  className="p-1 rounded-lg bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="max-h-[75vh] overflow-auto flex justify-center items-center bg-black/50 rounded-2xl p-2">
+                <img src={getWebSafeImageUrl(previewImage)} alt="Original Bill" className="max-h-[70vh] w-auto rounded-xl object-contain shadow-lg" />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <a
+                  href={getWebSafeImageUrl(previewImage)}
+                  download="bill_invoice_photo.jpg"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl cursor-pointer transition"
+                >
+                  डाउनलोड फोटो
+                </a>
+                <button
+                  onClick={() => setPreviewImage(null)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl cursor-pointer transition"
+                >
+                  बंद करें
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
@@ -1269,342 +2045,7 @@ export default function PartiesPage() {
           onPartyUpdated={fetchParties}
         />
 
-        {/* 📄 FULL ITEMIZED PARTY LEDGER STATEMENT MODAL */}
-        {showStatementModal && statementParty && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-center items-center z-50 p-3 sm:p-5 animate-in fade-in">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
-              {/* Modal Header */}
-              <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex justify-between items-start flex-wrap gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="p-1.5 bg-indigo-500/30 rounded-lg text-indigo-300">
-                      <FileText size={18} />
-                    </span>
-                    <h2 className="text-lg sm:text-xl font-black">{statementParty.name}</h2>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-white/20 text-white capitalize">
-                      {statementParty.partyType || 'customer'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-indigo-200 mt-1 flex items-center gap-2">
-                    <span>📞 {statementParty.mobileNumber || statementParty.phone || 'कोई नंबर नहीं'}</span>
-                    {statementParty.address && <span>• 📍 {statementParty.address}</span>}
-                  </p>
-                </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleShareWhatsApp}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow cursor-pointer transition"
-                    title="व्हाट्सएप पर स्टेटमेंट भेजें"
-                  >
-                    <Share2 size={14} /> <span>WhatsApp</span>
-                  </button>
-                  <button
-                    onClick={() => window.print()}
-                    className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 border border-white/20 cursor-pointer transition"
-                    title="प्रिंट या PDF डाउनलोड करें"
-                  >
-                    <Printer size={14} /> <span>प्रिंट / PDF</span>
-                  </button>
-                  <button
-                    onClick={() => setShowStatementModal(false)}
-                    className="p-1.5 text-white/70 hover:text-white rounded-xl hover:bg-white/10 cursor-pointer transition"
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Summary Cards */}
-              {(() => {
-                const isFilterActive = statementSiteFilter !== 'all' || statementPeriodFilter !== 'all' || statementStartDate || statementEndDate;
-                return (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-4 bg-slate-50 border-b border-slate-200 text-xs">
-                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-xs">
-                      <span className="text-[10px] text-slate-500 font-bold block">शुरूआती बैलेंस (Opening)</span>
-                      <p className="text-sm font-black text-slate-800 mt-0.5">
-                        ₹{(statementData?.openingBalance || statementParty.openingBalance || 0).toLocaleString('en-IN')}
-                      </p>
-                    </div>
-                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-xs">
-                      <span className="text-[10px] text-indigo-600 font-bold block">
-                        कुल बिल (Debit) {isFilterActive && <span className="text-amber-600 font-normal">(फ़िल्टर)</span>}
-                      </span>
-                      <p className="text-sm font-black text-indigo-700 mt-0.5">
-                        ₹{(isFilterActive ? filteredDebit : (statementData?.totalDebit || 0)).toLocaleString('en-IN')}
-                      </p>
-                      {isFilterActive && (
-                        <span className="text-[9px] text-slate-400">कुल: ₹{(statementData?.totalDebit || 0).toLocaleString('en-IN')}</span>
-                      )}
-                    </div>
-                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-xs">
-                      <span className="text-[10px] text-emerald-600 font-bold block">
-                        कुल जमा (Credit) {isFilterActive && <span className="text-amber-600 font-normal">(फ़िल्टर)</span>}
-                      </span>
-                      <p className="text-sm font-black text-emerald-700 mt-0.5">
-                        ₹{(isFilterActive ? filteredCredit : (statementData?.totalCredit || 0)).toLocaleString('en-IN')}
-                      </p>
-                      {isFilterActive && (
-                        <span className="text-[9px] text-slate-400">कुल: ₹{(statementData?.totalCredit || 0).toLocaleString('en-IN')}</span>
-                      )}
-                    </div>
-                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-xs">
-                      <span className="text-[10px] text-rose-600 font-bold block">
-                        {isFilterActive ? 'अवधि बाकी (Period Net)' : 'मौजूदा बाकी (Net Due)'}
-                      </span>
-                      <p className={`text-sm font-black mt-0.5 ${
-                        (isFilterActive ? filteredNet : Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0)) > 0 ? 'text-rose-600' : 'text-emerald-700'
-                      }`}>
-                        ₹{Math.abs(isFilterActive ? filteredNet : Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0)).toLocaleString('en-IN')}
-                        <span className="text-[10px] font-normal ml-1">
-                          {(isFilterActive ? filteredNet : Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0)) > 0 ? '(लेने हैं)' : '(देने हैं)'}
-                        </span>
-                      </p>
-                      {isFilterActive && (
-                        <span className="text-[9px] text-slate-500 font-medium">
-                          समग्र: ₹{Math.abs(Number(statementParty.currentBalance ?? statementData?.currentBalance ?? 0)).toLocaleString('en-IN')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* 🔍 FILTER BAR: Site, Financial Year & Custom Dates */}
-              <div className="p-3 bg-indigo-50/60 border-b border-indigo-100 flex flex-wrap items-center justify-between gap-2.5 text-xs">
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* Site Filter Dropdown */}
-                  <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-xs">
-                    <MapPin size={13} className="text-indigo-600 shrink-0" />
-                    <span className="font-bold text-slate-600 text-[11px]">साइट:</span>
-                    <select
-                      value={statementSiteFilter}
-                      onChange={(e) => setStatementSiteFilter(e.target.value)}
-                      className="bg-transparent font-bold text-indigo-700 outline-none cursor-pointer text-xs pr-1"
-                    >
-                      <option value="all">सभी साइटें ({statementData?.transactions?.length || 0})</option>
-                      {availableSites.map(s => (
-                        <option key={s.name} value={s.name}>
-                          {s.name} ({s.count})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Financial Year / Period Dropdown */}
-                  <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-xs">
-                    <Calendar size={13} className="text-indigo-600 shrink-0" />
-                    <span className="font-bold text-slate-600 text-[11px]">अवधि:</span>
-                    <select
-                      value={statementPeriodFilter}
-                      onChange={(e) => setStatementPeriodFilter(e.target.value)}
-                      className="bg-transparent font-bold text-indigo-700 outline-none cursor-pointer text-xs pr-1"
-                    >
-                      <option value="all">सभी समय (All Time)</option>
-                      <option value="FY2425">FY 2024-25 (01/04/24 - 31/03/25)</option>
-                      <option value="FY2526">FY 2025-26 (01/04/25 - 31/03/26)</option>
-                      <option value="FY2627">FY 2026-27 (01/04/26 - 31/03/27)</option>
-                      <option value="custom">📅 कस्टम तारीख चुनें (Custom Date)</option>
-                    </select>
-                  </div>
-
-                  {/* Custom Date Pickers */}
-                  {statementPeriodFilter === 'custom' && (
-                    <div className="flex items-center gap-1.5 bg-white px-2 py-1 rounded-xl border border-slate-200 shadow-xs animate-in fade-in">
-                      <input
-                        type="date"
-                        value={statementStartDate}
-                        onChange={(e) => setStatementStartDate(e.target.value)}
-                        className="border border-slate-200 rounded px-1.5 py-0.5 text-xs text-slate-700 outline-none"
-                        title="प्रारंभिक तारीख"
-                      />
-                      <span className="text-slate-400 font-bold text-[11px]">से</span>
-                      <input
-                        type="date"
-                        value={statementEndDate}
-                        onChange={(e) => setStatementEndDate(e.target.value)}
-                        className="border border-slate-200 rounded px-1.5 py-0.5 text-xs text-slate-700 outline-none"
-                        title="अंतिम तारीख"
-                      />
-                    </div>
-                  )}
-
-                  {/* Reset Filters Button */}
-                  {(statementSiteFilter !== 'all' || statementPeriodFilter !== 'all' || statementStartDate || statementEndDate) && (
-                    <button
-                      onClick={() => {
-                        setStatementSiteFilter('all');
-                        setStatementPeriodFilter('all');
-                        setStatementStartDate('');
-                        setStatementEndDate('');
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold cursor-pointer transition text-[11px]"
-                      title="फ़िल्टर हटाएं"
-                    >
-                      <RotateCcw size={12} /> रीसेट
-                    </button>
-                  )}
-                </div>
-
-                {/* Filter Counter */}
-                <div className="text-[11px] font-bold text-slate-500 ml-auto">
-                  दिखा रहे हैं: <span className="text-indigo-700">{filteredStatementTransactions.length}</span> / {statementData?.transactions?.length || 0}
-                </div>
-              </div>
-
-              {/* Transactions List */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {statementLoading ? (
-                  <div className="py-16 text-center text-slate-400 font-bold text-sm">
-                    लेजर स्टेटमेंट लोड हो रहा है...
-                  </div>
-                ) : filteredStatementTransactions.length === 0 ? (
-                  <div className="py-16 text-center text-slate-400 font-medium text-xs">
-                    चयनित फ़िल्टर (साइट या अवधि) के अनुसार कोई प्रविष्टि नहीं मिली।
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-100 text-slate-600 font-bold uppercase text-[10px] border-b">
-                        <tr>
-                          <th className="px-3 py-2.5">दिनांक (Date)</th>
-                          <th className="px-3 py-2.5">प्रकार (Type)</th>
-                          <th className="px-3 py-2.5">रेफरेंस / बिल #</th>
-                          <th className="px-3 py-2.5">विवरण (Details)</th>
-                          <th className="px-3 py-2.5 text-center">साइट (Site)</th>
-                          <th className="px-3 py-2.5 text-right">बिल (Debit ₹)</th>
-                          <th className="px-3 py-2.5 text-right">जमा (Credit ₹)</th>
-                          <th className="px-3 py-2.5 text-right">बाकी (Balance ₹)</th>
-                          <th className="px-3 py-2.5 text-center">बिल फोटो</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {filteredStatementTransactions.map((tx, idx) => {
-                          const isSale = tx.type === 'sale';
-                          const isPurchase = tx.type === 'purchase';
-                          const isReceipt = tx.type === 'receipt' || tx.credit > 0;
-                          const formattedDate = tx.date ? new Date(tx.date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
-                          const siteStr = (tx.siteName || '').trim();
-
-                          return (
-                            <tr key={tx._id || idx} className="hover:bg-slate-50/80 transition">
-                              <td className="px-3 py-2.5 whitespace-nowrap font-medium text-slate-700">
-                                {formattedDate}
-                              </td>
-                              <td className="px-3 py-2.5 whitespace-nowrap">
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                  isSale ? 'bg-indigo-100 text-indigo-700' :
-                                  isPurchase ? 'bg-amber-100 text-amber-800' :
-                                  isReceipt ? 'bg-emerald-100 text-emerald-800' :
-                                  'bg-rose-100 text-rose-800'
-                                }`}>
-                                  {isSale ? '🛒 बिक्री बिल' : isPurchase ? '🏢 खरीद बिल' : isReceipt ? '🟢 मुझे मिले' : '🔴 मैंने दिए'}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2.5 font-bold text-slate-800 whitespace-nowrap">
-                                {tx.refNo || '-'}
-                              </td>
-                              <td className="px-3 py-2.5 text-slate-600 max-w-xs truncate" title={tx.details}>
-                                {tx.details || '-'}
-                              </td>
-                              <td className="px-3 py-2.5 text-center whitespace-nowrap">
-                                {siteStr ? (
-                                  <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
-                                    siteStr === 'COMPLEX' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
-                                    siteStr === 'PWD' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
-                                    siteStr === 'PAINT' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                                    siteStr === 'S' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
-                                    siteStr.includes('%') ? 'bg-rose-100 text-rose-700 border border-rose-200' :
-                                    'bg-slate-100 text-slate-700 border border-slate-200'
-                                  }`}>
-                                    🏗️ {siteStr}
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-300 text-[10px]">-</span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2.5 text-right font-black text-rose-600 whitespace-nowrap">
-                                {tx.debit > 0 ? `₹${tx.debit.toLocaleString('en-IN')}` : '-'}
-                              </td>
-                              <td className="px-3 py-2.5 text-right font-black text-emerald-700 whitespace-nowrap">
-                                {tx.credit > 0 ? `₹${tx.credit.toLocaleString('en-IN')}` : '-'}
-                              </td>
-                              <td className="px-3 py-2.5 text-right font-black text-slate-900 whitespace-nowrap">
-                                ₹{Math.abs(Number(tx.runningBalance || 0)).toLocaleString('en-IN')}
-                                <span className="text-[9px] font-medium ml-1 text-slate-400">
-                                  {Number(tx.runningBalance || 0) >= 0 ? 'Dr' : 'Cr'}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2.5 text-center whitespace-nowrap">
-                                <div className="flex items-center justify-center gap-1.5">
-                                  {(() => {
-                                    const primaryImg = tx.billImageUrl || (tx.billImageUrls && tx.billImageUrls[0]);
-                                    const safeImg = getWebSafeImageUrl(primaryImg);
-                                    return safeImg ? (
-                                      <div className="flex items-center justify-center gap-1">
-                                        <img
-                                          src={safeImg}
-                                          alt="Bill"
-                                          onClick={() => setPreviewImage(safeImg)}
-                                          className="w-8 h-8 rounded-lg object-cover border border-indigo-200 cursor-pointer hover:scale-110 shadow-xs transition"
-                                          title="बिल फोटो बड़ी देखें"
-                                        />
-                                        <button
-                                          onClick={() => setPreviewImage(safeImg)}
-                                          className="p-1 text-indigo-600 hover:bg-indigo-50 rounded cursor-pointer"
-                                          title="बड़ा देखें"
-                                        >
-                                          <Eye size={13} />
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <label className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 px-2 py-1 rounded-lg border border-dashed border-slate-300 cursor-pointer transition">
-                                        <UploadCloud size={11} />
-                                        <span>फोटो जोड़ें</span>
-                                        <input
-                                          type="file"
-                                          accept="image/*"
-                                          className="hidden"
-                                          onChange={(e) => handleAttachImage(tx._id, e.target.files[0])}
-                                        />
-                                      </label>
-                                    );
-                                  })()}
-                                  {tx.type !== 'bill' && tx.type !== 'purchase' && tx.source !== 'BillPayment' && (
-                                    <button
-                                      onClick={() => handleDeleteStatementTransaction(tx._id)}
-                                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                      title="यह प्रविष्टि हटाएं (Delete Transaction)"
-                                    >
-                                      <Trash2 size={13} />
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* Modal Footer */}
-              <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs">
-                <span className="text-slate-500">
-                  प्रदर्शित प्रविष्टियाँ: <strong className="text-slate-800">{filteredStatementTransactions.length}</strong> / कुल: <strong>{(statementData?.transactions || []).length}</strong>
-                </span>
-                <button
-                  onClick={() => setShowStatementModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold cursor-pointer transition"
-                >
-                  बंद करें (Close)
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* 🖼️ HIGH-RES BILL IMAGE PREVIEW MODAL */}
         {previewImage && (

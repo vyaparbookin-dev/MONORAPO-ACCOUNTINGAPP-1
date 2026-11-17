@@ -160,7 +160,7 @@ Return strictly valid JSON without markdown fences:
 // Add manual payment entry (Udhar/Jama from Mobile App)
 export const addPaymentEntry = async (req, res) => {
   try {
-    const { partyId, amount, type, date, notes, paymentMethod, bankAccountId } = req.body;
+    const { partyId, partyName, amount, type, date, notes, paymentMethod, bankAccountId, siteName, site } = req.body;
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID is missing" });
 
     let party = null;
@@ -168,21 +168,34 @@ export const addPaymentEntry = async (req, res) => {
       party = await Party.findOne({ _id: partyId, companyId: req.companyId });
     }
     if (!party) {
-      party = await Party.findOne({
-        companyId: req.companyId,
-        $or: [
-          { id: partyId },
-          { name: partyId }
-        ]
-      });
+      const orConditions = [
+        ...(partyId ? [{ id: partyId }, { name: partyId }] : []),
+        ...(partyName ? [{ name: partyName }, { name: { $regex: new RegExp(`^${partyName.trim()}$`, 'i') } }] : [])
+      ];
+      if (orConditions.length > 0) {
+        party = await Party.findOne({
+          companyId: req.companyId,
+          $or: orConditions
+        });
+      }
     }
-    if (!party) {
+    if (!party && partyId) {
       try {
         const sbParty = await getPartyByIdFromSupabase(partyId, req.companyId);
         if (sbParty) party = sbParty;
       } catch (sbErr) {
         console.warn("[addPaymentEntry] Supabase fallback search warning:", sbErr.message);
       }
+    }
+    if (!party && partyName) {
+      try {
+        const { getSupabaseClient } = await import("../services/supabaseClient.js");
+        const sb = getSupabaseClient();
+        if (sb) {
+          const { data: sbP } = await sb.from("parties").select("*").ilike("name", `%${partyName.trim()}%`).maybeSingle();
+          if (sbP) party = sbP;
+        }
+      } catch (sbErr) {}
     }
     if (!party) return res.status(404).json({ success: false, message: "Party not found" });
 
@@ -272,6 +285,7 @@ export const addPaymentEntry = async (req, res) => {
       companyId: safeCompanyId,
       date: date ? new Date(date) : new Date(),
       details: notes || (type === 'received' ? 'Payment Received' : 'Payment Given'),
+      siteName: (siteName || site || '').trim(),
       debit,
       credit,
       type: 'manual',
