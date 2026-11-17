@@ -597,23 +597,82 @@ function MobileVyaparAppContent() {
     }
   };
 
+  // 🔄 FULL TWO-WAY AUTOMATIC SYNC ENGINE (दोतरफ़ा स्वतः सिंक प्रणाली)
+  // Reconciles both ways automatically: Local -> Server (missing offline entries) & Server -> Local (fresh cloud data)
+  const isSyncInProgressRef = useRef(false);
+  const runBidirectionalAutoSync = async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    if (isSyncInProgressRef.current) return;
+    isSyncInProgressRef.current = true;
+    try {
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+
+      // --- PHASE 1: LOCAL -> SERVER (Push any unsynced offline records) ---
+      // 1. Unsynced manual party transactions (vb_local_party_txs)
+      await syncLocalPartyTransactionsToServer();
+
+      // 2. Unsynced offline bills (bills where isOfflineCreated is true or ID starts with bill_)
+      if (currentCoId) {
+        try {
+          const localBills = storageManager.getBills(currentCoId) || [];
+          const unsyncedBills = localBills.filter(b => b.isOfflineCreated || String(b._id || b.id || '').startsWith("bill_"));
+          for (const ub of unsyncedBills) {
+            try {
+              const res = await api.post("/api/billing", ub);
+              const serverBill = res?.data?.bill || res?.data?.data || res?.data;
+              if (serverBill?._id) {
+                storageManager.saveBill(currentCoId, { ...serverBill, isOfflineCreated: false });
+              }
+            } catch (be) {
+              console.warn("[AutoSync] Bill push defer:", be.message);
+            }
+          }
+        } catch (billsSyncErr) {
+          console.warn("[AutoSync] Local bills push note:", billsSyncErr.message);
+        }
+      }
+
+      // 3. Process queued actions (vb_offline_sync_queue)
+      await processOfflineSyncQueue();
+
+      // --- PHASE 2: SERVER -> LOCAL (Pull fresh cloud data & reconcile cache) ---
+      if (typeof fetchLiveDashboardData === 'function') {
+        await fetchLiveDashboardData();
+      }
+    } catch (autoSyncErr) {
+      console.warn("[runBidirectionalAutoSync] note:", autoSyncErr.message);
+    } finally {
+      isSyncInProgressRef.current = false;
+    }
+  };
+
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      processOfflineSyncQueue();
-      syncLocalPartyTransactionsToServer();
-      fetchLiveDashboardData();
+      runBidirectionalAutoSync();
     };
     const handleOffline = () => {
       setIsOnline(false);
     };
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+
+    // Initial sync on app open
+    runBidirectionalAutoSync();
+
+    // Periodic automatic background check every 45 seconds (fully autonomous, no button needed)
+    const syncInterval = setInterval(() => {
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        runBidirectionalAutoSync();
+      }
+    }, 45000);
+
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      clearInterval(syncInterval);
     };
-  }, []);
+  }, [selectedCompany]);
 
   // AI Photo Bill OCR & Multi-Bill Batch State
   const [showOcrModal, setShowOcrModal] = useState(false);
@@ -11342,27 +11401,6 @@ function MobileVyaparAppContent() {
                 </button>
                 <button
                   type="button"
-                  disabled={isSyncingPartyTxs}
-                  onClick={async () => {
-                    setIsSyncingPartyTxs(true);
-                    const res = await syncLocalPartyTransactionsToServer();
-                    const pId = selectedPartyDetail?.id || selectedPartyDetail?._id;
-                    if (pId) await fetchPartyStatement(pId);
-                    setIsSyncingPartyTxs(false);
-                    if (res.synced > 0) {
-                      alert(`🎉 ${res.synced} ऑफ़लाइन लेन-देन सर्वर पर सिंक हो गए!`);
-                    } else {
-                      alert("✅ सभी लेन-देन पहले से ही सर्वर से सिंक हैं!");
-                    }
-                  }}
-                  className="py-2 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition shadow-xs"
-                  title="मोबाइल के ऑफ़लाइन लेन-देन सर्वर (डेस्कटॉप) पर सिंक करें"
-                >
-                  <RefreshCw size={12} className={isSyncingPartyTxs ? "animate-spin" : ""} />
-                  <span>{isSyncingPartyTxs ? "सिंक..." : "☁️ सर्वर सिंक"}</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => handleSharePartyStatementWhatsApp(selectedPartyDetail)}
                   className="flex-1 py-2 bg-[#25D366] hover:bg-green-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition min-w-[100px]"
                 >
@@ -12944,27 +12982,6 @@ function MobileVyaparAppContent() {
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  disabled={isSyncingPartyTxs}
-                  onClick={async () => {
-                    setIsSyncingPartyTxs(true);
-                    const res = await syncLocalPartyTransactionsToServer();
-                    const pId = selectedPartyDetail?.id || selectedPartyDetail?._id;
-                    if (pId) await fetchPartyStatement(pId);
-                    setIsSyncingPartyTxs(false);
-                    if (res.synced > 0) {
-                      alert(`🎉 ${res.synced} ऑफ़लाइन लेन-देन सर्वर पर सिंक हो गए!`);
-                    } else {
-                      alert("✅ सभी लेन-देन पहले से ही सर्वर से सिंक हैं!");
-                    }
-                  }}
-                  className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold rounded-lg border border-indigo-200 flex items-center gap-1 transition cursor-pointer"
-                  title="ऑफ़लाइन लेन-देन सर्वर पर सिंक करें"
-                >
-                  <RefreshCw size={12} className={isSyncingPartyTxs ? "animate-spin" : ""} />
-                  <span>{isSyncingPartyTxs ? "सिंक..." : "☁️ सर्वर सिंक"}</span>
-                </button>
                 <button
                   type="button"
                   onClick={() => setShowPartyStatementModal(false)}
