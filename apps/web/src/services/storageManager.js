@@ -10,6 +10,26 @@
 import { deduplicateBills } from "../utils/deduplicateBills";
 import { deduplicateExpenses } from "../utils/deduplicateExpenses";
 
+export function normalizePartyKey(p) {
+  if (!p) return "";
+  const name = String(p.name || p.partyName || "").trim().toLowerCase();
+  // Exact normalization for Rajkamal Agrawal across English/Hindi/aliases
+  if (name.includes("rajkamal") || name.includes("राजकमल")) {
+    return "party_fixed_rajkamal";
+  }
+  const cleanName = name.replace(/\(.*?\)/g, "").replace(/\[.*?\]/g, "").replace(/[^a-z0-9\u0900-\u097F]/g, "").trim();
+  const phone = String(p.phone || p.mobileNumber || "").replace(/\D/g, "").slice(-10);
+  const isDummyPhone = !phone || phone === "9999999999" || phone === "0000000000" || phone.includes("del");
+
+  if (cleanName && cleanName.length > 2) {
+    return `name_${cleanName}`;
+  }
+  if (phone && phone.length === 10 && !isDummyPhone) {
+    return `phone_${phone}`;
+  }
+  return String(p._id || p.id || "").trim();
+}
+
 class StorageManager {
   constructor() {
     this.migratedCompanies = new Set();
@@ -79,12 +99,7 @@ class StorageManager {
   }
 
   getPartyUniqueKey(p) {
-    if (!p) return "";
-    const name = String(p.name || p.partyName || "").trim().toLowerCase();
-    const phone = String(p.phone || p.mobileNumber || "").replace(/\D/g, "").slice(-10);
-    if (name) return `name_${name}`;
-    if (phone && phone.length === 10 && phone !== "9999999999") return `phone_${phone}`;
-    return String(p._id || p.id || Math.random());
+    return normalizePartyKey(p);
   }
 
   getParties(companyId) {
@@ -97,7 +112,22 @@ class StorageManager {
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
-          return parsed.map(p => this.normalizeParty(p)).filter(Boolean);
+          const map = new Map();
+          parsed.map(p => this.normalizeParty(p)).filter(Boolean).forEach(p => {
+            const k = normalizePartyKey(p);
+            if (!map.has(k)) {
+              map.set(k, p);
+            } else {
+              const existing = map.get(k);
+              const hasMongoId = p._id && String(p._id).length === 24 && !String(p._id).includes('-');
+              map.set(k, hasMongoId ? { ...existing, ...p } : { ...p, ...existing });
+            }
+          });
+          const deduped = Array.from(map.values());
+          if (deduped.length !== parsed.length) {
+            try { localStorage.setItem(key, JSON.stringify(deduped)); } catch (e) {}
+          }
+          return deduped;
         }
       }
     } catch (e) {
@@ -110,7 +140,18 @@ class StorageManager {
     if (typeof localStorage === "undefined" || !Array.isArray(partiesList)) return [];
 
     const cid = String(companyId || localStorage.getItem("companyId") || "default").trim();
-    const normList = partiesList.map(p => this.normalizeParty(p)).filter(Boolean);
+    const map = new Map();
+    partiesList.map(p => this.normalizeParty(p)).filter(Boolean).forEach(p => {
+      const k = normalizePartyKey(p);
+      if (!map.has(k)) {
+        map.set(k, p);
+      } else {
+        const existing = map.get(k);
+        const hasMongoId = p._id && String(p._id).length === 24 && !String(p._id).includes('-');
+        map.set(k, hasMongoId ? { ...existing, ...p } : { ...p, ...existing });
+      }
+    });
+    const normList = Array.from(map.values());
 
     // Save to primary v2 key
     const primaryKey = this.getKey("parties", cid);
@@ -135,18 +176,19 @@ class StorageManager {
 
     const current = this.getParties(companyId);
     const pId = String(norm._id || norm.id || '').trim();
-    const pName = String(norm.name || norm.partyName || '').trim().toLowerCase();
+    const pKey = normalizePartyKey(norm);
     const pPhone = String(norm.phone || norm.mobileNumber || '').replace(/\D/g, '').slice(-10);
+    const isDummyPhone = !pPhone || pPhone === "9999999999" || pPhone === "0000000000" || pPhone.includes('del');
 
     let updated = false;
     const nextList = current.map(p => {
       const eId = String(p._id || p.id || '').trim();
-      const eName = String(p.name || p.partyName || '').trim().toLowerCase();
+      const eKey = normalizePartyKey(p);
       const ePhone = String(p.phone || p.mobileNumber || '').replace(/\D/g, '').slice(-10);
 
-      const isMatch = (pId && eId && pId === eId) ||
-        (pName && eName && pName === eName) ||
-        (pPhone && ePhone && pPhone.length === 10 && ePhone.length === 10 && pPhone === ePhone && pPhone !== "9999999999");
+      const isMatch = (pKey && eKey && pKey === eKey) ||
+        (pId && eId && pId === eId) ||
+        (pPhone && ePhone && pPhone.length === 10 && ePhone.length === 10 && pPhone === ePhone && !isDummyPhone);
 
       if (isMatch) {
         updated = true;
@@ -167,18 +209,19 @@ class StorageManager {
     if (typeof localStorage === "undefined") return [];
     const cid = String(companyId || localStorage.getItem("companyId") || "default").trim();
     const targetId = typeof partyIdOrParty === 'object' ? String(partyIdOrParty?._id || partyIdOrParty?.id || '').trim() : String(partyIdOrParty || '').trim();
-    const targetName = typeof partyIdOrParty === 'object' ? String(partyIdOrParty?.name || partyIdOrParty?.partyName || '').trim().toLowerCase() : '';
+    const targetKey = typeof partyIdOrParty === 'object' ? normalizePartyKey(partyIdOrParty) : '';
     const targetPhone = typeof partyIdOrParty === 'object' ? String(partyIdOrParty?.phone || partyIdOrParty?.mobileNumber || '').replace(/\D/g, '').slice(-10) : '';
+    const isDummyPhone = !targetPhone || targetPhone === "9999999999" || targetPhone === "0000000000" || targetPhone.includes('del');
 
     const current = this.getParties(cid);
     const filtered = current.filter(p => {
       const pId = String(p._id || p.id || '').trim();
-      const pName = String(p.name || p.partyName || '').trim().toLowerCase();
+      const pKey = normalizePartyKey(p);
       const pPhone = String(p.phone || p.mobileNumber || '').replace(/\D/g, '').slice(-10);
 
       if (targetId && pId && targetId === pId) return false;
-      if (targetName && pName && targetName === pName) return false;
-      if (targetPhone && pPhone && targetPhone.length === 10 && targetPhone === pPhone && targetPhone !== "9999999999") return false;
+      if (targetKey && pKey && targetKey === pKey) return false;
+      if (targetPhone && pPhone && targetPhone.length === 10 && targetPhone === pPhone && !isDummyPhone) return false;
       return true;
     });
 
@@ -192,17 +235,18 @@ class StorageManager {
 
     const findMatchIndex = (party) => {
       const pId = String(party._id || party.id || '').trim();
-      const pName = String(party.name || party.partyName || '').trim().toLowerCase();
+      const pKey = normalizePartyKey(party);
       const pPhone = String(party.phone || party.mobileNumber || '').replace(/\D/g, '').slice(-10);
+      const isDummyPhone = !pPhone || pPhone === "9999999999" || pPhone === "0000000000" || pPhone.includes('del');
 
       return partyList.findIndex(existing => {
         const eId = String(existing._id || existing.id || '').trim();
-        const eName = String(existing.name || existing.partyName || '').trim().toLowerCase();
+        const eKey = normalizePartyKey(existing);
         const ePhone = String(existing.phone || existing.mobileNumber || '').replace(/\D/g, '').slice(-10);
 
+        if (pKey && eKey && pKey === eKey) return true;
         if (pId && eId && pId === eId) return true;
-        if (pName && eName && pName === eName) return true;
-        if (pPhone && ePhone && pPhone.length === 10 && ePhone.length === 10 && pPhone === ePhone && pPhone !== "9999999999") return true;
+        if (pPhone && ePhone && pPhone.length === 10 && ePhone.length === 10 && pPhone === ePhone && !isDummyPhone) return true;
         return false;
       });
     };

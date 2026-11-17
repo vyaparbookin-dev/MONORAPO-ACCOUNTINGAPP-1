@@ -73,7 +73,7 @@ import CreditLimitHubModal from "../../components/modals/CreditLimitHubModal";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
 import { deduplicateBills } from "../../utils/deduplicateBills";
 import { speakUpiPayment, playPaymentChime } from "../../utils/soundBox";
-import { storageManager } from "../../services/storageManager";
+import { storageManager, normalizePartyKey } from "../../services/storageManager";
 import SmartPdfBillModal from "../../components/SmartPdfBillModal";
 import { compressImageFile, persistPhotoToLocalCache, savePhotosToIndexedDB, getPhotosFromIndexedDB, getWebSafeImageUrl } from "../../utils/photoStorage";
 
@@ -707,7 +707,17 @@ function MobileVyaparAppContent() {
   const [newPartyBalanceDir, setNewPartyBalanceDir] = useState("positive"); // "positive"=लेने हैं, "negative"=देने हैं
   const [editingParty, setEditingParty] = useState(null); // Party currently being edited
   const [savingParty, setSavingParty] = useState(false);
-  const [partyFilterTab, setPartyFilterTab] = useState("all"); // 'all', 'customer', 'supplier', 'personal'
+  const [partyFilterTab, setPartyFilterTabState] = useState(() => {
+    try {
+      return sessionStorage.getItem("mobile_party_filter_tab") || "to_collect";
+    } catch (e) {
+      return "to_collect";
+    }
+  });
+  const setPartyFilterTab = useCallback((tab) => {
+    try { sessionStorage.setItem("mobile_party_filter_tab", tab); } catch (e) {}
+    setPartyFilterTabState(tab);
+  }, []);
   const [partyStatementLoading, setPartyStatementLoading] = useState(false);
   const [partyTransactions, setPartyTransactions] = useState([]);
   const [allPartyTransactions, setAllPartyTransactions] = useState(() => {
@@ -2453,28 +2463,22 @@ function MobileVyaparAppContent() {
     const map = new Map();
     (parties || []).forEach(p => {
       if (!p || p.isActive === false || p.isDeleted === true) return;
-      const nameKey = String(p.name || p.partyName || '').trim().toLowerCase();
-      const phoneKey = String(p.phone || p.mobileNumber || '').replace(/\D/g, '').slice(-10);
-      const key = nameKey || (phoneKey && phoneKey.length === 10 ? `phone_${phoneKey}` : String(p._id || p.id));
+      const key = normalizePartyKey(p);
       const bal = getPartyDisplayBalance(p);
       const enrichedP = { ...p, balance: bal, currentBalance: bal };
       if (!map.has(key)) {
         map.set(key, enrichedP);
       } else {
         const existing = map.get(key);
-        if (p._id && !String(p._id).startsWith('party_')) {
-          map.set(key, { ...existing, ...enrichedP });
-        }
+        const hasMongoId = p._id && String(p._id).length === 24 && !String(p._id).includes('-');
+        map.set(key, hasMongoId ? { ...existing, ...enrichedP } : { ...enrichedP, ...existing });
       }
     });
     return Array.from(map.values());
   }, [parties, getPartyDisplayBalance]);
 
   const toCollect = deduplicatedParties.filter(p => getPartyDisplayBalance(p) > 0).reduce((sum, p) => sum + getPartyDisplayBalance(p), 0);
-  const toPay = Math.abs(deduplicatedParties.filter(p => {
-    const isSupplier = (p.type === 'supplier' || p.partyType === 'supplier');
-    return isSupplier && getPartyDisplayBalance(p) < 0;
-  }).reduce((sum, p) => sum + getPartyDisplayBalance(p), 0));
+  const toPay = Math.abs(deduplicatedParties.filter(p => getPartyDisplayBalance(p) < 0).reduce((sum, p) => sum + getPartyDisplayBalance(p), 0));
   const stockValue = items.reduce((sum, it) => {
     const qty = Number(it.currentStock ?? it.stock ?? 0) || 0;
     const price = Number(it.salePrice ?? it.sellingPrice ?? it.price ?? it.costPrice ?? 0) || 0;
@@ -7710,7 +7714,7 @@ function MobileVyaparAppContent() {
 
         {/* ==================== TAB 2: PARTIES ==================== */}
         {activeTab === "parties" && (() => {
-          const filteredParties = parties.filter(p => {
+          const filteredParties = deduplicatedParties.filter(p => {
             const hasSearch = searchQuery && searchQuery.trim().length > 0;
             const matchesSearch = !hasSearch || String(p?.name || '').toLowerCase().includes(searchQuery.toLowerCase().trim()) || String(p?.phone || p?.mobileNumber || '').includes(searchQuery.trim());
             
@@ -7722,11 +7726,9 @@ function MobileVyaparAppContent() {
 
             let matchesFilter = true;
             if (partyFilterTab === "to_collect") {
-              const isCustomer = (pType === 'customer' || pType === 'both');
-              matchesFilter = bal > 0 || (isCustomer && bal < 0);
+              matchesFilter = bal > 0;
             } else if (partyFilterTab === "to_pay") {
-              const isSupplier = (pType === 'supplier');
-              matchesFilter = isSupplier && bal < 0;
+              matchesFilter = bal < 0;
             } else if (partyFilterTab === "settled") {
               matchesFilter = bal === 0;
             } else if (partyFilterTab === "customer") {

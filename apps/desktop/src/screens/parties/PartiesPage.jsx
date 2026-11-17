@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import api from '../../services/api';
 import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2, Download, FileSpreadsheet, Upload, AlertCircle, MapPin, RotateCcw, Filter } from 'lucide-react';
 import { syncQueue } from "@repo/shared";
 import CreditLimitHubModal from '../../components/modals/CreditLimitHubModal';
 import { getWebSafeImageUrl, compressImageFile } from '../../utils/photoStorage';
-import { storageManager } from '../../services/storageManager';
+import { storageManager, normalizePartyKey } from '../../services/storageManager';
 
 export default function PartiesPage() {
   const [parties, setParties] = useState([]);
@@ -13,7 +13,28 @@ export default function PartiesPage() {
   const [showModal, setShowModal] = useState(false);
   const [showCreditLimitHub, setShowCreditLimitHub] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState('all'); // 'all', 'to_collect', 'to_pay', 'customer', 'supplier', 'personal'
+  const [filterType, setFilterTypeState] = useState(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      return sp.get('filter') || sessionStorage.getItem('desktop_party_filter_tab') || 'to_collect';
+    } catch (e) {
+      return 'to_collect';
+    }
+  });
+
+  const setFilterType = useCallback((tab) => {
+    try {
+      sessionStorage.setItem('desktop_party_filter_tab', tab);
+      const url = new URL(window.location.href);
+      if (tab === 'all') {
+        url.searchParams.delete('filter');
+      } else {
+        url.searchParams.set('filter', tab);
+      }
+      window.history.replaceState({}, '', url.toString());
+    } catch (e) {}
+    setFilterTypeState(tab);
+  }, []);
 
   // Statement & Image Modal State
   const [statementParty, setStatementParty] = useState(null);
@@ -761,38 +782,52 @@ export default function PartiesPage() {
     window.open(url, '_blank');
   };
 
+  // Deduplicate parties strictly by normalized key
+  const deduplicatedParties = useMemo(() => {
+    const map = new Map();
+    (parties || []).forEach(p => {
+      if (!p || p.isActive === false || p.isDeleted === true) return;
+      const key = normalizePartyKey(p);
+      if (!map.has(key)) {
+        map.set(key, p);
+      } else {
+        const existing = map.get(key);
+        const hasMongoId = p._id && String(p._id).length === 24 && !String(p._id).includes('-');
+        map.set(key, hasMongoId ? { ...existing, ...p } : { ...p, ...existing });
+      }
+    });
+    return Array.from(map.values());
+  }, [parties]);
+
   // Filtered Parties calculation
-  const filteredParties = parties.filter(p => {
+  const filteredParties = deduplicatedParties.filter(p => {
     const matchesSearch = String(p?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || String(p?.mobileNumber || p?.phone || '').includes(searchTerm);
     const pType = (p?.partyType || p?.type || 'customer').toLowerCase();
-    const isSupplier = pType === 'supplier';
     const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
 
     let matchesType = true;
     if (filterType === 'to_collect') {
-      matchesType = bal > 0 || (!isSupplier && bal < 0);
+      matchesType = bal > 0;
     } else if (filterType === 'to_pay') {
-      matchesType = isSupplier && bal < 0;
+      matchesType = bal < 0;
     } else if (filterType === 'customer') {
       matchesType = pType === 'customer' || pType === 'both';
     } else if (filterType === 'supplier') {
-      matchesType = isSupplier || pType === 'both';
+      matchesType = pType === 'supplier' || pType === 'both';
     } else if (filterType === 'personal') {
       matchesType = pType === 'personal';
     }
     return matchesSearch && matchesType;
   });
 
-  const totalToCollect = parties.filter(p => {
-    const isSupplier = (p?.partyType || p?.type) === 'supplier';
+  const totalToCollect = deduplicatedParties.filter(p => {
     const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
-    return !isSupplier && bal > 0;
+    return bal > 0;
   }).reduce((sum, p) => sum + Number(p?.currentBalance ?? p?.balance ?? 0), 0);
 
-  const totalToPay = Math.abs(parties.filter(p => {
-    const isSupplier = (p?.partyType || p?.type) === 'supplier';
+  const totalToPay = Math.abs(deduplicatedParties.filter(p => {
     const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
-    return isSupplier && bal < 0;
+    return bal < 0;
   }).reduce((sum, p) => sum + Number(p?.currentBalance ?? p?.balance ?? 0), 0));
 
   return (
@@ -839,7 +874,7 @@ export default function PartiesPage() {
 
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
             {[
-              { id: 'all', label: `सभी (${parties.length})` },
+              { id: 'all', label: `सभी (${deduplicatedParties.length})` },
               { id: 'to_collect', label: `🟢 लेने हैं (₹${totalToCollect.toLocaleString('en-IN')})` },
               { id: 'to_pay', label: `🔴 देने हैं (₹${totalToPay.toLocaleString('en-IN')})` },
               { id: 'customer', label: '🛒 ग्राहक' },
