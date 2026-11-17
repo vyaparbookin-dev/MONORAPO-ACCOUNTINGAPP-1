@@ -12,7 +12,7 @@ const partyTransactionSchema = new mongoose.Schema({
   billImageUrls: [{ type: String }], // Attached multiple photos (up to 5 slips)
   billNumber: { type: String, default: '' },
   siteName: { type: String, default: '' }, // Site tracking (PWD, COMPLEX, PAINT, etc.)
-  referenceBillId: { type: mongoose.Schema.Types.ObjectId, ref: 'Bill' },
+  referenceBillId: { type: mongoose.Schema.Types.Mixed },
   isDeleted: { type: Boolean, default: false }
 }, { timestamps: true });
 

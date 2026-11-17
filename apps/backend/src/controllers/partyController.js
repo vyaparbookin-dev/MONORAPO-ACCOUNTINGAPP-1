@@ -1216,14 +1216,18 @@ export const updatePartyTransaction = async (req, res) => {
         const newCred = isPaid ? 0 : amt;
 
         const oldDate = tx.date;
-        tx.debit = newDeb;
-        tx.credit = newCred;
-        if (details !== undefined) tx.details = details;
-        if (date) tx.date = new Date(date);
-        if (paymentMethod) tx.paymentMethod = paymentMethod;
-        if (siteName !== undefined || site !== undefined) tx.siteName = (siteName ?? site ?? '').trim();
-        tx.updatedAt = new Date();
-        await tx.save();
+        const updateDoc = {
+          debit: newDeb,
+          credit: newCred,
+          updatedAt: new Date()
+        };
+        if (details !== undefined) updateDoc.details = details;
+        if (date) updateDoc.date = new Date(date);
+        if (paymentMethod) updateDoc.paymentMethod = paymentMethod;
+        if (siteName !== undefined || site !== undefined) updateDoc.siteName = (siteName ?? site ?? '').trim();
+
+        await PartyTransaction.updateOne({ _id: tx._id }, { $set: updateDoc });
+        Object.assign(tx, updateDoc);
 
         // Also update linked Bill if this tx has a billNumber or referenceBillId
         const linkedBillNum = tx.referenceBillId || tx.billNumber;
