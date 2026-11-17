@@ -287,6 +287,8 @@ const startServer = () => {
     console.log(`☁️ Cloudinary Storage: Ready (Cloud: ${process.env.CLOUDINARY_CLOUD_NAME || "qpaernum"})`);
     try {
       await connectDB(); // MongoDB connection ko wapas chalu kar diya hai
+      // Defer background cleanup and syncs so Render health checks pass immediately (< 2 seconds)
+      setTimeout(async () => {
       // Auto-cleanup stale operating expenses with invalid familyMember
       try {
         const cleanRes = await Expense.updateMany(
@@ -405,6 +407,7 @@ const startServer = () => {
       } catch (staffSyncErr) {
         console.warn("Staff advance auto-sync:", staffSyncErr.message);
       }
+      }, 2500);
     } catch (error) {
       console.error("❌ DB Connection Failed:", error);
       Sentry.captureException(error);
