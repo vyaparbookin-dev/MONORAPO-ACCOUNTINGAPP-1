@@ -3734,6 +3734,19 @@ function MobileVyaparAppContent() {
         }
 
         if (!exists) {
+          // If serverTxs were successfully loaded, only accept local txs that are genuinely pending upload!
+          // Stale / orphan transactions (old deleted duplicates from local cache) must be ignored!
+          const isPendingUpload = Boolean(
+            lt.synced === false ||
+            lt.isLocalOnly === true ||
+            lt.hasLocalEdits === true ||
+            String(lt._id || lt.id || '').startsWith('tx_offline_') ||
+            String(lt._id || lt.id || '').startsWith('ptx_')
+          );
+          if (Array.isArray(serverTxs) && serverTxs.length > 0 && !isPendingUpload) {
+            // This is an orphan/stale cached entry on the client that was deleted from server. Skip it!
+            return;
+          }
           const isPaid = lt.type === 'paid' || (Number(lt.debit || 0) > 0 && lt.source === 'PartyTransaction');
           const amt = Number(lt.amount || lt.debit || lt.credit || 0);
           const rawImgs = lt.billImageUrls || (lt.billImageUrl ? [lt.billImageUrl] : []);
@@ -3843,19 +3856,28 @@ function MobileVyaparAppContent() {
         });
 
         if (paidAmt > 0) {
-          combinedTxs.push({
-            _id: `pay_${b._id || b.id}`,
-            date: b.date || b.createdAt,
-            type: 'payment',
-            refNo: `REC-${bNum}`,
-            billNumber: bNum,
-            details: `बिल #${bNum} पर नकद/UPI जमा (Payment Received)`,
-            debit: isSupplier ? paidAmt : 0,
-            credit: isSupplier ? 0 : paidAmt,
-            billImageUrl: b.billImageUrl || (bImgs[0] || ''),
-            billImageUrls: bImgs,
-            paymentMethod: b.paymentMode || b.paymentMethod || 'CASH'
+          const alreadyHasPayment = combinedTxs.some(t => {
+            const tRef = String(t.refNo || t.billNumber || '').toLowerCase().trim();
+            const tDate = t.date ? new Date(t.date).toISOString().slice(0, 10) : '';
+            const tCred = Number(t.credit || 0);
+            return (tRef && (tRef === `rec-${bNum}` || tRef === bNum)) ||
+                   (tCred > 0 && Math.abs(tCred - paidAmt) < 0.01 && (!bDate || tDate === bDate));
           });
+          if (!alreadyHasPayment) {
+            combinedTxs.push({
+              _id: `pay_${b._id || b.id}`,
+              date: b.date || b.createdAt,
+              type: 'payment',
+              refNo: `REC-${bNum}`,
+              billNumber: bNum,
+              details: `बिल #${bNum} पर नकद/UPI जमा (Payment Received)`,
+              debit: isSupplier ? paidAmt : 0,
+              credit: isSupplier ? 0 : paidAmt,
+              billImageUrl: b.billImageUrl || (bImgs[0] || ''),
+              billImageUrls: bImgs,
+              paymentMethod: b.paymentMode || b.paymentMethod || 'CASH'
+            });
+          }
         }
       }
 
@@ -3873,13 +3895,41 @@ function MobileVyaparAppContent() {
       sortedChronological.forEach(tx => {
         running += (Number(tx.debit || 0) - Number(tx.credit || 0));
       });
-      const trueBalance = running;
+      const hasPendingOffline = matchingLocalTxs.some(t => t.synced === false || t.isLocalOnly === true);
+      const serverCurrentBal = (pObj?.currentBalance !== undefined && pObj?.currentBalance !== null)
+        ? Number(pObj.currentBalance)
+        : (pObj?.balance !== undefined && pObj?.balance !== null ? Number(pObj.balance) : null);
+      const trueBalance = (!hasPendingOffline && serverCurrentBal !== null && Array.isArray(serverTxs) && serverTxs.length > 0) ? serverCurrentBal : running;
 
       setSelectedPartyDetail(prev => prev ? ({
         ...prev,
         balance: trueBalance,
         currentBalance: trueBalance
       }) : prev);
+
+      // Clean up stale deleted party txs from localStorage so client cache does not remain bloated
+      if (Array.isArray(serverTxs) && serverTxs.length > 0) {
+        try {
+          const stored = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+          if (Array.isArray(stored)) {
+            const currentPartyId = String(partyId || pObj?._id || pObj?.id || '').trim();
+            const currentPartyName = String(pObj?.name || '').trim().toLowerCase();
+            const serverIdSet = new Set(serverTxs.map(st => String(st._id || st.id || '').trim()));
+            const cleanStored = stored.filter(t => {
+              const tPId = String(t.partyId?._id || t.partyId?.id || t.partyId || '').trim();
+              const tPName = String(t.partyName || t.customerName || t.party || '').trim().toLowerCase();
+              const isThisParty = (tPId && tPId === currentPartyId) || (currentPartyName && tPName && tPName === currentPartyName);
+              if (isThisParty) {
+                const isPending = t.synced === false || t.isLocalOnly === true;
+                const inServer = serverIdSet.has(String(t._id || t.id || '').trim());
+                return isPending || inServer;
+              }
+              return true;
+            });
+            localStorage.setItem("vb_local_party_txs", JSON.stringify(cleanStored));
+          }
+        } catch (e) {}
+      }
 
       const targetPartyId = String(partyId || pObj?._id || pObj?.id || '').trim();
       const targetPartyName = String(pObj?.name || selectedPartyDetail?.name || '').trim().toLowerCase();
