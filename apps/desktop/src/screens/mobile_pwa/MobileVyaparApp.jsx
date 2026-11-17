@@ -3592,11 +3592,13 @@ function MobileVyaparAppContent() {
 
       matchingLocalTxs.forEach(lt => {
         const ltId = String(lt._id || lt.id || "").trim();
-        // ✅ FIX: When ID matches but date is different (user edited date), update server tx with local data
+        const ltRef = String(lt.refNo || lt.billNumber || "").trim().toLowerCase();
+        // ✅ FIX: When ID matches or ref matches but date is different (user edited date), update server tx with local data
         let idMatchIdx = -1;
         const exists = combinedTxs.some((t, idx) => {
           const tId = String(t._id || t.id || "").trim();
-          if (tId && ltId && tId === ltId) {
+          const tRef = String(t.refNo || t.billNumber || "").trim().toLowerCase();
+          if ((tId && ltId && tId === ltId) || (ltRef && tRef && ltRef === tRef)) {
             idMatchIdx = idx;
             return true;
           }
@@ -3616,8 +3618,8 @@ function MobileVyaparAppContent() {
           return false;
         });
 
-        // ✅ FIX: If ID matched but local has DIFFERENT date/amount (user edited), update combined entry with local data
-        if (idMatchIdx >= 0 && ltId) {
+        // ✅ FIX: If ID/ref matched but local has DIFFERENT date/amount (user edited), update combined entry with local data
+        if (idMatchIdx >= 0) {
           const serverTx = combinedTxs[idMatchIdx];
           const serverDate = serverTx.date ? new Date(serverTx.date).toISOString().slice(0, 10) : "";
           const localDate = lt.date ? new Date(lt.date).toISOString().slice(0, 10) : "";
@@ -3641,7 +3643,7 @@ function MobileVyaparAppContent() {
               paymentMethod: lt.paymentMethod || serverTx.paymentMethod
             };
           }
-          return; // ID matched — don't add as duplicate
+          return; // ID/ref matched — don't add as duplicate
         }
 
         if (!exists) {
@@ -3676,11 +3678,26 @@ function MobileVyaparAppContent() {
       const pNameNorm = String(pObj?.name || '').trim().toLowerCase();
       const pPhoneNorm = String(pObj?.phone || pObj?.mobileNumber || '').trim();
       const existingRefNos = new Set();
+      const existingTxFingerprints = new Set();
       combinedTxs.forEach(t => {
         if (t.billNumber) existingRefNos.add(String(t.billNumber).trim().toLowerCase());
+        if (t.referenceBillId) existingRefNos.add(String(t.referenceBillId).trim().toLowerCase());
         if (t.refNo) existingRefNos.add(String(t.refNo).trim().toLowerCase());
         if (t._id) existingRefNos.add(String(t._id).trim().toLowerCase());
         if (t.id) existingRefNos.add(String(t.id).trim().toLowerCase());
+
+        // Extract any #RA-xxx or #123 from details
+        const hashMatches = String(t.details || '').match(/#([A-Za-z0-9_-]+)/g);
+        if (hashMatches) {
+          hashMatches.forEach(hm => existingRefNos.add(hm.replace('#', '').trim().toLowerCase()));
+        }
+
+        // Fingerprint by date + debit amount
+        const dStr = t.date ? new Date(t.date).toISOString().slice(0, 10) : '';
+        const deb = Number(t.debit || 0);
+        if (deb > 0) {
+          existingTxFingerprints.add(`${dStr}_${deb}`);
+        }
       });
 
       const localBills = allAvailableBills.filter(b => {
@@ -3698,11 +3715,15 @@ function MobileVyaparAppContent() {
       });
 
       for (const b of localBills) {
-        const bNum = String(b.billNumber || b.invoiceNumber || 'BILL').trim();
-        const bId = String(b._id || b.id || '').trim();
-        if (existingRefNos.has(bNum.toLowerCase()) || existingRefNos.has(bId.toLowerCase())) continue;
-
+        const bNum = String(b.billNumber || b.invoiceNumber || 'BILL').trim().toLowerCase();
+        const bRef = String(b.refBillNo || '').trim().toLowerCase();
+        const bId = String(b._id || b.id || '').trim().toLowerCase();
+        const bDate = b.date ? new Date(b.date).toISOString().slice(0, 10) : '';
         const finalAmt = Number(b.finalAmount ?? b.total ?? b.amount ?? 0);
+
+        if (existingRefNos.has(bNum) || (bRef && existingRefNos.has(bRef)) || existingRefNos.has(bId) || existingTxFingerprints.has(`${bDate}_${finalAmt}`)) {
+          continue;
+        }
 
         const isPaid = String(b.paymentStatus || b.status || '').toLowerCase() === 'paid';
         const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
@@ -4636,6 +4657,27 @@ function MobileVyaparAppContent() {
             carrierPhone: payload.carrierPhone,
             receiverName: payload.carrierName,
             receiverPhone: payload.carrierPhone
+          };
+        }
+        return t;
+      }));
+
+      setPartyTransactions(prev => (prev || []).map(t => {
+        const tId = t._id || t.id;
+        const tRef = t.refNo || t.billNumber;
+        if (tId === txId || (tRef && editingPartyTx.refNo && tRef === editingPartyTx.refNo)) {
+          return {
+            ...t,
+            date: payload.date,
+            createdAt: payload.date,
+            amount: amt,
+            debit: editPartyTxType === 'paid' ? amt : 0,
+            credit: editPartyTxType === 'received' ? amt : 0,
+            details: payload.details,
+            siteName: payload.siteName,
+            site: payload.site,
+            carrierName: payload.carrierName,
+            carrierPhone: payload.carrierPhone
           };
         }
         return t;

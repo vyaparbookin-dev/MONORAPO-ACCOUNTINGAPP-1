@@ -9,7 +9,7 @@ const isSupabaseConfigured = Boolean(supabase);
 /**
  * Execute a Supabase query with automatic retry on clock-skew / transient gateway errors (e.g. PGRST303 "JWT issued at future")
  */
-export const executeSupabaseQuery = async (buildQueryFn, maxRetries = 2, delayMs = 600) => {
+export const executeSupabaseQuery = async (buildQueryFn, maxRetries = 3, delayMs = 1000) => {
   let attempt = 0;
   while (true) {
     try {
@@ -407,7 +407,7 @@ export const getPartyTransactionsFromSupabase = async ({ partyId, companyId, sta
       q = q.gte("date", new Date(startDate).toISOString()).lte("date", new Date(endDate).toISOString());
     }
 
-    const { data, error } = await q;
+    const { data, error } = await executeSupabaseQuery(() => q);
     if (error) {
       console.warn("[Supabase Read] getPartyTransactions error:", error.message);
       return null;
@@ -446,7 +446,7 @@ export const getExpensesFromSupabase = async ({ companyId, category, expenseType
       q = q.limit(parseInt(limit) || 200);
     }
 
-    const { data, error } = await q;
+    const { data, error } = await executeSupabaseQuery(() => q);
     if (error) {
       console.warn("[Supabase Read] getExpenses error:", error.message);
       return null;
@@ -512,7 +512,7 @@ export const getPurchasesFromSupabase = async ({ companyId, limit = 200 }) => {
       q = q.limit(parseInt(limit) || 200);
     }
 
-    const { data, error } = await q;
+    const { data, error } = await executeSupabaseQuery(() => q);
     if (error) {
       console.warn("[Supabase Read] getPurchases error:", error.message);
       return null;
@@ -599,7 +599,7 @@ export const getStaffTransactionsFromSupabase = async ({ staffId, companyId }) =
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(staffId));
       q = q.eq("employee_id", isUuid ? staffId : mongoIdToUuid(staffId));
     }
-    const { data, error } = await q;
+    const { data, error } = await executeSupabaseQuery(() => q);
     if (error || !data) return null;
     return data.map(mapSupabaseStaffTxToTx);
   } catch (err) {
@@ -631,7 +631,7 @@ export const getProductsFromSupabase = async ({ companyId, category, search, lim
       q = q.limit(parseInt(limit) || 500);
     }
 
-    const { data, error } = await q;
+    const { data, error } = await executeSupabaseQuery(() => q);
     if (error) {
       console.warn("[Supabase Read] getProducts error:", error.message);
       return null;

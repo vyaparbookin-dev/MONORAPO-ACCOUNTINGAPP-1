@@ -179,25 +179,35 @@ export const syncPartyTxToSupabase = async (tx, explicitPartyUuid, previousDate)
       return;
     }
 
-    // If updating from an old date, find and update that specific Supabase transaction
+    // If updating from an old date, find and update that specific Supabase transaction matching amount
     if (previousDate) {
       const prevDStr = new Date(previousDate).toISOString().slice(0, 10);
-      const { data: prevMatch } = await supabase
+      let prevQuery = supabase
         .from("party_transactions")
         .select("id")
         .eq("party_id", pUuid)
         .gte("date", `${prevDStr}T00:00:00.000Z`)
-        .lte("date", `${prevDStr}T23:59:59.999Z`)
-        .limit(1);
+        .lte("date", `${prevDStr}T23:59:59.999Z`);
+      if (deb > 0) prevQuery = prevQuery.eq("debit", deb);
+      if (cred > 0) prevQuery = prevQuery.eq("credit", cred);
+      const { data: prevMatch } = await prevQuery.limit(1);
 
       if (prevMatch && prevMatch.length > 0) {
-        await supabase.from("party_transactions").update({
-          date: txDate,
-          details: det,
-          debit: deb,
-          credit: cred,
-          type: tx.type || "manual"
-        }).eq("id", prevMatch[0].id);
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const { error: upErr } = await supabase.from("party_transactions").update({
+            date: txDate,
+            details: det,
+            debit: deb,
+            credit: cred,
+            type: tx.type || "manual"
+          }).eq("id", prevMatch[0].id);
+
+          if (upErr && (upErr.message.includes('JWT') || upErr.message.includes('future') || upErr.message.includes('clock'))) {
+            await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+            continue;
+          }
+          break;
+        }
         return;
       }
     }

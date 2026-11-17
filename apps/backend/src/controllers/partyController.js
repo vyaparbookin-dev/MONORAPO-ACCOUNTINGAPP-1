@@ -449,6 +449,23 @@ export const getPartyStatement = async (req, res) => {
             continue;
           }
 
+          // If a Mongo transaction already exists with matching amount and details (e.g. date was edited in Mongo), do not duplicate
+          const matchesExistingMongoTx = txRecords.some(mt => {
+            const mDeb = Number(mt.debit || 0);
+            const mCred = Number(mt.credit || 0);
+            const mDet = (mt.details || '').trim().toLowerCase();
+            if (mDeb > 0 && sbDeb > 0 && Math.abs(mDeb - sbDeb) < 0.01) {
+              return mDet === sbDet || (mDet && sbDet && (mDet.includes(sbDet) || sbDet.includes(mDet)));
+            }
+            if (mCred > 0 && sbCred > 0 && Math.abs(mCred - sbCred) < 0.01) {
+              return mDet === sbDet || (mDet && sbDet && (mDet.includes(sbDet) || sbDet.includes(mDet)));
+            }
+            return false;
+          });
+          if (matchesExistingMongoTx) {
+            continue;
+          }
+
           seenTxKeys.add(sbId);
           seenTxKeys.add(sbKey);
           txRecords.push(st);
@@ -597,11 +614,14 @@ export const getPartyStatement = async (req, res) => {
     // Process manual / direct payments
     for (const tx of txRecords) {
       const isDebit = Number(tx.debit || 0) > 0;
+      const derivedBillNum = tx.billNumber || tx.referenceBillId || (String(tx.details || '').match(/#(RA-\d+|[A-Za-z0-9_-]+)/i)?.[1]) || "";
       ledgerEntries.push({
         _id: tx._id,
         date: tx.date || tx.createdAt,
         type: tx.type || (isDebit ? "payment" : (isSupplier ? "purchase" : "receipt")),
         refNo: tx.refNo || tx.billNumber || (isDebit ? "PAY" : (isSupplier ? "PUR" : "REC")),
+        billNumber: derivedBillNum,
+        referenceBillId: tx.referenceBillId || tx.billNumber || "",
         details: tx.details && tx.details !== "मुझे मिले" && tx.details !== "मैंने दिए"
           ? tx.details
           : (isSupplier 
@@ -1098,9 +1118,13 @@ export const updatePartyTransaction = async (req, res) => {
     }
 
     const { amount, type, details, date, paymentMethod, partyId: targetPartyId } = req.body;
-    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id);
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
-    const isNumeric = /^\d+$/.test(id);
+    const cleanId = String(id).replace(/^(pay_|tx_|ptx_)/, '').trim();
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(id) || /^[0-9a-fA-F]{24}$/.test(cleanId);
+    const targetId = /^[0-9a-fA-F]{24}$/.test(id) ? id : cleanId;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) || /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cleanId);
+    const targetUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ? id : cleanId;
+    const isNumeric = /^\d+$/.test(id) || /^\d+$/.test(cleanId);
+    const targetNumeric = /^\d+$/.test(id) ? id : cleanId;
 
     // 1. If opening balance (open_partyId)
     if (String(id).startsWith("open_")) {
@@ -1180,7 +1204,7 @@ export const updatePartyTransaction = async (req, res) => {
 
     // 2. Check PartyTransaction in MongoDB (if valid ObjectId)
     if (isMongoId) {
-      const tx = await PartyTransaction.findOne({ _id: id, companyId: req.companyId });
+      const tx = await PartyTransaction.findOne({ _id: targetId, companyId: req.companyId });
       if (tx) {
         const oldDeb = Number(tx.debit || 0);
         const oldCred = Number(tx.credit || 0);
@@ -1199,6 +1223,25 @@ export const updatePartyTransaction = async (req, res) => {
         if (paymentMethod) tx.paymentMethod = paymentMethod;
         tx.updatedAt = new Date();
         await tx.save();
+
+        // Also update linked Bill if this tx has a billNumber or referenceBillId
+        const linkedBillNum = tx.referenceBillId || tx.billNumber;
+        if (linkedBillNum && date) {
+          const bDate = new Date(date);
+          await Bill.updateMany(
+            { companyId: req.companyId, $or: [{ billNumber: linkedBillNum }, { refBillNo: linkedBillNum }] },
+            { $set: { date: bDate, updatedAt: new Date() } }
+          ).catch(() => {});
+
+          if (supabase) {
+            const sbCoUuid = mongoIdToUuid(req.companyId);
+            supabase.from("sales").update({ date: bDate.toISOString() })
+              .eq("company_id", sbCoUuid)
+              .or(`bill_number.eq.${linkedBillNum}`)
+              .then(() => {})
+              .catch(() => {});
+          }
+        }
 
         // Update party currentBalance: revert old net, add new net
         let updatedPartyBal = undefined;
@@ -1225,7 +1268,7 @@ export const updatePartyTransaction = async (req, res) => {
       }
 
       // Check if it's a Bill
-      const bill = await Bill.findOne({ _id: id, companyId: req.companyId });
+      const bill = await Bill.findOne({ _id: targetId, companyId: req.companyId });
       if (bill) {
         const oldAmt = Number(bill.finalAmount || bill.total || 0);
         const newAmt = Number(amount !== undefined ? amount : oldAmt);
@@ -1237,6 +1280,25 @@ export const updatePartyTransaction = async (req, res) => {
         if (date) bill.date = new Date(date);
         bill.updatedAt = new Date();
         await bill.save();
+
+        // Also update any linked PartyTransactions
+        const bNum = bill.billNumber || bill.refBillNo;
+        if (bNum && date) {
+          const bDate = new Date(date);
+          await PartyTransaction.updateMany(
+            { companyId: req.companyId, $or: [{ referenceBillId: bNum }, { billNumber: bNum }, { refNo: bNum }] },
+            { $set: { date: bDate, updatedAt: new Date() } }
+          ).catch(() => {});
+
+          if (supabase) {
+            const sbCoUuid = mongoIdToUuid(req.companyId);
+            supabase.from("party_transactions").update({ date: bDate.toISOString() })
+              .eq("company_id", sbCoUuid)
+              .or(`details.ilike.%${bNum}%`)
+              .then(() => {})
+              .catch(() => {});
+          }
+        }
 
         if (bill.partyId) {
           const party = await Party.findOne({ _id: bill.partyId, companyId: req.companyId });
@@ -1263,7 +1325,7 @@ export const updatePartyTransaction = async (req, res) => {
       const amt = Number(amount || 0);
       const newDeb = isPaid ? amt : 0;
       const newCred = isPaid ? 0 : amt;
-      const queryId = isNumeric ? Number(id) : id;
+      const queryId = isNumeric ? Number(targetNumeric) : targetUuid;
 
       let updatedTx = null;
       let sbErr = null;
