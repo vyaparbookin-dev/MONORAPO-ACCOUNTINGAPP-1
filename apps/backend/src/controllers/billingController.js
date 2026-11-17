@@ -1,6 +1,7 @@
 import axios from "axios";
 // GoogleGenerativeAI removed — pure OpenAI architecture (uses OPENAI_API_KEY from Render)
 import Bill from "../model/bill.js";
+import PartyTransaction from "../model/PartyTransaction.js";
 import mongoose from "mongoose";
 import fs from "fs";
 import path from "path";
@@ -669,6 +670,48 @@ export const updateBill = async (req, res) => {
 
     if (bill && bill._id && /^[0-9a-fA-F]{24}$/.test(String(bill._id))) {
       await logActivity(req, 'UPDATE', 'bill', bill._id, oldBill.toObject ? oldBill.toObject() : oldBill, bill.toObject ? bill.toObject() : bill);
+    }
+
+    // 🛡️ SYNC DATE & DETAILS TO LINKED PARTY TRANSACTIONS (Prevents date drift / duplicate ledger entries)
+    if (bill && (req.body.date || bill.date)) {
+      try {
+        const bDate = new Date(req.body.date || bill.date);
+        const bNum = bill.billNumber || bill.refBillNo || req.body.billNumber;
+        const bId = String(bill._id || id);
+
+        const txMatchConditions = [];
+        if (bNum) {
+          txMatchConditions.push({ billNumber: bNum });
+          txMatchConditions.push({ referenceBillId: bNum });
+          txMatchConditions.push({ refNo: bNum });
+          txMatchConditions.push({ details: { $regex: new RegExp(`#${bNum}\\b`, 'i') } });
+        }
+        if (bId && /^[0-9a-fA-F]{24}$/.test(bId)) {
+          txMatchConditions.push({ sale_id: bId });
+          txMatchConditions.push({ referenceBillId: bId });
+        }
+
+        if (txMatchConditions.length > 0) {
+          await PartyTransaction.updateMany(
+            { companyId: req.companyId, $or: txMatchConditions },
+            { $set: { date: bDate, updatedAt: new Date() } }
+          );
+
+          if (supabase) {
+            const sbCoUuid = mongoIdToUuid(req.companyId);
+            const sbFilters = [];
+            if (bNum) sbFilters.push(`details.ilike.%#${bNum}%`, `bill_number.eq.${bNum}`);
+            if (sbFilters.length > 0) {
+              supabase.from("party_transactions").update({ date: bDate.toISOString() })
+                .eq("company_id", sbCoUuid)
+                .or(sbFilters.join(","))
+                .then(() => {}, () => {});
+            }
+          }
+        }
+      } catch (txSyncErr) {
+        console.warn("[updateBill] PartyTransaction date sync warning:", txSyncErr.message);
+      }
     }
     
     // Sync to Supabase

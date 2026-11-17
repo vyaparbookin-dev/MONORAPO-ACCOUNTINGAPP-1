@@ -647,18 +647,43 @@ export const getPartyStatement = async (req, res) => {
       const isPaid = String(b.paymentStatus || b.status || "").toLowerCase() === "paid";
       const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
 
-      // If this bill was already recorded in party transactions, skip adding duplicate debit entry
+      // If this bill was already recorded in party transactions, synchronize date and skip duplicate debit entry
       const bDateStr = b.date ? new Date(b.date).toISOString().slice(0, 10) : "";
-      const matchesExistingSaleTx = txRecords.some(t => {
+      const matchedEntry = ledgerEntries.find(t => {
+        const tId = String(t._id || t.id || '');
+        const tRef = String(t.refNo || t.billNumber || t.referenceBillId || '').toLowerCase();
+        const tDet = String(t.details || '').toLowerCase();
+        const bNumLower = bNum.toLowerCase();
+        const invNoLower = invNo.toLowerCase();
+
+        // 1. Exact ID or Sale ID match
         if (t.sale_id && String(t.sale_id) === String(b._id || b.id)) return true;
-        const tDateStr = t.date ? new Date(t.date).toISOString().slice(0, 10) : "";
+        if (tId && (tId === bId || tId === String(b.id || ''))) return true;
+
+        // 2. Bill number or Invoice number match
+        if (bNumLower && bNumLower !== 'bill' && (tRef === bNumLower || tDet.includes(`#${bNumLower}`))) return true;
+        if (invNoLower && (tRef === invNoLower || tDet.includes(`#${invNoLower}`))) return true;
+
+        // 3. Exact amount & sale details match
         const tDeb = Number(t.debit || 0);
-        return (t.type === 'sale' || String(t.details || '').includes('बिक्री') || String(t.details || '').includes('बिल')) &&
-               bDateStr && tDateStr && bDateStr === tDateStr &&
-               Math.abs(tDeb - finalAmt) < 0.01;
+        if (Math.abs(tDeb - finalAmt) < 0.01 && (t.type === 'sale' || tDet.includes('बिक्री') || tDet.includes('बिल'))) {
+          const tDateStr = t.date ? new Date(t.date).toISOString().slice(0, 10) : "";
+          if (bDateStr && tDateStr && bDateStr === tDateStr) return true;
+          if (bNum && bNumLower !== 'bill' && tDet.includes(bNumLower)) return true;
+        }
+        return false;
       });
 
-      const alreadyInTx = existingRefBillIds.has(bNum) || existingRefBillIds.has(bId) || (invNo && existingRefBillIds.has(invNo)) || matchesExistingSaleTx;
+      const alreadyInTx = Boolean(matchedEntry) || existingRefBillIds.has(bNum) || existingRefBillIds.has(bId) || (invNo && existingRefBillIds.has(invNo));
+
+      // 🛡️ If matched existing transaction, synchronize date & details so date edits replace rather than duplicate
+      if (matchedEntry) {
+        if (b.date) matchedEntry.date = b.date;
+        if (bNum && (!matchedEntry.billNumber || matchedEntry.billNumber === 'BILL')) matchedEntry.billNumber = bNum;
+        if (b.items && b.items.length > 0 && (!matchedEntry.items || matchedEntry.items.length === 0)) matchedEntry.items = b.items;
+        if (b.siteName && !matchedEntry.siteName) matchedEntry.siteName = b.siteName;
+        if (b.billImageUrl && !matchedEntry.billImageUrl) matchedEntry.billImageUrl = b.billImageUrl;
+      }
 
       const itemsSummary = (b.items && b.items.length > 0)
         ? `: ${b.items.map(i => `${i.name}${i.quantity ? ` (${i.quantity} ${i.unit || 'pcs'})` : ''}`).slice(0, 3).join(', ')}${b.items.length > 3 ? '...' : ''}`
@@ -1229,12 +1254,12 @@ export const updatePartyTransaction = async (req, res) => {
         await PartyTransaction.updateOne({ _id: tx._id }, { $set: updateDoc });
         Object.assign(tx, updateDoc);
 
-        // Also update linked Bill if this tx has a billNumber or referenceBillId
-        const linkedBillNum = tx.referenceBillId || tx.billNumber;
+        // Also update linked Bill if this tx has a billNumber or referenceBillId or #billNumber in details
+        const linkedBillNum = tx.referenceBillId || tx.billNumber || (String(tx.details || '').match(/#([A-Za-z0-9_-]+)/)?.[1]);
         if (linkedBillNum && date) {
           const bDate = new Date(date);
           await Bill.updateMany(
-            { companyId: req.companyId, $or: [{ billNumber: linkedBillNum }, { refBillNo: linkedBillNum }] },
+            { companyId: req.companyId, $or: [{ billNumber: linkedBillNum }, { refBillNo: linkedBillNum }, { invoiceNumber: linkedBillNum }] },
             { $set: { date: bDate, updatedAt: new Date() } }
           ).catch(() => {});
 
@@ -1319,7 +1344,8 @@ export const updatePartyTransaction = async (req, res) => {
         return res.json({
           success: true,
           message: "बिल सफलतापूर्वक अपडेट हो गया!",
-          bill
+          bill,
+          transaction: bill
         });
       }
     }

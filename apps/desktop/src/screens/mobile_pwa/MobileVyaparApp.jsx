@@ -3819,6 +3819,35 @@ function MobileVyaparAppContent() {
         const bDate = b.date ? new Date(b.date).toISOString().slice(0, 10) : '';
         const finalAmt = Number(b.finalAmount ?? b.total ?? b.amount ?? 0);
 
+        // 🛡️ Date edit synchronization: If transaction already exists in combinedTxs by ID, billNumber, or refNo:
+        // Update its date/details instead of skipping without updating or duplicating!
+        const existingTx = combinedTxs.find(t => {
+          const tid = String(t._id || t.id || '').trim().toLowerCase();
+          const tNum = String(t.billNumber || '').trim().toLowerCase();
+          const tRef = String(t.refNo || '').trim().toLowerCase();
+          const tRefBill = String(t.referenceBillId || '').trim().toLowerCase();
+          const tDet = String(t.details || '').toLowerCase();
+
+          if (bId && (tid === bId || (b._id && tid === String(b._id).toLowerCase()))) return true;
+          if (bNum && bNum !== 'bill' && (tNum === bNum || tRef === bNum || tRefBill === bNum || tDet.includes(`#${bNum}`))) return true;
+          if (bRef && (tNum === bRef || tRef === bRef || tRefBill === bRef)) return true;
+          return false;
+        });
+
+        if (existingTx) {
+          if (b.date && (b.hasLocalEdits || !existingTx.date)) {
+            existingTx.date = b.date;
+          }
+          continue;
+        }
+
+        // If serverTxs were successfully loaded, only accept local bills that are genuinely offline/un-synced drafts!
+        // Stale local copies of server bills must never resurrect or create duplicate ledger entries!
+        const isServerDoc = /^[0-9a-fA-F]{24}$/.test(bId) || (!bId.startsWith('bill_') && !bId.startsWith('scan_local_') && !b.isOfflineCreated);
+        if (Array.isArray(serverTxs) && serverTxs.length > 0 && isServerDoc && !b.isOfflineCreated && !b.hasLocalEdits) {
+          continue;
+        }
+
         if (existingRefNos.has(bNum) || (bRef && existingRefNos.has(bRef)) || existingRefNos.has(bId) || existingTxFingerprints.has(`${bDate}_${finalAmt}`)) {
           continue;
         }
@@ -4647,7 +4676,7 @@ function MobileVyaparAppContent() {
         const updateRes = await api.put(`/api/party/transaction/${txId}`, payload)
           .catch(() => api.put(`/api/parties/transaction/${txId}`, payload));
         // If server returned updated transaction with confirmed date, use it
-        const confirmedTx = updateRes?.data?.transaction || updateRes?.transaction;
+        const confirmedTx = updateRes?.data?.transaction || updateRes?.transaction || updateRes?.data?.bill || updateRes?.bill;
         if (confirmedTx?.date) {
           payload.date = new Date(confirmedTx.date).toISOString();
         }
@@ -4687,10 +4716,16 @@ function MobileVyaparAppContent() {
           const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
           const storedBills = storageManager.getBills(currentCoId);
           if (Array.isArray(storedBills)) {
-            const billIdx = storedBills.findIndex(b => String(b.billNumber || b.invoiceNumber || b._id || b.id).toLowerCase() === billRef.toLowerCase());
+            const billIdx = storedBills.findIndex(b => {
+              const bRefMatch = String(b.billNumber || b.invoiceNumber || b._id || b.id).toLowerCase() === billRef.toLowerCase();
+              const bIdMatch = String(b._id || b.id).toLowerCase() === String(txId).toLowerCase();
+              return bRefMatch || bIdMatch;
+            });
             if (billIdx >= 0) {
               storedBills[billIdx].date = isoDate;
+              storedBills[billIdx].rawDate = isoDate;
               storedBills[billIdx].createdAt = isoDate;
+              storedBills[billIdx].hasLocalEdits = true;
               storedBills[billIdx].siteName = payload.siteName;
               storedBills[billIdx].site = payload.site;
               storedBills[billIdx].carrierName = payload.carrierName;
@@ -4701,8 +4736,8 @@ function MobileVyaparAppContent() {
 
               // Update bills state as well
               setBills(prev => (prev || []).map(b => {
-                if (String(b.billNumber || b.invoiceNumber || b._id || b.id).toLowerCase() === billRef.toLowerCase()) {
-                  return { ...b, date: isoDate, createdAt: isoDate, siteName: payload.siteName, site: payload.site, carrierName: payload.carrierName, carrierPhone: payload.carrierPhone };
+                if (String(b.billNumber || b.invoiceNumber || b._id || b.id).toLowerCase() === billRef.toLowerCase() || String(b._id || b.id).toLowerCase() === String(txId).toLowerCase()) {
+                  return { ...b, date: isoDate, rawDate: isoDate, createdAt: isoDate, hasLocalEdits: true, siteName: payload.siteName, site: payload.site, carrierName: payload.carrierName, carrierPhone: payload.carrierPhone };
                 }
                 return b;
               }));
@@ -4748,7 +4783,7 @@ function MobileVyaparAppContent() {
           return t;
         });
 
-        if (!matched) {
+        if (!matched && isClientLocalOnly) {
           updatedList.unshift({
             _id: payload._id || txId,
             id: payload.id || txId,
