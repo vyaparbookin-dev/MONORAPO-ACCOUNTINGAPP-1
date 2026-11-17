@@ -623,12 +623,22 @@ export const getPartyStatement = async (req, res) => {
       const bId = String(b._id || "");
       const invNo = String(b.invoiceNumber || "");
 
-      // If this bill was already recorded in party transactions, skip adding duplicate debit entry
-      const alreadyInTx = existingRefBillIds.has(bNum) || existingRefBillIds.has(bId) || (invNo && existingRefBillIds.has(invNo));
-
       const finalAmt = Number(b.finalAmount ?? b.total ?? 0);
       const isPaid = String(b.paymentStatus || b.status || "").toLowerCase() === "paid";
       const paidAmt = isPaid ? finalAmt : Number(b.amountPaid || b.advanceAmount || b.receivedAmount || 0);
+
+      // If this bill was already recorded in party transactions, skip adding duplicate debit entry
+      const bDateStr = b.date ? new Date(b.date).toISOString().slice(0, 10) : "";
+      const matchesExistingSaleTx = txRecords.some(t => {
+        if (t.sale_id && String(t.sale_id) === String(b._id || b.id)) return true;
+        const tDateStr = t.date ? new Date(t.date).toISOString().slice(0, 10) : "";
+        const tDeb = Number(t.debit || 0);
+        return (t.type === 'sale' || String(t.details || '').includes('बिक्री') || String(t.details || '').includes('बिल')) &&
+               bDateStr && tDateStr && bDateStr === tDateStr &&
+               Math.abs(tDeb - finalAmt) < 0.01;
+      });
+
+      const alreadyInTx = existingRefBillIds.has(bNum) || existingRefBillIds.has(bId) || (invNo && existingRefBillIds.has(invNo)) || matchesExistingSaleTx;
 
       const itemsSummary = (b.items && b.items.length > 0)
         ? `: ${b.items.map(i => `${i.name}${i.quantity ? ` (${i.quantity} ${i.unit || 'pcs'})` : ''}`).slice(0, 3).join(', ')}${b.items.length > 3 ? '...' : ''}`
@@ -683,9 +693,19 @@ export const getPartyStatement = async (req, res) => {
     for (const p of purchaseRecords) {
       const pNum = String(p.billNumber || p.invoiceNo || p.purchaseNumber || "PUR");
       const pId = String(p._id || "");
-      if (existingRefBillIds.has(pNum) || existingRefBillIds.has(pId)) continue;
-
       const totalAmt = Number(p.totalAmount ?? p.total ?? 0);
+
+      const pDateStr = p.date ? new Date(p.date).toISOString().slice(0, 10) : "";
+      const matchesExistingPurTx = txRecords.some(t => {
+        if (t.purchase_id && String(t.purchase_id) === String(p._id || p.id)) return true;
+        const tDateStr = t.date ? new Date(t.date).toISOString().slice(0, 10) : "";
+        const tCred = Number(t.credit || 0);
+        return (t.type === 'purchase' || String(t.details || '').includes('खरीद')) &&
+               pDateStr && tDateStr && pDateStr === tDateStr &&
+               Math.abs(tCred - totalAmt) < 0.01;
+      });
+      if (existingRefBillIds.has(pNum) || existingRefBillIds.has(pId) || matchesExistingPurTx) continue;
+
       ledgerEntries.push({
         _id: p._id,
         date: p.date || p.createdAt,
@@ -1171,6 +1191,7 @@ export const updatePartyTransaction = async (req, res) => {
         const newDeb = isPaid ? amt : 0;
         const newCred = isPaid ? 0 : amt;
 
+        const oldDate = tx.date;
         tx.debit = newDeb;
         tx.credit = newCred;
         if (details !== undefined) tx.details = details;
@@ -1192,8 +1213,8 @@ export const updatePartyTransaction = async (req, res) => {
           syncPartyToSupabase(party).catch(e => console.warn(e));
         }
 
-        // Dual-write to Supabase
-        syncPartyTxToSupabase(tx).catch(e => console.warn(e));
+        // Dual-write to Supabase with previousDate so Supabase date is accurately updated
+        syncPartyTxToSupabase(tx, null, oldDate).catch(e => console.warn(e));
 
         return res.json({
           success: true,
@@ -1242,6 +1263,7 @@ export const updatePartyTransaction = async (req, res) => {
       const amt = Number(amount || 0);
       const newDeb = isPaid ? amt : 0;
       const newCred = isPaid ? 0 : amt;
+      const queryId = isNumeric ? Number(id) : id;
 
       let updatedTx = null;
       let sbErr = null;
@@ -1254,7 +1276,7 @@ export const updatePartyTransaction = async (req, res) => {
             details: details || "संपादित लेनदेन",
             date: date ? new Date(date).toISOString() : new Date().toISOString()
           })
-          .eq("id", id)
+          .eq("id", queryId)
           .select()
           .maybeSingle();
 

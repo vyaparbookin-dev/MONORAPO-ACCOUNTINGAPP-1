@@ -573,10 +573,14 @@ const getEnv = (key) => {
 
 // Helper to determine base URL dynamically
 const getBaseUrl = () => {
+  const envUrl = getEnv("VITE_API_URL") || getEnv("REACT_APP_API_URL") || getEnv("EXPO_PUBLIC_API_URL");
+  if (envUrl) {
+    return envUrl;
+  }
   if (typeof window !== 'undefined' && window.location && window.location.hostname === 'localhost') {
     return "http://localhost:5001/api";
   }
-  return getEnv("VITE_API_URL") || getEnv("REACT_APP_API_URL") || getEnv("EXPO_PUBLIC_API_URL") || "https://monorapo-accountingapp-1.onrender.com/api";
+  return "https://monorapo-accountingapp-1.onrender.com/api";
 };
 
 // Base axios instance

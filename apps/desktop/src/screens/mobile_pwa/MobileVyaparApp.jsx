@@ -1225,6 +1225,7 @@ function MobileVyaparAppContent() {
       const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
       setIsPwaInstalled(!!isStandalone);
     }
+    processOfflineSyncQueue();
     fetchLiveDashboardData();
     fetchGharKharchData();
 
@@ -2296,11 +2297,11 @@ function MobileVyaparAppContent() {
     return Array.from(map.values());
   }, [parties, getPartyDisplayBalance]);
 
-  const toCollect = deduplicatedParties.filter(p => Number(p.balance || 0) > 0).reduce((sum, p) => sum + Number(p.balance || 0), 0);
+  const toCollect = deduplicatedParties.filter(p => getPartyDisplayBalance(p) > 0).reduce((sum, p) => sum + getPartyDisplayBalance(p), 0);
   const toPay = Math.abs(deduplicatedParties.filter(p => {
     const isSupplier = (p.type === 'supplier' || p.partyType === 'supplier');
-    return isSupplier && Number(p.balance || 0) < 0;
-  }).reduce((sum, p) => sum + Number(p.balance || 0), 0));
+    return isSupplier && getPartyDisplayBalance(p) < 0;
+  }).reduce((sum, p) => sum + getPartyDisplayBalance(p), 0));
   const stockValue = items.reduce((sum, it) => {
     const qty = Number(it.currentStock ?? it.stock ?? 0) || 0;
     const price = Number(it.salePrice ?? it.sellingPrice ?? it.price ?? it.costPrice ?? 0) || 0;
@@ -3418,9 +3419,14 @@ function MobileVyaparAppContent() {
 
       matchingLocalTxs.forEach(lt => {
         const ltId = String(lt._id || lt.id || "").trim();
-        const exists = combinedTxs.some(t => {
+        // ✅ FIX: When ID matches but date is different (user edited date), update server tx with local data
+        let idMatchIdx = -1;
+        const exists = combinedTxs.some((t, idx) => {
           const tId = String(t._id || t.id || "").trim();
-          if (tId && ltId && tId === ltId) return true;
+          if (tId && ltId && tId === ltId) {
+            idMatchIdx = idx;
+            return true;
+          }
           const tDate = t.date ? new Date(t.date).toISOString().slice(0, 10) : "";
           const ltDate = lt.date ? new Date(lt.date).toISOString().slice(0, 10) : "";
           const tDeb = Number(t.debit || 0);
@@ -3436,6 +3442,34 @@ function MobileVyaparAppContent() {
           }
           return false;
         });
+
+        // ✅ FIX: If ID matched but local has DIFFERENT date/amount (user edited), update combined entry with local data
+        if (idMatchIdx >= 0 && ltId) {
+          const serverTx = combinedTxs[idMatchIdx];
+          const serverDate = serverTx.date ? new Date(serverTx.date).toISOString().slice(0, 10) : "";
+          const localDate = lt.date ? new Date(lt.date).toISOString().slice(0, 10) : "";
+          const serverAmt = Number(serverTx.amount || serverTx.debit || serverTx.credit || 0);
+          const localAmt = Number(lt.amount || lt.debit || lt.credit || 0);
+          if ((localDate && serverDate && localDate !== serverDate) ||
+              (localAmt > 0 && serverAmt > 0 && Math.abs(localAmt - serverAmt) > 0.01)) {
+            // Local is more up-to-date (just edited) — patch the server entry
+            combinedTxs[idMatchIdx] = {
+              ...serverTx,
+              date: lt.date || serverTx.date,
+              createdAt: lt.date || serverTx.date,
+              amount: localAmt || serverAmt,
+              debit: lt.debit !== undefined ? Number(lt.debit) : serverTx.debit,
+              credit: lt.credit !== undefined ? Number(lt.credit) : serverTx.credit,
+              details: lt.details || serverTx.details,
+              siteName: lt.siteName || lt.site || serverTx.siteName || '',
+              site: lt.siteName || lt.site || serverTx.site || '',
+              carrierName: lt.carrierName || lt.receiverName || serverTx.carrierName || '',
+              carrierPhone: lt.carrierPhone || lt.receiverPhone || serverTx.carrierPhone || '',
+              paymentMethod: lt.paymentMethod || serverTx.paymentMethod
+            };
+          }
+          return; // ID matched — don't add as duplicate
+        }
 
         if (!exists) {
           const isPaid = lt.type === 'paid' || (Number(lt.debit || 0) > 0 && lt.source === 'PartyTransaction');
@@ -3566,10 +3600,16 @@ function MobileVyaparAppContent() {
         currentBalance: trueBalance
       }) : prev);
 
+      const targetPartyId = String(partyId || pObj?._id || pObj?.id || '').trim();
+      const targetPartyName = String(pObj?.name || selectedPartyDetail?.name || '').trim().toLowerCase();
+
       setParties(prev => {
-        const updated = prev.map(p => {
-          const id = p.id || p._id;
-          if (id === partyId) {
+        const updated = (prev || []).map(p => {
+          const pId = String(p._id || p.id || '').trim();
+          const pName = String(p.name || '').trim().toLowerCase();
+          const isMatch = (targetPartyId && pId && (pId === targetPartyId || p._id === targetPartyId || p.id === targetPartyId)) ||
+                          (targetPartyName && pName && targetPartyName === pName);
+          if (isMatch) {
             return { ...p, balance: trueBalance, currentBalance: trueBalance };
           }
           return p;
@@ -4251,7 +4291,14 @@ function MobileVyaparAppContent() {
           return up;
         });
       } else if (!isClientLocalOnly) {
-        await api.put(`/api/party/transaction/${txId}`, payload).catch(() => api.put(`/api/parties/transaction/${txId}`, payload));
+        // ✅ FIX: Capture API response so we use server-confirmed date/data
+        const updateRes = await api.put(`/api/party/transaction/${txId}`, payload)
+          .catch(() => api.put(`/api/parties/transaction/${txId}`, payload));
+        // If server returned updated transaction with confirmed date, use it
+        const confirmedTx = updateRes?.data?.transaction || updateRes?.transaction;
+        if (confirmedTx?.date) {
+          payload.date = new Date(confirmedTx.date).toISOString();
+        }
       }
 
       // Also update local state so date changes reflect immediately
@@ -4341,6 +4388,28 @@ function MobileVyaparAppContent() {
           }
           return t;
         });
+
+        if (!matched) {
+          updatedList.unshift({
+            _id: txId,
+            id: txId,
+            partyId: targetPartyId,
+            amount: amt,
+            debit: editPartyTxType === 'paid' ? amt : 0,
+            credit: editPartyTxType === 'received' ? amt : 0,
+            details: payload.details,
+            date: payload.date,
+            createdAt: payload.date,
+            paymentMethod: editPartyTxPaymentMode,
+            siteName: payload.siteName,
+            site: payload.site,
+            carrierName: payload.carrierName,
+            carrierPhone: payload.carrierPhone,
+            receiverName: payload.carrierName,
+            receiverPhone: payload.carrierPhone,
+            source: 'PartyTransaction'
+          });
+        }
         localStorage.setItem("vb_local_party_txs", JSON.stringify(updatedList));
       } catch (e) {}
 
@@ -7373,7 +7442,8 @@ function MobileVyaparAppContent() {
 
             let matchesFilter = true;
             if (partyFilterTab === "to_collect") {
-              matchesFilter = bal > 0;
+              const isCustomer = (pType === 'customer' || pType === 'both');
+              matchesFilter = bal > 0 || (isCustomer && bal < 0);
             } else if (partyFilterTab === "to_pay") {
               const isSupplier = (pType === 'supplier');
               matchesFilter = isSupplier && bal < 0;

@@ -761,9 +761,9 @@ export default function PartiesPage() {
 
     let matchesType = true;
     if (filterType === 'to_collect') {
-      matchesType = bal > 0;
+      matchesType = bal > 0 || (!isSupplier && bal < 0);
     } else if (filterType === 'to_pay') {
-      matchesType = isSupplier ? bal < 0 : bal < 0;
+      matchesType = isSupplier && bal < 0;
     } else if (filterType === 'customer') {
       matchesType = pType === 'customer' || pType === 'both';
     } else if (filterType === 'supplier') {

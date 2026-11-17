@@ -155,7 +155,7 @@ export const syncPartyToSupabase = async (party) => {
  * Note: party_transactions.id in Supabase is BIGINT (auto-incrementing serial),
  * so we must NOT pass a UUID string into id.
  */
-export const syncPartyTxToSupabase = async (tx, explicitPartyUuid) => {
+export const syncPartyTxToSupabase = async (tx, explicitPartyUuid, previousDate) => {
   if (!supabase || !tx) return;
   try {
     const pUuid = explicitPartyUuid || mongoIdToUuid(tx.partyId);
@@ -179,6 +179,29 @@ export const syncPartyTxToSupabase = async (tx, explicitPartyUuid) => {
       return;
     }
 
+    // If updating from an old date, find and update that specific Supabase transaction
+    if (previousDate) {
+      const prevDStr = new Date(previousDate).toISOString().slice(0, 10);
+      const { data: prevMatch } = await supabase
+        .from("party_transactions")
+        .select("id")
+        .eq("party_id", pUuid)
+        .gte("date", `${prevDStr}T00:00:00.000Z`)
+        .lte("date", `${prevDStr}T23:59:59.999Z`)
+        .limit(1);
+
+      if (prevMatch && prevMatch.length > 0) {
+        await supabase.from("party_transactions").update({
+          date: txDate,
+          details: det,
+          debit: deb,
+          credit: cred,
+          type: tx.type || "manual"
+        }).eq("id", prevMatch[0].id);
+        return;
+      }
+    }
+
     // Check if matching transaction already exists in Supabase to avoid duplicates
     const dStr = txDate.slice(0, 10);
     const { data: existing } = await supabase
@@ -192,7 +215,7 @@ export const syncPartyTxToSupabase = async (tx, explicitPartyUuid) => {
       .limit(1);
 
     if (existing && existing.length > 0) {
-      await supabase.from("party_transactions").update({ details: det, type: tx.type || "manual" }).eq("id", existing[0].id);
+      await supabase.from("party_transactions").update({ date: txDate, details: det, type: tx.type || "manual" }).eq("id", existing[0].id);
       return;
     }
 
