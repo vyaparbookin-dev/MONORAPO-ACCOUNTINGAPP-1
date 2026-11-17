@@ -236,6 +236,38 @@ export const addPaymentEntry = async (req, res) => {
     const isSupplier = (party.partyType === 'supplier' || party.party_type === 'supplier' || party.type === 'supplier' || mongoParty?.partyType === 'supplier');
     let newPartyBal = 0;
 
+    const safePartyId = mongoParty._id;
+    const safeCompanyId = mongoose.Types.ObjectId.isValid(req.companyId)
+      ? req.companyId
+      : new mongoose.Types.ObjectId();
+
+    const txDate = date ? new Date(date) : new Date();
+    const startOfDay = new Date(txDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(txDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const targetDebit = type === 'paid' ? numAmount : 0;
+    const targetCredit = type === 'received' ? numAmount : 0;
+
+    // 🛡️ DEDUPLICATION GUARD: Prevent duplicate payment transactions on repeated client sync
+    const existingTx = await PartyTransaction.findOne({
+      partyId: safePartyId,
+      companyId: safeCompanyId,
+      debit: targetDebit,
+      credit: targetCredit,
+      date: { $gte: startOfDay, $lte: endOfDay }
+    });
+
+    if (existingTx) {
+      return res.status(200).json({
+        success: true,
+        transaction: existingTx,
+        party: mongoParty || party,
+        message: "Identical transaction already recorded"
+      });
+    }
+
     if (type === 'received') {
       credit = numAmount;
       const curBal = Number(mongoParty ? mongoParty.currentBalance : party.currentBalance) || 0;
@@ -274,11 +306,6 @@ export const addPaymentEntry = async (req, res) => {
 
     party.currentBalance = newPartyBal;
     party.balance = newPartyBal;
-
-    const safePartyId = mongoParty._id;
-    const safeCompanyId = mongoose.Types.ObjectId.isValid(req.companyId)
-      ? req.companyId
-      : new mongoose.Types.ObjectId();
 
     const transaction = new PartyTransaction({
       partyId: safePartyId,

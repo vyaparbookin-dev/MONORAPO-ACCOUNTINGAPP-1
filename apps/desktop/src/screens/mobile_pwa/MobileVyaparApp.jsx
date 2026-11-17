@@ -3175,54 +3175,52 @@ function MobileVyaparAppContent() {
       speakUpiPayment(billPayload.finalAmount || effectiveAmount, "व्यापार");
     }
 
-    // 2. BACKGROUND SERVER SYNC
-    (async () => {
+    // 2. IMMEDIATE SERVER SYNC (with offline queue fallback)
+    try {
+      let res;
       try {
-        let res;
-        try {
-          res = await api.post("/api/billing", billPayload);
-        } catch (postErr) {
-          if (postErr.response?.data?.isPendingApprovalBlocked) {
-            if (window.confirm(`${postErr.response.data.message}\n\nक्या आप अभी 'काम न रुके' (बायपास) करके यह बिल तुरंत जारी करना चाहते हैं?`)) {
-              billPayload.bypassPendingLock = true;
-              res = await api.post("/api/billing", billPayload);
-            } else {
-              return;
-            }
+        res = await api.post("/api/billing", billPayload);
+      } catch (postErr) {
+        if (postErr.response?.data?.isPendingApprovalBlocked) {
+          if (window.confirm(`${postErr.response.data.message}\n\nक्या आप अभी 'काम न रुके' (बायपास) करके यह बिल तुरंत जारी करना चाहते हैं?`)) {
+            billPayload.bypassPendingLock = true;
+            res = await api.post("/api/billing", billPayload);
           } else {
-            throw postErr;
+            return;
           }
+        } else {
+          throw postErr;
         }
-
-        if (res?.data?.bill) {
-          const serverBill = res.data.bill;
-          const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
-          const syncedBills = storageManager.saveBill(currentCoId, { ...serverBill, isOfflineCreated: false });
-          setBills(syncedBills);
-
-          if (res?.data?.udharProtection) {
-            setActiveUdharBillData({
-              ...createdBill,
-              ...res.data.udharProtection,
-              _id: serverBill._id || createdBill._id
-            });
-            setShowUdharOtpModal(true);
-          }
-
-          const stampAward = res?.data?.stampResult;
-          if (stampAward?.awarded) {
-            let msg = `⭐ ग्राहक का स्टैंप जुड़ा: ${stampAward.visualStamps}`;
-            if (stampAward.rewardUnlocked) {
-              msg += `\n\n🎉 बधाई! लक्ष्य पूरा हुआ - रिवॉर्ड कोड: ${stampAward.rewardData?.code} (${stampAward.rewardDescription})`;
-            }
-            alert(msg);
-          }
-        }
-      } catch (err) {
-        console.warn("Background billing sync deferred to offline queue:", err);
-        enqueueOfflineSync({ type: 'CREATE_BILL', payload: billPayload, localId: localBillId });
       }
-    })();
+
+      if (res?.data?.bill) {
+        const serverBill = res.data.bill;
+        const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
+        const syncedBills = storageManager.saveBill(currentCoId, { ...serverBill, isOfflineCreated: false });
+        setBills(syncedBills);
+
+        if (res?.data?.udharProtection) {
+          setActiveUdharBillData({
+            ...createdBill,
+            ...res.data.udharProtection,
+            _id: serverBill._id || createdBill._id
+          });
+          setShowUdharOtpModal(true);
+        }
+
+        const stampAward = res?.data?.stampResult;
+        if (stampAward?.awarded) {
+          let msg = `⭐ ग्राहक का स्टैंप जुड़ा: ${stampAward.visualStamps}`;
+          if (stampAward.rewardUnlocked) {
+            msg += `\n\n🎉 बधाई! लक्ष्य पूरा हुआ - रिवॉर्ड कोड: ${stampAward.rewardData?.code} (${stampAward.rewardDescription})`;
+          }
+          alert(msg);
+        }
+      }
+    } catch (err) {
+      console.warn("Billing server sync deferred to offline queue:", err);
+      enqueueOfflineSync({ type: 'CREATE_BILL', payload: billPayload, localId: localBillId });
+    }
     } catch (e) {
       console.error(e);
     } finally {
