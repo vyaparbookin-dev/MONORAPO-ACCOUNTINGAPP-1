@@ -2287,15 +2287,30 @@ function MobileVyaparAppContent() {
         const dv = daybookRes.value;
         const txs = dv?.data?.partyTransactions || dv?.partyTransactions || [];
         if (Array.isArray(txs) && txs.length > 0) {
-          let mergedLocalTxs = [...txs];
+          let mergedLocalTxs = [];
           try {
             const existingLocal = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+            const localMap = new Map();
             if (Array.isArray(existingLocal)) {
-              const serverIds = new Set(
-                txs.map(t => String(t._id || t.id || t.transactionId || '').toLowerCase()).filter(Boolean)
-              );
               existingLocal.forEach(lt => {
-                const lid = String(lt?._id || lt?.id || lt?.transactionId || '').toLowerCase();
+                const lid = String(lt?._id || lt?.id || lt?.transactionId || '').toLowerCase().trim();
+                if (lid) localMap.set(lid, lt);
+              });
+            }
+            mergedLocalTxs = txs.map(st => {
+              const sid = String(st?._id || st?.id || st?.transactionId || '').toLowerCase().trim();
+              const lt = localMap.get(sid);
+              if (lt && (lt.hasLocalEdits || (lt._localUpdatedAt && (!st.updatedAt || new Date(lt._localUpdatedAt) > new Date(st.updatedAt))))) {
+                return { ...st, ...lt };
+              }
+              return st;
+            });
+            const serverIds = new Set(
+              txs.map(t => String(t._id || t.id || t.transactionId || '').toLowerCase().trim()).filter(Boolean)
+            );
+            if (Array.isArray(existingLocal)) {
+              existingLocal.forEach(lt => {
+                const lid = String(lt?._id || lt?.id || lt?.transactionId || '').toLowerCase().trim();
                 if (lid && !serverIds.has(lid)) {
                   mergedLocalTxs.push(lt);
                 } else if (!lid && lt) {
@@ -2303,7 +2318,9 @@ function MobileVyaparAppContent() {
                 }
               });
             }
-          } catch (e) {}
+          } catch (e) {
+            mergedLocalTxs = [...txs];
+          }
           if (deletedIdsSet.size > 0) {
             mergedLocalTxs = mergedLocalTxs.filter(t => {
               const tid = String(t?._id || t?.id || t?.transactionId || '').toLowerCase().trim();
@@ -2655,7 +2672,7 @@ function MobileVyaparAppContent() {
   const isPartyPaymentReceived = (tx) => {
     const isCredit = Number(tx.credit || 0) > 0;
     if (tx.source === 'Bill' || tx.type === 'bill') return false;
-    const isCustomerPayment = tx.type === 'receipt' || tx.type === 'received' || tx.type === 'payment' || tx.source === 'PartyTransaction';
+    const isCustomerPayment = tx.type === 'receipt' || tx.type === 'received' || tx.type === 'payment' || tx.type === 'manual' || tx.source === 'PartyTransaction';
     return isCredit && isCustomerPayment;
   };
 
