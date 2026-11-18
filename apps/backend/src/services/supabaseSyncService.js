@@ -155,7 +155,7 @@ export const syncPartyToSupabase = async (party) => {
  * Note: party_transactions.id in Supabase is BIGINT (auto-incrementing serial),
  * so we must NOT pass a UUID string into id.
  */
-export const syncPartyTxToSupabase = async (tx, explicitPartyUuid, previousDate) => {
+export const syncPartyTxToSupabase = async (tx, explicitPartyUuid, previousDate, previousDebit, previousCredit) => {
   if (!supabase || !tx) return;
   try {
     const pUuid = explicitPartyUuid || mongoIdToUuid(tx.partyId);
@@ -163,9 +163,13 @@ export const syncPartyTxToSupabase = async (tx, explicitPartyUuid, previousDate)
     const txDate = tx.date ? new Date(tx.date).toISOString() : new Date().toISOString();
     const deb = Number(tx.debit || 0);
     const cred = Number(tx.credit || 0);
-    const det = tx.details || tx.description || "पार्टी खाता लेन-देन";
+    const bNum = tx.billNumber || tx.refNo || tx.referenceBillId || (String(tx.details || '').match(/#([A-Za-z0-9_-]+)/)?.[1]);
+    let det = tx.details || tx.description || "पार्टी खाता लेन-देन";
+    if (bNum && !det.includes(bNum)) {
+      det = `${det} #${bNum}`;
+    }
 
-    // If tx has numeric id, update by numeric id
+    // 1. If tx has numeric id, update by numeric id
     const isNumId = tx.id && /^\d+$/.test(String(tx.id));
     if (isNumId) {
       await supabase.from("party_transactions").update({
@@ -179,17 +183,41 @@ export const syncPartyTxToSupabase = async (tx, explicitPartyUuid, previousDate)
       return;
     }
 
-    // If updating from an old date, find and update that specific Supabase transaction matching amount
-    if (previousDate) {
-      const prevDStr = new Date(previousDate).toISOString().slice(0, 10);
+    // 2. If tx has linked billNumber or refNo, find and update by bill number in details
+    if (bNum && bNum !== 'PAY' && bNum !== 'REC' && bNum !== 'PUR' && bNum !== 'BILL') {
+      const { data: bMatch } = await supabase
+        .from("party_transactions")
+        .select("id")
+        .eq("party_id", pUuid)
+        .or(`details.ilike.%${bNum}%,details.ilike.%#${bNum}%`)
+        .limit(1);
+
+      if (bMatch && bMatch.length > 0) {
+        await supabase.from("party_transactions").update({
+          date: txDate,
+          details: det,
+          debit: deb,
+          credit: cred,
+          type: tx.type || "sale"
+        }).eq("id", bMatch[0].id);
+        return;
+      }
+    }
+
+    // 3. If updating with previousDebit / previousCredit or previousDate
+    if (previousDebit !== undefined || previousCredit !== undefined || previousDate) {
+      const prevDStr = previousDate ? new Date(previousDate).toISOString().slice(0, 10) : txDate.slice(0, 10);
+      const searchDeb = previousDebit !== undefined ? Number(previousDebit) : deb;
+      const searchCred = previousCredit !== undefined ? Number(previousCredit) : cred;
+
       let prevQuery = supabase
         .from("party_transactions")
         .select("id")
         .eq("party_id", pUuid)
         .gte("date", `${prevDStr}T00:00:00.000Z`)
         .lte("date", `${prevDStr}T23:59:59.999Z`);
-      if (deb > 0) prevQuery = prevQuery.eq("debit", deb);
-      if (cred > 0) prevQuery = prevQuery.eq("credit", cred);
+      if (searchDeb > 0) prevQuery = prevQuery.eq("debit", searchDeb);
+      if (searchCred > 0) prevQuery = prevQuery.eq("credit", searchCred);
       const { data: prevMatch } = await prevQuery.limit(1);
 
       if (prevMatch && prevMatch.length > 0) {
@@ -212,7 +240,7 @@ export const syncPartyTxToSupabase = async (tx, explicitPartyUuid, previousDate)
       }
     }
 
-    // Check if matching transaction already exists in Supabase to avoid duplicates
+    // 4. Check if matching transaction already exists on same date with same debit/credit
     const dStr = txDate.slice(0, 10);
     const { data: existing } = await supabase
       .from("party_transactions")
@@ -229,7 +257,7 @@ export const syncPartyTxToSupabase = async (tx, explicitPartyUuid, previousDate)
       return;
     }
 
-    // Insert new transaction without id so Postgres generates the serial integer id
+    // 5. Insert new transaction without id so Postgres generates the serial integer id
     const txPayload = {
       company_id: coUuid,
       party_id: pUuid,

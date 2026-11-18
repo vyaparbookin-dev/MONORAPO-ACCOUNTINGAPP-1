@@ -1193,20 +1193,20 @@ export default function PartiesPage() {
                 चयनित फ़िल्टर के अनुसार कोई प्रविष्टि नहीं मिली।
               </div>
             ) : (
-              <table className="w-full text-xs text-left min-w-[1250px] border-collapse">
+              <table className="w-full text-xs text-left border-collapse table-auto">
                 <thead className="bg-slate-100 text-slate-700 font-black uppercase text-[11px] border-b border-slate-200 sticky top-0 z-10 shadow-xs">
                   <tr>
-                    <th className="px-3.5 py-3 text-center w-12">#</th>
-                    <th className="px-4 py-3 whitespace-nowrap">दिनांक (Date)</th>
-                    <th className="px-4 py-3 whitespace-nowrap">प्रकार (Type)</th>
-                    <th className="px-4 py-3 whitespace-nowrap">रेफरेंस / बिल #</th>
-                    <th className="px-4 py-3">विवरण (Details / Notes)</th>
-                    <th className="px-4 py-3 text-center whitespace-nowrap">साइट (Site)</th>
-                    <th className="px-4 py-3 text-right whitespace-nowrap">बिल (Debit ₹)</th>
-                    <th className="px-4 py-3 text-right whitespace-nowrap">जमा (Credit ₹)</th>
-                    <th className="px-4 py-3 text-right whitespace-nowrap">बाकी (Balance ₹)</th>
-                    <th className="px-4 py-3 text-center whitespace-nowrap">बिल फोटो</th>
-                    <th className="px-4 py-3 text-center whitespace-nowrap">कार्रवाई</th>
+                    <th className="px-2.5 py-3 text-center w-10 shrink-0">#</th>
+                    <th className="px-3 py-3 whitespace-nowrap">दिनांक (Date)</th>
+                    <th className="px-2.5 py-3 whitespace-nowrap">प्रकार</th>
+                    <th className="px-2.5 py-3 whitespace-nowrap">रेफरेंस / बिल #</th>
+                    <th className="px-3 py-3 max-w-[180px] lg:max-w-[260px] truncate" title="विवरण व टिप्पणी">विवरण (Details)</th>
+                    <th className="px-2.5 py-3 text-center whitespace-nowrap">साइट</th>
+                    <th className="px-3 py-3 text-right whitespace-nowrap">बिल (Debit ₹)</th>
+                    <th className="px-3 py-3 text-right whitespace-nowrap">जमा (Credit ₹)</th>
+                    <th className="px-3 py-3 text-right whitespace-nowrap">बाकी (Balance ₹)</th>
+                    <th className="px-2.5 py-3 text-center whitespace-nowrap">बिल फोटो</th>
+                    <th className="px-2.5 py-3 text-center whitespace-nowrap">कार्रवाई</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1219,10 +1219,10 @@ export default function PartiesPage() {
 
                     return (
                       <tr key={tx._id || idx} className="hover:bg-indigo-50/40 transition group">
-                        <td className="px-3.5 py-2.5 text-center text-slate-400 font-mono text-[11px]">
+                        <td className="px-2.5 py-2.5 text-center text-slate-400 font-mono text-[11px]">
                           {idx + 1}
                         </td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">
+                        <td className="px-3 py-2.5 whitespace-nowrap">
                           <div className="flex items-center gap-1.5">
                             <span className="font-semibold text-slate-800">{formattedDate}</span>
                             <button
@@ -1234,25 +1234,25 @@ export default function PartiesPage() {
                             </button>
                           </div>
                         </td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        <td className="px-2.5 py-2.5 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             isSale ? 'bg-indigo-100 text-indigo-700' :
                             isPurchase ? 'bg-amber-100 text-amber-800' :
                             isReceipt ? 'bg-emerald-100 text-emerald-800' :
                             'bg-rose-100 text-rose-800'
                           }`}>
-                            {isSale ? '🛒 बिक्री बिल' : isPurchase ? '🏢 खरीद बिल' : isReceipt ? '🟢 मुझे मिले' : '🔴 मैंने दिए'}
+                            {isSale ? '🛒 बिक्री' : isPurchase ? '🏢 खरीद' : isReceipt ? '🟢 मिले' : '🔴 दिए'}
                           </span>
                         </td>
-                        <td className="px-4 py-2.5 font-bold text-slate-800 whitespace-nowrap font-mono">
+                        <td className="px-2.5 py-2.5 font-bold text-slate-800 whitespace-nowrap font-mono">
                           {tx.refNo || '-'}
                         </td>
-                        <td className="px-4 py-2.5 text-slate-600 max-w-sm truncate" title={tx.details}>
+                        <td className="px-3 py-2.5 text-slate-600 max-w-[180px] lg:max-w-[260px] truncate" title={tx.details || ''}>
                           {tx.details || '-'}
                         </td>
-                        <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                        <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                           {siteStr ? (
-                            <span className={`px-2.5 py-0.5 rounded-md font-bold text-[10px] ${
+                            <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
                               siteStr === 'COMPLEX' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
                               siteStr === 'PWD' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
                               siteStr === 'PAINT' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
@@ -1267,23 +1267,23 @@ export default function PartiesPage() {
                               className="text-slate-400 hover:text-indigo-600 text-[10px] underline cursor-pointer"
                               title="साइट नाम जोड़ें"
                             >
-                              + साइट जोड़ें
+                              + साइट
                             </button>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-right font-black text-rose-600 whitespace-nowrap text-sm">
+                        <td className="px-3 py-2.5 text-right font-black text-rose-600 whitespace-nowrap text-sm">
                           {tx.debit > 0 ? `₹${tx.debit.toLocaleString('en-IN')}` : '-'}
                         </td>
-                        <td className="px-4 py-2.5 text-right font-black text-emerald-700 whitespace-nowrap text-sm">
+                        <td className="px-3 py-2.5 text-right font-black text-emerald-700 whitespace-nowrap text-sm">
                           {tx.credit > 0 ? `₹${tx.credit.toLocaleString('en-IN')}` : '-'}
                         </td>
-                        <td className="px-4 py-2.5 text-right font-black text-slate-900 whitespace-nowrap text-sm">
+                        <td className="px-3 py-2.5 text-right font-black text-slate-900 whitespace-nowrap text-sm">
                           ₹{Math.abs(Number(tx.runningBalance || 0)).toLocaleString('en-IN')}
                           <span className="text-[10px] font-bold ml-1 text-slate-400">
                             {Number(tx.runningBalance || 0) >= 0 ? 'Dr' : 'Cr'}
                           </span>
                         </td>
-                        <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                        <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1">
                             {(() => {
                               const primaryImg = tx.billImageUrl || (tx.billImageUrls && tx.billImageUrls[0]);
@@ -1320,7 +1320,7 @@ export default function PartiesPage() {
                             })()}
                           </div>
                         </td>
-                        <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                        <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1">
                             <button
                               onClick={() => handleOpenEditTx(tx)}

@@ -852,7 +852,7 @@ const PartyWiseReportPage = () => {
                         <th className="px-3 py-2.5">दिनांक (Date)</th>
                         <th className="px-3 py-2.5">प्रकार (Type)</th>
                         <th className="px-3 py-2.5">रेफरेंस / बिल #</th>
-                        <th className="px-3 py-2.5">विवरण (Details)</th>
+                        <th className="px-3 py-2.5 max-w-[180px] lg:max-w-[240px] truncate" title="विवरण व टिप्पणी">विवरण (Details)</th>
                         <th className="px-3 py-2.5 text-center">साइट (Site)</th>
                         <th className="px-3 py-2.5 text-right">बिल (Debit ₹)</th>
                         <th className="px-3 py-2.5 text-right">जमा (Credit ₹)</th>

@@ -1255,17 +1255,25 @@ export const updatePartyTransaction = async (req, res) => {
         Object.assign(tx, updateDoc);
 
         // Also update linked Bill if this tx has a billNumber or referenceBillId or #billNumber in details
-        const linkedBillNum = tx.referenceBillId || tx.billNumber || (String(tx.details || '').match(/#([A-Za-z0-9_-]+)/)?.[1]);
-        if (linkedBillNum && date) {
-          const bDate = new Date(date);
+        const linkedBillNum = tx.referenceBillId || tx.billNumber || tx.refNo || (String(tx.details || '').match(/#([A-Za-z0-9_-]+)/)?.[1]);
+        if (linkedBillNum && linkedBillNum !== 'PAY' && linkedBillNum !== 'REC' && linkedBillNum !== 'PUR' && linkedBillNum !== 'BILL') {
+          const updateBillDoc = { updatedAt: new Date() };
+          if (date) updateBillDoc.date = new Date(date);
+          if (newDeb > 0) {
+            updateBillDoc.finalAmount = newDeb;
+            updateBillDoc.total = newDeb;
+          }
           await Bill.updateMany(
             { companyId: req.companyId, $or: [{ billNumber: linkedBillNum }, { refBillNo: linkedBillNum }, { invoiceNumber: linkedBillNum }] },
-            { $set: { date: bDate, updatedAt: new Date() } }
+            { $set: updateBillDoc }
           ).catch(() => {});
 
           if (supabase) {
             const sbCoUuid = mongoIdToUuid(req.companyId);
-            supabase.from("sales").update({ date: bDate.toISOString() })
+            const sbUpdateDoc = {};
+            if (date) sbUpdateDoc.date = new Date(date).toISOString();
+            if (newDeb > 0) sbUpdateDoc.final_amount = newDeb;
+            supabase.from("sales").update(sbUpdateDoc)
               .eq("company_id", sbCoUuid)
               .or(`bill_number.eq.${linkedBillNum}`)
               .then(() => {})
@@ -1286,8 +1294,8 @@ export const updatePartyTransaction = async (req, res) => {
           syncPartyToSupabase(party).catch(e => console.warn(e));
         }
 
-        // Dual-write to Supabase with previousDate so Supabase date is accurately updated
-        syncPartyTxToSupabase(tx, null, oldDate).catch(e => console.warn(e));
+        // Dual-write to Supabase with previousDate and previous amounts so Supabase updates in-place without duplicating
+        syncPartyTxToSupabase(tx, null, oldDate, oldDeb, oldCred).catch(e => console.warn(e));
 
         return res.json({
           success: true,
@@ -1313,16 +1321,23 @@ export const updatePartyTransaction = async (req, res) => {
 
         // Also update any linked PartyTransactions
         const bNum = bill.billNumber || bill.refBillNo;
-        if (bNum && date) {
-          const bDate = new Date(date);
+        if (bNum) {
+          const updateTxDoc = { updatedAt: new Date() };
+          if (date) updateTxDoc.date = new Date(date);
+          if (newAmt > 0) updateTxDoc.debit = newAmt;
+          if (details) updateTxDoc.details = details;
           await PartyTransaction.updateMany(
             { companyId: req.companyId, $or: [{ referenceBillId: bNum }, { billNumber: bNum }, { refNo: bNum }] },
-            { $set: { date: bDate, updatedAt: new Date() } }
+            { $set: updateTxDoc }
           ).catch(() => {});
 
           if (supabase) {
             const sbCoUuid = mongoIdToUuid(req.companyId);
-            supabase.from("party_transactions").update({ date: bDate.toISOString() })
+            const sbTxUpdate = {};
+            if (date) sbTxUpdate.date = new Date(date).toISOString();
+            if (newAmt > 0) sbTxUpdate.debit = newAmt;
+            if (details) sbTxUpdate.details = details;
+            supabase.from("party_transactions").update(sbTxUpdate)
               .eq("company_id", sbCoUuid)
               .or(`details.ilike.%${bNum}%`)
               .then(() => {})
