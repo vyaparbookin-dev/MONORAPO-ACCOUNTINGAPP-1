@@ -84,13 +84,16 @@ export default function PartiesPage() {
   // Edit Party State
   const [editingParty, setEditingParty] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [updatingParty, setUpdatingParty] = useState(false);
   const [editFormData, setEditFormData] = useState({
     name: '',
     mobileNumber: '',
     address: '',
     partyType: 'customer',
     priceLevel: 'retail',
-    creditLimit: ''
+    creditLimit: '',
+    openingBalance: '',
+    balanceDir: 'positive'
   });
 
   // Payment / Installment Entry Modal State
@@ -410,20 +413,34 @@ export default function PartiesPage() {
       }
       fetchParties();
     } catch (error) {
-      alert('Error adding party: ' + (error.response?.data?.error || error.message));
+      const errMsg = error?.response?.data?.error || error?.response?.data?.message || error?.error || error?.message || (typeof error === "string" ? error : "अज्ञात त्रुटि");
+      if (String(errMsg).includes("पहले से सक्रिय") || String(errMsg).includes("पहले से मौजूद")) {
+        alert(`ℹ️ सूचना: ${errMsg}\nयह खाता पहले ही सुरक्षित किया जा चुका है।`);
+        setShowModal(false);
+        fetchParties();
+      } else {
+        alert('पार्टी जोड़ने में त्रुटि आई: ' + errMsg);
+      }
     }
   };
 
   // Open Edit Party
   const handleOpenEdit = (party) => {
     setEditingParty(party);
+    const isSupplier = (party.partyType === "supplier" || party.type === "supplier");
+    const rawOpening = Math.abs(Number(party.openingBalance || 0));
+    const curBal = Number(party.currentBalance ?? party.balance ?? 0);
+    const defaultDir = (party.balanceType === "PAY" || curBal < 0 || isSupplier) ? "negative" : "positive";
+
     setEditFormData({
       name: party.name || '',
       mobileNumber: party.mobileNumber || party.phone || '',
       address: party.address || '',
       partyType: party.partyType || party.type || 'customer',
       priceLevel: party.priceLevel || 'retail',
-      creditLimit: party.creditLimit || ''
+      creditLimit: party.creditLimit || '',
+      openingBalance: rawOpening > 0 ? String(rawOpening) : '',
+      balanceDir: defaultDir
     });
     setShowEditModal(true);
   };
@@ -431,7 +448,8 @@ export default function PartiesPage() {
   // Submit Edit Party
   const handleEditSubmit = async (e) => {
     e.preventDefault();
-    if (!editingParty) return;
+    if (!editingParty || updatingParty) return;
+    setUpdatingParty(true);
     try {
       const pId = editingParty._id || editingParty.id;
       const trimmedName = editFormData.name.trim();
@@ -450,8 +468,21 @@ export default function PartiesPage() {
 
       if (isDuplicate) {
         alert(`⚠️ इस नाम ("${trimmedName}") और पते ("${trimmedAddr}") से पहले से एक पार्टी मौजूद है!\nकृपया अलग नाम या पता दर्ज करें।`);
+        setUpdatingParty(false);
         return;
       }
+
+      const isSupplier = editFormData.partyType === "supplier";
+      const rawBal = parseFloat(editFormData.openingBalance) || 0;
+      const balanceDir = editFormData.balanceDir || (isSupplier ? "negative" : "positive");
+      const signedOpening = balanceDir === "negative" ? -Math.abs(rawBal) : Math.abs(rawBal);
+
+      const oldOpeningRaw = Math.abs(Number(editingParty.openingBalance || 0));
+      const oldSupplier = (editingParty.partyType === "supplier" || editingParty.type === "supplier");
+      const oldOpeningSigned = (editingParty.balanceType === "PAY" || oldSupplier) ? -oldOpeningRaw : oldOpeningRaw;
+
+      const curBal = Number(editingParty.currentBalance ?? editingParty.balance ?? 0);
+      const newCurrentBal = curBal - oldOpeningSigned + signedOpening;
 
       const payload = {
         name: trimmedName,
@@ -459,16 +490,35 @@ export default function PartiesPage() {
         address: trimmedAddr,
         partyType: editFormData.partyType,
         priceLevel: editFormData.priceLevel,
-        creditLimit: parseFloat(editFormData.creditLimit) || 0
+        creditLimit: parseFloat(editFormData.creditLimit) || 0,
+        openingBalance: Math.abs(rawBal),
+        balanceDir: balanceDir,
+        balanceType: signedOpening < 0 ? "PAY" : "RECEIVE",
+        currentBalance: newCurrentBal
       };
 
       await api.put(`/api/party/${pId}`, payload).catch(() => api.put(`/api/parties/${pId}`, payload));
+
+      if (Math.abs(rawBal) !== oldOpeningRaw) {
+        await api.post(`/api/party/${pId}/opening-balance`, {
+          amount: Math.abs(rawBal),
+          direction: balanceDir,
+          notes: "Updated from Edit Party"
+        }).catch(() => {});
+      }
+
       alert(`✅ पार्टी '${payload.name}' सफलतापूर्वक अपडेट हो गई!`);
       setShowEditModal(false);
       setEditingParty(null);
       fetchParties();
+      if (statementParty && ((statementParty._id || statementParty.id) === pId)) {
+        handleOpenStatement({ ...statementParty, ...payload, balance: newCurrentBal, currentBalance: newCurrentBal });
+      }
     } catch (error) {
-      alert('Error updating party: ' + (error.response?.data?.error || error.message));
+      const errMsg = error?.response?.data?.error || error?.response?.data?.message || error?.error || error?.message || (typeof error === "string" ? error : "अज्ञात त्रुटि");
+      alert('Error updating party: ' + errMsg);
+    } finally {
+      setUpdatingParty(false);
     }
   };
 
@@ -1187,6 +1237,13 @@ export default function PartiesPage() {
               <Printer size={14} /> <span>प्रिंट / PDF</span>
             </button>
             <button
+              onClick={() => handleOpenEdit(statementParty)}
+              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5 border border-slate-300 shadow-xs cursor-pointer transition"
+              title="पार्टी का नाम, फोन, पता या शुरुआती बैलेंस बदलें"
+            >
+              <span>✏️ विवरण बदलें</span>
+            </button>
+            <button
               onClick={() => handleOpenStatement(statementParty)}
               className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer border border-slate-300 transition"
               title="स्टेटमेंट रिफ्रेश करें"
@@ -1199,7 +1256,17 @@ export default function PartiesPage() {
         {/* Financial KPI Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-xs">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">शुरूआती बैलेंस (Opening)</span>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">शुरूआती बैलेंस (Opening)</span>
+              <button
+                type="button"
+                onClick={() => handleOpenEdit(statementParty)}
+                className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-0.5 cursor-pointer hover:underline"
+                title="शुरुआती बैलेंस या पार्टी विवरण संपादित करें"
+              >
+                ✏️ बदलें
+              </button>
+            </div>
             <p className="text-lg font-black text-slate-800 mt-1">
               ₹{(statementData?.openingBalance || statementParty.openingBalance || 0).toLocaleString('en-IN')}
             </p>
@@ -2212,7 +2279,14 @@ export default function PartiesPage() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">खाता प्रकार</label>
-                    <select className="w-full border rounded-xl px-3 py-2 text-sm font-medium" value={editFormData.partyType} onChange={e => setEditFormData({...editFormData, partyType: e.target.value})}>
+                    <select className="w-full border rounded-xl px-3 py-2 text-sm font-medium" value={editFormData.partyType} onChange={e => {
+                      const nextType = e.target.value;
+                      setEditFormData(prev => ({
+                        ...prev,
+                        partyType: nextType,
+                        balanceDir: nextType === 'supplier' ? 'negative' : 'positive'
+                      }));
+                    }}>
                       <option value="customer">🛒 Customer (ग्राहक)</option>
                       <option value="supplier">🏢 Supplier (सप्लायर)</option>
                       <option value="both">Both (ग्राहक व सप्लायर)</option>
@@ -2224,9 +2298,55 @@ export default function PartiesPage() {
                   <label className="block text-xs font-bold text-gray-700 mb-1">पता / शहर (Address)</label>
                   <input type="text" className="w-full border rounded-xl px-3 py-2 text-sm" value={editFormData.address} onChange={e => setEditFormData({...editFormData, address: e.target.value})} />
                 </div>
+
+                {/* Opening Balance with direction */}
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-gray-700">
+                      शुरुआती बाकी (Opening Balance)
+                    </label>
+                    <div className="flex gap-1 bg-white p-0.5 rounded-lg border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setEditFormData({ ...editFormData, balanceDir: 'positive' })}
+                        className={`px-2.5 py-1 text-[11px] font-extrabold rounded-md cursor-pointer transition ${
+                          editFormData.balanceDir === 'positive'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        🟢 लेने हैं (To Collect)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditFormData({ ...editFormData, balanceDir: 'negative' })}
+                        className={`px-2.5 py-1 text-[11px] font-extrabold rounded-md cursor-pointer transition ${
+                          editFormData.balanceDir === 'negative'
+                            ? 'bg-rose-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        🔴 देने हैं (To Pay)
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    type="number"
+                    placeholder="₹ 0.00 (शुरुआती बाकी दर्ज करें)"
+                    className="w-full bg-white border rounded-xl px-3 py-2 text-sm font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                    value={editFormData.openingBalance}
+                    onChange={e => setEditFormData({ ...editFormData, openingBalance: e.target.value })}
+                  />
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    💡 यदि पार्टी बनाते समय शुरुआती बकाया नहीं डाला था, तो यहाँ राशि दर्ज करने पर वह बहीखाते में सीधे जुड़ जाएगी।
+                  </p>
+                </div>
+
                 <div className="flex justify-end gap-2 mt-6 pt-2 border-t">
                   <button type="button" onClick={() => setShowEditModal(false)} className="px-4 py-2 border rounded-xl text-gray-600 hover:bg-gray-50 text-xs font-bold cursor-pointer">रद्द करें</button>
-                  <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold text-xs cursor-pointer shadow">अपडेट करें (Update)</button>
+                  <button type="submit" disabled={updatingParty} className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold text-xs cursor-pointer shadow disabled:opacity-50">
+                    {updatingParty ? "अपडेट हो रहा है..." : "अपडेट करें (Update)"}
+                  </button>
                 </div>
               </form>
             </div>

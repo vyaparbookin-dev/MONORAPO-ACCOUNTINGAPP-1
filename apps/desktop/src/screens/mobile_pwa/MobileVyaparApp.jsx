@@ -3401,15 +3401,48 @@ function MobileVyaparAppContent() {
 
       if (editingParty) {
         const pId = editingParty._id || editingParty.id;
+        const isSupplier = (newPartyType || "customer") === "supplier";
+        const rawBal = parseFloat(newPartyBalance) || 0;
+        const signedBal = newPartyBalanceDir === "negative" ? -Math.abs(rawBal) : Math.abs(rawBal);
+
+        const oldOpRaw = Math.abs(Number(editingParty.openingBalance || 0));
+        const oldSupplier = (editingParty.partyType === "supplier" || editingParty.type === "supplier");
+        const oldOpSigned = (editingParty.balanceType === "PAY" || oldSupplier) ? -oldOpRaw : oldOpRaw;
+        const oldCurBal = Number(editingParty.currentBalance ?? editingParty.balance ?? 0);
+
+        // Accurately adjust current balance by delta of opening balance
+        const updatedBal = oldCurBal - oldOpSigned + signedBal;
+
+        const payload = {
+          name: trimmedName,
+          mobileNumber: newPartyPhone.trim(),
+          openingBalance: Math.abs(rawBal),
+          currentBalance: updatedBal,
+          balanceType: signedBal < 0 ? "PAY" : "RECEIVE",
+          balanceDir: newPartyBalanceDir,
+          partyType: newPartyType || "customer",
+          address: trimmedAddr
+        };
+
         await api.put(`/api/party/${pId}`, payload).catch(() => api.put(`/api/parties/${pId}`, payload));
+
+        if (Math.abs(rawBal) !== oldOpRaw) {
+          api.post(`/api/party/${pId}/opening-balance`, {
+            amount: Math.abs(rawBal),
+            direction: newPartyBalanceDir,
+            notes: "Opening balance updated via party edit"
+          }).catch(() => {});
+        }
+
         const updatedParty = {
           ...editingParty,
           name: payload.name,
           phone: payload.mobileNumber,
           mobileNumber: payload.mobileNumber,
-          balance: signedBal,
-          currentBalance: signedBal,
+          balance: updatedBal,
+          currentBalance: updatedBal,
           openingBalance: Math.abs(rawBal),
+          balanceType: payload.balanceType,
           type: payload.partyType,
           partyType: payload.partyType,
           address: payload.address,
@@ -3420,6 +3453,7 @@ function MobileVyaparAppContent() {
         setParties(storageManager.getParties(currentCoId));
         if (selectedPartyDetail && ((selectedPartyDetail._id || selectedPartyDetail.id) === pId)) {
           setSelectedPartyDetail(updatedParty);
+          fetchPartyStatement(pId);
         }
         alert(`✅ पार्टी '${updatedParty.name}' सफलतापूर्वक अपडेट हो गई!`);
       } else {
@@ -3469,8 +3503,15 @@ function MobileVyaparAppContent() {
       fetchLiveDashboardData();
     } catch (err) {
       console.error("Save party error:", err);
-      const errMsg = err?.response?.data?.error || err?.message || "Unknown error";
-      alert("पार्टी सेव करने में त्रुटि आई।\n" + errMsg);
+      const errMsg = err?.response?.data?.error || err?.response?.data?.message || err?.error || err?.message || (typeof err === "string" ? err : "अज्ञात त्रुटि");
+      if (String(errMsg).includes("पहले से सक्रिय") || String(errMsg).includes("पहले से मौजूद")) {
+        alert(`ℹ️ सूचना: ${errMsg}\nयह खाता पहले ही सुरक्षित किया जा चुका है।`);
+        setShowAddPartyModal(false);
+        setEditingParty(null);
+        if (typeof fetchLiveDashboardData === 'function') fetchLiveDashboardData();
+      } else {
+        alert("पार्टी सेव करने में त्रुटि आई:\n" + errMsg);
+      }
     } finally {
       setSavingParty(false);
     }
@@ -3481,6 +3522,7 @@ function MobileVyaparAppContent() {
     setEditingParty(party);
     setNewPartyName(party.name || "");
     setNewPartyPhone(party.phone || party.mobileNumber || "");
+    setNewPartyAddress(party.address || "");
     const pType = party.type || party.partyType || "customer";
     setNewPartyType(pType);
     const isSupplier = pType === "supplier" || String(pType).toLowerCase().includes("sup");
@@ -3489,8 +3531,10 @@ function MobileVyaparAppContent() {
     if (isSupplier && op > 0 && (curBal > 0 && Math.abs(curBal) === op)) {
       curBal = -op;
     }
-    setNewPartyBalance(String(Math.abs(curBal)));
-    setNewPartyBalanceDir(curBal < 0 || isSupplier ? "negative" : "positive");
+    // Prefill with opening balance if present; if 0, leave empty for easy entry
+    setNewPartyBalance(op > 0 ? String(op) : "");
+    const dir = (party.balanceType === "PAY" || curBal < 0 || isSupplier) ? "negative" : "positive";
+    setNewPartyBalanceDir(dir);
     setShowAddPartyModal(true);
   };
 

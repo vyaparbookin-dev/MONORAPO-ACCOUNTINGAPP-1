@@ -1889,14 +1889,56 @@ export const updateParty = async (req, res) => {
       }
     }
 
-    const isSupplier = req.body.partyType === 'supplier' || req.body.type === 'supplier';
-    if (req.body.openingBalance !== undefined) {
-      req.body.openingBalance = Math.abs(Number(req.body.openingBalance || 0));
+    // Find existing party first to accurately calculate balances if opening balance is updated
+    let existingParty = null;
+    if (isMongoId) {
+      existingParty = await Party.findOne({ _id: id, companyId: req.companyId });
+    } else {
+      existingParty = await Party.findOne({
+        companyId: req.companyId,
+        $or: [
+          { id },
+          ...(req.body.name ? [{ name: req.body.name }] : []),
+          ...(req.body.mobileNumber ? [{ mobileNumber: req.body.mobileNumber }] : [])
+        ]
+      });
     }
-    const bType = String(req.body.balanceType || req.body.balanceDir || "").toUpperCase();
-    if (isSupplier && (bType.includes("PAY") || bType.includes("देने") || bType.includes("NEG"))) {
+
+    const isSupplier = (req.body.partyType || existingParty?.partyType || existingParty?.type) === 'supplier';
+    const bType = String(req.body.balanceType || req.body.balanceDir || (isSupplier ? 'PAY' : 'RECEIVE')).toUpperCase();
+    const isNegative = bType.includes("PAY") || bType.includes("देने") || bType.includes("NEG");
+
+    if (req.body.openingBalance !== undefined) {
+      const newOpVal = Math.abs(Number(req.body.openingBalance || 0));
+      const oldOpVal = Math.abs(Number(existingParty?.openingBalance || 0));
+
+      const oldIsSupplier = (existingParty?.partyType || existingParty?.type) === 'supplier';
+      const oldIsNegative = String(existingParty?.balanceType || existingParty?.balanceDir || (oldIsSupplier ? 'PAY' : 'RECEIVE')).toUpperCase().includes("PAY") || oldIsSupplier;
+      const oldOpSigned = oldIsNegative ? -oldOpVal : oldOpVal;
+      const newOpSigned = isNegative ? -newOpVal : newOpVal;
+
+      req.body.openingBalance = newOpVal;
+
+      // If currentBalance was not explicitly passed, compute new currentBalance from delta
+      if (req.body.currentBalance === undefined || req.body.currentBalance === null) {
+        const curBal = Number(existingParty?.currentBalance ?? existingParty?.balance ?? 0);
+        const updatedBal = curBal - oldOpSigned + newOpSigned;
+        req.body.currentBalance = updatedBal;
+        req.body.balance = updatedBal;
+      } else {
+        req.body.currentBalance = Number(req.body.currentBalance);
+        req.body.balance = req.body.currentBalance;
+      }
+
+      if (req.body.openingBalanceDate) {
+        req.body.openingBalanceDate = new Date(req.body.openingBalanceDate);
+      } else if (!existingParty?.openingBalanceDate && newOpVal > 0) {
+        req.body.openingBalanceDate = new Date();
+      }
+    } else if (isSupplier && isNegative) {
       if (req.body.currentBalance !== undefined && req.body.currentBalance !== null) {
         req.body.currentBalance = -Math.abs(Number(req.body.currentBalance));
+        req.body.balance = req.body.currentBalance;
       }
     }
 
