@@ -3444,7 +3444,12 @@ function MobileVyaparAppContent() {
         const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
         storageManager.saveParty(currentCoId, createdParty);
         setParties(prev => [createdParty, ...(prev || []).filter(p => (p._id || p.id) !== createdParty.id && p.name !== createdParty.name)]);
-        setPartyFilterTab("all");
+        // Preserve user's active tab (e.g. 'to_collect' / 'to_pay') so view is never disrupted
+        if (finalBal > 0 && partyFilterTab !== 'to_collect' && partyFilterTab !== 'customer' && partyFilterTab !== 'all') {
+          setPartyFilterTab('to_collect');
+        } else if (finalBal < 0 && partyFilterTab !== 'to_pay' && partyFilterTab !== 'supplier' && partyFilterTab !== 'all') {
+          setPartyFilterTab('to_pay');
+        }
         if (typeof fetchLiveDashboardData === 'function') {
           fetchLiveDashboardData();
         }
@@ -8951,7 +8956,6 @@ function MobileVyaparAppContent() {
           <button 
             onClick={() => {
               setSearchQuery("");
-              setPartyFilterTab("all");
               handleTabChange("parties");
               if (typeof fetchLiveDashboardData === 'function') fetchLiveDashboardData();
             }}

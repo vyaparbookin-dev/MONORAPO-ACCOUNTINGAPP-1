@@ -402,7 +402,12 @@ export default function PartiesPage() {
 
       setShowModal(false);
       setFormData({ name: '', mobileNumber: '', address: '', partyType: 'customer', priceLevel: 'retail', openingBalance: '', creditLimit: '' });
-      setFilterType('all');
+      // Keep user's active filter tab (e.g. 'to_collect' / 'to_pay') so view is never disrupted
+      if (signedBal > 0 && filterType !== 'to_collect' && filterType !== 'customer' && filterType !== 'all') {
+        setFilterType('to_collect');
+      } else if (signedBal < 0 && filterType !== 'to_pay' && filterType !== 'supplier' && filterType !== 'all') {
+        setFilterType('to_pay');
+      }
       fetchParties();
     } catch (error) {
       alert('Error adding party: ' + (error.response?.data?.error || error.message));
