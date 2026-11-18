@@ -117,6 +117,18 @@ export const createParty = async (req, res) => {
     syncPartyToSupabase(party).catch(e => console.warn("[Supabase Sync] Party dual-write note:", e.message));
     res.status(201).json({ success: true, party, message: `Party ${name} created successfully!` });
   } catch (error) {
+    if (error.code === 11000) {
+      if (error.message && error.message.includes("mobileNumber")) {
+        return res.status(400).json({
+          success: false,
+          error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!"
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "इस नाम या विवरण से पार्टी पहले से मौजूद है!"
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -217,6 +229,18 @@ export const bulkCreateParties = async (req, res) => {
       message: `✅ कुल ${createdCount} पार्टियां सफलतापूर्वक जोड़ी गईं! (${skippedCount} डुप्लीकेट छोड़ी गईं)`
     });
   } catch (error) {
+    if (error.code === 11000) {
+      if (error.message && error.message.includes("mobileNumber")) {
+        return res.status(400).json({
+          success: false,
+          error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!"
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "इस नाम या विवरण से पार्टी पहले से मौजूद है!"
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -253,6 +277,18 @@ export const getPartyQuickSummary = async (req, res) => {
       } : null,
     });
   } catch (error) {
+    if (error.code === 11000) {
+      if (error.message && error.message.includes("mobileNumber")) {
+        return res.status(400).json({
+          success: false,
+          error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!"
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "इस नाम या विवरण से पार्टी पहले से मौजूद है!"
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -329,6 +365,18 @@ export const getPartySummary = async (req, res) => {
       }
     });
   } catch (error) {
+    if (error.code === 11000) {
+      if (error.message && error.message.includes("mobileNumber")) {
+        return res.status(400).json({
+          success: false,
+          error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!"
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "इस नाम या विवरण से पार्टी पहले से मौजूद है!"
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -856,6 +904,18 @@ export const getPartyStatement = async (req, res) => {
       transactions: formattedTransactions
     });
   } catch (error) {
+    if (error.code === 11000) {
+      if (error.message && error.message.includes("mobileNumber")) {
+        return res.status(400).json({
+          success: false,
+          error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!"
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "इस नाम या विवरण से पार्टी पहले से मौजूद है!"
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -930,6 +990,18 @@ export const attachPartyTransactionImage = async (req, res) => {
       urls: updated?.billImageUrls || [finalUrl]
     });
   } catch (error) {
+    if (error.code === 11000) {
+      if (error.message && error.message.includes("mobileNumber")) {
+        return res.status(400).json({
+          success: false,
+          error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!"
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "इस नाम या विवरण से पार्टी पहले से मौजूद है!"
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -1144,6 +1216,18 @@ export const deletePartyTransaction = async (req, res) => {
 
     return res.status(404).json({ success: false, error: "लेनदेन (Transaction) नहीं मिला" });
   } catch (error) {
+    if (error.code === 11000) {
+      if (error.message && error.message.includes("mobileNumber")) {
+        return res.status(400).json({
+          success: false,
+          error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!"
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "इस नाम या विवरण से पार्टी पहले से मौजूद है!"
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -1468,6 +1552,18 @@ export const updatePartyTransaction = async (req, res) => {
       isLocalOnly: true
     });
   } catch (error) {
+    if (error.code === 11000) {
+      if (error.message && error.message.includes("mobileNumber")) {
+        return res.status(400).json({
+          success: false,
+          error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!"
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "इस नाम या विवरण से पार्टी पहले से मौजूद है!"
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -1707,6 +1803,18 @@ export const clearPartyBalance = async (req, res) => {
       party
     });
   } catch (error) {
+    if (error.code === 11000) {
+      if (error.message && error.message.includes("mobileNumber")) {
+        return res.status(400).json({
+          success: false,
+          error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!"
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "इस नाम या विवरण से पार्टी पहले से मौजूद है!"
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -1747,6 +1855,18 @@ export const syncPartyBalance = async (req, res) => {
       party
     });
   } catch (error) {
+    if (error.code === 11000) {
+      if (error.message && error.message.includes("mobileNumber")) {
+        return res.status(400).json({
+          success: false,
+          error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!"
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "इस नाम या विवरण से पार्टी पहले से मौजूद है!"
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -1828,6 +1948,18 @@ export const listParties = async (req, res) => {
 
     res.json({ success: true, parties: normalizedParties });
   } catch (error) {
+    if (error.code === 11000) {
+      if (error.message && error.message.includes("mobileNumber")) {
+        return res.status(400).json({
+          success: false,
+          error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!"
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "इस नाम या विवरण से पार्टी पहले से मौजूद है!"
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -1854,6 +1986,18 @@ export const getPartyById = async (req, res) => {
     if (!party) return res.status(404).json({ success: false, error: "Party not found" });
     res.json({ success: true, party });
   } catch (error) {
+    if (error.code === 11000) {
+      if (error.message && error.message.includes("mobileNumber")) {
+        return res.status(400).json({
+          success: false,
+          error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!"
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "इस नाम या विवरण से पार्टी पहले से मौजूद है!"
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -1971,6 +2115,18 @@ export const updateParty = async (req, res) => {
 
     res.json({ success: true, party: partyToSync, message: "Party updated successfully!" });
   } catch (error) {
+    if (error.code === 11000) {
+      if (error.message && error.message.includes("mobileNumber")) {
+        return res.status(400).json({
+          success: false,
+          error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!"
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "इस नाम या विवरण से पार्टी पहले से मौजूद है!"
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -2043,6 +2199,18 @@ export const deleteParty = async (req, res) => {
 
     res.json({ success: true, message: `पार्टी '${partyName}' सफलतापूर्वक हटा दी गई!` });
   } catch (error) {
+    if (error.code === 11000) {
+      if (error.message && error.message.includes("mobileNumber")) {
+        return res.status(400).json({
+          success: false,
+          error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!"
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "इस नाम या विवरण से पार्टी पहले से मौजूद है!"
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 };
