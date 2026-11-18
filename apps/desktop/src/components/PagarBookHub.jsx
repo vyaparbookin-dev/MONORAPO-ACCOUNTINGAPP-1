@@ -859,7 +859,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                                       : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
                                   }`}
                                 >
-                                  ✓ P
+                                  ✓ FD
                                 </button>
                                 <button
                                   type="button"
@@ -966,7 +966,7 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                                       : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
                                   }`}
                                 >
-                                  ✓ P
+                                  ✓ FD
                                 </button>
                                 <button
                                   type="button"
@@ -1381,185 +1381,99 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                   </div>
                 )}
 
-                {/* 📅 Date-by-Date Attendance Overview for Current Staff (कौन-कौन से दिन आया था व सुधारें) */}
+                {/* 📅 Date-by-Date Attendance (हर दिन की हाजिरी - 3 बटन सिस्टम: FD / HD / AB) */}
                 <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-100 shadow-xs space-y-3 mt-4">
                   <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-black text-slate-800">
-                        📅 {monthShortName} {currentYear} की दैनिक हाजिरी (कौन-कौन से दिन आया था)
-                      </span>
-                    </div>
+                    <span className="text-sm font-extrabold text-slate-800 flex items-center gap-2">
+                      📅 {monthShortName} {currentYear} की दैनिक हाजिरी (3-बटन सिस्टम)
+                    </span>
                     <div className="flex items-center gap-1.5 text-xs font-bold">
-                      <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">
-                        {currentStaff.presentDays || currentStaff.presentCount || 0} दिन उपस्थित (P)
+                      <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold">
+                        {currentStaff.presentDays || currentStaff.presentCount || 0} FD
                       </span>
                       {(currentStaff.halfDays || currentStaff.halfDayCount || 0) > 0 && (
-                        <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full">
-                          {currentStaff.halfDays || currentStaff.halfDayCount} आधा दिन (HD)
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full font-bold">
+                          {currentStaff.halfDays || currentStaff.halfDayCount} HD
                         </span>
                       )}
-                      <span className="px-2.5 py-0.5 bg-rose-100 text-rose-800 rounded-full">
-                        {currentStaff.absentDays || currentStaff.absentCount || 0} दिन गैरहाजिर (AB)
+                      <span className="px-2.5 py-0.5 bg-rose-100 text-rose-800 rounded-full font-bold">
+                        {currentStaff.absentDays || currentStaff.absentCount || 0} AB
                       </span>
                     </div>
                   </div>
 
-                  {/* 📦 3-BOX FINANCIAL SUMMARY: 1. बनता वेतन | 2. दिया पेमेंट (कितनी बार) | 3. जो देना बचा है */}
-                  <div className="grid grid-cols-3 gap-2 sm:gap-3">
-                    {/* Box 1: कुल बनता वेतन (देने वाला पेमेंट) */}
-                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50/80 p-3 sm:p-3.5 rounded-2xl border border-blue-200 shadow-xs flex flex-col justify-between">
-                      <div>
-                        <span className="text-[10px] sm:text-[11px] font-black text-blue-900 uppercase tracking-wider block">
-                          1. बनता वेतन (देना है)
-                        </span>
-                        <div className="text-base sm:text-xl font-black text-blue-700 mt-1">
-                          ₹{(currentStaff.earnedSalary || 0).toLocaleString('en-IN')}
-                        </div>
-                      </div>
-                      <span className="text-[10px] text-blue-600 font-bold mt-1 block truncate">
-                        {currentStaff.presentDays || currentStaff.presentCount || 0} दिन काम @ ₹{currentStaff.dailyRate || 320}
-                      </span>
-                    </div>
-
-                    {/* Box 2: दिया गया पेमेंट (एडवांस + वेतन भुगतान / कितनी बार लिया) */}
-                    <div 
-                      onClick={() => {
-                        const allPayments = [
-                          ...(currentStaff.advancesList || []).map(a => ({ ...a, category: 'advance' })),
-                          ...(currentStaff.paymentsList || []).map(p => ({ ...p, category: 'settlement' })),
-                          ...(currentStaff.bonusList || []).map(b => ({ ...b, category: 'bonus' }))
-                        ];
-                        setPaymentBreakdownData({
-                          staffName: currentStaff.name,
-                          monthLabel: `${monthShortName} ${currentYear}`,
-                          earnedSalary: currentStaff.earnedSalary || 0,
-                          totalPaid: (currentStaff.totalAdvance || 0) + (currentStaff.totalSalaryPaid || 0),
-                          totalBonus: currentStaff.totalBonus || 0,
-                          netPayable: currentStaff.netPayable || 0,
-                          payments: allPayments
-                        });
-                        setShowPaymentBreakdownModal(true);
-                      }}
-                      className="bg-gradient-to-br from-amber-50 to-orange-50/80 p-3 sm:p-3.5 rounded-2xl border border-amber-200 shadow-xs flex flex-col justify-between cursor-pointer hover:border-amber-400 hover:shadow-sm transition active:scale-[0.98] group"
-                      title="क्लिक करके तारीख-वार भुगतान विवरण देखें"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] sm:text-[11px] font-black text-amber-900 uppercase tracking-wider">
-                            2. दिया पेमेंट (लिया)
-                          </span>
-                          <span className="text-[9px] bg-amber-200 text-amber-900 font-black px-1.5 py-0.2 rounded-full">
-                            👆 तारीख देखें
-                          </span>
-                        </div>
-                        <div className="text-base sm:text-xl font-black text-amber-800 mt-1">
-                          ₹{((currentStaff.totalAdvance || 0) + (currentStaff.totalSalaryPaid || 0)).toLocaleString('en-IN')}
-                        </div>
-                      </div>
-                      <span className="text-[10px] text-amber-700 font-bold mt-1 block truncate group-hover:underline">
-                        {((currentStaff.advancesList || []).length + (currentStaff.paymentsList || []).length) > 0
-                          ? `कुल ${((currentStaff.advancesList || []).length + (currentStaff.paymentsList || []).length)} बार लिया 🔍`
-                          : "कोई भुगतान नहीं (0 बार)"}
-                      </span>
-                    </div>
-
-                    {/* Box 3: जो देना बचा है (शुद्ध बाकी) */}
-                    <div className={`p-3 sm:p-3.5 rounded-2xl border shadow-xs flex flex-col justify-between ${
-                      currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
-                        ? "bg-gradient-to-br from-emerald-50 to-teal-50/70 border-emerald-300"
-                        : "bg-gradient-to-br from-rose-50 to-red-50/70 border-rose-300"
-                    }`}>
-                      <div>
-                        <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider block text-slate-800">
-                          3. जो देना बचा है
-                        </span>
-                        <div className={`text-base sm:text-xl font-black mt-1 ${
-                          currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
-                            ? "text-emerald-700"
-                            : "text-rose-700"
-                        }`}>
-                          ₹{(currentStaff.netPayable || 0).toLocaleString('en-IN')}
-                        </div>
-                      </div>
-                      <span className={`text-[10px] font-extrabold mt-1 block truncate ${
-                        currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
-                          ? "text-emerald-700"
-                          : "text-rose-600"
-                      }`}>
-                        {currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
-                          ? "✅ पूरा चुकता (NIL)"
-                          : "शुद्ध बकाया राशि"}
-                      </span>
-                    </div>
-                  </div>
-
-                  <p className="text-[11px] text-slate-500 font-medium">
-                    💡 <b>हाजिरी सुधारें:</b> यदि किसी भी तारीख का डेटा मिसमैच हुआ हो, तो नीचे सीधे उस तारीख के बटन पर दबाकर तुरंत सही (P / ½ / ✕) कर सकते हैं।
-                  </p>
-
-                  <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 pt-1">
-                    {Array.from({ length: activeDaysCount }, (_, i) => i + 1).map((dayNum) => {
-                      const st = currentStaff.dailyAttendanceMap?.[dayNum] || "present";
+                  {/* Day-by-Day List (Descending Order from Today down to 1st) */}
+                  <div className="space-y-2.5 pt-1">
+                    {Array.from({ length: activeDaysCount }, (_, i) => activeDaysCount - i).map((dayNum) => {
+                      const status = currentStaff.dailyAttendanceMap?.[dayNum] || "present";
                       const dayName = getDayShortName(currentYear, currentMonth, dayNum);
 
                       return (
                         <div
                           key={dayNum}
-                          className={`p-2 rounded-xl border text-center transition flex flex-col justify-between ${
-                            st === "present"
-                              ? "bg-emerald-50/70 border-emerald-300"
-                              : st === "half_day"
-                              ? "bg-amber-50/70 border-amber-300"
-                              : "bg-rose-50/70 border-rose-300"
-                          }`}
+                          className="bg-slate-50/70 rounded-2xl p-3 sm:p-3.5 border border-slate-200/80 shadow-2xs space-y-2 hover:border-slate-300 transition"
                         >
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-black text-slate-900">{dayNum}</span>
-                            <span className="text-[9px] font-bold text-slate-400">{dayName}</span>
-                          </div>
-
-                          <div className="my-1">
-                            <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${
-                              st === "present"
-                                ? "bg-emerald-600 text-white"
-                                : st === "half_day"
-                                ? "bg-amber-500 text-white"
-                                : "bg-rose-600 text-white"
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm sm:text-base font-extrabold text-slate-900">
+                                {dayNum} {monthShortName}, {dayName}
+                              </span>
+                              {dayNum === todayDay && (
+                                <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full">आज</span>
+                              )}
+                            </div>
+                            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                              status === "present"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : status === "half_day"
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-rose-100 text-rose-800"
                             }`}>
-                              {st === "present" ? "हाजिर" : st === "half_day" ? "आधा दिन" : "गैरहाजिर"}
+                              {status === "present" ? "🟢 उपस्थित (FD)" : status === "half_day" ? "🟡 आधा दिन (HD)" : "🔴 अनुपस्थित (AB)"}
                             </span>
                           </div>
 
-                          <div className="flex items-center justify-center gap-1 mt-1 pt-1 border-t border-slate-200/60">
+                          <div className="grid grid-cols-3 gap-2 pt-0.5">
+                            {/* FD Button */}
                             <button
                               type="button"
                               onClick={() => handleMarkDayAttendance(currentStaff._id, dayNum, "present")}
-                              className={`text-[9px] px-1.5 py-0.5 rounded font-black transition cursor-pointer ${
-                                st === "present" ? "bg-emerald-600 text-white shadow-2xs" : "text-slate-400 hover:text-emerald-700 hover:bg-emerald-100"
+                              className={`py-2 rounded-xl text-xs sm:text-sm font-black transition flex items-center justify-center gap-1 cursor-pointer ${
+                                status === "present"
+                                  ? "bg-emerald-600 text-white shadow-xs"
+                                  : "bg-white text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200"
                               }`}
-                              title="हाजिर लगाएं"
                             >
-                              P
+                              <span>✓</span>
+                              <span>FD</span>
                             </button>
+
+                            {/* HD Button */}
                             <button
                               type="button"
                               onClick={() => handleMarkDayAttendance(currentStaff._id, dayNum, "half_day")}
-                              className={`text-[9px] px-1.5 py-0.5 rounded font-black transition cursor-pointer ${
-                                st === "half_day" ? "bg-amber-500 text-white shadow-2xs" : "text-slate-400 hover:text-amber-700 hover:bg-amber-100"
+                              className={`py-2 rounded-xl text-xs sm:text-sm font-black transition flex items-center justify-center gap-1 cursor-pointer ${
+                                status === "half_day"
+                                  ? "bg-amber-500 text-white shadow-xs"
+                                  : "bg-white text-slate-700 hover:bg-amber-50 hover:text-amber-700 border border-slate-200"
                               }`}
-                              title="आधा दिन लगाएं"
                             >
-                              ½
+                              <span>½</span>
+                              <span>HD</span>
                             </button>
+
+                            {/* AB Button */}
                             <button
                               type="button"
                               onClick={() => handleMarkDayAttendance(currentStaff._id, dayNum, "absent")}
-                              className={`text-[9px] px-1.5 py-0.5 rounded font-black transition cursor-pointer ${
-                                st === "absent" ? "bg-rose-600 text-white shadow-2xs" : "text-slate-400 hover:text-rose-700 hover:bg-rose-100"
+                              className={`py-2 rounded-xl text-xs sm:text-sm font-black transition flex items-center justify-center gap-1 cursor-pointer ${
+                                status === "absent"
+                                  ? "bg-rose-600 text-white shadow-xs"
+                                  : "bg-white text-slate-700 hover:bg-rose-50 hover:text-rose-700 border border-slate-200"
                               }`}
-                              title="गैरहाजिर / छुट्टी लगाएं"
                             >
-                              ✕
+                              <span>✕</span>
+                              <span>AB</span>
                             </button>
                           </div>
                         </div>
@@ -1610,95 +1524,6 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                 <button onClick={() => handleMonthChange(1)} className="p-1 hover:bg-slate-100 rounded-lg cursor-pointer">
                   <ChevronRight className="w-5 h-5 text-slate-500" />
                 </button>
-              </div>
-
-              {/* 📦 3-BOX FINANCIAL SUMMARY: 1. बनता वेतन | 2. दिया पेमेंट (कितनी बार) | 3. जो देना बचा है */}
-              <div className="grid grid-cols-3 gap-2 sm:gap-3">
-                {/* Box 1: कुल बनता वेतन (देने वाला पेमेंट) */}
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50/80 p-3 sm:p-3.5 rounded-2xl border border-blue-200 shadow-xs flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] sm:text-[11px] font-black text-blue-900 uppercase tracking-wider block">
-                      1. बनता वेतन (देना है)
-                    </span>
-                    <div className="text-base sm:text-xl font-black text-blue-700 mt-1">
-                      ₹{(currentStaff.earnedSalary || 0).toLocaleString('en-IN')}
-                    </div>
-                  </div>
-                  <span className="text-[10px] text-blue-600 font-bold mt-1 block truncate">
-                    {currentStaff.presentDays || currentStaff.presentCount || 0} दिन काम @ ₹{currentStaff.dailyRate || 320}
-                  </span>
-                </div>
-
-                {/* Box 2: दिया गया पेमेंट (एडवांस + वेतन भुगतान / कितनी बार लिया) */}
-                <div 
-                  onClick={() => {
-                    const allPayments = [
-                      ...(currentStaff.advancesList || []).map(a => ({ ...a, category: 'advance' })),
-                      ...(currentStaff.paymentsList || []).map(p => ({ ...p, category: 'settlement' })),
-                      ...(currentStaff.bonusList || []).map(b => ({ ...b, category: 'bonus' }))
-                    ];
-                    setPaymentBreakdownData({
-                      staffName: currentStaff.name,
-                      monthLabel: `${monthShortName} ${currentYear}`,
-                      earnedSalary: currentStaff.earnedSalary || 0,
-                      totalPaid: (currentStaff.totalAdvance || 0) + (currentStaff.totalSalaryPaid || 0),
-                      totalBonus: currentStaff.totalBonus || 0,
-                      netPayable: currentStaff.netPayable || 0,
-                      payments: allPayments
-                    });
-                    setShowPaymentBreakdownModal(true);
-                  }}
-                  className="bg-gradient-to-br from-amber-50 to-orange-50/80 p-3 sm:p-3.5 rounded-2xl border border-amber-200 shadow-xs flex flex-col justify-between cursor-pointer hover:border-amber-400 hover:shadow-sm transition active:scale-[0.98] group"
-                  title="क्लिक करके तारीख-वार भुगतान विवरण देखें"
-                >
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] sm:text-[11px] font-black text-amber-900 uppercase tracking-wider">
-                        2. दिया पेमेंट (लिया)
-                      </span>
-                      <span className="text-[9px] bg-amber-200 text-amber-900 font-black px-1.5 py-0.2 rounded-full">
-                        👆 तारीख देखें
-                      </span>
-                    </div>
-                    <div className="text-base sm:text-xl font-black text-amber-800 mt-1">
-                      ₹{((currentStaff.totalAdvance || 0) + (currentStaff.totalSalaryPaid || 0)).toLocaleString('en-IN')}
-                    </div>
-                  </div>
-                  <span className="text-[10px] text-amber-700 font-bold mt-1 block truncate group-hover:underline">
-                    {((currentStaff.advancesList || []).length + (currentStaff.paymentsList || []).length) > 0
-                      ? `कुल ${((currentStaff.advancesList || []).length + (currentStaff.paymentsList || []).length)} बार लिया 🔍`
-                      : "कोई भुगतान नहीं (0 बार)"}
-                  </span>
-                </div>
-
-                {/* Box 3: जो देना बचा है (शुद्ध बाकी) */}
-                <div className={`p-3 sm:p-3.5 rounded-2xl border shadow-xs flex flex-col justify-between ${
-                  currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
-                    ? "bg-gradient-to-br from-emerald-50 to-teal-50/80 border-emerald-300"
-                    : "bg-gradient-to-br from-rose-50 to-red-50/80 border-rose-300"
-                }`}>
-                  <div>
-                    <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider block text-slate-800">
-                      3. जो देना बचा है
-                    </span>
-                    <div className={`text-base sm:text-xl font-black mt-1 ${
-                      currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
-                        ? "text-emerald-700"
-                        : "text-rose-700"
-                    }`}>
-                      ₹{(currentStaff.netPayable || 0).toLocaleString('en-IN')}
-                    </div>
-                  </div>
-                  <span className={`text-[10px] font-extrabold mt-1 block truncate ${
-                    currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
-                      ? "text-emerald-700"
-                      : "text-rose-600"
-                  }`}>
-                    {currentStaff.netPayable === 0 && ((currentStaff.totalPaid || 0) > 0 || (currentStaff.totalSalaryPaid || 0) > 0)
-                      ? "✅ पूरा चुकता (NIL)"
-                      : "शुद्ध बकाया राशि"}
-                  </span>
-                </div>
               </div>
 
               {/* 3x3 Metric Grid (Screenshot 2) */}
@@ -1795,55 +1620,58 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                         <span className="text-sm font-bold text-slate-900">
                           {dayNum} {monthShortName}, {dayName}
                         </span>
-                        <span className={`text-xs font-semibold ${
-                          status === "present" ? "text-slate-500" : status === "absent" ? "text-[#DC2626]" : status === "half_day" ? "text-amber-600" : "text-slate-400"
+                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                          status === "present"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : status === "half_day"
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-rose-100 text-rose-800"
                         }`}>
-                          {status === "present" ? "8:30 Hrs" : status === "absent" ? "Absent" : status === "half_day" ? "4:00 Hrs" : "Pending"}
+                          {status === "present" ? "🟢 उपस्थित (FD)" : status === "half_day" ? "🟡 आधा दिन (HD)" : "🔴 अनुपस्थित (AB)"}
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        {/* P Button */}
+                      <div className="grid grid-cols-3 gap-2 pt-0.5">
+                        {/* FD Button */}
                         <button
+                          type="button"
                           onClick={() => handleMarkDayAttendance(currentStaff._id, dayNum, "present")}
-                          className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                          className={`py-2 rounded-xl text-xs sm:text-sm font-black transition flex items-center justify-center gap-1 cursor-pointer ${
                             status === "present"
-                              ? "bg-[#16A34A] text-white shadow-sm"
-                              : "bg-[#F1F5F9] text-slate-700 hover:bg-slate-200"
+                              ? "bg-emerald-600 text-white shadow-xs"
+                              : "bg-white text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200"
                           }`}
                         >
-                          P
+                          <span>✓</span>
+                          <span>FD</span>
                         </button>
 
                         {/* HD Button */}
                         <button
+                          type="button"
                           onClick={() => handleMarkDayAttendance(currentStaff._id, dayNum, "half_day")}
-                          className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                          className={`py-2 rounded-xl text-xs sm:text-sm font-black transition flex items-center justify-center gap-1 cursor-pointer ${
                             status === "half_day"
-                              ? "bg-[#F59E0B] text-white shadow-sm"
-                              : "bg-[#F1F5F9] text-slate-700 hover:bg-slate-200"
+                              ? "bg-amber-500 text-white shadow-xs"
+                              : "bg-white text-slate-700 hover:bg-amber-50 hover:text-amber-700 border border-slate-200"
                           }`}
                         >
-                          HD
+                          <span>½</span>
+                          <span>HD</span>
                         </button>
 
                         {/* AB Button */}
                         <button
+                          type="button"
                           onClick={() => handleMarkDayAttendance(currentStaff._id, dayNum, "absent")}
-                          className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                          className={`py-2 rounded-xl text-xs sm:text-sm font-black transition flex items-center justify-center gap-1 cursor-pointer ${
                             status === "absent"
-                              ? "bg-[#DC2626] text-white shadow-sm"
-                              : "bg-[#F1F5F9] text-slate-700 hover:bg-slate-200"
+                              ? "bg-rose-600 text-white shadow-xs"
+                              : "bg-white text-slate-700 hover:bg-rose-50 hover:text-rose-700 border border-slate-200"
                           }`}
                         >
-                          AB
-                        </button>
-
-                        <button 
-                          onClick={() => alert(`Day ${dayNum} ${monthShortName}: ${status === 'present' ? 'Present (पूर्ण दिन)' : status === 'half_day' ? 'Half Day (आधा दिन)' : 'Absent (छुट्टी)'}`)}
-                          className="p-2 bg-[#F1F5F9] text-blue-600 rounded-xl hover:bg-slate-200 cursor-pointer"
-                        >
-                          <ChevronDown className="w-4 h-4" />
+                          <span>✕</span>
+                          <span>AB</span>
                         </button>
                       </div>
                     </div>
@@ -2846,73 +2674,6 @@ export default function PagarBookHub({ onClose, initialStaffId = null }) {
                                   </div>
                                 </div>
                               )}
-                            </div>
-
-                            {/* 1-Tap Quick Fix Calendar Grid */}
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 px-0.5">
-                                <span>तारीख-वार हाजिरी बदलें या सुधारें (1-Tap):</span>
-                                <span className="text-[10px] text-slate-400">P = हाजिर | ½ = आधा दिन | ✕ = छुट्टी</span>
-                              </div>
-
-                              <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
-                                {Array.from({ length: m.daysConsidered || m.daysInMonth }, (_, i) => i + 1).map(dayNum => {
-                                  const curStatus = m.dailyAttendanceMap?.[dayNum] || (m.presentDates?.includes(dayNum) ? 'present' : (m.absentDates?.includes(dayNum) ? 'absent' : 'present'));
-                                  const dayDate = new Date(m.year, m.month - 1, dayNum);
-                                  const dayShort = dayDate.toLocaleDateString('hi-IN', { weekday: 'narrow' });
-
-                                  return (
-                                    <div 
-                                      key={dayNum}
-                                      className={`p-1.5 rounded-lg border text-center transition flex flex-col justify-between ${
-                                        curStatus === 'present'
-                                          ? 'bg-emerald-50/70 border-emerald-300'
-                                          : curStatus === 'half_day'
-                                          ? 'bg-amber-50/70 border-amber-300'
-                                          : 'bg-rose-50/70 border-rose-300'
-                                      }`}
-                                    >
-                                      <div className="flex items-center justify-between px-0.5">
-                                        <span className="text-[11px] font-black text-slate-900">{dayNum}</span>
-                                        <span className="text-[9px] text-slate-400 font-bold">{dayShort}</span>
-                                      </div>
-
-                                      <div className="flex items-center justify-center gap-0.5 mt-1 pt-1 border-t border-slate-200/50">
-                                        <button
-                                          type="button"
-                                          onClick={() => handleUpdateAttendanceAndRefresh(multiMonthStaff?._id, dayNum, m.month, m.year, 'present')}
-                                          className={`text-[9px] px-1 py-0.5 rounded font-black cursor-pointer transition ${
-                                            curStatus === 'present' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-slate-400 hover:text-emerald-700 hover:bg-emerald-100'
-                                          }`}
-                                          title="हाजिर लगाएं"
-                                        >
-                                          P
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleUpdateAttendanceAndRefresh(multiMonthStaff?._id, dayNum, m.month, m.year, 'half_day')}
-                                          className={`text-[9px] px-1 py-0.5 rounded font-black cursor-pointer transition ${
-                                            curStatus === 'half_day' ? 'bg-amber-500 text-white shadow-2xs' : 'text-slate-400 hover:text-amber-700 hover:bg-amber-100'
-                                          }`}
-                                          title="आधा दिन लगाएं"
-                                        >
-                                          ½
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleUpdateAttendanceAndRefresh(multiMonthStaff?._id, dayNum, m.month, m.year, 'absent')}
-                                          className={`text-[9px] px-1 py-0.5 rounded font-black cursor-pointer transition ${
-                                            curStatus === 'absent' ? 'bg-rose-600 text-white shadow-2xs' : 'text-slate-400 hover:text-rose-700 hover:bg-rose-100'
-                                          }`}
-                                          title="छुट्टी / अनुपस्थित लगाएं"
-                                        >
-                                          ✕
-                                        </button>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
                             </div>
                           </div>
 
