@@ -5945,16 +5945,29 @@ function MobileVyaparAppContent() {
 
   const handleSharePartyStatementWhatsApp = async (party) => {
     if (!party) return;
+    const isSupplier = (party.type === 'supplier' || party.partyType === 'supplier');
     const bal = Number(party.balance ?? party.currentBalance ?? 0);
-    const balText = bal > 0 
-      ? `कुल बकाया (लेने हैं): ₹${bal.toLocaleString('en-IN')}` 
-      : bal < 0 
-        ? `कुल बकाया (देने हैं): ₹${Math.abs(bal).toLocaleString('en-IN')}` 
-        : `हिसाब चुकता (₹0)`;
+    const balText = isSupplier
+      ? (bal < 0 ? `देने हैं: ₹${Math.abs(bal).toLocaleString('en-IN')}` : bal > 0 ? `लेने हैं: ₹${bal.toLocaleString('en-IN')}` : `हिसाब चुकता (₹0)`)
+      : (bal > 0 ? `लेने हैं: ₹${bal.toLocaleString('en-IN')}` : bal < 0 ? `देने हैं: ₹${Math.abs(bal).toLocaleString('en-IN')}` : `हिसाब चुकता (₹0)`);
     
-    const pTypeTag = (party.type || party.partyType) === 'personal' ? 'पर्सनल खाता' : 'व्यापारिक खाता';
-    const msg = `नमस्ते ${party.name} जी,\n\nयह आपका हिसाब-किताब विवरण (${pTypeTag}) है:\n${balText}\n\nधन्यवाद!\n-${companyDisplayName}`;
-    const cleanPhone = String(party.phone || party.mobileNumber || '').replace(/[^0-9]/g, '');
+    const pTypeTag = (party.type || party.partyType) === 'personal' ? 'पर्सनल खाता' : isSupplier ? 'सप्लायर खाता' : 'ग्राहक खाता';
+    let msg = `📜 *खाता हिसाब विवरण*\n` +
+      `🏢 *दुकान:* ${companyDisplayName}\n` +
+      `👤 *पार्टी:* ${party.name} (${pTypeTag})\n` +
+      `📅 *दिनांक:* ${new Date().toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' })}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n` +
+      `⚖️ *वर्तमान कुल बकाया:* *${balText}*\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n` +
+      `कृपया हिसाब का मिलान कर लें। धन्यवाद!\n-${companyDisplayName}`;
+
+    let cleanPhone = String(party.phone || party.mobileNumber || '').replace(/[^0-9]/g, '');
+    if (!cleanPhone || cleanPhone.length < 10) {
+      const inputPhone = window.prompt(`'${party.name}' का मोबाइल नंबर दर्ज नहीं है।\nकृपया भेजने के लिए 10 अंकों का WhatsApp मोबाइल नंबर दर्ज करें (या खाली छोड़ें):`, "");
+      if (inputPhone && inputPhone.trim()) {
+        cleanPhone = inputPhone.replace(/[^0-9]/g, '');
+      }
+    }
 
     // 🚀 Background WhatsApp Direct Send if connected!
     if (waStatus.isConnected && cleanPhone && cleanPhone.length >= 10) {
@@ -5972,10 +5985,13 @@ function MobileVyaparAppContent() {
       }
     }
 
-    const url = cleanPhone 
-      ? `https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(msg)}`
-      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-    window.open(url, '_blank');
+    if (cleanPhone && cleanPhone.length >= 10) {
+      window.open(`https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(msg)}`, '_blank');
+    } else {
+      try { navigator.clipboard?.writeText(msg); } catch (e) {}
+      alert(`📋 '${party.name}' का हिसाब कॉपी कर लिया गया है! आप किसी भी WhatsApp चैट पर पेस्ट कर सकते हैं।`);
+      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+    }
   };
 
   const handleShareFullDetailedStatementWhatsApp = (party, txs = []) => {
@@ -8360,6 +8376,17 @@ function MobileVyaparAppContent() {
                               {bal > 0 ? (isSupplier ? "🟢 एडवांस दिया" : "🟢 लेने हैं") : bal < 0 ? (isSupplier ? "🔴 देने हैं" : "🔵 एडवांस जमा (ग्राहक)") : "हिसाब चुकता"}
                             </span>
                           </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSharePartyStatementWhatsApp(p);
+                            }}
+                            className="p-1.5 rounded-lg text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition active:scale-90 cursor-pointer shadow-2xs"
+                            title="WhatsApp पर हिसाब शेयर करें"
+                          >
+                            <Share2 size={13} />
+                          </button>
                           <button
                             type="button"
                             onClick={(e) => {

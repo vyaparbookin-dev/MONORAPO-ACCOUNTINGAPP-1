@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import api from '../../services/api';
-import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2, Download, FileSpreadsheet, Upload, AlertCircle, MapPin, RotateCcw, Filter, ArrowLeft } from 'lucide-react';
+import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2, Download, FileSpreadsheet, Upload, AlertCircle, MapPin, RotateCcw, Filter, ArrowLeft, Copy, Check, MessageSquare } from 'lucide-react';
 import { syncQueue } from "@repo/shared";
 import CreditLimitHubModal from '../../components/modals/CreditLimitHubModal';
 import { getWebSafeImageUrl, compressImageFile } from '../../utils/photoStorage';
@@ -95,6 +95,13 @@ export default function PartiesPage() {
     openingBalance: '',
     balanceDir: 'positive'
   });
+
+  // Statement Share Modal State
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareCustomPhone, setShareCustomPhone] = useState('');
+  const [shareFormat, setShareFormat] = useState('detailed'); // 'detailed' | 'summary'
+  const [shareRecipientType, setShareRecipientType] = useState('party'); // 'party' | 'custom'
+  const [copiedShareText, setCopiedShareText] = useState(false);
 
   // Payment / Installment Entry Modal State
   const [paymentParty, setPaymentParty] = useState(null);
@@ -1060,44 +1067,134 @@ export default function PartiesPage() {
     }
   };
 
-  // WhatsApp Share Ledger (incorporates active site and date range)
-
-  const handleShareWhatsApp = () => {
-    if (!statementParty) return;
-    const p = statementParty;
+  // Statement Share System (Full detailed / summary + send to party or any other custom phone)
+  const generateStatementShareText = (format = 'detailed', targetParty = statementParty, txs = filteredStatementTransactions) => {
+    if (!targetParty) return '';
+    const p = targetParty;
+    const isSupplier = (p.partyType === 'supplier' || p.type === 'supplier');
+    const bal = Number(p.currentBalance ?? p.balance ?? statementData?.currentBalance ?? 0);
+    const balText = isSupplier
+      ? (bal < 0 ? `देने हैं: ₹${Math.abs(bal).toLocaleString('en-IN')}` : bal > 0 ? `लेने हैं: ₹${bal.toLocaleString('en-IN')}` : `हिसाब चुकता (₹0)`)
+      : (bal > 0 ? `लेने हैं: ₹${bal.toLocaleString('en-IN')}` : bal < 0 ? `देने हैं: ₹${Math.abs(bal).toLocaleString('en-IN')}` : `हिसाब चुकता (₹0)`);
 
     let periodLabel = 'सभी समय (All Time)';
-    if (statementPeriodFilter === 'FY2425') periodLabel = 'FY 2024-25 (01 Apr 2024 - 31 Mar 2025)';
-    else if (statementPeriodFilter === 'FY2526') periodLabel = 'FY 2025-26 (01 Apr 2025 - 31 Mar 2026)';
-    else if (statementPeriodFilter === 'FY2627') periodLabel = 'FY 2026-27 (01 Apr 2026 - 31 Mar 2027)';
+    if (statementPeriodFilter === 'FY2425') periodLabel = 'FY 2024-25';
+    else if (statementPeriodFilter === 'FY2526') periodLabel = 'FY 2025-26';
+    else if (statementPeriodFilter === 'FY2627') periodLabel = 'FY 2026-27';
     else if (statementPeriodFilter === 'custom') {
       const fromStr = statementStartDate ? new Date(statementStartDate).toLocaleDateString('hi-IN') : 'शुरुआत';
       const toStr = statementEndDate ? new Date(statementEndDate).toLocaleDateString('hi-IN') : 'आज तक';
       periodLabel = `${fromStr} से ${toStr}`;
     }
 
-    const siteLabel = statementSiteFilter !== 'all' ? statementSiteFilter : 'सभी साइटें (All Sites)';
-    const isFiltered = statementSiteFilter !== 'all' || statementPeriodFilter !== 'all' || statementStartDate || statementEndDate;
+    const siteLabel = statementSiteFilter !== 'all' ? statementSiteFilter : 'सभी साइटें';
+    const totalDeb = filteredDebit || 0;
+    const totalCred = filteredCredit || 0;
 
-    let text = `*खाता विवरण (Statement of Account)*\n` +
-      `🏢 *गणेश हार्डवेयर (Ganesh Hardware)*\n` +
-      `👤 पार्टी: *${p.name}*\n` +
-      `📞 मोबाइल: ${p.mobileNumber && p.mobileNumber !== '9999999999' ? p.mobileNumber : '-'}\n` +
-      `📅 अवधि: *${periodLabel}*\n` +
-      `🏗️ साइट: *${siteLabel}*\n` +
-      `------------------------------------\n` +
-      `📋 कुल प्रविष्टियाँ: ${filteredStatementTransactions.length}\n` +
-      `🔴 कुल बिल (Debit): *₹${filteredDebit.toLocaleString('en-IN')}*\n` +
-      `🟢 कुल जमा (Credit): *₹${filteredCredit.toLocaleString('en-IN')}*\n` +
-      `⚖️ *इस अवधि/साइट का बाकी:* *₹${Math.abs(filteredNet).toLocaleString('en-IN')} ${filteredNet > 0 ? '(लेने हैं / Due)' : filteredNet < 0 ? '(देने हैं / Advance)' : '(चुक्ता / Nil)'}*\n`;
+    let text = `📜 *खाता विवरण (Statement of Account)*\n`;
+    text += `👤 *पार्टी:* ${p.name} (${isSupplier ? 'सप्लायर' : 'ग्राहक'})\n`;
+    text += `🏢 *फर्म:* श्री गणेश ट्रेडर्स व हार्डवेयर\n`;
+    text += `📅 *तारीख:* ${new Date().toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' })}\n`;
+    text += `⏱️ *अवधि:* ${periodLabel}\n`;
+    if (statementSiteFilter !== 'all') {
+      text += `🏗️ *साइट:* ${siteLabel}\n`;
+    }
+    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    text += `📊 *खाता सारांश:*\n`;
+    text += `🔴 कुल बिल (डेबिट): *₹${totalDeb.toLocaleString('en-IN')}*\n`;
+    text += `🟢 कुल जमा (क्रेडिट): *₹${totalCred.toLocaleString('en-IN')}*\n`;
+    text += `⚖️ *शुद्ध बकाया:* *${balText}*\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━━\n`;
 
-    if (isFiltered) {
-      const overallBal = Number(p.currentBalance ?? statementData?.currentBalance ?? 0);
-      text += `💰 *कुल समग्र बकाया (All Time Net):* *₹${Math.abs(overallBal).toLocaleString('en-IN')} ${overallBal > 0 ? '(लेने हैं)' : '(देने हैं)'}*\n`;
+    if (format === 'detailed' && txs && txs.length > 0) {
+      text += `📋 *हालिया लेन-देन (${Math.min(txs.length, 30)} प्रविष्टियाँ):*\n`;
+      const displayTxs = txs.length > 30 ? txs.slice(-30) : txs;
+      displayTxs.forEach((t, i) => {
+        const dStr = t.date ? new Date(t.date).toLocaleDateString('hi-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
+        const deb = Number(t.debit || 0);
+        const cred = Number(t.credit || 0);
+        const amtStr = deb > 0 ? `+₹${deb.toLocaleString('en-IN')} (नाम)` : `-₹${cred.toLocaleString('en-IN')} (जमा)`;
+        const desc = t.details || t.refNo || (deb > 0 ? 'बिल' : 'भुगतान');
+        const sName = (t.siteName || '').trim();
+        const siteStr = sName ? ` [🏗️ ${sName}]` : '';
+        text += `${i + 1}. [${dStr}] ${desc}${siteStr}: *${amtStr}*\n`;
+      });
+      if (txs.length > 30) {
+        text += `\n*(कुल ${txs.length} में से हालिया 30 बिल ऊपर दिए गए हैं)*\n`;
+      }
+      text += `━━━━━━━━━━━━━━━━━━━━━\n`;
     }
 
-    text += `------------------------------------\n` +
-      `कृपया हिसाब मिलान कर लें। धन्यवाद!\n- Ganesh Hardware`;
+    text += `कृपया हिसाब का मिलान कर लें। धन्यवाद!\n- श्री गणेश ट्रेडर्स व हार्डवेयर`;
+    return text;
+  };
+
+  const handleOpenShareModal = () => {
+    if (!statementParty) return;
+    const cleanPhone = (statementParty.mobileNumber || statementParty.phone || '').replace(/[^0-9]/g, '');
+    const hasValidPhone = cleanPhone && cleanPhone !== '9999999999' && cleanPhone.length >= 10;
+    setShareRecipientType(hasValidPhone ? 'party' : 'custom');
+    setShareCustomPhone(hasValidPhone ? cleanPhone.slice(-10) : '');
+    setCopiedShareText(false);
+    setShowShareModal(true);
+  };
+
+  const handleExecuteShare = (channel = 'whatsapp') => {
+    if (!statementParty) return;
+    const text = generateStatementShareText(shareFormat, statementParty, filteredStatementTransactions);
+    const targetPhone = (shareRecipientType === 'party' 
+      ? (statementParty.mobileNumber || statementParty.phone || '') 
+      : shareCustomPhone).replace(/[^0-9]/g, '');
+
+    if (channel === 'whatsapp') {
+      const url = (targetPhone && targetPhone !== '9999999999' && targetPhone.length >= 10)
+        ? `https://wa.me/91${targetPhone.slice(-10)}?text=${encodeURIComponent(text)}`
+        : `https://wa.me/?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank');
+    } else if (channel === 'copy') {
+      try {
+        navigator.clipboard.writeText(text);
+        setCopiedShareText(true);
+        setTimeout(() => setCopiedShareText(false), 3000);
+      } catch (e) {
+        alert("कॉपी करने में समस्या आई, कृपया टेक्स्ट सेलेक्ट करके कॉपी करें।");
+      }
+    } else if (channel === 'native') {
+      if (navigator.share) {
+        navigator.share({
+          title: `खाता विवरण - ${statementParty.name}`,
+          text: text
+        }).catch(() => {});
+      } else {
+        try {
+          navigator.clipboard.writeText(text);
+          setCopiedShareText(true);
+          setTimeout(() => setCopiedShareText(false), 3000);
+        } catch (e) {}
+      }
+    }
+  };
+
+  const handleShareSingleTransaction = (tx) => {
+    if (!statementParty || !tx) return;
+    const p = statementParty;
+    const isDeb = Number(tx.debit || 0) > 0;
+    const amt = isDeb ? Number(tx.debit) : Number(tx.credit || 0);
+    const dStr = tx.date ? new Date(tx.date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
+    const isSupplier = (p.partyType === 'supplier' || p.type === 'supplier');
+    const typeLabel = isDeb ? (isSupplier ? 'भुगतान दिया' : 'सामान/बिल') : (isSupplier ? 'खरीद बिल' : 'जमा प्राप्त');
+    const curBal = Number(p.currentBalance ?? p.balance ?? statementData?.currentBalance ?? 0);
+
+    let text = `🧾 *लेन-देन प्रविष्टि (Transaction Detail)*\n` +
+      `🏢 *श्री गणेश ट्रेडर्स व हार्डवेयर*\n` +
+      `👤 पार्टी: *${p.name}*\n` +
+      `📅 दिनांक: *${dStr}*\n` +
+      `📄 विवरण: ${tx.details || tx.refNo || '-'}\n`;
+    if (tx.siteName) text += `🏗️ साइट: *${tx.siteName}*\n`;
+    text += `💰 राशि: *₹${amt.toLocaleString('en-IN')} (${typeLabel})*\n` +
+      `⚖️ खाता बकाया: *₹${Math.abs(curBal).toLocaleString('en-IN')} ${curBal >= 0 ? '(लेने हैं)' : '(देने हैं)'}*\n` +
+      `------------------------------------\n` +
+      `धन्यवाद! - श्री गणेश ट्रेडर्स व हार्डवेयर`;
 
     const cleanPhone = (p.mobileNumber || p.phone || '').replace(/[^0-9]/g, '');
     const url = (cleanPhone && cleanPhone !== '9999999999' && cleanPhone.length >= 10)
@@ -1223,11 +1320,11 @@ export default function PartiesPage() {
               <FileSpreadsheet size={14} /> <span>📥 Excel डाउनलोड</span>
             </button>
             <button
-              onClick={handleShareWhatsApp}
-              className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow cursor-pointer transition"
-              title="व्हाट्सएप पर खाता विवरण भेजें"
+              onClick={handleOpenShareModal}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl flex items-center gap-1.5 shadow-md cursor-pointer transition active:scale-95"
+              title="खाता विवरण WhatsApp या अन्य ऐप्स पर भेजें (Share Statement)"
             >
-              <Share2 size={14} /> <span>WhatsApp</span>
+              <Share2 size={14} /> <span>📤 खाता शेयर करें</span>
             </button>
             <button
               onClick={() => window.print()}
@@ -1562,6 +1659,13 @@ export default function PartiesPage() {
                         </td>
                         <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => handleShareSingleTransaction(tx)}
+                              className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                              title="यह बिल / लेन-देन WhatsApp पर भेजें"
+                            >
+                              <Share2 size={13} />
+                            </button>
                             <button
                               onClick={() => handleOpenEditTx(tx)}
                               className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
@@ -2174,6 +2278,20 @@ export default function PartiesPage() {
                         <td className="px-4 py-3.5 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <button
+                              onClick={() => {
+                                setStatementParty(p);
+                                const phone = p.mobileNumber && p.mobileNumber !== '9999999999' ? p.mobileNumber : (p.phone || '');
+                                setShareCustomPhone(phone);
+                                setShareRecipientType(phone ? 'party' : 'custom');
+                                setShowShareModal(true);
+                              }}
+                              className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold cursor-pointer transition flex items-center gap-1 shadow-2xs"
+                              title="इस पार्टी का खाता विवरण सीधे WhatsApp पर भेजें या शेयर करें"
+                            >
+                              <Share2 size={13} className="text-emerald-600" />
+                              <span>शेयर</span>
+                            </button>
+                            <button
                               onClick={() => handleOpenEdit(p)}
                               className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-lg text-xs font-bold cursor-pointer transition"
                               title="पार्टी विवरण संपादित करें"
@@ -2702,6 +2820,190 @@ export default function PartiesPage() {
                     <span>{bulkImportLoading ? "पार्टियां सेव हो रही हैं..." : `🚀 सभी ${bulkPartiesList.length} पार्टियां सॉफ्टवेयर में सेव करें`}</span>
                   </button>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 📤 DEDICATED STATEMENT SHARE MODAL */}
+        {showShareModal && statementParty && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-center items-center z-50 p-4 animate-in fade-in">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 space-y-4 max-h-[92vh] flex flex-col">
+              <div className="flex justify-between items-center border-b pb-3 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-lg shadow-2xs">
+                    📤
+                  </div>
+                  <div>
+                    <h2 className="text-base font-black text-slate-900">
+                      खाता विवरण शेयर करें (Share Statement)
+                    </h2>
+                    <p className="text-xs text-slate-500 font-bold">
+                      {statementParty.name} • {displayedNet >= 0 ? `बकाया लेना: ₹${Math.abs(displayedNet).toLocaleString('en-IN')}` : `बकाया देना: ₹${Math.abs(displayedNet).toLocaleString('en-IN')}`}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowShareModal(false)}
+                  className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-xl hover:bg-slate-100"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-4 overflow-y-auto flex-1 pr-1">
+                {/* 1. Recipient Choice */}
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-700 uppercase tracking-wider block">
+                    किसे भेजना है? (Recipient)
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl">
+                    <button
+                      type="button"
+                      onClick={() => setShareRecipientType('party')}
+                      className={`py-2 text-xs font-extrabold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                        shareRecipientType === 'party'
+                          ? 'bg-white text-emerald-800 shadow-xs border border-emerald-200'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <span>👤 पार्टी का नंबर</span>
+                      {statementParty.mobileNumber && statementParty.mobileNumber !== '9999999999' && (
+                        <span className="text-[10px] text-slate-400 font-mono">({statementParty.mobileNumber})</span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShareRecipientType('custom')}
+                      className={`py-2 text-xs font-extrabold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                        shareRecipientType === 'custom'
+                          ? 'bg-white text-indigo-800 shadow-xs border border-indigo-200'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <span>📱 अन्य कोई नंबर</span>
+                    </button>
+                  </div>
+
+                  {shareRecipientType === 'custom' && (
+                    <div className="animate-in fade-in pt-1">
+                      <div className="flex items-center gap-2 border border-indigo-200 bg-indigo-50/40 rounded-xl px-3 py-2">
+                        <span className="text-xs font-bold text-indigo-700">+91</span>
+                        <input
+                          type="tel"
+                          maxLength="10"
+                          placeholder="10 अंकों का मोबाइल नंबर दर्ज करें"
+                          value={shareCustomPhone}
+                          onChange={(e) => setShareCustomPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                          className="bg-transparent text-xs font-bold text-slate-900 outline-none w-full"
+                          autoFocus
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        💡 मुनीम, एकाउंटेंट, पार्टनर या ड्राइवर किसी को भी यहाँ से सीधे भेज सकते हैं।
+                      </p>
+                    </div>
+                  )}
+
+                  {shareRecipientType === 'party' && (!statementParty.mobileNumber || statementParty.mobileNumber === '9999999999') && (
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 font-medium flex items-center justify-between gap-2 animate-in fade-in">
+                      <span>⚠️ इस पार्टी का कोई मोबाइल नंबर दर्ज नहीं है।</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowShareModal(false);
+                          handleOpenEdit(statementParty);
+                        }}
+                        className="text-indigo-600 font-bold hover:underline shrink-0 text-xs cursor-pointer"
+                      >
+                        + नंबर जोड़ें
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Format Selection */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-slate-700 uppercase tracking-wider block">
+                    विवरण प्रकार (Statement Format)
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl">
+                    <button
+                      type="button"
+                      onClick={() => setShareFormat('detailed')}
+                      className={`py-2 text-xs font-extrabold rounded-xl transition cursor-pointer ${
+                        shareFormat === 'detailed'
+                          ? 'bg-white text-indigo-800 shadow-xs border border-indigo-200'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      📋 विस्तृत (हालिया बिल सूची सहित)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShareFormat('summary')}
+                      className={`py-2 text-xs font-extrabold rounded-xl transition cursor-pointer ${
+                        shareFormat === 'summary'
+                          ? 'bg-white text-indigo-800 shadow-xs border border-indigo-200'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      📊 केवल सारांश (कुल बकाया)
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. Live Message Preview */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-500">
+                    <span>संदेश पूर्वावलोकन (Preview)</span>
+                    <button
+                      type="button"
+                      onClick={() => handleExecuteShare('copy')}
+                      className="text-indigo-600 hover:text-indigo-800 cursor-pointer flex items-center gap-1 font-bold"
+                    >
+                      {copiedShareText ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                      <span>{copiedShareText ? 'कॉपी हो गया!' : 'टेक्स्ट कॉपी करें'}</span>
+                    </button>
+                  </div>
+                  <pre className="p-3 bg-slate-900 text-slate-100 rounded-2xl text-[11px] font-mono leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto border border-slate-800 select-all">
+                    {generateStatementShareText(shareFormat, statementParty, filteredStatementTransactions)}
+                  </pre>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-3 border-t border-slate-100 flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleExecuteShare('copy')}
+                  className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                  title="पूरा स्टेटमेंट टेक्स्ट कॉपी करें"
+                >
+                  {copiedShareText ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                  <span>{copiedShareText ? 'कॉपी हुआ!' : 'कॉपी करें'}</span>
+                </button>
+
+                {typeof navigator !== 'undefined' && navigator.share && (
+                  <button
+                    type="button"
+                    onClick={() => handleExecuteShare('native')}
+                    className="px-3.5 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                    title="फोन के अन्य ऐप्स पर शेयर करें"
+                  >
+                    <Share2 size={14} />
+                    <span>अन्य ऐप</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => handleExecuteShare('whatsapp')}
+                  className="flex-1 py-2.5 bg-[#25D366] hover:bg-green-600 text-white font-black text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-md active:scale-95"
+                >
+                  <MessageSquare size={16} />
+                  <span>WhatsApp पर भेजें</span>
+                </button>
               </div>
             </div>
           </div>
