@@ -672,12 +672,13 @@ export const updateBill = async (req, res) => {
       await logActivity(req, 'UPDATE', 'bill', bill._id, oldBill.toObject ? oldBill.toObject() : oldBill, bill.toObject ? bill.toObject() : bill);
     }
 
-    // 🛡️ SYNC DATE & DETAILS TO LINKED PARTY TRANSACTIONS (Prevents date drift / duplicate ledger entries)
-    if (bill && (req.body.date || bill.date)) {
+    // 🛡️ SYNC DATE, AMOUNT & DETAILS TO LINKED PARTY TRANSACTIONS (Prevents date drift / duplicate ledger entries)
+    if (bill && (req.body.date || bill.date || req.body.finalAmount || req.body.total)) {
       try {
-        const bDate = new Date(req.body.date || bill.date);
+        const bDate = new Date(req.body.date || bill.date || Date.now());
         const bNum = bill.billNumber || bill.refBillNo || req.body.billNumber;
         const bId = String(bill._id || id);
+        const newFinalAmt = Number(req.body.finalAmount ?? req.body.total ?? bill.finalAmount ?? bill.total ?? 0);
 
         const txMatchConditions = [];
         if (bNum) {
@@ -692,17 +693,32 @@ export const updateBill = async (req, res) => {
         }
 
         if (txMatchConditions.length > 0) {
+          const updateTxDoc = { date: bDate, updatedAt: new Date() };
+          if (newFinalAmt > 0) {
+            updateTxDoc.debit = newFinalAmt;
+          }
+          if (req.body.notes || req.body.details) {
+            updateTxDoc.details = req.body.notes || req.body.details;
+          }
+          if (req.body.siteName || bill.siteName) {
+            updateTxDoc.siteName = req.body.siteName || bill.siteName;
+          }
+
           await PartyTransaction.updateMany(
             { companyId: req.companyId, $or: txMatchConditions },
-            { $set: { date: bDate, updatedAt: new Date() } }
+            { $set: updateTxDoc }
           );
 
           if (supabase) {
             const sbCoUuid = mongoIdToUuid(req.companyId);
+            const sbTxUpdate = { date: bDate.toISOString() };
+            if (newFinalAmt > 0) sbTxUpdate.debit = newFinalAmt;
+            if (req.body.siteName || bill.siteName) sbTxUpdate.site_name = req.body.siteName || bill.siteName;
+
             const sbFilters = [];
-            if (bNum) sbFilters.push(`details.ilike.%#${bNum}%`, `bill_number.eq.${bNum}`);
+            if (bNum) sbFilters.push(`details.ilike.%#${bNum}%`, `details.ilike.%${bNum}%`);
             if (sbFilters.length > 0) {
-              supabase.from("party_transactions").update({ date: bDate.toISOString() })
+              supabase.from("party_transactions").update(sbTxUpdate)
                 .eq("company_id", sbCoUuid)
                 .or(sbFilters.join(","))
                 .then(() => {}, () => {});
@@ -710,7 +726,7 @@ export const updateBill = async (req, res) => {
           }
         }
       } catch (txSyncErr) {
-        console.warn("[updateBill] PartyTransaction date sync warning:", txSyncErr.message);
+        console.warn("[updateBill] PartyTransaction date & amount sync warning:", txSyncErr.message);
       }
     }
     
@@ -813,6 +829,37 @@ export const deleteBill = async (req, res) => {
         { new: true }
       );
       await logActivity(req, 'DELETE', 'bill', bill._id, oldBill.toObject ? oldBill.toObject() : oldBill, { isDeleted: true });
+    }
+
+    // 🛡️ CASCADE: Also soft-delete linked PartyTransaction in Mongo and delete from Supabase so statement never shows phantom rows
+    try {
+      const bNum = oldBill.billNumber || oldBill.refBillNo;
+      const delConditions = [];
+      if (bNum) {
+        delConditions.push({ billNumber: bNum }, { referenceBillId: bNum }, { refNo: bNum }, { details: { $regex: new RegExp(`#${bNum}\\b`, 'i') } });
+      }
+      if (id && /^[0-9a-fA-F]{24}$/.test(id)) {
+        delConditions.push({ sale_id: id }, { referenceBillId: id });
+      }
+      if (delConditions.length > 0) {
+        await PartyTransaction.updateMany(
+          { companyId: req.companyId, $or: delConditions },
+          { $set: { isDeleted: true, updatedAt: new Date() } }
+        );
+
+        if (supabase) {
+          const sbCoUuid = mongoIdToUuid(req.companyId);
+          const sbFilters = [];
+          if (bNum) sbFilters.push(`details.ilike.%#${bNum}%`, `details.ilike.%${bNum}%`);
+          if (sbFilters.length > 0) {
+            await supabase.from("party_transactions").delete()
+              .eq("company_id", sbCoUuid)
+              .or(sbFilters.join(","));
+          }
+        }
+      }
+    } catch (txDelErr) {
+      console.warn("[deleteBill] PartyTransaction cleanup warning:", txDelErr.message);
     }
     
     // Sync delete to Supabase

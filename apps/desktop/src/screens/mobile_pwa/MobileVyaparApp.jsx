@@ -4749,6 +4749,10 @@ function MobileVyaparAppContent() {
               storedBills[billIdx].date = isoDate;
               storedBills[billIdx].rawDate = isoDate;
               storedBills[billIdx].createdAt = isoDate;
+              storedBills[billIdx].amount = amt;
+              storedBills[billIdx].finalAmount = amt;
+              storedBills[billIdx].total = amt;
+              storedBills[billIdx].totalAmount = amt;
               storedBills[billIdx].hasLocalEdits = true;
               storedBills[billIdx].siteName = payload.siteName;
               storedBills[billIdx].site = payload.site;
@@ -4761,14 +4765,14 @@ function MobileVyaparAppContent() {
               // Update bills state as well
               setBills(prev => (prev || []).map(b => {
                 if (String(b.billNumber || b.invoiceNumber || b._id || b.id).toLowerCase() === billRef.toLowerCase() || String(b._id || b.id).toLowerCase() === String(txId).toLowerCase()) {
-                  return { ...b, date: isoDate, rawDate: isoDate, createdAt: isoDate, hasLocalEdits: true, siteName: payload.siteName, site: payload.site, carrierName: payload.carrierName, carrierPhone: payload.carrierPhone };
+                  return { ...b, amount: amt, finalAmount: amt, total: amt, totalAmount: amt, date: isoDate, rawDate: isoDate, createdAt: isoDate, hasLocalEdits: true, siteName: payload.siteName, site: payload.site, carrierName: payload.carrierName, carrierPhone: payload.carrierPhone };
                 }
                 return b;
               }));
 
               const sId = storedBills[billIdx]._id || storedBills[billIdx].id;
               if (sId && !String(sId).startsWith("bill_")) {
-                api.put(`/api/billing/${sId}`, { date: isoDate, siteName: payload.siteName, notes: payload.details }).catch(() => {});
+                api.put(`/api/billing/${sId}`, { date: isoDate, finalAmount: amt, total: amt, siteName: payload.siteName, notes: payload.details }).catch(() => {});
               }
             }
           }

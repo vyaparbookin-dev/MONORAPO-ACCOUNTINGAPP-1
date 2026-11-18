@@ -676,9 +676,13 @@ export const getPartyStatement = async (req, res) => {
 
       const alreadyInTx = Boolean(matchedEntry) || existingRefBillIds.has(bNum) || existingRefBillIds.has(bId) || (invNo && existingRefBillIds.has(invNo));
 
-      // 🛡️ If matched existing transaction, synchronize date & details so date edits replace rather than duplicate
+      // 🛡️ If matched existing transaction, synchronize date, amount & details so date/amount edits replace rather than duplicate
       if (matchedEntry) {
         if (b.date) matchedEntry.date = b.date;
+        if (finalAmt > 0) {
+          matchedEntry.debit = finalAmt;
+          matchedEntry.billAmount = finalAmt;
+        }
         if (bNum && (!matchedEntry.billNumber || matchedEntry.billNumber === 'BILL')) matchedEntry.billNumber = bNum;
         if (b.items && b.items.length > 0 && (!matchedEntry.items || matchedEntry.items.length === 0)) matchedEntry.items = b.items;
         if (b.siteName && !matchedEntry.siteName) matchedEntry.siteName = b.siteName;
