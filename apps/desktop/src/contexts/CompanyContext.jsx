@@ -131,11 +131,23 @@ export const CompanyProvider = ({ children }) => {
       const isDemoGuest = token && token.includes("demo_guest");
 
       if (isDemoActive || isGuestMode || isDemoGuest) {
-        setCompanies(allDemoCompanies);
+        const primaryCompany = {
+          _id: "6a8314470d93e58ad0920950",
+          name: "श्री गणेश ट्रेडर्स व हार्डवेयर",
+          businessType: "hardware",
+          industryType: "hardware",
+          address: "मेन मार्केट",
+          phone: "9876543210",
+          gstin: "22AAAAA0000A1Z5",
+          isDemo: false
+        };
+        const demoList = [primaryCompany, ...allDemoCompanies];
+        setCompanies(demoList);
         const storedCoId = localStorage.getItem("companyId");
-        const found = allDemoCompanies.find(c => c._id === storedCoId) || allDemoCompanies[0];
+        const found = demoList.find(c => c._id === storedCoId) || primaryCompany;
         setSelectedCompany(found);
         localStorage.setItem("companyId", found._id);
+        localStorage.setItem("selectedCompany", found._id);
         setLoading(false);
         return;
       }

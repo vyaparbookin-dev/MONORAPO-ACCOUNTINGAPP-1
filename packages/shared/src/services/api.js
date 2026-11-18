@@ -606,8 +606,8 @@ api.interceptors.request.use(async (config) => {
   config.headers.Authorization = `Bearer ${token}`;
 
   const DEFAULT_PRIMARY_COMPANY_ID = "6a8314470d93e58ad0920950";
-  // Default to primary company if guest token is active and no company is set
-  if (!rawCompanyId || rawCompanyId === "my_primary_company" || rawCompanyId === "demo_company_guest") {
+  // Default to primary company if guest token is active and no company is set or demo company
+  if (!rawCompanyId || rawCompanyId === "my_primary_company" || rawCompanyId === "demo_company_guest" || (typeof rawCompanyId === 'string' && (rawCompanyId.startsWith("demo_") || rawCompanyId.startsWith("custom_co_")))) {
     rawCompanyId = DEFAULT_PRIMARY_COMPANY_ID;
     await setStorage("companyId", DEFAULT_PRIMARY_COMPANY_ID);
     await setStorage("selectedCompany", DEFAULT_PRIMARY_COMPANY_ID);

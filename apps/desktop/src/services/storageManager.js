@@ -39,7 +39,10 @@ class StorageManager {
    * Generates a deterministic, company-scoped storage key
    */
   getKey(entity, companyId) {
-    const cid = String(companyId || (typeof localStorage !== "undefined" ? localStorage.getItem("companyId") : "") || "default").trim();
+    let cid = String(companyId || (typeof localStorage !== "undefined" ? localStorage.getItem("companyId") : "") || "default").trim();
+    if (!cid || cid === "default" || cid === "demo_company_guest" || cid === "my_primary_company" || cid.startsWith("demo_") || cid.startsWith("custom_co_")) {
+      cid = "6a8314470d93e58ad0920950";
+    }
     return `vb_v2_${cid}_${entity}`;
   }
 

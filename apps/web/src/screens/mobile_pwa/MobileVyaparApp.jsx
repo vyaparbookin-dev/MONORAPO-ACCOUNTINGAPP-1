@@ -281,14 +281,17 @@ function MobileVyaparAppContent() {
 
     // Sync companyId with selectedCompany or valid user company
     const currentCo = localStorage.getItem("companyId");
-    if (!currentCo || currentCo === "demo_company_guest" || currentCo === "my_primary_company" || currentCo === "undefined" || currentCo === "6a8314470d93e58ad0920950") {
-      if (selectedCompany?._id && selectedCompany._id !== "6a8314470d93e58ad0920950") {
+    if (!currentCo || currentCo === "demo_company_guest" || currentCo === "my_primary_company" || currentCo === "undefined" || currentCo === "null" || currentCo.startsWith("demo_") || currentCo.startsWith("custom_co_")) {
+      if (selectedCompany?._id && !selectedCompany._id.startsWith("demo_")) {
         localStorage.setItem("companyId", selectedCompany._id);
         localStorage.setItem("selectedCompany", selectedCompany._id);
-      } else if (companies && companies.length > 0 && !companies[0].isDemo) {
+      } else if (companies && companies.length > 0 && !companies[0].isDemo && !(companies[0]._id || '').startsWith("demo_")) {
         const validCoId = companies[0]._id || companies[0].id;
         localStorage.setItem("companyId", validCoId);
         localStorage.setItem("selectedCompany", validCoId);
+      } else {
+        localStorage.setItem("companyId", "6a8314470d93e58ad0920950");
+        localStorage.setItem("selectedCompany", "6a8314470d93e58ad0920950");
       }
     }
   }, [navigate, selectedCompany, companies]);
@@ -8127,24 +8130,36 @@ function MobileVyaparAppContent() {
                           : "व्यापारिक ग्राहक, सप्लायर व पर्सनल खाते"}
                   </p>
                 </div>
-                <button 
-                  onClick={() => {
-                    if (partyFilterTab === "to_pay" || partyFilterTab === "supplier") {
-                      setNewPartyType("supplier");
-                      setNewPartyBalanceDir("negative");
-                    } else if (partyFilterTab === "personal") {
-                      setNewPartyType("personal");
-                      setNewPartyBalanceDir("positive");
-                    } else {
-                      setNewPartyType("customer");
-                      setNewPartyBalanceDir("positive");
-                    }
-                    setShowAddPartyModal(true);
-                  }}
-                  className="px-3.5 py-1.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer"
-                >
-                  + Add Party
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      if (typeof fetchLiveDashboardData === 'function') fetchLiveDashboardData();
+                    }}
+                    className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer flex items-center justify-center shadow-xs"
+                    title="ताज़ा डेटा सिंक करें"
+                  >
+                    <RefreshCw size={14} className={loading ? "animate-spin text-indigo-600" : ""} />
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if (partyFilterTab === "to_pay" || partyFilterTab === "supplier") {
+                        setNewPartyType("supplier");
+                        setNewPartyBalanceDir("negative");
+                      } else if (partyFilterTab === "personal") {
+                        setNewPartyType("personal");
+                        setNewPartyBalanceDir("positive");
+                      } else {
+                        setNewPartyType("customer");
+                        setNewPartyBalanceDir("positive");
+                      }
+                      setShowAddPartyModal(true);
+                    }}
+                    className="px-3.5 py-1.5 bg-[#4338CA] hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer"
+                  >
+                    + Add Party
+                  </button>
+                </div>
               </div>
 
               <div className="relative">
@@ -8190,6 +8205,21 @@ function MobileVyaparAppContent() {
                   </button>
                 ))}
               </div>
+
+              {partyFilterTab !== "all" && (
+                <div className="flex items-center justify-between bg-indigo-50/90 border border-indigo-200/80 px-3 py-1.5 rounded-xl text-xs text-indigo-950 font-medium">
+                  <span className="truncate">
+                    🔎 फ़िल्टर: <b>{partyFilterTab === 'to_collect' ? 'लेने हैं' : partyFilterTab === 'to_pay' ? 'देने हैं' : partyFilterTab === 'settled' ? 'हिसाब चुकता' : partyFilterTab === 'customer' ? 'ग्राहक' : partyFilterTab === 'supplier' ? 'सप्लायर' : 'पर्सनल'}</b> ({filteredParties.length} दिख रहे हैं)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPartyFilterTab("all")}
+                    className="shrink-0 ml-2 text-xs font-black text-indigo-700 hover:text-indigo-900 cursor-pointer underline"
+                  >
+                    सभी ({parties.length}) देखें ✕
+                  </button>
+                </div>
+              )}
 
               {filteredParties.length === 0 ? (
                 <div className="p-8 text-center bg-gradient-to-b from-white to-indigo-50/30 rounded-3xl border border-indigo-100/60 shadow-sm space-y-3">
@@ -8919,7 +8949,12 @@ function MobileVyaparAppContent() {
 
         {userRole !== 'godown' && (
           <button 
-            onClick={() => handleTabChange("parties")}
+            onClick={() => {
+              setSearchQuery("");
+              setPartyFilterTab("all");
+              handleTabChange("parties");
+              if (typeof fetchLiveDashboardData === 'function') fetchLiveDashboardData();
+            }}
             className={`flex flex-col items-center gap-1 px-3 py-1 transition cursor-pointer ${activeTab === "parties" ? "text-[#4338CA] font-bold" : "text-[#94A3B8] font-medium"}`}
           >
             <Users size={20} />
