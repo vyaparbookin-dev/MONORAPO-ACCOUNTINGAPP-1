@@ -77,10 +77,10 @@ export default function LandingPage() {
   }, []);
 
   const GITHUB_RELEASES_PAGE = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases";
-  const DIRECT_APK_URL = "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/tag/v1.2.0";
+  const DIRECT_APK_URL = "/downloads/vyaparbook-mobile.apk";
 
   const handleDownloadAndroidApk = () => {
-    window.open(GITHUB_RELEASES_PAGE, "_blank");
+    window.location.href = DIRECT_APK_URL;
   };
 
   const handleDownloadWindowsApp = () => {
@@ -662,20 +662,21 @@ export default function LandingPage() {
                 </button>
               </div>
 
-              {/* Option 3: GitHub Releases Page */}
-              <div className="p-4 bg-slate-800/80 rounded-2xl border border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              {/* Option 3: Direct Android APK Download */}
+              <div className="p-4 bg-emerald-950/40 rounded-2xl border border-emerald-500/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div className="flex items-center gap-3">
                   <Smartphone size={28} className="text-emerald-400 shrink-0" />
                   <div>
-                    <h4 className="font-bold text-white text-sm">Android APK & All Releases</h4>
-                    <p className="text-slate-400 text-[11px] leading-tight">गिटहब रिलीज पेज से सभी वर्शन्स की APK व EXE फाइलें देखें</p>
+                    <h4 className="font-bold text-white text-sm">📱 Android APK डायरेक्ट डाउनलोड (.apk)</h4>
+                    <p className="text-slate-300 text-[11px] leading-tight">डायरेक्ट Android ऐप (4.2 MB) डाउनलोड व इंस्टॉल करें (Offline + Live Sync)</p>
                   </div>
                 </div>
                 <button
                   onClick={handleDownloadAndroidApk}
-                  className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-center cursor-pointer shrink-0"
+                  className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-center cursor-pointer shrink-0 shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5"
                 >
-                  View Releases →
+                  <Download size={14} />
+                  <span>Download APK</span>
                 </button>
               </div>
             </div>
