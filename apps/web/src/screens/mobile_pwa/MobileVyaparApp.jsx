@@ -759,9 +759,9 @@ function MobileVyaparAppContent() {
   const [savingParty, setSavingParty] = useState(false);
   const [partyFilterTab, setPartyFilterTabState] = useState(() => {
     try {
-      return sessionStorage.getItem("mobile_party_filter_tab") || "to_collect";
+      return sessionStorage.getItem("mobile_party_filter_tab") || "all";
     } catch (e) {
-      return "to_collect";
+      return "all";
     }
   });
   const setPartyFilterTab = useCallback((tab) => {
@@ -3440,7 +3440,11 @@ function MobileVyaparAppContent() {
 
         const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
         storageManager.saveParty(currentCoId, createdParty);
-        setParties(storageManager.getParties(currentCoId));
+        setParties(prev => [createdParty, ...(prev || []).filter(p => (p._id || p.id) !== createdParty.id && p.name !== createdParty.name)]);
+        setPartyFilterTab("all");
+        if (typeof fetchLiveDashboardData === 'function') {
+          fetchLiveDashboardData();
+        }
         alert(`✅ पार्टी '${createdParty.name}' सफलतापूर्वक जुड़ गई!`);
       }
 
@@ -7210,19 +7214,27 @@ function MobileVyaparAppContent() {
                 </div>
               </div>
 
-              {/* 4 Breakdown Pills: Cash, UPI, Udhar, Kharch (Expense) */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-indigo-400/30 text-center">
+              {/* 5 Breakdown Pills: Pure Cash Sale, Udhar Wasooli, UPI, Udhar Diya, Total Expense */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2 border-t border-indigo-400/30 text-center">
                 <div className="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
-                  <span className="text-[10px] text-emerald-300 font-bold block">💵 नकद (Cash)</span>
-                  <span className="font-extrabold text-xs text-white">₹{activePeriodCash.toLocaleString('en-IN')}</span>
+                  <span className="text-[10px] text-emerald-300 font-bold block">💵 नकद बिक्री (Cash)</span>
+                  <span className="font-extrabold text-xs text-white">₹{activePeriodPureCashSales.toLocaleString('en-IN')}</span>
+                  <span className="text-[9px] text-emerald-200/70 block">सीधी नकद सेल</span>
+                </div>
+                <div className="bg-teal-500/20 p-2 rounded-xl backdrop-blur-xs border border-teal-400/30">
+                  <span className="text-[10px] text-teal-300 font-bold block">🤝 उधारी वसूली</span>
+                  <span className="font-extrabold text-xs text-white">₹{activePeriodUdharCollected.toLocaleString('en-IN')}</span>
+                  <span className="text-[9px] text-teal-200/70 block">पुराना जमा मिला</span>
                 </div>
                 <div className="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
                   <span className="text-[10px] text-sky-300 font-bold block">📲 UPI / QR</span>
                   <span className="font-extrabold text-xs text-white">₹{activePeriodUpi.toLocaleString('en-IN')}</span>
+                  <span className="text-[9px] text-sky-200/70 block">ऑनलाइन बिक्री</span>
                 </div>
                 <div className="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
-                  <span className="text-[10px] text-rose-300 font-bold block">📒 उधारी (Udhar)</span>
-                  <span className="font-extrabold text-xs text-white">₹{activePeriodCredit.toLocaleString('en-IN')}</span>
+                  <span className="text-[10px] text-rose-300 font-bold block">📒 नया उधार दिया</span>
+                  <span className="font-extrabold text-xs text-white">₹{activePeriodGrossCredit.toLocaleString('en-IN')}</span>
+                  <span className="text-[9px] text-rose-200/70 block">आज का उधार</span>
                 </div>
                 <div 
                   onClick={() => handleToggleGharKharchLedger(true)}
@@ -7230,25 +7242,28 @@ function MobileVyaparAppContent() {
                   title="दुकान, घर खर्च व व्यापारी भुगतान विवरण देखें"
                 >
                   <span className="text-[10px] text-amber-300 font-bold block flex items-center justify-center gap-0.5">
-                    💸 कुल खर्च व निकासी <span className="text-[9px]">→</span>
+                    💸 कुल खर्च <span className="text-[9px]">→</span>
                   </span>
                   <span className="font-extrabold text-xs text-amber-200">₹{activePeriodTotalExpenses.toLocaleString('en-IN')}</span>
+                  <span className="text-[9px] text-amber-300/70 block">दुकान + घर</span>
                 </div>
               </div>
 
               {/* In-Hand Cash Surplus / Net Shuddh Munafa Strip */}
-              <div className="pt-2 border-t border-indigo-400/20 flex items-center justify-between text-[11px] bg-black/20 px-3 py-1.5 rounded-xl">
-                <div className="flex items-center gap-2">
-                  <span className="text-indigo-200 font-medium">💰 शुद्ध गल्ला (नकद आवक - खर्च):</span>
-                  {activePeriodSupplierPaid > 0 && (
-                    <span className="text-[10px] font-bold bg-amber-400/30 text-amber-200 px-1.5 py-0.5 rounded">
-                      व्यापारी भुगतान: -₹{activePeriodSupplierPaid.toLocaleString('en-IN')}
-                    </span>
-                  )}
+              <div className="pt-2 border-t border-indigo-400/20 flex items-center justify-between text-[11px] bg-black/20 px-3 py-1.5 rounded-xl flex-wrap gap-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-indigo-200 font-medium">💰 कुल गल्ला आवक:</span>
+                  <span className="font-black text-emerald-300 font-mono">₹{activePeriodCash.toLocaleString('en-IN')}</span>
+                  <span className="text-[9px] text-indigo-300">
+                    (नकद सेल ₹{activePeriodPureCashSales.toLocaleString('en-IN')} + वसूली ₹{activePeriodUdharCollected.toLocaleString('en-IN')})
+                  </span>
                 </div>
-                <span className={`font-black font-mono ${activePeriodNetCash >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
-                  ₹ {activePeriodNetCash.toLocaleString('en-IN')}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-indigo-200 text-[10px] font-bold">शुद्ध गल्ला:</span>
+                  <span className={`font-black font-mono ${activePeriodNetCash >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                    ₹ {activePeriodNetCash.toLocaleString('en-IN')}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -7673,22 +7688,27 @@ function MobileVyaparAppContent() {
                 </div>
               </div>
 
-              {/* 4 Core Metrics Grid: Sales, Cash Inflow, Udhar, Total Expenses */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center">
+              {/* 5 Core Metrics Grid: Total Sales, Cash Sales, Udhar Wasooli, New Udhar, Expenses */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 text-center">
                 <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                   <div className="text-[10px] font-bold text-slate-500">कुल बिक्री (Sales)</div>
                   <div className="font-black text-sm text-[#0F172A] mt-0.5 font-mono">₹ {activePeriodSales.toLocaleString('en-IN')}</div>
                   <div className="text-[9px] text-slate-400 mt-0.5">{activePeriodBills.length} बिल दर्ज</div>
                 </div>
                 <div className="bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-100">
-                  <div className="text-[10px] font-bold text-emerald-700">नकद आवक (Cash)</div>
-                  <div className="font-black text-sm text-[#059669] mt-0.5 font-mono">₹ {activePeriodCash.toLocaleString('en-IN')}</div>
-                  <div className="text-[9px] text-emerald-600/80 mt-0.5">सेल + उधारी वसूली</div>
+                  <div className="text-[10px] font-bold text-emerald-700">💵 नकद बिक्री</div>
+                  <div className="font-black text-sm text-[#059669] mt-0.5 font-mono">₹ {activePeriodPureCashSales.toLocaleString('en-IN')}</div>
+                  <div className="text-[9px] text-emerald-600/80 mt-0.5">सीधा कैश सेल</div>
+                </div>
+                <div className="bg-teal-50/60 p-2.5 rounded-xl border border-teal-100">
+                  <div className="text-[10px] font-bold text-teal-700">🤝 उधारी वसूली</div>
+                  <div className="font-black text-sm text-teal-800 mt-0.5 font-mono">₹ {activePeriodUdharCollected.toLocaleString('en-IN')}</div>
+                  <div className="text-[9px] text-teal-600/80 mt-0.5">पुराना जमा मिला</div>
                 </div>
                 <div className="bg-rose-50/60 p-2.5 rounded-xl border border-rose-100">
-                  <div className="text-[10px] font-bold text-rose-700">बाकी उधारी (Udhar)</div>
-                  <div className="font-black text-sm text-[#DC2626] mt-0.5 font-mono">₹ {activePeriodCredit.toLocaleString('en-IN')}</div>
-                  <div className="text-[9px] text-rose-600/80 mt-0.5">क्रेडिट बाकी</div>
+                  <div className="text-[10px] font-bold text-rose-700">📒 नया उधार</div>
+                  <div className="font-black text-sm text-[#DC2626] mt-0.5 font-mono">₹ {activePeriodGrossCredit.toLocaleString('en-IN')}</div>
+                  <div className="text-[9px] text-rose-600/80 mt-0.5">आज उधार दिया</div>
                 </div>
                 <div 
                   onClick={() => handleToggleGharKharchLedger(true)}

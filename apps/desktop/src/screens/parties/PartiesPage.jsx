@@ -16,9 +16,9 @@ export default function PartiesPage() {
   const [filterType, setFilterTypeState] = useState(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
-      return sp.get('filter') || sessionStorage.getItem('desktop_party_filter_tab') || 'to_collect';
+      return sp.get('filter') || sessionStorage.getItem('desktop_party_filter_tab') || 'all';
     } catch (e) {
-      return 'to_collect';
+      return 'all';
     }
   });
 
@@ -402,6 +402,7 @@ export default function PartiesPage() {
 
       setShowModal(false);
       setFormData({ name: '', mobileNumber: '', address: '', partyType: 'customer', priceLevel: 'retail', openingBalance: '', creditLimit: '' });
+      setFilterType('all');
       fetchParties();
     } catch (error) {
       alert('Error adding party: ' + (error.response?.data?.error || error.message));
