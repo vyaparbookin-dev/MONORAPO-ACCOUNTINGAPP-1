@@ -2286,7 +2286,7 @@ function MobileVyaparAppContent() {
       if (daybookRes.status === "fulfilled" && daybookRes.value) {
         const dv = daybookRes.value;
         const txs = dv?.data?.partyTransactions || dv?.partyTransactions || [];
-        if (Array.isArray(txs) && txs.length > 0) {
+        if (Array.isArray(txs)) {
           let mergedLocalTxs = [];
           try {
             const existingLocal = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
@@ -2297,24 +2297,46 @@ function MobileVyaparAppContent() {
                 if (lid) localMap.set(lid, lt);
               });
             }
+            // 1. Authoritative server transactions mapping
             mergedLocalTxs = txs.map(st => {
               const sid = String(st?._id || st?.id || st?.transactionId || '').toLowerCase().trim();
               const lt = localMap.get(sid);
-              if (lt && (lt.hasLocalEdits || (lt._localUpdatedAt && (!st.updatedAt || new Date(lt._localUpdatedAt) > new Date(st.updatedAt))))) {
+              // Only apply local override if strictly newer and not yet confirmed on server
+              if (lt && lt.hasLocalEdits && !lt.isSynced && lt._localUpdatedAt && (!st.updatedAt || new Date(lt._localUpdatedAt) > new Date(st.updatedAt))) {
                 return { ...st, ...lt };
               }
               return st;
             });
+
             const serverIds = new Set(
               txs.map(t => String(t._id || t.id || t.transactionId || '').toLowerCase().trim()).filter(Boolean)
             );
+
+            // 2. Only keep genuine pending offline creations (never revive deleted server transactions)
             if (Array.isArray(existingLocal)) {
               existingLocal.forEach(lt => {
+                if (!lt || lt.isDeleted) return;
                 const lid = String(lt?._id || lt?.id || lt?.transactionId || '').toLowerCase().trim();
-                if (lid && !serverIds.has(lid)) {
-                  mergedLocalTxs.push(lt);
-                } else if (!lid && lt) {
-                  mergedLocalTxs.push(lt);
+                const isExplicitLocalPending = Boolean(
+                  (lt.isOfflineCreated || lt.isOffline || lt.isLocalOnly || lid.startsWith('tx_') || lid.startsWith('ptx_') || lid.startsWith('temp_')) &&
+                  lt.isSynced !== true
+                );
+                const isServerFormatId = (lid.length === 24 && /^[0-9a-f]{24}$/i.test(lid)) || /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(lid);
+                if (isServerFormatId && !serverIds.has(lid)) {
+                  // Deleted on server — do NOT resurrect
+                  return;
+                }
+                if (isExplicitLocalPending && !serverIds.has(lid)) {
+                  const ltPartyId = String(lt.partyId?._id || lt.partyId?.id || lt.partyId || '').trim();
+                  const ltAmt = Number(lt.amount || lt.debit || lt.credit || 0);
+                  const isDuplicateOfServer = txs.some(st => {
+                    const stPartyId = String(st.partyId?._id || st.partyId?.id || st.partyId || '').trim();
+                    const stAmt = Number(st.amount || st.debit || st.credit || 0);
+                    return stPartyId === ltPartyId && Math.abs(stAmt - ltAmt) < 0.01 && ((st.debit > 0 && lt.debit > 0) || (st.credit > 0 && lt.credit > 0));
+                  });
+                  if (!isDuplicateOfServer) {
+                    mergedLocalTxs.push(lt);
+                  }
                 }
               });
             }
@@ -2328,6 +2350,8 @@ function MobileVyaparAppContent() {
               return (!tid || !deletedIdsSet.has(tid)) && (!tRef || !deletedIdsSet.has(tRef));
             });
           }
+          // Filter out any explicitly deleted records
+          mergedLocalTxs = mergedLocalTxs.filter(t => !t.isDeleted);
           setAllPartyTransactions(mergedLocalTxs);
           try {
             localStorage.setItem("vb_local_party_txs", JSON.stringify(mergedLocalTxs));

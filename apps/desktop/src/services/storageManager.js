@@ -313,8 +313,8 @@ class StorageManager {
         }
 
         partyList[idx] = {
-          ...normServer,
           ...localP,
+          ...normServer,
           id: normServer.id || localP.id,
           _id: normServer._id || localP._id,
           name: normServer.name || localP.name,
