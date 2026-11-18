@@ -59,6 +59,18 @@ export default function PartiesPage() {
   const [editingTxSite, setEditingTxSite] = useState('');
   const [savingTx, setSavingTx] = useState(false);
 
+  // 🛒 Add Missing Bill Modal State (Directly inside Statement)
+  const [showAddBillModal, setShowAddBillModal] = useState(false);
+  const [addBillDate, setAddBillDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [addBillNumber, setAddBillNumber] = useState('');
+  const [addBillAmount, setAddBillAmount] = useState('');
+  const [addBillPaymentMode, setAddBillPaymentMode] = useState('UDHAR');
+  const [addBillItemsSummary, setAddBillItemsSummary] = useState('');
+  const [addBillSite, setAddBillSite] = useState('');
+  const [addBillImage, setAddBillImage] = useState(null);
+  const [addBillImagePreview, setAddBillImagePreview] = useState('');
+  const [savingNewBill, setSavingNewBill] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     mobileNumber: '',
@@ -859,6 +871,139 @@ export default function PartiesPage() {
     }
   };
 
+  // 🛒 Open Add Missing Bill Dialog from Statement
+  const handleOpenAddBill = (party) => {
+    const p = party || statementParty;
+    if (!p) return;
+    setAddBillDate(new Date().toISOString().split('T')[0]);
+    
+    // Auto-generate next bill number based on existing statement transactions
+    const txs = statementData?.transactions || [];
+    const existingNums = txs
+      .map(t => String(t.refNo || t.billNumber || ''))
+      .filter(n => /^[A-Za-z]+-\d+$/.test(n));
+
+    let nextNum = '';
+    if (existingNums.length > 0) {
+      const match = existingNums[0].match(/^([A-Za-z]+)-(\d+)$/);
+      if (match) {
+        const prefix = match[1];
+        const maxNum = Math.max(...existingNums.map(n => parseInt(n.split('-')[1]) || 0));
+        nextNum = `${prefix}-${String(maxNum + 1).padStart(3, '0')}`;
+      }
+    }
+    if (!nextNum) {
+      const cleanInitials = (p.name || 'BILL').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'BILL';
+      nextNum = `${cleanInitials}-${Date.now().toString().slice(-4)}`;
+    }
+
+    setAddBillNumber(nextNum);
+    setAddBillAmount('');
+    setAddBillPaymentMode(p.partyType === 'supplier' ? 'CASH' : 'UDHAR');
+    setAddBillItemsSummary('');
+    setAddBillSite(statementSiteFilter !== 'all' ? statementSiteFilter : '');
+    setAddBillImage(null);
+    setAddBillImagePreview('');
+    setShowAddBillModal(true);
+  };
+
+  // 🛒 Save New/Missing Bill to Party Account
+  const handleSaveNewBill = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const p = statementParty;
+    if (!p) return;
+    const amt = parseFloat(addBillAmount);
+    if (!addBillAmount || isNaN(amt) || amt <= 0) {
+      alert("कृपया मान्य बिल राशि (₹) दर्ज करें!");
+      return;
+    }
+    const bNum = (addBillNumber || `BILL-${Date.now().toString().slice(-4)}`).trim();
+    setSavingNewBill(true);
+
+    try {
+      const isSupplier = p.partyType === 'supplier' || p.type === 'supplier';
+      const isUdhar = addBillPaymentMode === 'UDHAR';
+      const pId = p._id || p.id;
+
+      let uploadedImageUrl = '';
+      if (addBillImage) {
+        try {
+          const compressed = await compressImageFile(addBillImage, 1280, 0.75);
+          const upRes = await api.post('/api/upload/bill-image', {
+            fileData: compressed,
+            targetId: bNum,
+            targetType: isSupplier ? 'purchase' : 'bill'
+          });
+          if (upRes?.data?.imageUrl) uploadedImageUrl = upRes.data.imageUrl;
+        } catch (imgErr) {
+          console.warn("Bill image upload failed:", imgErr.message);
+        }
+      }
+
+      if (isSupplier) {
+        await api.post('/api/purchase', {
+          supplierName: p.name,
+          supplier: p.name,
+          partyId: pId,
+          billNumber: bNum,
+          invoiceNo: bNum,
+          date: addBillDate,
+          totalAmount: amt,
+          total: amt,
+          finalAmount: amt,
+          amountPaid: isUdhar ? 0 : amt,
+          paymentStatus: isUdhar ? 'unpaid' : 'paid',
+          paymentMethod: isUdhar ? 'credit' : 'cash',
+          siteName: addBillSite.trim(),
+          billImageUrl: uploadedImageUrl,
+          notes: addBillItemsSummary.trim() || `खरीद बिल #${bNum}`,
+          items: [{
+            name: addBillItemsSummary.trim() || `खरीद सामान`,
+            quantity: 1,
+            rate: amt,
+            price: amt,
+            total: amt
+          }]
+        });
+      } else {
+        await api.post('/api/billing', {
+          customerName: p.name,
+          customer: p.name,
+          partyId: pId,
+          partyName: p.name,
+          customerMobile: p.mobileNumber || '',
+          billNumber: bNum,
+          date: addBillDate,
+          finalAmount: amt,
+          total: amt,
+          totalAmount: amt,
+          paymentMode: isUdhar ? 'UDHAR' : 'CASH',
+          paymentMethod: isUdhar ? 'credit' : 'cash',
+          paymentStatus: isUdhar ? 'unpaid' : 'paid',
+          siteName: addBillSite.trim(),
+          billImageUrl: uploadedImageUrl,
+          notes: addBillItemsSummary.trim() || `बिक्री बिल #${bNum}`,
+          items: [{
+            name: addBillItemsSummary.trim() || `सामान बिक्री`,
+            quantity: 1,
+            rate: amt,
+            price: amt,
+            total: amt
+          }]
+        });
+      }
+
+      alert(`✅ बिल #${bNum} (₹${amt.toLocaleString('en-IN')}) सफलतापूर्वक खाते में दर्ज हो गया!`);
+      setShowAddBillModal(false);
+      handleOpenStatement(p);
+      fetchParties();
+    } catch (err) {
+      alert("बिल जोड़ने में त्रुटि: " + (err.response?.data?.error || err.message));
+    } finally {
+      setSavingNewBill(false);
+    }
+  };
+
   // WhatsApp Share Ledger (incorporates active site and date range)
 
   const handleShareWhatsApp = () => {
@@ -993,6 +1138,13 @@ export default function PartiesPage() {
 
           {/* Quick Action Buttons */}
           <div className="flex items-center gap-2 flex-wrap w-full lg:w-auto justify-end">
+            <button
+              onClick={() => handleOpenAddBill(statementParty)}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl flex items-center gap-1.5 shadow-md cursor-pointer transition active:scale-95"
+              title="इस खाते में छूटा हुआ या नया बिल जोड़ें (Add Missing Bill)"
+            >
+              <Plus size={14} /> <span>🛒 + नया बिल जोड़ें</span>
+            </button>
             <button
               onClick={() => handleOpenPayment(statementParty, 'received')}
               className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow cursor-pointer transition"
@@ -1189,8 +1341,23 @@ export default function PartiesPage() {
                 <span>लेजर स्टेटमेंट लोड हो रहा है...</span>
               </div>
             ) : filteredStatementTransactions.length === 0 ? (
-              <div className="py-24 text-center text-slate-400 font-medium text-sm">
-                चयनित फ़िल्टर के अनुसार कोई प्रविष्टि नहीं मिली।
+              <div className="py-24 text-center text-slate-400 font-medium text-sm flex flex-col items-center justify-center gap-3">
+                <FileText size={36} className="text-slate-300" />
+                <span>चयनित फ़िल्टर के अनुसार कोई प्रविष्टि नहीं मिली।</span>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    onClick={() => handleOpenAddBill(statementParty)}
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl shadow cursor-pointer transition flex items-center gap-1.5"
+                  >
+                    <Plus size={14} /> 🛒 छूटा हुआ बिल जोड़ें
+                  </button>
+                  <button
+                    onClick={() => handleOpenPayment(statementParty, 'received')}
+                    className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow cursor-pointer transition flex items-center gap-1.5"
+                  >
+                    <Plus size={14} /> 🟢 पेमेंट दर्ज करें
+                  </button>
+                </div>
               </div>
             ) : (
               <table className="w-full text-xs text-left border-collapse table-auto">
@@ -1360,6 +1527,155 @@ export default function PartiesPage() {
             </div>
           </div>
         </div>
+
+        {/* 🛒 ADD MISSING BILL MODAL DIRECTLY IN STATEMENT */}
+        {showAddBillModal && statementParty && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-center items-center z-50 p-4 animate-in fade-in">
+            <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center pb-3 border-b">
+                <div>
+                  <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                    🛒 खाता बिल जोड़ें (Add Missing Bill)
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    पार्टी: <strong className="text-indigo-700">{statementParty.name}</strong> ({statementParty.partyType === 'supplier' ? '🏢 सप्लायर' : '🛒 ग्राहक'})
+                  </p>
+                </div>
+                <button onClick={() => setShowAddBillModal(false)} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg cursor-pointer">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveNewBill} className="space-y-3.5 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">📅 बिल दिनांक (Date) *</label>
+                    <input
+                      type="date"
+                      required
+                      value={addBillDate}
+                      onChange={(e) => setAddBillDate(e.target.value)}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">🏷️ बिल / पर्ची नंबर *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="उदा. RA-017, BILL-102"
+                      value={addBillNumber}
+                      onChange={(e) => setAddBillNumber(e.target.value)}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold font-mono focus:ring-2 focus:ring-indigo-500 outline-none uppercase"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">💰 कुल बिल राशि (₹) *</label>
+                    <input
+                      type="number"
+                      step="any"
+                      required
+                      placeholder="उदा. 1095"
+                      value={addBillAmount}
+                      onChange={(e) => setAddBillAmount(e.target.value)}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-black text-indigo-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">भुगतान प्रकार</label>
+                    <select
+                      value={addBillPaymentMode}
+                      onChange={(e) => setAddBillPaymentMode(e.target.value)}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    >
+                      <option value="UDHAR">🔴 उधार बिल (बकाया खाते में जुड़ेगा)</option>
+                      <option value="CASH">🟢 नकद बिल (Cash / Paid)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">🏗️ साइट का नाम (Site Name - वैकल्पिक)</label>
+                  <input
+                    type="text"
+                    placeholder="उदा. COMPLEX, PWD, PAINT, S"
+                    value={addBillSite}
+                    onChange={(e) => setAddBillSite(e.target.value)}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none uppercase"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">📦 सामान का विवरण या नोट्स</label>
+                  <input
+                    type="text"
+                    placeholder="उदा. 5 बैग सीमेंट, 2 बंडल तार, हार्डवेयर सामान..."
+                    value={addBillItemsSummary}
+                    onChange={(e) => setAddBillItemsSummary(e.target.value)}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+
+                {/* Optional Bill Photo Attachment */}
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">📷 बिल / पर्ची फोटो (वैकल्पिक)</label>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl border border-dashed border-slate-300 cursor-pointer transition text-xs font-bold">
+                      <UploadCloud size={14} />
+                      <span>{addBillImage ? 'फोटो बदलें' : '+ फोटो जोड़ें'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            setAddBillImage(file);
+                            setAddBillImagePreview(URL.createObjectURL(file));
+                          }
+                        }}
+                      />
+                    </label>
+                    {addBillImagePreview && (
+                      <div className="flex items-center gap-2">
+                        <img src={addBillImagePreview} alt="Preview" className="w-10 h-10 object-cover rounded-lg border border-slate-200" />
+                        <button
+                          type="button"
+                          onClick={() => { setAddBillImage(null); setAddBillImagePreview(''); }}
+                          className="text-rose-500 hover:text-rose-700 p-1"
+                          title="फोटो हटाएं"
+                        >
+                          <X size={15} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddBillModal(false)}
+                    className="px-4 py-2 border rounded-xl text-slate-600 hover:bg-slate-50 text-xs font-bold cursor-pointer"
+                  >
+                    रद्द करें
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingNewBill}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md cursor-pointer disabled:opacity-50 transition flex items-center gap-1.5"
+                  >
+                    {savingNewBill ? 'सेव हो रहा है...' : '✓ बिल सेव करें'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* ✏️ EDIT TRANSACTION MODAL (Date, Site, Amount, Notes) */}
         {editingTx && (
