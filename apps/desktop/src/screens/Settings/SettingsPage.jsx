@@ -372,11 +372,10 @@ export default function SettingsPage() {
                   </select>
                   <input
                     type="text"
-                    placeholder="Mobile Number *"
+                    placeholder="Mobile Number (Optional)"
                     value={partyForm.mobileNumber}
                     onChange={(e) => setPartyForm({ ...partyForm, mobileNumber: e.target.value })}
                     className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
                   />
                   <input
                     type="text"

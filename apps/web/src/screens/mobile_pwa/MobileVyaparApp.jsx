@@ -3388,7 +3388,7 @@ function MobileVyaparAppContent() {
 
       const payload = {
         name: trimmedName,
-        mobileNumber: newPartyPhone.trim() || `9${Math.floor(100000000 + Math.random() * 900000000)}`,
+        mobileNumber: newPartyPhone.trim(),
         openingBalance: Math.abs(rawBal),
         currentBalance: signedBal,
         balanceType: signedBal < 0 ? "PAY" : "RECEIVE",
@@ -11415,7 +11415,7 @@ function MobileVyaparAppContent() {
             />
             <input 
               type="tel" 
-              placeholder="मोबाइल नंबर (WhatsApp के लिए)" 
+              placeholder="मोबाइल नंबर (वैकल्पिक / बाद में भी डाल सकते हैं)" 
               value={newPartyPhone}
               onChange={(e) => setNewPartyPhone(e.target.value)}
               className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"

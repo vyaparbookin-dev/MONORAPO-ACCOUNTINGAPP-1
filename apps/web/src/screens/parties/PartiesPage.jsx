@@ -2142,8 +2142,8 @@ export default function PartiesPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">मोबाइल नंबर *</label>
-                    <input required type="text" maxLength="10" placeholder="10-अंक मोबाइल" className="w-full border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" value={formData.mobileNumber} onChange={e => setFormData({...formData, mobileNumber: e.target.value})} />
+                    <label className="block text-xs font-bold text-gray-700 mb-1">मोबाइल नंबर (वैकल्पिक)</label>
+                    <input type="text" maxLength="10" placeholder="10-अंक मोबाइल (वैकल्पिक)" className="w-full border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" value={formData.mobileNumber} onChange={e => setFormData({...formData, mobileNumber: e.target.value})} />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">खाता प्रकार</label>
@@ -2157,8 +2157,8 @@ export default function PartiesPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">पता / शहर (Address) *</label>
-                  <input required type="text" placeholder="पता या शहर दर्ज करें" className="w-full border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
+                  <label className="block text-xs font-bold text-gray-700 mb-1">पता / शहर (Address - वैकल्पिक)</label>
+                  <input type="text" placeholder="पता या शहर (वैकल्पिक, डिफ़ॉल्ट: Local)" className="w-full border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>

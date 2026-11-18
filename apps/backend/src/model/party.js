@@ -6,9 +6,9 @@ const partySchema = new mongoose.Schema({
   partyType: { type: String, enum: ["supplier", "customer", "both", "personal"], default: "both" },
   contactPerson: String,
   email: String,
-  mobileNumber: { type: String, required: true },
+  mobileNumber: { type: String, default: "" },
   alternatePhone: String,
-  address: { type: String, required: true },
+  address: { type: String, default: "Local" },
   city: String,
   state: String,
   pincode: String,
@@ -48,7 +48,16 @@ const partySchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
-// Ensure uniqueness per company only for active parties
-partySchema.index({ companyId: 1, mobileNumber: 1 }, { unique: true, partialFilterExpression: { isActive: true } });
+// Ensure uniqueness per company only for active parties with a non-empty mobile number
+partySchema.index(
+  { companyId: 1, mobileNumber: 1 }, 
+  { 
+    unique: true, 
+    partialFilterExpression: { 
+      isActive: true, 
+      mobileNumber: { $type: "string", $gt: "" } 
+    } 
+  }
+);
 
 export default mongoose.model("Party", partySchema);

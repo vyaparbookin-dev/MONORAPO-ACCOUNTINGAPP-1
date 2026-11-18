@@ -17,12 +17,13 @@ export const createParty = async (req, res) => {
     }
 
     const { name, mobileNumber, address } = req.body;
-    if (!name || !mobileNumber || !address) {
-      return res.status(400).json({ success: false, error: "Name, Mobile, and Address are required" });
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: "पार्टी का नाम अनिवार्य है (Party Name is required)" });
     }
 
     const trimmedName = name.trim();
-    const trimmedAddress = address.trim();
+    const trimmedAddress = (address || "").trim() || "Local";
+    const trimmedMobile = (mobileNumber || "").trim();
     const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     // 1. Duplicate check: Same name and same address among ACTIVE parties
@@ -39,20 +40,25 @@ export const createParty = async (req, res) => {
       });
     }
 
-    // 2. Duplicate check: Same mobile number among ACTIVE parties
-    const existingParty = await Party.findOne({ mobileNumber, companyId: req.companyId, isActive: true });
-    if (existingParty) {
-      return res.status(400).json({ success: false, error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!" });
+    // 2. Duplicate check: Same mobile number among ACTIVE parties (ONLY if mobile number is provided)
+    if (trimmedMobile && trimmedMobile.length >= 10 && !trimmedMobile.startsWith("dummy_")) {
+      const existingParty = await Party.findOne({ mobileNumber: trimmedMobile, companyId: req.companyId, isActive: true });
+      if (existingParty) {
+        return res.status(400).json({ success: false, error: "इस मोबाइल नंबर से पार्टी पहले से सक्रिय है!" });
+      }
     }
 
     // 3. Check if a previously deleted / inactive party exists with this mobile number or name
+    const inactiveConditions = [
+      { name: { $regex: new RegExp(`^${escapeRegex(trimmedName)}$`, "i") } }
+    ];
+    if (trimmedMobile && trimmedMobile.length >= 10) {
+      inactiveConditions.push({ mobileNumber: trimmedMobile });
+    }
     const inactiveParty = await Party.findOne({
       companyId: req.companyId,
       isActive: false,
-      $or: [
-        { mobileNumber },
-        { name: { $regex: new RegExp(`^${escapeRegex(trimmedName)}$`, "i") } }
-      ]
+      $or: inactiveConditions
     });
 
     const rawType = (req.body.partyType || req.body.type || "customer").toLowerCase();
@@ -79,7 +85,7 @@ export const createParty = async (req, res) => {
       // Re-activate and update the deleted party slot with new details
       inactiveParty.name = trimmedName;
       inactiveParty.address = trimmedAddress;
-      inactiveParty.mobileNumber = mobileNumber;
+      inactiveParty.mobileNumber = trimmedMobile;
       inactiveParty.partyType = finalPartyType;
       inactiveParty.contactPerson = req.body.contactPerson || "";
       inactiveParty.email = req.body.email || "";
@@ -99,6 +105,9 @@ export const createParty = async (req, res) => {
 
     const party = new Party({
       ...req.body,
+      name: trimmedName,
+      address: trimmedAddress,
+      mobileNumber: trimmedMobile,
       companyId: req.companyId,
       partyType: finalPartyType,
       openingBalance: Math.abs(rawBal),
@@ -180,7 +189,7 @@ export const bulkCreateParties = async (req, res) => {
 
       const newPartyDoc = new Party({
         name,
-        mobileNumber: mobile || `99${Math.floor(10000000 + Math.random() * 90000000)}`,
+        mobileNumber: mobile || "",
         address: addr,
         partyType,
         priceLevel: p.priceLevel || "retail",
