@@ -1,12 +1,10 @@
-name: Build Android APK
+name: Build Android Expo APK (Legacy)
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
     tags:
-      - 'v*'
+      - 'expo-v*'
 
 permissions:
   contents: write

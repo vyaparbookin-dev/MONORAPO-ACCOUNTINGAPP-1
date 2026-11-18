@@ -1,5 +1,12 @@
 {
   "installCommand": "npm install --ignore-scripts",
+  "redirects": [
+    {
+      "source": "/downloads/vyaparbook-mobile.apk",
+      "destination": "https://github.com/vyaparbookin-dev/MONORAPO-ACCOUNTINGAPP-1/releases/download/latest-apk/VyaparBook.apk",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",
