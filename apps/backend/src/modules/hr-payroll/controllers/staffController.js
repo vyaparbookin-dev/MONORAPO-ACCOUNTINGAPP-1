@@ -117,17 +117,15 @@ export const autoBackfillStaffExpenses = async (companyId) => {
       staffIdMap.set(s._id.toString(), s);
     });
 
-    // STRICT: Only operating business expenses can ever be staff expenses.
+    // STRICT: Only operating business expenses with an EXPLICIT staffId can be linked to staff.
     // NEVER touch drawings / ghar_kharch / personal / personal_investment / capital / deposits.
+    // NEVER guess or assume staff based on generic category, description, or 'advance' word.
     const query = {
       companyId,
       isDeleted: { $ne: true },
       expenseType: "operating",
       familyMember: { $in: [null, "", undefined] },
-      $or: [
-        { staffId: { $exists: true, $ne: null } },
-        { category: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी/i } }
-      ]
+      staffId: { $exists: true, $ne: null }
     };
 
     const candidateExpenses = await Expense.find(query);
@@ -171,25 +169,9 @@ export const autoBackfillStaffExpenses = async (companyId) => {
         continue;
       }
 
-      let targetStaff = null;
-      if (exp.staffId && staffIdMap.has(exp.staffId.toString())) {
-        targetStaff = staffIdMap.get(exp.staffId.toString());
-      }
-      if (!targetStaff) {
-        const text = `${exp.title || ''} ${exp.description || ''} ${exp.notes || ''}`.toLowerCase();
-        for (const s of staffMembers) {
-          if (s.name && text.includes(s.name.trim().toLowerCase())) {
-            targetStaff = s;
-            break;
-          }
-        }
-      }
-      // ONLY assign to single staff if category EXPLICITLY is staff/salary/मजदूरी (NOT generic words)
-      const expCategory = (exp.category || '').toLowerCase();
-      const isExplicitStaffCategory = /staff|salary|वेतन|स्टाफ|मजदूरी/i.test(expCategory);
-      if (!targetStaff && staffMembers.length === 1 && isExplicitStaffCategory) {
-        targetStaff = staffMembers[0];
-      }
+      const targetStaff = (exp.staffId && staffIdMap.has(exp.staffId.toString()))
+        ? staffIdMap.get(exp.staffId.toString())
+        : null;
 
       if (targetStaff) {
         const amt = Number(exp.amount) || 0;

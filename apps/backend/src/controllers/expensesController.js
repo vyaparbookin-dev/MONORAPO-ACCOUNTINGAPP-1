@@ -43,8 +43,8 @@ export const addExpense = async (req, res) => {
 
     const expense = await Expense.create(expanceData);
 
-    // Auto-sync Staff Transaction if staffId is provided or detected from name / category
-    // STRICT: NEVER auto-sync personal/ghar kharch/drawings to staff
+    // Auto-sync Staff Transaction ONLY if staffId is explicitly provided by user/client
+    // STRICT: NEVER auto-sync personal/ghar kharch/drawings and NEVER guess staff from text/category/advance keywords
     const isOperating = (!expanceData.expenseType || expanceData.expenseType === 'operating') && !expanceData.familyMember;
     let staffDoc = null;
     if (isOperating && expanceData.staffId) {
@@ -53,23 +53,6 @@ export const addExpense = async (req, res) => {
       }
       if (!staffDoc) {
         staffDoc = await Staff.findOne({ companyId: req.companyId, name: new RegExp(`^${expanceData.staffId}$`, "i") });
-      }
-    }
-
-    if (isOperating && !staffDoc && amountNum > 0) {
-      const allActiveStaff = await Staff.find({ companyId: req.companyId, isActive: true });
-      const text = `${expanceData.title || ''} ${expanceData.description || ''} ${expanceData.notes || ''}`.toLowerCase();
-      const expCategory = (expanceData.category || '').toLowerCase();
-      for (const s of allActiveStaff) {
-        if (s.name && text.includes(s.name.trim().toLowerCase())) {
-          staffDoc = s;
-          break;
-        }
-      }
-      if (!staffDoc && allActiveStaff.length === 1 && (
-        expCategory.includes('staff') || expCategory.includes('salary') || expCategory.includes('स्टाफ') || expCategory.includes('वेतन') || expCategory.includes('मजदूरी')
-      )) {
-        staffDoc = allActiveStaff[0];
       }
     }
 

@@ -308,15 +308,11 @@ const startServer = () => {
           await StaffTransaction.updateMany({ debit: 0, amount: { $gt: 0 } }, [{ $set: { debit: "$amount" } }]);
         } catch (hErr) {}
 
-        const allActiveStaff = await Staff.find({ isActive: true });
         const staffExpenses = await Expense.find({
           expenseType: "operating",
           isDeleted: { $ne: true },
           familyMember: { $in: [null, "", undefined] },
-          $or: [
-            { staffId: { $exists: true, $ne: null } },
-            { category: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी/i } }
-          ]
+          staffId: { $exists: true, $ne: null }
         });
         for (const exp of staffExpenses) {
           const anyTx = await StaffTransaction.findOne({
@@ -356,21 +352,7 @@ const startServer = () => {
             continue;
           }
 
-          let staffDoc = exp.staffId ? await Staff.findById(exp.staffId) : null;
-          if (!staffDoc) {
-            const text = `${exp.title || ''} ${exp.description || ''} ${exp.notes || ''}`.toLowerCase();
-            for (const s of allActiveStaff) {
-              if (s.name && text.includes(s.name.trim().toLowerCase())) {
-                staffDoc = s;
-                break;
-              }
-            }
-            const expCat = (exp.category || '').toLowerCase();
-            const isExplicitStaffCat = /staff|salary|वेतन|स्टाफ|मजदूरी/i.test(expCat);
-            if (!staffDoc && allActiveStaff.length === 1 && isExplicitStaffCat) {
-              staffDoc = allActiveStaff[0];
-            }
-          }
+          const staffDoc = exp.staffId ? await Staff.findById(exp.staffId) : null;
 
           const resolvedCompanyId = exp.companyId || staffDoc?.companyId;
           if (staffDoc && resolvedCompanyId) {
