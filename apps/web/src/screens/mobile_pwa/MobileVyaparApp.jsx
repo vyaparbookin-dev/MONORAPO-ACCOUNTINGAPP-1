@@ -688,9 +688,9 @@ function MobileVyaparAppContent() {
       // 3. Process queued actions (vb_offline_sync_queue)
       await processOfflineSyncQueue();
 
-      // --- PHASE 2: SERVER -> LOCAL (Pull fresh cloud data & reconcile cache) ---
+      // --- PHASE 2: SERVER -> LOCAL (Pull fresh cloud data & reconcile cache silently in background) ---
       if (typeof fetchLiveDashboardData === 'function') {
-        await fetchLiveDashboardData();
+        await fetchLiveDashboardData(true);
       }
     } catch (autoSyncErr) {
       console.warn("[runBidirectionalAutoSync] note:", autoSyncErr.message);
@@ -708,12 +708,12 @@ function MobileVyaparAppContent() {
       setIsOnline(false);
     };
 
-    // ⚡ INSTANT RESUME SYNC: Whenever user unlocks phone, opens PWA, or switches back to tab
+    // ⚡ INSTANT RESUME SYNC: Whenever user unlocks phone, opens PWA, or switches back to tab (SILENT)
     const handleVisibilityOrFocus = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         runBidirectionalAutoSync();
-        if (typeof fetchLiveDashboardData === 'function') fetchLiveDashboardData();
-        if (typeof fetchGharKharchData === 'function') fetchGharKharchData();
+        if (typeof fetchLiveDashboardData === 'function') fetchLiveDashboardData(true);
+        if (typeof fetchGharKharchData === 'function') fetchGharKharchData(true);
       }
     };
 
@@ -1654,9 +1654,9 @@ function MobileVyaparAppContent() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
-  const fetchGharKharchData = async () => {
+  const fetchGharKharchData = async (isSilent = false) => {
     try {
-      setLoadingGharKharch(true);
+      if (!isSilent) setLoadingGharKharch(true);
       let localList = [];
       try {
         const stored = localStorage.getItem("vb_local_expenses") || localStorage.getItem("expenses") || localStorage.getItem("local_expenses");
@@ -1709,7 +1709,7 @@ function MobileVyaparAppContent() {
     } catch (e) {
       console.error("Failed to fetch Ghar Kharch:", e);
     } finally {
-      setLoadingGharKharch(false);
+      if (!isSilent) setLoadingGharKharch(false);
     }
   };
 
@@ -2282,8 +2282,8 @@ function MobileVyaparAppContent() {
     }
   };
 
-  const fetchLiveDashboardData = async () => {
-    setLoading(true);
+  const fetchLiveDashboardData = async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
     try {
       const [billsRes, partiesRes, invRes, catRes, brandRes, daybookRes] = await Promise.allSettled([
         api.get("/api/billing?limit=500"),
@@ -2572,7 +2572,7 @@ function MobileVyaparAppContent() {
     } catch (e) {
       console.error("Dashboard fetch error:", e);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 

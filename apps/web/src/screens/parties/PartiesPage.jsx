@@ -300,9 +300,9 @@ export default function PartiesPage() {
     }
   };
 
-  const fetchParties = async () => {
+  const fetchParties = async (isSilent = false) => {
     try {
-      setLoading(true);
+      if (!isSilent) setLoading(true);
       // Local-First: डेस्कटॉप ऐप के लिए लोकल SQLite से डेटा लें
       if (window.electron && window.electron.db) {
         const localParties = await window.electron.db.getCustomers();
@@ -346,19 +346,19 @@ export default function PartiesPage() {
       }
     } catch (error) {
       console.error("Error fetching parties", error);
-      if (!window.electron) setParties([]);
+      if (!window.electron && !isSilent) setParties([]);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
   useEffect(() => { 
     fetchParties(); 
 
-    // ⚡ Auto-sync when switching back to tab/window or every 15 seconds
+    // ⚡ Auto-sync when switching back to tab/window or every 15 seconds (SILENT background sync: no screen blinking)
     const handleFocus = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        fetchParties();
+        fetchParties(true);
       }
     };
     if (typeof document !== 'undefined') {
@@ -368,7 +368,7 @@ export default function PartiesPage() {
 
     const interval = setInterval(() => {
       if (typeof navigator === 'undefined' || navigator.onLine) {
-        fetchParties();
+        fetchParties(true);
       }
     }, 15000);
 
