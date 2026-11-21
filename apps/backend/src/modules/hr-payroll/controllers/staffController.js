@@ -4,7 +4,7 @@ import StaffTransaction from "../models/StaffTransaction.js";
 import Attendance from "../models/attendance.js";
 import User from "../../../model/user.js";
 import bcryptjs from "bcryptjs";
-import { syncStaffToSupabase, syncAttendanceToSupabase, syncStaffTxToSupabase } from "../../../services/supabaseSyncService.js";
+import { syncStaffToSupabase, syncAttendanceToSupabase, syncStaffTxToSupabase, syncExpenseToSupabase } from "../../../services/supabaseSyncService.js";
 import { getStaffFromSupabase, getStaffByIdFromSupabase, getStaffTransactionsFromSupabase } from "../../../services/supabaseReadService.js";
 
 export const createStaff = async (req, res) => {
@@ -117,33 +117,36 @@ export const autoBackfillStaffExpenses = async (companyId) => {
       staffIdMap.set(s._id.toString(), s);
     });
 
-    // Find operating expenses that might belong to staff
+    // STRICT: Only operating business expenses can ever be staff expenses.
+    // NEVER touch drawings / ghar_kharch / personal / personal_investment / capital / deposits.
     const query = {
       companyId,
       isDeleted: { $ne: true },
+      expenseType: "operating",
+      familyMember: { $in: [null, "", undefined] },
       $or: [
         { staffId: { $exists: true, $ne: null } },
-        { category: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी|advance|एडवांस/i } },
-        { title: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी|advance|एडवांस|सतीश|satish/i } },
-        { description: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी|advance|एडवांस|सतीश|satish/i } }
+        { category: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी/i } }
       ]
     };
 
     const candidateExpenses = await Expense.find(query);
     for (const exp of candidateExpenses) {
-      let existingTx = null;
-      if (exp.staffTransactionId) {
-        existingTx = await StaffTransaction.findOne({ _id: exp.staffTransactionId, isDeleted: { $ne: true } });
+      // STRICT SAFETY: Check if ANY StaffTransaction (active or soft-deleted) was ever linked to this expense
+      const anyLinkedTx = await StaffTransaction.findOne({
+        $or: [
+          ...(exp.staffTransactionId ? [{ _id: exp.staffTransactionId }] : []),
+          { expenseId: exp._id },
+          { referenceExpenseId: exp._id }
+        ]
+      });
+
+      // If user deliberately deleted this transaction earlier, NEVER recreate or resurrect it!
+      if (anyLinkedTx && anyLinkedTx.isDeleted) {
+        continue;
       }
-      if (!existingTx) {
-        existingTx = await StaffTransaction.findOne({
-          $or: [
-            { expenseId: exp._id },
-            { referenceExpenseId: exp._id }
-          ],
-          isDeleted: { $ne: true }
-        });
-      }
+
+      let existingTx = anyLinkedTx;
 
       if (existingTx) {
         const expAmt = Number(exp.amount) || 0;
@@ -181,7 +184,10 @@ export const autoBackfillStaffExpenses = async (companyId) => {
           }
         }
       }
-      if (!targetStaff && staffMembers.length === 1) {
+      // ONLY assign to single staff if category EXPLICITLY is staff/salary/मजदूरी (NOT generic words)
+      const expCategory = (exp.category || '').toLowerCase();
+      const isExplicitStaffCategory = /staff|salary|वेतन|स्टाफ|मजदूरी/i.test(expCategory);
+      if (!targetStaff && staffMembers.length === 1 && isExplicitStaffCategory) {
         targetStaff = staffMembers[0];
       }
 
@@ -1513,6 +1519,7 @@ export const deleteStaffTransaction = async (req, res) => {
     // Soft delete the transaction
     tx.isDeleted = true;
     await tx.save();
+    syncStaffTxToSupabase(tx).catch(e => console.warn("[Supabase Sync] staff tx delete note:", e.message));
 
     // Revert staff balance
     try {
@@ -1521,54 +1528,63 @@ export const deleteStaffTransaction = async (req, res) => {
         if (tx.debit > 0) staff.balance += tx.debit;    // Was deducted, add back
         if (tx.credit > 0) staff.balance -= tx.credit;  // Was credited, remove
         await staff.save();
+        syncStaffToSupabase(staff).catch(e => console.warn("[Supabase Sync] staff balance revert note:", e.message));
       }
     } catch (balErr) {
       console.warn("Staff balance revert warning:", balErr.message);
     }
 
-    // Delete linked expense (2-way sync)
+    // Delete or unlink linked expense (2-way sync)
     try {
       let linkedExpense = null;
       if (tx.expenseId) {
-        linkedExpense = await Expense.findOneAndUpdate(
-          { _id: tx.expenseId, companyId: req.companyId }, 
-          { $set: { isDeleted: true } },
-          { new: false } // return OLD doc to read bankAccountId
-        );
+        linkedExpense = await Expense.findOne({ _id: tx.expenseId, companyId: req.companyId });
       } else if (tx.staffId && tx.debit > 0) {
-        linkedExpense = await Expense.findOneAndUpdate(
-          { staffTransactionId: tx._id, companyId: req.companyId, isDeleted: { $ne: true } }, 
-          { $set: { isDeleted: true } },
-          { new: false }
-        );
-        if (!linkedExpense) {
-          linkedExpense = await Expense.findOneAndUpdate(
-            { staffId: tx.staffId, companyId: req.companyId, amount: tx.debit, isDeleted: { $ne: true } }, 
-            { $set: { isDeleted: true } },
-            { new: false }
-          );
-        }
+        linkedExpense = await Expense.findOne({ staffTransactionId: tx._id, companyId: req.companyId, isDeleted: { $ne: true } })
+          || await Expense.findOne({ staffId: tx.staffId, companyId: req.companyId, amount: tx.debit, isDeleted: { $ne: true } });
       }
 
-      // Revert bank balance if expense was bank-linked
-      if (linkedExpense && linkedExpense.bankAccountId && Number(linkedExpense.amount) > 0) {
-        const BankAccount = (await import("../../model/BankAccount.js")).default;
-        const bank = await BankAccount.findOne({ _id: linkedExpense.bankAccountId, companyId: req.companyId });
-        if (bank) {
-          const revAmt = Number(linkedExpense.amount);
-          if (bank.accountType === "CC_OVERDRAFT") {
-            bank.currentOutstanding = Math.max(0, (Number(bank.currentOutstanding) || 0) - revAmt);
-          } else {
-            bank.currentBalance = (Number(bank.currentBalance) || 0) + revAmt;
+      if (linkedExpense) {
+        const isPersonal = linkedExpense.expenseType === 'drawings' 
+          || linkedExpense.expenseType === 'ghar_kharch' 
+          || linkedExpense.expenseType === 'personal' 
+          || Boolean(linkedExpense.familyMember);
+
+        if (isPersonal) {
+          // STRICT SAFETY: Do NOT delete the user's personal / ghar kharch expense!
+          // Only unlink the staff transaction reference so personal expense remains intact.
+          linkedExpense.staffId = undefined;
+          linkedExpense.staffTransactionId = undefined;
+          linkedExpense.isDeleted = false;
+          await linkedExpense.save();
+          syncExpenseToSupabase(linkedExpense).catch(e => console.warn("[Supabase Sync] unlinked expense note:", e.message));
+        } else {
+          // Operating staff expense: soft delete it
+          linkedExpense.isDeleted = true;
+          await linkedExpense.save();
+          syncExpenseToSupabase(linkedExpense).catch(e => console.warn("[Supabase Sync] expense delete note:", e.message));
+
+          // Revert bank balance if expense was bank-linked
+          if (linkedExpense.bankAccountId && Number(linkedExpense.amount) > 0) {
+            const BankAccount = (await import("../../model/BankAccount.js")).default;
+            const bank = await BankAccount.findOne({ _id: linkedExpense.bankAccountId, companyId: req.companyId });
+            if (bank) {
+              const revAmt = Number(linkedExpense.amount);
+              if (bank.accountType === "CC_OVERDRAFT") {
+                bank.currentOutstanding = Math.max(0, (Number(bank.currentOutstanding) || 0) - revAmt);
+              } else {
+                bank.currentBalance = (Number(bank.currentBalance) || 0) + revAmt;
+              }
+              bank.transactions.push({
+                date: new Date(),
+                type: "deposit",
+                amount: revAmt,
+                note: `स्टाफ लेनदेन हटाया (रिफंड): ${linkedExpense.title || 'खर्च'}`,
+                referenceNo: `REV-STF-${tx._id}`
+              });
+              await bank.save();
+            }
           }
-          bank.transactions.push({
-            date: new Date(),
-            type: "deposit",
-            amount: revAmt,
-            note: `स्टाफ लेनदेन हटाया (रिफंड): ${linkedExpense.title || 'खर्च'}`,
-            referenceNo: `REV-STF-${tx._id}`
-          });
-          await bank.save();
         }
       }
     } catch (expDelErr) {

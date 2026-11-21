@@ -44,8 +44,10 @@ export const addExpense = async (req, res) => {
     const expense = await Expense.create(expanceData);
 
     // Auto-sync Staff Transaction if staffId is provided or detected from name / category
+    // STRICT: NEVER auto-sync personal/ghar kharch/drawings to staff
+    const isOperating = (!expanceData.expenseType || expanceData.expenseType === 'operating') && !expanceData.familyMember;
     let staffDoc = null;
-    if (expanceData.staffId) {
+    if (isOperating && expanceData.staffId) {
       if (mongoose.Types.ObjectId.isValid(expanceData.staffId)) {
         staffDoc = await Staff.findOne({ _id: expanceData.staffId, companyId: req.companyId }) || await Staff.findById(expanceData.staffId);
       }
@@ -54,7 +56,7 @@ export const addExpense = async (req, res) => {
       }
     }
 
-    if (!staffDoc && amountNum > 0) {
+    if (isOperating && !staffDoc && amountNum > 0) {
       const allActiveStaff = await Staff.find({ companyId: req.companyId, isActive: true });
       const text = `${expanceData.title || ''} ${expanceData.description || ''} ${expanceData.notes || ''}`.toLowerCase();
       const expCategory = (expanceData.category || '').toLowerCase();
@@ -65,7 +67,7 @@ export const addExpense = async (req, res) => {
         }
       }
       if (!staffDoc && allActiveStaff.length === 1 && (
-        expCategory.includes('staff') || expCategory.includes('salary') || expCategory.includes('स्टाफ') || expCategory.includes('वेतन') || expCategory.includes('एडवांस') || expCategory.includes('advance') || expCategory.includes('मजदूरी')
+        expCategory.includes('staff') || expCategory.includes('salary') || expCategory.includes('स्टाफ') || expCategory.includes('वेतन') || expCategory.includes('मजदूरी')
       )) {
         staffDoc = allActiveStaff[0];
       }
@@ -584,6 +586,7 @@ export const deleteExpense = async (req, res) => {
       oldExpense = await Expense.findOne(query);
       if (oldExpense) {
         await Expense.findOneAndUpdate(query, { isDeleted: true }, { new: true });
+        syncExpenseToSupabase({ ...(oldExpense.toObject ? oldExpense.toObject() : oldExpense), isDeleted: true }).catch(() => {});
       }
     } else if (id && id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)) {
       // Supabase UUID passed from frontend
@@ -597,6 +600,7 @@ export const deleteExpense = async (req, res) => {
       oldExpense = await Expense.findOne({ companyId: req.companyId, isDeleted: { $ne: true } });
       if (oldExpense) {
         await Expense.findOneAndUpdate({ _id: oldExpense._id }, { isDeleted: true });
+        syncExpenseToSupabase({ ...(oldExpense.toObject ? oldExpense.toObject() : oldExpense), isDeleted: true }).catch(() => {});
       }
     } else {
       return res.status(400).json({ success: false, error: "Invalid expense ID format" });
@@ -611,22 +615,30 @@ export const deleteExpense = async (req, res) => {
        // Revert linked Staff Transaction if this expense was for a staff advance
         if (oldExpense.staffId && Number(oldExpense.amount) > 0) {
           try {
+            let stTx = null;
             if (oldExpense.staffTransactionId) {
-              await StaffTransaction.findOneAndUpdate(
+              stTx = await StaffTransaction.findOneAndUpdate(
                 { _id: oldExpense.staffTransactionId, companyId: req.companyId },
-                { isDeleted: true }
+                { isDeleted: true },
+                { new: true }
               );
             } else {
-              const byExp = await StaffTransaction.findOneAndUpdate(
+              stTx = await StaffTransaction.findOneAndUpdate(
                 { expenseId: oldExpense._id, companyId: req.companyId },
-                { isDeleted: true }
+                { isDeleted: true },
+                { new: true }
               );
-              if (!byExp) {
-                await StaffTransaction.findOneAndUpdate(
+              if (!stTx) {
+                stTx = await StaffTransaction.findOneAndUpdate(
                   { staffId: oldExpense.staffId, companyId: req.companyId, debit: Number(oldExpense.amount), isDeleted: { $ne: true } },
-                  { isDeleted: true }
+                  { isDeleted: true },
+                  { new: true }
                 );
               }
+            }
+
+            if (stTx) {
+              syncStaffTxToSupabase(stTx).catch(() => {});
             }
 
             // Revert staff balance
@@ -635,6 +647,7 @@ export const deleteExpense = async (req, res) => {
               staffDoc.balance = (Number(staffDoc.balance) || 0) + Number(oldExpense.amount);
               staffDoc.updatedAt = new Date();
               await staffDoc.save();
+              syncStaffToSupabase(staffDoc).catch(() => {});
             }
           } catch (stErr) {
             console.warn("Error reverting staff transaction on expense deletion:", stErr.message);

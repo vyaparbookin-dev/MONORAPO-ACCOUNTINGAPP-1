@@ -312,22 +312,27 @@ const startServer = () => {
         const staffExpenses = await Expense.find({
           expenseType: "operating",
           isDeleted: { $ne: true },
+          familyMember: { $in: [null, "", undefined] },
           $or: [
             { staffId: { $exists: true, $ne: null } },
-            { category: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी|advance|एडवांस/i } },
-            { title: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी|advance|एडवांस|सतीश|satish/i } },
-            { description: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी|advance|एडवांस|सतीश|satish/i } }
+            { category: { $regex: /staff|salary|वेतन|स्टाफ|मजदूरी/i } }
           ]
         });
         for (const exp of staffExpenses) {
-          const existingTx = await StaffTransaction.findOne({
+          const anyTx = await StaffTransaction.findOne({
             $or: [
               ...(exp.staffTransactionId ? [{ _id: exp.staffTransactionId }] : []),
               { expenseId: exp._id },
               { referenceExpenseId: exp._id }
-            ],
-            isDeleted: { $ne: true }
+            ]
           });
+
+          // If transaction was intentionally deleted by user, never resurrect
+          if (anyTx && anyTx.isDeleted) {
+            continue;
+          }
+
+          const existingTx = anyTx;
           if (existingTx) {
             const expAmt = Number(exp.amount || 0);
             const textToAnalyze = `${exp.title || ''} ${exp.category || ''} ${exp.description || ''} ${exp.notes || ''} ${existingTx.notes || ''}`;
@@ -360,7 +365,9 @@ const startServer = () => {
                 break;
               }
             }
-            if (!staffDoc && allActiveStaff.length === 1) {
+            const expCat = (exp.category || '').toLowerCase();
+            const isExplicitStaffCat = /staff|salary|वेतन|स्टाफ|मजदूरी/i.test(expCat);
+            if (!staffDoc && allActiveStaff.length === 1 && isExplicitStaffCat) {
               staffDoc = allActiveStaff[0];
             }
           }
