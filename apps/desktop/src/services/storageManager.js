@@ -82,6 +82,7 @@ class StorageManager {
       name: pName || "अज्ञात पार्टी",
       mobileNumber: pMobile,
       phone: pMobile,
+      alternatePhone: String(p.alternatePhone || p.alternate_phone || "").trim(),
       balance: finalBal,
       currentBalance: finalBal,
       openingBalance: opBal,
@@ -328,6 +329,7 @@ class StorageManager {
           currentBalance: finalBal,
           openingBalance: normServer.openingBalance ?? localP.openingBalance ?? 0,
           openingBalanceDate: normServer.openingBalanceDate || localP.openingBalanceDate,
+          alternatePhone: normServer.alternatePhone || localP.alternatePhone || "",
           hasLocalEdits: hasUnsyncedLocalEdits
         };
       } else {

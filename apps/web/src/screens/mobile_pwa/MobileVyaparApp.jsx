@@ -772,6 +772,7 @@ function MobileVyaparAppContent() {
   const [showAddPartyModal, setShowAddPartyModal] = useState(false);
   const [newPartyName, setNewPartyName] = useState("");
   const [newPartyPhone, setNewPartyPhone] = useState("");
+  const [newPartyAltPhone, setNewPartyAltPhone] = useState("");
   const [newPartyAddress, setNewPartyAddress] = useState("");
   const [newPartyBalance, setNewPartyBalance] = useState("0");
   const [newPartyOpeningBalanceDate, setNewPartyOpeningBalanceDate] = useState("");
@@ -2995,8 +2996,9 @@ function MobileVyaparAppContent() {
     const existingParty = selectedPartyObject || (parties || []).find(p => {
       const pName = String(p?.name || '').trim().toLowerCase();
       const pPhone = String(p?.phone || p?.mobileNumber || '').trim();
+      const pAltPhone = String(p?.alternatePhone || p?.alternate_phone || '').trim();
       if (finalCustomer && finalCustomer !== "नकद ग्राहक (Walk-in)" && pName === finalCustomer.toLowerCase()) return true;
-      if (finalPhone && pPhone && pPhone === finalPhone) return true;
+      if (finalPhone && ((pPhone && pPhone === finalPhone) || (pAltPhone && pAltPhone === finalPhone))) return true;
       return false;
     });
     const resolvedPartyId = existingParty?._id || existingParty?.id || undefined;
@@ -3411,6 +3413,7 @@ function MobileVyaparAppContent() {
       const payload = {
         name: trimmedName,
         mobileNumber: newPartyPhone.trim(),
+        alternatePhone: newPartyAltPhone.trim() || undefined,
         openingBalance: Math.abs(rawBal),
         openingBalanceDate: newPartyOpeningBalanceDate || undefined,
         date: newPartyOpeningBalanceDate || undefined,
@@ -3437,6 +3440,7 @@ function MobileVyaparAppContent() {
         const payload = {
           name: trimmedName,
           mobileNumber: newPartyPhone.trim(),
+          alternatePhone: newPartyAltPhone.trim() || undefined,
           openingBalance: Math.abs(rawBal),
           openingBalanceDate: newPartyOpeningBalanceDate || undefined,
           date: newPartyOpeningBalanceDate || undefined,
@@ -3463,6 +3467,8 @@ function MobileVyaparAppContent() {
           name: payload.name,
           phone: payload.mobileNumber,
           mobileNumber: payload.mobileNumber,
+          alternatePhone: payload.alternatePhone,
+          alternate_phone: payload.alternatePhone,
           balance: updatedBal,
           currentBalance: updatedBal,
           openingBalance: Math.abs(rawBal),
@@ -3489,6 +3495,8 @@ function MobileVyaparAppContent() {
           name: payload.name,
           phone: payload.mobileNumber,
           mobileNumber: payload.mobileNumber,
+          alternatePhone: payload.alternatePhone,
+          alternate_phone: payload.alternatePhone,
           balance: signedBal,
           currentBalance: signedBal,
           openingBalance: Math.abs(rawBal),
@@ -3519,6 +3527,7 @@ function MobileVyaparAppContent() {
       // reset all party form states
       setNewPartyName("");
       setNewPartyPhone("");
+      setNewPartyAltPhone("");
       setNewPartyBalance("0");
       setNewPartyOpeningBalanceDate("");
       setNewPartyAddress("");
@@ -3547,6 +3556,7 @@ function MobileVyaparAppContent() {
     setEditingParty(party);
     setNewPartyName(party.name || "");
     setNewPartyPhone(party.phone || party.mobileNumber || "");
+    setNewPartyAltPhone(party.alternatePhone || party.alternate_phone || "");
     setNewPartyAddress(party.address || "");
     const pType = party.type || party.partyType || "customer";
     setNewPartyType(pType);
@@ -8177,7 +8187,12 @@ function MobileVyaparAppContent() {
         {activeTab === "parties" && (() => {
           const filteredParties = deduplicatedParties.filter(p => {
             const hasSearch = searchQuery && searchQuery.trim().length > 0;
-            const matchesSearch = !hasSearch || String(p?.name || '').toLowerCase().includes(searchQuery.toLowerCase().trim()) || String(p?.phone || p?.mobileNumber || '').includes(searchQuery.trim());
+            const q = (searchQuery || '').toLowerCase().trim();
+            const matchesSearch = !hasSearch || 
+              String(p?.name || '').toLowerCase().includes(q) || 
+              String(p?.phone || p?.mobileNumber || '').includes(q) ||
+              String(p?.alternatePhone || p?.alternate_phone || '').includes(q) ||
+              String(p?.address || '').toLowerCase().includes(q);
 
             const pType = (p?.type || p?.partyType || 'customer').toLowerCase();
             const bal = getPartyDisplayBalance(p);
@@ -8385,8 +8400,12 @@ function MobileVyaparAppContent() {
                               </span>
                             )}
                           </div>
-                          <div className="text-[11px] text-slate-500 flex items-center gap-1">
-                            <Phone size={11} /> {p.phone || p.mobileNumber || "कोई फोन नहीं"}
+                          <div className="text-[11px] text-slate-500 flex items-center gap-1 flex-wrap">
+                            <Phone size={11} /> 
+                            <span>{p.phone || p.mobileNumber || "कोई फोन नहीं"}</span>
+                            {(p.alternatePhone || p.alternate_phone) && (
+                              <span className="text-[10px] text-slate-400">, {p.alternatePhone || p.alternate_phone}</span>
+                            )}
                           </div>
                           {p.address && p.address !== "Local" && (
                             <div className="text-[10px] text-slate-400 flex items-center gap-1">
@@ -9199,14 +9218,18 @@ function MobileVyaparAppContent() {
                   {showPartySuggestions && (
                     <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-44 overflow-y-auto divide-y divide-slate-100">
                       {parties
-                        .filter(p => String(p?.name || '').toLowerCase().includes(String(billCustomer || '').toLowerCase()) || String(p?.phone || p?.mobileNumber || '').includes(String(billCustomer || '')))
+                        .filter(p => 
+                          String(p?.name || '').toLowerCase().includes(String(billCustomer || '').toLowerCase()) || 
+                          String(p?.phone || p?.mobileNumber || '').includes(String(billCustomer || '')) ||
+                          String(p?.alternatePhone || p?.alternate_phone || '').includes(String(billCustomer || ''))
+                        )
                         .slice(0, 6)
                         .map(p => (
                           <div
                             key={p.id}
                             onClick={() => {
                               setBillCustomer(p.name);
-                              setBillCustomerPhone(p.phone || "");
+                              setBillCustomerPhone(p.phone || p.mobileNumber || p.alternatePhone || p.alternate_phone || "");
                               setSelectedPartyObject(p);
                               setShowPartySuggestions(false);
                             }}
@@ -9214,7 +9237,10 @@ function MobileVyaparAppContent() {
                           >
                             <div>
                               <div className="font-extrabold text-xs text-[#0F172A]">👤 {p.name}</div>
-                              <div className="text-[10px] text-slate-400">{p.phone || "No Phone"}</div>
+                              <div className="text-[10px] text-slate-400">
+                                {p.phone || p.mobileNumber || "No Phone"}
+                                {(p.alternatePhone || p.alternate_phone) ? ` / ${p.alternatePhone || p.alternate_phone}` : ''}
+                              </div>
                             </div>
                             <div className="text-right font-black text-xs text-[#DC2626]">
                               {Number(p.balance || 0) !== 0 ? `₹${Number(p.balance || 0).toLocaleString('en-IN')}` : '₹0'}
@@ -11578,6 +11604,13 @@ function MobileVyaparAppContent() {
               className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
             />
             <input 
+              type="tel" 
+              placeholder="दूसरा मोबाइल (वैकल्पिक / Alt Phone)" 
+              value={newPartyAltPhone}
+              onChange={(e) => setNewPartyAltPhone(e.target.value)}
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
+            />
+            <input 
               type="text" 
               placeholder="पता / शहर (Address)" 
               value={newPartyAddress}
@@ -11666,8 +11699,11 @@ function MobileVyaparAppContent() {
                     </span>
                   )}
                 </div>
-                <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5 flex-wrap">
                   <Phone size={11} /> <span>{selectedPartyDetail.phone || selectedPartyDetail.mobileNumber || "कोई फोन नहीं"}</span>
+                  {(selectedPartyDetail.alternatePhone || selectedPartyDetail.alternate_phone) && (
+                    <span className="text-[11px] text-slate-400 font-medium">/ {selectedPartyDetail.alternatePhone || selectedPartyDetail.alternate_phone}</span>
+                  )}
                   {selectedPartyDetail.address && <span className="ml-1 text-[10px] text-slate-400 truncate">• {selectedPartyDetail.address}</span>}
                 </div>
               </div>

@@ -133,6 +133,7 @@ export const syncPartyToSupabase = async (party) => {
       name: party.name,
       party_type: (party.type === 'supplier' || party.partyType === 'supplier') ? 'supplier' : 'customer',
       mobile_number: party.mobileNumber || party.phone || "",
+      alternate_phone: party.alternatePhone || party.alternate_phone || null,
       billing_address: party.address || "",
       gst_number: party.gstin || party.gstNumber || null,
       pan_number: party.pan || null,

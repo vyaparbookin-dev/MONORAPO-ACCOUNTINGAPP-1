@@ -74,6 +74,7 @@ export default function PartiesPage() {
   const [formData, setFormData] = useState({
     name: '',
     mobileNumber: '',
+    alternatePhone: '',
     address: '',
     partyType: 'customer',
     priceLevel: 'retail',
@@ -89,6 +90,7 @@ export default function PartiesPage() {
   const [editFormData, setEditFormData] = useState({
     name: '',
     mobileNumber: '',
+    alternatePhone: '',
     address: '',
     partyType: 'customer',
     priceLevel: 'retail',
@@ -411,6 +413,8 @@ export default function PartiesPage() {
       const payload = {
         ...formData,
         name: trimmedName,
+        mobileNumber: formData.mobileNumber.trim(),
+        alternatePhone: formData.alternatePhone ? formData.alternatePhone.trim() : '',
         address: trimmedAddr,
         openingBalance: Math.abs(rawBal),
         openingBalanceDate: formData.openingBalanceDate || undefined,
@@ -442,7 +446,7 @@ export default function PartiesPage() {
       }
 
       setShowModal(false);
-      setFormData({ name: '', mobileNumber: '', address: '', partyType: 'customer', priceLevel: 'retail', openingBalance: '', openingBalanceDate: '', creditLimit: '' });
+      setFormData({ name: '', mobileNumber: '', alternatePhone: '', address: '', partyType: 'customer', priceLevel: 'retail', openingBalance: '', openingBalanceDate: '', creditLimit: '' });
       // Keep user's active filter tab (e.g. 'to_collect' / 'to_pay') so view is never disrupted
       if (signedBal > 0 && filterType !== 'to_collect' && filterType !== 'customer' && filterType !== 'all') {
         setFilterType('to_collect');
@@ -473,6 +477,7 @@ export default function PartiesPage() {
     setEditFormData({
       name: party.name || '',
       mobileNumber: party.mobileNumber || party.phone || '',
+      alternatePhone: party.alternatePhone || party.alternate_phone || '',
       address: party.address || '',
       partyType: party.partyType || party.type || 'customer',
       priceLevel: party.priceLevel || 'retail',
@@ -526,6 +531,7 @@ export default function PartiesPage() {
       const payload = {
         name: trimmedName,
         mobileNumber: editFormData.mobileNumber.trim(),
+        alternatePhone: editFormData.alternatePhone ? editFormData.alternatePhone.trim() : '',
         address: trimmedAddr,
         partyType: editFormData.partyType,
         priceLevel: editFormData.priceLevel,
@@ -1277,7 +1283,12 @@ export default function PartiesPage() {
 
   // Filtered Parties calculation
   const filteredParties = deduplicatedParties.filter(p => {
-    const matchesSearch = String(p?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || String(p?.mobileNumber || p?.phone || '').includes(searchTerm);
+    const q = searchTerm.toLowerCase().trim();
+    const matchesSearch = !q || 
+      String(p?.name || '').toLowerCase().includes(q) || 
+      String(p?.mobileNumber || p?.phone || '').includes(q) ||
+      String(p?.alternatePhone || p?.alternate_phone || '').includes(q) ||
+      String(p?.address || '').toLowerCase().includes(q);
     const pType = (p?.partyType || p?.type || 'customer').toLowerCase();
     const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
 
@@ -2292,6 +2303,9 @@ export default function PartiesPage() {
                           <div className="flex items-center gap-1.5 font-medium">
                             <Phone size={13} className="text-gray-400" />
                             <span>{p.mobileNumber || p.phone || '-'}</span>
+                            {(p.alternatePhone || p.alternate_phone) && (
+                              <span className="text-[11px] text-slate-400 font-normal">, {p.alternatePhone || p.alternate_phone}</span>
+                            )}
                           </div>
                           {p.address && <div className="text-[11px] text-gray-400 mt-0.5">📍 {p.address}</div>}
                         </td>
@@ -2393,20 +2407,24 @@ export default function PartiesPage() {
                   <label className="block text-xs font-bold text-gray-700 mb-1">पार्टी का नाम *</label>
                   <input required type="text" placeholder="नाम दर्ज करें" className="w-full border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">मोबाइल नंबर (वैकल्पिक)</label>
-                    <input type="text" maxLength="10" placeholder="10-अंक मोबाइल (वैकल्पिक)" className="w-full border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" value={formData.mobileNumber} onChange={e => setFormData({...formData, mobileNumber: e.target.value})} />
+                    <label className="block text-xs font-bold text-gray-700 mb-1">मोबाइल नंबर (Primary Phone)</label>
+                    <input type="text" maxLength="10" placeholder="10-अंक मुख्य मोबाइल (वैकल्पिक)" className="w-full border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" value={formData.mobileNumber} onChange={e => setFormData({...formData, mobileNumber: e.target.value})} />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">खाता प्रकार</label>
-                    <select className="w-full border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 font-medium" value={formData.partyType} onChange={e => setFormData({...formData, partyType: e.target.value})}>
-                      <option value="customer">🛒 Customer (ग्राहक)</option>
-                      <option value="supplier">🏢 Supplier (सप्लायर)</option>
-                      <option value="both">Both (ग्राहक व सप्लायर)</option>
-                      <option value="personal">👤 Personal (पर्सनल खाता)</option>
-                    </select>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">दूसरा मोबाइल (वैकल्पिक / Alt Phone)</label>
+                    <input type="text" maxLength="10" placeholder="अन्य या व्हाट्सएप नंबर" className="w-full border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" value={formData.alternatePhone || ''} onChange={e => setFormData({...formData, alternatePhone: e.target.value})} />
                   </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">खाता प्रकार</label>
+                  <select className="w-full border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 font-medium" value={formData.partyType} onChange={e => setFormData({...formData, partyType: e.target.value})}>
+                    <option value="customer">🛒 Customer (ग्राहक)</option>
+                    <option value="supplier">🏢 Supplier (सप्लायर)</option>
+                    <option value="both">Both (ग्राहक व सप्लायर)</option>
+                    <option value="personal">👤 Personal (पर्सनल खाता)</option>
+                  </select>
                 </div>
 
                 <div>
@@ -2458,27 +2476,31 @@ export default function PartiesPage() {
                   <label className="block text-xs font-bold text-gray-700 mb-1">पार्टी का नाम *</label>
                   <input required type="text" className="w-full border rounded-xl px-3 py-2 text-sm font-bold" value={editFormData.name} onChange={e => setEditFormData({...editFormData, name: e.target.value})} />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">मोबाइल नंबर</label>
-                    <input type="text" maxLength="10" className="w-full border rounded-xl px-3 py-2 text-sm" value={editFormData.mobileNumber} onChange={e => setEditFormData({...editFormData, mobileNumber: e.target.value})} />
+                    <label className="block text-xs font-bold text-gray-700 mb-1">मोबाइल नंबर (Primary Phone)</label>
+                    <input type="text" maxLength="10" placeholder="मुख्य मोबाइल नंबर" className="w-full border rounded-xl px-3 py-2 text-sm" value={editFormData.mobileNumber} onChange={e => setEditFormData({...editFormData, mobileNumber: e.target.value})} />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">खाता प्रकार</label>
-                    <select className="w-full border rounded-xl px-3 py-2 text-sm font-medium" value={editFormData.partyType} onChange={e => {
-                      const nextType = e.target.value;
-                      setEditFormData(prev => ({
-                        ...prev,
-                        partyType: nextType,
-                        balanceDir: nextType === 'supplier' ? 'negative' : 'positive'
-                      }));
-                    }}>
-                      <option value="customer">🛒 Customer (ग्राहक)</option>
-                      <option value="supplier">🏢 Supplier (सप्लायर)</option>
-                      <option value="both">Both (ग्राहक व सप्लायर)</option>
-                      <option value="personal">👤 Personal (पर्सनल)</option>
-                    </select>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">दूसरा मोबाइल (वैकल्पिक / Alt Phone)</label>
+                    <input type="text" maxLength="10" placeholder="अन्य या व्हाट्सएप नंबर" className="w-full border rounded-xl px-3 py-2 text-sm" value={editFormData.alternatePhone || ''} onChange={e => setEditFormData({...editFormData, alternatePhone: e.target.value})} />
                   </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">खाता प्रकार</label>
+                  <select className="w-full border rounded-xl px-3 py-2 text-sm font-medium" value={editFormData.partyType} onChange={e => {
+                    const nextType = e.target.value;
+                    setEditFormData(prev => ({
+                      ...prev,
+                      partyType: nextType,
+                      balanceDir: nextType === 'supplier' ? 'negative' : 'positive'
+                    }));
+                  }}>
+                    <option value="customer">🛒 Customer (ग्राहक)</option>
+                    <option value="supplier">🏢 Supplier (सप्लायर)</option>
+                    <option value="both">Both (ग्राहक व सप्लायर)</option>
+                    <option value="personal">👤 Personal (पर्सनल)</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">पता / शहर (Address)</label>
