@@ -93,7 +93,12 @@ export const createParty = async (req, res) => {
       inactiveParty.gstNumber = req.body.gstNumber || undefined;
       inactiveParty.panNumber = req.body.panNumber || "";
       inactiveParty.creditLimit = Number(req.body.creditLimit || 0);
+      const opDate = req.body.openingBalanceDate || req.body.asOfDate || (req.body.date ? new Date(req.body.date) : undefined);
       inactiveParty.openingBalance = Math.abs(rawBal);
+      if (opDate) {
+        inactiveParty.openingBalanceDate = new Date(opDate);
+        inactiveParty.createdAt = new Date(opDate);
+      }
       inactiveParty.currentBalance = finalBalance;
       inactiveParty.notes = req.body.notes || "";
       inactiveParty.isActive = true;
@@ -103,6 +108,7 @@ export const createParty = async (req, res) => {
       return res.status(201).json({ success: true, party: inactiveParty, message: `Party ${name} created successfully!` });
     }
 
+    const opDate = req.body.openingBalanceDate || req.body.asOfDate || (req.body.date ? new Date(req.body.date) : undefined);
     const party = new Party({
       ...req.body,
       name: trimmedName,
@@ -111,6 +117,7 @@ export const createParty = async (req, res) => {
       companyId: req.companyId,
       partyType: finalPartyType,
       openingBalance: Math.abs(rawBal),
+      ...(opDate ? { openingBalanceDate: new Date(opDate), createdAt: new Date(opDate) } : {}),
       currentBalance: finalBalance
     });
     await party.save();

@@ -78,6 +78,7 @@ export default function PartiesPage() {
     partyType: 'customer',
     priceLevel: 'retail',
     openingBalance: '',
+    openingBalanceDate: '',
     creditLimit: ''
   });
 
@@ -93,6 +94,7 @@ export default function PartiesPage() {
     priceLevel: 'retail',
     creditLimit: '',
     openingBalance: '',
+    openingBalanceDate: '',
     balanceDir: 'positive'
   });
 
@@ -411,6 +413,8 @@ export default function PartiesPage() {
         name: trimmedName,
         address: trimmedAddr,
         openingBalance: Math.abs(rawBal),
+        openingBalanceDate: formData.openingBalanceDate || undefined,
+        date: formData.openingBalanceDate || undefined,
         currentBalance: signedBal,
         balanceType: isSupplier ? "PAY" : "RECEIVE",
         creditLimit: parseFloat(formData.creditLimit) || 0
@@ -438,7 +442,7 @@ export default function PartiesPage() {
       }
 
       setShowModal(false);
-      setFormData({ name: '', mobileNumber: '', address: '', partyType: 'customer', priceLevel: 'retail', openingBalance: '', creditLimit: '' });
+      setFormData({ name: '', mobileNumber: '', address: '', partyType: 'customer', priceLevel: 'retail', openingBalance: '', openingBalanceDate: '', creditLimit: '' });
       // Keep user's active filter tab (e.g. 'to_collect' / 'to_pay') so view is never disrupted
       if (signedBal > 0 && filterType !== 'to_collect' && filterType !== 'customer' && filterType !== 'all') {
         setFilterType('to_collect');
@@ -474,6 +478,7 @@ export default function PartiesPage() {
       priceLevel: party.priceLevel || 'retail',
       creditLimit: party.creditLimit || '',
       openingBalance: rawOpening > 0 ? String(rawOpening) : '',
+      openingBalanceDate: party.openingBalanceDate ? new Date(party.openingBalanceDate).toISOString().split('T')[0] : (party.asOfDate ? new Date(party.asOfDate).toISOString().split('T')[0] : ''),
       balanceDir: defaultDir
     });
     setShowEditModal(true);
@@ -526,6 +531,8 @@ export default function PartiesPage() {
         priceLevel: editFormData.priceLevel,
         creditLimit: parseFloat(editFormData.creditLimit) || 0,
         openingBalance: Math.abs(rawBal),
+        openingBalanceDate: editFormData.openingBalanceDate || undefined,
+        date: editFormData.openingBalanceDate || undefined,
         balanceDir: balanceDir,
         balanceType: signedOpening < 0 ? "PAY" : "RECEIVE",
         currentBalance: newCurrentBal
@@ -839,6 +846,27 @@ export default function PartiesPage() {
     setSavingTx(true);
     try {
       const txId = editingTx._id || editingTx.id;
+
+      // 🛡️ Dedicated Handling for Editing Opening Balance row directly in statement
+      if (String(txId).startsWith("open_") || editingTx.source === "OpeningBalance" || editingTx.refNo === "OPENING") {
+        const pId = statementParty?._id || statementParty?.id || String(txId).replace("open_", "");
+        const isSupplier = statementParty?.partyType === "supplier" || statementParty?.type === "supplier";
+        const dir = editingTxType === "paid" ? (isSupplier ? "positive" : "negative") : (isSupplier ? "negative" : "positive");
+        const res = await api.post(`/api/party/${pId}/opening-balance`, {
+          amount: amt,
+          date: editingTxDate,
+          direction: dir,
+          notes: editingTxDetails.trim()
+        });
+        alert(res?.data?.message || "✅ पुराना हिसाब व तारीख सफलतापूर्वक सुरक्षित हो गई!");
+        setEditingTx(null);
+        if (statementParty) {
+          handleOpenStatement({ ...statementParty, openingBalanceDate: editingTxDate, openingBalance: amt });
+        }
+        fetchParties();
+        return;
+      }
+
       const payload = {
         date: editingTxDate,
         amount: amt,
@@ -1381,7 +1409,14 @@ export default function PartiesPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-xs">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">शुरूआती बैलेंस (Opening)</span>
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                शुरूआती बैलेंस (Opening)
+                {(statementParty.openingBalanceDate || statementData?.party?.openingBalanceDate) && (
+                  <span className="text-[10px] text-indigo-600 font-medium ml-1">
+                    ({new Date(statementParty.openingBalanceDate || statementData?.party?.openingBalanceDate).toLocaleDateString('hi-IN')} तक)
+                  </span>
+                )}
+              </span>
               <button
                 type="button"
                 onClick={() => handleOpenEdit(statementParty)}
@@ -2383,15 +2418,21 @@ export default function PartiesPage() {
                     <label className="block text-xs font-bold text-gray-700 mb-1">
                       शुरुआती बाकी (Opening Bal){" "}
                       <span className={formData.partyType === "supplier" ? "text-rose-600 font-extrabold" : "text-emerald-600 font-extrabold"}>
-                        {formData.partyType === "supplier" ? "🔴 (देने हैं / To Pay)" : "🟢 (लेने हैं / To Collect)"}
+                        {formData.partyType === "supplier" ? "🔴 (देने हैं)" : "🟢 (लेने हैं)"}
                       </span>
                     </label>
                     <input type="number" placeholder="₹ 0.00" className="w-full border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" value={formData.openingBalance} onChange={e => setFormData({...formData, openingBalance: e.target.value})} />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">क्रेडिट लिमिट (Credit Limit)</label>
-                    <input type="number" placeholder="₹ 0.00" className="w-full border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" value={formData.creditLimit} onChange={e => setFormData({...formData, creditLimit: e.target.value})} />
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      📅 बकाया तारीख (वैकल्पिक)
+                    </label>
+                    <input type="date" title="पुराना हिसाब किस तारीख तक का है (वैकल्पिक)" className="w-full border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" value={formData.openingBalanceDate || ''} onChange={e => setFormData({...formData, openingBalanceDate: e.target.value})} />
                   </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">क्रेडिट लिमिट (Credit Limit)</label>
+                  <input type="number" placeholder="₹ 0.00" className="w-full border rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" value={formData.creditLimit} onChange={e => setFormData({...formData, creditLimit: e.target.value})} />
                 </div>
                 <div className="flex justify-end gap-2 mt-6 pt-2 border-t">
                   <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border rounded-xl text-gray-600 hover:bg-gray-50 text-xs font-bold cursor-pointer">रद्द करें</button>
@@ -2475,15 +2516,30 @@ export default function PartiesPage() {
                       </button>
                     </div>
                   </div>
-                  <input
-                    type="number"
-                    placeholder="₹ 0.00 (शुरुआती बाकी दर्ज करें)"
-                    className="w-full bg-white border rounded-xl px-3 py-2 text-sm font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500"
-                    value={editFormData.openingBalance}
-                    onChange={e => setEditFormData({ ...editFormData, openingBalance: e.target.value })}
-                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-1">बकाया राशि (₹)</label>
+                      <input
+                        type="number"
+                        placeholder="₹ 0.00 (शुरुआती बाकी दर्ज करें)"
+                        className="w-full bg-white border rounded-xl px-3 py-2 text-sm font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                        value={editFormData.openingBalance}
+                        onChange={e => setEditFormData({ ...editFormData, openingBalance: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-1">📅 बकाया तारीख (वैकल्पिक)</label>
+                      <input
+                        type="date"
+                        title="पुराना हिसाब किस तारीख तक का है (वैकल्पिक)"
+                        className="w-full bg-white border rounded-xl px-3 py-2 text-sm font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                        value={editFormData.openingBalanceDate || ''}
+                        onChange={e => setEditFormData({ ...editFormData, openingBalanceDate: e.target.value })}
+                      />
+                    </div>
+                  </div>
                   <p className="text-[10px] text-slate-500 leading-relaxed">
-                    💡 यदि पार्टी बनाते समय शुरुआती बकाया नहीं डाला था, तो यहाँ राशि दर्ज करने पर वह बहीखाते में सीधे जुड़ जाएगी।
+                    💡 यदि पार्टी का पुराना बकाया किस तारीख तक का है यह दर्ज करना चाहें, तो तारीख चुनें (वैकल्पिक)।
                   </p>
                 </div>
 

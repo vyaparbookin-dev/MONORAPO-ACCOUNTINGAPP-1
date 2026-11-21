@@ -139,8 +139,9 @@ export const syncPartyToSupabase = async (party) => {
       opening_balance: Number(party.openingBalance || 0),
       current_balance: Number(party.currentBalance ?? party.balance ?? 0),
       credit_limit: Number(party.creditLimit || 0),
+      notes: party.notes || (party.openingBalanceDate ? `बकाया दिनांक: ${new Date(party.openingBalanceDate).toISOString().split('T')[0]}` : null),
       is_active: party.isActive !== false,
-      created_at: party.createdAt ? new Date(party.createdAt).toISOString() : new Date().toISOString(),
+      created_at: party.openingBalanceDate ? new Date(party.openingBalanceDate).toISOString() : (party.createdAt ? new Date(party.createdAt).toISOString() : new Date().toISOString()),
       updated_at: new Date().toISOString()
     };
     const { error } = await supabase.from("parties").upsert(partyPayload, { onConflict: "id" });

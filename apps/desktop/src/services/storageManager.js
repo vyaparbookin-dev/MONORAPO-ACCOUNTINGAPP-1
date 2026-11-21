@@ -85,6 +85,7 @@ class StorageManager {
       balance: finalBal,
       currentBalance: finalBal,
       openingBalance: opBal,
+      openingBalanceDate: p.openingBalanceDate || p.asOfDate || p.openingDate || null,
       partyType: isSupplier ? "supplier" : (pType === "personal" ? "personal" : (pType === "both" ? "both" : "customer")),
       type: isSupplier ? "supplier" : (pType === "personal" ? "personal" : (pType === "both" ? "both" : "customer")),
       address: p.address || "",

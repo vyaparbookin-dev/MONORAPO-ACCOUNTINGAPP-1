@@ -774,6 +774,7 @@ function MobileVyaparAppContent() {
   const [newPartyPhone, setNewPartyPhone] = useState("");
   const [newPartyAddress, setNewPartyAddress] = useState("");
   const [newPartyBalance, setNewPartyBalance] = useState("0");
+  const [newPartyOpeningBalanceDate, setNewPartyOpeningBalanceDate] = useState("");
   const [newPartyType, setNewPartyType] = useState("customer");
   const [newPartyBalanceDir, setNewPartyBalanceDir] = useState("positive"); // "positive"=लेने हैं, "negative"=देने हैं
   const [editingParty, setEditingParty] = useState(null); // Party currently being edited
@@ -3411,6 +3412,8 @@ function MobileVyaparAppContent() {
         name: trimmedName,
         mobileNumber: newPartyPhone.trim(),
         openingBalance: Math.abs(rawBal),
+        openingBalanceDate: newPartyOpeningBalanceDate || undefined,
+        date: newPartyOpeningBalanceDate || undefined,
         currentBalance: signedBal,
         balanceType: signedBal < 0 ? "PAY" : "RECEIVE",
         partyType: newPartyType || "customer",
@@ -3435,6 +3438,8 @@ function MobileVyaparAppContent() {
           name: trimmedName,
           mobileNumber: newPartyPhone.trim(),
           openingBalance: Math.abs(rawBal),
+          openingBalanceDate: newPartyOpeningBalanceDate || undefined,
+          date: newPartyOpeningBalanceDate || undefined,
           currentBalance: updatedBal,
           balanceType: signedBal < 0 ? "PAY" : "RECEIVE",
           balanceDir: newPartyBalanceDir,
@@ -3444,10 +3449,11 @@ function MobileVyaparAppContent() {
 
         await api.put(`/api/party/${pId}`, payload).catch(() => api.put(`/api/parties/${pId}`, payload));
 
-        if (Math.abs(rawBal) !== oldOpRaw) {
+        if (Math.abs(rawBal) !== oldOpRaw || newPartyOpeningBalanceDate) {
           api.post(`/api/party/${pId}/opening-balance`, {
             amount: Math.abs(rawBal),
             direction: newPartyBalanceDir,
+            date: newPartyOpeningBalanceDate ? toSafeIsoDate(newPartyOpeningBalanceDate) : undefined,
             notes: "Opening balance updated via party edit"
           }).catch(() => {});
         }
@@ -3514,6 +3520,7 @@ function MobileVyaparAppContent() {
       setNewPartyName("");
       setNewPartyPhone("");
       setNewPartyBalance("0");
+      setNewPartyOpeningBalanceDate("");
       setNewPartyAddress("");
       setNewPartyType("customer");
       setNewPartyBalanceDir("positive");
@@ -3551,6 +3558,8 @@ function MobileVyaparAppContent() {
     }
     // Prefill with opening balance if present; if 0, leave empty for easy entry
     setNewPartyBalance(op > 0 ? String(op) : "");
+    const opDate = party.openingBalanceDate || party.asOfDate;
+    setNewPartyOpeningBalanceDate(opDate ? getLocalYmd(opDate) : "");
     const dir = (party.balanceType === "PAY" || curBal < 0 || isSupplier) ? "negative" : "positive";
     setNewPartyBalanceDir(dir);
     setShowAddPartyModal(true);
@@ -11609,6 +11618,18 @@ function MobileVyaparAppContent() {
                 onChange={(e) => setNewPartyBalance(e.target.value)}
                 className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
               />
+              <div className="mt-2">
+                <label className="text-[10px] font-bold text-slate-500 block mb-1">
+                  📅 बकाया हिसाब की तारीख (As of Date - वैकल्पिक)
+                </label>
+                <input 
+                  type="date" 
+                  title="पुराना हिसाब किस तारीख तक का है (वैकल्पिक)"
+                  value={newPartyOpeningBalanceDate}
+                  onChange={(e) => setNewPartyOpeningBalanceDate(e.target.value)}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none focus:border-[#4338CA]"
+                />
+              </div>
             </div>
 
             <button
