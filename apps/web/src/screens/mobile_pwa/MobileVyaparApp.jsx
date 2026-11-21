@@ -707,22 +707,40 @@ function MobileVyaparAppContent() {
     const handleOffline = () => {
       setIsOnline(false);
     };
+
+    // ⚡ INSTANT RESUME SYNC: Whenever user unlocks phone, opens PWA, or switches back to tab
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        runBidirectionalAutoSync();
+        if (typeof fetchLiveDashboardData === 'function') fetchLiveDashboardData();
+        if (typeof fetchGharKharchData === 'function') fetchGharKharchData();
+      }
+    };
+
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+    if (typeof document !== 'undefined') {
+      document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    }
+    window.addEventListener("focus", handleVisibilityOrFocus);
 
     // Initial sync on app open
     runBidirectionalAutoSync();
 
-    // Periodic automatic background check every 45 seconds (fully autonomous, no button needed)
+    // Fast periodic background check every 15 seconds when active
     const syncInterval = setInterval(() => {
       if (typeof navigator === 'undefined' || navigator.onLine) {
         runBidirectionalAutoSync();
       }
-    }, 45000);
+    }, 15000);
 
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      }
+      window.removeEventListener("focus", handleVisibilityOrFocus);
       clearInterval(syncInterval);
     };
   }, [selectedCompany]);

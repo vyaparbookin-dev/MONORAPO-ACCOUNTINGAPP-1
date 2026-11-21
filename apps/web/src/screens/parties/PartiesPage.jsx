@@ -352,7 +352,34 @@ export default function PartiesPage() {
     }
   };
 
-  useEffect(() => { fetchParties(); }, []);
+  useEffect(() => { 
+    fetchParties(); 
+
+    // ⚡ Auto-sync when switching back to tab/window or every 15 seconds
+    const handleFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchParties();
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener("visibilitychange", handleFocus);
+    }
+    window.addEventListener("focus", handleFocus);
+
+    const interval = setInterval(() => {
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        fetchParties();
+      }
+    }, 15000);
+
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener("visibilitychange", handleFocus);
+      }
+      window.removeEventListener("focus", handleFocus);
+      clearInterval(interval);
+    };
+  }, []);
 
   // Add Party Submit
   const handleSubmit = async (e) => {
