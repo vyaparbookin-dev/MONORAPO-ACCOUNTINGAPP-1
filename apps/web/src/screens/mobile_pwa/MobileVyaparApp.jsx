@@ -3075,24 +3075,44 @@ function MobileVyaparAppContent() {
       } catch (e) {}
     }
 
-    // Auto-create party locally if it doesn't exist
+    // Auto-create party locally and on server if it doesn't exist
     if (finalCustomer && finalCustomer !== "नकद ग्राहक (Walk-in)" && !parties.some(p => String(p?.name || '').toLowerCase() === String(finalCustomer || '').toLowerCase())) {
       const newP = {
         id: `party-${Date.now()}`,
+        _id: `party-${Date.now()}`,
         name: finalCustomer,
         phone: finalPhone,
+        mobileNumber: finalPhone,
         address: finalAddress,
         balance: billPaymentMode === "UDHAR" ? effectiveAmount : 0,
-        type: "customer"
+        currentBalance: billPaymentMode === "UDHAR" ? effectiveAmount : 0,
+        openingBalance: 0,
+        type: "customer",
+        partyType: "customer",
+        isOfflineCreated: true
       };
-      setParties(prev => {
-        const updated = [newP, ...prev];
-        try {
-          localStorage.setItem("vb_local_parties", JSON.stringify(updated));
-          localStorage.setItem("parties", JSON.stringify(updated));
-        } catch (e) {}
-        return updated;
-      });
+      storageManager.saveParty(currentCoId, newP);
+      setParties(prev => [newP, ...(prev || []).filter(p => (p._id || p.id) !== newP.id && p.name !== newP.name)]);
+      
+      const partyPostPayload = {
+        name: finalCustomer,
+        mobileNumber: finalPhone,
+        address: finalAddress,
+        openingBalance: 0,
+        currentBalance: billPaymentMode === "UDHAR" ? effectiveAmount : 0,
+        partyType: "customer"
+      };
+      api.post("/api/party", partyPostPayload)
+        .then(res => {
+          if (res?.data?.party?._id) {
+            const syncedP = { ...newP, id: res.data.party._id, _id: res.data.party._id, isOfflineCreated: false };
+            storageManager.saveParty(currentCoId, syncedP);
+            setParties(prev => prev.map(p => (p.id === newP.id || p._id === newP.id) ? syncedP : p));
+          }
+        })
+        .catch(() => {
+          enqueueOfflineSync({ type: 'CREATE_PARTY', payload: partyPostPayload });
+        });
     }
 
     if (billAppliedReward) {
@@ -3487,7 +3507,19 @@ function MobileVyaparAppContent() {
         }
         alert(`✅ पार्टी '${updatedParty.name}' सफलतापूर्वक अपडेट हो गई!`);
       } else {
-        const res = await api.post("/api/party", payload).catch(() => api.post("/api/parties", payload));
+        let res = null;
+        let isSavedOffline = false;
+        try {
+          res = await api.post("/api/party", payload).catch(() => api.post("/api/parties", payload));
+        } catch (apiErr) {
+          const isNetErr = !navigator.onLine || apiErr?.message === "Network Error" || apiErr?.code === "ERR_NETWORK" || !apiErr?.response;
+          if (isNetErr) {
+            isSavedOffline = true;
+            enqueueOfflineSync({ type: 'CREATE_PARTY', payload });
+          } else {
+            throw apiErr;
+          }
+        }
         const savedId = res?.data?.party?._id || res?.data?._id || `party-${Date.now()}`;
         const createdParty = {
           id: savedId,
@@ -3504,22 +3536,38 @@ function MobileVyaparAppContent() {
           partyType: payload.partyType,
           address: payload.address,
           creditLimit: 0,
-          notes: ""
+          notes: "",
+          isOfflineCreated: isSavedOffline
         };
 
         const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
         storageManager.saveParty(currentCoId, createdParty);
         setParties(prev => [createdParty, ...(prev || []).filter(p => (p._id || p.id) !== createdParty.id && p.name !== createdParty.name)]);
-        // Preserve user's active tab (e.g. 'to_collect' / 'to_pay') so view is never disrupted
-        if (finalBal > 0 && partyFilterTab !== 'to_collect' && partyFilterTab !== 'customer' && partyFilterTab !== 'all') {
-          setPartyFilterTab('to_collect');
-        } else if (finalBal < 0 && partyFilterTab !== 'to_pay' && partyFilterTab !== 'supplier' && partyFilterTab !== 'all') {
-          setPartyFilterTab('to_pay');
+
+        // Preserve view / switch active tab so newly added party is ALWAYS visible:
+        if (signedBal > 0) {
+          if (partyFilterTab !== 'to_collect' && partyFilterTab !== 'customer' && partyFilterTab !== 'all') {
+            setPartyFilterTab('to_collect');
+          }
+        } else if (signedBal < 0) {
+          if (partyFilterTab !== 'to_pay' && partyFilterTab !== 'supplier' && partyFilterTab !== 'all') {
+            setPartyFilterTab('to_pay');
+          }
+        } else {
+          // Zero balance party: if user is on 'to_collect' or 'to_pay', switch to 'all' or party type so it is immediately visible!
+          if (partyFilterTab === 'to_collect' || partyFilterTab === 'to_pay') {
+            setPartyFilterTab(payload.partyType === 'supplier' ? 'supplier' : 'customer');
+          }
         }
+
         if (typeof fetchLiveDashboardData === 'function') {
           fetchLiveDashboardData();
         }
-        alert(`✅ पार्टी '${createdParty.name}' सफलतापूर्वक जुड़ गई!`);
+        if (isSavedOffline) {
+          alert(`✅ पार्टी '${createdParty.name}' सुरक्षित हो गई है (ऑफ़लाइन)! इंटरनेट आते ही सर्वर से सिंक हो जाएगी।`);
+        } else {
+          alert(`✅ पार्टी '${createdParty.name}' सफलतापूर्वक जुड़ गई!`);
+        }
       }
 
       setShowAddPartyModal(false);
