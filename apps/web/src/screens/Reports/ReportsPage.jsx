@@ -79,6 +79,16 @@ const ReportsPage = () => {
       badge: "CA / Audit"
     },
     {
+      id: "trialbalance",
+      category: "sales",
+      title: "तलपट (Trial Balance Report)",
+      desc: "Debit vs Credit ledger balancing, Tally-standard double-entry audit sheet",
+      path: "/reports/trialbalance",
+      icon: Scale,
+      color: "bg-teal-50 text-teal-700 border-teal-200",
+      badge: "Double Entry"
+    },
+    {
       id: "sitewise",
       category: "sales",
       title: "Sitewise Project Sales",

@@ -911,6 +911,447 @@ export const getBalanceSheet = async (req, res) => {
 };
 
 /**
+ * @desc    Get Trial Balance (तलपट रिपोर्ट) - Full Double Entry Balancing
+ * @route   GET /api/reports/trialbalance & /api/reports/trial-balance
+ * @access  Private
+ */
+export const getTrialBalance = async (req, res) => {
+  try {
+    if (!req.companyId) {
+      return res.status(400).json({ success: false, message: "Company ID is missing" });
+    }
+
+    const { startDate, endDate, fy } = req.query;
+
+    const coIdStr = String(req.companyId || "");
+    const validMongoCoIds = [];
+    if (mongoose.Types.ObjectId.isValid(coIdStr)) {
+      validMongoCoIds.push(new mongoose.Types.ObjectId(coIdStr));
+    } else {
+      try {
+        const allCompanies = await Company.find({}, { _id: 1 }).lean();
+        for (const c of allCompanies) {
+          if (mongoIdToUuid(c._id) === coIdStr) {
+            validMongoCoIds.push(c._id);
+            break;
+          }
+        }
+      } catch (cErr) {}
+    }
+
+    const coFilter = validMongoCoIds.length > 0 ? { $in: validMongoCoIds } : req.companyId;
+
+    // Optional date filter for nominal accounts (Sales, Purchases, Expenses)
+    let dateFilter = {};
+    if (startDate && endDate) {
+      dateFilter = {
+        date: {
+          $gte: new Date(startDate),
+          $lte: new Date(new Date(endDate).setHours(23, 59, 59, 999))
+        }
+      };
+    } else if (fy) {
+      const [startYear, endYear] = fy.split("-").map(y => parseInt(y.trim()));
+      if (startYear && endYear) {
+        dateFilter = {
+          date: {
+            $gte: new Date(`${startYear}-04-01T00:00:00.000Z`),
+            $lte: new Date(`${endYear}-03-31T23:59:59.999Z`)
+          }
+        };
+      }
+    }
+
+    // 1. Bank Accounts
+    let bankAccountsList = [];
+    try {
+      bankAccountsList = await BankAccount.find({
+        companyId: coFilter,
+        isDeleted: { $ne: true }
+      }).lean();
+    } catch (e) {}
+
+    const totalBankBalance = bankAccountsList.reduce((acc, b) => acc + (Number(b.balance ?? b.currentBalance ?? 0) || 0), 0);
+
+    // 2. Sundry Debtors & Sundry Creditors (Parties)
+    let partiesList = [];
+    try {
+      partiesList = await Party.find({
+        companyId: coFilter,
+        isDeleted: { $ne: true }
+      }).lean();
+    } catch (e) {}
+
+    if (partiesList.length === 0 && supabase) {
+      try {
+        const sbCoUuid = mongoIdToUuid(req.companyId);
+        const { data: sbP } = await supabase.from("parties").select("*").eq("company_id", sbCoUuid).eq("is_active", true);
+        if (Array.isArray(sbP)) {
+          partiesList = sbP.map(p => ({
+            name: p.name,
+            currentBalance: Number(p.current_balance || 0),
+            partyType: p.party_type
+          }));
+        }
+      } catch (e) {}
+    }
+
+    const debtors = partiesList.filter(p => Number(p.currentBalance || p.balance || 0) > 0);
+    const totalDebtors = debtors.reduce((sum, p) => sum + (Number(p.currentBalance || p.balance || 0)), 0);
+
+    const creditors = partiesList.filter(p => Number(p.currentBalance || p.balance || 0) < 0 || p.partyType === 'supplier');
+    const totalCreditors = creditors.reduce((sum, p) => {
+      const bal = Number(p.currentBalance || p.balance || 0);
+      return sum + (bal < 0 ? Math.abs(bal) : (p.partyType === 'supplier' && bal > 0 ? bal : 0));
+    }, 0);
+
+    // 3. Inventory / Stock
+    let productsList = [];
+    try {
+      productsList = await Product.find({
+        companyId: coFilter,
+        isActive: { $ne: false },
+        isDeleted: { $ne: true }
+      }).lean();
+    } catch (e) {}
+
+    const inventoryValue = productsList.reduce((sum, p) => {
+      const stock = Number(p.stock ?? p.currentStock ?? 0);
+      const rate = Number(p.purchasePrice ?? p.costPrice ?? p.price ?? 0);
+      return sum + (stock > 0 ? stock * rate : 0);
+    }, 0);
+
+    // 4. Fixed Assets
+    let fixedAssetsList = [];
+    try {
+      fixedAssetsList = await FixedAsset.find({
+        companyId: coFilter,
+        isDeleted: { $ne: true },
+        status: { $ne: 'scrapped' }
+      }).lean();
+    } catch (e) {}
+
+    const totalFixedAssets = fixedAssetsList.reduce((sum, a) => sum + (Number(a.currentValue ?? a.purchaseCost ?? 0) || 0), 0);
+
+    // 5. Sales (Bills)
+    const billMatch = { companyId: coFilter, isDeleted: { $ne: true }, ...(dateFilter.date ? { date: dateFilter.date } : {}) };
+    let bills = [];
+    try {
+      bills = await Bill.find(billMatch, { total: 1, finalAmount: 1, paymentMethod: 1, paymentMode: 1, paidAmount: 1 }).lean();
+    } catch (e) {}
+
+    let totalSales = 0;
+    let cashSales = 0;
+    bills.forEach(b => {
+      const amt = Number(b.finalAmount ?? b.total ?? 0);
+      totalSales += amt;
+      const pMode = String(b.paymentMethod || b.paymentMode || "CASH").toUpperCase();
+      if (pMode === "CASH") {
+        cashSales += Number(b.paidAmount ?? b.finalAmount ?? b.total ?? 0);
+      }
+    });
+
+    // 6. Purchases
+    const purchaseMatch = { companyId: coFilter, isDeleted: { $ne: true }, ...(dateFilter.date ? { date: dateFilter.date } : {}) };
+    let purchases = [];
+    try {
+      purchases = await Purchase.find(purchaseMatch, { totalAmount: 1, total: 1 }).lean();
+    } catch (e) {}
+
+    const totalPurchases = purchases.reduce((s, p) => s + (Number(p.totalAmount ?? p.total ?? 0)), 0);
+
+    // 7. Expenses & Drawings
+    const expMatch = { companyId: coFilter, isDeleted: { $ne: true }, ...(dateFilter.date ? { date: dateFilter.date } : {}) };
+    let expenses = [];
+    try {
+      expenses = await Expance.find(expMatch).lean();
+    } catch (e) {}
+
+    let cashExpenses = 0;
+    let operatingExpenses = 0;
+    let drawingsGharKharch = 0;
+    const expenseCategoryMap = {};
+
+    expenses.forEach(exp => {
+      const isPersonal = exp.expenseType === 'drawings' || exp.expenseType === 'personal' || (exp.familyMember && exp.familyMember.trim() !== '');
+      const amt = Number(exp.amount || 0);
+      const m = String(exp.paymentMethod || "cash").toLowerCase();
+      if (m === "cash") {
+        cashExpenses += amt;
+      }
+      if (isPersonal) {
+        drawingsGharKharch += amt;
+      } else {
+        operatingExpenses += amt;
+        const cat = exp.category || 'अन्य व्यापारिक व्यय (General Expenses)';
+        expenseCategoryMap[cat] = (expenseCategoryMap[cat] || 0) + amt;
+      }
+    });
+
+    const estimatedCashInHand = Math.max(0, cashSales - cashExpenses);
+
+    // 8. Capital & Loans
+    let capitalEntries = [];
+    try {
+      capitalEntries = await Capital.find({
+        companyId: coFilter,
+        isDeleted: { $ne: true }
+      }).lean();
+    } catch (e) {}
+
+    const totalUnsecuredLoans = capitalEntries
+      .filter(e => e.entryType === 'unsecured_loan')
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    const ownerInvestedCapital = capitalEntries
+      .filter(e => e.entryType === 'owner_capital' || e.entryType === 'partner_capital' || e.entryType === 'additional_capital')
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    const totalAssets = estimatedCashInHand + totalBankBalance + totalDebtors + inventoryValue + totalFixedAssets;
+    const netProfit = totalSales - totalPurchases - operatingExpenses;
+    const effectiveOpeningCapital = ownerInvestedCapital > 0
+      ? ownerInvestedCapital
+      : Math.max(0, totalAssets - totalCreditors - totalUnsecuredLoans - netProfit + drawingsGharKharch);
+
+    // Construct Ledger Accounts List (तलपट खाते)
+    const ledgers = [];
+
+    // --- DEBIT ACCOUNTS ---
+    // 1. Cash in Hand
+    if (estimatedCashInHand > 0) {
+      ledgers.push({
+        id: "cash-account",
+        code: "1010",
+        name: "रोकड़ खाता (दुकान गल्ला / Cash-in-Hand)",
+        group: "Current Assets (चालू परिसंपत्ति)",
+        type: "Asset",
+        debit: Math.round(estimatedCashInHand),
+        credit: 0
+      });
+    }
+
+    // 2. Bank Accounts
+    if (bankAccountsList.length > 0) {
+      bankAccountsList.forEach((b, idx) => {
+        const bal = Number(b.balance ?? b.currentBalance ?? 0);
+        if (bal >= 0) {
+          ledgers.push({
+            id: `bank-${b._id || idx}`,
+            code: `102${idx + 1}`,
+            name: `${b.bankName || "बैंक"} खाता - ${b.accountName || b.accountNumber || "मुख्य खाता"}`,
+            group: "Bank Accounts (बैंक खाते)",
+            type: "Asset",
+            debit: Math.round(bal),
+            credit: 0
+          });
+        } else {
+          ledgers.push({
+            id: `bank-od-${b._id || idx}`,
+            code: `202${idx + 1}`,
+            name: `${b.bankName || "बैंक"} ओवरड्राफ्ट (OD Account)`,
+            group: "Bank OD A/c (बैंक ओवरड्राफ्ट)",
+            type: "Liability",
+            debit: 0,
+            credit: Math.round(Math.abs(bal))
+          });
+        }
+      });
+    } else if (totalBankBalance > 0) {
+      ledgers.push({
+        id: "bank-summary",
+        code: "1020",
+        name: "बैंक खाता (Bank Accounts)",
+        group: "Bank Accounts (बैंक खाते)",
+        type: "Asset",
+        debit: Math.round(totalBankBalance),
+        credit: 0
+      });
+    }
+
+    // 3. Sundry Debtors (कुल देनदार ग्राहक)
+    ledgers.push({
+      id: "sundry-debtors",
+      code: "1030",
+      name: `विविध देनदार ग्राहक (Sundry Debtors - ${debtors.length} पार्टियां)`,
+      group: "Sundry Debtors (देनदार ग्राहक)",
+      type: "Asset",
+      debit: Math.round(totalDebtors),
+      credit: 0,
+      breakdown: debtors.map(d => ({
+        id: d._id,
+        name: d.name,
+        mobile: d.mobile || d.phone,
+        balance: Number(d.currentBalance || d.balance || 0)
+      }))
+    });
+
+    // 4. Closing Stock
+    if (inventoryValue > 0) {
+      ledgers.push({
+        id: "closing-stock",
+        code: "1040",
+        name: "स्टॉक खाता / इन्वेंटरी (Closing Inventory)",
+        group: "Current Assets (चालू परिसंपत्ति)",
+        type: "Asset",
+        debit: Math.round(inventoryValue),
+        credit: 0
+      });
+    }
+
+    // 5. Fixed Assets
+    if (fixedAssetsList.length > 0) {
+      fixedAssetsList.forEach((a, idx) => {
+        ledgers.push({
+          id: `fixed-asset-${a._id || idx}`,
+          code: `110${idx + 1}`,
+          name: `${a.assetName || "स्थिर संपत्ति"} (Fixed Asset)`,
+          group: "Fixed Assets (स्थिर परिसंपत्ति)",
+          type: "Asset",
+          debit: Math.round(Number(a.currentValue ?? a.purchaseCost ?? 0)),
+          credit: 0
+        });
+      });
+    } else if (totalFixedAssets > 0) {
+      ledgers.push({
+        id: "fixed-assets-summary",
+        code: "1100",
+        name: "स्थिर परिसंपत्तियां (Fixed Assets)",
+        group: "Fixed Assets (स्थिर परिसंपत्ति)",
+        type: "Asset",
+        debit: Math.round(totalFixedAssets),
+        credit: 0
+      });
+    }
+
+    // 6. Purchase Account
+    ledgers.push({
+      id: "purchase-account",
+      code: "5010",
+      name: "माल खरीद खाता (Purchase Account)",
+      group: "Purchase Accounts (खरीद खाते)",
+      type: "Expense",
+      debit: Math.round(totalPurchases),
+      credit: 0
+    });
+
+    // 7. Operating Expense Category Ledgers
+    Object.entries(expenseCategoryMap).forEach(([catName, amt], idx) => {
+      ledgers.push({
+        id: `exp-${idx}`,
+        code: `60${idx + 1 < 10 ? '0' + (idx + 1) : (idx + 1)}`,
+        name: `${catName} खाता`,
+        group: "Indirect Expenses (अप्रत्यक्ष व्यापारिक खर्च)",
+        type: "Expense",
+        debit: Math.round(amt),
+        credit: 0
+      });
+    });
+
+    // 8. Drawings (घर खर्च / आहरण खाता)
+    if (drawingsGharKharch > 0) {
+      ledgers.push({
+        id: "drawings-account",
+        code: "3020",
+        name: "आहरण खाता (Drawings / निजी व घर खर्च)",
+        group: "Capital Account (पूंजी समायोजन)",
+        type: "Drawings",
+        debit: Math.round(drawingsGharKharch),
+        credit: 0
+      });
+    }
+
+    // --- CREDIT ACCOUNTS ---
+    // 9. Sales Account
+    ledgers.push({
+      id: "sales-account",
+      code: "4010",
+      name: "बिक्री खाता (Sales Account / कुल राजस्व)",
+      group: "Sales Accounts (बिक्री खाते)",
+      type: "Income",
+      debit: 0,
+      credit: Math.round(totalSales)
+    });
+
+    // 10. Sundry Creditors (कुल लेनदार सप्लायर)
+    ledgers.push({
+      id: "sundry-creditors",
+      code: "2010",
+      name: `विविध लेनदार सप्लायर (Sundry Creditors - ${creditors.length} पार्टियां)`,
+      group: "Sundry Creditors (लेनदार सप्लायर)",
+      type: "Liability",
+      debit: 0,
+      credit: Math.round(totalCreditors),
+      breakdown: creditors.map(c => ({
+        id: c._id,
+        name: c.name,
+        mobile: c.mobile || c.phone,
+        balance: Math.abs(Number(c.currentBalance || c.balance || 0))
+      }))
+    });
+
+    // 11. Loans & Borrowings
+    if (totalUnsecuredLoans > 0) {
+      ledgers.push({
+        id: "loans-account",
+        code: "2030",
+        name: "ऋण व लोन खाता (Loans & Borrowings)",
+        group: "Loans (Liabilities)",
+        type: "Liability",
+        debit: 0,
+        credit: Math.round(totalUnsecuredLoans)
+      });
+    }
+
+    // 12. Capital Account
+    ledgers.push({
+      id: "capital-account",
+      code: "3010",
+      name: "मालिक पूंजी खाता (Proprietor / Partners Capital)",
+      group: "Capital Account (पूंजी खाता)",
+      type: "Equity",
+      debit: 0,
+      credit: Math.round(effectiveOpeningCapital)
+    });
+
+    // Calculate totals
+    const totalDebit = ledgers.reduce((sum, l) => sum + (Number(l.debit) || 0), 0);
+    const totalCredit = ledgers.reduce((sum, l) => sum + (Number(l.credit) || 0), 0);
+    const difference = Math.round((totalDebit - totalCredit) * 100) / 100;
+
+    // Group-wise summary for group toggle
+    const groupSummary = {};
+    ledgers.forEach(l => {
+      if (!groupSummary[l.group]) {
+        groupSummary[l.group] = { group: l.group, debit: 0, credit: 0, count: 0 };
+      }
+      groupSummary[l.group].debit += l.debit;
+      groupSummary[l.group].credit += l.credit;
+      groupSummary[l.group].count += 1;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        asOnDate: new Date().toISOString(),
+        filters: { startDate, endDate, fy },
+        summary: {
+          totalDebit,
+          totalCredit,
+          difference,
+          isBalanced: Math.abs(difference) < 1,
+          ledgerCount: ledgers.length
+        },
+        ledgers,
+        groups: Object.values(groupSummary)
+      }
+    });
+  } catch (error) {
+    console.error("[getTrialBalance] Error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * @desc    Get Non-Moving Items Report
  * @route   GET /api/reports/non-moving-items
  * @access  Private

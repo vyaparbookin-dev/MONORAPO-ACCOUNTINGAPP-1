@@ -189,6 +189,7 @@ export default function DashboardLayout() {
         { icon: UserCheck, label: "👥 Staff Attendance & Pagar", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
         { icon: DollarSign, label: "📊 Sales & Profit/Loss", href: "/reports/profitloss", color: "text-emerald-400", roles: ['admin'] },
         { icon: Scale, label: "⚖️ तुलन पत्र (Balance Sheet)", href: "/reports/balancesheet", color: "text-indigo-400", roles: ['admin', 'manager'] },
+        { icon: Scale, label: "⚖️ तलपट (Trial Balance)", href: "/reports/trialbalance", color: "text-teal-400", roles: ['admin', 'manager'] },
         { icon: BookOpen, label: "📖 Day Book Ledger", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] },
         { icon: FileText, label: "📑 GST Tax Reports", href: "/reports/gst", color: "text-blue-500", roles: ['admin'] },
         { icon: Bot, label: "🤖 AI मुनीम जी Advisor", href: "/ai-advisor", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] }
@@ -260,6 +261,7 @@ export default function DashboardLayout() {
         { icon: UserCheck, label: "👥 Staff Attendance & Pagar", href: "/salary/attendance", color: "text-emerald-500", roles: ['admin', 'manager'] },
         { icon: DollarSign, label: "📊 Sales & Profit/Loss", href: "/reports/profitloss", color: "text-emerald-400", roles: ['admin'] },
         { icon: Scale, label: "⚖️ तुलन पत्र (Balance Sheet)", href: "/reports/balancesheet", color: "text-indigo-400", roles: ['admin', 'manager'] },
+        { icon: Scale, label: "⚖️ तलपट (Trial Balance)", href: "/reports/trialbalance", color: "text-teal-400", roles: ['admin', 'manager'] },
         { icon: BookOpen, label: "📖 Day Book Ledger", href: "/reports/daybook", color: "text-rose-400", roles: ['admin'] },
         { icon: FileText, label: "📑 GST Tax Reports", href: "/reports/gst", color: "text-blue-500", roles: ['admin'] },
         { icon: Bot, label: "🤖 AI मुनीम जी Advisor", href: "/ai-advisor", color: "text-purple-400", roles: ['admin', 'manager', 'cashier'] }

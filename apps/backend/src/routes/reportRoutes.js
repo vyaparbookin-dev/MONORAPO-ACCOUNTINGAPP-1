@@ -2,6 +2,7 @@ import express from "express";
 import {
   generateReport,
   getBalanceSheet,
+  getTrialBalance,
   getChartData,
   getProfitLoss,
   getPartyWiseReport,
@@ -35,6 +36,10 @@ router.get("/charts", getChartData);
 
 // Balance Sheet Route
 router.get("/balancesheet", getBalanceSheet);
+
+// Trial Balance Routes (Supports both /trialbalance and /trial-balance)
+router.get("/trialbalance", getTrialBalance);
+router.get("/trial-balance", getTrialBalance);
 
 // Profit & Loss Routes (Supports both /profitloss and /profit-loss)
 router.get("/profitloss", getProfitLoss);

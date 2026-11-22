@@ -154,6 +154,7 @@ const CustomerReportBuilder = safeLazy(() => import("./screens/Reports/CustomerR
 const PartyWiseReportPage = safeLazy(() => import("./screens/Reports/PartyWiseReportPage"));
 const ProfitLossReportPage = safeLazy(() => import("./screens/Reports/ProfitLossReport"));
 const BalanceSheetPage = safeLazy(() => import("./screens/Reports/BalanceSheetPage"));
+const TrialBalancePage = safeLazy(() => import("./screens/Reports/TrialBalancePage"));
 const SchemeReportPage = safeLazy(() => import("./screens/Reports/SchemeReportPage"));
 const SupplierLedgerPage = safeLazy(() => import("./screens/Reports/SupplierLedgerPage"));
 const DayBookPage = safeLazy(() => import("./screens/Reports/DayBookPage"));
@@ -409,6 +410,9 @@ const App = () => {
                     <Route path="/reports/balancesheet" element={<BalanceSheetPage />} />
                     <Route path="/reports/balance-sheet" element={<BalanceSheetPage />} />
                     <Route path="/balancesheet" element={<BalanceSheetPage />} />
+                    <Route path="/reports/trialbalance" element={<TrialBalancePage />} />
+                    <Route path="/reports/trial-balance" element={<TrialBalancePage />} />
+                    <Route path="/trialbalance" element={<TrialBalancePage />} />
                     <Route path="/reports/scheme" element={<SchemeReportPage />} />
                     <Route path="/reports/supplier-ledger" element={<SupplierLedgerPage />} />
                     <Route path="/reports/daybook" element={<DayBookPage />} />
