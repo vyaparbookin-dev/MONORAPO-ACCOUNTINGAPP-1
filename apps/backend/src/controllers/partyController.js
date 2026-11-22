@@ -1,4 +1,5 @@
 import Party from "../model/party.js";
+import Company from "../model/company.js";
 import Bill from "../model/bill.js";
 import Purchase from "../model/purchase.js";
 import PartyTransaction from "../model/PartyTransaction.js";
@@ -394,18 +395,38 @@ export const getPartyStatement = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    let party = null;
-    if (mongoose.Types.ObjectId.isValid(req.params.id)) {
-      party = await Party.findOne({ _id: req.params.id, companyId: req.companyId });
+    const coIdStr = String(req.companyId || "");
+    const validMongoCoIds = [];
+    if (mongoose.Types.ObjectId.isValid(coIdStr)) {
+      validMongoCoIds.push(new mongoose.Types.ObjectId(coIdStr));
+    } else {
+      try {
+        const allCompanies = await Company.find({}, { _id: 1 }).lean();
+        for (const c of allCompanies) {
+          if (mongoIdToUuid(c._id) === coIdStr) {
+            validMongoCoIds.push(c._id);
+            break;
+          }
+        }
+      } catch (cErr) {
+        console.warn("[getPartyStatement] Company UUID to Mongo error:", cErr.message);
+      }
     }
-    if (!party) {
-      party = await Party.findOne({
-        companyId: req.companyId,
-        $or: [
-          { id: req.params.id },
-          { name: req.params.id }
-        ]
-      });
+
+    let party = null;
+    if (validMongoCoIds.length > 0) {
+      if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+        party = await Party.findOne({ _id: req.params.id, companyId: { $in: validMongoCoIds } });
+      }
+      if (!party) {
+        party = await Party.findOne({
+          companyId: { $in: validMongoCoIds },
+          $or: [
+            { id: req.params.id },
+            { name: req.params.id }
+          ]
+        });
+      }
     }
     // Fallback: Check Supabase for party if not found in MongoDB
     if (!party) {
@@ -422,12 +443,6 @@ export const getPartyStatement = async (req, res) => {
 
     const escapeRegex = (s) => (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const nameRegex = new RegExp(`^${escapeRegex(party.name)}$`, "i");
-
-    const coIdStr = String(req.companyId || "");
-    const validMongoCoIds = [];
-    if (mongoose.Types.ObjectId.isValid(coIdStr)) {
-      validMongoCoIds.push(new mongoose.Types.ObjectId(coIdStr));
-    }
 
     const pIdStr = String(party._id || party.id || "");
     const validMongoPartyIds = [];

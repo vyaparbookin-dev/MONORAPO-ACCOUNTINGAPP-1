@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import Expense from "../model/expenses.js";
+import Company from "../model/company.js";
 import BankAccount from "../model/bankAccount.js";
 import Staff from "../model/staff.js";
 import StaffTransaction from "../model/StaffTransaction.js";
@@ -402,7 +403,30 @@ export const listExpenses = async (req, res) => {
     const limit = (req.query.limit === 'all' || parseInt(req.query.limit) >= 500) ? (parseInt(req.query.limit) || 1000) : (parseInt(req.query.limit) || 200);
     const skip = (page - 1) * limit;
 
-    const filter = { companyId: req.companyId, isDeleted: { $ne: true } };
+    const coIdStr = String(req.companyId || "");
+    const validMongoCoIds = [];
+    if (mongoose.Types.ObjectId.isValid(coIdStr)) {
+      validMongoCoIds.push(new mongoose.Types.ObjectId(coIdStr));
+    } else {
+      try {
+        const allCompanies = await Company.find({}, { _id: 1 }).lean();
+        for (const c of allCompanies) {
+          if (mongoIdToUuid(c._id) === coIdStr) {
+            validMongoCoIds.push(c._id);
+            break;
+          }
+        }
+      } catch (cErr) {
+        console.warn("[Expenses Controller] Company UUID to Mongo error:", cErr.message);
+      }
+    }
+
+    const filter = { isDeleted: { $ne: true } };
+    if (validMongoCoIds.length > 0) {
+      filter.companyId = { $in: validMongoCoIds };
+    } else if (mongoose.Types.ObjectId.isValid(req.companyId)) {
+      filter.companyId = req.companyId;
+    }
 
     // Support filter by expenseType (e.g. 'drawings' for Ghar Kharch, 'operating' for Business)
     if (req.query.expenseType && req.query.expenseType !== 'all') {
@@ -489,8 +513,25 @@ export const getGharKharchSummary = async (req, res) => {
   try {
     if (!req.companyId) return res.status(400).json({ success: false, message: "Company ID missing" });
 
+    const coIdStr = String(req.companyId || "");
+    const validMongoCoIds = [];
+    if (mongoose.Types.ObjectId.isValid(coIdStr)) {
+      validMongoCoIds.push(new mongoose.Types.ObjectId(coIdStr));
+    } else {
+      try {
+        const allCompanies = await Company.find({}, { _id: 1 }).lean();
+        for (const c of allCompanies) {
+          if (mongoIdToUuid(c._id) === coIdStr) {
+            validMongoCoIds.push(c._id);
+            break;
+          }
+        }
+      } catch (cErr) {
+        console.warn("[getGharKharchSummary] Company UUID to Mongo error:", cErr.message);
+      }
+    }
+
     const gharKharchFilter = {
-      companyId: req.companyId,
       expenseType: { $ne: 'operating' },
       $or: [
         { expenseType: "drawings" },
@@ -498,6 +539,11 @@ export const getGharKharchSummary = async (req, res) => {
       ],
       isDeleted: { $ne: true }
     };
+    if (validMongoCoIds.length > 0) {
+      gharKharchFilter.companyId = { $in: validMongoCoIds };
+    } else if (mongoose.Types.ObjectId.isValid(req.companyId)) {
+      gharKharchFilter.companyId = req.companyId;
+    }
 
     const allGharKharch = await Expense.find(gharKharchFilter).sort({ date: -1, createdAt: -1 });
 

@@ -75,6 +75,7 @@ export default function BillingPage() {
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({
     billNumber: "",
+    date: new Date().toISOString().slice(0, 10),
     partyId: "",
     salesmanId: "",
     customerName: "",
@@ -155,6 +156,7 @@ export default function BillingPage() {
   const [newProdData, setNewProdData] = useState({ name: '', rate: '', unit: 'pcs' });
   const [quickInsight, setQuickInsight] = useState(null); // Phase 5: Live Customer Insights
   const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [appliedSchemeIds, setAppliedSchemeIds] = useState(new Set()); // BUG-13: Track applied schemes
 
   // Pagination states
   const [page, setPage] = useState(1);
@@ -168,7 +170,7 @@ export default function BillingPage() {
   const handleToggleVoiceSearch = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("आपके सिस्टम / ब्राउज़र में आवाज़ पहचानने की सुविधा उपलब्ध नहीं है। कृपया माइक्रोफ़ोन कनेक्ट करें या Google Chrome में खोलें।");
+      alert("आपके ब्राउज़र में आवाज़ पहचानने (Speech Recognition) की सुविधा उपलब्ध नहीं है। कृपया Google Chrome का उपयोग करें।");
       return;
     }
 
@@ -371,7 +373,7 @@ export default function BillingPage() {
         // ensure items use `rate` and `total` fields expected by backend
         const payload = { 
           ...formData,
-          finalAmount: formData.total + (parseFloat(formData.tax) || 0) - (parseFloat(formData.discount) || 0) + (parseFloat(formData.freightCharges) || 0) + (parseFloat(formData.laborCharges) || 0) + (parseFloat(formData.packingForwardingCharges) || 0)
+          finalAmount: Number((formData.total + (parseFloat(formData.tax) || 0) - (parseFloat(formData.discount) || 0) + (parseFloat(formData.freightCharges) || 0) + (parseFloat(formData.laborCharges) || 0) + (parseFloat(formData.packingForwardingCharges) || 0)).toFixed(2))
         };
         payload.items = payload.items.map((it) => ({
           productId: it.productId || "",
@@ -434,6 +436,7 @@ export default function BillingPage() {
   const handleCreateInvoice = () => {
     setFormData({
       billNumber: `INV-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`,
+      date: new Date().toISOString().slice(0, 10),
       partyId: "",
       salesmanId: "",
       customerName: "",
@@ -463,6 +466,7 @@ export default function BillingPage() {
   const resetForm = () => {
     setFormData({
       billNumber: `INV-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`,
+      date: new Date().toISOString().slice(0, 10),
       customerName: "",
       customerMobile: "",
       items: [],
@@ -574,6 +578,7 @@ export default function BillingPage() {
     setEditingId(bill._id);
     setFormData({
       billNumber: bill.billNumber,
+      date: bill.date ? new Date(bill.date).toISOString().split("T")[0] : (bill.createdAt ? new Date(bill.createdAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]),
       partyId: bill.partyId,
       salesmanId: bill.salesmanId || "",
       customerName: bill.customerName,
@@ -911,6 +916,12 @@ export default function BillingPage() {
   };
 
   const handleSchemeApplied = (result) => {
+    // BUG-13: Prevent duplicate scheme application
+    if (result.schemeId && appliedSchemeIds.has(result.schemeId)) {
+      alert("यह स्कीम पहले से लागू है!");
+      return;
+    }
+
     // If scheme gives a flat discount
     if (result.discount > 0) {
       setFormData(prev => ({
@@ -927,6 +938,11 @@ export default function BillingPage() {
         items: [...prev.items, ...result.freeItems.map(i => ({ ...i, id: Date.now() + Math.random() }))]
       }));
       alert(`Scheme Applied: ${result.freeItems.length} free item(s) added!`);
+    }
+
+    // Track applied scheme
+    if (result.schemeId) {
+      setAppliedSchemeIds(prev => new Set([...prev, result.schemeId]));
     }
   };
 
@@ -973,6 +989,14 @@ export default function BillingPage() {
             Restore Held ({heldBills.length})
           </button>
         )}
+        <button
+          onClick={() => navigate("/voice-assistant")}
+          className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-4 py-2 rounded-lg hover:from-purple-700 hover:to-indigo-700 transition shadow-sm font-bold cursor-pointer active:scale-95"
+          title="बोलकर बिल बनाएं या इन्वेंटरी जोड़ें"
+        >
+          <Mic size={18} className="animate-pulse text-amber-300" />
+          Voice Billing
+        </button>
         <button
           onClick={() => navigate("/billing/parse")}
           className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition"
@@ -1118,6 +1142,18 @@ export default function BillingPage() {
                     setFormData({ ...formData, billNumber: e.target.value })
                   }
                   required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📅 Invoice Date (बिल दिनांक) *</label>
+                <input
+                  type="date"
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold text-gray-800"
+                  value={formData.date || new Date().toISOString().slice(0, 10)}
+                  onChange={(e) =>
+                    setFormData({ ...formData, date: e.target.value })
+                  }
                 />
               </div>
               <div>
@@ -2012,6 +2048,9 @@ export default function BillingPage() {
                   Invoice
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">
+                  📅 बिल दिनांक (Date)
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">
                   Customer
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">
@@ -2031,7 +2070,7 @@ export default function BillingPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
                     Loading invoices...
                   </td>
                 </tr>
@@ -2044,17 +2083,36 @@ export default function BillingPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <FileText className="text-blue-600" size={18} />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setQuickViewBill(bill);
-                            setShowQuickViewModal(true);
-                          }}
-                          className="font-semibold text-blue-600 hover:text-blue-800 hover:underline text-left"
-                          title="क्लिक करके बिल का त्वरित प्रीव्यू देखें"
-                        >
-                          {bill.billNumber}
-                        </button>
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQuickViewBill(bill);
+                              setShowQuickViewModal(true);
+                            }}
+                            className="font-semibold text-blue-600 hover:text-blue-800 hover:underline text-left block"
+                            title="क्लिक करके बिल का त्वरित प्रीव्यू देखें"
+                          >
+                            {bill.billNumber}
+                          </button>
+                          <div className="text-[11px] text-gray-400 font-mono">
+                            {bill.date || bill.createdAt ? new Date(bill.date || bill.createdAt).toLocaleDateString("hi-IN") : ""}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5 text-gray-800 font-bold text-sm">
+                        <Calendar size={15} className="text-blue-500 shrink-0" />
+                        <span>
+                          {bill.date || bill.createdAt
+                            ? new Date(bill.date || bill.createdAt).toLocaleDateString("hi-IN", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric"
+                              })
+                            : "-"}
+                        </span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -2133,7 +2191,7 @@ export default function BillingPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
                     <div className="flex flex-col items-center justify-center">
                       <div className="bg-gray-100 p-4 rounded-full mb-3">
                         <FileText size={32} className="text-gray-400" />

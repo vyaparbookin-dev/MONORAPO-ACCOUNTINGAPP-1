@@ -164,7 +164,16 @@ export default function PartiesPage() {
   const [statementData, setStatementData] = useState(null);
   const [statementLoading, setStatementLoading] = useState(false);
   const [showStatementModal, setShowStatementModal] = useState(false);
+  const [openedShareFromList, setOpenedShareFromList] = useState(false);
   const [previewImage, setPreviewImage] = useState(null); // URL for full-res bill photo preview modal
+
+  const handleCloseShareModal = () => {
+    setShowShareModal(false);
+    if (openedShareFromList) {
+      setStatementParty(null);
+      setOpenedShareFromList(false);
+    }
+  };
 
   // Statement Filters State (Site, Financial Year & Custom Dates)
   const [statementSiteFilter, setStatementSiteFilter] = useState('all');
@@ -921,8 +930,26 @@ export default function PartiesPage() {
 
   // Filtered transactions for active party statement (by Site, FY, Custom Date & Search)
   const filteredStatementTransactions = useMemo(() => {
-    if (!statementData?.transactions) return [];
-    let list = [...statementData.transactions];
+    let list = statementData?.transactions ? [...statementData.transactions] : [];
+    if (list.length === 0 && statementParty) {
+      const curBal = Number(statementParty.currentBalance ?? statementParty.balance ?? statementParty.openingBalance ?? 0);
+      if (curBal !== 0) {
+        const isSupplier = statementParty.partyType === 'supplier' || statementParty.type === 'supplier';
+        list = [{
+          _id: 'open_' + (statementParty._id || statementParty.id || 'initial'),
+          date: statementParty.openingBalanceDate || statementParty.createdAt || new Date().toISOString(),
+          type: isSupplier ? 'purchase' : 'sale',
+          refNo: 'OPENING',
+          billNumber: 'OPENING-BAL',
+          details: isSupplier ? 'प्रारंभिक शेष / पुराना बाकी (देने हैं)' : 'प्रारंभिक शेष / पुराना बाकी हिसाब (लेने हैं)',
+          debit: isSupplier ? 0 : Math.abs(curBal),
+          credit: isSupplier ? Math.abs(curBal) : 0,
+          runningBalance: curBal,
+          source: 'OpeningBalance'
+        }];
+      }
+    }
+    if (list.length === 0) return [];
 
     // 1. Site filter
     if (statementSiteFilter && statementSiteFilter !== 'all') {
@@ -1765,7 +1792,14 @@ export default function PartiesPage() {
               <div className="py-24 text-center text-slate-400 font-medium text-sm flex flex-col items-center justify-center gap-3">
                 <FileText size={36} className="text-slate-300" />
                 <span>चयनित फ़िल्टर के अनुसार कोई प्रविष्टि नहीं मिली।</span>
-                <div className="flex items-center gap-2 mt-2">
+                <div className="flex items-center gap-2 mt-2 flex-wrap justify-center">
+                  <button
+                    onClick={() => { setStatementParty(null); setShowStatementModal(false); }}
+                    className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow cursor-pointer transition flex items-center gap-1.5"
+                    title="पार्टी सूची पर वापस जाएं"
+                  >
+                    <ArrowLeft size={14} /> ← वापस पार्टी सूची (Back to Parties)
+                  </button>
                   <button
                     onClick={() => handleOpenAddBill(statementParty)}
                     className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl shadow cursor-pointer transition flex items-center gap-1.5"
@@ -2547,10 +2581,11 @@ export default function PartiesPage() {
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => {
-                                setStatementParty(p);
+                                handleOpenStatement(p);
                                 const phone = p.mobileNumber && p.mobileNumber !== '9999999999' ? p.mobileNumber : (p.phone || '');
                                 setShareCustomPhone(phone);
                                 setShareRecipientType(phone ? 'party' : 'custom');
+                                setOpenedShareFromList(true);
                                 setShowShareModal(true);
                               }}
                               className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold cursor-pointer transition flex items-center gap-1 shadow-2xs"
@@ -3141,7 +3176,7 @@ export default function PartiesPage() {
                   </div>
                 </div>
                 <button
-                  onClick={() => setShowShareModal(false)}
+                  onClick={handleCloseShareModal}
                   className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-xl hover:bg-slate-100"
                 >
                   <X size={20} />

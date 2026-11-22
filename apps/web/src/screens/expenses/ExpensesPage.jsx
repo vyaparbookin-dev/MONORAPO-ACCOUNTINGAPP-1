@@ -26,8 +26,8 @@ export const isFamilyGharKharch = (e) => {
   if (mem && mem !== 'Admin' && mem !== 'Shop') return true;
 
   // Category or title contains home/family keywords (unless strictly operating)
-  const isPersonalCat = /घर खर्च|personal|family|राशन|किराना|दवाई|अस्पताल|स्कूल|कॉलेज फीस|कपड़े|दूध|घरेलू/i.test(c);
-  const isPersonalTitle = /घर खर्च|घरेलू|राशन|किराना|दवाई|स्कूल फीस|कॉलेज फीस|मम्मी|पापा|बच्चे/i.test(tit);
+  const isPersonalCat = /घर खर्च|personal|family|राशन|किराना|दवाई|अस्पताल|स्कूल|कॉलेज फीस|कपड़े|दूध|घरेलू|पेट्रोल|वाहन|सर्विसिंग|servicing/i.test(c);
+  const isPersonalTitle = /घर खर्च|घरेलू|राशन|किराना|दवाई|स्कूल फीस|कॉलेज फीस|मम्मी|पापा|बच्चे|पेट्रोल|वाहन|सर्विसिंग|servicing/i.test(tit);
 
   if (t !== 'operating' && (isPersonalCat || isPersonalTitle || (mem && mem !== 'Admin' && mem !== 'Shop'))) return true;
 

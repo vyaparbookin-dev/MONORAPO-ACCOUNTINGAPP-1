@@ -75,6 +75,7 @@ export default function BillingPage() {
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({
     billNumber: "",
+    date: new Date().toISOString().slice(0, 10),
     partyId: "",
     salesmanId: "",
     customerName: "",
@@ -435,6 +436,7 @@ export default function BillingPage() {
   const handleCreateInvoice = () => {
     setFormData({
       billNumber: `INV-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`,
+      date: new Date().toISOString().slice(0, 10),
       partyId: "",
       salesmanId: "",
       customerName: "",
@@ -464,6 +466,7 @@ export default function BillingPage() {
   const resetForm = () => {
     setFormData({
       billNumber: `INV-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`,
+      date: new Date().toISOString().slice(0, 10),
       customerName: "",
       customerMobile: "",
       items: [],
@@ -575,6 +578,7 @@ export default function BillingPage() {
     setEditingId(bill._id);
     setFormData({
       billNumber: bill.billNumber,
+      date: bill.date ? new Date(bill.date).toISOString().split("T")[0] : (bill.createdAt ? new Date(bill.createdAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]),
       partyId: bill.partyId,
       salesmanId: bill.salesmanId || "",
       customerName: bill.customerName,
@@ -1138,6 +1142,18 @@ export default function BillingPage() {
                     setFormData({ ...formData, billNumber: e.target.value })
                   }
                   required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">📅 Invoice Date (बिल दिनांक) *</label>
+                <input
+                  type="date"
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold text-gray-800"
+                  value={formData.date || new Date().toISOString().slice(0, 10)}
+                  onChange={(e) =>
+                    setFormData({ ...formData, date: e.target.value })
+                  }
                 />
               </div>
               <div>
@@ -2032,6 +2048,9 @@ export default function BillingPage() {
                   Invoice
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">
+                  📅 बिल दिनांक (Date)
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">
                   Customer
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">
@@ -2051,7 +2070,7 @@ export default function BillingPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
                     Loading invoices...
                   </td>
                 </tr>
@@ -2064,17 +2083,36 @@ export default function BillingPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <FileText className="text-blue-600" size={18} />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setQuickViewBill(bill);
-                            setShowQuickViewModal(true);
-                          }}
-                          className="font-semibold text-blue-600 hover:text-blue-800 hover:underline text-left"
-                          title="क्लिक करके बिल का त्वरित प्रीव्यू देखें"
-                        >
-                          {bill.billNumber}
-                        </button>
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQuickViewBill(bill);
+                              setShowQuickViewModal(true);
+                            }}
+                            className="font-semibold text-blue-600 hover:text-blue-800 hover:underline text-left block"
+                            title="क्लिक करके बिल का त्वरित प्रीव्यू देखें"
+                          >
+                            {bill.billNumber}
+                          </button>
+                          <div className="text-[11px] text-gray-400 font-mono">
+                            {bill.date || bill.createdAt ? new Date(bill.date || bill.createdAt).toLocaleDateString("hi-IN") : ""}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5 text-gray-800 font-bold text-sm">
+                        <Calendar size={15} className="text-blue-500 shrink-0" />
+                        <span>
+                          {bill.date || bill.createdAt
+                            ? new Date(bill.date || bill.createdAt).toLocaleDateString("hi-IN", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric"
+                              })
+                            : "-"}
+                        </span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -2153,7 +2191,7 @@ export default function BillingPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
                     <div className="flex flex-col items-center justify-center">
                       <div className="bg-gray-100 p-4 rounded-full mb-3">
                         <FileText size={32} className="text-gray-400" />
