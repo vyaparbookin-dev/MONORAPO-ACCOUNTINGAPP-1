@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-title" content="VyaparBook" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="manifest" href="/manifest.json" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: http: https: ws: wss: blob:;" />
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests; default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob: wss:;" />
     <title>VyaparBook 2.0 - Billing & Mobile Accounting</title>
   </head>
   <body class="bg-[#F8FAFC] text-[#0F172A]">
@@ -35,12 +35,24 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
+          navigator.serviceWorker.register('/sw.js', { scope: '/' })
             .then(reg => {
-              reg.update();
+              if (reg && typeof reg.update === 'function') {
+                reg.update().catch(() => {});
+              }
               console.log('✅ PWA Active:', reg.scope);
             })
-            .catch(err => console.log('SW Registration error:', err));
+            .catch(err => console.log('SW Registration note:', err));
+
+          // Reload once when new Service Worker takes over so users never see stale JS/CSS
+          let refreshing = false;
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (!refreshing) {
+              refreshing = true;
+              console.log('⚡ New Service Worker activated, refreshing app...');
+              window.location.reload();
+            }
+          });
         });
       }
     </script>
