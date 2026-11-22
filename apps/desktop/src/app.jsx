@@ -423,6 +423,9 @@ const App = () => {
                     <Route path="/reports/aging" element={<AgingReportPage />} />
                     <Route path="/reports/analytics" element={<GraphicalAnalytics />} />
                     <Route path="/reports/bank-reconciliation" element={<BankReconciliationPage />} />
+                    <Route path="/reports/bank-rec" element={<BankReconciliationPage />} />
+                    <Route path="/bank-reconciliation" element={<BankReconciliationPage />} />
+                    <Route path="/brs" element={<BankReconciliationPage />} />
                     <Route path="/reports/eway-bill" element={<EWayBillPage />} />
                     <Route path="/reports/fixed-assets" element={<FixedAssetsPage />} />
                     <Route path="/capital" element={<BalanceSheetPage />} />

@@ -3,6 +3,7 @@ import PartyTransaction from "../model/PartyTransaction.js";
 import { syncPartyTxToSupabase, syncPartyToSupabase, syncBankAccountToSupabase, syncBankAccountDeleteToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
 import { getPartyByIdFromSupabase } from "../services/supabaseReadService.js";
 import BankAccount from "../model/bankAccount.js";
+import Company from "../model/company.js";
 import mongoose from "mongoose";
 
 // Get all bank & CC accounts
@@ -28,8 +29,30 @@ export const getBankAccounts = async (req, res) => {
     }
 
     console.log("[BankAccount Debug] getBankAccounts query:", JSON.stringify(query));
-    const accounts = await BankAccount.find(query).sort({ createdAt: -1 });
+    let accounts = await BankAccount.find(query).sort({ createdAt: -1 });
     console.log("[BankAccount Debug] found accounts count:", accounts.length);
+
+    if (accounts.length === 0 && req.companyId) {
+      try {
+        const co = await Company.findById(req.companyId).lean();
+        if (co && (co.bankName || co.accountNumber)) {
+          const defaultAcc = new BankAccount({
+            companyId: co._id,
+            accountName: co.name || "Ganesh Hardware",
+            bankName: co.bankName || "Central Bank of India",
+            accountNumber: co.accountNumber || "3349586348",
+            ifscCode: co.ifscCode || "CBIN0280000",
+            upiId: co.upiId || "",
+            accountType: "CURRENT",
+            openingBalance: 0,
+            currentBalance: 0,
+            isDefaultUPI: true
+          });
+          await defaultAcc.save();
+          accounts = [defaultAcc];
+        }
+      } catch (cErr) {}
+    }
 
     const totalCurrentBalance = accounts
       .filter((a) => a.accountType === "CURRENT" || a.accountType === "SAVINGS" || a.accountType === "PERSONAL_BUSINESS")

@@ -1,17 +1,64 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { 
-  Building2, Plus, Download, UploadCloud, CheckCircle2, AlertTriangle, 
-  CreditCard, Wallet, RefreshCw, X, ArrowUpRight, ArrowDownRight, QrCode, FileText 
+  Building2, 
+  Plus, 
+  Download, 
+  UploadCloud, 
+  CheckCircle2, 
+  AlertTriangle, 
+  CreditCard, 
+  Wallet, 
+  RefreshCw, 
+  X, 
+  ArrowUpRight, 
+  ArrowDownRight, 
+  FileText, 
+  Printer, 
+  FileSpreadsheet, 
+  Check, 
+  Sparkles, 
+  Scale, 
+  Zap, 
+  Layers, 
+  Search,
+  ExternalLink,
+  ChevronDown,
+  ArrowRight
 } from 'lucide-react';
 import { useCompany } from '../../contexts/CompanyContext';
+import * as XLSX from 'xlsx';
 
 export default function BankReconciliationPage() {
   const { selectedCompany } = useCompany() || {};
   const [bankAccounts, setBankAccounts] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState(null);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   
-  // Add Account Modal
+  // Active View Tab: "reconciliation" | "accounts" | "feeds"
+  const [activeTab, setActiveTab] = useState("reconciliation");
+
+  // Reconciliation Results & Upload State
+  const [file, setFile] = useState(null);
+  const [reconciling, setReconciling] = useState(false);
+  const [results, setResults] = useState(null);
+  const [statementBalanceInput, setStatementBalanceInput] = useState("");
+  const [activeResultsSubTab, setActiveResultsSubTab] = useState("matched"); // "matched" | "unmatched"
+
+  // 1-Click Post Missing Entry Modal
+  const [postingEntry, setPostingEntry] = useState(null); // entry being posted
+  const [showPostModal, setShowPostModal] = useState(false);
+  const [postForm, setPostForm] = useState({
+    category: "बैंक चार्ज व अन्य व्यय (Bank Charges & Fees)",
+    entryType: "expense",
+    notes: ""
+  });
+  const [savingPost, setSavingPost] = useState(false);
+
+  // Print BRS Modal
+  const [showPrintBrs, setShowPrintBrs] = useState(false);
+
+  // Add Bank Account Modal
   const [showAddBankModal, setShowAddBankModal] = useState(false);
   const [newBankData, setNewBankData] = useState({
     accountName: '',
@@ -27,89 +74,19 @@ export default function BankReconciliationPage() {
   });
   const [savingBank, setSavingBank] = useState(false);
 
-  // Quick Bank Transaction (Deposit / UPI Inflow / Withdrawal)
-  const [selectedBankForTx, setSelectedBankForTx] = useState(null);
-  const [showTxModal, setShowTxModal] = useState(false);
-  const [txForm, setTxForm] = useState({
-    type: 'deposit', // 'deposit' or 'withdrawal'
-    amount: '',
-    note: '',
-    referenceNo: '',
-    date: new Date().toISOString().split('T')[0]
-  });
-  const [savingTx, setSavingTx] = useState(false);
-
-  // Set Default UPI Account
-  const handleSetDefaultUPI = async (bank) => {
-    try {
-      const id = bank._id || bank.id;
-      if (id) {
-        await api.put(`/api/bank-accounts/${id}`, { isDefaultUPI: true });
-      }
-      // Update local cache
-      const updated = bankAccounts.map(b => ({
-        ...b,
-        isDefaultUPI: (b._id === id || b.id === id)
-      }));
-      setBankAccounts(updated);
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('vb_local_bank_accounts', JSON.stringify(updated));
-      }
-      alert(`✅ ${bank.bankName || bank.accountName} को मुख्य UPI खाता सेट कर दिया गया!`);
-      fetchBankAccounts();
-    } catch (err) {
-      console.error("Error setting default UPI:", err);
-      alert("मुख्य UPI सेट करने में त्रुटि: " + (err.response?.data?.message || err.message));
-    }
-  };
-
-  // Reconciliation Upload State
-  const [file, setFile] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState(null);
-
-  // Fetch Bank Accounts from Server and Local Storage (Same logic as Mobile)
+  // Fetch Bank Accounts
   const fetchBankAccounts = async () => {
     setLoadingAccounts(true);
     try {
-      let serverAccounts = [];
-      try {
-        const res = await api.get('/api/bank-accounts');
-        serverAccounts = Array.isArray(res?.accounts) ? res.accounts : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
-      } catch (e) {}
-
-      let localAccounts = [];
-      try {
-        if (typeof localStorage !== 'undefined') {
-          const stored = localStorage.getItem('vb_local_bank_accounts');
-          if (stored) localAccounts = JSON.parse(stored) || [];
-        }
-      } catch (e) {}
-
-      if (serverAccounts.length === 0 && localAccounts.length === 0 && selectedCompany?.bankName) {
-        localAccounts.push({
-          _id: 'co_bank_default',
-          id: 'co_bank_default',
-          accountName: selectedCompany.accountName || selectedCompany.bankName,
-          bankName: selectedCompany.bankName,
-          accountNumber: selectedCompany.accountNumber || '',
-          accountType: 'CURRENT',
-          openingBalance: 0,
-          currentBalance: 0
-        });
+      const res = await api.get('/api/bank-accounts');
+      const accounts = Array.isArray(res?.accounts) 
+        ? res.accounts 
+        : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+      
+      setBankAccounts(accounts);
+      if (accounts.length > 0 && !selectedAccount) {
+        setSelectedAccount(accounts[0]);
       }
-
-      const map = new Map();
-      serverAccounts.forEach(item => {
-        const id = item._id || item.id || item.clientTempId;
-        if (id) map.set(String(id), item);
-      });
-      localAccounts.forEach(item => {
-        const id = item._id || item.id || item.clientTempId;
-        if (id && !map.has(String(id))) map.set(String(id), item);
-      });
-
-      setBankAccounts(Array.from(map.values()));
     } catch (err) {
       console.error('Error fetching bank accounts:', err);
     } finally {
@@ -121,95 +98,242 @@ export default function BankReconciliationPage() {
     fetchBankAccounts();
   }, [selectedCompany]);
 
-  // Handle Add Bank Account
-  const handleSaveBankAccount = async (e) => {
-    e.preventDefault();
-    if (!newBankData.bankName.trim() || !newBankData.accountName.trim()) {
-      alert('कृपया बैंक का नाम और खाता धारक का नाम दर्ज करें!');
-      return;
+  // Handle Bank Account Switch
+  const handleSelectAccount = (accId) => {
+    const acc = bankAccounts.find(a => (a._id || a.id) === accId);
+    if (acc) setSelectedAccount(acc);
+  };
+
+  // Live Bank Feeds Auto-Sync
+  const handleSyncLiveFeeds = async () => {
+    try {
+      setReconciling(true);
+      const accId = selectedAccount?._id || selectedAccount?.id;
+      const res = await api.get(`/api/bank-rec/feeds${accId ? `/${accId}` : ''}`);
+      const feeds = res.data?.feeds || [];
+
+      if (feeds.length === 0) {
+        alert("कोई लाइव बैंक प्रविष्टियां नहीं मिलीं");
+        return;
+      }
+
+      // Automatically reconcile against live feeds
+      const recRes = await api.post('/api/bank-rec/reconcile', {
+        bankAccountId: accId,
+        statementEntries: feeds,
+        statementClosingBalance: feeds[feeds.length - 1]?.balance
+      });
+
+      if (recRes.data?.success) {
+        setResults(recRes.data.data);
+      }
+    } catch (err) {
+      console.error("Live feed sync error:", err);
+      alert("बैंक फीड्स सिंक करने में त्रुटि: " + (err.response?.data?.error || err.message));
+    } finally {
+      setReconciling(false);
     }
-    setSavingBank(true);
+  };
+
+  // Universal File Upload & Reconcile (Excel / CSV)
+  const handleFileUpload = (e) => {
+    const uploadedFile = e.target.files[0];
+    if (uploadedFile) {
+      setFile(uploadedFile);
+    }
+  };
+
+  const processStatementAndReconcile = () => {
+    if (!file) return alert("कृपया पहले बैंक स्टेटमेंट फ़ाइल (Excel या CSV) चुनें!");
+
+    setReconciling(true);
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      try {
+        let entries = [];
+        const data = e.target.result;
+
+        // If Excel (.xlsx or .xls)
+        if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+          const workbook = XLSX.read(data, { type: 'binary' });
+          const firstSheetName = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[firstSheetName];
+          const jsonRows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+          entries = parseJsonRowsToEntries(jsonRows);
+        } else {
+          // If CSV / TXT
+          const text = new TextDecoder('utf-8').decode(new Uint8Array(data));
+          const lines = text.split('\n');
+          entries = parseCsvLinesToEntries(lines);
+        }
+
+        if (entries.length === 0) {
+          alert("स्टेटमेंट में कोई मान्य प्रविष्टियां नहीं मिलीं। कृपया फ़ाइल का प्रारूप जांचें।");
+          setReconciling(false);
+          return;
+        }
+
+        const accId = selectedAccount?._id || selectedAccount?.id;
+        const recRes = await api.post('/api/bank-rec/reconcile', {
+          bankAccountId: accId,
+          statementEntries: entries,
+          statementClosingBalance: statementBalanceInput ? parseFloat(statementBalanceInput) : undefined
+        });
+
+        if (recRes.data?.success) {
+          setResults(recRes.data.data);
+          alert(`✅ समाधान पूर्ण! ${recRes.data.data.brsSummary.matchedCount} प्रविष्टियां स्वतः मिलान हुईं।`);
+        }
+      } catch (err) {
+        console.error("Statement processing error:", err);
+        alert("स्टेटमेंट प्रोसेस करने में त्रुटि: " + (err.response?.data?.error || err.message));
+      } finally {
+        setReconciling(false);
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
+  };
+
+  // Intelligent CSV Parser for Indian Banks
+  const parseCsvLinesToEntries = (lines) => {
+    const entries = [];
+    if (lines.length < 2) return entries;
+
+    const header = lines[0].toLowerCase().split(',');
+    const dateIdx = header.findIndex(h => h.includes('date') || h.includes('दिनांक'));
+    const descIdx = header.findIndex(h => h.includes('desc') || h.includes('particular') || h.includes('narration') || h.includes('विवरण'));
+    const debitIdx = header.findIndex(h => h.includes('debit') || h.includes('dr') || h.includes('withdrawal') || h.includes('नाम'));
+    const creditIdx = header.findIndex(h => h.includes('credit') || h.includes('cr') || h.includes('deposit') || h.includes('जमा'));
+    const refIdx = header.findIndex(h => h.includes('ref') || h.includes('chq') || h.includes('utr') || h.includes('चेक'));
+    const balIdx = header.findIndex(h => h.includes('bal') || h.includes('शेष'));
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const cols = line.split(',');
+
+      const dStr = dateIdx >= 0 ? cols[dateIdx]?.trim() : cols[0]?.trim();
+      const desc = descIdx >= 0 ? cols[descIdx]?.trim() : (cols[1]?.trim() || "बैंक लेनदेन");
+      const dr = debitIdx >= 0 ? parseFloat(cols[debitIdx]) || 0 : 0;
+      const cr = creditIdx >= 0 ? parseFloat(cols[creditIdx]) || 0 : 0;
+      const ref = refIdx >= 0 ? cols[refIdx]?.trim() : "";
+      const bal = balIdx >= 0 ? parseFloat(cols[balIdx]) : undefined;
+
+      if (dr > 0) {
+        entries.push({ date: dStr, description: desc, amount: dr, type: 'debit', referenceNo: ref, balance: bal });
+      } else if (cr > 0) {
+        entries.push({ date: dStr, description: desc, amount: cr, type: 'credit', referenceNo: ref, balance: bal });
+      }
+    }
+    return entries;
+  };
+
+  // Intelligent JSON Row Parser (from Excel)
+  const parseJsonRowsToEntries = (rows) => {
+    const entries = [];
+    rows.forEach(r => {
+      const keys = Object.keys(r);
+      const dateKey = keys.find(k => k.toLowerCase().includes('date') || k.toLowerCase().includes('दिनांक'));
+      const descKey = keys.find(k => k.toLowerCase().includes('desc') || k.toLowerCase().includes('particular') || k.toLowerCase().includes('narration'));
+      const drKey = keys.find(k => k.toLowerCase().includes('debit') || k.toLowerCase().includes('dr') || k.toLowerCase().includes('withdrawal'));
+      const crKey = keys.find(k => k.toLowerCase().includes('credit') || k.toLowerCase().includes('cr') || k.toLowerCase().includes('deposit'));
+      const refKey = keys.find(k => k.toLowerCase().includes('ref') || k.toLowerCase().includes('chq') || k.toLowerCase().includes('utr'));
+      const balKey = keys.find(k => k.toLowerCase().includes('bal'));
+
+      const dStr = dateKey ? r[dateKey] : Object.values(r)[0];
+      const desc = descKey ? r[descKey] : "बैंक लेनदेन";
+      const dr = drKey ? parseFloat(r[drKey]) || 0 : 0;
+      const cr = crKey ? parseFloat(r[crKey]) || 0 : 0;
+      const ref = refKey ? String(r[refKey]) : "";
+      const bal = balKey ? parseFloat(r[balKey]) : undefined;
+
+      if (dr > 0) {
+        entries.push({ date: dStr, description: desc, amount: dr, type: 'debit', referenceNo: ref, balance: bal });
+      } else if (cr > 0) {
+        entries.push({ date: dStr, description: desc, amount: cr, type: 'credit', referenceNo: ref, balance: bal });
+      }
+    });
+    return entries;
+  };
+
+  // 1-Click Post Missing Entry
+  const handleOpenPostModal = (entry) => {
+    setPostingEntry(entry);
+    setPostForm({
+      category: entry.type === 'debit' ? "बैंक चार्ज व अन्य व्यय (Bank Charges & Fees)" : "अन्य व्यावसायिक आय (Other Income)",
+      entryType: entry.type === 'debit' ? "expense" : "receipt",
+      notes: entry.description || ""
+    });
+    setShowPostModal(true);
+  };
+
+  const handleSaveMissingEntry = async (e) => {
+    e.preventDefault();
+    if (!postingEntry) return;
+
+    setSavingPost(true);
     try {
       const payload = {
-        ...newBankData,
-        openingBalance: parseFloat(newBankData.openingBalance) || 0,
-        currentBalance: parseFloat(newBankData.openingBalance) || 0,
-        sanctionedLimit: parseFloat(newBankData.sanctionedLimit) || 0
+        entryType: postForm.entryType,
+        amount: postingEntry.amount,
+        date: postingEntry.date,
+        description: postForm.notes,
+        category: postForm.category,
+        bankAccountId: selectedAccount?._id || selectedAccount?.id
       };
-      await api.post('/api/bank-accounts', payload);
-      alert('✅ नया बैंक खाता सफलतापूर्वक जुड़ गया!');
-      setShowAddBankModal(false);
-      setNewBankData({
-        accountName: '',
-        bankName: '',
-        accountNumber: '',
-        ifscCode: '',
-        upiId: '',
-        accountType: 'CURRENT',
-        openingBalance: '',
-        sanctionedLimit: '',
-        hasCcLimit: false
+
+      const res = await api.post('/api/bank-rec/post-entry', payload);
+      alert(`✅ ${res.data?.message || "प्रविष्टि बहीखाते में दर्ज हो गई!"}`);
+
+      // Move this item from unmatched to matched locally
+      setResults(prev => {
+        if (!prev) return prev;
+        const newUnmatched = prev.unmatched.filter(u => u !== postingEntry);
+        const newMatched = [
+          ...prev.matched,
+          {
+            statementEntry: postingEntry,
+            matchDetails: {
+              model: postForm.entryType === 'expense' ? 'Expance' : 'BankAccount',
+              label: `${postForm.entryType === 'expense' ? 'खर्च' : 'जमा'}: ${postForm.category}`,
+              confidence: 'exact'
+            }
+          }
+        ];
+        return {
+          ...prev,
+          unmatched: newUnmatched,
+          matched: newMatched,
+          brsSummary: {
+            ...prev.brsSummary,
+            matchedCount: newMatched.length,
+            unmatchedCount: newUnmatched.length
+          }
+        };
       });
+
+      setShowPostModal(false);
+      setPostingEntry(null);
       fetchBankAccounts();
     } catch (err) {
-      alert('बैंक खाता जोड़ने में त्रुटि: ' + (err.response?.data?.error || err.message));
+      alert("प्रविष्टि सहेजने में विफल: " + (err.response?.data?.error || err.message));
     } finally {
-      setSavingBank(false);
+      setSavingPost(false);
     }
   };
 
-  // Open Quick Transaction Modal (Deposit/Withdraw/UPI)
-  const handleOpenTxModal = (acc, type = 'deposit') => {
-    setSelectedBankForTx(acc);
-    setTxForm({
-      type,
-      amount: '',
-      note: type === 'deposit' ? 'UPI कलेक्शन / नकद जमा' : 'UPI से भुगतान / खर्च',
-      referenceNo: '',
-      date: new Date().toISOString().split('T')[0]
-    });
-    setShowTxModal(true);
-  };
-
-  // Save Transaction to Bank Account
-  const handleSaveTx = async (e) => {
-    e.preventDefault();
-    if (!selectedBankForTx) return;
-    const amt = parseFloat(txForm.amount);
-    if (!txForm.amount || isNaN(amt) || amt <= 0) {
-      alert('कृपया मान्य राशि दर्ज करें!');
-      return;
-    }
-    setSavingTx(true);
-    try {
-      const accId = selectedBankForTx._id || selectedBankForTx.id;
-      await api.post(`/api/bank-accounts/${accId}/transaction`, {
-        type: txForm.type,
-        amount: amt,
-        note: txForm.note,
-        referenceNo: txForm.referenceNo,
-        date: txForm.date
-      });
-      alert(`✅ ₹${amt.toLocaleString('en-IN')} का लेन-देन (${txForm.type === 'deposit' ? 'जमा / UPI Inflow' : 'निकासी / Payout'}) सफलतापूर्वक दर्ज हो गया!`);
-      setShowTxModal(false);
-      setSelectedBankForTx(null);
-      fetchBankAccounts();
-    } catch (err) {
-      alert('लेन-देन दर्ज करने में त्रुटि: ' + (err.response?.data?.message || err.message));
-    } finally {
-      setSavingTx(false);
-    }
-  };
-
-  // Download Ready-made Sample CSV for Reconciliation
+  // Download Sample Statement CSV
   const handleDownloadSampleCsv = () => {
     const today = new Date().toISOString().split('T')[0];
     const sampleRows = [
-      'Date,Description,Debit,Credit',
-      `${today},NEFT / UPI Customer Payment,,4500.00`,
-      `${today},Supplier Raw Material Payout,2500.00,`,
-      `${today},Bank Monthly SMS Charges,17.70,`,
-      `${today},Direct Cash Deposit at Branch,,10000.00`
+      'Date,Description,ReferenceNo,Debit,Credit,Balance',
+      `${today},UPI/CR/431209823122/Customer Payment,UPI4312098231,,4500.00,14500.00`,
+      `${today},NEFT/DR/N029384920/Asian Paints Raw Material,N029384920,2500.00,,12000.00`,
+      `${today},CHG/SMS ALERT CHARGES Q3 2026,CHG882910,17.70,,11982.30`,
+      `${today},CASH DEP/BR Raipur Main/Self Slip 449,DEP449102,,10000.00,21982.30`
     ].join('\n');
 
     const blob = new Blob([sampleRows], { type: 'text/csv;charset=utf-8;' });
@@ -222,570 +346,557 @@ export default function BankReconciliationPage() {
     document.body.removeChild(link);
   };
 
-  // Handle CSV File Selection
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
-    if (selectedFile) setFile(selectedFile);
-  };
+  // Export BRS Summary to Excel
+  const handleExportBrsExcel = () => {
+    if (!results) return alert("पहले बैंक स्टेटमेंट समाधान चलाएं!");
+    const wb = XLSX.utils.book_new();
 
-  // Parse CSV File and Run Auto-Tally
-  const handleUploadAndReconcile = () => {
-    if (!file) return alert('कृपया पहले बैंक की CSV स्टेटमेंट फ़ाइल चुनें!');
+    const rows = [
+      ["गणेश हार्डवेयर - बैंक समाधान विवरण (Bank Reconciliation Statement)"],
+      [`बैंक खाता: ${selectedAccount?.bankName} (${selectedAccount?.accountNumber})`],
+      [`दिनांक: ${new Date().toLocaleDateString('hi-IN')}`],
+      [""],
+      ["विवरण (BRS Parameter)", "राशि (₹)"],
+      ["बहीखाता अनुसार बैंक शेष (Balance as per Books)", results.brsSummary.booksBalance],
+      ["बैंक पासबुक अनुसार शेष (Balance as per Statement)", results.brsSummary.statementBalance],
+      ["समाधान अंतर (Reconciliation Difference)", results.brsSummary.difference],
+      ["स्थिति (Status)", results.brsSummary.isBalanced ? "पूर्णतः संतुलित (Balanced)" : "असमायोजित अंतर"],
+      [""],
+      ["क्र.", "दिनांक", "विवरण (Narration)", "रेफरेंस नं.", "डेबिट (₹)", "क्रेडिट (₹)", "मिलान स्थिति", "बहीखाता मैच प्रविष्टि"]
+    ];
 
-    setLoading(true);
-    const reader = new FileReader();
+    results.matched.forEach((m, idx) => {
+      rows.push([
+        idx + 1,
+        m.statementEntry.date,
+        m.statementEntry.description,
+        m.statementEntry.referenceNo || "-",
+        m.statementEntry.type === 'debit' ? m.statementEntry.amount : "",
+        m.statementEntry.type === 'credit' ? m.statementEntry.amount : "",
+        "✓ 100% मिलान (Matched)",
+        m.matchDetails?.label || m.matchDetails?.model
+      ]);
+    });
 
-    reader.onload = async (e) => {
-      const text = e.target.result;
-      const lines = text.split('\n');
-      const statementEntries = [];
+    results.unmatched.forEach((u, idx) => {
+      rows.push([
+        results.matched.length + idx + 1,
+        u.date,
+        u.description,
+        u.referenceNo || "-",
+        u.type === 'debit' ? u.amount : "",
+        u.type === 'credit' ? u.amount : "",
+        "⚠️ बहीखाते में अनुपलब्ध (Unmatched)",
+        "छूटी हुई प्रविष्टि"
+      ]);
+    });
 
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-
-        const cols = line.split(',');
-        if (cols.length >= 4) {
-          const date = cols[0].trim();
-          const description = cols[1].trim();
-          const debit = parseFloat(cols[2]) || 0;
-          const credit = parseFloat(cols[3]) || 0;
-
-          if (debit > 0) {
-            statementEntries.push({ date, description, amount: debit, type: 'debit' });
-          } else if (credit > 0) {
-            statementEntries.push({ date, description, amount: credit, type: 'credit' });
-          }
-        }
-      }
-
-      if (statementEntries.length === 0) {
-        alert('CSV फ़ाइल में कोई मान्य डेटा नहीं मिला। कृपया फॉर्मेट जांचें!');
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const response = await api.post('/api/bank-rec/reconcile', { statementEntries });
-        const resData = response?.data || response;
-        if (resData?.success || resData?.matched) {
-          setResults({
-            matched: Array.isArray(resData?.matched) ? resData.matched : [],
-            unmatched: Array.isArray(resData?.unmatched) ? resData.unmatched : []
-          });
-        }
-      } catch (error) {
-        console.error(error);
-        alert('Reconciliation Error: ' + (error.response?.data?.message || error.message));
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    reader.readAsText(file);
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, "BRS_Report");
+    XLSX.writeFile(wb, `BRS_${selectedAccount?.bankName || 'Bank'}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const totalBankBalance = bankAccounts.reduce((sum, b) => sum + Number(b.currentBalance ?? b.balance ?? b.openingBalance ?? 0), 0);
 
   return (
-    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen space-y-6">
-      <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 flex items-center gap-2.5">
-              <Building2 className="text-indigo-600" size={26} /> बैंक खाते व स्टेटमेंट रिकॉन्सिलिएशन (Banking & Auto-Tally)
-            </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              मोबाइल व वेब के सभी बैंक खातों, CC लिमिट व स्टेटमेंट का ऑटोमैटिक मिलान
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={fetchBankAccounts}
-              className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold transition cursor-pointer"
-              title="रिफ्रेश करें"
-            >
-              <RefreshCw size={16} className={loadingAccounts ? 'animate-spin' : ''} />
-            </button>
-            <button
-              onClick={() => setShowAddBankModal(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-2xl font-bold text-xs flex items-center gap-1.5 shadow cursor-pointer transition"
-            >
-              <Plus size={16} /> + नया बैंक खाता जोड़ें
-            </button>
-          </div>
-        </div>
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800">
+      <div className="max-w-7xl mx-auto space-y-5">
 
-        {/* Bank Accounts Section (Directly visible from Mobile sync) */}
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4">
-          <div className="flex justify-between items-center flex-wrap gap-2">
+        {/* Top Header */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl border border-indigo-200/60 shadow-sm">
+              <Building2 className="w-7 h-7" />
+            </div>
             <div>
-              <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                <Wallet className="text-indigo-600" size={18} /> आपके पंजीकृत बैंक खाते (Your Bank Accounts)
-              </h2>
-              <span className="text-[11px] text-slate-400">
-                कुल बैंक बैलेंस: <strong className="text-emerald-700">₹{totalBankBalance.toLocaleString('en-IN')}</strong>
-              </span>
-            </div>
-            <span className="text-xs bg-indigo-50 text-indigo-700 font-bold px-3 py-1 rounded-full border border-indigo-100">
-              {bankAccounts.length} बैंक खाते सक्रिय
-            </span>
-          </div>
-
-          {loadingAccounts ? (
-            <div className="py-8 text-center text-slate-400 font-bold text-xs">बैंक खाते लोड हो रहे हैं...</div>
-          ) : bankAccounts.length === 0 ? (
-            <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-              <p className="text-xs text-slate-500 mb-3">अभी कोई बैंक खाता पंजीकृत नहीं है।</p>
-              <button
-                onClick={() => setShowAddBankModal(true)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow cursor-pointer"
-              >
-                + पहला बैंक खाता जोड़ें
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {bankAccounts.map((acc, idx) => {
-                const bal = Number(acc.currentBalance ?? acc.balance ?? acc.openingBalance ?? 0);
-                const isCc = acc.accountType === 'CC_OVERDRAFT' || acc.hasCcLimit;
-
-                return (
-                  <div key={acc._id || acc.id || idx} className="p-4 bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl shadow-md space-y-3 relative overflow-hidden border border-indigo-500/20">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-300">
-                          {isCc ? '💳 CC / OD लिमिट खाता' : '🏛️ ' + (acc.accountType || 'CURRENT')}
-                        </span>
-                        <h3 className="text-base font-black text-white mt-0.5">{acc.bankName}</h3>
-                        <p className="text-xs text-indigo-200">{acc.accountName}</p>
-                      </div>
-                      <span className="p-2 bg-white/10 rounded-xl">
-                        <CreditCard size={18} className="text-indigo-300" />
-                      </span>
-                    </div>
-
-                    <div className="pt-2 border-t border-white/10 flex justify-between items-end">
-                      <div>
-                        <span className="text-[10px] text-gray-400 block">खाता संख्या</span>
-                        <p className="text-xs font-mono font-bold text-gray-200">
-                          {acc.accountNumber ? `•••• ${String(acc.accountNumber).slice(-4)}` : 'उपलब्ध नहीं'}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[10px] text-gray-400 block">वर्तमान बैलेंस</span>
-                        <p className={`text-base font-black ${bal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          ₹{bal.toLocaleString('en-IN')}
-                        </p>
-                      </div>
-                    </div>
-
-                    {acc.ifscCode && (
-                      <div className="text-[10px] text-indigo-300 font-mono">
-                        IFSC: {acc.ifscCode} {acc.upiId ? `• UPI: ${acc.upiId}` : ''}
-                      </div>
-                    )}
-
-                    {/* Primary UPI Badge or Action */}
-                    <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-white/10">
-                      {acc.isDefaultUPI ? (
-                        <span className="bg-amber-400 text-amber-950 text-[10px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
-                          ⚡ मुख्य UPI खाता (Auto-Debit Linked)
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleSetDefaultUPI(acc)}
-                          className="text-amber-300 hover:text-amber-100 text-[10px] font-bold hover:underline flex items-center gap-1 cursor-pointer"
-                          title="इस खाते को डिफ़ॉल्ट UPI खाता बनाएं ताकि काउंटर QR सेल व UPI खर्च सीधे इसी से कटें"
-                        >
-                          ⚡ मुख्य UPI बनाएं
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Quick Deposit / Withdrawal Buttons */}
-                    <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2">
-                      <button
-                        onClick={() => handleOpenTxModal(acc, 'deposit')}
-                        className="flex-1 py-1.5 bg-emerald-600/90 hover:bg-emerald-600 text-white rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer transition shadow-xs"
-                        title="UPI कलेक्शन या नकद जमा करें"
-                      >
-                        <Plus size={13} /> + UPI / जमा
-                      </button>
-                      <button
-                        onClick={() => handleOpenTxModal(acc, 'withdrawal')}
-                        className="flex-1 py-1.5 bg-rose-600/80 hover:bg-rose-600 text-white rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer transition shadow-xs"
-                        title="UPI से भुगतान या निकासी दर्ज करें"
-                      >
-                        - निकासी / खर्च
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Bank Reconciliation Section */}
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4">
-            <div>
-              <h2 className="text-base font-black text-slate-800 flex items-center gap-2">
-                <FileText className="text-emerald-600" size={20} /> बैंक स्टेटमेंट ऑटो-टैली (Bank Statement Auto-Reconciliation)
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                बैंक से डाउनलोड की गई CSV स्टेटमेंट अपलोड करें और सॉफ्टवेयर की प्रविष्टियों से 1-क्लिक में मिलान करें
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight">
+                  बैंक समाधान व ऑटो-रीकंसीलिएशन (Bank Reconciliation & BRS)
+                </h1>
+                <span className="text-xs bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded-full">
+                  ऑटो-टैली इंजन
+                </span>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+                बैंक पासबुक बनाम बहीखाता (Cash Book) का 1-क्लिक समाधान, ऑटो-मैचिंग व BRS प्रिंट रिपोर्ट
               </p>
             </div>
+          </div>
+
+          <div className="flex items-center flex-wrap gap-2 w-full sm:w-auto">
+            <button
+              onClick={fetchBankAccounts}
+              className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition"
+              title="रिफ्रेश करें"
+            >
+              <RefreshCw className={`w-4 h-4 ${loadingAccounts ? 'animate-spin' : ''}`} />
+            </button>
+
             <button
               onClick={handleDownloadSampleCsv}
-              className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200 flex items-center gap-1.5 cursor-pointer transition shrink-0"
-              title="सैंपल CSV टेम्पलेट डाउनलोड करें"
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition"
             >
-              <Download size={14} /> 📥 सैंपल CSV डाउनलोड करें
+              <Download className="w-4 h-4" />
+              <span>नमूना स्टेटमेंट</span>
             </button>
-          </div>
-
-          <div className="bg-blue-50 border border-blue-200 p-4 rounded-2xl text-xs text-blue-900 space-y-1">
-            <p className="font-bold">💡 निर्देश (CSV Format Guide):</p>
-            <p>
-              बैंक स्टेटमेंट CSV फ़ाइल में 4 कॉलम होने चाहिए: <strong>Date (YYYY-MM-DD), Description (विवरण), Debit (पैसे कटे), Credit (पैसे आए)</strong>।
-              यदि समझ न आए, तो ऊपर दिए गए बटन से <strong>सैंपल CSV</strong> डाउनलोड करके देखें।
-            </p>
-          </div>
-
-          {/* Upload Box */}
-          <div className="p-6 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <span className="p-3 bg-indigo-100 text-indigo-700 rounded-2xl">
-                <UploadCloud size={24} />
-              </span>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">बैंक स्टेटमेंट CSV फ़ाइल चुनें</label>
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileChange}
-                  className="block text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer"
-                />
-              </div>
-            </div>
 
             <button
-              onClick={handleUploadAndReconcile}
-              disabled={loading || !file}
-              className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-6 rounded-2xl text-xs disabled:opacity-50 transition cursor-pointer shadow"
+              onClick={handleSyncLiveFeeds}
+              disabled={reconciling}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs sm:text-sm font-bold shadow-sm transition disabled:opacity-50"
             >
-              {loading ? 'मिलान हो रहा है...' : '⚡ ऑटो-टैली रन करें (Run Auto-Tally)'}
+              <Zap className="w-4 h-4" />
+              <span>⚡ लाइव बैंक फीड्स सिंक</span>
             </button>
           </div>
+        </div>
 
-          {/* Reconciliation Results */}
-          {results && (
-            <div className="space-y-6 pt-4 border-t border-slate-200">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
-                  <span className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
-                    <CheckCircle2 size={16} /> सफलतापूर्वक मिले (Matched Entries)
-                  </span>
-                  <p className="text-2xl font-black text-emerald-900 mt-1">{results.matched.length}</p>
-                  <p className="text-[11px] text-emerald-700">सॉफ्टवेयर और बैंक दोनों में रिकॉर्ड मौजूद हैं</p>
+        {/* Bank Account Selector Card */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+          <div className="flex-1 space-y-1">
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+              सक्रिय समाधान बैंक खाता चुनें (Select Bank Account):
+            </label>
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedAccount?._id || selectedAccount?.id || ""}
+                onChange={(e) => handleSelectAccount(e.target.value)}
+                className="w-full md:max-w-md bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-black text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {bankAccounts.map(b => (
+                  <option key={b._id || b.id} value={b._id || b.id}>
+                    {b.bankName?.toUpperCase()} - {b.accountNumber} ({b.accountName})
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs bg-emerald-50 text-emerald-700 font-bold px-3 py-2 rounded-xl border border-emerald-200 whitespace-nowrap">
+                खाता बैलेंस: ₹{Number(selectedAccount?.currentBalance || selectedAccount?.balance || 0).toLocaleString('en-IN')}
+              </span>
+            </div>
+          </div>
+
+          {/* Quick File Upload Trigger */}
+          <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+            <input
+              type="file"
+              id="statementFile"
+              accept=".csv, .xlsx, .xls, .txt"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <label
+              htmlFor="statementFile"
+              className="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-100 rounded-xl text-xs font-bold text-slate-700 cursor-pointer flex items-center gap-1.5 transition"
+            >
+              <UploadCloud className="w-4 h-4 text-indigo-600" />
+              <span>{file ? file.name.slice(0, 20) + '...' : '📂 बैंक स्टेटमेंट फ़ाइल चुनें'}</span>
+            </label>
+            <button
+              onClick={processStatementAndReconcile}
+              disabled={reconciling || !file}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition disabled:opacity-50"
+            >
+              {reconciling ? 'मिलान हो रहा है...' : 'समाधान चलाएं (Auto-Tally)'}
+            </button>
+          </div>
+        </div>
+
+        {/* BRS COMPARISON SUMMARY WIDGET (When reconciled) */}
+        {results && (
+          <div className="space-y-4">
+            
+            {/* Top 4 KPI Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">बहीखाता शेष (Books Balance)</span>
+                <div className="text-2xl font-black text-slate-800 mt-1">
+                  ₹{Number(results.brsSummary.booksBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </div>
-                <div className="p-4 bg-rose-50 rounded-2xl border border-rose-200">
-                  <span className="text-xs font-bold text-rose-800 flex items-center gap-1.5">
-                    <AlertTriangle size={16} /> सॉफ्टवेयर में छूटे हुए (Unmatched Entries)
-                  </span>
-                  <p className="text-2xl font-black text-rose-900 mt-1">{results.unmatched.length}</p>
-                  <p className="text-[11px] text-rose-700">बैंक में हैं पर सॉफ्टवेयर में दर्ज नहीं हैं</p>
+                <p className="text-xs text-slate-500 mt-1">ऐप में दर्ज बैंक खाता शेष</p>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">पासबुक शेष (Statement Balance)</span>
+                <div className="text-2xl font-black text-indigo-700 mt-1">
+                  ₹{Number(results.brsSummary.statementBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </div>
+                <p className="text-xs text-slate-500 mt-1">बैंक स्टेटमेंट अंतिम शेष</p>
+              </div>
+
+              <div className={`p-4 rounded-2xl shadow-sm border ${results.brsSummary.isBalanced ? 'bg-emerald-50/50 border-emerald-200' : 'bg-rose-50/50 border-rose-200'}`}>
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">समाधान अंतर (BRS Difference)</span>
+                <div className={`text-2xl font-black mt-1 ${results.brsSummary.isBalanced ? 'text-emerald-700' : 'text-rose-700'}`}>
+                  ₹{Math.abs(results.brsSummary.difference).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </div>
+                <p className="text-xs mt-1 text-slate-500">
+                  {results.brsSummary.isBalanced ? '✓ पूर्णतः संतुलित' : 'असमायोजित अंतर'}
+                </p>
+              </div>
+
+              <div className="bg-gradient-to-br from-indigo-900 to-slate-900 text-white p-4 rounded-2xl shadow-md flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-indigo-200 uppercase tracking-wider">ऑटो-मैच दर</span>
+                  <Sparkles className="w-5 h-5 text-amber-400" />
+                </div>
+                <div className="mt-2">
+                  <div className="text-2xl font-black text-white">
+                    {results.brsSummary.matchPercentage}%
+                  </div>
+                  <p className="text-[11px] text-indigo-300 mt-0.5">
+                    {results.brsSummary.matchedCount} / {results.brsSummary.totalEntries} प्रविष्टियां सत्यापित
+                  </p>
                 </div>
               </div>
 
-              {/* Unmatched Table */}
-              {results.unmatched.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="text-xs font-bold text-rose-800 uppercase tracking-wider">
-                    ⚠️ ये प्रविष्टियां सॉफ्टवेयर में गायब हैं (Bank entries missing in books):
-                  </h3>
-                  <div className="overflow-x-auto border border-rose-200 rounded-2xl">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-rose-100/70 text-rose-900 font-bold border-b border-rose-200">
+            </div>
+
+            {/* Results Review Section */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              
+              {/* Tab Selector & Actions */}
+              <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50/60">
+                <div className="flex items-center gap-2 bg-slate-200/80 p-1 rounded-xl">
+                  <button
+                    onClick={() => setActiveResultsSubTab("matched")}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${activeResultsSubTab === 'matched' ? 'bg-white text-emerald-800 shadow' : 'text-slate-600'}`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>सत्यापित मिलान ({results.matched.length})</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveResultsSubTab("unmatched")}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${activeResultsSubTab === 'unmatched' ? 'bg-white text-rose-800 shadow' : 'text-slate-600'}`}
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                    <span>छूटी हुई प्रविष्टियां ({results.unmatched.length})</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleExportBrsExcel}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>BRS एक्सेल डाउनलोड</span>
+                  </button>
+                  <button
+                    onClick={() => setShowPrintBrs(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-xs transition"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>BRS प्रिंट (A4)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto">
+                {activeResultsSubTab === "matched" ? (
+                  <table className="w-full text-left text-xs sm:text-sm">
+                    <thead>
+                      <tr className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
+                        <th className="py-3 px-4 w-12 text-center">#</th>
+                        <th className="py-3 px-4">दिनांक</th>
+                        <th className="py-3 px-4">बैंक विवरण (Narration / Ref)</th>
+                        <th className="py-3 px-4 text-right">राशि (₹)</th>
+                        <th className="py-3 px-4">बहीखाता मिलान प्रविष्टि (Matched In Books)</th>
+                        <th className="py-3 px-4 text-center">सटीकता (Confidence)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {results.matched.length === 0 ? (
                         <tr>
-                          <th className="p-3">दिनांक (Date)</th>
-                          <th className="p-3">विवरण (Description)</th>
-                          <th className="p-3 text-right">राशि (Amount ₹)</th>
-                          <th className="p-3 text-center">प्रकार (Type)</th>
+                          <td colSpan="6" className="py-8 text-center text-slate-400">
+                            कोई मिलान नहीं मिला
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-rose-100 bg-white">
-                        {results.unmatched.map((item, idx) => (
-                          <tr key={idx} className="hover:bg-rose-50/50">
-                            <td className="p-3 whitespace-nowrap">{item.date}</td>
-                            <td className="p-3 font-medium text-slate-700">{item.description}</td>
-                            <td className="p-3 text-right font-black text-slate-900">₹{Number(item.amount).toLocaleString('en-IN')}</td>
-                            <td className="p-3 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                item.type === 'credit' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                              }`}>
-                                {item.type === 'credit' ? '🟢 जमा (Credit)' : '🔴 निकासी (Debit)'}
+                      ) : (
+                        results.matched.map((m, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/80">
+                            <td className="py-3 px-4 text-center text-slate-400 text-xs">{idx + 1}</td>
+                            <td className="py-3 px-4 text-slate-500 font-mono text-xs">
+                              {new Date(m.statementEntry.date).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </td>
+                            <td className="py-3 px-4 font-semibold text-slate-800">
+                              <div>{m.statementEntry.description}</div>
+                              {m.statementEntry.referenceNo && (
+                                <span className="text-[11px] font-mono text-slate-400">Ref: {m.statementEntry.referenceNo}</span>
+                              )}
+                            </td>
+                            <td className={`py-3 px-4 text-right font-mono font-bold ${m.statementEntry.type === 'credit' ? 'text-emerald-700' : 'text-slate-800'}`}>
+                              {m.statementEntry.type === 'credit' ? '+' : '-'}₹{Number(m.statementEntry.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="py-3 px-4 font-bold text-indigo-700">
+                              <span className="bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
+                                {m.matchDetails?.label}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+                                <CheckCircle2 className="w-3 h-3" />
+                                {m.matchDetails?.confidence === 'exact' ? '100% सटीक' : 'उच्च मिलान'}
                               </span>
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  /* UNMATCHED TABLE WITH 1-CLICK POST BUTTON */
+                  <table className="w-full text-left text-xs sm:text-sm">
+                    <thead>
+                      <tr className="bg-rose-50/80 text-rose-900 font-bold border-b border-rose-200">
+                        <th className="py-3 px-4 w-12 text-center">#</th>
+                        <th className="py-3 px-4">दिनांक</th>
+                        <th className="py-3 px-4">बैंक स्टेटमेंट विवरण (Narration)</th>
+                        <th className="py-3 px-4 text-center">प्रकार</th>
+                        <th className="py-3 px-4 text-right">राशि (₹)</th>
+                        <th className="py-3 px-4 text-center">1-क्लिक समाधान (1-Click Action)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-rose-100">
+                      {results.unmatched.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" className="py-8 text-center text-slate-400">
+                            ✓ कोई छूटी हुई प्रविष्टि नहीं है! सभी प्रविष्टियां सत्यापित हैं।
+                          </td>
+                        </tr>
+                      ) : (
+                        results.unmatched.map((u, idx) => (
+                          <tr key={idx} className="hover:bg-rose-50/40">
+                            <td className="py-3 px-4 text-center text-slate-400 text-xs">{idx + 1}</td>
+                            <td className="py-3 px-4 text-slate-500 font-mono text-xs">
+                              {new Date(u.date).toLocaleDateString('hi-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </td>
+                            <td className="py-3 px-4 font-semibold text-slate-800">
+                              <div>{u.description}</div>
+                              {u.referenceNo && <span className="text-[11px] font-mono text-slate-400">Ref: {u.referenceNo}</span>}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`px-2 py-0.5 rounded text-xs font-bold ${u.type === 'credit' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                                {u.type === 'credit' ? 'क्रेडिट (जमा)' : 'डेबिट (निकासी)'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
+                              ₹{Number(u.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <button
+                                onClick={() => handleOpenPostModal(u)}
+                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1 mx-auto"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>बहीखाते में दर्ज करें</span>
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
+              </div>
 
-        {/* ADD BANK ACCOUNT MODAL */}
-        {showAddBankModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-center items-center z-50 p-4 animate-in fade-in">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 border border-slate-200">
-              <div className="flex justify-between items-center pb-3 border-b mb-4">
-                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                  <Building2 size={18} className="text-indigo-600" /> नया बैंक खाता जोड़ें (Add Bank)
+            </div>
+
+          </div>
+        )}
+
+        {/* MODAL: 1-CLICK POST MISSING ENTRY */}
+        {showPostModal && postingEntry && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <Plus className="w-5 h-5 text-indigo-600" />
+                  छूटी हुई प्रविष्टि बहीखाते में जोड़ें
                 </h3>
-                <button onClick={() => setShowAddBankModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
-                  <X size={18} />
+                <button
+                  onClick={() => setShowPostModal(false)}
+                  className="p-1 rounded-lg hover:bg-slate-100 text-slate-400"
+                >
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <form onSubmit={handleSaveBankAccount} className="space-y-3.5">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">बैंक का नाम (Bank Name) *</label>
-                  <input
-                    required
-                    type="text"
-                    placeholder="उदा. State Bank of India, HDFC Bank"
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                    value={newBankData.bankName}
-                    onChange={(e) => setNewBankData({ ...newBankData, bankName: e.target.value })}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">खाता धारक का नाम (Account Holder) *</label>
-                  <input
-                    required
-                    type="text"
-                    placeholder="फर्म / दुकान या मालिक का नाम"
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                    value={newBankData.accountName}
-                    onChange={(e) => setNewBankData({ ...newBankData, accountName: e.target.value })}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">खाता संख्या (A/C No)</label>
-                    <input
-                      type="text"
-                      placeholder="उदा. 34829100293"
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
-                      value={newBankData.accountNumber}
-                      onChange={(e) => setNewBankData({ ...newBankData, accountNumber: e.target.value })}
-                    />
+              <form onSubmit={handleSaveMissingEntry} className="space-y-3 mt-4 text-xs">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">बैंक विवरण:</span>
+                    <span className="font-bold text-slate-800 font-mono">
+                      ₹{Number(postingEntry.amount).toLocaleString('en-IN')} ({postingEntry.type === 'debit' ? 'डेबिट' : 'क्रेडिट'})
+                    </span>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">IFSC Code</label>
-                    <input
-                      type="text"
-                      placeholder="उदा. SBIN0001234"
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono uppercase focus:ring-2 focus:ring-indigo-500 outline-none"
-                      value={newBankData.ifscCode}
-                      onChange={(e) => setNewBankData({ ...newBankData, ifscCode: e.target.value })}
-                    />
-                  </div>
+                  <p className="text-slate-600 font-semibold">{postingEntry.description}</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2.5">
+                {postingEntry.type === 'debit' ? (
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">खाता प्रकार (Type)</label>
+                    <label className="block font-bold text-slate-700 mb-1">खर्च की श्रेणी (Expense Category) *</label>
                     <select
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                      value={newBankData.accountType}
-                      onChange={(e) => setNewBankData({ ...newBankData, accountType: e.target.value })}
+                      value={postForm.category}
+                      onChange={(e) => setPostForm({ ...postForm, category: e.target.value })}
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
-                      <option value="CURRENT">करंट (Current)</option>
-                      <option value="SAVINGS">बचत (Savings)</option>
-                      <option value="CC_OVERDRAFT">CC / OD लिमिट</option>
-                      <option value="PERSONAL_BUSINESS">पर्सनल (Business Use)</option>
+                      <option value="बैंक चार्ज व अन्य व्यय (Bank Charges & Fees)">बैंक चार्ज व SMS फीस (Bank Charges)</option>
+                      <option value="बिजली बिल (Electricity Bill)">बिजली बिल (Electricity Bill)</option>
+                      <option value="दुकान किराया (Shop Rent)">दुकान किराया (Shop Rent)</option>
+                      <option value="स्टाफ सैलरी (Staff Salary)">स्टाफ वेतन / मजदूरी (Salaries)</option>
+                      <option value="ट्रांसपोर्ट/भाड़ा (Freight & Cartage)">ट्रांसपोर्ट / माल भाड़ा</option>
+                      <option value="अन्य व्यावसायिक व्यय (General Expenses)">अन्य व्यावसायिक व्यय</option>
                     </select>
                   </div>
+                ) : (
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">शुरूआती बैलेंस (Opening ₹)</label>
-                    <input
-                      type="number"
-                      placeholder="0.00"
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
-                      value={newBankData.openingBalance}
-                      onChange={(e) => setNewBankData({ ...newBankData, openingBalance: e.target.value })}
-                    />
+                    <label className="block font-bold text-slate-700 mb-1">जमा का प्रकार (Receipt Type) *</label>
+                    <select
+                      value={postForm.category}
+                      onChange={(e) => setPostForm({ ...postForm, category: e.target.value })}
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="ग्राहक प्रत्यक्ष UPI/बैंक जमा (Customer Direct Deposit)">ग्राहक प्रत्यक्ष UPI/बैंक जमा</option>
+                      <option value="बैंक ब्याज आय (Bank Interest Credited)">बैंक बचत/FD ब्याज आय (Interest)</option>
+                      <option value="मालिक अतिरिक्त पूंजी जमा (Capital Inflow)">मालिक अतिरिक्त पूंजी जमा</option>
+                      <option value="अन्य व्यावसायिक आय (Other Income)">अन्य विविध आय</option>
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">टिप्पणी / विवरण (Notes)</label>
+                  <input
+                    type="text"
+                    value={postForm.notes}
+                    onChange={(e) => setPostForm({ ...postForm, notes: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowPostModal(false)}
+                    className="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-bold"
+                  >
+                    रद्द करें
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingPost}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-sm"
+                  >
+                    {savingPost ? 'सहेज रहे हैं...' : 'दर्ज करें व मिलान करें'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: PRINT BRS A4 REPORT */}
+        {showPrintBrs && results && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl max-w-3xl w-full p-6 sm:p-8 shadow-2xl border border-slate-200 my-auto">
+              
+              <div className="flex items-center justify-between pb-4 border-b border-slate-200 print:hidden">
+                <span className="font-bold text-slate-800">बैंक समाधान विवरण (BRS Report Preview)</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => window.print()}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>प्रिंट करें (Print A4)</span>
+                  </button>
+                  <button onClick={() => setShowPrintBrs(false)} className="p-2 text-slate-400">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* A4 PRINTABLE CONTENT */}
+              <div className="p-6 bg-white text-slate-900 space-y-4 font-sans text-xs sm:text-sm">
+                
+                <div className="text-center border-b-2 border-slate-900 pb-3">
+                  <h1 className="text-2xl font-black uppercase tracking-wide">गणेश हार्डवेयर (Ganesh Hardware)</h1>
+                  <p className="text-xs text-slate-600">बैंक समाधान विवरण (Bank Reconciliation Statement - BRS)</p>
+                  <p className="text-xs font-bold text-slate-700 mt-1">
+                    बैंक: {selectedAccount?.bankName?.toUpperCase()} • खाता संख्या: {selectedAccount?.accountNumber}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    समाधान तिथि: {new Date().toLocaleDateString('hi-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </p>
+                </div>
+
+                {/* BRS Financial Statement Box */}
+                <table className="w-full text-left border-collapse border border-slate-300 text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 font-bold border-b border-slate-300">
+                      <th className="p-2.5 border-r border-slate-300">विवरण (Particulars)</th>
+                      <th className="p-2.5 text-right w-40">राशि (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    <tr>
+                      <td className="p-2.5 font-bold">1. बहीखाते अनुसार बैंक शेष (Balance as per Cash Book)</td>
+                      <td className="p-2.5 text-right font-mono font-bold">
+                        ₹{Number(results.brsSummary.booksBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="p-2.5 text-slate-600 pl-6">
+                        (+) सत्यापित क्रेडिट प्रविष्टियां (Reconciled Bank Deposits)
+                      </td>
+                      <td className="p-2.5 text-right font-mono text-emerald-700">
+                        +₹{results.matched.filter(m => m.statementEntry.type === 'credit').reduce((s, m) => s + m.statementEntry.amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="p-2.5 text-slate-600 pl-6">
+                        (-) सत्यापित डेबिट प्रविष्टियां (Reconciled Withdrawals & Expenses)
+                      </td>
+                      <td className="p-2.5 text-right font-mono text-rose-700">
+                        -₹{results.matched.filter(m => m.statementEntry.type === 'debit').reduce((s, m) => s + m.statementEntry.amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                    <tr className="bg-slate-50 font-bold">
+                      <td className="p-2.5">2. बैंक पासबुक अनुसार अंतिम शेष (Balance as per Bank Statement)</td>
+                      <td className="p-2.5 text-right font-mono font-black text-indigo-900">
+                        ₹{Number(results.brsSummary.statementBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                    <tr className={results.brsSummary.isBalanced ? "bg-emerald-50 font-bold" : "bg-rose-50 font-bold"}>
+                      <td className="p-2.5">3. समाधान अंतर (Net Difference)</td>
+                      <td className="p-2.5 text-right font-mono font-black">
+                        {results.brsSummary.isBalanced ? "₹0.00 (पूर्णतः संतुलित)" : `₹${results.brsSummary.difference}`}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* Audit Signatures */}
+                <div className="grid grid-cols-2 gap-8 pt-16 text-center text-xs">
+                  <div>
+                    <div className="border-b border-slate-400 w-48 mx-auto mb-1"></div>
+                    <p className="font-bold">हस्ताक्षर - अकाउंटेंट / मुंशी</p>
+                    <p className="text-[10px] text-slate-400">बैंक समाधान सत्यापित</p>
+                  </div>
+                  <div>
+                    <div className="border-b border-slate-400 w-48 mx-auto mb-1"></div>
+                    <p className="font-bold">हस्ताक्षर - प्रोप्राइटर / CA</p>
+                    <p className="text-[10px] text-slate-400">गणेश हार्डवेयर</p>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">UPI ID (QR पेमेंट के लिए)</label>
-                  <input
-                    type="text"
-                    placeholder="उदा. username@upi"
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                    value={newBankData.upiId}
-                    onChange={(e) => setNewBankData({ ...newBankData, upiId: e.target.value })}
-                  />
-                </div>
-
-                <div className="flex items-center gap-2 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
-                  <input
-                    type="checkbox"
-                    id="isDefaultUPICheck"
-                    className="w-4 h-4 text-amber-600 rounded cursor-pointer"
-                    checked={newBankData.isDefaultUPI}
-                    onChange={(e) => setNewBankData({ ...newBankData, isDefaultUPI: e.target.checked })}
-                  />
-                  <label htmlFor="isDefaultUPICheck" className="text-xs font-bold text-amber-900 cursor-pointer">
-                    ⚡ मुख्य UPI खाता बनाएं (Primary UPI for QR & Auto-Debit)
-                  </label>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-3 border-t">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddBankModal(false)}
-                    className="px-4 py-2 border rounded-xl text-slate-600 hover:bg-slate-50 text-xs font-bold cursor-pointer"
-                  >
-                    रद्द करें
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={savingBank}
-                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer transition shadow"
-                  >
-                    {savingBank ? 'सेव हो रहा है...' : 'सुरक्षित करें (Save Bank)'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* ⚡ QUICK TRANSACTION MODAL (DEPOSIT / UPI INFLOW / WITHDRAWAL) */}
-        {showTxModal && selectedBankForTx && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-center items-center z-50 p-4 animate-in fade-in">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 border border-slate-200">
-              <div className="flex justify-between items-center pb-3 border-b mb-4">
-                <div>
-                  <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                    {txForm.type === 'deposit' ? '🟢 बैंक में जमा / UPI Inflow' : '🔴 बैंक से निकासी / UPI Payout'}
-                  </h3>
-                  <p className="text-xs text-indigo-600 font-bold">{selectedBankForTx.bankName} ({selectedBankForTx.accountName})</p>
-                </div>
-                <button onClick={() => setShowTxModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
-                  <X size={18} />
-                </button>
               </div>
 
-              <form onSubmit={handleSaveTx} className="space-y-4">
-                {/* Transaction Type Switcher */}
-                <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl text-xs font-bold">
-                  <button
-                    type="button"
-                    onClick={() => setTxForm({ ...txForm, type: 'deposit', note: 'UPI कलेक्शन / नकद जमा' })}
-                    className={`py-2 rounded-lg transition cursor-pointer ${
-                      txForm.type === 'deposit' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600'
-                    }`}
-                  >
-                    🟢 जमा (Deposit / UPI)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTxForm({ ...txForm, type: 'withdrawal', note: 'UPI से भुगतान / खर्च' })}
-                    className={`py-2 rounded-lg transition cursor-pointer ${
-                      txForm.type === 'withdrawal' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-600'
-                    }`}
-                  >
-                    🔴 निकासी (Withdraw / Pay)
-                  </button>
-                </div>
-
-                {/* Amount */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">रकम (Amount ₹) *</label>
-                  <input
-                    required
-                    type="number"
-                    step="any"
-                    placeholder="₹ 0.00"
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-base font-black text-indigo-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                    value={txForm.amount}
-                    onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
-                    autoFocus
-                  />
-                </div>
-
-                {/* Date */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">तारीख (Date)</label>
-                  <input
-                    type="date"
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
-                    value={txForm.date}
-                    onChange={(e) => setTxForm({ ...txForm, date: e.target.value })}
-                  />
-                </div>
-
-                {/* Description / Note */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">विवरण / नोट (Description)</label>
-                  <input
-                    type="text"
-                    placeholder="उदा. आज का कुल UPI कलेक्शन, ग्राहक से ऑनलाइन"
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                    value={txForm.note}
-                    onChange={(e) => setTxForm({ ...txForm, note: e.target.value })}
-                  />
-                </div>
-
-                {/* Reference No / UPI Ref */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">UPI Ref No / UTR (वैकल्पिक)</label>
-                  <input
-                    type="text"
-                    placeholder="उदा. 423981290342"
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
-                    value={txForm.referenceNo}
-                    onChange={(e) => setTxForm({ ...txForm, referenceNo: e.target.value })}
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-3 border-t">
-                  <button
-                    type="button"
-                    onClick={() => setShowTxModal(false)}
-                    className="px-4 py-2 border rounded-xl text-slate-600 hover:bg-slate-50 text-xs font-bold cursor-pointer"
-                  >
-                    रद्द करें
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={savingTx}
-                    className={`px-5 py-2 text-white rounded-xl text-xs font-bold cursor-pointer transition shadow ${
-                      txForm.type === 'deposit' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
-                    }`}
-                  >
-                    {savingTx ? 'सेव हो रहा है...' : 'सुरक्षित करें (Save Transaction)'}
-                  </button>
-                </div>
-              </form>
             </div>
           </div>
         )}
+
       </div>
     </div>
   );

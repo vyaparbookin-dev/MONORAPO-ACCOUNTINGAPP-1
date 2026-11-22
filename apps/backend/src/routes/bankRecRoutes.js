@@ -1,9 +1,19 @@
 import express from "express";
-import { reconcileStatement } from "../controllers/bankRecController.js";
+import { 
+  reconcileStatement, 
+  postMissingEntry, 
+  getBankFeeds, 
+  saveReconciliationReport 
+} from "../controllers/bankRecController.js";
 import { protect } from "../middleware/authmiddleware.js";
 
 const router = express.Router();
 
-router.post("/reconcile", protect, reconcileStatement);
+router.use(protect);
+router.post("/reconcile", reconcileStatement);
+router.post("/post-entry", postMissingEntry);
+router.get("/feeds", getBankFeeds);
+router.get("/feeds/:accountId", getBankFeeds);
+router.post("/save-report", saveReconciliationReport);
 
 export default router;

@@ -237,12 +237,12 @@ const ReportsPage = () => {
     {
       id: "bank-recon",
       category: "parties",
-      title: "Bank Reconciliation",
-      desc: "Match bank statement with ERP cash & UPI transaction entries",
+      title: "बैंक समाधान व BRS (Bank Reconciliation)",
+      desc: "Auto-reconcile bank statements, live feeds, 1-click auto-tally & BRS report",
       path: "/reports/bank-reconciliation",
       icon: Building,
-      color: "bg-gray-50 text-gray-700 border-gray-200",
-      badge: "Banking"
+      color: "bg-indigo-50 text-indigo-700 border-indigo-200",
+      badge: "Auto BRS"
     },
     {
       id: "capital-assets",
