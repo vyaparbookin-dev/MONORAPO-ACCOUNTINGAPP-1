@@ -32,7 +32,8 @@ import {
   ShoppingCart,
   PlusCircle,
   Package,
-  FileText
+  FileText,
+  Receipt
 } from "lucide-react";
 import api from "../../services/api";
 import { readLocalJson } from "@repo/shared";
