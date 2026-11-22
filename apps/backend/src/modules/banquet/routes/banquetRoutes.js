@@ -18,7 +18,9 @@ import {
   reconcileLeftoverMaterial,
   updateHotelRoomAllotment,
   updateDepartmentalManagers,
-  updateEventItinerary
+  updateEventItinerary,
+  getCelebrationReminders,
+  updateCelebrationFollowup
 } from "../controllers/banquetController.js";
 
 const router = express.Router();
@@ -60,6 +62,10 @@ router.post("/bookings/:bookingId/itinerary", updateEventItinerary);
 
 // Cancellation & Refund
 router.post("/bookings/:bookingId/cancel", cancelBookingWithRefund);
+
+// Celebration CRM Reminders (30 & 15 Days Before Annual Events)
+router.get("/celebration-reminders", getCelebrationReminders);
+router.put("/celebration-reminders/:id", updateCelebrationFollowup);
 
 // Inquiry & Leads CRM
 router.get("/inquiries", getInquiries);

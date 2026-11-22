@@ -9,7 +9,7 @@ const isSupabaseConfigured = Boolean(supabase);
 /**
  * Execute a Supabase query with automatic retry on clock-skew / transient gateway errors (e.g. PGRST303 "JWT issued at future")
  */
-export const executeSupabaseQuery = async (buildQueryFn, maxRetries = 3, delayMs = 1000) => {
+export const executeSupabaseQuery = async (buildQueryFn, maxRetries = 2, delayMs = 400) => {
   let attempt = 0;
   while (true) {
     try {
@@ -19,7 +19,7 @@ export const executeSupabaseQuery = async (buildQueryFn, maxRetries = 3, delayMs
         const msg = String(res.error.message || '').toLowerCase();
         if ((msg.includes('jwt issued at future') || msg.includes('pgrst303') || msg.includes('clock') || msg.includes('jwt')) && attempt < maxRetries) {
           attempt++;
-          console.warn(`[Supabase Read] Transient clock skew error (${res.error.message}), retrying attempt ${attempt}/${maxRetries}...`);
+          // Silent micro-wait to let local clock skew settle
           await new Promise(r => setTimeout(r, delayMs * attempt));
           continue;
         }
@@ -29,7 +29,6 @@ export const executeSupabaseQuery = async (buildQueryFn, maxRetries = 3, delayMs
       const msg = String(err.message || '').toLowerCase();
       if ((msg.includes('jwt issued at future') || msg.includes('jwt')) && attempt < maxRetries) {
         attempt++;
-        console.warn(`[Supabase Read] Transient exception (${err.message}), retrying attempt ${attempt}/${maxRetries}...`);
         await new Promise(r => setTimeout(r, delayMs * attempt));
         continue;
       }

@@ -187,6 +187,12 @@ export const createBooking = async (req, res) => {
     const booking = new BanquetBooking({
       ...data,
       bookingNo,
+      celebrantName: data.celebrantName || data.customerName,
+      celebrantMobile: data.celebrantMobile || data.customerMobile,
+      celebrantDobOrAnniversary: data.celebrantDobOrAnniversary || data.eventDate,
+      bookerName: data.isBookerDifferentFromCelebrant ? (data.bookerName || data.customerName) : data.customerName,
+      bookerMobile: data.isBookerDifferentFromCelebrant ? (data.bookerMobile || data.customerMobile) : data.customerMobile,
+      bookerRelation: data.isBookerDifferentFromCelebrant ? (data.bookerRelation || "रिश्तेदार") : "स्वयं (Self)",
       hallRent: calculatedHallRent,
       totalEstimatedAmount: totalEst,
       balanceDue: balDue,
@@ -687,5 +693,123 @@ export const updateEventItinerary = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// 18. CELEBRATION CRM REMINDERS (30 & 15 DAYS BEFORE ANNUAL EVENTS)
+export const getCelebrationReminders = async (req, res) => {
+  try {
+    const bookings = await BanquetBooking.find({
+      status: { $ne: "cancelled" },
+      annualReminderEnabled: { $ne: false }
+    }).lean();
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const currentYear = today.getFullYear();
+
+    const reminders = [];
+
+    for (const b of bookings) {
+      const rawDateStr = b.celebrantDobOrAnniversary || b.eventDate;
+      if (!rawDateStr) continue;
+
+      const parts = rawDateStr.split("-");
+      if (parts.length < 3) continue;
+
+      const month = parseInt(parts[1], 10) - 1; // 0-indexed
+      const day = parseInt(parts[2], 10);
+
+      // Check upcoming celebration date in current year or next year
+      let nextCelebration = new Date(currentYear, month, day);
+      if (nextCelebration < today) {
+        nextCelebration = new Date(currentYear + 1, month, day);
+      }
+
+      const diffMs = nextCelebration.getTime() - today.getTime();
+      const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+      // Staff follow-up window (events coming up in next 45 days)
+      if (diffDays <= 45) {
+        let reminderStage = "upcoming";
+        if (diffDays <= 7) {
+          reminderStage = "urgent_today_or_week";
+        } else if (diffDays <= 15) {
+          reminderStage = "15_days_alert";
+        } else if (diffDays <= 30) {
+          reminderStage = "30_days_alert";
+        }
+
+        reminders.push({
+          bookingId: b._id,
+          bookingNo: b.bookingNo,
+          hallName: b.hallName,
+          eventName: b.eventName,
+          eventType: b.eventType || "birthday",
+          eventDateOriginal: b.eventDate,
+          nextCelebrationDate: nextCelebration.toISOString().split("T")[0],
+          daysRemaining: diffDays,
+          reminderStage,
+          // Direct Celebrant contact details (whose celebration it is)
+          celebrantName: b.celebrantName || b.customerName,
+          celebrantMobile: b.celebrantMobile || b.customerMobile,
+          // Booker / Relative contact details
+          isBookerDifferent: !!b.isBookerDifferentFromCelebrant,
+          bookerName: b.isBookerDifferentFromCelebrant ? b.bookerName : b.customerName,
+          bookerMobile: b.isBookerDifferentFromCelebrant ? b.bookerMobile : b.customerMobile,
+          bookerRelation: b.bookerRelation || (b.isBookerDifferentFromCelebrant ? "रिश्तेदार" : "स्वयं"),
+          // Followup CRM state
+          followupStatus: b.followupStatus || "pending",
+          followupNotes: b.followupNotes || "",
+          lastFollowupDate: b.lastFollowupDate,
+          totalAmount: b.totalEstimatedAmount,
+          pax: b.minGuaranteedPax
+        });
+      }
+    }
+
+    // Sort by daysRemaining ascending (nearest first)
+    reminders.sort((a, b) => a.daysRemaining - b.daysRemaining);
+
+    res.json({
+      success: true,
+      count: reminders.length,
+      reminders
+    });
+  } catch (error) {
+    console.error("Error fetching celebration reminders:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 19. UPDATE CELEBRATION FOLLOWUP STATUS & NOTES
+export const updateCelebrationFollowup = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { followupStatus, followupNotes } = req.body;
+
+    const booking = await BanquetBooking.findByIdAndUpdate(
+      id,
+      {
+        followupStatus,
+        followupNotes,
+        lastFollowupDate: new Date()
+      },
+      { new: true }
+    );
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "बुकिंग नहीं मिली।" });
+    }
+
+    res.json({
+      success: true,
+      message: "फॉलो-अप स्थिति सफलतापूर्वक सुरक्षित की गई!",
+      booking
+    });
+  } catch (error) {
+    console.error("Error updating celebration followup:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 
 

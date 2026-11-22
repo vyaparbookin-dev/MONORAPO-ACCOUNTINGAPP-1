@@ -7,6 +7,32 @@ const banquetBookingSchema = new mongoose.Schema({
   hallName: { type: String, required: true },
   eventName: { type: String, default: "Marriage / Birthday Party / Corporate" },
   
+  // Celebrant / Honoree Details (जिसका जन्मदिन / सालगिरह / उत्सव है)
+  celebrantName: { type: String, default: "" },
+  celebrantMobile: { type: String, default: "" },
+  celebrantDobOrAnniversary: { type: String, default: "" }, // Format: YYYY-MM-DD
+  eventType: { 
+    type: String, 
+    enum: ["birthday", "anniversary", "kitty_party", "ring_ceremony", "corporate", "other"],
+    default: "birthday" 
+  },
+  
+  // Booker / Relative Details (बुक करने वाले रिश्तेदार / दोस्त का विवरण)
+  isBookerDifferentFromCelebrant: { type: Boolean, default: false },
+  bookerName: { type: String, default: "" },
+  bookerMobile: { type: String, default: "" },
+  bookerRelation: { type: String, default: "स्वयं (Self)" }, // e.g., पिता (Father), माता, भाई, बहन, चाचा, मामा, दोस्त, आदि
+
+  // Annual Follow-up Reminders (30 & 15 Days Before)
+  annualReminderEnabled: { type: Boolean, default: true },
+  followupStatus: { 
+    type: String, 
+    enum: ["pending", "called_interested", "confirmed_rebooking", "declined", "completed"], 
+    default: "pending" 
+  },
+  followupNotes: { type: String, default: "" },
+  lastFollowupDate: { type: Date },
+
   // Host & Organizer Details
   customerName: { type: String, required: true },
   customerMobile: { type: String, required: true },

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vyaparbook-offline-v2';
+const CACHE_NAME = 'vyaparbook-offline-v3';
 
 // Core shell assets to precache on installation
 const PRECACHE_ASSETS = [
@@ -84,11 +84,12 @@ self.addEventListener('fetch', (event) => {
       fetch(req)
         .then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
-            const clone = networkResponse.clone();
+            const clone1 = networkResponse.clone();
+            const clone2 = clone1.clone();
             caches.open(CACHE_NAME).then((cache) => {
-              cache.put(req, clone);
-              cache.put('/', networkResponse.clone());
-            });
+              cache.put(req, clone1).catch(() => {});
+              cache.put('/', clone2).catch(() => {});
+            }).catch(() => {});
           }
           return networkResponse;
         })
@@ -151,9 +152,10 @@ self.addEventListener('fetch', (event) => {
           });
         }
         if (req.destination === 'script' || url.pathname.endsWith('.js')) {
-          return new Response('console.warn("VyaparBook [Offline]: Asset deferred:", ' + JSON.stringify(url.pathname) + ');', {
-            headers: { 'Content-Type': 'application/javascript' }
-          });
+          return new Response(
+            'console.warn("VyaparBook [Offline]: Asset deferred:", ' + JSON.stringify(url.pathname) + '); export default function DeferredChunk(){ return null; };',
+            { headers: { 'Content-Type': 'application/javascript' } }
+          );
         }
         return new Response('Asset Unavailable Offline', {
           status: 503,

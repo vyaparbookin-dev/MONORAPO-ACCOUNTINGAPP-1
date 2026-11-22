@@ -12,7 +12,11 @@ import Loader from "./components/Loader";
 const safeLazy = (importFn) => {
   return React.lazy(async () => {
     try {
-      return await importFn();
+      const mod = await importFn();
+      if (!mod || (!mod.default && typeof mod !== "function")) {
+        throw new Error("Module has no default export or was deferred offline");
+      }
+      return mod;
     } catch (err) {
       console.warn("Dynamic import failed, retrying chunk...", err);
       const isChunkError = 
@@ -20,6 +24,7 @@ const safeLazy = (importFn) => {
         err?.message?.includes("Failed to fetch") ||
         err?.message?.includes("MIME type") ||
         err?.message?.includes("text/html") ||
+        err?.message?.includes("no default export") ||
         err?.name === "ChunkLoadError";
 
       if (isChunkError && typeof window !== "undefined") {
@@ -32,17 +37,21 @@ const safeLazy = (importFn) => {
         }
       }
       try {
-        return await importFn();
+        const retryMod = await importFn();
+        if (!retryMod || (!retryMod.default && typeof retryMod !== "function")) {
+          throw new Error("Retry module missing default export");
+        }
+        return retryMod;
       } catch (retryErr) {
         console.error("Critical component load fallback:", retryErr);
         return {
           default: () => (
             <div className="flex flex-col items-center justify-center min-h-[300px] p-6 text-center">
               <div className="text-4xl mb-2">⚡</div>
-              <h3 className="text-lg font-bold text-gray-800">Screen Refreshing...</h3>
-              <p className="text-sm text-gray-500 mb-4">Please refresh to load the latest components.</p>
+              <h3 className="text-lg font-bold text-gray-800">स्क्रीन लोड हो रही है (Screen Loading)...</h3>
+              <p className="text-sm text-gray-500 mb-4">यह स्क्रीन लोड करने के लिए कृपया एक बार रिफ्रेश करें।</p>
               <button onClick={() => { sessionStorage.clear(); window.location.reload(); }} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold">
-                Refresh Now
+                रिफ्रेश करें (Refresh)
               </button>
             </div>
           )

@@ -41,8 +41,10 @@ import {
   PieChart,
   DollarSign,
   Eye,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Cake
 } from "lucide-react";
+import CelebrationRemindersManager from "../banquet/CelebrationRemindersManager";
 
 export default function GamezoneOperationsPage() {
 
@@ -414,6 +416,7 @@ export default function GamezoneOperationsPage() {
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
         {[
           { id: "fleet", label: "🕹️ मशीन फ्लीट व IoT टेलीमेट्री", icon: <Gamepad2 size={15} /> },
+          { id: "celebrations", label: "🎂 बर्थडे व पार्टी फॉलो-अप CRM (30/15-दिन)", icon: <Cake size={15} /> },
           { id: "soft_play_arena", label: "🎪 सॉफ्ट प्ले व ट्रैम्पोलिन एरिना", icon: <Activity size={15} /> },
           { id: "pricing_matrix", label: "💰 सेंट्रलाइज्ड रेट मैट्रिक्स व शेड्यूल", icon: <Sliders size={15} /> },
           { id: "claw_security", label: "🧸 सॉफ्ट टॉय एंटी-फ्रॉड गार्ड", icon: <ShieldAlert size={15} /> },
@@ -439,6 +442,11 @@ export default function GamezoneOperationsPage() {
           </button>
         ))}
       </div>
+
+      {/* TAB: BIRTHDAY & CELEBRATIONS CRM REMINDERS */}
+      {activeSubTab === "celebrations" && (
+        <CelebrationRemindersManager venueContext="गेमज़ोन, आर्केड व किड्स फन एरिना" />
+      )}
 
       {/* TAB 1: FLEET & LIVE IOT TELEMETRY (Phase 2) */}
       {activeSubTab === "fleet" && (

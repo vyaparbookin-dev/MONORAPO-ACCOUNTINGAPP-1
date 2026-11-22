@@ -44,6 +44,7 @@ import {
   Package
 } from "lucide-react";
 import BanquetBookingWizardModal from "./BanquetBookingWizardModal";
+import CelebrationRemindersManager from "./CelebrationRemindersManager";
 import { useLanguage } from "../../contexts/LanguageContext";
 import LanguageSwitchButton from "../../components/LanguageSwitchButton";
 
@@ -535,6 +536,18 @@ export default function BanquetHubPage() {
             </button>
 
             <button
+              onClick={() => setActiveTab("celebration_reminders")}
+              className={`px-4 py-2 rounded-xl flex items-center gap-1.5 transition shrink-0 ${
+                activeTab === "celebration_reminders"
+                  ? "bg-purple-800 text-white shadow-xs"
+                  : "bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200"
+              }`}
+            >
+              <Cake size={14} className="text-pink-400" />
+              <span>🎂 उत्सव व जन्मदिन फॉलो-अप CRM (30 व 15 दिन अलर्ट)</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab("plate_audit")}
               className={`px-4 py-2 rounded-xl flex items-center gap-1.5 transition shrink-0 ${
                 activeTab === "plate_audit"
@@ -650,6 +663,16 @@ export default function BanquetHubPage() {
             <span className="text-[10px] text-rose-700 font-bold mt-1 block">फंक्शन की रात देय</span>
           </div>
         </div>
+
+        {/* TAB: CELEBRATION CRM REMINDERS (30 & 15 DAYS) */}
+        {activeTab === "celebration_reminders" && (
+          <CelebrationRemindersManager
+            onOpenBookingWizard={() => {
+              setShowWizardModal(true);
+            }}
+            venueContext="बैंक्वेट, होटल व रेस्टोरेंट"
+          />
+        )}
 
         {/* TAB 1: UPCOMING BOOKINGS */}
         {activeTab === "bookings" && (

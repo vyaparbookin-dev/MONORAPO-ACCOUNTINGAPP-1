@@ -50,6 +50,17 @@ export default function BanquetBookingWizardModal({ isOpen, onClose, onBookingSu
   const [city, setCity] = useState("जबलपुर (Jabalpur)");
   const [eventName, setEventName] = useState("Marriage Reception / Birthday Party");
 
+  // Celebration CRM & Relative Booker Engine
+  const [celebrantName, setCelebrantName] = useState("");
+  const [celebrantMobile, setCelebrantMobile] = useState("");
+  const [celebrantDobOrAnniversary, setCelebrantDobOrAnniversary] = useState("");
+  const [eventType, setEventType] = useState("birthday");
+  const [isBookerDifferentFromCelebrant, setIsBookerDifferentFromCelebrant] = useState(false);
+  const [bookerName, setBookerName] = useState("");
+  const [bookerMobile, setBookerMobile] = useState("");
+  const [bookerRelation, setBookerRelation] = useState("माता / पिता (Parent)");
+  const [annualReminderEnabled, setAnnualReminderEnabled] = useState(true);
+
   const todayStr = new Date().toISOString().split("T")[0];
   const [eventDate, setEventDate] = useState(todayStr);
   const [timeSlot, setTimeSlot] = useState("evening");
@@ -372,6 +383,16 @@ export default function BanquetBookingWizardModal({ isOpen, onClose, onBookingSu
         alternateMobile: alternateMobile.trim(),
         customerAddress: customerAddress.trim(),
         city: city.trim(),
+        // Celebration & Booker Engine
+        celebrantName: isBookerDifferentFromCelebrant && celebrantName.trim() ? celebrantName.trim() : customerName.trim(),
+        celebrantMobile: isBookerDifferentFromCelebrant && celebrantMobile.trim() ? celebrantMobile.trim() : customerMobile.trim(),
+        celebrantDobOrAnniversary: celebrantDobOrAnniversary || eventDate,
+        eventType,
+        isBookerDifferentFromCelebrant,
+        bookerName: isBookerDifferentFromCelebrant ? (bookerName.trim() || customerName.trim()) : customerName.trim(),
+        bookerMobile: isBookerDifferentFromCelebrant ? (bookerMobile.trim() || customerMobile.trim()) : customerMobile.trim(),
+        bookerRelation: isBookerDifferentFromCelebrant ? bookerRelation : "स्वयं (Self)",
+        annualReminderEnabled,
         eventDate,
         timeSlot,
         minGuaranteedPax: pax,
@@ -712,6 +733,165 @@ export default function BanquetBookingWizardModal({ isOpen, onClose, onBookingSu
                     className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium outline-none"
                   />
                 </div>
+              </div>
+
+              {/* 🎂 CELEBRATION & RELATIVE BOOKER CRM ENGINE */}
+              <div className="p-4 bg-gradient-to-r from-purple-50/80 to-indigo-50/80 border border-purple-200 rounded-2xl space-y-3.5 shadow-2xs">
+                <div className="flex flex-wrap justify-between items-center gap-2 border-b border-purple-200/60 pb-2">
+                  <div className="flex items-center gap-2 text-purple-950 font-black text-xs">
+                    <Cake className="text-purple-600" size={17} />
+                    <span>उत्सव प्रकार, वास्तविक उत्सवकर्ता व 30/15-दिन फॉलो-अप इंजन:</span>
+                  </div>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-bold text-purple-800 bg-white px-2.5 py-1 rounded-xl border border-purple-200 shadow-2xs">
+                    <input
+                      type="checkbox"
+                      checked={annualReminderEnabled}
+                      onChange={(e) => setAnnualReminderEnabled(e.target.checked)}
+                      className="w-3.5 h-3.5 text-purple-600 rounded"
+                    />
+                    <span>🔔 आगामी वर्षों हेतु 30 व 15 दिन पूर्व ऑटो-फॉलोअप चालू</span>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      उत्सव का प्रकार (Event Type):
+                    </label>
+                    <select
+                      value={eventType}
+                      onChange={(e) => setEventType(e.target.value)}
+                      className="w-full p-2.5 bg-white border border-purple-200 rounded-xl font-bold text-slate-800 outline-none"
+                    >
+                      <option value="birthday">🎂 जन्मदिन (Birthday Celebration)</option>
+                      <option value="anniversary">💍 शादी की सालगिरह (Anniversary)</option>
+                      <option value="kitty_party">🎉 किटी पार्टी (Kitty Party)</option>
+                      <option value="ring_ceremony">💍 सगाई / रोका (Ring Ceremony)</option>
+                      <option value="corporate">💼 कॉर्पोरेट मीट (Corporate Event)</option>
+                      <option value="other">✨ अन्य उत्सव (Other Celebration)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      वार्षिक उत्सव तारीख (Celebration Annual Date):
+                    </label>
+                    <input
+                      type="date"
+                      value={celebrantDobOrAnniversary || eventDate}
+                      onChange={(e) => setCelebrantDobOrAnniversary(e.target.value)}
+                      className="w-full p-2.5 bg-white border border-purple-200 rounded-xl font-mono outline-none"
+                    />
+                  </div>
+
+                  <div className="flex items-end">
+                    <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-purple-200 cursor-pointer w-full hover:bg-purple-50 transition">
+                      <input
+                        type="checkbox"
+                        checked={isBookerDifferentFromCelebrant}
+                        onChange={(e) => {
+                          setIsBookerDifferentFromCelebrant(e.target.checked);
+                          if (!e.target.checked) {
+                            setCelebrantName("");
+                            setCelebrantMobile("");
+                          }
+                        }}
+                        className="w-4 h-4 text-purple-600 rounded"
+                      />
+                      <div className="text-[11px] leading-tight">
+                        <span className="font-black text-purple-900 block">बुक करने वाले रिश्तेदार/दोस्त हैं?</span>
+                        <span className="text-slate-500 text-[10px]">उत्सव किसी और का है (उदा. पिता बच्चे के लिए)</span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {isBookerDifferentFromCelebrant && (
+                  <div className="p-3 bg-white/95 rounded-xl border border-purple-300 grid grid-cols-1 md:grid-cols-2 gap-3 animate-in fade-in">
+                    <div className="bg-purple-50/70 p-3 rounded-xl border border-purple-200">
+                      <span className="text-[11px] font-black uppercase text-purple-900 block mb-1.5 flex items-center gap-1">
+                        🎯 जिनका उत्सव है (Celebrant Details - फॉलो-अप कॉल व WhatsApp इसी नंबर पर जाएगा):
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="font-bold text-slate-700 block text-[10px] mb-0.5">
+                            उत्सवकर्ता का नाम: <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={celebrantName}
+                            onChange={(e) => setCelebrantName(e.target.value)}
+                            placeholder="उदा. आरव (Aarav)"
+                            className="w-full p-2 text-xs bg-white border border-purple-300 rounded-lg outline-none font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block text-[10px] mb-0.5">
+                            उत्सवकर्ता मोबाइल: <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="tel"
+                            value={celebrantMobile}
+                            onChange={(e) => setCelebrantMobile(e.target.value)}
+                            placeholder="98260XXXXX"
+                            className="w-full p-2 text-xs bg-white border border-purple-300 rounded-lg font-mono outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                      <span className="text-[11px] font-black uppercase text-slate-800 block mb-1.5">
+                        👤 बुक करने वाले रिश्तेदार (Relative Reference):
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div>
+                          <label className="font-bold text-slate-700 block text-[10px] mb-0.5">
+                            रिश्तेदार का नाम:
+                          </label>
+                          <input
+                            type="text"
+                            value={bookerName || customerName}
+                            onChange={(e) => setBookerName(e.target.value)}
+                            placeholder="उदा. राजेश कुमार"
+                            className="w-full p-2 text-xs bg-white border border-slate-300 rounded-lg outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block text-[10px] mb-0.5">
+                            रिश्तेदार फोन:
+                          </label>
+                          <input
+                            type="tel"
+                            value={bookerMobile || customerMobile}
+                            onChange={(e) => setBookerMobile(e.target.value)}
+                            placeholder="98261XXXXX"
+                            className="w-full p-2 text-xs bg-white border border-slate-300 rounded-lg font-mono outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block text-[10px] mb-0.5">
+                            रिश्ता (Relation):
+                          </label>
+                          <select
+                            value={bookerRelation}
+                            onChange={(e) => setBookerRelation(e.target.value)}
+                            className="w-full p-2 text-xs bg-white border border-slate-300 rounded-lg outline-none font-bold"
+                          >
+                            <option value="पिता (Father)">पिता (Father)</option>
+                            <option value="माता (Mother)">माता (Mother)</option>
+                            <option value="भाई (Brother)">भाई (Brother)</option>
+                            <option value="बहन (Sister)">बहन (Sister)</option>
+                            <option value="चाचा / मामा (Uncle)">चाचा / मामा</option>
+                            <option value="दोस्त (Friend)">दोस्त (Friend)</option>
+                            <option value="पति / पत्नी (Spouse)">पति / पत्नी</option>
+                            <option value="अन्य रिश्तेदार">अन्य रिश्तेदार</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 🌟 CUSTOMER REPUTATION & HISTORY AUTO-LOOKUP BADGE */}
