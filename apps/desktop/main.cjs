@@ -18,6 +18,7 @@ function createWindow() {
     width: 1280,
     height: 800,
     title: "Red Accounting Book",
+    show: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'), // Securely expose APIs
       nodeIntegration: false, // Keep false for security
@@ -32,30 +33,51 @@ function createWindow() {
   
   // If in production (built), load the index.html file
   if (app.isPackaged) {
-    win.loadFile(path.join(__dirname, 'dist/index.html'));
+    win.loadFile(path.join(__dirname, 'dist/index.html')).catch((err) => {
+      log.error('Failed to load dist/index.html:', err);
+    });
   } else {
-    win.loadURL(startUrl);
+    win.loadURL(startUrl).catch((err) => {
+      log.error('Failed to load startUrl:', err);
+    });
   }
+
+  win.webContents.on('did-fail-load', (e, code, desc) => {
+    log.error('webContents did-fail-load:', code, desc);
+  });
+
+  return win;
 }
 
-app.whenReady().then(async () => {
-  try {
-    // Database और Handlers को लोड करें
-    const { db } = await import('./src/main/database/db.js');
-    const { setupHandlers } = await import('./src/main/ipc/handlers.js');
-    const { startSyncService } = await import('./src/main/services/SyncService.js');
-    
-    setupHandlers();
-    startSyncService();
-    console.log('✅ Local Database & IPC Handlers Initialized');
-  } catch (error) {
-    console.error('⚠️ Notice on database initialization:', error);
-  }
-
+app.whenReady().then(() => {
+  // Create window immediately so user sees the app window without delay
   createWindow();
 
-  // जैसे ही ऐप चालू हो, बैकग्राउंड में अपडेट चेक करें
-  autoUpdater.checkForUpdatesAndNotify();
+  // Database and Handlers loaded asynchronously in background
+  (async () => {
+    try {
+      const { db } = await import('./src/main/database/db.js');
+      const { setupHandlers } = await import('./src/main/ipc/handlers.js');
+      const { startSyncService } = await import('./src/main/services/SyncService.js');
+      
+      setupHandlers();
+      startSyncService();
+      console.log('✅ Local Database & IPC Handlers Initialized');
+    } catch (error) {
+      console.error('⚠️ Notice on database initialization:', error);
+    }
+  })();
+
+  // Check updates safely without throwing unhandled rejection offline
+  try {
+    if (app.isPackaged) {
+      autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+        log.warn('Auto updater check skipped:', err?.message || err);
+      });
+    }
+  } catch (err) {
+    log.warn('Auto updater init note:', err?.message || err);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
