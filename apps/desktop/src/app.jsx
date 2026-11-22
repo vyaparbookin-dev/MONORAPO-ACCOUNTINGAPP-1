@@ -427,6 +427,9 @@ const App = () => {
                     <Route path="/bank-reconciliation" element={<BankReconciliationPage />} />
                     <Route path="/brs" element={<BankReconciliationPage />} />
                     <Route path="/reports/eway-bill" element={<EWayBillPage />} />
+                    <Route path="/eway-bill" element={<EWayBillPage />} />
+                    <Route path="/einvoice" element={<EWayBillPage />} />
+                    <Route path="/reports/einvoice" element={<EWayBillPage />} />
                     <Route path="/reports/fixed-assets" element={<FixedAssetsPage />} />
                     <Route path="/capital" element={<BalanceSheetPage />} />
                     <Route path="/admin" element={<SuperAdminDashboardPage />} />

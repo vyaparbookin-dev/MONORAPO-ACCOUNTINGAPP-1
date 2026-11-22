@@ -22,7 +22,8 @@ import {
   Layers,
   BookOpen,
   ArrowLeft,
-  Scale
+  Scale,
+  Truck
 } from "lucide-react";
 import api from "../../services/api";
 
@@ -185,12 +186,12 @@ const ReportsPage = () => {
     {
       id: "eway-bill",
       category: "gst",
-      title: "E-Way Bill Register",
-      desc: "E-Way bills generated for inter-state & local cargo movement",
+      title: "E-Way Bill व E-Invoicing (IRN)",
+      desc: "12-अंकीय ई-वे बिल, 64-अक्षर IRN, हाई-वे QR कोड व वाहन ट्रैकिंग",
       path: "/reports/eway-bill",
-      icon: FileText,
-      color: "bg-slate-50 text-slate-700 border-slate-200",
-      badge: "E-Way"
+      icon: Truck,
+      color: "bg-indigo-50 text-indigo-700 border-indigo-200",
+      badge: "Govt NIC"
     },
     {
       id: "tds-tcs",
