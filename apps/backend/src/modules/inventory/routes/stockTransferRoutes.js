@@ -1,10 +1,20 @@
 import express from "express";
-import { initiateTransfer, getTransfers } from "../controllers/stockTransferController.js";
+import { 
+  initiateTransfer, 
+  getTransfers, 
+  getTransferById, 
+  updateTransferStatus, 
+  deleteTransfer 
+} from "../controllers/stockTransferController.js";
 import { protect } from "../../../middleware/authmiddleware.js";
 
 const router = express.Router();
 
-router.post("/", protect, initiateTransfer);
-router.get("/", protect, getTransfers);
+router.use(protect);
+router.post("/", initiateTransfer);
+router.get("/", getTransfers);
+router.get("/:id", getTransferById);
+router.patch("/:id/status", updateTransferStatus);
+router.delete("/:id", deleteTransfer);
 
 export default router;

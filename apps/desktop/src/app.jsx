@@ -365,6 +365,9 @@ const App = () => {
                     <Route path="/inventory/purchase-return" element={<InventorySalesReturnPage />} />
                     <Route path="/inventory/supplier-ledger" element={<InventorySupplierLedgerPage />} />
                     <Route path="/inventory/transfer" element={<StockTransferPage />} />
+                    <Route path="/inventory/stock-transfer" element={<StockTransferPage />} />
+                    <Route path="/stock-transfer" element={<StockTransferPage />} />
+                    <Route path="/godowns" element={<StockTransferPage />} />
                     <Route path="/inventory/parse-purchase-bill" element={<ParsePurchaseBillPage />} />
                     <Route path="/inventory/categories" element={<CategoryManagementPage />} />
                     <Route path="/inventory/masters" element={<ItemMasterPage />} />

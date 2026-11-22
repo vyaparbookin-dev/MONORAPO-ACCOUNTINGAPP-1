@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Plus, Search, Download, Edit, Trash2, Package, AlertTriangle, Upload, Scan, ShoppingBag, ClipboardList, Undo2, BookUser, Camera, Barcode, X, Link as LinkIcon, UploadCloud, History, Printer, FileSpreadsheet } from "lucide-react";
+import { Plus, Search, Download, Edit, Trash2, Package, AlertTriangle, Upload, Scan, ShoppingBag, ClipboardList, Undo2, BookUser, Camera, Barcode, X, Link as LinkIcon, UploadCloud, History, Printer, FileSpreadsheet, ArrowRightLeft } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useNavigate } from "react-router-dom";
 import BarcodeScanner from "../../components/BarcodeScanner";
@@ -911,6 +911,14 @@ const InventoryPage = () => {
           >
             <Upload size={18} />
             Bulk Upload
+          </button>
+          <button
+            onClick={() => navigate("/inventory/transfer")}
+            className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 font-bold px-3.5 py-2 rounded-lg hover:bg-amber-100 transition shadow-xs"
+            title="गोदाम स्टॉक ट्रांसफर चालान"
+          >
+            <ArrowRightLeft size={18} />
+            गोदाम ट्रांसफर
           </button>
           <button
             onClick={() => setShowForm(!showForm)}
