@@ -21,7 +21,8 @@ import {
   Sparkles,
   Layers,
   BookOpen,
-  ArrowLeft
+  ArrowLeft,
+  Scale
 } from "lucide-react";
 import api from "../../services/api";
 
@@ -66,6 +67,16 @@ const ReportsPage = () => {
       icon: TrendingUp,
       color: "bg-emerald-50 text-emerald-700 border-emerald-200",
       badge: "Financial"
+    },
+    {
+      id: "balancesheet",
+      category: "sales",
+      title: "तुलन पत्र / बैलेंस शीट (Balance Sheet)",
+      desc: "Assets, Liabilities, Capital Account & Double-Entry Tally audit report",
+      path: "/reports/balancesheet",
+      icon: Scale,
+      color: "bg-indigo-50 text-indigo-700 border-indigo-200",
+      badge: "CA / Audit"
     },
     {
       id: "sitewise",

@@ -5,9 +5,15 @@ import Expance from "../model/expenses.js";
 import Purchase from "../model/purchase.js";
 import Salary from "../model/salary.js";
 import StaffTransaction from "../model/StaffTransaction.js";
-import User from "../model/user.js"; // User model ko import karein
+import User from "../model/user.js";
 import Staff from "../model/staff.js";
 import Party from "../model/party.js";
+import BankAccount from "../model/bankAccount.js";
+import FixedAsset from "../model/fixedAsset.js";
+import Capital from "../model/capital.js";
+import Company from "../model/company.js";
+import { mongoIdToUuid } from "../services/supabaseSyncService.js";
+import { supabase } from "../config/supabase.js";
 import mongoose from "mongoose";
 
 export const generateReport = async (req, res) => {
@@ -651,43 +657,255 @@ export const getBalanceSheet = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    // 1. Calculate Assets (Current Assets)
-    // - Cash/Bank Balance (Not tracked yet, assuming 0 or manual)
-    // - Accounts Receivable (Unpaid Bills/Udhar)
-    // - Inventory Value (Stock * Cost Price)
+    const coIdStr = String(req.companyId || "");
+    const validMongoCoIds = [];
+    if (mongoose.Types.ObjectId.isValid(coIdStr)) {
+      validMongoCoIds.push(new mongoose.Types.ObjectId(coIdStr));
+    } else {
+      try {
+        const allCompanies = await Company.find({}, { _id: 1 }).lean();
+        for (const c of allCompanies) {
+          if (mongoIdToUuid(c._id) === coIdStr) {
+            validMongoCoIds.push(c._id);
+            break;
+          }
+        }
+      } catch (cErr) {}
+    }
 
-    // Accounts Receivable (Total of unpaid/issued bills)
-    const unpaidBills = await Bill.find({
-      companyId: req.companyId,
-      status: { $in: ["issued", "unpaid", "partial"] },
-      isDeleted: false
-    });
-    const accountsReceivable = unpaidBills.reduce((sum, bill) => sum + (bill.total || 0), 0);
+    const coFilter = validMongoCoIds.length > 0 ? { $in: validMongoCoIds } : req.companyId;
 
-    // Inventory Value
-    const products = await Product.find({ companyId: req.companyId, isActive: true });
-    const inventoryValue = products.reduce((sum, p) => sum + ((p.costPrice || 0) * (p.currentStock || 0)), 0);
+    // 1. Current Assets:
+    // A. Cash in Hand & Bank Balances
+    let bankAccountsList = [];
+    try {
+      bankAccountsList = await BankAccount.find({
+        companyId: coFilter,
+        isDeleted: { $ne: true }
+      }).lean();
+    } catch (e) {}
 
-    const totalAssets = accountsReceivable + inventoryValue;
+    const totalBankBalance = bankAccountsList.reduce((acc, b) => acc + (Number(b.balance ?? b.currentBalance ?? 0) || 0), 0);
 
-    // 2. Calculate Liabilities (Current Liabilities)
-    // - Accounts Payable (Unpaid Expenses/Purchases)
-    // - Loans (Not tracked yet)
+    // B. Accounts Receivable (Sundry Debtors / देनदार ग्राहक)
+    let partiesList = [];
+    try {
+      partiesList = await Party.find({
+        companyId: coFilter,
+        isDeleted: { $ne: true }
+      }).lean();
+    } catch (e) {}
 
-    // Total Expenses (Assuming all are paid for now, but in future we can track unpaid expenses)
-    // For Balance Sheet, usually only *unpaid* expenses are liabilities.
-    // Since we don't have "unpaid expenses" status yet, we'll just show Total Expenses as a separate metric or 0 for liability.
-    // Let's assume 0 for now unless we add Purchase module.
-    const totalLiabilities = 0;
+    // In dual mode, fallback to Supabase if Mongo empty
+    if (partiesList.length === 0 && supabase) {
+      try {
+        const sbCoUuid = mongoIdToUuid(req.companyId);
+        const { data: sbP } = await supabase.from("parties").select("*").eq("company_id", sbCoUuid).eq("is_active", true);
+        if (Array.isArray(sbP)) {
+          partiesList = sbP.map(p => ({
+            name: p.name,
+            currentBalance: Number(p.current_balance || 0),
+            partyType: p.party_type
+          }));
+        }
+      } catch (e) {}
+    }
 
-    // 3. Equity (Assets - Liabilities)
-    const equity = totalAssets - totalLiabilities;
+    const debtors = partiesList.filter(p => Number(p.currentBalance || p.balance || 0) > 0);
+    const totalDebtors = debtors.reduce((sum, p) => sum + (Number(p.currentBalance || p.balance || 0)), 0);
+
+    // C. Inventory / Closing Stock Value (दुकान में स्टॉक का मूल्य)
+    let productsList = [];
+    try {
+      productsList = await Product.find({
+        companyId: coFilter,
+        isActive: { $ne: false },
+        isDeleted: { $ne: true }
+      }).lean();
+    } catch (e) {}
+
+    const inventoryValue = productsList.reduce((sum, p) => {
+      const stock = Number(p.stock ?? p.currentStock ?? 0);
+      const rate = Number(p.purchasePrice ?? p.costPrice ?? p.price ?? 0);
+      return sum + (stock > 0 ? stock * rate : 0);
+    }, 0);
+
+    // D. Estimated Cash in Hand (दुकान गल्ला)
+    let cashSales = 0;
+    try {
+      const bills = await Bill.find({
+        companyId: coFilter,
+        isDeleted: { $ne: true }
+      }, { total: 1, finalAmount: 1, paymentMethod: 1, paymentMode: 1, paidAmount: 1 }).lean();
+
+      bills.forEach(b => {
+        const pMode = String(b.paymentMethod || b.paymentMode || "CASH").toUpperCase();
+        if (pMode === "CASH") {
+          cashSales += Number(b.paidAmount ?? b.finalAmount ?? b.total ?? 0);
+        }
+      });
+    } catch (e) {}
+
+    let cashExpenses = 0;
+    try {
+      const exps = await Expance.find({
+        companyId: coFilter,
+        isDeleted: { $ne: true }
+      }, { amount: 1, paymentMethod: 1 }).lean();
+
+      exps.forEach(e => {
+        const m = String(e.paymentMethod || "cash").toLowerCase();
+        if (m === "cash") {
+          cashExpenses += Number(e.amount || 0);
+        }
+      });
+    } catch (e) {}
+
+    const estimatedCashInHand = Math.max(0, cashSales - cashExpenses);
+    const totalCurrentAssets = totalBankBalance + totalDebtors + inventoryValue + estimatedCashInHand;
+
+    // 2. Fixed Assets (स्थिर संपत्तियां: फर्नीचर, मशीन, वाहन, कंप्यूटर)
+    let fixedAssetsList = [];
+    try {
+      fixedAssetsList = await FixedAsset.find({
+        companyId: coFilter,
+        isDeleted: { $ne: true },
+        status: { $ne: 'scrapped' }
+      }).lean();
+    } catch (e) {}
+
+    const totalFixedAssets = fixedAssetsList.reduce((sum, a) => sum + (Number(a.currentValue ?? a.purchaseCost ?? 0) || 0), 0);
+    const totalAssets = totalCurrentAssets + totalFixedAssets;
+
+    // 3. Current Liabilities (चालू देनदारियां):
+    // Sundry Creditors (सप्लायर / लेनदार पार्टियां - देने हैं)
+    const creditors = partiesList.filter(p => Number(p.currentBalance || p.balance || 0) < 0 || p.partyType === 'supplier');
+    const totalCreditors = creditors.reduce((sum, p) => {
+      const bal = Number(p.currentBalance || p.balance || 0);
+      return sum + (bal < 0 ? Math.abs(bal) : (p.partyType === 'supplier' && bal > 0 ? bal : 0));
+    }, 0);
+
+    const totalCurrentLiabilities = totalCreditors;
+
+    // 4. Non-Current Liabilities (लोन व ऋण):
+    let capitalEntries = [];
+    try {
+      capitalEntries = await Capital.find({
+        companyId: coFilter,
+        isDeleted: { $ne: true }
+      }).lean();
+    } catch (e) {}
+
+    const totalUnsecuredLoans = capitalEntries
+      .filter(e => e.entryType === 'unsecured_loan')
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    const totalNonCurrentLiabilities = totalUnsecuredLoans;
+    const totalLiabilities = totalCurrentLiabilities + totalNonCurrentLiabilities;
+
+    // 5. Capital & Equity (मालिक की पूंजी):
+    const ownerInvestedCapital = capitalEntries
+      .filter(e => e.entryType === 'owner_capital' || e.entryType === 'partner_capital' || e.entryType === 'additional_capital')
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    // Calculate Net Profit
+    let totalRevenue = 0;
+    try {
+      const allBills = await Bill.find({ companyId: coFilter, isDeleted: { $ne: true } }, { finalAmount: 1, total: 1 }).lean();
+      totalRevenue = allBills.reduce((s, b) => s + (Number(b.finalAmount ?? b.total ?? 0)), 0);
+    } catch (e) {}
+
+    let totalPurchases = 0;
+    try {
+      const allPurchases = await Purchase.find({ companyId: coFilter, isDeleted: { $ne: true } }, { totalAmount: 1, total: 1 }).lean();
+      totalPurchases = allPurchases.reduce((s, p) => s + (Number(p.totalAmount ?? p.total ?? 0)), 0);
+    } catch (e) {}
+
+    let operatingExpenses = 0;
+    let drawingsGharKharch = 0;
+    try {
+      const allExpenses = await Expance.find({ companyId: coFilter, isDeleted: { $ne: true } }).lean();
+      allExpenses.forEach(exp => {
+        const isPersonal = exp.expenseType === 'drawings' || exp.expenseType === 'personal' || (exp.familyMember && exp.familyMember.trim() !== '');
+        const amt = Number(exp.amount || 0);
+        if (isPersonal) {
+          drawingsGharKharch += amt;
+        } else {
+          operatingExpenses += amt;
+        }
+      });
+    } catch (e) {}
+
+    const netProfit = totalRevenue - totalPurchases - operatingExpenses;
+    const effectiveOpeningCapital = ownerInvestedCapital > 0 ? ownerInvestedCapital : Math.max(0, totalAssets - totalLiabilities - netProfit + drawingsGharKharch);
+    const closingCapital = effectiveOpeningCapital + netProfit - drawingsGharKharch;
+
+    const totalLiabilitiesAndCapital = totalLiabilities + closingCapital;
+    const difference = Math.round((totalAssets - totalLiabilitiesAndCapital) * 100) / 100;
 
     res.json({
       success: true,
-      data: { accountsReceivable, inventoryValue, totalAssets, totalLiabilities, equity }
+      data: {
+        asOnDate: new Date().toISOString(),
+        assets: {
+          currentAssets: {
+            cashInHand: Math.round(estimatedCashInHand),
+            bankBalances: Math.round(totalBankBalance),
+            bankAccounts: bankAccountsList.map(b => ({
+              accountName: b.accountName,
+              bankName: b.bankName,
+              balance: Number(b.balance ?? b.currentBalance ?? 0)
+            })),
+            sundryDebtors: Math.round(totalDebtors),
+            debtorsCount: debtors.length,
+            topDebtors: debtors.sort((a, b) => (b.currentBalance || 0) - (a.currentBalance || 0)).slice(0, 10).map(d => ({
+              name: d.name,
+              balance: Number(d.currentBalance || d.balance || 0)
+            })),
+            closingStock: Math.round(inventoryValue),
+            total: Math.round(totalCurrentAssets)
+          },
+          fixedAssets: {
+            total: Math.round(totalFixedAssets),
+            items: fixedAssetsList.map(a => ({
+              assetName: a.assetName,
+              currentValue: Number(a.currentValue ?? a.purchaseCost ?? 0),
+              purchaseCost: Number(a.purchaseCost || 0)
+            }))
+          },
+          totalAssets: Math.round(totalAssets)
+        },
+        liabilitiesAndCapital: {
+          capitalAccount: {
+            openingCapital: Math.round(effectiveOpeningCapital),
+            netProfit: Math.round(netProfit),
+            drawings: Math.round(drawingsGharKharch),
+            closingCapital: Math.round(closingCapital)
+          },
+          nonCurrentLiabilities: {
+            unsecuredLoans: Math.round(totalUnsecuredLoans),
+            total: Math.round(totalNonCurrentLiabilities)
+          },
+          currentLiabilities: {
+            sundryCreditors: Math.round(totalCreditors),
+            creditorsCount: creditors.length,
+            topCreditors: creditors.sort((a, b) => Math.abs(b.currentBalance || 0) - Math.abs(a.currentBalance || 0)).slice(0, 10).map(c => ({
+              name: c.name,
+              balance: Math.abs(Number(c.currentBalance || c.balance || 0))
+            })),
+            total: Math.round(totalCurrentLiabilities)
+          },
+          totalLiabilities: Math.round(totalLiabilities),
+          totalLiabilitiesAndCapital: Math.round(totalLiabilitiesAndCapital)
+        },
+        balanceCheck: {
+          isBalanced: Math.abs(difference) < 1,
+          difference: difference
+        }
+      }
     });
   } catch (error) {
+    console.error("[getBalanceSheet] Error:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 };

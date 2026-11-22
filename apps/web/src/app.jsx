@@ -153,6 +153,7 @@ const BillWiseReportPage = safeLazy(() => import("./screens/Reports/BillWiseRepo
 const CustomerReportBuilder = safeLazy(() => import("./screens/Reports/CustomerReportBuilder"));
 const PartyWiseReportPage = safeLazy(() => import("./screens/Reports/PartyWiseReportPage"));
 const ProfitLossReportPage = safeLazy(() => import("./screens/Reports/ProfitLossReport"));
+const BalanceSheetPage = safeLazy(() => import("./screens/Reports/BalanceSheetPage"));
 const SchemeReportPage = safeLazy(() => import("./screens/Reports/SchemeReportPage"));
 const SupplierLedgerPage = safeLazy(() => import("./screens/Reports/SupplierLedgerPage"));
 const DayBookPage = safeLazy(() => import("./screens/Reports/DayBookPage"));
@@ -405,6 +406,9 @@ const App = () => {
                     <Route path="/reports/customer" element={<CustomerReportBuilder />} />
                     <Route path="/reports/partywise" element={<PartyWiseReportPage />} />
                     <Route path="/reports/profitloss" element={<ProfitLossReportPage />} />
+                    <Route path="/reports/balancesheet" element={<BalanceSheetPage />} />
+                    <Route path="/reports/balance-sheet" element={<BalanceSheetPage />} />
+                    <Route path="/balancesheet" element={<BalanceSheetPage />} />
                     <Route path="/reports/scheme" element={<SchemeReportPage />} />
                     <Route path="/reports/supplier-ledger" element={<SupplierLedgerPage />} />
                     <Route path="/reports/daybook" element={<DayBookPage />} />
@@ -414,7 +418,7 @@ const App = () => {
                     <Route path="/reports/bank-reconciliation" element={<BankReconciliationPage />} />
                     <Route path="/reports/eway-bill" element={<EWayBillPage />} />
                     <Route path="/reports/fixed-assets" element={<FixedAssetsPage />} />
-                    <Route path="/capital" element={<FixedAssetsPage />} />
+                    <Route path="/capital" element={<BalanceSheetPage />} />
                     <Route path="/admin" element={<SuperAdminDashboardPage />} />
                     <Route path="/ai-advisor" element={<AIBusinessAdvisorPage />} />
                     <Route path="/reports/tds-tcs" element={<TdsTcsPage />} />

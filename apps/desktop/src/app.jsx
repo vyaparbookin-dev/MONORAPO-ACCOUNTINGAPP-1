@@ -1,9 +1,9 @@
 import React, { Suspense, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Outlet } from "react-router-dom";
 import { CompanyProvider } from "./contexts/CompanyContext";
-import { LanguageProvider } from "./contexts/LanguageContext";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import { SettingsProvider } from "./contexts/SettingsContext"; // Import SettingsProvider
+import { LanguageProvider } from "./contexts/LanguageContext"; // Import LanguageProvider
 import { SecurityTracker } from "./components/SecurityTracker";
 import DashboardLayout from "./components/DashboardLayout";
 import Loader from "./components/Loader";
@@ -94,6 +94,7 @@ const SalesReturnPage = safeLazy(() => import("./screens/Billing/SalesReturnPage
 const CreateReturnScreen = safeLazy(() => import("./screens/returns/CreateReturnScreen"));
 const B2bDocumentListPage = safeLazy(() => import("./screens/Billing/B2bDocumentListPage"));
 const CreateB2bDocumentPage = safeLazy(() => import("./screens/Billing/CreateB2bDocumentPage"));
+const VoiceAssistantPage = safeLazy(() => import("./screens/voice/VoiceAssistantPage"));
 
 // Banquet & Events Module
 const BanquetHubPage = safeLazy(() => import("./screens/Banquet/BanquetHubPage"));
@@ -152,6 +153,7 @@ const BillWiseReportPage = safeLazy(() => import("./screens/Reports/BillWiseRepo
 const CustomerReportBuilder = safeLazy(() => import("./screens/Reports/CustomerReportBuilder"));
 const PartyWiseReportPage = safeLazy(() => import("./screens/Reports/PartyWiseReportPage"));
 const ProfitLossReportPage = safeLazy(() => import("./screens/Reports/ProfitLossReport"));
+const BalanceSheetPage = safeLazy(() => import("./screens/Reports/BalanceSheetPage"));
 const SchemeReportPage = safeLazy(() => import("./screens/Reports/SchemeReportPage"));
 const SupplierLedgerPage = safeLazy(() => import("./screens/Reports/SupplierLedgerPage"));
 const DayBookPage = safeLazy(() => import("./screens/Reports/DayBookPage"));
@@ -222,11 +224,11 @@ const ComingSoonPage = () => (
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, error: null };
   }
 
   static getDerivedStateFromError(error) {
-    return { hasError: true };
+    return { hasError: true, error };
   }
 
   componentDidCatch(error, errorInfo) {
@@ -236,11 +238,48 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-100">
-          <div className="bg-white p-8 rounded-lg shadow-md text-center max-w-md">
-            <h2 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h2>
-            <p className="text-gray-600 mb-6">The application encountered an error. Please try reloading.</p>
-            <button onClick={() => window.location.reload()} className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Reload</button>
+        <div className="flex items-center justify-center min-h-screen bg-slate-50 p-4 select-none">
+          <div className="bg-white p-8 rounded-3xl shadow-xl text-center max-w-md w-full border border-slate-200">
+            <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4 shadow-xs">
+              ⚡
+            </div>
+            <h2 className="text-xl font-black text-slate-900 mb-2">ऐप सुरक्षित मोड (App Recovery)</h2>
+            <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+              एक अस्थायी लोड त्रुटि आई है। आपका सारा डेटा और एकाउंट पूरी तरह सुरक्षित है।
+            </p>
+            <div className="flex flex-col gap-2.5">
+              <button 
+                onClick={() => {
+                  sessionStorage.clear();
+                  window.location.reload();
+                }} 
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md transition cursor-pointer"
+              >
+                🔄 ऐप पुनः लोड करें (Reload App)
+              </button>
+              <button 
+                onClick={() => {
+                  this.setState({ hasError: false, error: null });
+                  window.location.href = '/m';
+                }} 
+                className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl transition cursor-pointer"
+              >
+                📱 मोबाइल ऐप खोलें (Open Mobile PWA)
+              </button>
+              <button 
+                onClick={() => {
+                  try {
+                    localStorage.removeItem('selectedCompany');
+                    localStorage.removeItem('appSettings');
+                    sessionStorage.clear();
+                  } catch (e) {}
+                  window.location.href = '/dashboard';
+                }} 
+                className="w-full py-2 text-[11px] text-slate-400 hover:text-slate-600 font-semibold transition cursor-pointer"
+              >
+                🧹 सुरक्षित रीसेट (Safe Restart)
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -304,6 +343,8 @@ const App = () => {
                     <Route path="/billing/b2b" element={<B2bDocumentListPage />} />
                     <Route path="/billing/b2b/create" element={<CreateB2bDocumentPage />} />
                     <Route path="/billing/:id" element={<BillDetailPage />} />
+                    <Route path="/voice-assistant" element={<VoiceAssistantPage />} />
+                    <Route path="/voice-billing" element={<VoiceAssistantPage />} />
 
                     {/* Banquet & Events */}
                     <Route path="/banquet" element={<BanquetHubPage />} />
@@ -365,6 +406,9 @@ const App = () => {
                     <Route path="/reports/customer" element={<CustomerReportBuilder />} />
                     <Route path="/reports/partywise" element={<PartyWiseReportPage />} />
                     <Route path="/reports/profitloss" element={<ProfitLossReportPage />} />
+                    <Route path="/reports/balancesheet" element={<BalanceSheetPage />} />
+                    <Route path="/reports/balance-sheet" element={<BalanceSheetPage />} />
+                    <Route path="/balancesheet" element={<BalanceSheetPage />} />
                     <Route path="/reports/scheme" element={<SchemeReportPage />} />
                     <Route path="/reports/supplier-ledger" element={<SupplierLedgerPage />} />
                     <Route path="/reports/daybook" element={<DayBookPage />} />
@@ -374,7 +418,7 @@ const App = () => {
                     <Route path="/reports/bank-reconciliation" element={<BankReconciliationPage />} />
                     <Route path="/reports/eway-bill" element={<EWayBillPage />} />
                     <Route path="/reports/fixed-assets" element={<FixedAssetsPage />} />
-                    <Route path="/capital" element={<FixedAssetsPage />} />
+                    <Route path="/capital" element={<BalanceSheetPage />} />
                     <Route path="/admin" element={<SuperAdminDashboardPage />} />
                     <Route path="/ai-advisor" element={<AIBusinessAdvisorPage />} />
                     <Route path="/reports/tds-tcs" element={<TdsTcsPage />} />
@@ -434,8 +478,8 @@ const App = () => {
                 </Routes>
               </Suspense>
             </Router>
-            </CompanyProvider>
-          </LanguageProvider>
+          </CompanyProvider>
+        </LanguageProvider>
         </SettingsProvider>
       </ErrorBoundary>
     </GoogleOAuthProvider>

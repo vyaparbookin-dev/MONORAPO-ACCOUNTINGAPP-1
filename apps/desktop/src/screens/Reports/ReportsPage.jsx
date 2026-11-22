@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Download,
   BarChart3,
@@ -20,11 +20,14 @@ import {
   ArrowRight,
   Sparkles,
   Layers,
-  BookOpen
+  BookOpen,
+  ArrowLeft,
+  Scale
 } from "lucide-react";
 import api from "../../services/api";
 
 const ReportsPage = () => {
+  const navigate = useNavigate();
   const [reportType, setReportType] = useState("income");
   const [dateRange, setDateRange] = useState("month");
   const [reportCategoryTab, setReportCategoryTab] = useState("all");
@@ -64,6 +67,16 @@ const ReportsPage = () => {
       icon: TrendingUp,
       color: "bg-emerald-50 text-emerald-700 border-emerald-200",
       badge: "Financial"
+    },
+    {
+      id: "balancesheet",
+      category: "sales",
+      title: "तुलन पत्र / बैलेंस शीट (Balance Sheet)",
+      desc: "Assets, Liabilities, Capital Account & Double-Entry Tally audit report",
+      path: "/reports/balancesheet",
+      icon: Scale,
+      color: "bg-indigo-50 text-indigo-700 border-indigo-200",
+      badge: "CA / Audit"
     },
     {
       id: "sitewise",
@@ -309,6 +322,16 @@ const ReportsPage = () => {
       } catch (e) {
         console.log("Expenses API not available");
       }
+
+      // Fetch purchases for Cost of Goods Sold (COGS)
+      let purchasesData = [];
+      try {
+        const purchasesResponse = await api.get("/api/purchase?limit=1000");
+        const pData = purchasesResponse.data || purchasesResponse;
+        purchasesData = Array.isArray(pData.purchases) ? pData.purchases : (Array.isArray(pData.data?.purchases) ? pData.data.purchases : (Array.isArray(pData.data) ? pData.data : (Array.isArray(pData) ? pData : [])));
+      } catch (e) {
+        console.log("Purchases API not available");
+      }
       
       // Filter bills by date range
       const filteredBills = allBills.filter(bill => {
@@ -356,8 +379,13 @@ const ReportsPage = () => {
           sum + (exp.amount || 0), 0);
         expensesByMonth.push(monthExpense);
         
-        // Calculate profit
-        profitByMonth.push(monthIncome - monthExpense);
+        // Calculate COGS and profit for this month (सामान खरीद लागत घटाकर)
+        const monthPurchases = purchasesData.filter(pur => {
+          const purDate = new Date(pur.date || pur.createdAt);
+          return purDate.getMonth() === monthDate.getMonth() && purDate.getFullYear() === year;
+        }).reduce((sum, p) => sum + (Number(p.finalAmount || p.totalAmount || p.total) || 0), 0);
+        const monthCOGS = monthPurchases > 0 ? monthPurchases : Math.round(monthIncome * 0.85);
+        profitByMonth.push(Math.max(0, monthIncome - monthCOGS) - monthExpense);
       }
       
       // Calculate totals
@@ -365,7 +393,17 @@ const ReportsPage = () => {
         sum + (bill.finalAmount || bill.totalAmount || bill.total || 0), 0);
       const totalExpenses = filteredExpenses.reduce((sum, exp) => 
         sum + (exp.amount || 0), 0);
-      const totalProfit = totalIncome - totalExpenses;
+
+      // Deduct Cost of Goods Sold (COGS) so profit is not artificially high
+      const filteredPurchases = purchasesData.filter(pur => {
+        const purDate = new Date(pur.date || pur.createdAt);
+        return purDate >= startDate && purDate <= endDate;
+      });
+      const totalRecordedPurchases = filteredPurchases.reduce((sum, p) => 
+        sum + (Number(p.finalAmount || p.totalAmount || p.total) || 0), 0);
+      const totalCOGS = totalRecordedPurchases > 0 ? totalRecordedPurchases : Math.round(totalIncome * 0.85);
+      const grossProfit = Math.max(0, totalIncome - totalCOGS);
+      const totalProfit = grossProfit - totalExpenses;
       const profitMargin = totalIncome > 0 ? ((totalProfit / totalIncome) * 100).toFixed(1) : 0;
       
       // Expense breakdown by category
@@ -507,14 +545,24 @@ const ReportsPage = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-            <span className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
-              <BarChart3 className="text-white" size={20} />
-            </span>
-            Reports & Analytics
-          </h1>
-          <p className="text-gray-600 mt-1">Business performance and financial analysis</p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/m')}
+            className="p-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl transition flex items-center gap-1 text-xs font-bold shadow-xs cursor-pointer shrink-0"
+            title="वापस मोबाइल ऐप पर जाएं"
+          >
+            <ArrowLeft size={16} />
+            <span>वापस</span>
+          </button>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center gap-3">
+              <span className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shrink-0">
+                <BarChart3 className="text-white" size={20} />
+              </span>
+              <span>Reports & Analytics</span>
+            </h1>
+            <p className="text-gray-600 mt-1 text-xs sm:text-sm">Business performance and financial analysis</p>
+          </div>
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
