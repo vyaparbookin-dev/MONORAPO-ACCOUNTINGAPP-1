@@ -8233,6 +8233,11 @@ function MobileVyaparAppContent() {
 
         {/* ==================== TAB 2: PARTIES ==================== */}
         {activeTab === "parties" && (() => {
+          const zeroPartiesCount = deduplicatedParties.filter(p => {
+            const bal = getPartyDisplayBalance(p);
+            return Math.abs(bal) <= 0.01;
+          }).length;
+
           const filteredParties = deduplicatedParties.filter(p => {
             const hasSearch = searchQuery && searchQuery.trim().length > 0;
             const q = (searchQuery || '').toLowerCase().trim();
@@ -8247,11 +8252,11 @@ function MobileVyaparAppContent() {
 
             let matchesFilter = true;
             if (partyFilterTab === "to_collect") {
-              matchesFilter = bal > 0;
+              matchesFilter = bal > 0.01;
             } else if (partyFilterTab === "to_pay") {
-              matchesFilter = bal < 0;
+              matchesFilter = bal < -0.01;
             } else if (partyFilterTab === "settled") {
-              matchesFilter = bal === 0;
+              matchesFilter = Math.abs(bal) <= 0.01;
             } else if (partyFilterTab === "customer") {
               matchesFilter = pType === "customer" || pType === "both";
             } else if (partyFilterTab === "supplier") {
@@ -8259,7 +8264,13 @@ function MobileVyaparAppContent() {
             } else if (partyFilterTab === "personal") {
               matchesFilter = pType === "personal";
             }
-            return matchesSearch && matchesFilter;
+
+            // Always search across all parties when searching so zero-balance parties are never hidden!
+            if (hasSearch) {
+              return matchesSearch;
+            }
+
+            return matchesFilter;
           });
 
           return (
@@ -8272,8 +8283,8 @@ function MobileVyaparAppContent() {
                       : partyFilterTab === "to_collect"
                         ? `🟢 लेने हैं (${filteredParties.length})`
                         : partyFilterTab === "settled"
-                          ? `✅ हिसाब चुकता (${filteredParties.length})`
-                          : `Parties (${filteredParties.length})`}
+                          ? `⚪ ₹0 बैलेंस / चुकता (${filteredParties.length})`
+                          : `पार्टियां (${filteredParties.length})`}
                   </h2>
                   <p className="text-[10px] text-slate-400 font-medium">
                     {partyFilterTab === "to_pay"
@@ -8331,10 +8342,10 @@ function MobileVyaparAppContent() {
               {/* Filter Tabs: All / To Collect / To Pay / Settled / Customer / Supplier / Personal */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
                 {[
-                  { id: "all", label: `सभी (${parties.length})` },
+                  { id: "all", label: `सभी (${deduplicatedParties.length})` },
                   { id: "to_collect", label: `🟢 लेने हैं (₹${toCollect.toLocaleString('en-IN')})` },
                   { id: "to_pay", label: `🔴 देने हैं (₹${toPay.toLocaleString('en-IN')})` },
-                  { id: "settled", label: `✅ चुकता (${deduplicatedParties.filter(p => Number(p.balance || 0) === 0).length})` },
+                  { id: "settled", label: `⚪ ₹0 बैलेंस / चुकता (${zeroPartiesCount})` },
                   { id: "customer", label: "🛒 ग्राहक" },
                   { id: "supplier", label: "🏢 सप्लायर" },
                   { id: "personal", label: "👤 पर्सनल खाता" }
@@ -8364,7 +8375,7 @@ function MobileVyaparAppContent() {
               {partyFilterTab !== "all" && (
                 <div className="flex items-center justify-between bg-indigo-50/90 border border-indigo-200/80 px-3 py-1.5 rounded-xl text-xs text-indigo-950 font-medium">
                   <span className="truncate">
-                    🔎 फ़िल्टर: <b>{partyFilterTab === 'to_collect' ? 'लेने हैं' : partyFilterTab === 'to_pay' ? 'देने हैं' : partyFilterTab === 'settled' ? 'हिसाब चुकता' : partyFilterTab === 'customer' ? 'ग्राहक' : partyFilterTab === 'supplier' ? 'सप्लायर' : 'पर्सनल'}</b> ({filteredParties.length} दिख रहे हैं)
+                    🔎 फ़िल्टर: <b>{partyFilterTab === 'to_collect' ? 'लेने हैं' : partyFilterTab === 'to_pay' ? 'देने हैं' : partyFilterTab === 'settled' ? '₹0 बैलेंस / चुकता' : partyFilterTab === 'customer' ? 'ग्राहक' : partyFilterTab === 'supplier' ? 'सप्लायर' : 'पर्सनल'}</b> ({filteredParties.length} दिख रहे हैं)
                   </span>
                   <button
                     type="button"

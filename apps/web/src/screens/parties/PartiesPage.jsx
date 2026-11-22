@@ -308,12 +308,33 @@ export default function PartiesPage() {
     try {
       if (!isSilent) setLoading(true);
       // Local-First: डेस्कटॉप ऐप के लिए लोकल SQLite से डेटा लें
+      let partiesLoaded = false;
       if (window.electron && window.electron.db) {
-        const localParties = await window.electron.db.getCustomers();
-        setParties(localParties || []);
-      } else {
+        try {
+          const localParties = await window.electron.db.getCustomers();
+          if (localParties && localParties.length > 0) {
+            setParties(localParties.map(p => ({
+              ...p,
+              id: p.uuid || p.id || p._id,
+              _id: p.uuid || p.id || p._id,
+              name: p.name || 'Unknown',
+              currentBalance: Number(p.balance ?? p.currentBalance ?? 0),
+              balance: Number(p.balance ?? p.currentBalance ?? 0),
+              partyType: p.party_type || p.partyType || p.type || 'customer',
+              mobileNumber: p.phone || p.mobileNumber || '',
+              phone: p.phone || p.mobileNumber || '',
+              alternatePhone: p.alternate_phone || p.alternatePhone || ''
+            })));
+            partiesLoaded = true;
+          }
+        } catch (dbErr) {
+          console.warn("Electron SQLite fetch error:", dbErr);
+        }
+      }
+
+      if (!partiesLoaded) {
         const res = await api.get('/api/party').catch(() => api.get('/api/parties'));
-        const rawList = res.data?.parties || res.parties || (Array.isArray(res) ? res : []);
+        const rawList = res?.data?.parties || res?.parties || (Array.isArray(res) ? res : []);
         const currentCoId = String(localStorage.getItem("companyId") || "").trim();
         const sanitized = rawList.map(p => {
           const isSupplier = (p.partyType || p.type) === 'supplier';
@@ -347,6 +368,15 @@ export default function PartiesPage() {
           }
         }
         setParties(merged);
+
+        // If running in Electron and SQLite was empty, seed SQLite in background
+        if (window.electron && window.electron.db?.addCustomer && Array.isArray(merged) && merged.length > 0) {
+          setTimeout(async () => {
+            for (const p of merged) {
+              try { await window.electron.db.addCustomer(p); } catch (e) {}
+            }
+          }, 200);
+        }
       }
     } catch (error) {
       console.error("Error fetching parties", error);
@@ -1290,6 +1320,21 @@ export default function PartiesPage() {
     return Array.from(map.values());
   }, [parties]);
 
+  const totalToCollect = deduplicatedParties.filter(p => {
+    const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
+    return bal > 0.01;
+  }).reduce((sum, p) => sum + Number(p?.currentBalance ?? p?.balance ?? 0), 0);
+
+  const totalToPay = Math.abs(deduplicatedParties.filter(p => {
+    const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
+    return bal < -0.01;
+  }).reduce((sum, p) => sum + Number(p?.currentBalance ?? p?.balance ?? 0), 0));
+
+  const zeroBalanceCount = deduplicatedParties.filter(p => {
+    const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
+    return Math.abs(bal) <= 0.01;
+  }).length;
+
   // Filtered Parties calculation
   const filteredParties = deduplicatedParties.filter(p => {
     const q = searchTerm.toLowerCase().trim();
@@ -1303,9 +1348,11 @@ export default function PartiesPage() {
 
     let matchesType = true;
     if (filterType === 'to_collect') {
-      matchesType = bal > 0;
+      matchesType = bal > 0.01;
     } else if (filterType === 'to_pay') {
-      matchesType = bal < 0;
+      matchesType = bal < -0.01;
+    } else if (filterType === 'zero_balance') {
+      matchesType = Math.abs(bal) <= 0.01;
     } else if (filterType === 'customer') {
       matchesType = pType === 'customer' || pType === 'both';
     } else if (filterType === 'supplier') {
@@ -1313,18 +1360,14 @@ export default function PartiesPage() {
     } else if (filterType === 'personal') {
       matchesType = pType === 'personal';
     }
-    return matchesSearch && matchesType;
+
+    // Always search across all parties when searching so zero-balance parties are never hidden!
+    if (q) {
+      return matchesSearch;
+    }
+
+    return matchesType;
   });
-
-  const totalToCollect = deduplicatedParties.filter(p => {
-    const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
-    return bal > 0;
-  }).reduce((sum, p) => sum + Number(p?.currentBalance ?? p?.balance ?? 0), 0);
-
-  const totalToPay = Math.abs(deduplicatedParties.filter(p => {
-    const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
-    return bal < 0;
-  }).reduce((sum, p) => sum + Number(p?.currentBalance ?? p?.balance ?? 0), 0));
 
   // 📄 If viewing statement for a specific party, render dedicated full-page Ledger Statement View
   if (statementParty) {
@@ -2228,6 +2271,7 @@ export default function PartiesPage() {
               { id: 'all', label: `सभी (${deduplicatedParties.length})` },
               { id: 'to_collect', label: `🟢 लेने हैं (₹${totalToCollect.toLocaleString('en-IN')})` },
               { id: 'to_pay', label: `🔴 देने हैं (₹${totalToPay.toLocaleString('en-IN')})` },
+              { id: 'zero_balance', label: `⚪ ₹0 बैलेंस / चुकता (${zeroBalanceCount})` },
               { id: 'customer', label: '🛒 ग्राहक' },
               { id: 'supplier', label: '🏢 सप्लायर' },
               { id: 'personal', label: '👤 पर्सनल खाता' }
@@ -2239,6 +2283,7 @@ export default function PartiesPage() {
                   filterType === tab.id
                     ? tab.id === 'to_collect' ? 'bg-emerald-600 text-white shadow-sm'
                     : tab.id === 'to_pay' ? 'bg-rose-600 text-white shadow-sm'
+                    : tab.id === 'zero_balance' ? 'bg-slate-700 text-white shadow-sm'
                     : tab.id === 'personal' ? 'bg-amber-600 text-white shadow-sm'
                     : 'bg-[#4338CA] text-white shadow-sm'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'

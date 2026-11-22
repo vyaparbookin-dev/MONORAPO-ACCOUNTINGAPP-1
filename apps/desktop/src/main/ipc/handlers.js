@@ -16,6 +16,9 @@ export const setupHandlers = () => {
   ipcMain.handle('db:get-customers', () => {
     try {
       db.prepare(`CREATE TABLE IF NOT EXISTS customers (uuid TEXT PRIMARY KEY, name TEXT, gstin TEXT, phone TEXT, email TEXT, address TEXT, is_synced INTEGER DEFAULT 0, is_deleted INTEGER DEFAULT 0)`).run();
+      try { db.prepare(`ALTER TABLE customers ADD COLUMN balance REAL DEFAULT 0`).run(); } catch(e){}
+      try { db.prepare(`ALTER TABLE customers ADD COLUMN party_type TEXT DEFAULT 'customer'`).run(); } catch(e){}
+      try { db.prepare(`ALTER TABLE customers ADD COLUMN alternate_phone TEXT DEFAULT ''`).run(); } catch(e){}
       const stmt = db.prepare('SELECT * FROM customers WHERE is_deleted = 0 ORDER BY name ASC');
       return stmt.all();
     } catch(e) { console.error("Customer fetch error:", e); return []; }
@@ -23,22 +26,33 @@ export const setupHandlers = () => {
 
   // Add Customer
   ipcMain.handle('db:add-customer', (_, customer) => {
-    db.prepare(`CREATE TABLE IF NOT EXISTS customers (uuid TEXT PRIMARY KEY, name TEXT, gstin TEXT, phone TEXT, email TEXT, address TEXT, is_synced INTEGER DEFAULT 0, is_deleted INTEGER DEFAULT 0)`).run();
-    const uuid = uuidv4();
-    const stmt = db.prepare(`
-      INSERT INTO customers (uuid, name, gstin, phone, email, address, is_synced)
-      VALUES (@uuid, @name, @gstin, @phone, @email, @address, 0)
-    `);
-    
-    stmt.run({ 
-      uuid: customer.uuid || uuid,
-      name: customer.name || 'Unknown',
-      gstin: customer.gstin || customer.gstNumber || '',
-      phone: customer.phone || customer.mobileNumber || '',
-      email: customer.email || '',
-      address: customer.address || ''
-    });
-    return { success: true, uuid };
+    try {
+      db.prepare(`CREATE TABLE IF NOT EXISTS customers (uuid TEXT PRIMARY KEY, name TEXT, gstin TEXT, phone TEXT, email TEXT, address TEXT, is_synced INTEGER DEFAULT 0, is_deleted INTEGER DEFAULT 0)`).run();
+      try { db.prepare(`ALTER TABLE customers ADD COLUMN balance REAL DEFAULT 0`).run(); } catch(e){}
+      try { db.prepare(`ALTER TABLE customers ADD COLUMN party_type TEXT DEFAULT 'customer'`).run(); } catch(e){}
+      try { db.prepare(`ALTER TABLE customers ADD COLUMN alternate_phone TEXT DEFAULT ''`).run(); } catch(e){}
+      const uuid = customer.uuid || customer._id || customer.id || uuidv4();
+      const stmt = db.prepare(`
+        INSERT OR REPLACE INTO customers (uuid, name, gstin, phone, alternate_phone, email, address, balance, party_type, is_synced)
+        VALUES (@uuid, @name, @gstin, @phone, @alternate_phone, @email, @address, @balance, @party_type, 0)
+      `);
+      
+      stmt.run({ 
+        uuid: String(uuid),
+        name: customer.name || 'Unknown',
+        gstin: customer.gstin || customer.gstNumber || '',
+        phone: customer.phone || customer.mobileNumber || '',
+        alternate_phone: customer.alternatePhone || customer.alternate_phone || '',
+        email: customer.email || '',
+        address: customer.address || '',
+        balance: Number(customer.balance ?? customer.currentBalance ?? 0),
+        party_type: customer.partyType || customer.party_type || customer.type || 'customer'
+      });
+      return { success: true, uuid };
+    } catch (e) {
+      console.error("Customer add error:", e);
+      return { success: false, error: e.message };
+    }
   });
 
   // --- INVOICES ---
