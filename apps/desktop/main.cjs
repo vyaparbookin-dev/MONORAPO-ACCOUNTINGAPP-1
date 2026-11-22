@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, shell } = require('electron');
+const { app, BrowserWindow, dialog, shell, ipcMain } = require('electron');
 const path = require('path');
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
@@ -46,12 +46,29 @@ function createWindow() {
     log.error('webContents did-fail-load:', code, desc);
   });
 
+  // Open external links (WhatsApp, Web, mailto, etc.) in user's default OS browser/app
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https:') || url.startsWith('http:') || url.startsWith('whatsapp:') || url.startsWith('mailto:')) {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+
   return win;
 }
 
 app.whenReady().then(() => {
   // Create window immediately so user sees the app window without delay
   createWindow();
+
+  // IPC handler to open external links via default OS handler
+  ipcMain.handle('open-external', (_, url) => {
+    if (url) {
+      shell.openExternal(url).catch(err => log.error('openExternal error:', err));
+    }
+    return true;
+  });
 
   // Database and Handlers loaded asynchronously in background
   (async () => {

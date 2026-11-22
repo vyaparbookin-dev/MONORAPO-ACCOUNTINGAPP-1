@@ -36,6 +36,129 @@ export default function PartiesPage() {
     setFilterTypeState(tab);
   }, []);
 
+  // 📲 WhatsApp Background QR Engine States & Methods
+  const [showWhatsAppQrModal, setShowWhatsAppQrModal] = useState(false);
+  const [waStatus, setWaStatus] = useState({
+    isConnected: false,
+    status: 'DISCONNECTED',
+    qrDataUrl: null,
+    userPhone: null
+  });
+  const [loadingWaAction, setLoadingWaAction] = useState(false);
+  const [directWaSending, setDirectWaSending] = useState(false);
+  const [directWaSuccessMsg, setDirectWaSuccessMsg] = useState('');
+
+  const fetchWhatsAppStatus = async () => {
+    try {
+      const res = await api.get('/api/whatsapp/status');
+      if (res?.data?.success) {
+        setWaStatus({
+          isConnected: Boolean(res.data.isConnected),
+          status: res.data.status || 'DISCONNECTED',
+          qrDataUrl: res.data.qrDataUrl || null,
+          userPhone: res.data.userPhone || null
+        });
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    fetchWhatsAppStatus();
+  }, []);
+
+  useEffect(() => {
+    let timer = null;
+    if (showWhatsAppQrModal && !waStatus.isConnected) {
+      timer = setInterval(fetchWhatsAppStatus, 2500);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [showWhatsAppQrModal, waStatus.isConnected]);
+
+  const handleOpenWhatsAppModal = () => {
+    setShowWhatsAppQrModal(true);
+    if (!waStatus.isConnected) {
+      handleStartWhatsAppSession(false);
+    }
+  };
+
+  const handleStartWhatsAppSession = async (forceNew = false) => {
+    setLoadingWaAction(true);
+    try {
+      const res = await api.post('/api/whatsapp/start-session', { forceNew });
+      if (res?.data?.success) {
+        setWaStatus(prev => ({
+          ...prev,
+          qrDataUrl: res.data.qrDataUrl || prev.qrDataUrl,
+          status: res.data.status || prev.status
+        }));
+      }
+    } catch (err) {
+      console.warn("WhatsApp session start warning:", err.message);
+    } finally {
+      setLoadingWaAction(false);
+    }
+  };
+
+  const handleDisconnectWhatsApp = async () => {
+    if (!window.confirm("क्या आप वाकई इस कंपनी का WhatsApp डिस्कनेक्ट करना चाहते हैं?")) return;
+    setLoadingWaAction(true);
+    try {
+      const res = await api.post('/api/whatsapp/disconnect');
+      if (res?.data?.success) {
+        setWaStatus({
+          isConnected: false,
+          status: 'DISCONNECTED',
+          qrDataUrl: null,
+          userPhone: null
+        });
+        alert("✅ WhatsApp सफलतापूर्वक डिस्कनेक्ट हो गया!");
+      }
+    } catch (err) {
+      alert("डिस्कनेक्ट विफल: " + (err.response?.data?.error || err.message));
+    } finally {
+      setLoadingWaAction(false);
+    }
+  };
+
+  const handleSendDirectWhatsApp = async () => {
+    if (!statementParty) return;
+    const text = generateStatementShareText(shareFormat, statementParty, filteredStatementTransactions);
+    const targetPhone = (shareRecipientType === 'party' 
+      ? (statementParty.mobileNumber || statementParty.phone || '') 
+      : shareCustomPhone).replace(/[^0-9]/g, '');
+
+    if (!targetPhone || targetPhone.length < 10) {
+      alert("कृपया मान्य 10-अंकों का मोबाइल नंबर दर्ज करें!");
+      return;
+    }
+
+    if (!waStatus.isConnected) {
+      handleOpenWhatsAppModal();
+      return;
+    }
+
+    setDirectWaSending(true);
+    setDirectWaSuccessMsg('');
+    try {
+      const res = await api.post('/api/whatsapp/send-direct', {
+        toMobile: targetPhone,
+        messageText: text
+      });
+      if (res?.data?.success) {
+        setDirectWaSuccessMsg(`✅ ${statementParty.name} के WhatsApp (${targetPhone}) पर खाता विवरण सफलतापूर्वक भेज दिया गया!`);
+        setTimeout(() => setDirectWaSuccessMsg(''), 6000);
+      } else {
+        alert("WhatsApp संदेश भेजने में त्रुटि: " + (res?.data?.message || "कृपया पुनः प्रयास करें"));
+      }
+    } catch (err) {
+      alert("WhatsApp सेंड विफल: " + (err.response?.data?.message || err.message));
+    } finally {
+      setDirectWaSending(false);
+    }
+  };
+
   // Statement & Image Modal State
   const [statementParty, setStatementParty] = useState(null);
   const [statementData, setStatementData] = useState(null);
@@ -1250,7 +1373,12 @@ export default function PartiesPage() {
       const url = (targetPhone && targetPhone !== '9999999999' && targetPhone.length >= 10)
         ? `https://wa.me/91${targetPhone.slice(-10)}?text=${encodeURIComponent(text)}`
         : `https://wa.me/?text=${encodeURIComponent(text)}`;
-      window.open(url, '_blank');
+
+      if (window.electron?.openExternal) {
+        window.electron.openExternal(url);
+      } else {
+        window.open(url, '_blank');
+      }
     } else if (channel === 'copy') {
       try {
         navigator.clipboard.writeText(text);
@@ -1320,15 +1448,13 @@ export default function PartiesPage() {
     return Array.from(map.values());
   }, [parties]);
 
-  const totalToCollect = deduplicatedParties.filter(p => {
-    const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
-    return bal > 0.01;
-  }).reduce((sum, p) => sum + Number(p?.currentBalance ?? p?.balance ?? 0), 0);
+  const toCollectParties = deduplicatedParties.filter(p => Number(p?.currentBalance ?? p?.balance ?? 0) > 0.01);
+  const toPayParties = deduplicatedParties.filter(p => Number(p?.currentBalance ?? p?.balance ?? 0) < -0.01);
+  const toCollectCount = toCollectParties.length;
+  const toPayCount = toPayParties.length;
 
-  const totalToPay = Math.abs(deduplicatedParties.filter(p => {
-    const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
-    return bal < -0.01;
-  }).reduce((sum, p) => sum + Number(p?.currentBalance ?? p?.balance ?? 0), 0));
+  const totalToCollect = toCollectParties.reduce((sum, p) => sum + Number(p?.currentBalance ?? p?.balance ?? 0), 0);
+  const totalToPay = Math.abs(toPayParties.reduce((sum, p) => sum + Number(p?.currentBalance ?? p?.balance ?? 0), 0));
 
   const zeroBalanceCount = deduplicatedParties.filter(p => {
     const bal = Number(p?.currentBalance ?? p?.balance ?? 0);
@@ -2247,6 +2373,18 @@ export default function PartiesPage() {
             >
               <CreditCard size={17} /> 💳 क्रेडिट लिमिट हब
             </button>
+            <button
+              onClick={handleOpenWhatsAppModal}
+              className={`px-3.5 py-2.5 rounded-xl font-bold flex items-center gap-1.5 cursor-pointer shadow-md transition text-xs sm:text-sm ${
+                waStatus.isConnected 
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
+                  : 'bg-green-600 hover:bg-green-700 text-white'
+              }`}
+              title={waStatus.isConnected ? `ऑटोमैटिक WhatsApp कनेक्टेड है (${waStatus.userPhone})` : "QR कोड स्कैन करके WhatsApp लिंक करें"}
+            >
+              <MessageSquare size={17} />
+              <span>{waStatus.isConnected ? `📲 WhatsApp (${waStatus.userPhone ? waStatus.userPhone.slice(-4) : 'सक्रिय'})` : '📲 WhatsApp QR लिंक'}</span>
+            </button>
             <button onClick={() => setShowModal(true)} className="bg-[#4338CA] hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 cursor-pointer shadow-md transition text-xs sm:text-sm">
               <Plus size={18} /> + नया खाता जोड़ें
             </button>
@@ -2269,8 +2407,8 @@ export default function PartiesPage() {
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
             {[
               { id: 'all', label: `सभी (${deduplicatedParties.length})` },
-              { id: 'to_collect', label: `🟢 लेने हैं (₹${totalToCollect.toLocaleString('en-IN')})` },
-              { id: 'to_pay', label: `🔴 देने हैं (₹${totalToPay.toLocaleString('en-IN')})` },
+              { id: 'to_collect', label: `🟢 लेने हैं (${toCollectCount} पार्टियां • ₹${totalToCollect.toLocaleString('en-IN')})` },
+              { id: 'to_pay', label: `🔴 देने हैं (${toPayCount} पार्टियां • ₹${totalToPay.toLocaleString('en-IN')})` },
               { id: 'zero_balance', label: `⚪ ₹0 बैलेंस / चुकता (${zeroBalanceCount})` },
               { id: 'customer', label: '🛒 ग्राहक' },
               { id: 'supplier', label: '🏢 सप्लायर' },
@@ -3129,41 +3267,198 @@ export default function PartiesPage() {
                     {generateStatementShareText(shareFormat, statementParty, filteredStatementTransactions)}
                   </pre>
                 </div>
+
+                {/* WhatsApp Connection Status Indicator */}
+                <div className={`p-3 rounded-2xl border text-xs flex items-center justify-between gap-2 ${
+                  waStatus.isConnected ? 'bg-emerald-50/70 border-emerald-200' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${waStatus.isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
+                    <div>
+                      <span className="font-extrabold text-slate-800">
+                        {waStatus.isConnected ? `ऑटोमैटिक WhatsApp लिंक्ड है (${waStatus.userPhone || 'सक्रिय'})` : 'ऑटोमैटिक WhatsApp लिंक्ड नहीं है'}
+                      </span>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        {waStatus.isConnected ? 'मैसेज सीधे बैकग्राउंड में चला जाएगा' : 'QR कोड स्कैन करके बैकग्राउंड सेंडिंग चालू कर सकते हैं'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenWhatsAppModal}
+                    className="shrink-0 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-xl transition cursor-pointer shadow-xs"
+                  >
+                    {waStatus.isConnected ? 'कनेक्शन बदलें' : '📲 QR स्कैन करें'}
+                  </button>
+                </div>
+
+                {directWaSuccessMsg && (
+                  <div className="p-3 bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-bold rounded-2xl animate-in fade-in flex items-center gap-2">
+                    <CheckCircle2 size={16} className="text-emerald-700 shrink-0" />
+                    <span>{directWaSuccessMsg}</span>
+                  </div>
+                )}
               </div>
 
               {/* Action Buttons */}
-              <div className="pt-3 border-t border-slate-100 flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => handleExecuteShare('copy')}
-                  className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                  title="पूरा स्टेटमेंट टेक्स्ट कॉपी करें"
-                >
-                  {copiedShareText ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
-                  <span>{copiedShareText ? 'कॉपी हुआ!' : 'कॉपी करें'}</span>
-                </button>
-
-                {typeof navigator !== 'undefined' && navigator.share && (
+              <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => handleExecuteShare('native')}
-                    className="px-3.5 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                    title="फोन के अन्य ऐप्स पर शेयर करें"
+                    onClick={() => handleExecuteShare('copy')}
+                    className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                    title="पूरा स्टेटमेंट टेक्स्ट कॉपी करें"
                   >
-                    <Share2 size={14} />
-                    <span>अन्य ऐप</span>
+                    {copiedShareText ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                    <span>{copiedShareText ? 'कॉपी हुआ!' : 'कॉपी करें'}</span>
+                  </button>
+
+                  {typeof navigator !== 'undefined' && navigator.share && (
+                    <button
+                      type="button"
+                      onClick={() => handleExecuteShare('native')}
+                      className="px-3 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                      title="फोन के अन्य ऐप्स पर शेयर करें"
+                    >
+                      <Share2 size={14} />
+                      <span>अन्य ऐप</span>
+                    </button>
+                  )}
+                </div>
+
+                {waStatus.isConnected ? (
+                  <button
+                    type="button"
+                    onClick={handleSendDirectWhatsApp}
+                    disabled={directWaSending}
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-md active:scale-95 disabled:opacity-60"
+                  >
+                    <MessageSquare size={16} />
+                    <span>{directWaSending ? 'भेजा जा रहा है...' : '⚡ डायरेक्ट WhatsApp भेजें'}</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleOpenWhatsAppModal}
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-md active:scale-95"
+                  >
+                    <MessageSquare size={16} />
+                    <span>📲 QR स्कैन करके लिंक करें</span>
                   </button>
                 )}
 
                 <button
                   type="button"
                   onClick={() => handleExecuteShare('whatsapp')}
-                  className="flex-1 py-2.5 bg-[#25D366] hover:bg-green-600 text-white font-black text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-md active:scale-95"
+                  className="px-3 py-2.5 bg-[#25D366] hover:bg-green-600 text-white font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md active:scale-95"
+                  title="WhatsApp Web या WhatsApp Desktop ऐप में खोलें"
                 >
-                  <MessageSquare size={16} />
-                  <span>WhatsApp पर भेजें</span>
+                  <MessageSquare size={15} />
+                  <span>Web/App में खोलें</span>
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* 📲 WHATSAPP BACKGROUND QR ENGINE MODAL */}
+        {showWhatsAppQrModal && (
+          <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+            <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">
+                    <MessageSquare size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-[#0F172A]">ऑटोमैटिक WhatsApp इंजन</h3>
+                    <p className="text-[10px] text-slate-500 font-bold">QR स्कैन करके बैकग्राउंड सेंडिंग चालू करें</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowWhatsAppQrModal(false)}
+                  className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-lg hover:bg-slate-100"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {waStatus.isConnected ? (
+                <div className="text-center py-3 space-y-3">
+                  <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                    <CheckCircle2 size={36} />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-emerald-800 text-base">WhatsApp सफलतापूर्वक कनेक्टेड है!</h4>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      लिंक मोबाइल: <span className="font-bold text-slate-900">{waStatus.userPhone}</span>
+                    </p>
+                  </div>
+
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-[11px] text-emerald-900 text-left leading-relaxed">
+                    🚀 <b>बैकग्राउंड सेंडिंग एक्टिव है!</b><br />
+                    अब जब भी आप पार्टी का हिसाब शेयर करेंगे, मैसेज सीधे ग्राहक के नंबर पर बैकग्राउंड में चला जाएगा। आपको बार-बार WhatsApp ऐप खोलकर Enter नहीं दबाना पड़ेगा।
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleDisconnectWhatsApp}
+                    disabled={loadingWaAction}
+                    className="w-full py-2.5 rounded-2xl border border-rose-300 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer"
+                  >
+                    {loadingWaAction ? "डिस्कनेक्ट हो रहा है..." : "डिस्कनेक्ट करें (Disconnect)"}
+                  </button>
+                </div>
+              ) : (
+                <div className="text-center space-y-3">
+                  {waStatus.qrDataUrl ? (
+                    <div>
+                      <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-2xl inline-block shadow-inner mb-2">
+                        <img
+                          src={waStatus.qrDataUrl}
+                          alt="WhatsApp QR Code"
+                          className="w-52 h-52 mx-auto rounded-xl object-contain"
+                        />
+                      </div>
+                      <div className="text-left bg-slate-50 p-3 rounded-2xl border border-slate-100 text-[11px] text-slate-700 space-y-1">
+                        <p className="font-extrabold text-slate-900">📲 कैसे कनेक्ट करें:</p>
+                        <p>1. फोन में अपना <b>WhatsApp</b> खोलें</p>
+                        <p>2. ऊपर 3 डॉट्स (⋮) या Settings ➔ <b>Linked Devices</b> दबाएं</p>
+                        <p>3. <b>Link a Device</b> दबाकर इस QR कोड को स्कैन करें</p>
+                      </div>
+                      <div className="flex items-center justify-center gap-1.5 text-[11px] text-emerald-600 font-bold mt-2">
+                        <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" />
+                        स्कैन होने की प्रतीक्षा कर रहा है...
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-8 space-y-2">
+                      <div className="w-10 h-10 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                      <p className="text-xs font-bold text-slate-700">QR कोड लोड हो रहा है...</p>
+                      <p className="text-[11px] text-slate-400">कृपया कुछ सेकंड प्रतीक्षा करें</p>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleStartWhatsAppSession(true)}
+                      disabled={loadingWaAction}
+                      className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
+                    >
+                      {loadingWaAction ? "नया कोड बन रहा है..." : "🔄 नया QR कोड बनाएं"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowWhatsAppQrModal(false)}
+                      className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition cursor-pointer"
+                    >
+                      बंद करें
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

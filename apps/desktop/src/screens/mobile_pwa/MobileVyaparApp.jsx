@@ -8233,6 +8233,8 @@ function MobileVyaparAppContent() {
 
         {/* ==================== TAB 2: PARTIES ==================== */}
         {activeTab === "parties" && (() => {
+          const toCollectPartiesCount = deduplicatedParties.filter(p => getPartyDisplayBalance(p) > 0.01).length;
+          const toPayPartiesCount = deduplicatedParties.filter(p => getPartyDisplayBalance(p) < -0.01).length;
           const zeroPartiesCount = deduplicatedParties.filter(p => {
             const bal = getPartyDisplayBalance(p);
             return Math.abs(bal) <= 0.01;
@@ -8343,8 +8345,8 @@ function MobileVyaparAppContent() {
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
                 {[
                   { id: "all", label: `सभी (${deduplicatedParties.length})` },
-                  { id: "to_collect", label: `🟢 लेने हैं (₹${toCollect.toLocaleString('en-IN')})` },
-                  { id: "to_pay", label: `🔴 देने हैं (₹${toPay.toLocaleString('en-IN')})` },
+                  { id: "to_collect", label: `🟢 लेने हैं (${toCollectPartiesCount} पार्टियां • ₹${toCollect.toLocaleString('en-IN')})` },
+                  { id: "to_pay", label: `🔴 देने हैं (${toPayPartiesCount} पार्टियां • ₹${toPay.toLocaleString('en-IN')})` },
                   { id: "settled", label: `⚪ ₹0 बैलेंस / चुकता (${zeroPartiesCount})` },
                   { id: "customer", label: "🛒 ग्राहक" },
                   { id: "supplier", label: "🏢 सप्लायर" },
