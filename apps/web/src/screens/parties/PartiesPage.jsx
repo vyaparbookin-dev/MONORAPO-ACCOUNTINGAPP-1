@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import api from '../../services/api';
-import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2, Download, FileSpreadsheet, Upload, AlertCircle, MapPin, RotateCcw, Filter, ArrowLeft, Copy, Check, MessageSquare, RefreshCw } from 'lucide-react';
+import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2, Download, FileSpreadsheet, Upload, AlertCircle, MapPin, RotateCcw, Filter, ArrowLeft, Copy, Check, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, DownloadCloud, Layers } from 'lucide-react';
 import { syncQueue } from "@repo/shared";
 import CreditLimitHubModal from '../../components/modals/CreditLimitHubModal';
 import { getWebSafeImageUrl, compressImageFile } from '../../utils/photoStorage';
@@ -341,6 +341,172 @@ export default function PartiesPage() {
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [openedShareFromList, setOpenedShareFromList] = useState(false);
   const [previewImage, setPreviewImage] = useState(null); // URL for full-res bill photo preview modal
+  const [previewPhotosList, setPreviewPhotosList] = useState([]);
+  const [previewPhotoIndex, setPreviewPhotoIndex] = useState(0);
+  const [previewTxDetails, setPreviewTxDetails] = useState(null);
+
+  const handleOpenPhotoPreview = (tx, initialIndex = 0) => {
+    const list = (tx.billImageUrls && tx.billImageUrls.length > 0)
+      ? tx.billImageUrls
+      : (tx.billImageUrl ? [tx.billImageUrl] : []);
+    if (list.length === 0) return;
+    setPreviewPhotosList(list);
+    setPreviewPhotoIndex(initialIndex);
+    setPreviewTxDetails(tx);
+  };
+
+  const handleDownloadAllPhotos = (photos, billNo) => {
+    if (!photos || photos.length === 0) return;
+    photos.forEach((url, idx) => {
+      setTimeout(() => {
+        const safe = getWebSafeImageUrl(url);
+        const a = document.createElement("a");
+        a.href = safe;
+        a.download = `Bill_${billNo || "slip"}_page_${idx + 1}.jpg`;
+        a.target = "_blank";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          try { document.body.removeChild(a); } catch (e) {}
+        }, 300);
+      }, idx * 400);
+    });
+  };
+
+  const renderPhotoModal = () => {
+    const list = previewPhotosList.length > 0 ? previewPhotosList : (previewImage ? [previewImage] : []);
+    if (list.length === 0) return null;
+    const activePhoto = list[previewPhotoIndex] || list[0];
+    const safeActive = getWebSafeImageUrl(activePhoto);
+
+    return (
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-50 p-3 sm:p-4 animate-in fade-in">
+        <div className="bg-slate-900 rounded-3xl max-w-2xl w-full p-4 flex flex-col gap-3 shadow-2xl border border-slate-700 max-h-[92vh]">
+          {/* Header */}
+          <div className="flex justify-between items-center text-white pb-2 border-b border-slate-800">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold flex items-center gap-2">
+                <ImageIcon size={18} className="text-indigo-400" />
+                <span>मूल बिल / रसीद की फोटो (Bill Document)</span>
+              </span>
+              {list.length > 1 && (
+                <span className="bg-indigo-600/30 border border-indigo-400 text-indigo-300 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                  फोटो {previewPhotoIndex + 1} / {list.length}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                setPreviewImage(null);
+                setPreviewPhotosList([]);
+                setPreviewPhotoIndex(0);
+                setPreviewTxDetails(null);
+              }}
+              className="p-1 rounded-lg bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Main Photo with Carousel Arrows */}
+          <div className="relative max-h-[62vh] overflow-hidden flex justify-center items-center bg-black/60 rounded-2xl p-2 border border-slate-800">
+            <img
+              src={safeActive}
+              alt="Original Bill"
+              className="max-h-[58vh] w-auto rounded-xl object-contain shadow-lg"
+            />
+
+            {list.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setPreviewPhotoIndex(prev => (prev > 0 ? prev - 1 : list.length - 1))}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center cursor-pointer shadow-lg transition"
+                  title="पिछली फोटो"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewPhotoIndex(prev => (prev < list.length - 1 ? prev + 1 : 0))}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center cursor-pointer shadow-lg transition"
+                  title="अगली फोटो"
+                >
+                  <ChevronRight size={20} />
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Filmstrip for multiple photos */}
+          {list.length > 1 && (
+            <div className="flex items-center gap-2 overflow-x-auto py-1 px-1 justify-center max-w-full">
+              {list.map((url, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setPreviewPhotoIndex(i)}
+                  className={`relative rounded-lg overflow-hidden border-2 transition shrink-0 cursor-pointer ${
+                    i === previewPhotoIndex
+                      ? "border-indigo-500 scale-105 shadow-md"
+                      : "border-slate-700 opacity-60 hover:opacity-100"
+                  }`}
+                >
+                  <img
+                    src={getWebSafeImageUrl(url)}
+                    alt={`Thumb ${i + 1}`}
+                    className="w-11 h-11 object-cover"
+                  />
+                  <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[9px] text-white font-bold text-center">
+                    #{i + 1}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Actions: Close, Single Download, Bulk Download */}
+          <div className="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-800">
+            <button
+              onClick={() => {
+                setPreviewImage(null);
+                setPreviewPhotosList([]);
+                setPreviewPhotoIndex(0);
+                setPreviewTxDetails(null);
+              }}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl cursor-pointer transition"
+            >
+              बंद करें
+            </button>
+
+            <div className="flex items-center gap-2">
+              <a
+                href={safeActive}
+                download={`bill_photo_page_${previewPhotoIndex + 1}.jpg`}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer transition border border-slate-700"
+              >
+                <Download size={13} />
+                <span>यह फोटो (#{previewPhotoIndex + 1})</span>
+              </a>
+
+              {list.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => handleDownloadAllPhotos(list, previewTxDetails?.billNumber || previewTxDetails?.refNo)}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md transition cursor-pointer"
+                >
+                  <DownloadCloud size={14} />
+                  <span>⬇️ सभी {list.length} फोटो एक साथ डाउनलोड करें</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const handleCloseShareModal = () => {
     setShowShareModal(false);
@@ -2166,36 +2332,53 @@ export default function PartiesPage() {
                         <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1">
                             {(() => {
-                              const primaryImg = tx.billImageUrl || (tx.billImageUrls && tx.billImageUrls[0]);
-                              const safeImg = getWebSafeImageUrl(primaryImg);
-                              return safeImg ? (
-                                <div className="flex items-center gap-1">
-                                  <img
-                                    src={safeImg}
-                                    alt="Bill"
-                                    onClick={() => setPreviewImage(safeImg)}
-                                    className="w-8 h-8 rounded-lg object-cover border border-indigo-200 cursor-pointer hover:scale-110 shadow-xs transition"
-                                    title="बिल फोटो बड़ी देखें"
-                                  />
+                              const pList = (tx.billImageUrls && tx.billImageUrls.length > 0)
+                                ? tx.billImageUrls
+                                : (tx.billImageUrl ? [tx.billImageUrl] : []);
+                              if (pList.length === 0) {
+                                return (
+                                  <label className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 px-2 py-1 rounded-lg border border-dashed border-slate-300 cursor-pointer transition">
+                                    <UploadCloud size={11} />
+                                    <span>फोटो</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={(e) => handleAttachImage(tx._id, e.target.files[0])}
+                                    />
+                                  </label>
+                                );
+                              }
+
+                              const safeImg = getWebSafeImageUrl(pList[0]);
+                              return (
+                                <div className="flex items-center gap-1.5">
+                                  <div
+                                    className="relative cursor-pointer group"
+                                    onClick={() => handleOpenPhotoPreview(tx, 0)}
+                                  >
+                                    <img
+                                      src={safeImg}
+                                      alt="Bill"
+                                      className="w-8 h-8 rounded-lg object-cover border border-indigo-200 group-hover:scale-110 shadow-xs transition"
+                                      title="बिल फोटो बड़ी देखें"
+                                    />
+                                    {pList.length > 1 && (
+                                      <span className="absolute -bottom-1 -right-1 bg-indigo-600 text-white font-black text-[9px] px-1 rounded-full shadow-xs">
+                                        +{pList.length - 1}
+                                      </span>
+                                    )}
+                                  </div>
                                   <button
-                                    onClick={() => setPreviewImage(safeImg)}
-                                    className="p-1 text-indigo-600 hover:bg-indigo-50 rounded cursor-pointer"
+                                    type="button"
+                                    onClick={() => handleOpenPhotoPreview(tx, 0)}
+                                    className="p-1 text-indigo-600 hover:bg-indigo-50 rounded cursor-pointer text-xs font-bold flex items-center gap-0.5"
                                     title="बड़ा देखें"
                                   >
                                     <Eye size={13} />
+                                    {pList.length > 1 && <span>{pList.length}</span>}
                                   </button>
                                 </div>
-                              ) : (
-                                <label className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 px-2 py-1 rounded-lg border border-dashed border-slate-300 cursor-pointer transition">
-                                  <UploadCloud size={11} />
-                                  <span>फोटो</span>
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    className="hidden"
-                                    onChange={(e) => handleAttachImage(tx._id, e.target.files[0])}
-                                  />
-                                </label>
                               );
                             })()}
                           </div>
@@ -2601,43 +2784,7 @@ export default function PartiesPage() {
         )}
 
         {/* 🖼️ High-Res Bill Image Preview Modal */}
-        {previewImage && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-50 p-4 animate-in fade-in">
-            <div className="bg-slate-900 rounded-3xl max-w-2xl w-full p-4 flex flex-col gap-3 shadow-2xl border border-slate-700">
-              <div className="flex justify-between items-center text-white pb-2 border-b border-slate-800">
-                <span className="text-sm font-bold flex items-center gap-2">
-                  <ImageIcon size={18} className="text-indigo-400" /> मूल बिल / रसीद की फोटो (Bill Document)
-                </span>
-                <button
-                  onClick={() => setPreviewImage(null)}
-                  className="p-1 rounded-lg bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="max-h-[75vh] overflow-auto flex justify-center items-center bg-black/50 rounded-2xl p-2">
-                <img src={getWebSafeImageUrl(previewImage)} alt="Original Bill" className="max-h-[70vh] w-auto rounded-xl object-contain shadow-lg" />
-              </div>
-              <div className="flex justify-end gap-2 pt-1">
-                <a
-                  href={getWebSafeImageUrl(previewImage)}
-                  download="bill_invoice_photo.jpg"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl cursor-pointer transition"
-                >
-                  डाउनलोड फोटो
-                </a>
-                <button
-                  onClick={() => setPreviewImage(null)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl cursor-pointer transition"
-                >
-                  बंद करें
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {renderPhotoModal()}
       </div>
     );
   }
@@ -3194,43 +3341,7 @@ export default function PartiesPage() {
 
 
         {/* 🖼️ HIGH-RES BILL IMAGE PREVIEW MODAL */}
-        {previewImage && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-50 p-4 animate-in fade-in">
-            <div className="bg-slate-900 rounded-3xl max-w-2xl w-full p-4 flex flex-col gap-3 shadow-2xl border border-slate-700">
-              <div className="flex justify-between items-center text-white pb-2 border-b border-slate-800">
-                <span className="text-sm font-bold flex items-center gap-2">
-                  <ImageIcon size={18} className="text-indigo-400" /> मूल बिल / रसीद की फोटो (Bill Document)
-                </span>
-                <button
-                  onClick={() => setPreviewImage(null)}
-                  className="p-1 rounded-lg bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="max-h-[75vh] overflow-auto flex justify-center items-center bg-black/50 rounded-2xl p-2">
-                <img src={getWebSafeImageUrl(previewImage)} alt="Original Bill" className="max-h-[70vh] w-auto rounded-xl object-contain shadow-lg" />
-              </div>
-              <div className="flex justify-end gap-2 pt-1">
-                <a
-                  href={getWebSafeImageUrl(previewImage)}
-                  download="bill_invoice_photo.jpg"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl cursor-pointer transition"
-                >
-                  डाउनलोड फोटो
-                </a>
-                <button
-                  onClick={() => setPreviewImage(null)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl cursor-pointer transition"
-                >
-                  बंद करें
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {renderPhotoModal()}
         {/* 📥 BULK IMPORT PARTIES MODAL (EXCEL / CSV) */}
         {showBulkImportModal && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex justify-center items-center z-50 p-3 sm:p-5 animate-in fade-in">
