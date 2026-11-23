@@ -524,6 +524,19 @@ const PartyWiseReportPage = () => {
       });
 
       const ws = XLSX.utils.aoa_to_sheet(rows);
+
+      // Add clickable Excel hyperlinks for rows with a photo
+      filteredStatementTransactions.forEach((tx, idx) => {
+        const url = tx.billImageUrl || (tx.billImageUrls && tx.billImageUrls[0]);
+        if (url) {
+          const r = 12 + idx; // header row is index 11
+          const cellRef = XLSX.utils.encode_cell({ c: 8, r: r });
+          if (ws[cellRef]) {
+            ws[cellRef].l = { Target: url, Tooltip: "बिल फोटो खोलें" };
+          }
+        }
+      });
+
       ws['!cols'] = [
         { wch: 14 },
         { wch: 14 },

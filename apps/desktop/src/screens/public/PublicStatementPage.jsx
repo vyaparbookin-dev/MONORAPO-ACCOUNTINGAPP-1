@@ -48,7 +48,7 @@ export default function PublicStatementPage() {
   const handleExportExcel = () => {
     if (!data?.transactions) return;
     const partyName = data.party?.name || "Customer";
-    const rows = (data.transactions || []).map((t) => {
+    const rawRows = (data.transactions || []).map((t) => {
       const txDate = t.date ? new Date(t.date).toLocaleDateString("hi-IN") : "-";
       const daysDiff = Math.max(0, Math.floor((new Date() - new Date(t.date)) / (1000 * 60 * 60 * 24)));
       const photoUrl = t.billImageUrl || (t.billImageUrls && t.billImageUrls[0]) || "";
@@ -60,11 +60,23 @@ export default function PublicStatementPage() {
         "बिल रकम (Debit ₹)": Number(t.debit || 0),
         "जमा रकम (Credit ₹)": Number(t.credit || 0),
         "शेष बाकी (Balance ₹)": Number(t.runningBalance || 0),
-        "बिल पर्ची / फोटो लिंक (Photo URL)": photoUrl || "कोई फोटो नहीं"
+        "बिल पर्ची / फोटो लिंक (Click to View)": photoUrl ? "📷 फोटो खोलें (Click to View Photo)" : "कोई फोटो नहीं"
       };
     });
 
-    const ws = XLSX.utils.json_to_sheet(rows);
+    const ws = XLSX.utils.json_to_sheet(rawRows);
+    
+    // Add real clickable Excel hyperlinks for rows with a photo
+    (data.transactions || []).forEach((t, i) => {
+      const photoUrl = t.billImageUrl || (t.billImageUrls && t.billImageUrls[0]) || "";
+      if (photoUrl) {
+        const cellRef = XLSX.utils.encode_cell({ c: 7, r: i + 1 });
+        if (ws[cellRef]) {
+          ws[cellRef].l = { Target: photoUrl, Tooltip: "बिल पर्ची फोटो खोलें" };
+        }
+      }
+    });
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Statement");
     XLSX.writeFile(wb, `Statement_${partyName.replace(/\s+/g, "_")}.xlsx`);

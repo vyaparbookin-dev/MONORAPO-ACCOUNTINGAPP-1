@@ -1272,6 +1272,7 @@ export default function PartiesPage() {
                           tx.type === 'purchase' ? 'खरीद बिल' :
                           isReceipt ? 'मुझे मिले (जमा)' : 'मैंने दिए (बिल/किस्त)';
         const dateStr = tx.date ? new Date(tx.date).toLocaleDateString('en-GB') : '-';
+        const photoUrl = tx.billImageUrl || (tx.billImageUrls && tx.billImageUrls[0]) || '';
         return {
           "क्र. सं.": idx + 1,
           "दिनांक": dateStr,
@@ -1281,7 +1282,8 @@ export default function PartiesPage() {
           "साइट (Site)": tx.siteName || '-',
           "बिल (डेबिट ₹)": tx.debit || 0,
           "जमा (क्रेडिट ₹)": tx.credit || 0,
-          "बैलेंस (₹)": Math.abs(Number(tx.runningBalance || 0)) + (Number(tx.runningBalance || 0) >= 0 ? ' Dr' : ' Cr')
+          "बैलेंस (₹)": Math.abs(Number(tx.runningBalance || 0)) + (Number(tx.runningBalance || 0) >= 0 ? ' Dr' : ' Cr'),
+          "बिल पर्ची / फोटो": photoUrl ? "📷 फोटो खोलें (Click to View)" : "-"
         };
       });
 
@@ -1295,10 +1297,22 @@ export default function PartiesPage() {
         "साइट (Site)": "",
         "बिल (डेबिट ₹)": filteredDebit,
         "जमा (क्रेडिट ₹)": filteredCredit,
-        "बैलेंस (₹)": Math.abs(filteredNet) + (filteredNet >= 0 ? ' (लेने हैं)' : ' (देने हैं)')
+        "बैलेंस (₹)": Math.abs(filteredNet) + (filteredNet >= 0 ? ' (लेने हैं)' : ' (देने हैं)'),
+        "बिल पर्ची / फोटो": ""
       });
 
       const ws = XLSX.utils.json_to_sheet(rows);
+
+      // Add real clickable Excel hyperlinks for rows with a photo
+      filteredStatementTransactions.forEach((tx, i) => {
+        const photoUrl = tx.billImageUrl || (tx.billImageUrls && tx.billImageUrls[0]) || '';
+        if (photoUrl) {
+          const cellRef = XLSX.utils.encode_cell({ c: 9, r: i + 1 });
+          if (ws[cellRef]) {
+            ws[cellRef].l = { Target: photoUrl, Tooltip: "बिल पर्ची फोटो खोलें" };
+          }
+        }
+      });
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "खाता_स्टेटमेंट");
       const safeName = pName.replace(/[^a-zA-Z0-9_\u0900-\u097F]/g, '_');
