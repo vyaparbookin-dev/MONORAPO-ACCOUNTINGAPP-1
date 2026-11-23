@@ -200,14 +200,26 @@ export default function PublicStatementPage() {
   const upiPayUrl = upiId ? `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(merchantName)}&am=${absBal}&cu=INR&tn=${encodeURIComponent(`Bill Payment ${party?.name || ''}`)}` : "";
   const qrImageUrl = upiPayUrl ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(upiPayUrl)}` : "";
 
-  // Find max overdue days
+  // Find overdue and last bill delay days
   let oldestOverdueDays = 0;
-  transactions.forEach((t) => {
-    if (Number(t.debit) > 0 && t.date) {
-      const d = Math.max(0, Math.floor((new Date() - new Date(t.date)) / (1000 * 60 * 60 * 24)));
-      if (d > oldestOverdueDays) oldestOverdueDays = d;
+  let lastBillDate = null;
+  let lastBillOverdueDays = 0;
+  let lastBillAmount = 0;
+
+  const debitTxs = transactions.filter((t) => Number(t.debit) > 0 && t.date);
+  if (debitTxs.length > 0) {
+    const sorted = [...debitTxs].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const oldest = sorted[0];
+    const newest = sorted[sorted.length - 1];
+    if (oldest?.date) {
+      oldestOverdueDays = Math.max(0, Math.floor((new Date() - new Date(oldest.date)) / (1000 * 60 * 60 * 24)));
     }
-  });
+    if (newest?.date) {
+      lastBillDate = newest.date;
+      lastBillAmount = Number(newest.debit || 0);
+      lastBillOverdueDays = Math.max(0, Math.floor((new Date() - new Date(newest.date)) / (1000 * 60 * 60 * 24)));
+    }
+  }
 
   // Filter transactions with photos
   const photoTransactions = transactions.filter(t => t.billImageUrl || (t.billImageUrls && t.billImageUrls.length > 0));
@@ -322,14 +334,52 @@ export default function PublicStatementPage() {
               <p className={`text-2xl sm:text-3xl font-black mt-0.5 ${isDue ? "text-rose-600" : isAdvance ? "text-emerald-700" : "text-slate-800"}`}>
                 ₹{absBal.toLocaleString("en-IN")}
               </p>
-              {isDue && oldestOverdueDays > 0 && (
-                <span className="text-[10px] font-black bg-rose-200/80 text-rose-800 px-2 py-0.5 rounded-md inline-block mt-1">
-                  ⏳ सबसे पुराना बिल: {oldestOverdueDays} दिन से बकाया
-                </span>
+              {isDue && lastBillOverdueDays > 0 && (
+                <div className="mt-1.5 flex flex-col items-end gap-0.5">
+                  <span className="text-[10px] font-black bg-rose-200/90 text-rose-900 px-2 py-0.5 rounded-md inline-block">
+                    ⏳ पिछला बिल: {lastBillOverdueDays} दिन से पेंडिंग
+                  </span>
+                  {oldestOverdueDays > lastBillOverdueDays && (
+                    <span className="text-[9px] font-bold text-rose-700">
+                      (सबसे पुराना बिल: {oldestOverdueDays} दिन)
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           </div>
         </div>
+
+        {/* ⏳ PROMINENT BILL DELAY / AGING ALERT BANNER */}
+        {isDue && lastBillOverdueDays > 0 && (
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-3xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-900 flex items-center justify-center font-black text-lg shrink-0 border border-amber-400/30">
+                ⏳
+              </div>
+              <div>
+                <h4 className="font-black text-amber-950 text-sm">
+                  बिल भुगतान देरी विवरण (Payment Delay & Aging Alert)
+                </h4>
+                <p className="text-xs text-amber-900 mt-0.5">
+                  आपका पिछला बिल <strong>{lastBillOverdueDays} दिन पुराना</strong> है ({lastBillDate ? new Date(lastBillDate).toLocaleDateString('hi-IN') : ''} • ₹{lastBillAmount.toLocaleString('en-IN')})
+                  {oldestOverdueDays > lastBillOverdueDays && (
+                    <> एवं सबसे पुराना बकाया बिल <strong>{oldestOverdueDays} दिन से देय</strong> है।</>
+                  )}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`px-3 py-1 rounded-xl font-black text-xs shadow-xs ${
+                lastBillOverdueDays > 30 ? 'bg-rose-100 text-rose-800 border border-rose-300' :
+                lastBillOverdueDays > 7 ? 'bg-amber-200 text-amber-900 border border-amber-300' :
+                'bg-emerald-100 text-emerald-800 border border-emerald-300'
+              }`}>
+                {lastBillOverdueDays > 30 ? '🔴 30+ दिन अति-विलंबित' : lastBillOverdueDays > 7 ? '🟡 विलंबित (Overdue)' : '🟢 सामान्य'}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* 📱 INSTANT UPI PAYMENT CARD (WHEN BALANCE IS DUE & UPI ID CONFIGURED) */}
         {isDue && absBal > 0 && upiId && (
@@ -471,13 +521,20 @@ export default function PublicStatementPage() {
                           </td>
                           <td className="px-4 py-3.5 whitespace-nowrap">
                             {isDebit ? (
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${
-                                daysAgo > 20 ? "bg-rose-100 text-rose-800 border border-rose-200" :
-                                daysAgo > 7 ? "bg-amber-100 text-amber-800 border border-amber-200" :
-                                "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                              }`}>
-                                <span>⏳ {daysAgo} दिन से बकाया</span>
-                              </span>
+                              <div className="flex flex-col items-start gap-0.5">
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${
+                                  daysAgo > 30 ? "bg-rose-100 text-rose-800 border border-rose-300 shadow-xs" :
+                                  daysAgo > 7 ? "bg-amber-100 text-amber-800 border border-amber-300" :
+                                  "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                }`}>
+                                  <span>⏳ {daysAgo} दिन देरी</span>
+                                </span>
+                                {t.date === lastBillDate && (
+                                  <span className="text-[9px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded-md">
+                                    ★ पिछला बिल
+                                  </span>
+                                )}
+                              </div>
                             ) : isCredit ? (
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200 inline-flex items-center gap-1">
                                 <CheckCircle2 size={10} /> <span>जमा प्रविष्टि</span>

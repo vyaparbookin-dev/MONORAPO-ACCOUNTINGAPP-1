@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import api from '../../services/api';
-import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2, Download, FileSpreadsheet, Upload, AlertCircle, MapPin, RotateCcw, Filter, ArrowLeft, Copy, Check, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, DownloadCloud, Layers } from 'lucide-react';
+import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2, Download, FileSpreadsheet, Upload, AlertCircle, MapPin, RotateCcw, Filter, ArrowLeft, Copy, Check, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, DownloadCloud, Layers, Camera } from 'lucide-react';
 import { syncQueue } from "@repo/shared";
 import CreditLimitHubModal from '../../components/modals/CreditLimitHubModal';
 import { getWebSafeImageUrl, compressImageFile } from '../../utils/photoStorage';
@@ -376,6 +376,7 @@ export default function PartiesPage() {
   const [previewPhotosList, setPreviewPhotosList] = useState([]);
   const [previewPhotoIndex, setPreviewPhotoIndex] = useState(0);
   const [previewTxDetails, setPreviewTxDetails] = useState(null);
+  const [uploadingTxId, setUploadingTxId] = useState(null);
 
   const handleOpenPhotoPreview = (tx, initialIndex = 0) => {
     const list = (tx.billImageUrls && tx.billImageUrls.length > 0)
@@ -1409,6 +1410,30 @@ export default function PartiesPage() {
 
   const filteredNet = filteredDebit - filteredCredit;
 
+  // ⏳ Comprehensive Aging & Bill Delay Metrics
+  const agingStats = useMemo(() => {
+    let oldestOverdueDays = 0;
+    let lastBillDate = null;
+    let lastBillOverdueDays = 0;
+    let lastBillAmount = 0;
+
+    const debitTxs = filteredStatementTransactions.filter(t => Number(t.debit) > 0 && t.date);
+    if (debitTxs.length > 0) {
+      const sorted = [...debitTxs].sort((a, b) => new Date(a.date) - new Date(b.date));
+      const oldest = sorted[0];
+      const newest = sorted[sorted.length - 1];
+      if (oldest?.date) {
+        oldestOverdueDays = Math.max(0, Math.floor((new Date() - new Date(oldest.date)) / (1000 * 60 * 60 * 24)));
+      }
+      if (newest?.date) {
+        lastBillDate = newest.date;
+        lastBillAmount = Number(newest.debit || 0);
+        lastBillOverdueDays = Math.max(0, Math.floor((new Date() - new Date(newest.date)) / (1000 * 60 * 60 * 24)));
+      }
+    }
+    return { oldestOverdueDays, lastBillDate, lastBillOverdueDays, lastBillAmount };
+  }, [filteredStatementTransactions]);
+
   // Open Edit Transaction Dialog
   const handleOpenEditTx = (tx) => {
     setEditingTx(tx);
@@ -1542,6 +1567,7 @@ export default function PartiesPage() {
   // Attach Bill Photo / Receipt Image to Transaction
   const handleAttachImage = async (txId, file) => {
     if (!file) return;
+    setUploadingTxId(txId);
     try {
       // 1. Client-side compress before upload for snappy performance
       const compressedDataUrl = await compressImageFile(file, 1280, 0.75);
@@ -1570,6 +1596,8 @@ export default function PartiesPage() {
       fetchParties();
     } catch (e) {
       alert("फोटो सेव विफल: " + e.message);
+    } finally {
+      setUploadingTxId(null);
     }
   };
 
@@ -2136,25 +2164,64 @@ export default function PartiesPage() {
           </div>
           <div className="p-3.5 bg-white rounded-2xl border border-rose-200 shadow-xs col-span-2 md:col-span-1">
             <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider block">
-              ⏳ सबसे पुराना बकाया (Aging)
+              ⏳ बिल देरी (Aging / Delay)
             </span>
-            <p className="text-lg font-black text-rose-600 mt-1">
-              {(() => {
-                let maxDays = 0;
-                filteredStatementTransactions.forEach(t => {
-                  if (Number(t.debit) > 0 && t.date) {
-                    const d = Math.max(0, Math.floor((new Date() - new Date(t.date)) / (1000 * 60 * 60 * 24)));
-                    if (d > maxDays) maxDays = d;
-                  }
-                });
-                return maxDays > 0 ? `${maxDays} दिन देरी` : "कोई देरी नहीं";
-              })()}
-            </p>
+            <div className="mt-1 flex items-baseline justify-between gap-1">
+              <div>
+                <p className="text-base font-black text-rose-600">
+                  {agingStats.lastBillOverdueDays > 0 
+                    ? `${agingStats.lastBillOverdueDays} दिन लेट` 
+                    : (agingStats.lastBillDate ? "आज का बिल" : "कोई देरी नहीं")}
+                </p>
+                <span className="text-[10px] text-slate-500 block">
+                  पिछला बिल: {agingStats.lastBillOverdueDays} दिन पुराना
+                </span>
+              </div>
+              {agingStats.oldestOverdueDays > agingStats.lastBillOverdueDays && (
+                <div className="text-right">
+                  <span className="text-[10px] font-bold text-rose-700 block">पुराना बिल:</span>
+                  <span className="text-xs font-black text-rose-800 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                    {agingStats.oldestOverdueDays} दिन
+                  </span>
+                </div>
+              )}
+            </div>
             <span className="text-[10px] text-slate-400 block mt-0.5">
               {statementParty.partyType === 'supplier' ? 'सप्लायर भुगतान देय' : 'ग्राहक से वसूली लंबित'}
             </span>
           </div>
         </div>
+
+        {/* ⏳ PROMINENT BILL DELAY / AGING ALERT BANNER */}
+        {displayedNet > 0 && agingStats.lastBillOverdueDays > 0 && (
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs">
+            <div className="flex items-center gap-3">
+              <span className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-900 flex items-center justify-center font-black text-base shrink-0 border border-amber-400/30">
+                ⏳
+              </span>
+              <div>
+                <span className="font-black text-amber-950 block text-xs">
+                  बिल भुगतान देरी विवरण (Bill Overdue & Delay Alert):
+                </span>
+                <span className="text-amber-900 text-[11px]">
+                  ग्राहक का पिछला बिल <strong>{agingStats.lastBillOverdueDays} दिन पुराना</strong> है ({agingStats.lastBillDate ? new Date(agingStats.lastBillDate).toLocaleDateString('hi-IN') : ''} • ₹{agingStats.lastBillAmount.toLocaleString('en-IN')})
+                  {agingStats.oldestOverdueDays > agingStats.lastBillOverdueDays && (
+                    <> एवं सबसे पुराना बकाया बिल <strong>{agingStats.oldestOverdueDays} दिन से पेंडिंग</strong> है।</>
+                  )}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`px-3 py-1 rounded-xl font-black text-[11px] shadow-xs ${
+                agingStats.lastBillOverdueDays > 30 ? 'bg-rose-100 text-rose-800 border border-rose-300' :
+                agingStats.lastBillOverdueDays > 7 ? 'bg-amber-200 text-amber-900 border border-amber-300' :
+                'bg-emerald-100 text-emerald-800 border border-emerald-300'
+              }`}>
+                {agingStats.lastBillOverdueDays > 30 ? '🔴 30+ दिन अति-विलंबित' : agingStats.lastBillOverdueDays > 7 ? '🟡 विलंबित (Overdue)' : '🟢 सामान्य'}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Filter and Search Controls Bar */}
         <div className="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -2344,15 +2411,23 @@ export default function PartiesPage() {
                             const daysAgo = Math.max(0, Math.floor((new Date() - new Date(tx.date)) / (1000 * 60 * 60 * 24)));
                             const isDebit = Number(tx.debit) > 0;
                             const isCredit = Number(tx.credit) > 0;
+                            const isLatestBill = isDebit && tx.date === agingStats.lastBillDate;
                             if (isDebit) {
                               return (
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 ${
-                                  daysAgo > 20 ? 'bg-rose-100 text-rose-800 border border-rose-300' :
-                                  daysAgo > 7 ? 'bg-amber-100 text-amber-800 border border-amber-300' :
-                                  'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                }`}>
-                                  <span>⏳ {daysAgo} दिन</span>
-                                </span>
+                                <div className="flex flex-col items-start gap-0.5">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 ${
+                                    daysAgo > 30 ? 'bg-rose-100 text-rose-800 border border-rose-300 shadow-xs' :
+                                    daysAgo > 7 ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                                    'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                  }`}>
+                                    <span>⏳ {daysAgo} दिन देरी</span>
+                                  </span>
+                                  {isLatestBill && (
+                                    <span className="text-[9px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded-md">
+                                      ★ पिछला बिल
+                                    </span>
+                                  )}
+                                </div>
                               );
                             }
                             if (isCredit) {
@@ -2404,21 +2479,57 @@ export default function PartiesPage() {
                         <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1">
                             {(() => {
+                              if (uploadingTxId === tx._id) {
+                                return (
+                                  <div className="flex items-center justify-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-200 animate-pulse">
+                                    <RotateCcw size={11} className="animate-spin" />
+                                    <span>अपलोड...</span>
+                                  </div>
+                                );
+                              }
+
                               const pList = (tx.billImageUrls && tx.billImageUrls.length > 0)
                                 ? tx.billImageUrls
                                 : (tx.billImageUrl ? [tx.billImageUrl] : []);
+
                               if (pList.length === 0) {
                                 return (
-                                  <label className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 px-2 py-1 rounded-lg border border-dashed border-slate-300 cursor-pointer transition">
-                                    <UploadCloud size={11} />
-                                    <span>फोटो</span>
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      className="hidden"
-                                      onChange={(e) => handleAttachImage(tx._id, e.target.files[0])}
-                                    />
-                                  </label>
+                                  <div className="flex items-center justify-center gap-1">
+                                    {/* 📸 Direct Camera Button (Mobile Viewfinder) */}
+                                    <label
+                                      className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded-lg border border-emerald-300 cursor-pointer transition shadow-xs"
+                                      title="सीधे कैमरे से फोटो खींचें (कैमरा खुल जाएगा, फ़ोन में सेव करने की ज़रूरत नहीं)"
+                                    >
+                                      <Camera size={12} className="text-emerald-600" />
+                                      <span>कैमरा</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        capture="environment"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          if (e.target.files?.[0]) handleAttachImage(tx._id, e.target.files[0]);
+                                          e.target.value = '';
+                                        }}
+                                      />
+                                    </label>
+                                    {/* 📁 Gallery Pick Button */}
+                                    <label
+                                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 px-1.5 py-1 rounded-lg border border-slate-300 cursor-pointer transition"
+                                      title="गैलरी या फ़ाइल से फोटो चुनें"
+                                    >
+                                      <UploadCloud size={11} className="text-slate-500" />
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          if (e.target.files?.[0]) handleAttachImage(tx._id, e.target.files[0]);
+                                          e.target.value = '';
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
                                 );
                               }
 
@@ -2450,6 +2561,23 @@ export default function PartiesPage() {
                                     <Eye size={13} />
                                     {pList.length > 1 && <span>{pList.length}</span>}
                                   </button>
+                                  {/* + 📸 Add more photos directly with camera */}
+                                  <label
+                                    className="p-1 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-300 cursor-pointer transition"
+                                    title="कैमरे से और फोटो जोड़ें (+ Direct Camera Snap)"
+                                  >
+                                    <Camera size={12} />
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      capture="environment"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        if (e.target.files?.[0]) handleAttachImage(tx._id, e.target.files[0]);
+                                        e.target.value = '';
+                                      }}
+                                    />
+                                  </label>
                                 </div>
                               );
                             })()}
