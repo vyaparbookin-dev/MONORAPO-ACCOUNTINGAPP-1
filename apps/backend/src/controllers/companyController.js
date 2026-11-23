@@ -109,12 +109,12 @@ export const getCompany = async (req, res) => {
 export const updateCompany = async (req, res) => {
   try {
     const userId = req.user?._id || req.user?.id;
-    const { name, email, phone, alternatePhone, alternatePhone2, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, modulesEnabled, activeModules, linkedModules, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, enableGst, googleReviewUrl, instagramUrl, facebookUrl, youtubeUrl, whatsappBusinessNumber, reviewRewardCouponCode, reviewRewardCouponDiscount } = req.body;
+    const { name, email, phone, alternatePhone, alternatePhone2, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, modulesEnabled, activeModules, linkedModules, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, enableGst, googleReviewUrl, instagramUrl, facebookUrl, youtubeUrl, whatsappBusinessNumber, callingContactNumber, mapLocationUrl, reviewRewardCouponCode, reviewRewardCouponDiscount } = req.body;
     
     let finalEnableGst = enableGst;
     if (gstType === 'unregistered') finalEnableGst = false;
 
-    const updateData = { name, email, phone, alternatePhone, alternatePhone2, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, modulesEnabled: Array.isArray(modulesEnabled) ? modulesEnabled : Array.isArray(activeModules) ? activeModules : Array.isArray(linkedModules) ? linkedModules : undefined, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, googleReviewUrl, instagramUrl, facebookUrl, youtubeUrl, whatsappBusinessNumber, reviewRewardCouponCode, reviewRewardCouponDiscount };
+    const updateData = { name, email, phone, alternatePhone, alternatePhone2, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, modulesEnabled: Array.isArray(modulesEnabled) ? modulesEnabled : Array.isArray(activeModules) ? activeModules : Array.isArray(linkedModules) ? linkedModules : undefined, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, googleReviewUrl, instagramUrl, facebookUrl, youtubeUrl, whatsappBusinessNumber, callingContactNumber, mapLocationUrl, reviewRewardCouponCode, reviewRewardCouponDiscount };
     if (finalEnableGst !== undefined) updateData.enableGst = finalEnableGst;
 
     const company = await Company.findOneAndUpdate(
@@ -164,7 +164,7 @@ export const deleteCompany = async (req, res) => {
 export const getPublicCompanyInfo = async (req, res) => {
   try {
     const company = await Company.findById(req.params.id)
-      .select("name logo address phone email upiId googleReviewUrl instagramUrl facebookUrl youtubeUrl whatsappBusinessNumber reviewRewardCouponCode reviewRewardCouponDiscount businessDescription")
+      .select("name logo address phone email upiId googleReviewUrl instagramUrl facebookUrl youtubeUrl whatsappBusinessNumber callingContactNumber mapLocationUrl reviewRewardCouponCode reviewRewardCouponDiscount businessDescription")
       .lean();
     if (!company) return res.status(404).json({ success: false, message: "Company not found" });
     res.json({ success: true, company });

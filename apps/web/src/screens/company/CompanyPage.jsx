@@ -43,6 +43,8 @@ const CompanyPage = () => {
     facebookUrl: company?.facebookUrl || "",
     youtubeUrl: company?.youtubeUrl || "",
     whatsappBusinessNumber: company?.whatsappBusinessNumber || "",
+    callingContactNumber: company?.callingContactNumber || "",
+    mapLocationUrl: company?.mapLocationUrl || "",
     reviewRewardCouponCode: company?.reviewRewardCouponCode || "STAR5",
     reviewRewardCouponDiscount: company?.reviewRewardCouponDiscount || 10
   });
@@ -356,7 +358,7 @@ const CompanyPage = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-bold text-emerald-900 mb-1">
-                        WhatsApp Business नंबर (जिससे बिल जाएंगे)
+                        1. WhatsApp Business नंबर (जिससे बिल व हिसाब जाएंगे)
                       </label>
                       <input
                         type="text"
@@ -367,8 +369,35 @@ const CompanyPage = () => {
                         className="w-full px-3 py-2 border border-emerald-300 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
                       />
                     </div>
-                    <div className="text-[11px] text-emerald-900 flex items-center bg-white/70 p-2.5 rounded-xl border border-emerald-200">
-                      💡 <b>टिप:</b> ऊपर दिए गए 'WhatsApp QR लिंक करें' बटन से आप दुकान का फोन सीधे लिंक कर सकते हैं, जिससे बिना कोई पर्सनल चैट खुले सीधे बैकग्राउंड में बिल व स्टेटमेंट जाएंगे।
+                    <div>
+                      <label className="block text-xs font-bold text-emerald-900 mb-1">
+                        2. कॉलिंग / संपर्क नंबर (यदि WhatsApp नंबर से अलग हो)
+                      </label>
+                      <input
+                        type="text"
+                        name="callingContactNumber"
+                        value={formData.callingContactNumber}
+                        onChange={handleChange}
+                        placeholder="खाली रखने पर WhatsApp नंबर ही दिखेगा"
+                        className="w-full px-3 py-2 border border-emerald-300 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-emerald-900 mb-1 flex items-center gap-1">
+                        <MapPin size={13} className="text-emerald-700" />
+                        <span>3. दुकान का GPS / Google Maps लोकेशन लिंक (वैकल्पिक)</span>
+                      </label>
+                      <input
+                        type="url"
+                        name="mapLocationUrl"
+                        value={formData.mapLocationUrl}
+                        onChange={handleChange}
+                        placeholder="उदा. https://maps.app.goo.gl/... या https://goo.gl/maps/..."
+                        className="w-full px-3 py-2 border border-emerald-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
+                      />
+                      <p className="text-[10px] text-emerald-800 mt-1">
+                        📍 लोकेशन लिंक डालने पर ग्राहकों को बिल व लेजर के साथ आपकी दुकान पर आने का सही Google Maps रास्ता भी मिलेगा।
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -691,6 +720,16 @@ const CompanyPage = () => {
                       <p className="font-extrabold text-emerald-800 text-xs">
                         {selectedCompany.whatsappBusinessNumber || selectedCompany.phone || "सेट नहीं है"}
                       </p>
+                      {selectedCompany.callingContactNumber && (
+                        <p className="text-[11px] font-semibold text-emerald-900 mt-1">
+                          📞 कॉलिंग/हेल्पलाइन नंबर: <span className="font-bold">{selectedCompany.callingContactNumber}</span>
+                        </p>
+                      )}
+                      {selectedCompany.mapLocationUrl && (
+                        <p className="text-[11px] font-semibold text-emerald-900 mt-0.5">
+                          📍 GPS लोकेशन: <a href={selectedCompany.mapLocationUrl} target="_blank" rel="noopener noreferrer" className="underline text-blue-700 hover:text-blue-900 font-bold">{selectedCompany.mapLocationUrl}</a>
+                        </p>
+                      )}
                       <p className="text-[10px] text-emerald-700">
                         {waStatus.isConnected ? "🚀 बैकग्राउंड WhatsApp सक्रिय है - बिना चैट खोले बिल जाएंगे।" : "⚠️ QR स्कैन करके बैकग्राउंड सेंडिंग चालू करें।"}
                       </p>
@@ -983,7 +1022,7 @@ const CompanyPage = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-bold text-emerald-900 mb-1">
-                        WhatsApp Business नंबर (जिससे बिल जाएंगे)
+                        1. WhatsApp Business नंबर (जिससे बिल व हिसाब जाएंगे)
                       </label>
                       <input
                         type="text"
@@ -994,8 +1033,35 @@ const CompanyPage = () => {
                         className="w-full px-3 py-2 border border-emerald-300 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
                       />
                     </div>
-                    <div className="text-[11px] text-emerald-900 flex items-center bg-white/70 p-2.5 rounded-xl border border-emerald-200">
-                      💡 <b>टिप:</b> ऊपर दिए गए 'WhatsApp QR लिंक करें' बटन से आप दुकान का फोन सीधे लिंक कर सकते हैं, जिससे बिना कोई पर्सनल चैट खुले सीधे बैकग्राउंड में बिल व स्टेटमेंट जाएंगे।
+                    <div>
+                      <label className="block text-xs font-bold text-emerald-900 mb-1">
+                        2. कॉलिंग / संपर्क नंबर (यदि WhatsApp नंबर से अलग हो)
+                      </label>
+                      <input
+                        type="text"
+                        name="callingContactNumber"
+                        value={formData.callingContactNumber}
+                        onChange={handleChange}
+                        placeholder="खाली रखने पर WhatsApp नंबर ही दिखेगा"
+                        className="w-full px-3 py-2 border border-emerald-300 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-emerald-900 mb-1 flex items-center gap-1">
+                        <MapPin size={13} className="text-emerald-700" />
+                        <span>3. दुकान का GPS / Google Maps लोकेशन लिंक (वैकल्पिक)</span>
+                      </label>
+                      <input
+                        type="url"
+                        name="mapLocationUrl"
+                        value={formData.mapLocationUrl}
+                        onChange={handleChange}
+                        placeholder="उदा. https://maps.app.goo.gl/... या https://goo.gl/maps/..."
+                        className="w-full px-3 py-2 border border-emerald-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
+                      />
+                      <p className="text-[10px] text-emerald-800 mt-1">
+                        📍 लोकेशन लिंक डालने पर ग्राहकों को बिल व लेजर के साथ आपकी दुकान पर आने का सही Google Maps रास्ता भी मिलेगा।
+                      </p>
                     </div>
                   </div>
                 </div>

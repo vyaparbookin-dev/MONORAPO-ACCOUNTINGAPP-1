@@ -994,16 +994,20 @@ export const getPublicPartyStatement = async (req, res) => {
     res.json = (data) => {
       if (data && data.success) {
         const compPhone = company?.whatsappBusinessNumber || company?.phone || company?.mobile || "";
-        const compUpi = company?.upiId || (compPhone ? `${compPhone}@upi` : "");
+        const callingPhone = company?.callingContactNumber || company?.phone || compPhone;
+        // 🔒 Only use UPI ID if explicitly set in business profile (no invented fallbacks)
+        const compUpi = company?.upiId ? String(company.upiId).trim() : "";
         data.company = {
           name: company?.businessName || company?.name || "व्यापार खाता",
           phone: compPhone,
           whatsappBusinessNumber: company?.whatsappBusinessNumber || compPhone,
+          callingContactNumber: callingPhone,
           alternatePhone: company?.alternatePhone || "",
           alternatePhone2: company?.alternatePhone2 || "",
           address: company?.address || "",
+          mapLocationUrl: company?.mapLocationUrl || "",
           upiId: compUpi,
-          upiNumber: compPhone
+          upiNumber: compUpi ? (company?.phone || compPhone) : ""
         };
       }
       return originalJson(data);

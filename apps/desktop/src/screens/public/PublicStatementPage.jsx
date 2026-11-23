@@ -150,10 +150,11 @@ export default function PublicStatementPage() {
 
   // Generate UPI payment URL
   const merchantPhone = company?.whatsappBusinessNumber || company?.phone || "";
-  const upiId = company?.upiId || (merchantPhone ? `${merchantPhone}@upi` : "");
+  const callingPhone = company?.callingContactNumber || "";
+  const upiId = company?.upiId ? String(company.upiId).trim() : "";
   const merchantName = company?.name || "व्यापार खाता";
-  const upiPayUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(merchantName)}&am=${absBal}&cu=INR&tn=${encodeURIComponent(`Bill Payment ${party?.name || ''}`)}`;
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(upiPayUrl)}`;
+  const upiPayUrl = upiId ? `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(merchantName)}&am=${absBal}&cu=INR&tn=${encodeURIComponent(`Bill Payment ${party?.name || ''}`)}` : "";
+  const qrImageUrl = upiPayUrl ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(upiPayUrl)}` : "";
 
   // Find max overdue days
   let oldestOverdueDays = 0;
@@ -195,10 +196,27 @@ export default function PublicStatementPage() {
                     <span>{company.address}</span>
                   </span>
                 )}
+                {company?.mapLocationUrl && (
+                  <a
+                    href={company.mapLocationUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 bg-white/15 hover:bg-white/25 text-white px-2.5 py-0.5 rounded-full text-xs font-bold transition border border-white/20"
+                  >
+                    <ExternalLink size={11} />
+                    <span>📍 दुकान GPS लोकेशन</span>
+                  </a>
+                )}
                 {merchantPhone && (
                   <a href={`tel:${merchantPhone}`} className="flex items-center gap-1 hover:text-white transition">
                     <Phone size={13} className="text-indigo-400" />
-                    <span>{merchantPhone}</span>
+                    <span>WhatsApp / संपर्क: {merchantPhone}</span>
+                  </a>
+                )}
+                {callingPhone && callingPhone !== merchantPhone && (
+                  <a href={`tel:${callingPhone}`} className="flex items-center gap-1 hover:text-white transition">
+                    <Phone size={13} className="text-indigo-400" />
+                    <span>📞 कॉल: {callingPhone}</span>
                   </a>
                 )}
               </div>
@@ -269,8 +287,8 @@ export default function PublicStatementPage() {
           </div>
         </div>
 
-        {/* 📱 INSTANT UPI PAYMENT CARD (WHEN BALANCE IS DUE) */}
-        {isDue && absBal > 0 && (
+        {/* 📱 INSTANT UPI PAYMENT CARD (WHEN BALANCE IS DUE & UPI ID CONFIGURED) */}
+        {isDue && absBal > 0 && upiId && (
           <div className="bg-gradient-to-br from-emerald-900 to-teal-950 text-white rounded-3xl p-5 sm:p-6 shadow-xl border border-emerald-700/40 print:hidden">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
               <div className="space-y-3 flex-1 text-center sm:text-left">

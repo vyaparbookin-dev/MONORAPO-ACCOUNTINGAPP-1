@@ -38,6 +38,8 @@ const companySchema = new mongoose.Schema({
   facebookUrl: { type: String, default: "" },
   youtubeUrl: { type: String, default: "" },
   whatsappBusinessNumber: { type: String, default: "" },
+  callingContactNumber: { type: String, default: "" }, // Calling / Helpline contact number if different from WhatsApp
+  mapLocationUrl: { type: String, default: "" }, // Shop GPS / Google Maps Location link
   reviewRewardCouponCode: { type: String, default: "STAR5" }, // Coupon gifted for 4 & 5-star review
   reviewRewardCouponDiscount: { type: Number, default: 10 }, // 10% or Rs 100
 
