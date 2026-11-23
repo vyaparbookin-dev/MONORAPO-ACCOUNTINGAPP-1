@@ -955,14 +955,15 @@ export const getPublicPartyStatement = async (req, res) => {
       party = await Party.findById(partyId);
     }
     if (!party) {
-      party = await Party.findOne({
-        $or: [
-          { id: partyId },
-          { _id: partyId },
-          { uuid: partyId },
-          { mobileNumber: partyId }
-        ]
-      });
+      const orClauses = [
+        { id: partyId },
+        { uuid: partyId },
+        { mobileNumber: partyId }
+      ];
+      if (mongoose.Types.ObjectId.isValid(partyId)) {
+        orClauses.push({ _id: partyId });
+      }
+      party = await Party.findOne({ $or: orClauses });
     }
     if (!party) {
       try {
@@ -982,9 +983,11 @@ export const getPublicPartyStatement = async (req, res) => {
         company = await Company.findById(companyId).lean();
       }
       if (!company) {
-        company = await Company.findOne({
-          $or: [{ _id: companyId }, { id: companyId }]
-        }).lean();
+        const compOr = [{ id: companyId }];
+        if (mongoose.Types.ObjectId.isValid(companyId)) {
+          compOr.push({ _id: companyId });
+        }
+        company = await Company.findOne({ $or: compOr }).lean();
       }
     }
 
