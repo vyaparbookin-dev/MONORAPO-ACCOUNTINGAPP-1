@@ -50,12 +50,14 @@ export default function WhatsappSender({ bill, isPaid = false }) {
         return;
       }
 
-      // Fallback: If not connected to background engine, open WhatsApp Web/App
-      const message = response.data?.preview || response.preview || customText ||
-        `नमस्ते ${bill.customerName || 'ग्राहक'},\n\nआपका बिल #${bill.billNumber || bill.billNo} (राशि: ₹${totalAmt.toLocaleString('en-IN')}) तैयार है।\n\n📄 बिल देखें:\n${liveBillLink}\n\nधन्यवाद!`;
+      // Fallback: If not connected to background engine, DO NOT silently open Chrome!
+      if (window.confirm("⚠️ दुकान का WhatsApp QR अभी कनेक्ट नहीं है!\n\nसीधे दुकान के नंबर से बिना Chrome खोले बिल भेजने के लिए कृपया पहले बिज़नेस प्रोफाइल (Company Profile) से WhatsApp QR स्कैन करें।\n\nक्या आप अभी Chrome ब्राउज़र में खोलना चाहते हैं? (ध्यान दें: Chrome में जो भी WhatsApp लॉगिन होगा, उससे संदेश जाएगा)")) {
+        const message = response.data?.preview || response.preview || customText ||
+          `नमस्ते ${bill.customerName || 'ग्राहक'},\n\nआपका बिल #${bill.billNumber || bill.billNo} (राशि: ₹${totalAmt.toLocaleString('en-IN')}) तैयार है।\n\n📄 बिल देखें:\n${liveBillLink}\n\nधन्यवाद!`;
 
-      const url = `https://wa.me/${mobile}?text=${encodeURIComponent(message)}`;
-      window.open(url, "_blank");
+        const url = `https://wa.me/${mobile}?text=${encodeURIComponent(message)}`;
+        window.open(url, "_blank");
+      }
     } catch (error) {
       console.error("Failed to generate WhatsApp message", error);
       alert("WhatsApp संदेश भेजने में समस्या: " + (error.response?.data?.message || error.message));

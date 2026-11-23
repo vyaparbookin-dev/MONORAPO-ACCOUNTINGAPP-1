@@ -337,7 +337,9 @@ export default function MarketingOffersPage() {
       alert("कृपया मान्य 10-अंकों का मोबाइल नंबर दर्ज करें या पार्टी चुनें!");
       return;
     }
-    openWhatsAppDirectly(targetPhone, customizedMessage);
+    if (window.confirm("⚠️ ध्यान दें: Chrome ब्राउज़र में जो भी WhatsApp लॉगिन होगा, उससे संदेश जाएगा। क्या आप Chrome में खोलना चाहते हैं?")) {
+      openWhatsAppDirectly(targetPhone, customizedMessage);
+    }
   };
 
   // 📋 Copy message

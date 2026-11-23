@@ -2028,8 +2028,12 @@ export default function PartiesPage() {
       } catch (e) {
         console.warn("Direct send failed, fallback to web", e);
       }
+    } else {
+      if (window.confirm("⚠️ दुकान का WhatsApp QR अभी कनेक्ट नहीं है!\n\nसीधे दुकान के नंबर से बिना Chrome खोले भेजने के लिए पहले बिज़नेस प्रोफाइल से QR स्कैन करें।\n\nक्या आप अभी Chrome ब्राउज़र में खोलना चाहते हैं? (ध्यान दें: Chrome में जो भी WhatsApp लॉगिन होगा उससे संदेश जाएगा)")) {
+        openWhatsAppDirectly(cleanPhone, text);
+      }
+      return;
     }
-    openWhatsAppDirectly(cleanPhone, text);
   };
 
   // Deduplicate parties strictly by normalized key
@@ -4645,52 +4649,89 @@ export default function PartiesPage() {
                   <span>कॉपी</span>
                 </button>
 
-                <button
-                  type="button"
-                  disabled={!quickSharePhone || quickSharePhone.length < 10}
-                  onClick={() => {
-                    openWhatsAppDirectly(quickSharePhone, quickShareMessageText);
-                    setShowQuickSharePhoneModal(false);
-                    setQuickShareToast(`✅ WhatsApp (${quickSharePhone}) पर हिसाब भेजा जा रहा है!`);
-                    setTimeout(() => setQuickShareToast(''), 4000);
-                    setQuickShareParty(null);
-                  }}
-                  className="flex-1 py-2.5 bg-white border border-[#25D366] text-[#25D366] hover:bg-green-50 font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 active:scale-95 cursor-pointer"
-                  title="WhatsApp Web या मोबाइल ऐप में खोलें"
-                >
-                  <MessageSquare size={14} />
-                  <span>WhatsApp पर भेजें</span>
-                </button>
+                {waStatus.isConnected ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={!quickSharePhone || quickSharePhone.length < 10}
+                      onClick={async () => {
+                        setQuickShareToast(`⚡ बैकग्राउंड WhatsApp से भेजा जा रहा है...`);
+                        try {
+                          const res = await api.post('/api/whatsapp/send-direct', {
+                            toMobile: quickSharePhone,
+                            messageText: quickShareMessageText,
+                            channel: 'recovery'
+                          });
+                          if (res?.data?.success) {
+                            setShowQuickSharePhoneModal(false);
+                            setQuickShareToast(`✅ WhatsApp (${quickSharePhone}) पर हिसाब बैकग्राउंड में भेज दिया गया!`);
+                            setTimeout(() => setQuickShareToast(''), 4000);
+                            setQuickShareParty(null);
+                            return;
+                          }
+                        } catch (err) {
+                          console.warn("Background WA error:", err);
+                          alert("बैकग्राउंड सेंड विफल: " + (err.response?.data?.message || err.message));
+                        }
+                      }}
+                      className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50 active:scale-95 cursor-pointer"
+                      title="बिना WhatsApp चैट खोले सीधे बैकग्राउंड में भेजें"
+                    >
+                      <Send size={14} />
+                      <span>⚡ 1-क्लिक ऑटो-सेंड (+{waStatus.userPhone})</span>
+                    </button>
 
-                {waStatus.isConnected && (
-                  <button
-                    type="button"
-                    disabled={!quickSharePhone || quickSharePhone.length < 10}
-                    onClick={async () => {
-                      setQuickShareToast(`⚡ बैकग्राउंड WhatsApp से भेजा जा रहा है...`);
-                      try {
-                        const res = await api.post('/api/whatsapp/send-direct', {
-                          toMobile: quickSharePhone,
-                          messageText: quickShareMessageText,
-                          channel: 'recovery'
-                        });
-                        if (res?.data?.success) {
+                    <button
+                      type="button"
+                      disabled={!quickSharePhone || quickSharePhone.length < 10}
+                      onClick={() => {
+                        if (window.confirm("⚠️ ध्यान दें: Chrome ब्राउज़र में जो भी WhatsApp खुला होगा, उससे संदेश जाएगा। क्या आप Chrome में खोलना चाहते हैं?")) {
+                          openWhatsAppDirectly(quickSharePhone, quickShareMessageText);
                           setShowQuickSharePhoneModal(false);
-                          setQuickShareToast(`✅ WhatsApp (${quickSharePhone}) पर हिसाब बैकग्राउंड में भेज दिया गया!`);
+                          setQuickShareToast(`✅ WhatsApp (${quickSharePhone}) पर भेजा जा रहा है!`);
                           setTimeout(() => setQuickShareToast(''), 4000);
                           setQuickShareParty(null);
-                          return;
                         }
-                      } catch (err) {
-                        console.warn("Background WA error:", err);
-                        alert("बैकग्राउंड सेंड विफल: " + (err.response?.data?.message || err.message));
-                      }
-                    }}
-                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50 active:scale-95 cursor-pointer"
-                    title="बिना चैट खोले सीधे भेजें"
-                  >
-                    <span>⚡ बैकग्राउंड सेंड</span>
-                  </button>
+                      }}
+                      className="py-2.5 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 transition cursor-pointer"
+                      title="Chrome के WhatsApp Web से भेजने का वैकल्पिक तरीका"
+                    >
+                      <span>🌐 Chrome</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowQuickSharePhoneModal(false);
+                        handleOpenWhatsAppModal();
+                      }}
+                      className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+                      title="ऑटोमैटिक बैकग्राउंड सेंडिंग चालू करने हेतु QR स्कैन करें"
+                    >
+                      <QrCode size={14} />
+                      <span>📲 WhatsApp QR लिंक करें (ऑटो-सेंड)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={!quickSharePhone || quickSharePhone.length < 10}
+                      onClick={() => {
+                        if (window.confirm("⚠️ दुकान का WhatsApp QR अभी कनेक्ट नहीं है!\n\nक्या आप Chrome ब्राउज़र में खोलना चाहते हैं? (ध्यान दें: Chrome में जो भी WhatsApp लॉगिन होगा उससे संदेश जाएगा)")) {
+                          openWhatsAppDirectly(quickSharePhone, quickShareMessageText);
+                          setShowQuickSharePhoneModal(false);
+                          setQuickShareToast(`✅ WhatsApp (${quickSharePhone}) पर भेजा जा रहा है!`);
+                          setTimeout(() => setQuickShareToast(''), 4000);
+                          setQuickShareParty(null);
+                        }
+                      }}
+                      className="py-2.5 px-3 bg-white border border-[#25D366] text-[#25D366] hover:bg-green-50 font-bold text-xs rounded-xl transition cursor-pointer"
+                      title="Chrome में खोलें"
+                    >
+                      <span>🌐 Chrome से भेजें</span>
+                    </button>
+                  </>
                 )}
               </div>
             </div>
