@@ -213,6 +213,22 @@ export default function PartiesPage() {
     const text = generatePartyDetailedWhatsAppText(party, stData);
 
     if (hasValidPhone) {
+      if (waStatus.isConnected) {
+        setQuickShareToast(`⚡ बैकग्राउंड WhatsApp से ${party.name} को भेजा जा रहा है...`);
+        try {
+          const res = await api.post('/api/whatsapp/send-direct', {
+            toMobile: phone,
+            messageText: text
+          });
+          if (res?.data?.success) {
+            setQuickShareToast(`✅ ${party.name} (${phone.slice(-10)}) को सीधे बैकग्राउंड WhatsApp से हिसाब भेज दिया गया!`);
+            setTimeout(() => setQuickShareToast(''), 4000);
+            return;
+          }
+        } catch (err) {
+          console.warn("Background WA error, falling back to direct app:", err);
+        }
+      }
       openWhatsAppDirectly(phone, text);
       setQuickShareToast(`✅ ${party.name} के WhatsApp (${phone.slice(-10)}) पर हिसाब भेजा जा रहा है!`);
       setTimeout(() => setQuickShareToast(''), 4000);
@@ -2990,7 +3006,7 @@ export default function PartiesPage() {
                                 handleDirectShareParty(p);
                               }}
                               className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-600 text-emerald-800 hover:text-white border border-emerald-300 rounded-lg text-xs font-bold cursor-pointer transition flex items-center gap-1 shadow-2xs active:scale-95 group"
-                              title="इस पार्टी का हिसाब सीधे WhatsApp पर भेजें (बिना स्टेटमेंट में जाए)"
+                              title={waStatus.isConnected ? `⚡ सीधे बैकग्राउंड WhatsApp (${waStatus.userPhone}) से भेजें` : "इस पार्टी का हिसाब सीधे WhatsApp पर भेजें (बिना स्टेटमेंट में जाए)"}
                             >
                               <Share2 size={13} className="text-emerald-600 group-hover:text-white transition" />
                               <span>शेयर</span>
@@ -3944,8 +3960,26 @@ export default function PartiesPage() {
                 <button
                   type="button"
                   disabled={!quickSharePhone || quickSharePhone.length < 10}
-                  onClick={() => {
+                  onClick={async () => {
                     const text = generatePartyDetailedWhatsAppText(quickShareParty, quickShareParty?.statementData);
+                    if (waStatus.isConnected) {
+                      setQuickShareToast(`⚡ बैकग्राउंड WhatsApp से भेजा जा रहा है...`);
+                      try {
+                        const res = await api.post('/api/whatsapp/send-direct', {
+                          toMobile: quickSharePhone,
+                          messageText: text
+                        });
+                        if (res?.data?.success) {
+                          setShowQuickSharePhoneModal(false);
+                          setQuickShareToast(`✅ WhatsApp (${quickSharePhone}) पर हिसाब बैकग्राउंड में भेज दिया गया!`);
+                          setTimeout(() => setQuickShareToast(''), 4000);
+                          setQuickShareParty(null);
+                          return;
+                        }
+                      } catch (err) {
+                        console.warn("Background WA error:", err);
+                      }
+                    }
                     openWhatsAppDirectly(quickSharePhone, text);
                     setShowQuickSharePhoneModal(false);
                     setQuickShareToast(`✅ WhatsApp (${quickSharePhone}) पर हिसाब भेजा जा रहा है!`);
@@ -3955,7 +3989,7 @@ export default function PartiesPage() {
                   className="flex-1 py-2.5 bg-[#25D366] hover:bg-green-600 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50 active:scale-95 cursor-pointer"
                 >
                   <MessageSquare size={15} />
-                  <span>WhatsApp पर भेजें</span>
+                  <span>{waStatus.isConnected ? '⚡ बैकग्राउंड सेंड' : 'WhatsApp पर भेजें'}</span>
                 </button>
               </div>
             </div>
