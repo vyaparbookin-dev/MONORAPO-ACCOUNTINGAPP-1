@@ -84,6 +84,9 @@ const ApprovalsPage = safeLazy(() => import("./screens/Dashboard/ApprovalsPage")
 // Parties
 const PartiesPage = safeLazy(() => import("./screens/parties/PartiesPage"));
 
+// Marketing & Promotional Offers Hub
+const MarketingOffersPage = safeLazy(() => import("./screens/marketing/MarketingOffersPage"));
+
 // Billing
 const BillingPage = safeLazy(() => import("./screens/Billing/BillingPage"));
 const BillListPage = safeLazy(() => import("./screens/Billing/BillListPage"));
@@ -332,6 +335,11 @@ const App = () => {
 
                     {/* Parties */}
                     <Route path="/parties" element={<PartiesPage />} />
+
+                    {/* Marketing & Promotional Offers Hub */}
+                    <Route path="/marketing" element={<MarketingOffersPage />} />
+                    <Route path="/promotions" element={<MarketingOffersPage />} />
+                    <Route path="/offers" element={<MarketingOffersPage />} />
 
                     {/* Fast POS */}
                     <Route path="/fast-pos" element={<FastPOSPage />} />

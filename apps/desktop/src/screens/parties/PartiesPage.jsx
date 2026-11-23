@@ -6,6 +6,7 @@ import { syncQueue } from "@repo/shared";
 import CreditLimitHubModal from '../../components/modals/CreditLimitHubModal';
 import { getWebSafeImageUrl, compressImageFile } from '../../utils/photoStorage';
 import { storageManager, normalizePartyKey } from '../../services/storageManager';
+import { useCompany } from '../../contexts/CompanyContext';
 
 export const openWhatsAppDirectly = (phoneNumber, text) => {
   const cleanPhone = (phoneNumber || '').replace(/[^0-9]/g, '');
@@ -163,6 +164,11 @@ export const generatePartyDetailedWhatsAppText = (party, statementData, options 
 export const generatePartyQuickBalanceText = generatePartyDetailedWhatsAppText;
 
 export default function PartiesPage() {
+  const { selectedCompany, updateCompany } = useCompany() || {};
+  const [showQuickSettings, setShowQuickSettings] = useState(false);
+  const [quickUpiInput, setQuickUpiInput] = useState('');
+  const [quickGpsInput, setQuickGpsInput] = useState('');
+  const [savingQuickSetting, setSavingQuickSetting] = useState(false);
   const [parties, setParties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -1752,7 +1758,7 @@ export default function PartiesPage() {
   };
 
   // Statement Share System (Full detailed / summary + send to party or any other custom phone)
-  const generateStatementShareText = (format = 'detailed', targetParty = statementParty, txs = filteredStatementTransactions, options = {}) => {
+  const generateStatementShareText = (format = 'detailed', targetParty = statementParty, txs = filteredStatementTransactions, options = {}, overrideCompany = null) => {
     const {
       includeAddress = true,
       includeGps = true,
@@ -1784,12 +1790,13 @@ export default function PartiesPage() {
     const siteLabel = statementSiteFilter !== 'all' ? statementSiteFilter : 'सभी साइटें';
     const totalDeb = filteredDebit || 0;
     const totalCred = filteredCredit || 0;
-    const shopName = statementData?.company?.name || "";
-    const shopPhone = statementData?.company?.whatsappBusinessNumber || statementData?.company?.phone || "";
-    const callingPhone = statementData?.company?.callingContactNumber || "";
-    const mapLocationUrl = statementData?.company?.mapLocationUrl || "";
-    const shopAddress = statementData?.company?.address || "";
-    const upiId = statementData?.company?.upiId ? String(statementData.company.upiId).trim() : "";
+    const activeCompany = overrideCompany || statementData?.company || selectedCompany;
+    const shopName = activeCompany?.name || "";
+    const shopPhone = activeCompany?.whatsappBusinessNumber || activeCompany?.phone || "";
+    const callingPhone = activeCompany?.callingContactNumber || "";
+    const mapLocationUrl = activeCompany?.mapLocationUrl || "";
+    const shopAddress = activeCompany?.address || "";
+    const upiId = activeCompany?.upiId ? String(activeCompany.upiId).trim() : "";
     const pId = String(statementData?.party?._id || p?._id || p?.id || "").trim();
     const publicStatementUrl = `https://monorapo-accountingapp-1-web.vercel.app/statement/${pId}`;
 
@@ -1868,9 +1875,52 @@ export default function PartiesPage() {
     setShareRecipientType(hasValidPhone ? 'party' : 'custom');
     setShareCustomPhone(hasValidPhone ? cleanPhone.slice(-10) : '');
     setCopiedShareText(false);
+    fetchWhatsAppStatus();
+    setQuickUpiInput(statementData?.company?.upiId || selectedCompany?.upiId || '');
+    setQuickGpsInput(statementData?.company?.mapLocationUrl || selectedCompany?.mapLocationUrl || '');
     const initialText = generateStatementShareText(shareFormat, statementParty, filteredStatementTransactions, statementShareOptions);
     setShareCustomText(initialText);
     setShowShareModal(true);
+  };
+
+  // ⚡ Quick-save shop UPI or GPS and immediately sync with Company profile in database
+  const handleSaveQuickCompanySetting = async (field, val) => {
+    const compId = selectedCompany?._id || statementData?.company?._id;
+    if (!compId) {
+      alert("दुकान प्रोफ़ाइल लोड नहीं है!");
+      return;
+    }
+    setSavingQuickSetting(true);
+    try {
+      const payload = {
+        ...(selectedCompany || statementData?.company || {}),
+        [field]: (val || '').trim()
+      };
+      const res = await api.put(`/api/company/${compId}`, payload);
+      const updated = res.data?.company || res.data || payload;
+      if (updateCompany) updateCompany(updated);
+      if (statementData) {
+        setStatementData(prev => ({
+          ...prev,
+          company: {
+            ...(prev?.company || {}),
+            [field]: (val || '').trim()
+          }
+        }));
+      }
+      const opts = { ...statementShareOptions };
+      if (field === 'upiId' && val.trim()) opts.includeUpi = true;
+      if (field === 'mapLocationUrl' && val.trim()) opts.includeGps = true;
+      setStatementShareOptions(opts);
+
+      const newText = generateStatementShareText(shareFormat, statementParty, filteredStatementTransactions, opts, updated);
+      setShareCustomText(newText);
+      alert(`✅ ${field === 'upiId' ? 'UPI ID' : 'GPS लोकेशन'} दुकान प्रोफ़ाइल में सुरक्षित हो गई और संदेश में जुड़ गई!`);
+    } catch (e) {
+      alert("सेव करने में त्रुटि: " + (e.response?.data?.error || e.message));
+    } finally {
+      setSavingQuickSetting(false);
+    }
   };
 
   const handleExecuteShare = (channel = 'whatsapp') => {
@@ -1908,29 +1958,67 @@ export default function PartiesPage() {
     }
   };
 
-  const handleShareSingleTransaction = (tx) => {
+  const handleShareSingleTransaction = async (tx) => {
     if (!statementParty || !tx) return;
     const p = statementParty;
     const isDeb = Number(tx.debit || 0) > 0;
     const amt = isDeb ? Number(tx.debit) : Number(tx.credit || 0);
     const dStr = tx.date ? new Date(tx.date).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
     const isSupplier = (p.partyType === 'supplier' || p.type === 'supplier');
-    const typeLabel = isDeb ? (isSupplier ? 'भुगतान दिया' : 'सामान/बिल') : (isSupplier ? 'खरीद बिल' : 'जमा प्राप्त');
     const curBal = Number(p.currentBalance ?? p.balance ?? statementData?.currentBalance ?? 0);
-    const compName = statementData?.company?.name || "";
-
-    let text = `🧾 *लेन-देन प्रविष्टि (Transaction Detail)*\n`;
-    if (compName) text += `🏢 *${compName}*\n`;
-    text += `👤 पार्टी: *${p.name}*\n` +
-      `📅 दिनांक: *${dStr}*\n` +
-      `📄 विवरण: ${tx.details || tx.refNo || '-'}\n`;
-    if (tx.siteName) text += `🏗️ साइट: *${tx.siteName}*\n`;
-    text += `💰 राशि: *₹${amt.toLocaleString('en-IN')} (${typeLabel})*\n` +
-      `⚖️ खाता बकाया: *₹${Math.abs(curBal).toLocaleString('en-IN')} ${curBal >= 0 ? '(लेने हैं)' : '(देने हैं)'}*\n` +
-      `------------------------------------\n` +
-      `धन्यवाद! ${compName ? `- ${compName}` : ""}`;
-
+    const comp = statementData?.company || selectedCompany;
+    const compName = comp?.name || "";
+    const compPhone = comp?.whatsappBusinessNumber || comp?.phone || "";
+    const compGps = comp?.mapLocationUrl || "";
     const cleanPhone = (p.mobileNumber || p.phone || '').replace(/[^0-9]/g, '');
+
+    let text = "";
+    if (!isDeb) {
+      // 🟢 PAYMENT RECEIVED VOUCHER / RECEIPT
+      text = `🧾 *भुगतान पावती (PAYMENT RECEIPT)*\n`;
+      if (compName) text += `🏪 *${compName}*\n`;
+      text += `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `👤 सम्मानित ग्राहक: *${p.name}*\n` +
+        `📅 भुगतान दिनांक: *${dStr}*\n` +
+        `🏷️ रसीद / रिफरेंस नं.: *${tx.refNo || '-'}*\n`;
+      if (tx.details) text += `📝 विवरण: ${tx.details}\n`;
+      if (tx.siteName) text += `🏗️ साइट: *${tx.siteName}*\n`;
+      text += `💰 *प्राप्त राशि: ₹${amt.toLocaleString('en-IN')}*\n` +
+        `✅ स्थिति: *सफलतापूर्वक प्राप्त व खाते में जमा*\n` +
+        `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `⚖️ खाता शेष बाकी: *₹${Math.abs(curBal).toLocaleString('en-IN')} ${curBal > 0 ? '(लेने हैं)' : curBal < 0 ? '(जमा)' : '(हिसाब चुकता)'}*\n`;
+      if (compGps) text += `📍 दुकान लोकेशन: ${compGps}\n`;
+      if (compPhone) text += `📞 संपर्क: ${compPhone}\n`;
+      text += `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `🙏 भुगतान के लिए बहुत-बहुत धन्यवाद! ${compName ? `- ${compName}` : ""}`;
+    } else {
+      // 🛒 BILL / DEBIT ENTRY
+      text = `🧾 *बिल प्रविष्टि (Bill Detail)*\n`;
+      if (compName) text += `🏪 *${compName}*\n`;
+      text += `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `👤 पार्टी: *${p.name}*\n` +
+        `📅 दिनांक: *${dStr}*\n` +
+        `🏷️ बिल नं.: *${tx.refNo || '-'}*\n`;
+      if (tx.details) text += `📝 विवरण: ${tx.details}\n`;
+      if (tx.siteName) text += `🏗️ साइट: *${tx.siteName}*\n`;
+      text += `💰 बिल रकम: *₹${amt.toLocaleString('en-IN')}*\n` +
+        `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `⚖️ कुल बकाया: *₹${Math.abs(curBal).toLocaleString('en-IN')} ${curBal >= 0 ? '(लेने हैं)' : '(देने हैं)'}*\n`;
+      if (comp?.upiId && curBal > 0) text += `💳 UPI पेमेंट: ${comp.upiId}\n`;
+      if (compPhone) text += `📞 संपर्क: ${compPhone}\n`;
+      text += `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `धन्यवाद! ${compName ? `- ${compName}` : ""}`;
+    }
+
+    if (waStatus.isConnected && cleanPhone && cleanPhone.length >= 10) {
+      try {
+        await api.post('/api/whatsapp/send-direct', { toMobile: cleanPhone, messageText: text });
+        alert(`✅ ${p.name} को WhatsApp पर ${!isDeb ? 'भुगतान पावती (Receipt)' : 'बिल विवरण'} 1-क्लिक बैकग्राउंड में भेज दिया गया!`);
+        return;
+      } catch (e) {
+        console.warn("Direct send failed, fallback to web", e);
+      }
+    }
     openWhatsAppDirectly(cleanPhone, text);
   };
 
@@ -3748,7 +3836,136 @@ export default function PartiesPage() {
                 </button>
               </div>
 
-              <div className="space-y-4 overflow-y-auto flex-1 pr-1">
+              <div className="space-y-3.5 overflow-y-auto flex-1 pr-1">
+                {/* 🟢 Live WhatsApp Engine Connection & Identity Banner */}
+                <div className={`p-3 rounded-2xl border text-xs flex items-center justify-between gap-3 ${
+                  waStatus.isConnected ? 'bg-emerald-50/90 border-emerald-300' : 'bg-amber-50/90 border-amber-300'
+                }`}>
+                  <div className="flex items-center gap-2.5">
+                    <span className={`w-3 h-3 rounded-full shrink-0 ${waStatus.isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-black text-slate-900 text-xs">
+                          {waStatus.isConnected ? `⚡ बैकग्राउंड ऑटो-सेंड सक्रिय (+${waStatus.userPhone || 'लिंक्ड'})` : '⚠️ बैकग्राउंड इंजन डिस्कनेक्ट है'}
+                        </span>
+                        {waStatus.isConnected && (
+                          <span className="bg-emerald-200 text-emerald-900 text-[10px] font-black px-2 py-0.5 rounded-full">
+                            बिना WhatsApp खोले जाएगा
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-600 mt-0.5">
+                        {waStatus.isConnected
+                          ? `💡 संदेश इसी नंबर से सीधे बैकग्राउंड में जाएगा। लैपटॉप/Chrome का कोई असर नहीं पड़ेगा (कोई Enter नहीं दबाना)।`
+                          : '💡 QR कोड स्कैन करके लिंक करें ताकि बिना WhatsApp खोले 1-क्लिक में ऑटो-सेंड हो सके।'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenWhatsAppModal}
+                    className="shrink-0 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold text-xs rounded-xl transition cursor-pointer shadow-2xs"
+                    title="नया QR कोड स्कैन करें या नंबर बदलें"
+                  >
+                    {waStatus.isConnected ? '🔄 नंबर बदलें' : '📲 QR लिंक करें'}
+                  </button>
+                </div>
+
+                {/* ⚙️ 2 BUTTONS: QUICK UPI & GPS PROFILE SYNC TOOL */}
+                <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black text-indigo-950 flex items-center gap-1.5">
+                      <span>⚙️ दुकान विवरण (यहाँ से डालें - प्रोफाइल में ऑटो-सेव होगा):</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowQuickSettings(!showQuickSettings)}
+                      className="text-xs font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                    >
+                      {showQuickSettings ? 'छुपाएं ▲' : '+ सेटिंग्स खोलें / बदलें ▼'}
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <div className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border flex items-center gap-1.5 ${
+                      (statementData?.company?.upiId || selectedCompany?.upiId)
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                        : 'bg-rose-50 text-rose-700 border-rose-300'
+                    }`}>
+                      <span>💳 UPI ID:</span>
+                      <strong className="font-mono">
+                        {statementData?.company?.upiId || selectedCompany?.upiId || 'सेट नहीं है'}
+                      </strong>
+                    </div>
+
+                    <div className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border flex items-center gap-1.5 ${
+                      (statementData?.company?.mapLocationUrl || selectedCompany?.mapLocationUrl)
+                        ? 'bg-blue-50 text-blue-800 border-blue-300'
+                        : 'bg-amber-50 text-amber-800 border-amber-300'
+                    }`}>
+                      <span>📍 दुकान GPS:</span>
+                      <strong>
+                        {(statementData?.company?.mapLocationUrl || selectedCompany?.mapLocationUrl) ? 'सेट है' : 'सेट नहीं है'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {showQuickSettings && (
+                    <div className="pt-2 border-t border-indigo-200 space-y-2.5 animate-in fade-in">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-bold text-indigo-950 mb-0.5">
+                            💳 UPI ID (1-क्लिक पेमेंट लिंक हेतु)
+                          </label>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              placeholder="उदा. 9828228943@okbizaxis"
+                              value={quickUpiInput}
+                              onChange={(e) => setQuickUpiInput(e.target.value)}
+                              className="w-full bg-white border border-indigo-300 rounded-xl px-2.5 py-1 text-xs outline-none focus:border-indigo-600 font-mono"
+                            />
+                            <button
+                              type="button"
+                              disabled={savingQuickSetting || !quickUpiInput.trim()}
+                              onClick={() => handleSaveQuickCompanySetting('upiId', quickUpiInput)}
+                              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shrink-0 cursor-pointer disabled:opacity-50"
+                            >
+                              {savingQuickSetting ? '...' : 'सेव'}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-indigo-950 mb-0.5">
+                            📍 दुकान GPS मैप लिंक (Google Maps)
+                          </label>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="url"
+                              placeholder="https://maps.app.goo.gl/..."
+                              value={quickGpsInput}
+                              onChange={(e) => setQuickGpsInput(e.target.value)}
+                              className="w-full bg-white border border-indigo-300 rounded-xl px-2.5 py-1 text-xs outline-none focus:border-indigo-600 font-mono"
+                            />
+                            <button
+                              type="button"
+                              disabled={savingQuickSetting || !quickGpsInput.trim()}
+                              onClick={() => handleSaveQuickCompanySetting('mapLocationUrl', quickGpsInput)}
+                              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shrink-0 cursor-pointer disabled:opacity-50"
+                            >
+                              {savingQuickSetting ? '...' : 'सेव'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-500">
+                        💡 यहाँ सेव करते ही दुकान की प्रोफाइल में हमेशा के लिए अपडेट हो जाएगा और WhatsApp संदेश में लिंक जुड़ जाएगा।
+                      </p>
+                    </div>
+                  )}
+                </div>
+
                 {/* 1. Recipient Choice */}
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-700 uppercase tracking-wider block">
@@ -4044,39 +4261,50 @@ export default function PartiesPage() {
                   )}
                 </div>
 
-                {/* 1. PRIMARY BUTTON: Immediately opens WhatsApp with statement */}
-                <button
-                  type="button"
-                  onClick={() => handleExecuteShare('whatsapp')}
-                  className="flex-1 py-2.5 bg-[#25D366] hover:bg-green-600 text-white font-black text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-md active:scale-95"
-                  title="WhatsApp पर तुरंत खाता विवरण भेजें"
-                >
-                  <MessageSquare size={16} />
-                  <span>🟢 WhatsApp पर तुरंत भेजें</span>
-                </button>
-
-                {/* 2. OPTIONAL: If auto QR session connected, offer 1-click silent send */}
-                {waStatus.isConnected && (
+                {/* 1. PRIMARY BUTTON: If Background QR connected, THIS IS THE BIG HERO BUTTON! */}
+                {waStatus.isConnected ? (
                   <button
                     type="button"
                     onClick={handleSendDirectWhatsApp}
                     disabled={directWaSending}
-                    className="py-2.5 px-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow active:scale-95 disabled:opacity-60"
-                    title="सर्वर से सीधे बैकग्राउंड में भेजें"
+                    className="flex-1 py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 disabled:opacity-60"
+                    title="सीधे सर्वर से 1-क्लिक में ग्राहक को भेजें (बिना WhatsApp खोले, कोई Enter नहीं दबाना)"
                   >
-                    <span>{directWaSending ? 'भेजा जा रहा है...' : '⚡ बैकग्राउंड सेंड'}</span>
+                    <MessageSquare size={16} />
+                    <span>
+                      {directWaSending ? 'भेजा जा रहा है...' : `⚡ 1-क्लिक ऑटो-सेंड (+${waStatus.userPhone || 'सक्रिय'})`}
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleExecuteShare('whatsapp')}
+                    className="flex-1 py-3 px-4 bg-[#25D366] hover:bg-green-600 text-white font-black text-xs sm:text-sm rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95"
+                    title="WhatsApp Web या Desktop App में खोलें"
+                  >
+                    <MessageSquare size={16} />
+                    <span>🟢 WhatsApp पर खोलें (मैन्युअल भेजें)</span>
                   </button>
                 )}
 
-                {/* 3. OPTIONAL: If not connected, offer QR pairing link */}
-                {!waStatus.isConnected && (
+                {/* 2. SECONDARY / ALTERNATIVE BUTTON */}
+                {waStatus.isConnected ? (
+                  <button
+                    type="button"
+                    onClick={() => handleExecuteShare('whatsapp')}
+                    className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 border border-slate-300"
+                    title="यदि आप अपने Chrome ब्राउज़र के WhatsApp Web से भेजना चाहें"
+                  >
+                    <span>🌐 Web में खोलें</span>
+                  </button>
+                ) : (
                   <button
                     type="button"
                     onClick={handleOpenWhatsAppModal}
-                    className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 border border-slate-300"
-                    title="बैकग्राउंड ऑटो-सेंडिंग हेतु QR लिंक करें"
+                    className="py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 border border-emerald-200"
+                    title="बिना WhatsApp खोले 1-क्लिक सेंड चालू करने हेतु QR स्कैन करें"
                   >
-                    <span>📲 QR लिंक</span>
+                    <span>📲 ऑटो-सेंड QR</span>
                   </button>
                 )}
               </div>
