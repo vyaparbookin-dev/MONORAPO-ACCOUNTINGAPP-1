@@ -222,6 +222,119 @@ const CompanyPage = () => {
     );
   }
 
+  const renderMobileWhatsAppPreview = (info = {}, isLiveEditing = false) => {
+    const shopName = info.name || "आपकी दुकान / फर्म का नाम";
+    const shopPhone = info.whatsappBusinessNumber || info.phone || "7828289433";
+    const callingPhone = info.callingContactNumber || "";
+    const shopAddress = info.address || "दुकान का मुख्य पता";
+    const mapLocationUrl = info.mapLocationUrl || "";
+    const upiId = info.upiId ? String(info.upiId).trim() : "";
+
+    return (
+      <div className="mt-3 bg-slate-900 rounded-2xl p-3 sm:p-4 text-white shadow-xl border border-slate-800">
+        <div className="flex items-center justify-between mb-2.5 border-b border-slate-800 pb-2">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs">
+              📱
+            </div>
+            <div>
+              <h5 className="text-xs font-black text-slate-100 flex items-center gap-1.5">
+                <span>ग्राहकों के मोबाइल पर ऐसा दिखेगा (WhatsApp Message Preview)</span>
+                {isLiveEditing && (
+                  <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-bold px-2 py-0.2 rounded-full border border-emerald-500/30 animate-pulse">
+                    लाइव डेमो
+                  </span>
+                )}
+              </h5>
+              <p className="text-[10px] text-slate-400">
+                {isLiveEditing
+                  ? "💡 आपके विवरण भरते ही यह संदेश रियल-टाइम में स्वतः बदल रहा है।"
+                  : "💡 ग्राहकों को भेजे जाने वाले बिल व हिसाब का वास्तविक WhatsApp संदेश रूप:"}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Simulated Mobile WhatsApp Chat Bubble */}
+        <div className="bg-[#EFEAE2] rounded-xl p-3 text-slate-900 shadow-inner max-w-md mx-auto border border-[#E0D8CC]">
+          {/* Mock WhatsApp Chat Header */}
+          <div className="flex items-center gap-2 pb-2 mb-2 border-b border-[#D8CEBF]">
+            <div className="w-7 h-7 rounded-full bg-[#075E54] text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
+              {shopName.charAt(0) || "🏢"}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h6 className="font-bold text-xs text-slate-900 truncate">{shopName}</h6>
+              <span className="text-[10px] text-emerald-700 font-semibold block">online • WhatsApp Business</span>
+            </div>
+          </div>
+
+          {/* Incoming Message Bubble */}
+          <div className="bg-white rounded-xl p-2.5 shadow-xs border border-slate-200/60 text-[11px] font-sans leading-relaxed space-y-1.5 select-all">
+            <p className="font-medium text-slate-800">
+              नमस्ते <b>सम्मानित ग्राहक</b> जी,
+            </p>
+
+            <div className="space-y-0.5 text-slate-800 border-l-2 border-emerald-500 pl-2">
+              <p className="font-black text-slate-900">🏢 *{shopName}*</p>
+              {shopAddress && <p className="text-slate-700">📍 पता: {shopAddress}</p>}
+              {mapLocationUrl ? (
+                <p className="text-blue-700 font-semibold break-all">
+                  🗺️ दुकान लोकेशन: <span className="underline">{mapLocationUrl}</span>
+                </p>
+              ) : (
+                <p className="text-[10px] text-amber-700 italic">
+                  (📍 GPS लिंक खाली है - लिंक डालने पर यहाँ Google Maps दिखेगा)
+                </p>
+              )}
+              <p className="font-bold text-emerald-800">💬 WhatsApp: {shopPhone}</p>
+              {callingPhone && callingPhone !== shopPhone ? (
+                <p className="font-bold text-slate-800">📞 कॉल / संपर्क हेतु: {callingPhone}</p>
+              ) : (
+                <p className="text-[10px] text-slate-500 italic">
+                  (कॉलिंग नंबर खाली होने पर WhatsApp नंबर ही संपर्क माना जाएगा)
+                </p>
+              )}
+            </div>
+
+            <div className="border-t border-slate-100 pt-1 space-y-0.5">
+              <p className="font-extrabold text-slate-900">📋 *खाता विवरण (Statement of Account)*</p>
+              <p className="font-black text-rose-700">⚖️ *वर्तमान कुल बकाया: ₹12,450 (लेने हैं)*</p>
+              <p className="text-slate-500 text-[10px]">📅 विवरण दिनांक: 23/11/2026</p>
+            </div>
+
+            <div className="bg-slate-50 p-2 rounded-lg text-[10px] border border-slate-100 font-mono space-y-0.5">
+              <p className="font-bold text-slate-700">📜 हालिया बिल विवरण:</p>
+              <p>1️⃣ 20/11/2026: बिल #104 — <b>₹8,450</b> (⏳ 3 दिन से बकाया)</p>
+              <p>2️⃣ 15/11/2026: बिल #101 — <b>₹4,000</b> (⏳ 8 दिन से बकाया)</p>
+            </div>
+
+            {upiId ? (
+              <div className="bg-emerald-50/80 p-2 rounded-lg text-[10px] border border-emerald-200">
+                <p className="font-bold text-emerald-950">📱 *ऑनलाइन भुगतान (GPay / PhonePe / Paytm):*</p>
+                <p className="font-mono text-emerald-900">UPI ID: <b>{upiId}</b></p>
+                <p className="text-blue-600 font-bold underline mt-0.5">👉 1-क्लिक भुगतान लिंक</p>
+              </div>
+            ) : (
+              <div className="bg-slate-100 p-1.5 rounded-lg text-[10px] text-slate-500 italic">
+                (💳 UPI ID खाली है - डालने पर यहाँ 1-क्लिक पेमेंट लिंक व QR कोड जुड़ेगा)
+              </div>
+            )}
+
+            <div className="bg-blue-50/80 p-2 rounded-lg text-[10px] border border-blue-200">
+              <p className="font-bold text-blue-950">🌐 *पूरा लेजर, बिल पर्ची व PDF देखने हेतु लिंक:*</p>
+              <p className="text-blue-700 underline font-mono text-[9px]">https://monorapo-accountingapp-1-web.vercel.app/statement/...</p>
+            </div>
+
+            <div className="flex justify-between items-center pt-1 text-[10px] text-slate-400">
+              <span>धन्यवाद! 🙏 - {shopName}</span>
+              <span className="text-[9px] text-slate-400">10:30 AM ✓✓</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -400,6 +513,9 @@ const CompanyPage = () => {
                       </p>
                     </div>
                   </div>
+
+                  {/* 📱 Live WhatsApp Message Mobile Preview */}
+                  {renderMobileWhatsAppPreview(formData, true)}
                 </div>
               </div>
 
@@ -736,6 +852,9 @@ const CompanyPage = () => {
                     </div>
                   </div>
 
+                  {/* 📱 Saved WhatsApp Message Mobile Preview */}
+                  {renderMobileWhatsAppPreview(selectedCompany, false)}
+
                   <div className="flex items-center gap-3">
                     <Mail className="text-gray-400" size={20} />
                     <div>
@@ -1064,6 +1183,9 @@ const CompanyPage = () => {
                       </p>
                     </div>
                   </div>
+
+                  {/* 📱 Live WhatsApp Message Mobile Preview */}
+                  {renderMobileWhatsAppPreview(formData, true)}
                 </div>
               </div>
 

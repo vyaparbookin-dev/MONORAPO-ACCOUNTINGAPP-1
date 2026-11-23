@@ -944,10 +944,11 @@ export const getPartyStatement = async (req, res) => {
 
 export const getPublicPartyStatement = async (req, res) => {
   try {
-    const partyId = req.params.partyId;
-    if (!partyId) {
+    const rawPartyId = req.params.partyId;
+    if (!rawPartyId) {
       return res.status(400).json({ success: false, message: "Party ID is required" });
     }
+    const partyId = decodeURIComponent(String(rawPartyId)).trim();
 
     let party = null;
     if (mongoose.Types.ObjectId.isValid(partyId)) {
@@ -957,7 +958,9 @@ export const getPublicPartyStatement = async (req, res) => {
       party = await Party.findOne({
         $or: [
           { id: partyId },
-          { _id: partyId }
+          { _id: partyId },
+          { uuid: partyId },
+          { mobileNumber: partyId }
         ]
       });
     }

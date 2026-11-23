@@ -54,21 +54,65 @@ export default function PublicStatementPage() {
 
   const fetchPublicStatement = async () => {
     if (!partyId) return;
+    const cleanPartyId = decodeURIComponent(String(partyId)).trim();
     setLoading(true);
     setError("");
+
+    // 1. Try standard API request
     try {
-      const res = await api.get(`/api/parties/public/${partyId}/statement`);
-      if (res.data && res.data.success) {
-        setData(res.data);
-      } else {
-        setError(res.data?.error || "खाता विवरण लोड नहीं हो सका।");
+      const res = await api.get(`/api/parties/public/${cleanPartyId}/statement`);
+      const payload = res?.data?.success ? res.data : (res?.success ? res : res?.data);
+      if (payload && payload.success) {
+        setData(payload);
+        setLoading(false);
+        return;
       }
-    } catch (err) {
-      console.error("Public statement load error:", err);
-      setError(err.response?.data?.error || err.message || "खाता विवरण लोड करने में त्रुटि आई।");
-    } finally {
-      setLoading(false);
+    } catch (apiErr) {
+      console.warn("Primary API public statement load failed, attempting direct cloud fetch:", apiErr.message);
     }
+
+    // 2. Direct Cloud Fetch fallback (bypasses any local auth or port interceptors)
+    try {
+      const cloudUrl = `https://monorapo-accountingapp-1.onrender.com/api/parties/public/${cleanPartyId}/statement`;
+      const cloudRes = await fetch(cloudUrl);
+      if (cloudRes.ok) {
+        const cloudData = await cloudRes.json();
+        if (cloudData && cloudData.success) {
+          setData(cloudData);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch (cloudErr) {
+      console.warn("Direct cloud fetch failed:", cloudErr.message);
+    }
+
+    // 3. Local-First Desktop / Electron SQLite fallback (if running in desktop or offline)
+    if (typeof window !== "undefined" && window.electron && window.electron.db) {
+      try {
+        const localParty = await window.electron.db.getCustomerById(cleanPartyId);
+        if (localParty) {
+          const localTxs = await window.electron.db.getTransactionsForParty(cleanPartyId);
+          setData({
+            success: true,
+            party: localParty,
+            currentBalance: Number(localParty.balance || 0),
+            transactions: localTxs || [],
+            company: {
+              name: "व्यापार खाता",
+              phone: localParty.phone || ""
+            }
+          });
+          setLoading(false);
+          return;
+        }
+      } catch (dbErr) {
+        console.warn("Local DB fallback error:", dbErr.message);
+      }
+    }
+
+    setError("खाता विवरण लोड नहीं हो सका। कृपया लिंक की जांच करें या इंटरनेट कनेक्शन देखें।");
+    setLoading(false);
   };
 
   useEffect(() => {

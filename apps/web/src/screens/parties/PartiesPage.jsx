@@ -67,7 +67,7 @@ export const generatePartyDetailedWhatsAppText = (party, statementData, options 
     year: 'numeric'
   });
 
-  const pId = party._id || party.id || "";
+  const pId = String(statementData?.party?._id || party?._id || party?.id || "").trim();
   const publicStatementUrl = `https://monorapo-accountingapp-1-web.vercel.app/statement/${pId}`;
 
   // Analyze transactions for aging & delay
@@ -1762,7 +1762,7 @@ export default function PartiesPage() {
     const mapLocationUrl = statementData?.company?.mapLocationUrl || "";
     const shopAddress = statementData?.company?.address || "";
     const upiId = statementData?.company?.upiId ? String(statementData.company.upiId).trim() : "";
-    const pId = p._id || p.id || "";
+    const pId = String(statementData?.party?._id || p?._id || p?.id || "").trim();
     const publicStatementUrl = `https://monorapo-accountingapp-1-web.vercel.app/statement/${pId}`;
 
     let text = `नमस्ते *${p.name}* जी,\n\n`;
