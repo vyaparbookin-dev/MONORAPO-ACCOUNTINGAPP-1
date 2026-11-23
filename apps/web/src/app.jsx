@@ -67,6 +67,7 @@ const safeLazy = (importFn) => {
 const LandingPage = safeLazy(() => import("./screens/Landing/LandingPage"));
 const MobileVyaparApp = safeLazy(() => import("./screens/mobile_pwa/MobileVyaparApp"));
 const PublicCustomerReviewPage = safeLazy(() => import("./screens/public/PublicCustomerReviewPage"));
+const PublicStatementPage = safeLazy(() => import("./screens/public/PublicStatementPage"));
 const GamezoneOperationsPage = safeLazy(() => import("./screens/gamezone/GamezoneOperationsPage"));
 
 // Auth Screens
@@ -311,6 +312,8 @@ const App = () => {
                   <Route path="/mobile-app" element={<MobileVyaparApp />} />
                   <Route path="/m" element={<MobileVyaparApp />} />
                   <Route path="/review/:companyId" element={<PublicCustomerReviewPage />} />
+                  <Route path="/statement/:partyId" element={<PublicStatementPage />} />
+                  <Route path="/p/statement/:partyId" element={<PublicStatementPage />} />
                   <Route path="/welcome" element={<LandingPage />} />
                   <Route path="/login" element={<LoginScreen />} />
                   <Route path="/register" element={<RegisterScreen />} />

@@ -7,6 +7,7 @@ import {
   updateParty,
   deleteParty,
   getPartyStatement,
+  getPublicPartyStatement,
   getPartyQuickSummary,
   attachPartyTransactionImage,
   deletePartyTransaction,
@@ -18,6 +19,9 @@ import {
 import { protect, requireCompany } from "../middleware/authmiddleware.js";
 
 const router = express.Router();
+
+// 🌐 PUBLIC ROUTE: Customer Statement & Instant UPI Payment (No login required)
+router.get("/public/:partyId/statement", getPublicPartyStatement);
 
 // 🚀 SAAS LOCK
 router.use(protect);

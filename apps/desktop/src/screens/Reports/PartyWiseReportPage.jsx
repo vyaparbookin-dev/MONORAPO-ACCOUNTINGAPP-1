@@ -84,53 +84,141 @@ const PartyWiseReportPage = () => {
     }
   };
 
-  // Generate concise, professional Hindi WhatsApp balance notification
-  const generatePartyQuickBalanceText = (party) => {
+  // Generate comprehensive Hindi WhatsApp balance and itemized statement notification
+  const generatePartyDetailedWhatsAppText = (party, statementData) => {
     const name = party.partyName || party.name || "सम्मानित ग्राहक";
-    const bal = Number(party.balance ?? party.currentBalance ?? party.openingBalance ?? 0);
-    const totalSales = Number(party.totalSales || 0);
-    const now = new Date().toLocaleDateString("hi-IN", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const bal = Number(party.balance ?? party.currentBalance ?? statementData?.currentBalance ?? 0);
+    const isSupplier = (party.partyType === "supplier" || party.type === "supplier");
+    const isDue = bal > 0;
+    const isAdvance = bal < 0;
+    const absBal = Math.abs(bal);
 
-    let text = `*खाता बकाया सूचना (Balance Alert)*\n` +
-      `🏢 *गणेश हार्डवेयर (Ganesh Hardware)*\n` +
-      `📍 सारंगढ़ (छ.ग.) | 📞 7828289433\n` +
-      `------------------------------------\n` +
-      `👤 पार्टी: *${name}*\n` +
-      `📅 दिनांक: ${now}\n` +
-      `------------------------------------\n`;
+    const shopName = statementData?.company?.name || "श्री गणेश ट्रेडर्स व हार्डवेयर";
+    const shopPhone = statementData?.company?.phone || "7828289433";
+    const shopAddress = statementData?.company?.address || "भारत माता चौक, सारंगढ़ (छ.ग.)";
+    const upiId = statementData?.company?.upiId || `${shopPhone}@upi`;
 
-    if (totalSales > 0) {
-      text += `📦 कुल कारोबार / खरीद: *₹${totalSales.toLocaleString('en-IN')}*\n`;
+    const dateStr = new Date().toLocaleDateString('hi-IN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+
+    const pId = party._id || party.id || "";
+    const publicStatementUrl = `https://monorapo-accountingapp-1-web.vercel.app/statement/${pId}`;
+
+    const rawTxList = statementData?.transactions || [];
+    const txList = [...rawTxList];
+    let billEntriesText = "";
+    let oldestOverdueDays = 0;
+
+    if (txList.length > 0) {
+      const displayTxs = txList.slice(0, 8);
+      displayTxs.forEach((t, i) => {
+        const isDebit = Number(t.debit) > 0;
+        const isCredit = Number(t.credit) > 0;
+        const tDate = t.date ? new Date(t.date) : null;
+        const tDateStr = tDate ? tDate.toLocaleDateString('hi-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : "-";
+        const daysAgo = tDate ? Math.max(0, Math.floor((new Date() - tDate) / (1000 * 60 * 60 * 24))) : 0;
+
+        const numIcon = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣"][i] || `🔹`;
+        const title = t.details || (isDebit ? "बिल / बिक्री" : "जमा / भुगतान");
+        const amtStr = isDebit ? `₹${Number(t.debit).toLocaleString('en-IN')}` : `₹${Number(t.credit).toLocaleString('en-IN')}`;
+
+        if (isDebit) {
+          if (daysAgo > oldestOverdueDays) oldestOverdueDays = daysAgo;
+          billEntriesText += `${numIcon} ${tDateStr}: ${title} — *${amtStr}*\n   ⏳ *स्थिति: ${daysAgo} दिन से बकाया*\n`;
+        } else if (isCredit) {
+          billEntriesText += `${numIcon} ${tDateStr}: जमा (Credit) — *${amtStr}*\n   ✅ *भुगतान प्राप्त*\n`;
+        }
+      });
+
+      if (txList.length > 8) {
+        billEntriesText += `...और ${txList.length - 8} अन्य पुराने बिल/प्रविष्टियाँ\n`;
+      }
     }
 
-    if (bal > 0) {
-      text += `🔴 *कुल बकाया राशि (देय / Due):* *₹${bal.toLocaleString('en-IN')}*\n\n` +
-        `⚠️ *विनम्र निवेदन:* कृपया उपरोक्त शेष राशि शीघ्र जमा करने का कष्ट करें।\n` +
-        `ऑनलाइन भुगतान हेतु UPI नंबर: *7828289433*\n`;
-    } else if (bal < 0) {
-      text += `🟢 *अग्रिम जमा (Advance Credit):* *₹${Math.abs(bal).toLocaleString('en-IN')}*\n\n` +
-        `आपका अग्रिम जमा हमारे पास सुरक्षित है। धन्यवाद!\n`;
+    let text = `नमस्ते *${name}* जी,\n\n` +
+      `🏢 *${shopName}*\n` +
+      `📍 ${shopAddress}\n` +
+      `📞 संपर्क / हेल्पलाइन: *${shopPhone}*\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📋 *खाता विवरण (Statement of Account)*\n`;
+
+    if (isSupplier) {
+      text += `⚖️ *कुल देय राशि:* *₹${absBal.toLocaleString('en-IN')} ${bal < 0 ? '(देने हैं / Payable)' : '(एडवांस जमा)'}*\n`;
     } else {
-      text += `🟢 *खाता स्थिति:* हिसाब पूर्णतः चुकता (₹0.00)\n\n` +
-        `समय पर भुगतान के लिए आपका बहुत-बहुत धन्यवाद!\n`;
+      text += `⚖️ *वर्तमान कुल बकाया:* *₹${absBal.toLocaleString('en-IN')} ${isDue ? '(लेने हैं / Debit)' : isAdvance ? '(एडवांस जमा)' : '(चुकता)'}*\n`;
     }
 
-    text += `------------------------------------\n` +
-      `- गणेश हार्डवेयर, सारंगढ़`;
+    text += `📅 *विवरण दिनांक:* ${dateStr}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n`;
+
+    if (billEntriesText) {
+      text += `📜 *बिल व बकाया विवरण:*\n` +
+        `${billEntriesText}` +
+        `━━━━━━━━━━━━━━━━━━━━━\n`;
+    }
+
+    if (isDue && !isSupplier) {
+      text += `🔴 *कुल बकाया राशि:* *₹${absBal.toLocaleString('en-IN')}*\n`;
+      if (oldestOverdueDays > 0) {
+        text += `⚠️ *विनम्र निवेदन:* आपका बिल पिछले *${oldestOverdueDays} दिनों से बकाया* चल रहा है। कृपया व्यापारिक संबंध बनाए रखने हेतु इसका जल्द से जल्द भुगतान करने का कष्ट करें। 🙏\n\n`;
+      } else {
+        text += `⚠️ *निवेदन:* कृपया उपरोक्त शेष राशि का शीघ्र भुगतान करने का कष्ट करें। 🙏\n\n`;
+      }
+
+      text += `📱 *ऑनलाइन भुगतान (Google Pay / PhonePe / Paytm):*\n` +
+        `UPI ID: *${upiId}*\n` +
+        `UPI / फोन नंबर: *${shopPhone}*\n` +
+        `👉 *1-क्लिक भुगतान लिंक:* upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(shopName)}&am=${absBal}&cu=INR\n\n`;
+    } else if (isSupplier && bal < 0) {
+      text += `🔴 *कुल भुगतान देय:* *₹${absBal.toLocaleString('en-IN')}*\n` +
+        `कृपया हिसाब का मिलान कर लें।\n\n`;
+    } else if (isAdvance) {
+      text += `🟢 आपका अग्रिम जमा हमारे पास सुरक्षित है। धन्यवाद!\n\n`;
+    } else {
+      text += `🟢 आपका हिसाब पूर्णतः चुकता (₹0.00) है। समय पर भुगतान हेतु धन्यवाद!\n\n`;
+    }
+
+    text += `🌐 *पूरा लेजर देखने, बिल पर्ची व PDF डाउनलोड करने के लिए यहाँ क्लिक करें:*\n` +
+      `${publicStatementUrl}\n\n` +
+      `धन्यवाद! 🙏\n` +
+      `*- ${shopName}, सारंगढ़*`;
+
     return text;
   };
 
+  const generatePartyQuickBalanceText = generatePartyDetailedWhatsAppText;
+
   // Direct 1-Click WhatsApp Share without opening statement
-  const handleDirectShareParty = (party) => {
+  const handleDirectShareParty = async (party) => {
     if (!party) return;
     const phone = (party.phone || party.mobileNumber || '').replace(/[^0-9]/g, '');
-    if (phone && phone !== '9999999999' && phone.length >= 10) {
-      const text = generatePartyQuickBalanceText(party);
+    const hasValidPhone = phone && phone !== '9999999999' && phone.length >= 10;
+
+    setQuickShareToast(`⏳ ${party.partyName || party.name || 'पार्टी'} का खाता विवरण लोड हो रहा है...`);
+    let stData = null;
+    try {
+      const pId = party._id || party.id;
+      const res = await api.get(`/api/parties/public/${pId}/statement`);
+      if (res?.data?.success) stData = res.data;
+    } catch (e) {
+      try {
+        const pId = party._id || party.id;
+        const res = await api.get(`/api/party/${pId}/statement`);
+        if (res?.data) stData = res.data;
+      } catch (e2) {}
+    }
+
+    const text = generatePartyDetailedWhatsAppText(party, stData);
+
+    if (hasValidPhone) {
       openWhatsAppDirectly(phone, text);
-      setQuickShareToast(`✅ WhatsApp (${phone.slice(-10)}) पर हिसाब भेजा जा रहा है!`);
+      setQuickShareToast(`✅ WhatsApp (${phone.slice(-10)}) पर हिसाब व विवरण भेजा जा रहा है!`);
       setTimeout(() => setQuickShareToast(''), 4000);
     } else {
-      setQuickShareParty(party);
+      setQuickShareParty({ ...party, statementData: stData });
       setQuickSharePhone('');
       setShowQuickSharePhoneModal(true);
     }
@@ -321,40 +409,7 @@ const PartyWiseReportPage = () => {
   const handleShareWhatsApp = () => {
     if (!statementParty) return;
     const p = statementParty;
-
-    let periodLabel = "सभी समय (All Time)";
-    if (statementPeriodFilter === "FY2425") periodLabel = "FY 2024-25 (01 Apr 2024 - 31 Mar 2025)";
-    else if (statementPeriodFilter === "FY2526") periodLabel = "FY 2025-26 (01 Apr 2025 - 31 Mar 2026)";
-    else if (statementPeriodFilter === "FY2627") periodLabel = "FY 2026-27 (01 Apr 2026 - 31 Mar 2027)";
-    else if (statementPeriodFilter === "custom") {
-      const fromStr = statementStartDate ? new Date(statementStartDate).toLocaleDateString("hi-IN") : "शुरुआत";
-      const toStr = statementEndDate ? new Date(statementEndDate).toLocaleDateString("hi-IN") : "आज तक";
-      periodLabel = `${fromStr} से ${toStr}`;
-    }
-
-    const siteLabel = statementSiteFilter !== "all" ? statementSiteFilter : "सभी साइटें (All Sites)";
-    const isFiltered = statementSiteFilter !== "all" || statementPeriodFilter !== "all" || statementStartDate || statementEndDate;
-
-    let text = `*खाता विवरण (Statement of Account)*\n` +
-      `🏢 *गणेश हार्डवेयर (Ganesh Hardware)*\n` +
-      `👤 पार्टी: *${p.name || p.partyName}*\n` +
-      `📞 मोबाइल: ${p.mobileNumber && p.mobileNumber !== '9999999999' ? p.mobileNumber : (p.phone && p.phone !== '9999999999' ? p.phone : '-')}\n` +
-      `📅 अवधि: *${periodLabel}*\n` +
-      `🏗️ साइट: *${siteLabel}*\n` +
-      `------------------------------------\n` +
-      `📋 कुल प्रविष्टियाँ: ${filteredStatementTransactions.length}\n` +
-      `🔴 कुल बिल (Debit): *₹${filteredDebit.toLocaleString('en-IN')}*\n` +
-      `🟢 कुल जमा (Credit): *₹${filteredCredit.toLocaleString('en-IN')}*\n` +
-      `⚖️ *इस अवधि/साइट का बाकी:* *₹${Math.abs(filteredNet).toLocaleString('en-IN')} ${filteredNet > 0 ? '(लेने हैं / Due)' : filteredNet < 0 ? '(देने हैं / Advance)' : '(चुक्ता / Nil)'}*\n`;
-
-    if (isFiltered) {
-      const overallBal = Number(p.currentBalance ?? p.balance ?? statementData?.currentBalance ?? 0);
-      text += `💰 *कुल समग्र बकाया (All Time Net):* *₹${Math.abs(overallBal).toLocaleString('en-IN')} ${overallBal > 0 ? '(लेने हैं)' : '(देने हैं)'}*\n`;
-    }
-
-    text += `------------------------------------\n` +
-      `कृपया हिसाब मिलान कर लें। धन्यवाद!\n- Ganesh Hardware`;
-
+    const text = generatePartyDetailedWhatsAppText(p, statementData);
     const cleanPhone = (p.mobileNumber || p.phone || '').replace(/[^0-9]/g, '');
     openWhatsAppDirectly(cleanPhone, text);
     setQuickShareToast("✅ लेजर स्टेटमेंट WhatsApp पर भेजा जा रहा है!");
@@ -957,6 +1012,7 @@ const PartyWiseReportPage = () => {
                         <th className="px-3 py-2.5">दिनांक (Date)</th>
                         <th className="px-3 py-2.5">प्रकार (Type)</th>
                         <th className="px-3 py-2.5">रेफरेंस / बिल #</th>
+                        <th className="px-3 py-2.5">अवधि / स्थिति</th>
                         <th className="px-3 py-2.5 max-w-[180px] lg:max-w-[240px] truncate" title="विवरण व टिप्पणी">विवरण (Details)</th>
                         <th className="px-3 py-2.5 text-center">साइट (Site)</th>
                         <th className="px-3 py-2.5 text-right">बिल (Debit ₹)</th>
@@ -990,6 +1046,33 @@ const PartyWiseReportPage = () => {
                             </td>
                             <td className="px-3 py-2.5 font-bold text-slate-800 whitespace-nowrap">
                               {tx.refNo || '-'}
+                            </td>
+                            <td className="px-3 py-2.5 whitespace-nowrap">
+                              {(() => {
+                                if (!tx.date) return <span className="text-slate-400">-</span>;
+                                const daysAgo = Math.max(0, Math.floor((new Date() - new Date(tx.date)) / (1000 * 60 * 60 * 24)));
+                                const isDebit = Number(tx.debit) > 0;
+                                const isCredit = Number(tx.credit) > 0;
+                                if (isDebit) {
+                                  return (
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 ${
+                                      daysAgo > 20 ? 'bg-rose-100 text-rose-800 border border-rose-300' :
+                                      daysAgo > 7 ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                                      'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                    }`}>
+                                      <span>⏳ {daysAgo} दिन</span>
+                                    </span>
+                                  );
+                                }
+                                if (isCredit) {
+                                  return (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 inline-flex items-center gap-1">
+                                      <span>✅ जमा ({daysAgo}d)</span>
+                                    </span>
+                                  );
+                                }
+                                return <span className="text-slate-400 text-[10px]">{daysAgo} दिन</span>;
+                              })()}
                             </td>
                             <td className="px-3 py-2.5 text-slate-600 max-w-xs truncate" title={tx.details}>
                               {tx.details || '-'}
@@ -1218,7 +1301,7 @@ const PartyWiseReportPage = () => {
               <button
                 type="button"
                 onClick={() => {
-                  const text = generatePartyQuickBalanceText(quickShareParty);
+                  const text = generatePartyDetailedWhatsAppText(quickShareParty, quickShareParty?.statementData);
                   navigator.clipboard.writeText(text);
                   setQuickShareToast("📋 हिसाब टेक्स्ट कॉपी हो गया!");
                   setTimeout(() => setQuickShareToast(''), 3000);
@@ -1234,7 +1317,7 @@ const PartyWiseReportPage = () => {
                 type="button"
                 disabled={!quickSharePhone || quickSharePhone.length < 10}
                 onClick={() => {
-                  const text = generatePartyQuickBalanceText(quickShareParty);
+                  const text = generatePartyDetailedWhatsAppText(quickShareParty, quickShareParty?.statementData);
                   openWhatsAppDirectly(quickSharePhone, text);
                   setShowQuickSharePhoneModal(false);
                   setQuickShareToast(`✅ WhatsApp (${quickSharePhone}) पर हिसाब भेजा जा रहा है!`);

@@ -942,6 +942,75 @@ export const getPartyStatement = async (req, res) => {
   }
 };
 
+export const getPublicPartyStatement = async (req, res) => {
+  try {
+    const partyId = req.params.partyId;
+    if (!partyId) {
+      return res.status(400).json({ success: false, message: "Party ID is required" });
+    }
+
+    let party = null;
+    if (mongoose.Types.ObjectId.isValid(partyId)) {
+      party = await Party.findById(partyId);
+    }
+    if (!party) {
+      party = await Party.findOne({
+        $or: [
+          { id: partyId },
+          { _id: partyId }
+        ]
+      });
+    }
+    if (!party) {
+      try {
+        const sbParty = await getPartyByIdFromSupabase(partyId);
+        if (sbParty) party = sbParty;
+      } catch (e) {}
+    }
+
+    if (!party) {
+      return res.status(404).json({ success: false, error: "पार्टी का खाता नहीं मिला (Party not found)" });
+    }
+
+    const companyId = party.companyId;
+    let company = null;
+    if (companyId) {
+      if (mongoose.Types.ObjectId.isValid(companyId)) {
+        company = await Company.findById(companyId).lean();
+      }
+      if (!company) {
+        company = await Company.findOne({
+          $or: [{ _id: companyId }, { id: companyId }]
+        }).lean();
+      }
+    }
+
+    // Attach req.companyId and req.params.id for getPartyStatement
+    req.companyId = companyId;
+    req.params.id = party._id ? String(party._id) : party.id;
+
+    // Use a custom response interceptor to add company details to the statement
+    const originalJson = res.json.bind(res);
+    res.json = (data) => {
+      if (data && data.success) {
+        data.company = {
+          name: company?.businessName || company?.name || "श्री गणेश ट्रेडर्स व हार्डवेयर",
+          phone: company?.phone || company?.mobile || "7828289433",
+          address: company?.address || "भारत माता चौक, सारंगढ़ (छ.ग.)",
+          upiId: company?.upiId || "7828289433@upi",
+          upiNumber: company?.phone || "7828289433"
+        };
+      }
+      return originalJson(data);
+    };
+
+    return getPartyStatement(req, res);
+  } catch (error) {
+    console.error("[getPublicPartyStatement] Error:", error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 export const attachPartyTransactionImage = async (req, res) => {
   try {
     const { txId, imageUrl } = req.body;
