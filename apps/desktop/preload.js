@@ -50,4 +50,5 @@ contextBridge.exposeInMainWorld('electron', {
   send: (channel, data) => ipcRenderer.send(channel, data),
   on: (channel, func) => ipcRenderer.on(channel, (event, ...args) => func(...args)),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  openDevTools: () => ipcRenderer.invoke('open-devtools'),
 });
