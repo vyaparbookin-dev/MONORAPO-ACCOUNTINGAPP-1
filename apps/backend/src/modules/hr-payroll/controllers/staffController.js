@@ -722,7 +722,7 @@ export const addStaffAdvance = async (req, res) => {
     await staff.save();
 
     // Async Supabase Dual-Write
-    syncStaffTxToSupabase(otTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
+    syncStaffTxToSupabase(advanceTx).catch(e => console.warn("[Supabase Dual-Write] Staff tx note:", e.message));
     syncStaffToSupabase(staff).catch(e => console.warn("[Supabase Dual-Write] Staff sync note:", e.message));
 
     res.status(201).json({ 
