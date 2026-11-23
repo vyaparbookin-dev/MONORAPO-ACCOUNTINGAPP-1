@@ -993,12 +993,17 @@ export const getPublicPartyStatement = async (req, res) => {
     const originalJson = res.json.bind(res);
     res.json = (data) => {
       if (data && data.success) {
+        const compPhone = company?.whatsappBusinessNumber || company?.phone || company?.mobile || "";
+        const compUpi = company?.upiId || (compPhone ? `${compPhone}@upi` : "");
         data.company = {
-          name: company?.businessName || company?.name || "श्री गणेश ट्रेडर्स व हार्डवेयर",
-          phone: company?.phone || company?.mobile || "7828289433",
-          address: company?.address || "भारत माता चौक, सारंगढ़ (छ.ग.)",
-          upiId: company?.upiId || "7828289433@upi",
-          upiNumber: company?.phone || "7828289433"
+          name: company?.businessName || company?.name || "व्यापार खाता",
+          phone: compPhone,
+          whatsappBusinessNumber: company?.whatsappBusinessNumber || compPhone,
+          alternatePhone: company?.alternatePhone || "",
+          alternatePhone2: company?.alternatePhone2 || "",
+          address: company?.address || "",
+          upiId: compUpi,
+          upiNumber: compPhone
         };
       }
       return originalJson(data);

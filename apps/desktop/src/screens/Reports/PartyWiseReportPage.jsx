@@ -93,10 +93,10 @@ const PartyWiseReportPage = () => {
     const isAdvance = bal < 0;
     const absBal = Math.abs(bal);
 
-    const shopName = statementData?.company?.name || "श्री गणेश ट्रेडर्स व हार्डवेयर";
-    const shopPhone = statementData?.company?.phone || "7828289433";
-    const shopAddress = statementData?.company?.address || "भारत माता चौक, सारंगढ़ (छ.ग.)";
-    const upiId = statementData?.company?.upiId || `${shopPhone}@upi`;
+    const shopName = statementData?.company?.name || "";
+    const shopPhone = statementData?.company?.whatsappBusinessNumber || statementData?.company?.phone || "";
+    const shopAddress = statementData?.company?.address || "";
+    const upiId = statementData?.company?.upiId || (shopPhone ? `${shopPhone}@upi` : "");
 
     const dateStr = new Date().toLocaleDateString('hi-IN', {
       day: '2-digit',
@@ -138,11 +138,11 @@ const PartyWiseReportPage = () => {
       }
     }
 
-    let text = `नमस्ते *${name}* जी,\n\n` +
-      `🏢 *${shopName}*\n` +
-      `📍 ${shopAddress}\n` +
-      `📞 संपर्क / हेल्पलाइन: *${shopPhone}*\n` +
-      `━━━━━━━━━━━━━━━━━━━━━\n` +
+    let text = `नमस्ते *${name}* जी,\n\n`;
+    if (shopName) text += `🏢 *${shopName}*\n`;
+    if (shopAddress) text += `📍 ${shopAddress}\n`;
+    if (shopPhone) text += `📞 संपर्क / WhatsApp: *${shopPhone}*\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━━\n` +
       `📋 *खाता विवरण (Statement of Account)*\n`;
 
     if (isSupplier) {
@@ -168,10 +168,12 @@ const PartyWiseReportPage = () => {
         text += `⚠️ *निवेदन:* कृपया उपरोक्त शेष राशि का शीघ्र भुगतान करने का कष्ट करें। 🙏\n\n`;
       }
 
-      text += `📱 *ऑनलाइन भुगतान (Google Pay / PhonePe / Paytm):*\n` +
-        `UPI ID: *${upiId}*\n` +
-        `UPI / फोन नंबर: *${shopPhone}*\n` +
-        `👉 *1-क्लिक भुगतान लिंक:* upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(shopName)}&am=${absBal}&cu=INR\n\n`;
+      if (upiId || shopPhone) {
+        text += `📱 *ऑनलाइन भुगतान (Google Pay / PhonePe / Paytm):*\n` +
+          (upiId ? `UPI ID: *${upiId}*\n` : '') +
+          (shopPhone ? `UPI / फोन नंबर: *${shopPhone}*\n` : '') +
+          (upiId ? `👉 *1-क्लिक भुगतान लिंक:* upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(shopName || 'Merchant')}&am=${absBal}&cu=INR\n\n` : '\n');
+      }
     } else if (isSupplier && bal < 0) {
       text += `🔴 *कुल भुगतान देय:* *₹${absBal.toLocaleString('en-IN')}*\n` +
         `कृपया हिसाब का मिलान कर लें।\n\n`;
@@ -184,7 +186,7 @@ const PartyWiseReportPage = () => {
     text += `🌐 *पूरा लेजर देखने, बिल पर्ची व PDF डाउनलोड करने के लिए यहाँ क्लिक करें:*\n` +
       `${publicStatementUrl}\n\n` +
       `धन्यवाद! 🙏\n` +
-      `*- ${shopName}, सारंगढ़*`;
+      `*- ${shopName || 'दुकानदार'}${shopAddress ? `, ${shopAddress}` : ''}*`;
 
     return text;
   };

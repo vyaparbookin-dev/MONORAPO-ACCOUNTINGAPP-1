@@ -4,6 +4,8 @@ const companySchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: String,
   phone: String,
+  alternatePhone: { type: String, default: "" }, // 2nd Mobile Number
+  alternatePhone2: { type: String, default: "" }, // 3rd Mobile Number / Landline
   gstNumber: String,
   gstType: { 
     type: String, 

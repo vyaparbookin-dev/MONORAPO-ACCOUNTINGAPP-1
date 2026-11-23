@@ -109,12 +109,12 @@ export const getCompany = async (req, res) => {
 export const updateCompany = async (req, res) => {
   try {
     const userId = req.user?._id || req.user?.id;
-    const { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, modulesEnabled, activeModules, linkedModules, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, enableGst, googleReviewUrl, instagramUrl, facebookUrl, youtubeUrl, whatsappBusinessNumber, reviewRewardCouponCode, reviewRewardCouponDiscount } = req.body;
+    const { name, email, phone, alternatePhone, alternatePhone2, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, modulesEnabled, activeModules, linkedModules, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, enableGst, googleReviewUrl, instagramUrl, facebookUrl, youtubeUrl, whatsappBusinessNumber, reviewRewardCouponCode, reviewRewardCouponDiscount } = req.body;
     
     let finalEnableGst = enableGst;
     if (gstType === 'unregistered') finalEnableGst = false;
 
-    const updateData = { name, email, phone, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, modulesEnabled: Array.isArray(modulesEnabled) ? modulesEnabled : Array.isArray(activeModules) ? activeModules : Array.isArray(linkedModules) ? linkedModules : undefined, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, googleReviewUrl, instagramUrl, facebookUrl, youtubeUrl, whatsappBusinessNumber, reviewRewardCouponCode, reviewRewardCouponDiscount };
+    const updateData = { name, email, phone, alternatePhone, alternatePhone2, gstType, industryType, ownershipType, gstNumber, address, upiId, customQrCode, businessType, modulesEnabled: Array.isArray(modulesEnabled) ? modulesEnabled : Array.isArray(activeModules) ? activeModules : Array.isArray(linkedModules) ? linkedModules : undefined, website, panNumber, bankName, accountName, accountNumber, ifscCode, caName, caPhone, invoiceThemeColor, invoiceTemplateType, logo, theme, notifications, googleReviewUrl, instagramUrl, facebookUrl, youtubeUrl, whatsappBusinessNumber, reviewRewardCouponCode, reviewRewardCouponDiscount };
     if (finalEnableGst !== undefined) updateData.enableGst = finalEnableGst;
 
     const company = await Company.findOneAndUpdate(

@@ -44,10 +44,10 @@ export const generatePartyDetailedWhatsAppText = (party, statementData) => {
   const isAdvance = bal < 0;
   const absBal = Math.abs(bal);
 
-  const shopName = statementData?.company?.name || "श्री गणेश ट्रेडर्स व हार्डवेयर";
-  const shopPhone = statementData?.company?.phone || "7828289433";
-  const shopAddress = statementData?.company?.address || "भारत माता चौक, सारंगढ़ (छ.ग.)";
-  const upiId = statementData?.company?.upiId || `${shopPhone}@upi`;
+  const shopName = statementData?.company?.name || "";
+  const shopPhone = statementData?.company?.whatsappBusinessNumber || statementData?.company?.phone || "";
+  const shopAddress = statementData?.company?.address || "";
+  const upiId = statementData?.company?.upiId || (shopPhone ? `${shopPhone}@upi` : "");
 
   const dateStr = new Date().toLocaleDateString('hi-IN', {
     day: '2-digit',
@@ -121,10 +121,12 @@ export const generatePartyDetailedWhatsAppText = (party, statementData) => {
       text += `⚠️ *निवेदन:* कृपया उपरोक्त शेष राशि का शीघ्र भुगतान करने का कष्ट करें। 🙏\n\n`;
     }
 
-    text += `📱 *ऑनलाइन भुगतान (Google Pay / PhonePe / Paytm):*\n` +
-      `UPI ID: *${upiId}*\n` +
-      `UPI / फोन नंबर: *${shopPhone}*\n` +
-      `👉 *1-क्लिक भुगतान लिंक:* upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(shopName)}&am=${absBal}&cu=INR\n\n`;
+    if (upiId || shopPhone) {
+      text += `📱 *ऑनलाइन भुगतान (Google Pay / PhonePe / Paytm):*\n` +
+        (upiId ? `UPI ID: *${upiId}*\n` : '') +
+        (shopPhone ? `UPI / फोन नंबर: *${shopPhone}*\n` : '') +
+        (upiId ? `👉 *1-क्लिक भुगतान लिंक:* upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(shopName || 'Merchant')}&am=${absBal}&cu=INR\n\n` : '\n');
+    }
   } else if (isSupplier && bal < 0) {
     text += `🔴 *कुल भुगतान देय:* *₹${absBal.toLocaleString('en-IN')}*\n` +
       `कृपया हिसाब का मिलान कर लें।\n\n`;
@@ -137,7 +139,7 @@ export const generatePartyDetailedWhatsAppText = (party, statementData) => {
   text += `🌐 *पूरा लेजर देखने, बिल पर्ची व PDF डाउनलोड करने के लिए यहाँ क्लिक करें:*\n` +
     `${publicStatementUrl}\n\n` +
     `धन्यवाद! 🙏\n` +
-    `*- ${shopName}, सारंगढ़*`;
+    `*- ${shopName || 'दुकानदार'}${shopAddress ? `, ${shopAddress}` : ""}*`;
 
   return text;
 };
@@ -1711,18 +1713,18 @@ export default function PartiesPage() {
     const siteLabel = statementSiteFilter !== 'all' ? statementSiteFilter : 'सभी साइटें';
     const totalDeb = filteredDebit || 0;
     const totalCred = filteredCredit || 0;
-    const shopName = "श्री गणेश ट्रेडर्स व हार्डवेयर";
-    const shopPhone = "7828289433";
-    const shopAddress = "भारत माता चौक, सारंगढ़ (छ.ग.)";
-    const upiId = "7828289433@upi";
+    const shopName = statementData?.company?.name || "";
+    const shopPhone = statementData?.company?.whatsappBusinessNumber || statementData?.company?.phone || "";
+    const shopAddress = statementData?.company?.address || "";
+    const upiId = statementData?.company?.upiId || (shopPhone ? `${shopPhone}@upi` : "");
     const pId = p._id || p.id || "";
     const publicStatementUrl = `https://monorapo-accountingapp-1-web.vercel.app/statement/${pId}`;
 
-    let text = `नमस्ते *${p.name}* जी,\n\n` +
-      `🏢 *${shopName}*\n` +
-      `📍 ${shopAddress}\n` +
-      `📞 संपर्क / हेल्पलाइन: *${shopPhone}*\n` +
-      `━━━━━━━━━━━━━━━━━━━━━\n` +
+    let text = `नमस्ते *${p.name}* जी,\n\n`;
+    if (shopName) text += `🏢 *${shopName}*\n`;
+    if (shopAddress) text += `📍 ${shopAddress}\n`;
+    if (shopPhone) text += `📞 संपर्क / WhatsApp: *${shopPhone}*\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━━\n` +
       `📜 *खाता विवरण (Statement of Account)*\n` +
       `👤 *पार्टी:* ${p.name} (${isSupplier ? 'सप्लायर' : 'ग्राहक'})\n` +
       `📅 *दिनांक:* ${new Date().toLocaleDateString('hi-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}\n` +
@@ -1768,15 +1770,17 @@ export default function PartiesPage() {
       if (oldestOverdueDays > 0) {
         text += `⚠️ *विनम्र निवेदन:* आपका बिल पिछले *${oldestOverdueDays} दिनों से बकाया* चल रहा है। कृपया व्यापारिक संबंध बनाए रखने हेतु इसका जल्द से जल्द भुगतान करने का कष्ट करें। 🙏\n\n`;
       }
-      text += `📱 *ऑनलाइन भुगतान (Google Pay / PhonePe / Paytm):*\n` +
-        `UPI ID: *${upiId}*\n` +
-        `UPI नंबर: *${shopPhone}*\n` +
-        `👉 1-क्लिक भुगतान: upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(shopName)}&am=${Math.abs(bal)}&cu=INR\n\n`;
+      if (upiId || shopPhone) {
+        text += `📱 *ऑनलाइन भुगतान (Google Pay / PhonePe / Paytm):*\n` +
+          (upiId ? `UPI ID: *${upiId}*\n` : '') +
+          (shopPhone ? `UPI नंबर: *${shopPhone}*\n` : '') +
+          (upiId ? `👉 1-क्लिक भुगतान: upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(shopName || 'Merchant')}&am=${Math.abs(bal)}&cu=INR\n\n` : '\n');
+      }
     }
 
     text += `🌐 *पूरा लेजर ऑनलाइन देखने, बिल पर्ची व PDF डाउनलोड करने हेतु लिंक:*\n` +
       `${publicStatementUrl}\n\n` +
-      `कृपया हिसाब का मिलान कर लें। धन्यवाद!\n- ${shopName}, सारंगढ़`;
+      `कृपया हिसाब का मिलान कर लें। धन्यवाद!\n- ${shopName || 'दुकानदार'}${shopAddress ? `, ${shopAddress}` : ''}`;
     return text;
   };
 

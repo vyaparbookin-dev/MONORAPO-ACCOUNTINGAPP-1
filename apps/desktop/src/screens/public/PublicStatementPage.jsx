@@ -149,9 +149,9 @@ export default function PublicStatementPage() {
   const absBal = Math.abs(currentBalance || 0);
 
   // Generate UPI payment URL
-  const merchantPhone = company?.phone || "7828289433";
-  const upiId = company?.upiId || `${merchantPhone}@upi`;
-  const merchantName = company?.name || "Ganesh Hardware";
+  const merchantPhone = company?.whatsappBusinessNumber || company?.phone || "";
+  const upiId = company?.upiId || (merchantPhone ? `${merchantPhone}@upi` : "");
+  const merchantName = company?.name || "व्यापार खाता";
   const upiPayUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(merchantName)}&am=${absBal}&cu=INR&tn=${encodeURIComponent(`Bill Payment ${party?.name || ''}`)}`;
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(upiPayUrl)}`;
 
@@ -589,7 +589,7 @@ export default function PublicStatementPage() {
             कृपया खाता विवरण का मिलान कर लें। किसी भी त्रुटि या सहायता हेतु संपर्क करें: {merchantPhone}
           </p>
           <p className="text-[11px] text-slate-400">
-            - {merchantName}, {company?.address || "सारंगढ़"}
+            - {merchantName}{company?.address ? `, ${company.address}` : ""}
           </p>
         </div>
       </div>

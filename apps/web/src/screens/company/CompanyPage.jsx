@@ -16,6 +16,8 @@ const CompanyPage = () => {
     name: company?.name || "",
     email: company?.email || "",
     phone: company?.phone || "",
+    alternatePhone: company?.alternatePhone || "",
+    alternatePhone2: company?.alternatePhone2 || "",
     address: company?.address || "",
     gstNumber: company?.gstNumber || "",
     gstType: company?.gstType || "regular",
@@ -46,6 +48,90 @@ const CompanyPage = () => {
   });
 
   const [formData, setFormData] = useState(getInitialFormState());
+
+  // 📲 Dynamic WhatsApp QR Engine State for Business Profile
+  const [waStatus, setWaStatus] = useState({
+    isConnected: false,
+    status: 'DISCONNECTED',
+    qrDataUrl: null,
+    userPhone: null
+  });
+  const [showWhatsAppQrModal, setShowWhatsAppQrModal] = useState(false);
+  const [loadingWaAction, setLoadingWaAction] = useState(false);
+
+  const fetchWhatsAppStatus = async () => {
+    try {
+      const res = await api.get('/api/whatsapp/status');
+      if (res?.data?.success) {
+        setWaStatus({
+          isConnected: Boolean(res.data.isConnected),
+          status: res.data.status || 'DISCONNECTED',
+          qrDataUrl: res.data.qrDataUrl || null,
+          userPhone: res.data.userPhone || null
+        });
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    fetchWhatsAppStatus();
+  }, []);
+
+  useEffect(() => {
+    let timer = null;
+    if (showWhatsAppQrModal && !waStatus.isConnected) {
+      timer = setInterval(fetchWhatsAppStatus, 2500);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [showWhatsAppQrModal, waStatus.isConnected]);
+
+  const handleOpenWhatsAppModal = () => {
+    setShowWhatsAppQrModal(true);
+    if (!waStatus.isConnected) {
+      handleStartWhatsAppSession(false);
+    }
+  };
+
+  const handleStartWhatsAppSession = async (forceNew = false) => {
+    setLoadingWaAction(true);
+    try {
+      const res = await api.post('/api/whatsapp/start-session', { forceNew });
+      if (res?.data?.success) {
+        setWaStatus(prev => ({
+          ...prev,
+          qrDataUrl: res.data.qrDataUrl || prev.qrDataUrl,
+          status: res.data.status || prev.status
+        }));
+      }
+    } catch (err) {
+      console.warn("WhatsApp session start warning:", err.message);
+    } finally {
+      setLoadingWaAction(false);
+    }
+  };
+
+  const handleDisconnectWhatsApp = async () => {
+    if (!window.confirm("क्या आप वाकई इस कंपनी का WhatsApp डिस्कनेक्ट करना चाहते हैं?")) return;
+    setLoadingWaAction(true);
+    try {
+      const res = await api.post('/api/whatsapp/disconnect');
+      if (res?.data?.success) {
+        setWaStatus({
+          isConnected: false,
+          status: 'DISCONNECTED',
+          qrDataUrl: null,
+          userPhone: null
+        });
+        alert("✅ WhatsApp सफलतापूर्वक डिस्कनेक्ट हो गया!");
+      }
+    } catch (err) {
+      alert("डिस्कनेक्ट विफल: " + (err.response?.data?.error || err.message));
+    } finally {
+      setLoadingWaAction(false);
+    }
+  };
 
   useEffect(() => {
     if (selectedCompany) {
@@ -216,12 +302,20 @@ const CompanyPage = () => {
                 <h3 className="text-lg font-medium border-b pb-2 mb-3 text-gray-800">Basic Information</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Company Name *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Company / Firm Name *</label>
                     <input type="text" name="name" value={formData.name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-                    <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">मुख्य मोबाइल नंबर (Primary Mobile) *</label>
+                    <input type="text" name="phone" value={formData.phone} onChange={handleChange} placeholder="उदा. 9876543210" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">अतिरिक्त मोबाइल नंबर 1 (Secondary Phone)</label>
+                    <input type="text" name="alternatePhone" value={formData.alternatePhone} onChange={handleChange} placeholder="वैकल्पिक मोबाइल नंबर" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">अतिरिक्त नंबर 2 / लैंडलाइन (3rd Contact)</label>
+                    <input type="text" name="alternatePhone2" value={formData.alternatePhone2} onChange={handleChange} placeholder="दूसरा वैकल्पिक या लैंडलाइन नंबर" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -230,6 +324,52 @@ const CompanyPage = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Full Address</label>
                     <textarea name="address" rows="1" value={formData.address} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                  </div>
+                </div>
+
+                {/* 📲 WhatsApp Business & QR Linking Section */}
+                <div className="mt-4 p-4 bg-emerald-50/80 rounded-2xl border border-emerald-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-2 border-b border-emerald-200/70">
+                    <div>
+                      <h4 className="text-sm font-extrabold text-emerald-950 flex items-center gap-1.5">
+                        <MessageCircle size={17} className="text-emerald-600" />
+                        <span>WhatsApp Business & ऑटोमैटिक सेंडिंग नंबर</span>
+                      </h4>
+                      <p className="text-[11px] text-emerald-800 font-medium mt-0.5">
+                        यहाँ डाला गया नंबर ग्राहकों को जाने वाले बिलों, रसीदों व स्टेटमेंट में संपर्क व WhatsApp हेतु दिखाया जाएगा।
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleOpenWhatsAppModal}
+                      className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition shrink-0 ${
+                        waStatus.isConnected
+                          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                          : 'bg-white text-emerald-800 border border-emerald-400 hover:bg-emerald-100'
+                      }`}
+                    >
+                      <span>{waStatus.isConnected ? `✅ कनेक्टेड (${waStatus.userPhone})` : '📲 WhatsApp QR लिंक करें'}</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-emerald-900 mb-1">
+                        WhatsApp Business नंबर (जिससे बिल जाएंगे)
+                      </label>
+                      <input
+                        type="text"
+                        name="whatsappBusinessNumber"
+                        value={formData.whatsappBusinessNumber}
+                        onChange={handleChange}
+                        placeholder="उदा. 919876543210 या 9876543210"
+                        className="w-full px-3 py-2 border border-emerald-300 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
+                      />
+                    </div>
+                    <div className="text-[11px] text-emerald-900 flex items-center bg-white/70 p-2.5 rounded-xl border border-emerald-200">
+                      💡 <b>टिप:</b> ऊपर दिए गए 'WhatsApp QR लिंक करें' बटन से आप दुकान का फोन सीधे लिंक कर सकते हैं, जिससे बिना कोई पर्सनल चैट खुले सीधे बैकग्राउंड में बिल व स्टेटमेंट जाएंगे।
+                    </div>
                   </div>
                 </div>
               </div>
@@ -509,13 +649,54 @@ const CompanyPage = () => {
                       <p className="font-medium text-gray-800">{selectedCompany.address || "Not provided"}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Phone className="text-gray-400" size={20} />
-                    <div>
-                      <p className="text-sm text-gray-500">Phone</p>
-                      <p className="font-medium text-gray-800">{selectedCompany.phone || "Not provided"}</p>
+                  <div className="flex items-start gap-3">
+                    <Phone className="text-gray-400 mt-1" size={20} />
+                    <div className="space-y-1">
+                      <p className="text-sm text-gray-500">संपर्क नंबर (Contact Numbers)</p>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-bold text-gray-900 bg-gray-100 px-2.5 py-0.5 rounded-lg text-xs border border-gray-200">
+                          मुख्य: {selectedCompany.phone || "उपलब्ध नहीं"}
+                        </span>
+                        {selectedCompany.alternatePhone && (
+                          <span className="font-medium text-gray-700 bg-gray-100 px-2.5 py-0.5 rounded-lg text-xs border border-gray-200">
+                            अन्य 1: {selectedCompany.alternatePhone}
+                          </span>
+                        )}
+                        {selectedCompany.alternatePhone2 && (
+                          <span className="font-medium text-gray-700 bg-gray-100 px-2.5 py-0.5 rounded-lg text-xs border border-gray-200">
+                            अन्य 2: {selectedCompany.alternatePhone2}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
+
+                  <div className="flex items-start gap-3 p-3 bg-emerald-50/70 border border-emerald-200 rounded-2xl">
+                    <MessageCircle className="text-emerald-600 mt-0.5 shrink-0" size={20} />
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-bold text-emerald-950">WhatsApp Business (बिल व हिसाब हेतु)</p>
+                        <button
+                          type="button"
+                          onClick={handleOpenWhatsAppModal}
+                          className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border transition cursor-pointer shadow-2xs ${
+                            waStatus.isConnected
+                              ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
+                              : 'bg-white text-emerald-800 border-emerald-400 hover:bg-emerald-100'
+                          }`}
+                        >
+                          {waStatus.isConnected ? `✅ सक्रिय (${waStatus.userPhone})` : '📲 QR लिंक करें'}
+                        </button>
+                      </div>
+                      <p className="font-extrabold text-emerald-800 text-xs">
+                        {selectedCompany.whatsappBusinessNumber || selectedCompany.phone || "सेट नहीं है"}
+                      </p>
+                      <p className="text-[10px] text-emerald-700">
+                        {waStatus.isConnected ? "🚀 बैकग्राउंड WhatsApp सक्रिय है - बिना चैट खोले बिल जाएंगे।" : "⚠️ QR स्कैन करके बैकग्राउंड सेंडिंग चालू करें।"}
+                      </p>
+                    </div>
+                  </div>
+
                   <div className="flex items-center gap-3">
                     <Mail className="text-gray-400" size={20} />
                     <div>
@@ -748,12 +929,20 @@ const CompanyPage = () => {
                 <h3 className="text-lg font-medium border-b pb-2 mb-3 text-gray-800">Basic Information</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Company Name *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Company / Firm Name *</label>
                     <input type="text" name="name" value={formData.name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-                    <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">मुख्य मोबाइल नंबर (Primary Mobile) *</label>
+                    <input type="text" name="phone" value={formData.phone} onChange={handleChange} placeholder="उदा. 9876543210" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">अतिरिक्त मोबाइल नंबर 1 (Secondary Phone)</label>
+                    <input type="text" name="alternatePhone" value={formData.alternatePhone} onChange={handleChange} placeholder="वैकल्पिक मोबाइल नंबर" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">अतिरिक्त नंबर 2 / लैंडलाइन (3rd Contact)</label>
+                    <input type="text" name="alternatePhone2" value={formData.alternatePhone2} onChange={handleChange} placeholder="दूसरा वैकल्पिक या लैंडलाइन नंबर" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -762,6 +951,52 @@ const CompanyPage = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Full Address</label>
                     <textarea name="address" rows="1" value={formData.address} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                  </div>
+                </div>
+
+                {/* 📲 WhatsApp Business & QR Linking Section */}
+                <div className="mt-4 p-4 bg-emerald-50/80 rounded-2xl border border-emerald-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-2 border-b border-emerald-200/70">
+                    <div>
+                      <h4 className="text-sm font-extrabold text-emerald-950 flex items-center gap-1.5">
+                        <MessageCircle size={17} className="text-emerald-600" />
+                        <span>WhatsApp Business & ऑटोमैटिक सेंडिंग नंबर</span>
+                      </h4>
+                      <p className="text-[11px] text-emerald-800 font-medium mt-0.5">
+                        यहाँ डाला गया नंबर ग्राहकों को जाने वाले बिलों, रसीदों व स्टेटमेंट में संपर्क व WhatsApp हेतु दिखाया जाएगा।
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleOpenWhatsAppModal}
+                      className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition shrink-0 ${
+                        waStatus.isConnected
+                          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                          : 'bg-white text-emerald-800 border border-emerald-400 hover:bg-emerald-100'
+                      }`}
+                    >
+                      <span>{waStatus.isConnected ? `✅ कनेक्टेड (${waStatus.userPhone})` : '📲 WhatsApp QR लिंक करें'}</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-emerald-900 mb-1">
+                        WhatsApp Business नंबर (जिससे बिल जाएंगे)
+                      </label>
+                      <input
+                        type="text"
+                        name="whatsappBusinessNumber"
+                        value={formData.whatsappBusinessNumber}
+                        onChange={handleChange}
+                        placeholder="उदा. 919876543210 या 9876543210"
+                        className="w-full px-3 py-2 border border-emerald-300 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
+                      />
+                    </div>
+                    <div className="text-[11px] text-emerald-900 flex items-center bg-white/70 p-2.5 rounded-xl border border-emerald-200">
+                      💡 <b>टिप:</b> ऊपर दिए गए 'WhatsApp QR लिंक करें' बटन से आप दुकान का फोन सीधे लिंक कर सकते हैं, जिससे बिना कोई पर्सनल चैट खुले सीधे बैकग्राउंड में बिल व स्टेटमेंट जाएंगे।
+                    </div>
                   </div>
                 </div>
               </div>
@@ -985,6 +1220,96 @@ const CompanyPage = () => {
                 📸 Instagram • 👍 Facebook • 📺 YouTube पर भी जुड़े रहें
               </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📲 WHATSAPP QR CODE PAIRING MODAL */}
+      {showWhatsAppQrModal && (
+        <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">
+                  <MessageCircle size={20} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">WhatsApp बिजनेस QR लिंक</h3>
+                  <p className="text-[10px] text-slate-500 font-bold">QR स्कैन करके ऑटोमैटिक बैकग्राउंड सेंडिंग जोड़ें</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowWhatsAppQrModal(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-lg hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {waStatus.isConnected ? (
+              <div className="text-center py-3 space-y-3">
+                <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                  <Check size={36} />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-emerald-800 text-base">WhatsApp सफलतापूर्वक कनेक्टेड है!</h4>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    लिंक मोबाइल: <span className="font-bold text-slate-900">{waStatus.userPhone}</span>
+                  </p>
+                </div>
+
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-[11px] text-emerald-900 text-left leading-relaxed">
+                  🚀 <b>बैकग्राउंड सेंडिंग सक्रिय है!</b><br />
+                  अब जब भी आप ग्राहकों को बिल या हिसाब भेजेंगे, संदेश सीधे इसी दुकान वाले WhatsApp से बिना कोई चैट विंडो खोले बैकग्राउंड में चला जाएगा।
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDisconnectWhatsApp}
+                  disabled={loadingWaAction}
+                  className="w-full py-2.5 rounded-2xl border border-rose-300 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer"
+                >
+                  {loadingWaAction ? "डिस्कनेक्ट हो रहा है..." : "डिस्कनेक्ट करें (Disconnect)"}
+                </button>
+              </div>
+            ) : (
+              <div className="text-center space-y-3">
+                {waStatus.qrDataUrl ? (
+                  <div>
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-2xl inline-block shadow-inner mb-2">
+                      <img
+                        src={waStatus.qrDataUrl}
+                        alt="WhatsApp QR Code"
+                        className="w-52 h-52 mx-auto rounded-xl object-contain"
+                      />
+                    </div>
+                    <div className="text-left bg-slate-50 p-3 rounded-2xl border border-slate-100 text-[11px] text-slate-700 space-y-1">
+                      <p className="font-extrabold text-slate-900">📲 कैसे कनेक्ट करें:</p>
+                      <p>1. जिस फोन से बिल भेजना है उसमें <b>WhatsApp</b> खोलें</p>
+                      <p>2. ऊपर 3 डॉट्स (⋮) या Settings ➔ <b>Linked Devices</b> दबाएं</p>
+                      <p>3. <b>Link a Device</b> दबाकर इस QR कोड को स्कैन करें</p>
+                    </div>
+                    <div className="flex items-center justify-center gap-1.5 text-[11px] text-emerald-600 font-bold mt-2">
+                      <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" />
+                      स्कैन होने की प्रतीक्षा कर रहा है...
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-6 space-y-3">
+                    <p className="text-xs text-slate-500">QR कोड तैयार किया जा रहा है...</p>
+                    <button
+                      type="button"
+                      onClick={() => handleStartWhatsAppSession(true)}
+                      disabled={loadingWaAction}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
+                    >
+                      {loadingWaAction ? "लोड हो रहा है..." : "नया QR कोड बनाएं (Generate QR)"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
