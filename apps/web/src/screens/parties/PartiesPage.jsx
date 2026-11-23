@@ -36,7 +36,17 @@ export const openWhatsAppDirectly = (phoneNumber, text) => {
   }
 };
 
-export const generatePartyDetailedWhatsAppText = (party, statementData) => {
+export const generatePartyDetailedWhatsAppText = (party, statementData, options = {}) => {
+  const {
+    includeAddress = true,
+    includeGps = true,
+    includeCallingPhone = true,
+    includeBills = true,
+    includeOverdueWarning = true,
+    includeUpi = true,
+    includeOnlineLink = true,
+  } = options;
+
   const name = party.name || party.partyName || "सम्मानित ग्राहक";
   const bal = Number(party.balance ?? party.currentBalance ?? statementData?.currentBalance ?? 0);
   const isSupplier = (party.partyType === "supplier" || party.type === "supplier");
@@ -95,10 +105,10 @@ export const generatePartyDetailedWhatsAppText = (party, statementData) => {
 
   let text = `नमस्ते *${name}* जी,\n\n`;
   if (shopName) text += `🏢 *${shopName}*\n`;
-  if (shopAddress) text += `📍 पता: ${shopAddress}\n`;
-  if (mapLocationUrl) text += `🗺️ दुकान लोकेशन (Google Maps): ${mapLocationUrl}\n`;
+  if (includeAddress && shopAddress) text += `📍 पता: ${shopAddress}\n`;
+  if (includeGps && mapLocationUrl) text += `🗺️ दुकान लोकेशन (Google Maps): ${mapLocationUrl}\n`;
   if (shopPhone) text += `💬 WhatsApp: *${shopPhone}*\n`;
-  if (callingPhone && callingPhone !== shopPhone) text += `📞 कॉल / संपर्क हेतु: *${callingPhone}*\n`;
+  if (includeCallingPhone && callingPhone && callingPhone !== shopPhone) text += `📞 कॉल / संपर्क हेतु: *${callingPhone}*\n`;
   text += `━━━━━━━━━━━━━━━━━━━━━\n` +
     `📋 *खाता विवरण (Statement of Account)*\n`;
 
@@ -111,7 +121,7 @@ export const generatePartyDetailedWhatsAppText = (party, statementData) => {
   text += `📅 *विवरण दिनांक:* ${dateStr}\n` +
     `━━━━━━━━━━━━━━━━━━━━━\n`;
 
-  if (billEntriesText) {
+  if (includeBills && billEntriesText) {
     text += `📜 *बिल व बकाया विवरण:*\n` +
       `${billEntriesText}` +
       `━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -119,13 +129,13 @@ export const generatePartyDetailedWhatsAppText = (party, statementData) => {
 
   if (isDue && !isSupplier) {
     text += `🔴 *कुल बकाया राशि:* *₹${absBal.toLocaleString('en-IN')}*\n`;
-    if (oldestOverdueDays > 0) {
+    if (includeOverdueWarning && oldestOverdueDays > 0) {
       text += `⚠️ *विनम्र निवेदन:* आपका बिल पिछले *${oldestOverdueDays} दिनों से बकाया* चल रहा है। कृपया व्यापारिक संबंध बनाए रखने हेतु इसका जल्द से जल्द भुगतान करने का कष्ट करें। 🙏\n\n`;
     } else {
       text += `⚠️ *निवेदन:* कृपया उपरोक्त शेष राशि का शीघ्र भुगतान करने का कष्ट करें। 🙏\n\n`;
     }
 
-    if (upiId) {
+    if (includeUpi && upiId) {
       text += `📱 *ऑनलाइन भुगतान (Google Pay / PhonePe / Paytm / BHIM):*\n` +
         `UPI ID: *${upiId}*\n` +
         `👉 *1-क्लिक भुगतान लिंक:* upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(shopName || 'Merchant')}&am=${absBal}&cu=INR\n\n`;
@@ -139,10 +149,13 @@ export const generatePartyDetailedWhatsAppText = (party, statementData) => {
     text += `🟢 आपका हिसाब पूर्णतः चुकता (₹0.00) है। समय पर भुगतान हेतु धन्यवाद!\n\n`;
   }
 
-  text += `🌐 *पूरा लेजर देखने, बिल पर्ची व PDF डाउनलोड करने के लिए यहाँ क्लिक करें:*\n` +
-    `${publicStatementUrl}\n\n` +
-    `धन्यवाद! 🙏\n` +
-    `*- ${shopName || 'दुकानदार'}${shopAddress ? `, ${shopAddress}` : ""}*`;
+  if (includeOnlineLink) {
+    text += `🌐 *पूरा लेजर देखने, बिल पर्ची व PDF डाउनलोड करने के लिए यहाँ क्लिक करें:*\n` +
+      `${publicStatementUrl}\n\n`;
+  }
+
+  text += `धन्यवाद! 🙏\n` +
+    `*- ${shopName || 'दुकानदार'}${includeAddress && shopAddress ? `, ${shopAddress}` : ""}*`;
 
   return text;
 };
@@ -194,6 +207,24 @@ export default function PartiesPage() {
   const [quickShareParty, setQuickShareParty] = useState(null);
   const [quickSharePhone, setQuickSharePhone] = useState('');
   const [quickShareMessageText, setQuickShareMessageText] = useState('');
+  const [quickShareOptions, setQuickShareOptions] = useState({
+    includeGps: true,
+    includeUpi: true,
+    includeBills: true,
+    includeAddress: true,
+    includeCallingPhone: true,
+    includeOnlineLink: true,
+    includeOverdueWarning: true
+  });
+
+  const toggleQuickShareOption = (key) => {
+    const updated = { ...quickShareOptions, [key]: !quickShareOptions[key] };
+    setQuickShareOptions(updated);
+    if (quickShareParty) {
+      const newText = generatePartyDetailedWhatsAppText(quickShareParty, quickShareParty?.statementData, updated);
+      setQuickShareMessageText(newText);
+    }
+  };
 
   const handleDirectShareParty = async (party) => {
     if (!party) return;
@@ -216,7 +247,7 @@ export default function PartiesPage() {
       } catch (e2) {}
     }
 
-    const text = generatePartyDetailedWhatsAppText(party, stData);
+    const text = generatePartyDetailedWhatsAppText(party, stData, quickShareOptions);
     setQuickShareParty({ ...party, statementData: stData });
     setQuickSharePhone(hasValidPhone ? phone.slice(-10) : (phone || ''));
     setQuickShareMessageText(text);
@@ -581,6 +612,24 @@ export default function PartiesPage() {
   const [shareRecipientType, setShareRecipientType] = useState('party'); // 'party' | 'custom'
   const [shareCustomText, setShareCustomText] = useState('');
   const [copiedShareText, setCopiedShareText] = useState(false);
+  const [statementShareOptions, setStatementShareOptions] = useState({
+    includeGps: true,
+    includeUpi: true,
+    includeBills: true,
+    includeAddress: true,
+    includeCallingPhone: true,
+    includeOnlineLink: true,
+    includeOverdueWarning: true
+  });
+
+  const toggleStatementShareOption = (key) => {
+    const updated = { ...statementShareOptions, [key]: !statementShareOptions[key] };
+    setStatementShareOptions(updated);
+    if (statementParty) {
+      const newText = generateStatementShareText(shareFormat, statementParty, filteredStatementTransactions, updated);
+      setShareCustomText(newText);
+    }
+  };
 
   // Payment / Installment Entry Modal State
   const [paymentParty, setPaymentParty] = useState(null);
@@ -1675,7 +1724,17 @@ export default function PartiesPage() {
   };
 
   // Statement Share System (Full detailed / summary + send to party or any other custom phone)
-  const generateStatementShareText = (format = 'detailed', targetParty = statementParty, txs = filteredStatementTransactions) => {
+  const generateStatementShareText = (format = 'detailed', targetParty = statementParty, txs = filteredStatementTransactions, options = {}) => {
+    const {
+      includeAddress = true,
+      includeGps = true,
+      includeCallingPhone = true,
+      includeBills = true,
+      includeOverdueWarning = true,
+      includeUpi = true,
+      includeOnlineLink = true,
+    } = options;
+
     if (!targetParty) return '';
     const p = targetParty;
     const isSupplier = (p.partyType === 'supplier' || p.type === 'supplier');
@@ -1708,10 +1767,10 @@ export default function PartiesPage() {
 
     let text = `नमस्ते *${p.name}* जी,\n\n`;
     if (shopName) text += `🏢 *${shopName}*\n`;
-    if (shopAddress) text += `📍 पता: ${shopAddress}\n`;
-    if (mapLocationUrl) text += `🗺️ दुकान लोकेशन (Google Maps): ${mapLocationUrl}\n`;
+    if (includeAddress && shopAddress) text += `📍 पता: ${shopAddress}\n`;
+    if (includeGps && mapLocationUrl) text += `🗺️ दुकान लोकेशन (Google Maps): ${mapLocationUrl}\n`;
     if (shopPhone) text += `💬 WhatsApp: *${shopPhone}*\n`;
-    if (callingPhone && callingPhone !== shopPhone) text += `📞 कॉल / संपर्क हेतु: *${callingPhone}*\n`;
+    if (includeCallingPhone && callingPhone && callingPhone !== shopPhone) text += `📞 कॉल / संपर्क हेतु: *${callingPhone}*\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━\n` +
       `📜 *खाता विवरण (Statement of Account)*\n` +
       `👤 *पार्टी:* ${p.name} (${isSupplier ? 'सप्लायर' : 'ग्राहक'})\n` +
@@ -1730,7 +1789,7 @@ export default function PartiesPage() {
 
     let oldestOverdueDays = 0;
 
-    if (format === 'detailed' && txs && txs.length > 0) {
+    if (format === 'detailed' && includeBills && txs && txs.length > 0) {
       text += `📋 *बिल व लेन-देन विवरण (${Math.min(txs.length, 30)} प्रविष्टियाँ):*\n`;
       const displayTxs = txs.length > 30 ? txs.slice(-30) : txs;
       displayTxs.forEach((t, i) => {
@@ -1755,19 +1814,22 @@ export default function PartiesPage() {
     }
 
     if (!isSupplier && bal > 0) {
-      if (oldestOverdueDays > 0) {
+      if (includeOverdueWarning && oldestOverdueDays > 0) {
         text += `⚠️ *विनम्र निवेदन:* आपका बिल पिछले *${oldestOverdueDays} दिनों से बकाया* चल रहा है। कृपया व्यापारिक संबंध बनाए रखने हेतु इसका जल्द से जल्द भुगतान करने का कष्ट करें। 🙏\n\n`;
       }
-      if (upiId) {
+      if (includeUpi && upiId) {
         text += `📱 *ऑनलाइन भुगतान (Google Pay / PhonePe / Paytm / BHIM):*\n` +
           `UPI ID: *${upiId}*\n` +
           `👉 1-क्लिक भुगतान: upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(shopName || 'Merchant')}&am=${Math.abs(bal)}&cu=INR\n\n`;
       }
     }
 
-    text += `🌐 *पूरा लेजर ऑनलाइन देखने, बिल पर्ची व PDF डाउनलोड करने हेतु लिंक:*\n` +
-      `${publicStatementUrl}\n\n` +
-      `कृपया हिसाब का मिलान कर लें। धन्यवाद!\n- ${shopName || 'दुकानदार'}${shopAddress ? `, ${shopAddress}` : ''}`;
+    if (includeOnlineLink) {
+      text += `🌐 *पूरा लेजर ऑनलाइन देखने, बिल पर्ची व PDF डाउनलोड करने हेतु लिंक:*\n` +
+        `${publicStatementUrl}\n\n`;
+    }
+
+    text += `कृपया हिसाब का मिलान कर लें। धन्यवाद!\n- ${shopName || 'दुकानदार'}${includeAddress && shopAddress ? `, ${shopAddress}` : ''}`;
     return text;
   };
 
@@ -1778,7 +1840,7 @@ export default function PartiesPage() {
     setShareRecipientType(hasValidPhone ? 'party' : 'custom');
     setShareCustomPhone(hasValidPhone ? cleanPhone.slice(-10) : '');
     setCopiedShareText(false);
-    const initialText = generateStatementShareText(shareFormat, statementParty, filteredStatementTransactions);
+    const initialText = generateStatementShareText(shareFormat, statementParty, filteredStatementTransactions, statementShareOptions);
     setShareCustomText(initialText);
     setShowShareModal(true);
   };
@@ -3639,7 +3701,7 @@ export default function PartiesPage() {
                       type="button"
                       onClick={() => {
                         setShareFormat('detailed');
-                        setShareCustomText(generateStatementShareText('detailed', statementParty, filteredStatementTransactions));
+                        setShareCustomText(generateStatementShareText('detailed', statementParty, filteredStatementTransactions, statementShareOptions));
                       }}
                       className={`py-2 text-xs font-extrabold rounded-xl transition cursor-pointer ${
                         shareFormat === 'detailed'
@@ -3653,7 +3715,7 @@ export default function PartiesPage() {
                       type="button"
                       onClick={() => {
                         setShareFormat('summary');
-                        setShareCustomText(generateStatementShareText('summary', statementParty, filteredStatementTransactions));
+                        setShareCustomText(generateStatementShareText('summary', statementParty, filteredStatementTransactions, statementShareOptions));
                       }}
                       className={`py-2 text-xs font-extrabold rounded-xl transition cursor-pointer ${
                         shareFormat === 'summary'
@@ -3666,6 +3728,104 @@ export default function PartiesPage() {
                   </div>
                 </div>
 
+                {/* Tick / Untick Options for Statement Share */}
+                <div className="space-y-1.5 bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+                  <span className="text-[11px] font-black text-slate-700 block">
+                    ⚙️ संदेश में क्या-क्या शामिल करें? (Tick / Untick):
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {statementData?.company?.mapLocationUrl && (
+                      <button
+                        type="button"
+                        onClick={() => toggleStatementShareOption('includeGps')}
+                        className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                          statementShareOptions.includeGps
+                            ? 'bg-blue-50 text-blue-800 border-blue-300 shadow-2xs'
+                            : 'bg-white text-slate-400 border-slate-200 line-through'
+                        }`}
+                      >
+                        <span>{statementShareOptions.includeGps ? '☑️' : '⬜'} 📍 GPS मैप लिंक</span>
+                      </button>
+                    )}
+
+                    {statementData?.company?.upiId && (
+                      <button
+                        type="button"
+                        onClick={() => toggleStatementShareOption('includeUpi')}
+                        className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                          statementShareOptions.includeUpi
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
+                            : 'bg-white text-slate-400 border-slate-200 line-through'
+                        }`}
+                      >
+                        <span>{statementShareOptions.includeUpi ? '☑️' : '⬜'} 💳 UPI पेमेंट लिंक</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => toggleStatementShareOption('includeBills')}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                        statementShareOptions.includeBills
+                          ? 'bg-indigo-50 text-indigo-800 border-indigo-300 shadow-2xs'
+                          : 'bg-white text-slate-400 border-slate-200 line-through'
+                      }`}
+                    >
+                      <span>{statementShareOptions.includeBills ? '☑️' : '⬜'} 📜 बिल विवरण</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => toggleStatementShareOption('includeOnlineLink')}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                        statementShareOptions.includeOnlineLink
+                          ? 'bg-purple-50 text-purple-800 border-purple-300 shadow-2xs'
+                          : 'bg-white text-slate-400 border-slate-200 line-through'
+                      }`}
+                    >
+                      <span>{statementShareOptions.includeOnlineLink ? '☑️' : '⬜'} 🌐 लेजर लिंक</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => toggleStatementShareOption('includeAddress')}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                        statementShareOptions.includeAddress
+                          ? 'bg-slate-800 text-white border-slate-700 shadow-2xs'
+                          : 'bg-white text-slate-400 border-slate-200 line-through'
+                      }`}
+                    >
+                      <span>{statementShareOptions.includeAddress ? '☑️' : '⬜'} 🏠 दुकान पता</span>
+                    </button>
+
+                    {statementData?.company?.callingContactNumber && (
+                      <button
+                        type="button"
+                        onClick={() => toggleStatementShareOption('includeCallingPhone')}
+                        className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                          statementShareOptions.includeCallingPhone
+                            ? 'bg-amber-50 text-amber-900 border-amber-300 shadow-2xs'
+                            : 'bg-white text-slate-400 border-slate-200 line-through'
+                        }`}
+                      >
+                        <span>{statementShareOptions.includeCallingPhone ? '☑️' : '⬜'} 📞 कॉल नंबर</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => toggleStatementShareOption('includeOverdueWarning')}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                        statementShareOptions.includeOverdueWarning
+                          ? 'bg-rose-50 text-rose-800 border-rose-300 shadow-2xs'
+                          : 'bg-white text-slate-400 border-slate-200 line-through'
+                      }`}
+                    >
+                      <span>{statementShareOptions.includeOverdueWarning ? '☑️' : '⬜'} ⚠️ बकाया चेतावनी</span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* 3. Live Editable Message Preview */}
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-[11px] font-bold text-slate-500">
@@ -3673,7 +3833,7 @@ export default function PartiesPage() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => setShareCustomText(generateStatementShareText(shareFormat, statementParty, filteredStatementTransactions))}
+                        onClick={() => setShareCustomText(generateStatementShareText(shareFormat, statementParty, filteredStatementTransactions, statementShareOptions))}
                         className="text-indigo-600 hover:text-indigo-800 cursor-pointer font-bold text-[10px] hover:underline"
                         title="मूल स्वतः-जनरेटेड रूप में रीसेट करें"
                       >
@@ -3963,6 +4123,104 @@ export default function PartiesPage() {
                 </div>
               </div>
 
+              {/* Tick / Untick Options for Quick Share */}
+              <div className="space-y-1 bg-slate-50 p-2.5 rounded-2xl border border-slate-200 shrink-0">
+                <span className="text-[11px] font-black text-slate-700 block">
+                  ⚙️ संदेश में क्या-क्या शामिल करें? (Tick / Untick):
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {quickShareParty?.statementData?.company?.mapLocationUrl && (
+                    <button
+                      type="button"
+                      onClick={() => toggleQuickShareOption('includeGps')}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                        quickShareOptions.includeGps
+                          ? 'bg-blue-50 text-blue-800 border-blue-300 shadow-2xs'
+                          : 'bg-white text-slate-400 border-slate-200 line-through'
+                      }`}
+                    >
+                      <span>{quickShareOptions.includeGps ? '☑️' : '⬜'} 📍 GPS मैप लिंक</span>
+                    </button>
+                  )}
+
+                  {quickShareParty?.statementData?.company?.upiId && (
+                    <button
+                      type="button"
+                      onClick={() => toggleQuickShareOption('includeUpi')}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                        quickShareOptions.includeUpi
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'
+                          : 'bg-white text-slate-400 border-slate-200 line-through'
+                      }`}
+                    >
+                      <span>{quickShareOptions.includeUpi ? '☑️' : '⬜'} 💳 UPI पेमेंट लिंक</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => toggleQuickShareOption('includeBills')}
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                      quickShareOptions.includeBills
+                        ? 'bg-indigo-50 text-indigo-800 border-indigo-300 shadow-2xs'
+                        : 'bg-white text-slate-400 border-slate-200 line-through'
+                    }`}
+                  >
+                    <span>{quickShareOptions.includeBills ? '☑️' : '⬜'} 📜 बिल विवरण</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleQuickShareOption('includeOnlineLink')}
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                      quickShareOptions.includeOnlineLink
+                        ? 'bg-purple-50 text-purple-800 border-purple-300 shadow-2xs'
+                        : 'bg-white text-slate-400 border-slate-200 line-through'
+                    }`}
+                  >
+                    <span>{quickShareOptions.includeOnlineLink ? '☑️' : '⬜'} 🌐 लेजर लिंक</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleQuickShareOption('includeAddress')}
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                      quickShareOptions.includeAddress
+                        ? 'bg-slate-800 text-white border-slate-700 shadow-2xs'
+                        : 'bg-white text-slate-400 border-slate-200 line-through'
+                    }`}
+                  >
+                    <span>{quickShareOptions.includeAddress ? '☑️' : '⬜'} 🏠 दुकान पता</span>
+                  </button>
+
+                  {quickShareParty?.statementData?.company?.callingContactNumber && (
+                    <button
+                      type="button"
+                      onClick={() => toggleQuickShareOption('includeCallingPhone')}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                        quickShareOptions.includeCallingPhone
+                          ? 'bg-amber-50 text-amber-900 border-amber-300 shadow-2xs'
+                          : 'bg-white text-slate-400 border-slate-200 line-through'
+                      }`}
+                    >
+                      <span>{quickShareOptions.includeCallingPhone ? '☑️' : '⬜'} 📞 कॉल नंबर</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => toggleQuickShareOption('includeOverdueWarning')}
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border ${
+                      quickShareOptions.includeOverdueWarning
+                        ? 'bg-rose-50 text-rose-800 border-rose-300 shadow-2xs'
+                        : 'bg-white text-slate-400 border-slate-200 line-through'
+                    }`}
+                  >
+                    <span>{quickShareOptions.includeOverdueWarning ? '☑️' : '⬜'} ⚠️ बकाया चेतावनी</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Editable Textarea */}
               <div className="flex-1 flex flex-col min-h-0 space-y-1">
                 <div className="flex items-center justify-between text-[11px] font-bold text-slate-600">
@@ -3970,7 +4228,7 @@ export default function PartiesPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      const text = generatePartyDetailedWhatsAppText(quickShareParty, quickShareParty?.statementData);
+                      const text = generatePartyDetailedWhatsAppText(quickShareParty, quickShareParty?.statementData, quickShareOptions);
                       setQuickShareMessageText(text);
                     }}
                     className="text-indigo-600 hover:text-indigo-800 text-[10px] cursor-pointer font-bold hover:underline"
