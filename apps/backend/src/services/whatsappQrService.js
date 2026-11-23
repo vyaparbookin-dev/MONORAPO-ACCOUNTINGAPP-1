@@ -100,34 +100,44 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
   const sessKey = getSessionKey(companyId, normChan);
   const existing = sessions.get(sessKey);
 
+  // 1. If session exists and forceNew is false:
+  // If socket is already alive (CONNECTED, QR_READY, or INITIALIZING), do NOT create duplicate socket!
   if (existing && !forceNew) {
-    if (existing.status === "CONNECTED" && existing.sock) {
-      return {
-        channel: normChan,
-        status: existing.status,
-        qrDataUrl: null,
-        userPhone: existing.userPhone,
-        userName: existing.userName,
-        isConnected: true
-      };
-    }
-    if (existing.status === "QR_READY" && existing.qrDataUrl) {
+    if (existing.sock) {
       return {
         channel: normChan,
         status: existing.status,
         qrDataUrl: existing.qrDataUrl,
-        userPhone: null,
-        userName: null,
-        isConnected: false
+        userPhone: existing.userPhone,
+        userName: existing.userName,
+        isConnected: existing.status === "CONNECTED"
       };
     }
   }
 
   const authDir = getAuthDir(companyId, normChan);
-  if (forceNew && fs.existsSync(authDir)) {
-    try {
-      fs.rmSync(authDir, { recursive: true, force: true });
-    } catch (e) {}
+
+  // 2. If forceNew is requested, cleanly teardown old socket before starting fresh
+  if (existing) {
+    if (existing.reconnectTimer) {
+      clearTimeout(existing.reconnectTimer);
+      existing.reconnectTimer = null;
+    }
+    if (existing.sock) {
+      try {
+        existing.sock.ev.removeAllListeners();
+        existing.sock.end(undefined);
+      } catch (e) {}
+      existing.sock = null;
+    }
+    if (forceNew) {
+      sessions.delete(sessKey);
+      if (fs.existsSync(authDir)) {
+        try {
+          fs.rmSync(authDir, { recursive: true, force: true });
+        } catch (e) {}
+      }
+    }
   }
 
   if (!fs.existsSync(authDir)) {
@@ -140,10 +150,11 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
     channel: normChan,
     sock: null,
     status: "INITIALIZING",
-    qr: null,
-    qrDataUrl: null,
+    qr: existing?.qr || null,
+    qrDataUrl: existing?.qrDataUrl || null, // Preserve existing QR if available
     userPhone: null,
-    userName: null
+    userName: null,
+    reconnectTimer: null
   };
   sessions.set(sessKey, sessionObj);
 
@@ -166,6 +177,11 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
     sock.ev.on("creds.update", saveCreds);
 
     sock.ev.on("connection.update", async (update) => {
+      // 🛡️ Guard: If this socket has been replaced by a newer one, ignore events
+      if (sessions.get(sessKey)?.sock !== sock) {
+        return;
+      }
+
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
@@ -180,13 +196,17 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
         } catch (qrErr) {
           console.warn(`[WhatsApp Engine][${normChan}] QR to DataURL error:`, qrErr.message);
         }
-        console.log(`📲 [WhatsApp Engine][${normChan}] New QR code generated for ${sessKey}`);
+        console.log(`📲 [WhatsApp Engine][${normChan}] Active QR code available for ${sessKey}`);
       }
 
       if (connection === "open") {
         sessionObj.status = "CONNECTED";
         sessionObj.qr = null;
         sessionObj.qrDataUrl = null;
+        if (sessionObj.reconnectTimer) {
+          clearTimeout(sessionObj.reconnectTimer);
+          sessionObj.reconnectTimer = null;
+        }
 
         const rawId = sock.user?.id || "";
         const uPhone = rawId.split(":")[0]?.replace(/\D/g, "") || sock.user?.lid || "Unknown";
@@ -197,6 +217,11 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
       }
 
       if (connection === "close") {
+        // 🛡️ Guard: Only handle closure if this is still the active socket
+        if (sessions.get(sessKey)?.sock !== sock) {
+          return;
+        }
+
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
@@ -205,16 +230,21 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
         if (isLoggedOut) {
           sessionObj.status = "DISCONNECTED";
           sessionObj.sock = null;
+          sessionObj.qr = null;
           sessionObj.qrDataUrl = null;
+          sessionObj.userPhone = null;
           try {
             fs.rmSync(authDir, { recursive: true, force: true });
           } catch (e) {}
-        } else {
-          // Reconnect automatically if connection dropped
+        } else if (statusCode !== DisconnectReason.connectionReplaced) {
+          // Reconnect with a controlled backoff only if socket is not replaced
           sessionObj.status = "INITIALIZING";
-          setTimeout(() => {
-            initWhatsAppSession(companyId, normChan, false).catch(() => {});
-          }, 3000);
+          if (sessionObj.reconnectTimer) clearTimeout(sessionObj.reconnectTimer);
+          sessionObj.reconnectTimer = setTimeout(() => {
+            if (sessions.get(sessKey)?.sock === sock) {
+              initWhatsAppSession(companyId, normChan, false).catch(() => {});
+            }
+          }, 5000);
         }
       }
     });
@@ -321,11 +351,18 @@ export async function disconnectWhatsApp(companyId, channel = 'billing') {
   const sessKey = getSessionKey(companyId, normChan);
   const session = sessions.get(sessKey);
 
-  if (session && session.sock) {
-    try {
-      await session.sock.logout();
-    } catch (e) {
-      try { session.sock.end(); } catch (e2) {}
+  if (session) {
+    if (session.reconnectTimer) {
+      clearTimeout(session.reconnectTimer);
+      session.reconnectTimer = null;
+    }
+    if (session.sock) {
+      try {
+        session.sock.ev.removeAllListeners();
+        await session.sock.logout();
+      } catch (e) {
+        try { session.sock.end(); } catch (e2) {}
+      }
     }
   }
 

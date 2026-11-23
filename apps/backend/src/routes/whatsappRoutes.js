@@ -10,6 +10,15 @@ import {
 
 const router = express.Router();
 
+// 🏢 Resolve companyId from header x-company-id, query, or body
+router.use((req, res, next) => {
+  let cid = req.headers['x-company-id'] || req.query.companyId || req.body?.companyId;
+  if (cid && typeof cid === 'string' && cid.trim() && cid !== 'undefined' && cid !== 'null') {
+    req.companyId = cid.trim();
+  }
+  next();
+});
+
 /**
  * GET /api/whatsapp/status
  * Get live WhatsApp connection status & QR code for the current company

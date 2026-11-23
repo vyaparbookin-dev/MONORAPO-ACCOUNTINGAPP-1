@@ -66,7 +66,20 @@ const CompanyPage = () => {
       const url = targetChannel ? `/api/whatsapp/status?channel=${targetChannel}` : '/api/whatsapp/status';
       const res = await api.get(url);
       if (res?.data?.success && res.data.channels) {
-        setWaChannels(res.data.channels);
+        setWaChannels(prev => {
+          const incoming = res.data.channels;
+          const updated = { ...prev };
+          for (const ch of ['billing', 'recovery', 'marketing']) {
+            if (incoming[ch]) {
+              updated[ch] = {
+                ...incoming[ch],
+                // 🛡️ Preserve existing QR Data URL if backend is currently processing
+                qrDataUrl: incoming[ch].qrDataUrl || prev[ch]?.qrDataUrl || null
+              };
+            }
+          }
+          return updated;
+        });
       }
     } catch (e) {}
   };
@@ -77,14 +90,13 @@ const CompanyPage = () => {
 
   useEffect(() => {
     let timer = null;
-    const currentStatus = waChannels[activeWaModalChannel];
-    if (showWhatsAppQrModal && !currentStatus?.isConnected) {
+    if (showWhatsAppQrModal) {
       timer = setInterval(() => fetchWhatsAppStatus(activeWaModalChannel), 2500);
     }
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [showWhatsAppQrModal, activeWaModalChannel, waChannels]);
+  }, [showWhatsAppQrModal, activeWaModalChannel]);
 
   const handleOpenWhatsAppModal = (channel = 'billing') => {
     setActiveWaModalChannel(channel);
@@ -1630,15 +1642,17 @@ const CompanyPage = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="py-6 space-y-3">
-                    <p className="text-xs text-slate-500">QR कोड तैयार किया जा रहा है...</p>
+                  <div className="py-8 space-y-3.5">
+                    <div className="w-9 h-9 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto shadow-sm" />
+                    <p className="text-xs font-bold text-slate-700">QR कोड तैयार किया जा रहा है...</p>
+                    <p className="text-[10px] text-slate-400">कृपया कुछ सेकंड प्रतीक्षा करें, QR कोड स्वतः स्क्रीन पर आ जाएगा।</p>
                     <button
                       type="button"
                       onClick={() => handleStartWhatsAppSession(activeWaModalChannel, true)}
                       disabled={loadingWaAction}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow cursor-pointer transition active:scale-95"
                     >
-                      {loadingWaAction ? "लोड हो रहा है..." : "नया QR कोड बनाएं (Generate QR)"}
+                      {loadingWaAction ? "लोड हो रहा है..." : "पुनः QR कोड लोड करें (Refresh QR)"}
                     </button>
                   </div>
                 )}
