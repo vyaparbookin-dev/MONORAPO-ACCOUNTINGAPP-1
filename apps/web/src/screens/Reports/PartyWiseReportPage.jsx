@@ -7,7 +7,8 @@ import * as XLSX from "xlsx";
 import { 
   Printer, ArrowLeft, RefreshCw, Search, Eye, FileText, 
   Share2, X, MapPin, Calendar, RotateCcw, ExternalLink,
-  Camera, Download, Image, Upload, FileSpreadsheet, Loader2
+  Camera, Download, Image, Upload, FileSpreadsheet, Loader2,
+  MessageSquare, CheckCircle2, Copy
 } from "lucide-react";
 
 import { deduplicateBills } from "../../utils/deduplicateBills";
@@ -42,6 +43,98 @@ const PartyWiseReportPage = () => {
   const [previewBillDetails, setPreviewBillDetails] = useState(null);
   const [targetUploadTx, setTargetUploadTx] = useState(null);
   const fileInputRef = useRef(null);
+
+  // Quick Direct WhatsApp Share State
+  const [quickShareParty, setQuickShareParty] = useState(null);
+  const [quickSharePhone, setQuickSharePhone] = useState("");
+  const [showQuickSharePhoneModal, setShowQuickSharePhoneModal] = useState(false);
+  const [quickShareToast, setQuickShareToast] = useState("");
+
+  // Universal helper to open WhatsApp directly (bypasses browser popup blocker and works on Electron)
+  const openWhatsAppDirectly = (phoneNumber, text) => {
+    const cleanPhone = (phoneNumber || '').toString().replace(/[^0-9]/g, '');
+    const encodedText = encodeURIComponent(text);
+    let targetUrl = '';
+    if (cleanPhone && cleanPhone !== '9999999999' && cleanPhone.length >= 10) {
+      const p10 = cleanPhone.slice(-10);
+      targetUrl = `https://api.whatsapp.com/send?phone=91${p10}&text=${encodedText}`;
+    } else {
+      targetUrl = `https://api.whatsapp.com/send?text=${encodedText}`;
+    }
+
+    try {
+      if (typeof window !== 'undefined' && window.electron && typeof window.electron.openExternal === 'function') {
+        window.electron.openExternal(targetUrl);
+        return;
+      }
+    } catch (e) {}
+
+    try {
+      const a = document.createElement('a');
+      a.href = targetUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        try { document.body.removeChild(a); } catch (e) {}
+      }, 200);
+    } catch (err) {
+      window.open(targetUrl, '_blank');
+    }
+  };
+
+  // Generate concise, professional Hindi WhatsApp balance notification
+  const generatePartyQuickBalanceText = (party) => {
+    const name = party.partyName || party.name || "सम्मानित ग्राहक";
+    const bal = Number(party.balance ?? party.currentBalance ?? party.openingBalance ?? 0);
+    const totalSales = Number(party.totalSales || 0);
+    const now = new Date().toLocaleDateString("hi-IN", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+    let text = `*खाता बकाया सूचना (Balance Alert)*\n` +
+      `🏢 *गणेश हार्डवेयर (Ganesh Hardware)*\n` +
+      `📍 सारंगढ़ (छ.ग.) | 📞 7828289433\n` +
+      `------------------------------------\n` +
+      `👤 पार्टी: *${name}*\n` +
+      `📅 दिनांक: ${now}\n` +
+      `------------------------------------\n`;
+
+    if (totalSales > 0) {
+      text += `📦 कुल कारोबार / खरीद: *₹${totalSales.toLocaleString('en-IN')}*\n`;
+    }
+
+    if (bal > 0) {
+      text += `🔴 *कुल बकाया राशि (देय / Due):* *₹${bal.toLocaleString('en-IN')}*\n\n` +
+        `⚠️ *विनम्र निवेदन:* कृपया उपरोक्त शेष राशि शीघ्र जमा करने का कष्ट करें।\n` +
+        `ऑनलाइन भुगतान हेतु UPI नंबर: *7828289433*\n`;
+    } else if (bal < 0) {
+      text += `🟢 *अग्रिम जमा (Advance Credit):* *₹${Math.abs(bal).toLocaleString('en-IN')}*\n\n` +
+        `आपका अग्रिम जमा हमारे पास सुरक्षित है। धन्यवाद!\n`;
+    } else {
+      text += `🟢 *खाता स्थिति:* हिसाब पूर्णतः चुकता (₹0.00)\n\n` +
+        `समय पर भुगतान के लिए आपका बहुत-बहुत धन्यवाद!\n`;
+    }
+
+    text += `------------------------------------\n` +
+      `- गणेश हार्डवेयर, सारंगढ़`;
+    return text;
+  };
+
+  // Direct 1-Click WhatsApp Share without opening statement
+  const handleDirectShareParty = (party) => {
+    if (!party) return;
+    const phone = (party.phone || party.mobileNumber || '').replace(/[^0-9]/g, '');
+    if (phone && phone !== '9999999999' && phone.length >= 10) {
+      const text = generatePartyQuickBalanceText(party);
+      openWhatsAppDirectly(phone, text);
+      setQuickShareToast(`✅ WhatsApp (${phone.slice(-10)}) पर हिसाब भेजा जा रहा है!`);
+      setTimeout(() => setQuickShareToast(''), 4000);
+    } else {
+      setQuickShareParty(party);
+      setQuickSharePhone('');
+      setShowQuickSharePhoneModal(true);
+    }
+  };
 
   const fetchReport = async () => {
     setLoading(true);
@@ -263,10 +356,9 @@ const PartyWiseReportPage = () => {
       `कृपया हिसाब मिलान कर लें। धन्यवाद!\n- Ganesh Hardware`;
 
     const cleanPhone = (p.mobileNumber || p.phone || '').replace(/[^0-9]/g, '');
-    const url = (cleanPhone && cleanPhone !== '9999999999' && cleanPhone.length >= 10)
-      ? `https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
+    openWhatsAppDirectly(cleanPhone, text);
+    setQuickShareToast("✅ लेजर स्टेटमेंट WhatsApp पर भेजा जा रहा है!");
+    setTimeout(() => setQuickShareToast(''), 4000);
   };
 
   // 📷 Handle Bill Photo Upload (Cloudinary Signed Upload via Backend)
@@ -558,17 +650,30 @@ const PartyWiseReportPage = () => {
                    '₹0 (चुक्ता)'}
                 </td>
                 <td className="px-4 py-3 text-center print:hidden">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleOpenStatement(item);
-                    }}
-                    className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-xl font-bold text-[11px] inline-flex items-center gap-1 transition cursor-pointer shadow-xs"
-                    title="पूरा बिल व लेजर खाता खोलें"
-                  >
-                    <Eye size={13} />
-                    <span>खाता खोलें</span>
-                  </button>
+                  <div className="flex items-center justify-center gap-1.5">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDirectShareParty(item);
+                      }}
+                      className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white border border-emerald-200 rounded-xl font-bold text-[11px] inline-flex items-center gap-1 transition cursor-pointer shadow-xs active:scale-95"
+                      title="व्हाट्सएप पर सीधा बकाया भेजें (बिना लेजर में जाए)"
+                    >
+                      <Share2 size={13} />
+                      <span>शेयर</span>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenStatement(item);
+                      }}
+                      className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white border border-indigo-200 rounded-xl font-bold text-[11px] inline-flex items-center gap-1 transition cursor-pointer shadow-xs"
+                      title="पूरा बिल व लेजर खाता खोलें"
+                    >
+                      <Eye size={13} />
+                      <span>खाता खोलें</span>
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -1047,6 +1152,100 @@ const PartyWiseReportPage = () => {
               >
                 <Download size={14} /> ⬇️ बिल फोटो डाउनलोड करें
               </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔔 QUICK SHARE TOAST NOTIFICATION */}
+      {quickShareToast && (
+        <div className="fixed bottom-6 right-6 z-[120] bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl text-xs font-bold flex items-center gap-2 border border-slate-700 animate-in fade-in slide-in-from-bottom-2">
+          <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+          <span>{quickShareToast}</span>
+        </div>
+      )}
+
+      {/* 📱 QUICK SHARE PHONE PROMPT MODAL (WHEN PARTY HAS NO PHONE SAVED) */}
+      {showQuickSharePhoneModal && quickShareParty && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-center items-center z-[110] p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-5 border border-slate-200 space-y-4">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h3 className="font-black text-slate-900 text-sm flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-emerald-600" />
+                <span>{quickShareParty.partyName || quickShareParty.name}</span>
+              </h3>
+              <button
+                onClick={() => {
+                  setShowQuickSharePhoneModal(false);
+                  setQuickShareParty(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="bg-emerald-50 p-3 rounded-2xl border border-emerald-200 text-xs">
+              <span className="text-[11px] font-bold text-emerald-950 block">कुल हिसाब बकाया:</span>
+              <span className="text-base font-black text-emerald-800 mt-0.5 block">
+                {Number(quickShareParty.balance ?? quickShareParty.currentBalance ?? 0) > 0
+                  ? `₹${Number(quickShareParty.balance ?? quickShareParty.currentBalance ?? 0).toLocaleString('en-IN')} (लेने हैं)`
+                  : Number(quickShareParty.balance ?? quickShareParty.currentBalance ?? 0) < 0
+                  ? `₹${Math.abs(Number(quickShareParty.balance ?? quickShareParty.currentBalance ?? 0)).toLocaleString('en-IN')} (देने हैं)`
+                  : '₹0.00 (हिसाब चुकता)'}
+              </span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                WhatsApp मोबाइल नंबर दर्ज करें:
+              </label>
+              <div className="flex items-center gap-1.5 border border-slate-300 rounded-xl p-2.5 bg-white focus-within:ring-2 focus-within:ring-emerald-500">
+                <span className="text-xs font-bold text-slate-500 pl-1">+91</span>
+                <input
+                  type="tel"
+                  maxLength={10}
+                  placeholder="10-अंकीय मोबाइल नंबर"
+                  value={quickSharePhone}
+                  onChange={(e) => setQuickSharePhone(e.target.value.replace(/[^0-9]/g, ''))}
+                  className="w-full text-sm font-mono font-bold text-slate-800 focus:outline-none"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => {
+                  const text = generatePartyQuickBalanceText(quickShareParty);
+                  navigator.clipboard.writeText(text);
+                  setQuickShareToast("📋 हिसाब टेक्स्ट कॉपी हो गया!");
+                  setTimeout(() => setQuickShareToast(''), 3000);
+                  setShowQuickSharePhoneModal(false);
+                }}
+                className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer"
+              >
+                <Copy size={13} />
+                <span>कॉपी</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={!quickSharePhone || quickSharePhone.length < 10}
+                onClick={() => {
+                  const text = generatePartyQuickBalanceText(quickShareParty);
+                  openWhatsAppDirectly(quickSharePhone, text);
+                  setShowQuickSharePhoneModal(false);
+                  setQuickShareToast(`✅ WhatsApp (${quickSharePhone}) पर हिसाब भेजा जा रहा है!`);
+                  setTimeout(() => setQuickShareToast(''), 4000);
+                  setQuickShareParty(null);
+                }}
+                className="flex-1 py-2.5 bg-[#25D366] hover:bg-green-600 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50 active:scale-95 cursor-pointer"
+              >
+                <MessageSquare size={15} />
+                <span>WhatsApp पर भेजें</span>
+              </button>
             </div>
           </div>
         </div>
