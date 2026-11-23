@@ -126,15 +126,24 @@ export default function MarketingOffersPage() {
   const [quickGpsInput, setQuickGpsInput] = useState('');
   const [savingQuickSetting, setSavingQuickSetting] = useState(false);
 
-  // Fetch WhatsApp Engine Status
+  // Fetch WhatsApp Engine Status for Marketing Channel
   const fetchWaStatus = async () => {
     try {
-      const res = await api.get('/api/whatsapp/status');
+      const res = await api.get('/api/whatsapp/status?channel=marketing');
       if (res?.data?.success) {
+        const marketingConn = Boolean(res.data.channels?.marketing?.isConnected);
+        const billingConn = Boolean(res.data.channels?.billing?.isConnected);
+        const effectiveConn = marketingConn || billingConn;
+        const effectivePhone = marketingConn
+          ? res.data.channels?.marketing?.userPhone
+          : (res.data.channels?.billing?.userPhone || res.data.userPhone);
+
         setWaStatus({
-          isConnected: Boolean(res.data.isConnected),
-          userPhone: res.data.userPhone || null,
-          userName: res.data.userName || null
+          isConnected: effectiveConn,
+          userPhone: effectivePhone || null,
+          userName: res.data.userName || null,
+          isDedicated: marketingConn,
+          isInherited: !marketingConn && billingConn
         });
       }
     } catch (e) {}
@@ -306,7 +315,8 @@ export default function MarketingOffersPage() {
     try {
       const res = await api.post('/api/whatsapp/send-direct', {
         toMobile: targetPhone,
-        messageText: customizedMessage
+        messageText: customizedMessage,
+        channel: 'marketing'
       });
       if (res?.data?.success) {
         setStatusMsg(`✅ ऑफर संदेश WhatsApp (${targetPhone}) पर बैकग्राउंड में सफलतापूर्वक भेज दिया गया!`);
@@ -786,6 +796,28 @@ export default function MarketingOffersPage() {
                 <span>{statusMsg}</span>
               </div>
             )}
+
+            {/* Multi-Channel WhatsApp Profile Notice */}
+            <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-600">
+              <span className="flex items-center gap-1.5 font-bold">
+                {waStatus.isConnected ? (
+                  waStatus.isDedicated ? (
+                    <span className="text-indigo-800">📢 समर्पित मार्केटिंग WhatsApp (+91 {waStatus.userPhone})</span>
+                  ) : (
+                    <span className="text-blue-800">🔄 बिलिंग WhatsApp बैकअप (+91 {waStatus.userPhone})</span>
+                  )
+                ) : (
+                  <span className="text-slate-500">⚪ WhatsApp QR लिंक नहीं है</span>
+                )}
+              </span>
+              <a
+                href="/company"
+                className="text-indigo-600 hover:text-indigo-800 font-bold hover:underline"
+                title="सभी 3 WhatsApp नंबर बिज़नेस प्रोफाइल से प्रबंधित करें"
+              >
+                ⚙️ बिज़नेस प्रोफाइल
+              </a>
+            </div>
 
             {/* Action Send Buttons */}
             <div className="space-y-2 pt-2">

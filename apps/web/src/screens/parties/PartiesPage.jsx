@@ -263,13 +263,22 @@ export default function PartiesPage() {
 
   const fetchWhatsAppStatus = async () => {
     try {
-      const res = await api.get('/api/whatsapp/status');
+      const res = await api.get('/api/whatsapp/status?channel=recovery');
       if (res?.data?.success) {
+        const recoveryConn = Boolean(res.data.channels?.recovery?.isConnected);
+        const billingConn = Boolean(res.data.channels?.billing?.isConnected);
+        const effectiveConn = recoveryConn || billingConn;
+        const effectivePhone = recoveryConn
+          ? res.data.channels?.recovery?.userPhone
+          : (res.data.channels?.billing?.userPhone || res.data.userPhone);
+
         setWaStatus({
-          isConnected: Boolean(res.data.isConnected),
-          status: res.data.status || 'DISCONNECTED',
+          isConnected: effectiveConn,
+          status: effectiveConn ? 'CONNECTED' : (res.data.status || 'DISCONNECTED'),
           qrDataUrl: res.data.qrDataUrl || null,
-          userPhone: res.data.userPhone || null
+          userPhone: effectivePhone || null,
+          isDedicated: recoveryConn,
+          isInherited: !recoveryConn && billingConn
         });
       }
     } catch (e) {}
@@ -357,7 +366,8 @@ export default function PartiesPage() {
     try {
       const res = await api.post('/api/whatsapp/send-direct', {
         toMobile: targetPhone,
-        messageText: text
+        messageText: text,
+        channel: 'recovery'
       });
       if (res?.data?.success) {
         setDirectWaSuccessMsg(`✅ ${statementParty.name} के WhatsApp (${targetPhone}) पर खाता विवरण सफलतापूर्वक भेज दिया गया!`);
@@ -2012,7 +2022,7 @@ export default function PartiesPage() {
 
     if (waStatus.isConnected && cleanPhone && cleanPhone.length >= 10) {
       try {
-        await api.post('/api/whatsapp/send-direct', { toMobile: cleanPhone, messageText: text });
+        await api.post('/api/whatsapp/send-direct', { toMobile: cleanPhone, messageText: text, channel: 'recovery' });
         alert(`✅ ${p.name} को WhatsApp पर ${!isDeb ? 'भुगतान पावती (Receipt)' : 'बिल विवरण'} 1-क्लिक बैकग्राउंड में भेज दिया गया!`);
         return;
       } catch (e) {
@@ -4603,21 +4613,21 @@ export default function PartiesPage() {
               </div>
 
               {/* Status info */}
-              <div className="text-[10px] text-slate-500 flex items-center justify-between px-1 shrink-0">
+              <div className="text-[10px] text-slate-500 flex flex-wrap items-center justify-between gap-1 px-1 shrink-0">
                 <span>
                   {waStatus.isConnected
-                    ? `🟢 ऑटोमैटिक WhatsApp कनेक्टेड (${waStatus.userPhone})`
+                    ? (waStatus.isDedicated
+                        ? `🟢 वसूली WhatsApp कनेक्टेड (+91 ${waStatus.userPhone})`
+                        : `🔄 बिलिंग WhatsApp बैकअप सक्रिय (+91 ${waStatus.userPhone})`)
                     : '⚪ WhatsApp QR लिंक नहीं है (सीधे WhatsApp से भेजा जाएगा)'}
                 </span>
-                {!waStatus.isConnected && (
-                  <button
-                    type="button"
-                    onClick={handleOpenWhatsAppModal}
-                    className="text-emerald-700 font-bold hover:underline cursor-pointer"
-                  >
-                    📲 QR लिंक करें
-                  </button>
-                )}
+                <a
+                  href="/company"
+                  className="text-emerald-700 font-bold hover:underline cursor-pointer"
+                  title="सभी 3 WhatsApp नंबर बिज़नेस प्रोफाइल से प्रबंधित करें"
+                >
+                  ⚙️ बिज़नेस प्रोफाइल से नंबर बदलें
+                </a>
               </div>
 
               <div className="flex items-center gap-2 pt-2 border-t shrink-0">
@@ -4661,7 +4671,8 @@ export default function PartiesPage() {
                       try {
                         const res = await api.post('/api/whatsapp/send-direct', {
                           toMobile: quickSharePhone,
-                          messageText: quickShareMessageText
+                          messageText: quickShareMessageText,
+                          channel: 'recovery'
                         });
                         if (res?.data?.success) {
                           setShowQuickSharePhoneModal(false);

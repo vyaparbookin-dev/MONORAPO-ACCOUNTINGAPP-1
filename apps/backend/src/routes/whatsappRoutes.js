@@ -13,10 +13,12 @@ const router = express.Router();
 /**
  * GET /api/whatsapp/status
  * Get live WhatsApp connection status & QR code for the current company
+ * Optional query param: ?channel=billing|recovery|marketing
  */
 router.get("/status", async (req, res) => {
   try {
-    const status = getWhatsAppStatus(req.companyId);
+    const channel = req.query.channel || null;
+    const status = getWhatsAppStatus(req.companyId, channel);
     res.json({ success: true, ...status });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -26,11 +28,13 @@ router.get("/status", async (req, res) => {
 /**
  * POST /api/whatsapp/start-session
  * Initialize session and generate QR Code for scanning
+ * Body: { channel?: 'billing'|'recovery'|'marketing', forceNew?: boolean }
  */
 router.post("/start-session", async (req, res) => {
   try {
+    const channel = req.body.channel || 'billing';
     const forceNew = Boolean(req.body.forceNew);
-    const result = await initWhatsAppSession(req.companyId, forceNew);
+    const result = await initWhatsAppSession(req.companyId, channel, forceNew);
     res.json({ success: true, ...result });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -39,11 +43,13 @@ router.post("/start-session", async (req, res) => {
 
 /**
  * POST /api/whatsapp/disconnect
- * Disconnect and logout current company's WhatsApp session
+ * Disconnect and logout company's WhatsApp session for a specific channel
+ * Body: { channel?: 'billing'|'recovery'|'marketing' }
  */
 router.post("/disconnect", async (req, res) => {
   try {
-    const result = await disconnectWhatsApp(req.companyId);
+    const channel = req.body.channel || 'billing';
+    const result = await disconnectWhatsApp(req.companyId, channel);
     res.json({ success: true, ...result });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -53,15 +59,16 @@ router.post("/disconnect", async (req, res) => {
 /**
  * POST /api/whatsapp/send-direct
  * Send any custom message directly to customer's WhatsApp in background
+ * Body: { toMobile, messageText, channel?: 'billing'|'recovery'|'marketing' }
  */
 router.post("/send-direct", async (req, res) => {
   try {
-    const { toMobile, messageText } = req.body;
+    const { toMobile, messageText, channel = 'billing' } = req.body;
     if (!toMobile || !messageText) {
       return res.status(400).json({ success: false, message: "मोबाइल नंबर और संदेश आवश्यक हैं!" });
     }
 
-    const sendRes = await sendDirectWhatsAppMessage(req.companyId, toMobile, messageText);
+    const sendRes = await sendDirectWhatsAppMessage(req.companyId, toMobile, messageText, channel);
     if (!sendRes.success) {
       return res.status(sendRes.isQrRequired ? 428 : 400).json(sendRes);
     }
@@ -74,7 +81,7 @@ router.post("/send-direct", async (req, res) => {
 
 /**
  * POST /api/whatsapp/send-invoice
- * Send invoice & payment link to customer
+ * Send invoice & payment link to customer via billing channel
  * Automatically sends via background QR engine if connected!
  */
 router.post("/send-invoice", async (req, res) => {
@@ -117,12 +124,12 @@ router.post("/send-invoice", async (req, res) => {
 
     message += `हमारे साथ व्यापार करने के लिए धन्यवाद!\n-${company?.name || 'दुकानदार'}`;
 
-    // Check if WhatsApp Engine is connected for background sending
-    const status = getWhatsAppStatus(req.companyId);
+    // Check if WhatsApp Billing Engine is connected for background sending
+    const status = getWhatsAppStatus(req.companyId, 'billing');
     let sentDirectly = false;
 
     if (status.isConnected && targetMobile) {
-      const sendRes = await sendDirectWhatsAppMessage(req.companyId, targetMobile, message);
+      const sendRes = await sendDirectWhatsAppMessage(req.companyId, targetMobile, message, 'billing');
       if (sendRes.success) {
         sentDirectly = true;
       }

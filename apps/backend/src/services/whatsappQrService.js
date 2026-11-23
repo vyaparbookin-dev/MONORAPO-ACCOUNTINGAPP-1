@@ -15,8 +15,22 @@ if (!fs.existsSync(AUTH_BASE_DIR)) {
   } catch (e) {}
 }
 
-// Active WhatsApp Sessions per company
-// Map<companyId, { sock, status: 'DISCONNECTED'|'INITIALIZING'|'QR_READY'|'CONNECTED', qr: string, qrDataUrl: string, userPhone: string, userName: string }>
+/**
+ * Supported Multi-WhatsApp Channels:
+ * 1. 'billing': Primary invoices, receipts, counter bills
+ * 2. 'recovery': Payment reminders, ledger statements, due recovery
+ * 3. 'marketing': Promotional offers, festival discounts, coupons
+ */
+export const WA_CHANNELS = ['billing', 'recovery', 'marketing'];
+
+export function normalizeChannel(channel) {
+  if (!channel || typeof channel !== 'string') return 'billing';
+  const c = channel.trim().toLowerCase();
+  if (WA_CHANNELS.includes(c)) return c;
+  return 'billing';
+}
+
+// Active WhatsApp Sessions per company and channel: Map<"${companyId}__${channel}", sessionObj>
 const sessions = new Map();
 
 /**
@@ -24,6 +38,38 @@ const sessions = new Map();
  */
 function getCompanyKey(companyId) {
   return String(companyId || "default_shop").trim();
+}
+
+/**
+ * Get composite session key: ${companyId}__${channel}
+ */
+export function getSessionKey(companyId, channel = 'billing') {
+  const coKey = getCompanyKey(companyId);
+  const chan = normalizeChannel(channel);
+  return `${coKey}__${chan}`;
+}
+
+/**
+ * Get auth directory for a specific company channel with backwards compatibility migration
+ */
+export function getAuthDir(companyId, channel = 'billing') {
+  const coKey = getCompanyKey(companyId);
+  const chan = normalizeChannel(channel);
+  const newDir = path.join(AUTH_BASE_DIR, `${coKey}__${chan}`);
+  const legacyDir = path.join(AUTH_BASE_DIR, coKey);
+
+  // Backwards compatibility migration for primary billing channel
+  if (chan === 'billing') {
+    if (!fs.existsSync(newDir) && fs.existsSync(legacyDir)) {
+      try {
+        fs.renameSync(legacyDir, newDir);
+        console.log(`[WhatsApp Engine] Migrated legacy auth dir ${legacyDir} -> ${newDir}`);
+      } catch (e) {
+        return legacyDir;
+      }
+    }
+  }
+  return newDir;
 }
 
 /**
@@ -47,32 +93,37 @@ export function formatToWhatsAppJid(phone) {
 }
 
 /**
- * Initialize or get active WhatsApp session for a company
+ * Initialize or get active WhatsApp session for a company & channel
  */
-export async function initWhatsAppSession(companyId, forceNew = false) {
-  const coKey = getCompanyKey(companyId);
-  const existing = sessions.get(coKey);
+export async function initWhatsAppSession(companyId, channel = 'billing', forceNew = false) {
+  const normChan = normalizeChannel(channel);
+  const sessKey = getSessionKey(companyId, normChan);
+  const existing = sessions.get(sessKey);
 
   if (existing && !forceNew) {
     if (existing.status === "CONNECTED" && existing.sock) {
       return {
+        channel: normChan,
         status: existing.status,
         qrDataUrl: null,
         userPhone: existing.userPhone,
+        userName: existing.userName,
         isConnected: true
       };
     }
     if (existing.status === "QR_READY" && existing.qrDataUrl) {
       return {
+        channel: normChan,
         status: existing.status,
         qrDataUrl: existing.qrDataUrl,
         userPhone: null,
+        userName: null,
         isConnected: false
       };
     }
   }
 
-  const authDir = path.join(AUTH_BASE_DIR, coKey);
+  const authDir = getAuthDir(companyId, normChan);
   if (forceNew && fs.existsSync(authDir)) {
     try {
       fs.rmSync(authDir, { recursive: true, force: true });
@@ -86,6 +137,7 @@ export async function initWhatsAppSession(companyId, forceNew = false) {
   }
 
   const sessionObj = {
+    channel: normChan,
     sock: null,
     status: "INITIALIZING",
     qr: null,
@@ -93,7 +145,7 @@ export async function initWhatsAppSession(companyId, forceNew = false) {
     userPhone: null,
     userName: null
   };
-  sessions.set(coKey, sessionObj);
+  sessions.set(sessKey, sessionObj);
 
   try {
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -106,7 +158,7 @@ export async function initWhatsAppSession(companyId, forceNew = false) {
       defaultQueryTimeoutMs: 60000,
       keepAliveIntervalMs: 30000,
       emitOwnEvents: false,
-      browser: ["Vyapar Billing App", "Chrome", "1.0.0"]
+      browser: [`Vyapar-${normChan}`, "Chrome", "1.0.0"]
     });
 
     sessionObj.sock = sock;
@@ -123,12 +175,12 @@ export async function initWhatsAppSession(companyId, forceNew = false) {
           sessionObj.qrDataUrl = await qrcode.toDataURL(qr, {
             margin: 2,
             width: 320,
-            color: { dark: "#065F46", light: "#FFFFFF" }
+            color: { dark: normChan === 'recovery' ? "#991B1B" : normChan === 'marketing' ? "#7C2D12" : "#065F46", light: "#FFFFFF" }
           });
         } catch (qrErr) {
-          console.warn("[WhatsApp Engine] QR to DataURL error:", qrErr.message);
+          console.warn(`[WhatsApp Engine][${normChan}] QR to DataURL error:`, qrErr.message);
         }
-        console.log(`📲 [WhatsApp Engine] New QR code generated for company ${coKey}`);
+        console.log(`📲 [WhatsApp Engine][${normChan}] New QR code generated for ${sessKey}`);
       }
 
       if (connection === "open") {
@@ -141,14 +193,14 @@ export async function initWhatsAppSession(companyId, forceNew = false) {
         sessionObj.userPhone = uPhone;
         sessionObj.userName = sock.user?.name || "व्यापारी";
 
-        console.log(`✅ [WhatsApp Engine] Connected successfully for ${coKey}! Phone: ${uPhone}`);
+        console.log(`✅ [WhatsApp Engine][${normChan}] Connected successfully for ${sessKey}! Phone: ${uPhone}`);
       }
 
       if (connection === "close") {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
-        console.log(`⚠️ [WhatsApp Engine] Connection closed for ${coKey}. Code: ${statusCode}, LoggedOut: ${isLoggedOut}`);
+        console.log(`⚠️ [WhatsApp Engine][${normChan}] Connection closed for ${sessKey}. Code: ${statusCode}, LoggedOut: ${isLoggedOut}`);
 
         if (isLoggedOut) {
           sessionObj.status = "DISCONNECTED";
@@ -161,25 +213,29 @@ export async function initWhatsAppSession(companyId, forceNew = false) {
           // Reconnect automatically if connection dropped
           sessionObj.status = "INITIALIZING";
           setTimeout(() => {
-            initWhatsAppSession(coKey, false).catch(() => {});
+            initWhatsAppSession(companyId, normChan, false).catch(() => {});
           }, 3000);
         }
       }
     });
 
     return {
+      channel: normChan,
       status: sessionObj.status,
       qrDataUrl: sessionObj.qrDataUrl,
       userPhone: sessionObj.userPhone,
+      userName: sessionObj.userName,
       isConnected: sessionObj.status === "CONNECTED"
     };
   } catch (initErr) {
-    console.error(`[WhatsApp Engine] Init error for ${coKey}:`, initErr.message);
+    console.error(`[WhatsApp Engine][${normChan}] Init error for ${sessKey}:`, initErr.message);
     sessionObj.status = "DISCONNECTED";
     return {
+      channel: normChan,
       status: "DISCONNECTED",
       qrDataUrl: null,
       userPhone: null,
+      userName: null,
       isConnected: false,
       error: initErr.message
     };
@@ -187,40 +243,83 @@ export async function initWhatsAppSession(companyId, forceNew = false) {
 }
 
 /**
- * Get live WhatsApp connection status for a company
+ * Get live WhatsApp connection status for a company across all 3 channels
  */
-export function getWhatsAppStatus(companyId) {
+export function getWhatsAppStatus(companyId, requestedChannel = null) {
   const coKey = getCompanyKey(companyId);
-  const session = sessions.get(coKey);
 
-  if (!session) {
-    const authDir = path.join(AUTH_BASE_DIR, coKey);
-    // If auth directory exists with creds, session can be initiated in background
+  const getSingleChannelStatus = (ch) => {
+    const sKey = `${coKey}__${ch}`;
+    const sess = sessions.get(sKey);
+    const authDir = getAuthDir(companyId, ch);
     const hasCreds = fs.existsSync(authDir) && fs.readdirSync(authDir).length > 0;
+
+    if (!sess) {
+      return {
+        channel: ch,
+        status: hasCreds ? "INITIALIZING" : "DISCONNECTED",
+        qrDataUrl: null,
+        userPhone: null,
+        userName: null,
+        isConnected: false,
+        hasSavedSession: hasCreds
+      };
+    }
     return {
-      status: hasCreds ? "INITIALIZING" : "DISCONNECTED",
-      qrDataUrl: null,
-      userPhone: null,
-      isConnected: false,
+      channel: ch,
+      status: sess.status,
+      qrDataUrl: sess.qrDataUrl,
+      userPhone: sess.userPhone,
+      userName: sess.userName,
+      isConnected: sess.status === "CONNECTED",
       hasSavedSession: hasCreds
     };
-  }
+  };
+
+  const billing = getSingleChannelStatus('billing');
+  const recoveryRaw = getSingleChannelStatus('recovery');
+  const marketingRaw = getSingleChannelStatus('marketing');
+
+  // Smart fallback indicator: if recovery or marketing is unlinked, it can inherit billing
+  const recovery = {
+    ...recoveryRaw,
+    isInherited: !recoveryRaw.isConnected && billing.isConnected,
+    effectivePhone: recoveryRaw.isConnected ? recoveryRaw.userPhone : (billing.isConnected ? billing.userPhone : null),
+    effectiveStatus: recoveryRaw.isConnected ? recoveryRaw.status : (billing.isConnected ? 'INHERITED_BILLING' : recoveryRaw.status)
+  };
+
+  const marketing = {
+    ...marketingRaw,
+    isInherited: !marketingRaw.isConnected && billing.isConnected,
+    effectivePhone: marketingRaw.isConnected ? marketingRaw.userPhone : (billing.isConnected ? billing.userPhone : null),
+    effectiveStatus: marketingRaw.isConnected ? marketingRaw.status : (billing.isConnected ? 'INHERITED_BILLING' : marketingRaw.status)
+  };
+
+  const channels = { billing, recovery, marketing };
+
+  const activeChannel = requestedChannel ? normalizeChannel(requestedChannel) : 'billing';
+  const target = channels[activeChannel] || billing;
 
   return {
-    status: session.status,
-    qrDataUrl: session.qrDataUrl,
-    userPhone: session.userPhone,
-    userName: session.userName,
-    isConnected: session.status === "CONNECTED"
+    channel: activeChannel,
+    status: target.status,
+    qrDataUrl: target.qrDataUrl,
+    userPhone: target.userPhone,
+    userName: target.userName,
+    isConnected: target.isConnected,
+    effectivePhone: target.effectivePhone || target.userPhone,
+    isInherited: Boolean(target.isInherited),
+    channels
   };
 }
 
 /**
- * Disconnect and logout company WhatsApp session
+ * Disconnect and logout company WhatsApp session for a specific channel
  */
-export async function disconnectWhatsApp(companyId) {
-  const coKey = getCompanyKey(companyId);
-  const session = sessions.get(coKey);
+export async function disconnectWhatsApp(companyId, channel = 'billing') {
+  const normChan = normalizeChannel(channel);
+  const sessKey = getSessionKey(companyId, normChan);
+  const session = sessions.get(sessKey);
 
   if (session && session.sock) {
     try {
@@ -230,32 +329,58 @@ export async function disconnectWhatsApp(companyId) {
     }
   }
 
-  sessions.delete(coKey);
+  sessions.delete(sessKey);
 
-  const authDir = path.join(AUTH_BASE_DIR, coKey);
+  const authDir = getAuthDir(companyId, normChan);
   if (fs.existsSync(authDir)) {
     try {
       fs.rmSync(authDir, { recursive: true, force: true });
     } catch (e) {}
   }
 
-  console.log(`🔌 [WhatsApp Engine] Session disconnected & wiped for ${coKey}`);
-  return { success: true, message: "WhatsApp सफलतापूर्वक डिस्कनेक्ट हो गया!" };
+  const chanNameHindi = normChan === 'recovery' ? 'उधारी वसूली' : normChan === 'marketing' ? 'मार्केटिंग' : 'बिलिंग';
+  console.log(`🔌 [WhatsApp Engine] ${chanNameHindi} (${normChan}) session disconnected & wiped for ${companyId}`);
+  return { 
+    success: true, 
+    channel: normChan,
+    message: `${chanNameHindi} WhatsApp सफलतापूर्वक डिस्कनेक्ट हो गया!` 
+  };
 }
 
 /**
- * Send WhatsApp text message in the background
+ * Send WhatsApp text message in the background with Smart Fallback
  */
-export async function sendDirectWhatsAppMessage(companyId, toMobile, messageText) {
-  const coKey = getCompanyKey(companyId);
-  let session = sessions.get(coKey);
+export async function sendDirectWhatsAppMessage(companyId, toMobile, messageText, targetChannel = 'billing') {
+  const normChan = normalizeChannel(targetChannel);
+  let sessKey = getSessionKey(companyId, normChan);
+  let session = sessions.get(sessKey);
+  let usedChannel = normChan;
 
+  // 1. Attempt auto-restore for target channel if credentials exist
   if (!session || session.status !== "CONNECTED" || !session.sock) {
-    // Attempt auto-restore if credentials exist
-    const authDir = path.join(AUTH_BASE_DIR, coKey);
-    if (fs.existsSync(authDir) && fs.readdirSync(authDir).length > 0) {
-      await initWhatsAppSession(coKey, false);
-      session = sessions.get(coKey);
+    const aDir = getAuthDir(companyId, normChan);
+    if (fs.existsSync(aDir) && fs.readdirSync(aDir).length > 0) {
+      await initWhatsAppSession(companyId, normChan, false);
+      session = sessions.get(sessKey);
+    }
+  }
+
+  // 2. Smart Fallback: If recovery or marketing is not connected, fallback to billing channel!
+  if ((!session || session.status !== "CONNECTED" || !session.sock) && normChan !== 'billing') {
+    const billingKey = getSessionKey(companyId, 'billing');
+    let billingSession = sessions.get(billingKey);
+    if (!billingSession || billingSession.status !== "CONNECTED" || !billingSession.sock) {
+      const bDir = getAuthDir(companyId, 'billing');
+      if (fs.existsSync(bDir) && fs.readdirSync(bDir).length > 0) {
+        await initWhatsAppSession(companyId, 'billing', false);
+        billingSession = sessions.get(billingKey);
+      }
+    }
+
+    if (billingSession && billingSession.status === "CONNECTED" && billingSession.sock) {
+      console.log(`ℹ️ [WhatsApp Engine] Channel '${normChan}' not linked. Falling back to primary 'billing' channel (${billingSession.userPhone}).`);
+      session = billingSession;
+      usedChannel = 'billing';
     }
   }
 
@@ -263,7 +388,8 @@ export async function sendDirectWhatsAppMessage(companyId, toMobile, messageText
     return {
       success: false,
       isQrRequired: true,
-      message: "WhatsApp कनेक्ट नहीं है! कृपया पहले सेटिंग्स से QR कोड स्कैन करें।"
+      channel: normChan,
+      message: "WhatsApp कनेक्ट नहीं है! कृपया बिज़नेस प्रोफाइल से QR कोड स्कैन करें।"
     };
   }
 
@@ -277,23 +403,26 @@ export async function sendDirectWhatsAppMessage(companyId, toMobile, messageText
 
   try {
     const sentMsg = await session.sock.sendMessage(jid, { text: messageText });
-    console.log(`📤 [WhatsApp Engine] Message sent successfully to ${jid} (Msg ID: ${sentMsg?.key?.id})`);
+    console.log(`📤 [WhatsApp Engine][${usedChannel}] Message sent successfully to ${jid} (Msg ID: ${sentMsg?.key?.id}) via ${session.userPhone}`);
     return {
       success: true,
       messageId: sentMsg?.key?.id,
+      usedChannel,
+      senderPhone: session.userPhone,
       message: "संदेश बैकग्राउंड में सफलतापूर्वक भेज दिया गया!"
     };
   } catch (sendErr) {
-    console.error(`[WhatsApp Engine] Send error to ${jid}:`, sendErr.message);
+    console.error(`[WhatsApp Engine][${usedChannel}] Send error to ${jid}:`, sendErr.message);
     return {
       success: false,
+      channel: usedChannel,
       message: "संदेश भेजने में विफल: " + sendErr.message
     };
   }
 }
 
 /**
- * Auto-restore saved sessions on server boot
+ * Auto-restore saved sessions across all channels on server boot
  */
 export function autoRestoreWhatsAppSessions() {
   if (!fs.existsSync(AUTH_BASE_DIR)) return;
@@ -302,8 +431,26 @@ export function autoRestoreWhatsAppSessions() {
     for (const d of subDirs) {
       const fullP = path.join(AUTH_BASE_DIR, d);
       if (fs.statSync(fullP).isDirectory() && fs.readdirSync(fullP).length > 0) {
-        console.log(`🔄 [WhatsApp Engine] Restoring saved session for ${d}...`);
-        initWhatsAppSession(d, false).catch(e => console.warn(`Failed to restore WA session for ${d}:`, e.message));
+        let companyId = d;
+        let channel = 'billing';
+        if (d.includes('__')) {
+          const parts = d.split('__');
+          companyId = parts[0];
+          channel = parts[1] || 'billing';
+        } else {
+          // migrate legacy dir to companyId__billing
+          const newDir = path.join(AUTH_BASE_DIR, `${d}__billing`);
+          if (!fs.existsSync(newDir)) {
+            try {
+              fs.renameSync(fullP, newDir);
+              channel = 'billing';
+            } catch (e) {}
+          }
+        }
+        console.log(`🔄 [WhatsApp Engine] Restoring saved session for ${companyId} [${channel}]...`);
+        initWhatsAppSession(companyId, channel, false).catch(e =>
+          console.warn(`Failed to restore WA session for ${companyId} [${channel}]:`, e.message)
+        );
       }
     }
   } catch (err) {

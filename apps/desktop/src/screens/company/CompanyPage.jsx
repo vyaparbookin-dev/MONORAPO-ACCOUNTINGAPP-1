@@ -51,26 +51,22 @@ const CompanyPage = () => {
 
   const [formData, setFormData] = useState(getInitialFormState());
 
-  // 📲 Dynamic WhatsApp QR Engine State for Business Profile
-  const [waStatus, setWaStatus] = useState({
-    isConnected: false,
-    status: 'DISCONNECTED',
-    qrDataUrl: null,
-    userPhone: null
+  // 📲 Dynamic 3-Channel WhatsApp QR Engine State for Business Profile
+  const [waChannels, setWaChannels] = useState({
+    billing: { isConnected: false, status: 'DISCONNECTED', qrDataUrl: null, userPhone: null },
+    recovery: { isConnected: false, status: 'DISCONNECTED', qrDataUrl: null, userPhone: null, isInherited: false, effectivePhone: null },
+    marketing: { isConnected: false, status: 'DISCONNECTED', qrDataUrl: null, userPhone: null, isInherited: false, effectivePhone: null }
   });
+  const [activeWaModalChannel, setActiveWaModalChannel] = useState('billing');
   const [showWhatsAppQrModal, setShowWhatsAppQrModal] = useState(false);
   const [loadingWaAction, setLoadingWaAction] = useState(false);
 
-  const fetchWhatsAppStatus = async () => {
+  const fetchWhatsAppStatus = async (targetChannel = null) => {
     try {
-      const res = await api.get('/api/whatsapp/status');
-      if (res?.data?.success) {
-        setWaStatus({
-          isConnected: Boolean(res.data.isConnected),
-          status: res.data.status || 'DISCONNECTED',
-          qrDataUrl: res.data.qrDataUrl || null,
-          userPhone: res.data.userPhone || null
-        });
+      const url = targetChannel ? `/api/whatsapp/status?channel=${targetChannel}` : '/api/whatsapp/status';
+      const res = await api.get(url);
+      if (res?.data?.success && res.data.channels) {
+        setWaChannels(res.data.channels);
       }
     } catch (e) {}
   };
@@ -81,30 +77,35 @@ const CompanyPage = () => {
 
   useEffect(() => {
     let timer = null;
-    if (showWhatsAppQrModal && !waStatus.isConnected) {
-      timer = setInterval(fetchWhatsAppStatus, 2500);
+    const currentStatus = waChannels[activeWaModalChannel];
+    if (showWhatsAppQrModal && !currentStatus?.isConnected) {
+      timer = setInterval(() => fetchWhatsAppStatus(activeWaModalChannel), 2500);
     }
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [showWhatsAppQrModal, waStatus.isConnected]);
+  }, [showWhatsAppQrModal, activeWaModalChannel, waChannels]);
 
-  const handleOpenWhatsAppModal = () => {
+  const handleOpenWhatsAppModal = (channel = 'billing') => {
+    setActiveWaModalChannel(channel);
     setShowWhatsAppQrModal(true);
-    if (!waStatus.isConnected) {
-      handleStartWhatsAppSession(false);
+    if (!waChannels[channel]?.isConnected) {
+      handleStartWhatsAppSession(channel, false);
     }
   };
 
-  const handleStartWhatsAppSession = async (forceNew = false) => {
+  const handleStartWhatsAppSession = async (channel = activeWaModalChannel, forceNew = false) => {
     setLoadingWaAction(true);
     try {
-      const res = await api.post('/api/whatsapp/start-session', { forceNew });
+      const res = await api.post('/api/whatsapp/start-session', { channel, forceNew });
       if (res?.data?.success) {
-        setWaStatus(prev => ({
+        setWaChannels(prev => ({
           ...prev,
-          qrDataUrl: res.data.qrDataUrl || prev.qrDataUrl,
-          status: res.data.status || prev.status
+          [channel]: {
+            ...prev[channel],
+            status: res.data.status || prev[channel]?.status,
+            qrDataUrl: res.data.qrDataUrl || prev[channel]?.qrDataUrl
+          }
         }));
       }
     } catch (err) {
@@ -114,19 +115,19 @@ const CompanyPage = () => {
     }
   };
 
-  const handleDisconnectWhatsApp = async () => {
-    if (!window.confirm("क्या आप वाकई इस कंपनी का WhatsApp डिस्कनेक्ट करना चाहते हैं?")) return;
+  const handleDisconnectWhatsApp = async (channel = activeWaModalChannel) => {
+    const channelTitles = {
+      billing: "बिलिंग व बिक्री",
+      recovery: "उधारी वसूली",
+      marketing: "मार्केटिंग व ऑफर्स"
+    };
+    if (!window.confirm(`क्या आप वाकई ${channelTitles[channel] || channel} WhatsApp को डिस्कनेक्ट करना चाहते हैं?`)) return;
     setLoadingWaAction(true);
     try {
-      const res = await api.post('/api/whatsapp/disconnect');
+      const res = await api.post('/api/whatsapp/disconnect', { channel });
       if (res?.data?.success) {
-        setWaStatus({
-          isConnected: false,
-          status: 'DISCONNECTED',
-          qrDataUrl: null,
-          userPhone: null
-        });
-        alert("✅ WhatsApp सफलतापूर्वक डिस्कनेक्ट हो गया!");
+        await fetchWhatsAppStatus();
+        alert(`✅ ${channelTitles[channel] || ''} WhatsApp सफलतापूर्वक डिस्कनेक्ट हो गया!`);
       }
     } catch (err) {
       alert("डिस्कनेक्ट विफल: " + (err.response?.data?.error || err.message));
@@ -335,6 +336,284 @@ const CompanyPage = () => {
     );
   };
 
+  const renderWhatsAppControlHub = (info = {}, isEditingMode = false) => {
+    const isBillingConn = Boolean(waChannels.billing?.isConnected);
+    const isRecoveryConn = Boolean(waChannels.recovery?.isConnected);
+    const isMarketingConn = Boolean(waChannels.marketing?.isConnected);
+
+    return (
+      <div className="mt-4 p-4 sm:p-5 bg-gradient-to-br from-emerald-50/90 via-slate-50 to-teal-50/80 rounded-3xl border border-emerald-200 shadow-sm space-y-4">
+        {/* Hub Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-emerald-200/80">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-md shadow-emerald-600/20 shrink-0">
+              <MessageCircle size={22} />
+            </div>
+            <div>
+              <h4 className="text-base font-extrabold text-slate-900 flex items-center gap-2 flex-wrap">
+                <span>📲 3-चैनल WhatsApp बिज़नेस कंट्रोल हब</span>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2.5 py-0.5 rounded-full border border-emerald-300">
+                  One-Stop Central Manager
+                </span>
+              </h4>
+              <p className="text-xs text-slate-600 font-medium mt-0.5">
+                बिक्री बिल, उधारी वसूली व मार्केटिंग हेतु अलग-अलग WhatsApp नंबर जोड़ें, या केवल 1 नंबर से ही सब कुछ संचालित करें।
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => handleOpenWhatsAppModal('billing')}
+              className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-xl shadow-xs transition active:scale-95 cursor-pointer flex items-center gap-1.5"
+            >
+              <QrCode size={14} /> <span>QR मैनेजर खोलें</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 3 Channels Card Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+          {/* Slot 1: Invoices & Billing */}
+          <div className={`p-4 rounded-2xl border transition flex flex-col justify-between ${isBillingConn ? 'bg-white border-emerald-400 shadow-xs ring-2 ring-emerald-500/20' : 'bg-white/80 border-slate-200'}`}>
+            <div>
+              <div className="flex items-start justify-between gap-1 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300">
+                  स्लॉट 1: मुख्य बिलिंग
+                </span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isBillingConn ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  {isBillingConn ? 'सक्रिय ✓' : 'बंद'}
+                </span>
+              </div>
+              <h5 className="font-extrabold text-sm text-slate-900 flex items-center gap-1.5">
+                <span>🧾 बिलिंग व बिक्री WhatsApp</span>
+              </h5>
+              <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                दुकान के नए बिल, रसीद, काउंटर पर्ची व UPI भुगतान लिंक ग्राहकों को भेजने हेतु।
+              </p>
+            </div>
+
+            <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-2">
+              <p className="text-xs font-black text-slate-900">
+                {isBillingConn ? (
+                  <span className="text-emerald-700">📱 +91 {waChannels.billing?.userPhone}</span>
+                ) : (
+                  <span className="text-rose-600 font-bold">⚠️ QR लिंक नहीं है</span>
+                )}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenWhatsAppModal('billing')}
+                  className={`w-full py-1.5 px-2 rounded-xl text-xs font-bold transition cursor-pointer text-center ${
+                    isBillingConn
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs'
+                  }`}
+                >
+                  {isBillingConn ? '⚙️ बिलिंग नंबर बदलें' : '📲 बिलिंग QR लिंक करें'}
+                </button>
+                {isBillingConn && (
+                  <button
+                    type="button"
+                    onClick={() => handleDisconnectWhatsApp('billing')}
+                    disabled={loadingWaAction}
+                    className="p-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer shrink-0"
+                    title="डिस्कनेक्ट करें"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Slot 2: Recovery & Due Reminders */}
+          <div className={`p-4 rounded-2xl border transition flex flex-col justify-between ${isRecoveryConn ? 'bg-white border-amber-400 shadow-xs ring-2 ring-amber-500/20' : 'bg-white/80 border-slate-200'}`}>
+            <div>
+              <div className="flex items-start justify-between gap-1 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                  स्लॉट 2: उधारी वसूली
+                </span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isRecoveryConn ? 'bg-amber-600 text-white' : isBillingConn ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-slate-100 text-slate-600'}`}>
+                  {isRecoveryConn ? 'अलग नंबर ✓' : isBillingConn ? 'स्मार्ट बैकअप 🔄' : 'बंद'}
+                </span>
+              </div>
+              <h5 className="font-extrabold text-sm text-slate-900 flex items-center gap-1.5">
+                <span>⚖️ उधारी वसूली व तगादा WhatsApp</span>
+              </h5>
+              <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                लेजर स्टेटमेंट, बकाया उधारी तगादा व लेट-पेमेंट रिमाइंडर भेजने हेतु।
+              </p>
+            </div>
+
+            <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-2">
+              <p className="text-xs font-black text-slate-900">
+                {isRecoveryConn ? (
+                  <span className="text-amber-800">📱 +91 {waChannels.recovery?.userPhone} (समर्पित नंबर)</span>
+                ) : isBillingConn ? (
+                  <span className="text-blue-700 font-bold text-[11px] flex items-center gap-1">
+                    🔄 बिलिंग नंबर (+91 {waChannels.billing?.userPhone}) से स्वतः जाएगा
+                  </span>
+                ) : (
+                  <span className="text-slate-500 text-[11px]">⚠️ लिंक नहीं है</span>
+                )}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenWhatsAppModal('recovery')}
+                  className={`w-full py-1.5 px-2 rounded-xl text-xs font-bold transition cursor-pointer text-center ${
+                    isRecoveryConn
+                      ? 'bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100'
+                      : 'bg-amber-600 text-white hover:bg-amber-700 shadow-xs'
+                  }`}
+                >
+                  {isRecoveryConn ? '⚙️ वसूली नंबर बदलें' : '📲 अलग वसूली QR लिंक'}
+                </button>
+                {isRecoveryConn && (
+                  <button
+                    type="button"
+                    onClick={() => handleDisconnectWhatsApp('recovery')}
+                    disabled={loadingWaAction}
+                    className="p-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer shrink-0"
+                    title="डिस्कनेक्ट करें"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Slot 3: Marketing & Festival Offers */}
+          <div className={`p-4 rounded-2xl border transition flex flex-col justify-between ${isMarketingConn ? 'bg-white border-indigo-400 shadow-xs ring-2 ring-indigo-500/20' : 'bg-white/80 border-slate-200'}`}>
+            <div>
+              <div className="flex items-start justify-between gap-1 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 border border-indigo-300">
+                  स्लॉट 3: मार्केटिंग व ऑफर्स
+                </span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isMarketingConn ? 'bg-indigo-600 text-white' : isBillingConn ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-slate-100 text-slate-600'}`}>
+                  {isMarketingConn ? 'अलग नंबर ✓' : isBillingConn ? 'स्मार्ट बैकअप 🔄' : 'बंद'}
+                </span>
+              </div>
+              <h5 className="font-extrabold text-sm text-slate-900 flex items-center gap-1.5">
+                <span>📢 मार्केटिंग व ऑफर्स WhatsApp</span>
+              </h5>
+              <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                बंपर डिस्काउंट सेल, त्योहार बधाई, VIP कूपन व ब्रॉडकास्ट संदेश भेजने हेतु।
+              </p>
+            </div>
+
+            <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-2">
+              <p className="text-xs font-black text-slate-900">
+                {isMarketingConn ? (
+                  <span className="text-indigo-800">📱 +91 {waChannels.marketing?.userPhone} (समर्पित नंबर)</span>
+                ) : isBillingConn ? (
+                  <span className="text-blue-700 font-bold text-[11px] flex items-center gap-1">
+                    🔄 बिलिंग नंबर (+91 {waChannels.billing?.userPhone}) से स्वतः जाएगा
+                  </span>
+                ) : (
+                  <span className="text-slate-500 text-[11px]">⚠️ लिंक नहीं है</span>
+                )}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenWhatsAppModal('marketing')}
+                  className={`w-full py-1.5 px-2 rounded-xl text-xs font-bold transition cursor-pointer text-center ${
+                    isMarketingConn
+                      ? 'bg-indigo-50 text-indigo-800 border border-indigo-300 hover:bg-indigo-100'
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-xs'
+                  }`}
+                >
+                  {isMarketingConn ? '⚙️ मार्केटिंग नंबर बदलें' : '📲 अलग मार्केटिंग QR लिंक'}
+                </button>
+                {isMarketingConn && (
+                  <button
+                    type="button"
+                    onClick={() => handleDisconnectWhatsApp('marketing')}
+                    disabled={loadingWaAction}
+                    className="p-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer shrink-0"
+                    title="डिस्कनेक्ट करें"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Business Contact & Location Fields */}
+        {isEditingMode ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-emerald-200/80 bg-white/60 p-3 rounded-2xl">
+            <div>
+              <label className="block text-xs font-bold text-slate-900 mb-1">
+                WhatsApp Business नंबर (बिलों व रसीदों पर प्रदर्शित)
+              </label>
+              <input
+                type="text"
+                name="whatsappBusinessNumber"
+                value={formData.whatsappBusinessNumber}
+                onChange={handleChange}
+                placeholder="उदा. 919876543210 या 9876543210"
+                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-900 mb-1">
+                हेल्पलाइन / कॉलिंग नंबर (यदि WhatsApp से अलग हो)
+              </label>
+              <input
+                type="text"
+                name="callingContactNumber"
+                value={formData.callingContactNumber}
+                onChange={handleChange}
+                placeholder="खाली रखने पर WhatsApp नंबर ही संपर्क माना जाएगा"
+                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs font-bold text-slate-900 mb-1 flex items-center gap-1">
+                <MapPin size={13} className="text-emerald-700" />
+                <span>दुकान का GPS / Google Maps लोकेशन लिंक (वैकल्पिक)</span>
+              </label>
+              <input
+                type="url"
+                name="mapLocationUrl"
+                value={formData.mapLocationUrl}
+                onChange={handleChange}
+                placeholder="उदा. https://maps.app.goo.gl/... या https://goo.gl/maps/..."
+                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="pt-2 border-t border-emerald-200/80 text-xs text-slate-700 space-y-1 bg-white/60 p-3 rounded-2xl">
+            <div className="flex flex-wrap items-center gap-4">
+              <p><b>बिलों पर WhatsApp नंबर:</b> {info.whatsappBusinessNumber || info.phone || "सेट नहीं है"}</p>
+              {info.callingContactNumber && <p><b>📞 हेल्पलाइन कॉल:</b> {info.callingContactNumber}</p>}
+            </div>
+            {info.mapLocationUrl && (
+              <p className="flex items-center gap-1 text-[11px] mt-1">
+                <MapPin size={12} className="text-emerald-600 shrink-0" />
+                <b>दुकान GPS:</b>
+                <a href={info.mapLocationUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline font-semibold truncate max-w-sm">
+                  {info.mapLocationUrl}
+                </a>
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Live Message Preview */}
+        {renderMobileWhatsAppPreview(info, isEditingMode)}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -442,81 +721,8 @@ const CompanyPage = () => {
                   </div>
                 </div>
 
-                {/* 📲 WhatsApp Business & QR Linking Section */}
-                <div className="mt-4 p-4 bg-emerald-50/80 rounded-2xl border border-emerald-200">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-2 border-b border-emerald-200/70">
-                    <div>
-                      <h4 className="text-sm font-extrabold text-emerald-950 flex items-center gap-1.5">
-                        <MessageCircle size={17} className="text-emerald-600" />
-                        <span>WhatsApp Business & ऑटोमैटिक सेंडिंग नंबर</span>
-                      </h4>
-                      <p className="text-[11px] text-emerald-800 font-medium mt-0.5">
-                        यहाँ डाला गया नंबर ग्राहकों को जाने वाले बिलों, रसीदों व स्टेटमेंट में संपर्क व WhatsApp हेतु दिखाया जाएगा।
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleOpenWhatsAppModal}
-                      className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition shrink-0 ${
-                        waStatus.isConnected
-                          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                          : 'bg-white text-emerald-800 border border-emerald-400 hover:bg-emerald-100'
-                      }`}
-                    >
-                      <span>{waStatus.isConnected ? `✅ कनेक्टेड (${waStatus.userPhone})` : '📲 WhatsApp QR लिंक करें'}</span>
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-bold text-emerald-900 mb-1">
-                        1. WhatsApp Business नंबर (जिससे बिल व हिसाब जाएंगे)
-                      </label>
-                      <input
-                        type="text"
-                        name="whatsappBusinessNumber"
-                        value={formData.whatsappBusinessNumber}
-                        onChange={handleChange}
-                        placeholder="उदा. 919876543210 या 9876543210"
-                        className="w-full px-3 py-2 border border-emerald-300 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-emerald-900 mb-1">
-                        2. कॉलिंग / संपर्क नंबर (यदि WhatsApp नंबर से अलग हो)
-                      </label>
-                      <input
-                        type="text"
-                        name="callingContactNumber"
-                        value={formData.callingContactNumber}
-                        onChange={handleChange}
-                        placeholder="खाली रखने पर WhatsApp नंबर ही दिखेगा"
-                        className="w-full px-3 py-2 border border-emerald-300 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-bold text-emerald-900 mb-1 flex items-center gap-1">
-                        <MapPin size={13} className="text-emerald-700" />
-                        <span>3. दुकान का GPS / Google Maps लोकेशन लिंक (वैकल्पिक)</span>
-                      </label>
-                      <input
-                        type="url"
-                        name="mapLocationUrl"
-                        value={formData.mapLocationUrl}
-                        onChange={handleChange}
-                        placeholder="उदा. https://maps.app.goo.gl/... या https://goo.gl/maps/..."
-                        className="w-full px-3 py-2 border border-emerald-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
-                      />
-                      <p className="text-[10px] text-emerald-800 mt-1">
-                        📍 लोकेशन लिंक डालने पर ग्राहकों को बिल व लेजर के साथ आपकी दुकान पर आने का सही Google Maps रास्ता भी मिलेगा।
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* 📱 Live WhatsApp Message Mobile Preview */}
-                  {renderMobileWhatsAppPreview(formData, true)}
-                </div>
+                {/* 📲 3-Channel WhatsApp Business Control Hub */}
+                {renderWhatsAppControlHub(formData, true)}
               </div>
 
               {/* Business & Tax */}
@@ -816,45 +1022,6 @@ const CompanyPage = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-start gap-3 p-3 bg-emerald-50/70 border border-emerald-200 rounded-2xl">
-                    <MessageCircle className="text-emerald-600 mt-0.5 shrink-0" size={20} />
-                    <div className="space-y-1 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-bold text-emerald-950">WhatsApp Business (बिल व हिसाब हेतु)</p>
-                        <button
-                          type="button"
-                          onClick={handleOpenWhatsAppModal}
-                          className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border transition cursor-pointer shadow-2xs ${
-                            waStatus.isConnected
-                              ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
-                              : 'bg-white text-emerald-800 border-emerald-400 hover:bg-emerald-100'
-                          }`}
-                        >
-                          {waStatus.isConnected ? `✅ सक्रिय (${waStatus.userPhone})` : '📲 QR लिंक करें'}
-                        </button>
-                      </div>
-                      <p className="font-extrabold text-emerald-800 text-xs">
-                        {selectedCompany.whatsappBusinessNumber || selectedCompany.phone || "सेट नहीं है"}
-                      </p>
-                      {selectedCompany.callingContactNumber && (
-                        <p className="text-[11px] font-semibold text-emerald-900 mt-1">
-                          📞 कॉलिंग/हेल्पलाइन नंबर: <span className="font-bold">{selectedCompany.callingContactNumber}</span>
-                        </p>
-                      )}
-                      {selectedCompany.mapLocationUrl && (
-                        <p className="text-[11px] font-semibold text-emerald-900 mt-0.5">
-                          📍 GPS लोकेशन: <a href={selectedCompany.mapLocationUrl} target="_blank" rel="noopener noreferrer" className="underline text-blue-700 hover:text-blue-900 font-bold">{selectedCompany.mapLocationUrl}</a>
-                        </p>
-                      )}
-                      <p className="text-[10px] text-emerald-700">
-                        {waStatus.isConnected ? "🚀 बैकग्राउंड WhatsApp सक्रिय है - बिना चैट खोले बिल जाएंगे।" : "⚠️ QR स्कैन करके बैकग्राउंड सेंडिंग चालू करें।"}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* 📱 Saved WhatsApp Message Mobile Preview */}
-                  {renderMobileWhatsAppPreview(selectedCompany, false)}
-
                   <div className="flex items-center gap-3">
                     <Mail className="text-gray-400" size={20} />
                     <div>
@@ -930,6 +1097,9 @@ const CompanyPage = () => {
                   </div>
                 </div>
               </div>
+
+              {/* 📲 3-Channel WhatsApp Business Control Hub */}
+              {renderWhatsAppControlHub(selectedCompany, false)}
 
               {/* 🌐 Social Media & Google Reviews Display Hub */}
               <div className="mt-6 p-6 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl shadow-lg border border-indigo-900/50 space-y-4">
@@ -1112,81 +1282,8 @@ const CompanyPage = () => {
                   </div>
                 </div>
 
-                {/* 📲 WhatsApp Business & QR Linking Section */}
-                <div className="mt-4 p-4 bg-emerald-50/80 rounded-2xl border border-emerald-200">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-2 border-b border-emerald-200/70">
-                    <div>
-                      <h4 className="text-sm font-extrabold text-emerald-950 flex items-center gap-1.5">
-                        <MessageCircle size={17} className="text-emerald-600" />
-                        <span>WhatsApp Business & ऑटोमैटिक सेंडिंग नंबर</span>
-                      </h4>
-                      <p className="text-[11px] text-emerald-800 font-medium mt-0.5">
-                        यहाँ डाला गया नंबर ग्राहकों को जाने वाले बिलों, रसीदों व स्टेटमेंट में संपर्क व WhatsApp हेतु दिखाया जाएगा।
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleOpenWhatsAppModal}
-                      className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition shrink-0 ${
-                        waStatus.isConnected
-                          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                          : 'bg-white text-emerald-800 border border-emerald-400 hover:bg-emerald-100'
-                      }`}
-                    >
-                      <span>{waStatus.isConnected ? `✅ कनेक्टेड (${waStatus.userPhone})` : '📲 WhatsApp QR लिंक करें'}</span>
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-bold text-emerald-900 mb-1">
-                        1. WhatsApp Business नंबर (जिससे बिल व हिसाब जाएंगे)
-                      </label>
-                      <input
-                        type="text"
-                        name="whatsappBusinessNumber"
-                        value={formData.whatsappBusinessNumber}
-                        onChange={handleChange}
-                        placeholder="उदा. 919876543210 या 9876543210"
-                        className="w-full px-3 py-2 border border-emerald-300 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-emerald-900 mb-1">
-                        2. कॉलिंग / संपर्क नंबर (यदि WhatsApp नंबर से अलग हो)
-                      </label>
-                      <input
-                        type="text"
-                        name="callingContactNumber"
-                        value={formData.callingContactNumber}
-                        onChange={handleChange}
-                        placeholder="खाली रखने पर WhatsApp नंबर ही दिखेगा"
-                        className="w-full px-3 py-2 border border-emerald-300 rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-bold text-emerald-900 mb-1 flex items-center gap-1">
-                        <MapPin size={13} className="text-emerald-700" />
-                        <span>3. दुकान का GPS / Google Maps लोकेशन लिंक (वैकल्पिक)</span>
-                      </label>
-                      <input
-                        type="url"
-                        name="mapLocationUrl"
-                        value={formData.mapLocationUrl}
-                        onChange={handleChange}
-                        placeholder="उदा. https://maps.app.goo.gl/... या https://goo.gl/maps/..."
-                        className="w-full px-3 py-2 border border-emerald-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-800"
-                      />
-                      <p className="text-[10px] text-emerald-800 mt-1">
-                        📍 लोकेशन लिंक डालने पर ग्राहकों को बिल व लेजर के साथ आपकी दुकान पर आने का सही Google Maps रास्ता भी मिलेगा।
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* 📱 Live WhatsApp Message Mobile Preview */}
-                  {renderMobileWhatsAppPreview(formData, true)}
-                </div>
+                {/* 📲 3-Channel WhatsApp Business Control Hub */}
+                {renderWhatsAppControlHub(formData, true)}
               </div>
 
               {/* Business & Tax */}
@@ -1412,18 +1509,19 @@ const CompanyPage = () => {
         </div>
       )}
 
-      {/* 📲 WHATSAPP QR CODE PAIRING MODAL */}
+      {/* 📲 WHATSAPP MULTI-CHANNEL QR CODE PAIRING MODAL */}
       {showWhatsAppQrModal && (
         <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 space-y-4 shadow-2xl">
+            {/* Modal Header */}
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
               <div className="flex items-center gap-2">
                 <div className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">
                   <MessageCircle size={20} />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm text-[#0F172A]">WhatsApp बिजनेस QR लिंक</h3>
-                  <p className="text-[10px] text-slate-500 font-bold">QR स्कैन करके ऑटोमैटिक बैकग्राउंड सेंडिंग जोड़ें</p>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">3-चैनल WhatsApp QR मैनेजर</h3>
+                  <p className="text-[10px] text-slate-500 font-bold">चैनल चुनें व QR स्कैन करके बैकग्राउंड सेंडिंग जोड़ें</p>
                 </div>
               </div>
               <button
@@ -1435,46 +1533,94 @@ const CompanyPage = () => {
               </button>
             </div>
 
-            {waStatus.isConnected ? (
+            {/* Channel Tabs */}
+            <div className="flex rounded-xl bg-slate-100 p-1 gap-1">
+              {[
+                { id: 'billing', label: '🧾 1. बिलिंग', color: 'emerald' },
+                { id: 'recovery', label: '⚖️ 2. वसूली', color: 'amber' },
+                { id: 'marketing', label: '📢 3. मार्केटिंग', color: 'indigo' }
+              ].map(tab => {
+                const isConn = Boolean(waChannels[tab.id]?.isConnected);
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveWaModalChannel(tab.id);
+                      if (!waChannels[tab.id]?.isConnected) {
+                        handleStartWhatsAppSession(tab.id, false);
+                      }
+                    }}
+                    className={`flex-1 py-1.5 px-2 text-xs font-extrabold rounded-lg transition cursor-pointer text-center flex items-center justify-center gap-1 ${
+                      activeWaModalChannel === tab.id
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    {isConn && (
+                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Active Channel Details */}
+            {waChannels[activeWaModalChannel]?.isConnected ? (
               <div className="text-center py-3 space-y-3">
                 <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
                   <Check size={36} />
                 </div>
                 <div>
-                  <h4 className="font-extrabold text-emerald-800 text-base">WhatsApp सफलतापूर्वक कनेक्टेड है!</h4>
+                  <h4 className="font-extrabold text-emerald-800 text-base">
+                    {activeWaModalChannel === 'recovery'
+                      ? '⚖️ उधारी वसूली WhatsApp कनेक्टेड है!'
+                      : activeWaModalChannel === 'marketing'
+                      ? '📢 मार्केटिंग WhatsApp कनेक्टेड है!'
+                      : '🧾 बिलिंग WhatsApp कनेक्टेड है!'}
+                  </h4>
                   <p className="text-xs text-slate-600 mt-0.5">
-                    लिंक मोबाइल: <span className="font-bold text-slate-900">{waStatus.userPhone}</span>
+                    लिंक मोबाइल: <span className="font-bold text-slate-900">+91 {waChannels[activeWaModalChannel]?.userPhone}</span>
                   </p>
                 </div>
 
                 <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-[11px] text-emerald-900 text-left leading-relaxed">
                   🚀 <b>बैकग्राउंड सेंडिंग सक्रिय है!</b><br />
-                  अब जब भी आप ग्राहकों को बिल या हिसाब भेजेंगे, संदेश सीधे इसी दुकान वाले WhatsApp से बिना कोई चैट विंडो खोले बैकग्राउंड में चला जाएगा।
+                  {activeWaModalChannel === 'recovery' && 'अब ग्राहकों को खाता विवरण, बकाया उधारी व लेट पेमेंट रिमाइंडर सीधे इसी नंबर से जाएंगे।'}
+                  {activeWaModalChannel === 'marketing' && 'अब ग्राहकों को प्रोमोशनल ऑफर्स, डिस्काउंट व त्योहार के संदेश सीधे इसी नंबर से जाएंगे।'}
+                  {activeWaModalChannel === 'billing' && 'अब ग्राहकों को दुकान के बिल, रसीद व पेमेंट लिंक सीधे इसी नंबर से जाएंगे।'}
                 </div>
 
                 <button
                   type="button"
-                  onClick={handleDisconnectWhatsApp}
+                  onClick={() => handleDisconnectWhatsApp(activeWaModalChannel)}
                   disabled={loadingWaAction}
                   className="w-full py-2.5 rounded-2xl border border-rose-300 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer"
                 >
-                  {loadingWaAction ? "डिस्कनेक्ट हो रहा है..." : "डिस्कनेक्ट करें (Disconnect)"}
+                  {loadingWaAction ? "डिस्कनेक्ट हो रहा है..." : "इस चैनल को डिस्कनेक्ट करें (Disconnect)"}
                 </button>
               </div>
             ) : (
               <div className="text-center space-y-3">
-                {waStatus.qrDataUrl ? (
+                <div className="text-xs text-slate-600 font-medium">
+                  {activeWaModalChannel === 'recovery' && '⚖️ उधारी वसूली व तगादे के लिए जिस फोन का उपयोग करना है, उसका WhatsApp लिंक करें:'}
+                  {activeWaModalChannel === 'marketing' && '📢 मार्केटिंग, त्योहार व ऑफर्स के लिए जिस फोन का उपयोग करना है, उसका WhatsApp लिंक करें:'}
+                  {activeWaModalChannel === 'billing' && '🧾 दुकान के बिल व रसीदें भेजने के लिए मुख्य WhatsApp लिंक करें:'}
+                </div>
+
+                {waChannels[activeWaModalChannel]?.qrDataUrl ? (
                   <div>
                     <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-2xl inline-block shadow-inner mb-2">
                       <img
-                        src={waStatus.qrDataUrl}
+                        src={waChannels[activeWaModalChannel].qrDataUrl}
                         alt="WhatsApp QR Code"
                         className="w-52 h-52 mx-auto rounded-xl object-contain"
                       />
                     </div>
                     <div className="text-left bg-slate-50 p-3 rounded-2xl border border-slate-100 text-[11px] text-slate-700 space-y-1">
                       <p className="font-extrabold text-slate-900">📲 कैसे कनेक्ट करें:</p>
-                      <p>1. जिस फोन से बिल भेजना है उसमें <b>WhatsApp</b> खोलें</p>
+                      <p>1. जिस फोन से संदेश भेजना है उसमें <b>WhatsApp</b> खोलें</p>
                       <p>2. ऊपर 3 डॉट्स (⋮) या Settings ➔ <b>Linked Devices</b> दबाएं</p>
                       <p>3. <b>Link a Device</b> दबाकर इस QR कोड को स्कैन करें</p>
                     </div>
@@ -1488,7 +1634,7 @@ const CompanyPage = () => {
                     <p className="text-xs text-slate-500">QR कोड तैयार किया जा रहा है...</p>
                     <button
                       type="button"
-                      onClick={() => handleStartWhatsAppSession(true)}
+                      onClick={() => handleStartWhatsAppSession(activeWaModalChannel, true)}
                       disabled={loadingWaAction}
                       className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
                     >
