@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 
 const purchaseSchema = new mongoose.Schema({
   purchaseNumber: { type: String, required: true },
+  bookNo: { type: String, default: "" }, // Physical Bill Book Number
+  pageNo: { type: String, default: "" }, // Physical Bill Book Page Number
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
   partyId: { type: mongoose.Schema.Types.ObjectId, ref: "Party", required: true }, // Supplier
   supplierName: { type: String, required: true },

@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const partySchema = new mongoose.Schema({
   name: { type: String, required: true },
+  uuid: { type: String, sparse: true },
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
   partyType: { type: String, enum: ["supplier", "customer", "both", "personal"], default: "both" },
   contactPerson: String,

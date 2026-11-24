@@ -77,6 +77,8 @@ export default function CreateQuotationPage() {
     rateTier: 'A',
     date: new Date().toISOString().split('T')[0],
     validUntil: '',
+    expectedPurchaseDate: '',
+    followUpDate: '',
     items: [],
     notes: '1. यह कोटेशन 15 दिनों तक मान्य है।\n2. ऑर्डर कन्फर्म होने के 3 दिनों के भीतर माल दिया जाएगा।\n3. जीएसटी नियमानुसार लागू है।',
     subTotal: 0,
@@ -148,6 +150,8 @@ export default function CreateQuotationPage() {
               rateTier: q.rateTier || 'A',
               date: q.date ? new Date(q.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
               validUntil: q.validUntil ? new Date(q.validUntil).toISOString().split('T')[0] : '',
+              expectedPurchaseDate: q.expectedPurchaseDate ? new Date(q.expectedPurchaseDate).toISOString().split('T')[0] : '',
+              followUpDate: q.followUpDate ? new Date(q.followUpDate).toISOString().split('T')[0] : '',
               items: enrichedItems,
               notes: q.notes || '',
               subTotal: Number(q.subTotal || 0),
@@ -954,6 +958,32 @@ export default function CreateQuotationPage() {
               value={formData.validUntil}
               onChange={(e) => setFormData(prev => ({ ...prev, validUntil: e.target.value }))}
               className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-800"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              📅 संभावित खरीद दिनांक (Expected Purchase)
+            </label>
+            <input
+              type="date"
+              value={formData.expectedPurchaseDate || ''}
+              onChange={(e) => setFormData(prev => ({ ...prev, expectedPurchaseDate: e.target.value }))}
+              className="w-full px-3 py-2 border border-blue-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-800"
+              placeholder="कब सामान लेने की संभावना है"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              ⏰ अगला फॉलो-अप कॉल (Follow-up Call)
+            </label>
+            <input
+              type="date"
+              value={formData.followUpDate || ''}
+              onChange={(e) => setFormData(prev => ({ ...prev, followUpDate: e.target.value }))}
+              className="w-full px-3 py-2 border border-amber-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-amber-500 outline-none bg-white text-slate-800"
+              placeholder="कब फोन करना है"
             />
           </div>
         </div>

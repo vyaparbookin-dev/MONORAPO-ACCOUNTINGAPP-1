@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 
 const billSchema = new mongoose.Schema({
   billNumber: { type: String, required: true, unique: true },
+  bookNo: { type: String, default: "" }, // Physical Bill Book Number (e.g. "87")
+  pageNo: { type: String, default: "" }, // Physical Bill Book Page Number (e.g. "25")
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
   partyId: { type: mongoose.Schema.Types.ObjectId, ref: "Party" }, // Optional for POS walk-in customers
   salesmanId: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" }, // Track salesman for incentives (Clothes/Retail/Restaurant)

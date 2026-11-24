@@ -391,6 +391,10 @@ export const getPartySummary = async (req, res) => {
 
 export const getPartyStatement = async (req, res) => {
   try {
+    let party = req.preloadedParty || null;
+    if (!req.companyId && party?.companyId) {
+      req.companyId = party.companyId;
+    }
     if (!req.companyId) {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
@@ -413,28 +417,39 @@ export const getPartyStatement = async (req, res) => {
       }
     }
 
-    let party = null;
-    if (validMongoCoIds.length > 0) {
-      if (mongoose.Types.ObjectId.isValid(req.params.id)) {
-        party = await Party.findOne({ _id: req.params.id, companyId: { $in: validMongoCoIds } });
-      }
-      if (!party) {
-        party = await Party.findOne({
-          companyId: { $in: validMongoCoIds },
-          $or: [
-            { id: req.params.id },
-            { name: req.params.id }
-          ]
-        });
-      }
-    }
-    // Fallback: Check Supabase for party if not found in MongoDB
     if (!party) {
-      try {
-        const sbParty = await getPartyByIdFromSupabase(req.params.id, req.companyId);
-        if (sbParty) party = sbParty;
-      } catch (sbErr) {
-        console.warn("[getPartyStatement] Supabase party lookup error:", sbErr.message);
+      const isReqMongoId = mongoose.Types.ObjectId.isValid(req.params.id);
+      if (validMongoCoIds.length > 0) {
+        if (isReqMongoId) {
+          party = await Party.findOne({ _id: req.params.id, companyId: { $in: validMongoCoIds } });
+        }
+        if (!party) {
+          party = await Party.findOne({
+            companyId: { $in: validMongoCoIds },
+            name: req.params.id
+          });
+        }
+      }
+      // Check if req.params.id is a UUID matching mongoIdToUuid
+      if (!party && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(req.params.id) && validMongoCoIds.length > 0) {
+        try {
+          const allParties = await Party.find({ companyId: { $in: validMongoCoIds } }, { _id: 1 }).lean();
+          for (const p of allParties) {
+            if (mongoIdToUuid(p._id) === req.params.id) {
+              party = await Party.findById(p._id);
+              break;
+            }
+          }
+        } catch (me) {}
+      }
+      // Fallback: Check Supabase for party if not found in MongoDB
+      if (!party) {
+        try {
+          const sbParty = await getPartyByIdFromSupabase(req.params.id, req.companyId);
+          if (sbParty) party = sbParty;
+        } catch (sbErr) {
+          console.warn("[getPartyStatement] Supabase party lookup error:", sbErr.message);
+        }
       }
     }
     if (!party) return res.status(404).json({ success: false, error: "Party not found" });
@@ -700,6 +715,8 @@ export const getPartyStatement = async (req, res) => {
         type: tx.type || (isDebit ? "payment" : (isSupplier ? "purchase" : "receipt")),
         refNo: tx.refNo || tx.billNumber || (isDebit ? "PAY" : (isSupplier ? "PUR" : "REC")),
         billNumber: derivedBillNum,
+        bookNo: tx.bookNo || "",
+        pageNo: tx.pageNo || "",
         referenceBillId: tx.referenceBillId || tx.billNumber || "",
         details: tx.details && tx.details !== "मुझे मिले" && tx.details !== "मैंने दिए"
           ? tx.details
@@ -763,6 +780,8 @@ export const getPartyStatement = async (req, res) => {
           matchedEntry.billAmount = finalAmt;
         }
         if (bNum && (!matchedEntry.billNumber || matchedEntry.billNumber === 'BILL')) matchedEntry.billNumber = bNum;
+        if (b.bookNo) matchedEntry.bookNo = b.bookNo;
+        if (b.pageNo) matchedEntry.pageNo = b.pageNo;
         if (b.items && b.items.length > 0 && (!matchedEntry.items || matchedEntry.items.length === 0)) matchedEntry.items = b.items;
         if (b.siteName && !matchedEntry.siteName) matchedEntry.siteName = b.siteName;
         if (b.billImageUrl && !matchedEntry.billImageUrl) matchedEntry.billImageUrl = b.billImageUrl;
@@ -782,10 +801,12 @@ export const getPartyStatement = async (req, res) => {
           type: "sale",
           refNo: bNum,
           billNumber: bNum,
+          bookNo: b.bookNo || "",
+          pageNo: b.pageNo || "",
           billAmount: finalAmt,
           paidAmount: paidAmt,
           items: b.items || [],
-          details: `बिक्री बिल #${bNum} (${isCreditBill ? 'उधार' : 'नकद'})${itemsSummary}`,
+          details: `बिक्री बिल #${bNum}${b.bookNo ? ` (बुक #${b.bookNo}${b.pageNo ? `, पेज #${b.pageNo}` : ''})` : ''} (${isCreditBill ? 'उधार' : 'नकद'})${itemsSummary}`,
           siteName: b.siteName || "",
           debit: finalAmt,
           credit: 0,
@@ -839,7 +860,10 @@ export const getPartyStatement = async (req, res) => {
         date: p.date || p.createdAt,
         type: "purchase",
         refNo: pNum,
-        details: `खरीद इनवॉइस #${pNum}`,
+        billNumber: pNum,
+        bookNo: p.bookNo || "",
+        pageNo: p.pageNo || "",
+        details: `खरीद इनवॉइस #${pNum}${p.bookNo ? ` (बुक #${p.bookNo}${p.pageNo ? `, पेज #${p.pageNo}` : ''})` : ''}`,
         debit: 0,
         credit: totalAmt,
         billImageUrl: p.billImageUrl || p.receiptUrl || (p.billImageUrls && p.billImageUrls[0]) || "",
@@ -951,19 +975,34 @@ export const getPublicPartyStatement = async (req, res) => {
     const partyId = decodeURIComponent(String(rawPartyId)).trim();
 
     let party = null;
-    if (mongoose.Types.ObjectId.isValid(partyId)) {
+    const isMongoId = mongoose.Types.ObjectId.isValid(partyId);
+    if (isMongoId) {
       party = await Party.findById(partyId);
     }
     if (!party) {
       const orClauses = [
-        { id: partyId },
-        { uuid: partyId },
         { mobileNumber: partyId }
       ];
-      if (mongoose.Types.ObjectId.isValid(partyId)) {
+      if (isMongoId) {
         orClauses.push({ _id: partyId });
       }
-      party = await Party.findOne({ $or: orClauses });
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(partyId)) {
+        orClauses.push({ uuid: partyId });
+      }
+      try {
+        party = await Party.findOne({ $or: orClauses });
+      } catch (me) {}
+    }
+    if (!party && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(partyId)) {
+      try {
+        const allParties = await Party.find({}, { _id: 1, companyId: 1, name: 1, mobileNumber: 1 }).lean();
+        for (const p of allParties) {
+          if (mongoIdToUuid(p._id) === partyId) {
+            party = await Party.findById(p._id);
+            break;
+          }
+        }
+      } catch (me) {}
     }
     if (!party) {
       try {
@@ -976,24 +1015,38 @@ export const getPublicPartyStatement = async (req, res) => {
       return res.status(404).json({ success: false, error: "पार्टी का खाता नहीं मिला (Party not found)" });
     }
 
-    const companyId = party.companyId;
+    const companyId = party.companyId || (party.company_id ? String(party.company_id) : "");
     let company = null;
     if (companyId) {
       if (mongoose.Types.ObjectId.isValid(companyId)) {
         company = await Company.findById(companyId).lean();
       }
       if (!company) {
-        const compOr = [{ id: companyId }];
-        if (mongoose.Types.ObjectId.isValid(companyId)) {
-          compOr.push({ _id: companyId });
-        }
-        company = await Company.findOne({ $or: compOr }).lean();
+        try {
+          const compOr = [];
+          if (mongoose.Types.ObjectId.isValid(companyId)) {
+            compOr.push({ _id: companyId });
+          }
+          if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(companyId)) {
+            const allComps = await Company.find({}, { _id: 1 }).lean();
+            for (const c of allComps) {
+              if (mongoIdToUuid(c._id) === companyId) {
+                company = c;
+                break;
+              }
+            }
+          }
+          if (!company && compOr.length > 0) {
+            company = await Company.findOne({ $or: compOr }).lean();
+          }
+        } catch (ce) {}
       }
     }
 
-    // Attach req.companyId and req.params.id for getPartyStatement
-    req.companyId = companyId;
-    req.params.id = party._id ? String(party._id) : party.id;
+    // Attach req.companyId, req.params.id, and preloadedParty for getPartyStatement
+    req.companyId = company?._id ? String(company._id) : (companyId || party.companyId || party.company_id);
+    req.params.id = party._id ? String(party._id) : (party.id || partyId);
+    req.preloadedParty = party;
 
     // Use a custom response interceptor to add company details to the statement
     const originalJson = res.json.bind(res);

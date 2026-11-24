@@ -130,6 +130,8 @@ export default function PublicStatementPage() {
         "दिनांक (Date)": txDate,
         "विवरण (Particulars)": t.details || (t.debit > 0 ? "बिल / बिक्री" : "जमा / भुगतान"),
         "रिफरेंस / बिल नं.": t.billNumber || t.refNo || "-",
+        "बुक नं. (Book #)": t.bookNo || "-",
+        "पेज नं. (Page #)": t.pageNo || "-",
         "देरी / अवधि (Days)": t.debit > 0 ? `${daysDiff} दिन से बकाया` : "जमा",
         "बिल रकम (Debit ₹)": Number(t.debit || 0),
         "जमा रकम (Credit ₹)": Number(t.credit || 0),
@@ -513,11 +515,18 @@ export default function PublicStatementPage() {
                           </td>
                           <td className="px-4 py-3.5">
                             <div className="font-bold text-slate-900">{t.details || (isDebit ? "बिल" : "जमा")}</div>
-                            {(t.billNumber || t.refNo) && (
-                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                                रिफरेंस: #{t.billNumber || t.refNo}
-                              </div>
-                            )}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                              {(t.billNumber || t.refNo) && (
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  रिफरेंस: #{t.billNumber || t.refNo}
+                                </span>
+                              )}
+                              {(t.bookNo || t.pageNo) && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.2 rounded-md shadow-xs">
+                                  📖 बुक #{t.bookNo || '-'}{t.pageNo ? `, पेज #${t.pageNo}` : ''}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-4 py-3.5 whitespace-nowrap">
                             {isDebit ? (

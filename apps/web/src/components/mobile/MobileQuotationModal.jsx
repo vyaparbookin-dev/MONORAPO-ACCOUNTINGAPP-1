@@ -64,6 +64,8 @@ export default function MobileQuotationModal({
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [validUntil, setValidUntil] = useState("");
+  const [expectedPurchaseDate, setExpectedPurchaseDate] = useState("");
+  const [followUpDate, setFollowUpDate] = useState("");
   const [quotationDate, setQuotationDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("1. यह कोटेशन 15 दिनों तक मान्य है।\n2. जीएसटी नियमानुसार लागू है।");
   const [items, setItems] = useState([]);
@@ -168,6 +170,8 @@ export default function MobileQuotationModal({
     setCustomerPhone("");
     setCustomerAddress("");
     setValidUntil("");
+    setExpectedPurchaseDate("");
+    setFollowUpDate("");
     setQuotationDate(new Date().toISOString().split("T")[0]);
     setNotes("1. यह कोटेशन 15 दिनों तक मान्य है।\n2. जीएसटी नियमानुसार लागू है।");
     setItems([]);
@@ -192,6 +196,8 @@ export default function MobileQuotationModal({
     setCustomerPhone(quotation.customerPhone || quotation.partyId?.mobileNumber || "");
     setCustomerAddress(quotation.customerAddress || quotation.partyId?.address || "");
     setValidUntil(quotation.validUntil ? quotation.validUntil.split("T")[0] : "");
+    setExpectedPurchaseDate(quotation.expectedPurchaseDate ? quotation.expectedPurchaseDate.split("T")[0] : "");
+    setFollowUpDate(quotation.followUpDate ? quotation.followUpDate.split("T")[0] : "");
     setQuotationDate(quotation.date ? quotation.date.split("T")[0] : new Date().toISOString().split("T")[0]);
     setNotes(quotation.notes || "");
     setActiveRateTier(quotation.rateTier || "A");
@@ -529,6 +535,8 @@ export default function MobileQuotationModal({
         customerPhone: customerPhone.trim(),
         customerAddress: customerAddress.trim(),
         validUntil: validUntil || undefined,
+        expectedPurchaseDate: expectedPurchaseDate || undefined,
+        followUpDate: followUpDate || undefined,
         rateTier: activeRateTier,
         date: quotationDate,
         notes: notes.trim(),
@@ -613,7 +621,9 @@ export default function MobileQuotationModal({
       if (typeof onConvertToBill === "function") {
         await onConvertToBill(quo);
       } else {
-        await api.patch(`/api/quotations/${quo._id || quo.id}/status`, { status: "converted" }).catch(() => null);
+        await api.post(`/api/quotations/${quo._id || quo.id}/convert-to-bill`).catch(async () => {
+          await api.patch(`/api/quotations/${quo._id || quo.id}/status`, { status: "converted" }).catch(() => null);
+        });
       }
 
       const qId = quo._id || quo.id;
@@ -1073,6 +1083,28 @@ export default function MobileQuotationModal({
                     </div>
                   </div>
                 )}
+
+                {/* 📅 Expected Purchase Date & Follow-up Date */}
+                <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <div>
+                    <label className="text-[10px] font-bold text-blue-900 block mb-0.5">📅 संभावित खरीद दिनांक</label>
+                    <input
+                      type="date"
+                      value={expectedPurchaseDate}
+                      onChange={(e) => setExpectedPurchaseDate(e.target.value)}
+                      className="w-full p-1.5 bg-white border border-blue-200 rounded-lg text-xs font-bold text-slate-800 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-amber-900 block mb-0.5">⏰ फॉलो-अप कॉल दिनांक</label>
+                    <input
+                      type="date"
+                      value={followUpDate}
+                      onChange={(e) => setFollowUpDate(e.target.value)}
+                      className="w-full p-1.5 bg-white border border-amber-200 rounded-lg text-xs font-bold text-slate-800 outline-none"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* 🔍 CATEGORY & BRAND FILTERS + PRODUCT SEARCH */}

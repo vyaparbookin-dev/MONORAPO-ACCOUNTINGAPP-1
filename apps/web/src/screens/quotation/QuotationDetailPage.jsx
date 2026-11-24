@@ -70,11 +70,34 @@ export default function QuotationDetailPage() {
         <button onClick={() => navigate('/quotations')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-bold text-xs">
           <ArrowLeft size={18} /> वापस कोटेशन सूची
         </button>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {quotation.status !== 'converted' ? (
+            <button
+              onClick={async () => {
+                if (!window.confirm(`क्या आप कोटेशन #${quotation.quotationNumber} को बिक्री बिल में बदलना चाहते हैं?`)) return;
+                try {
+                  const res = await api.post(`/api/quotations/${id}/convert-to-bill`);
+                  if (res.data?.success) {
+                    alert(`🎉 कोटेशन बिल में बदल गया!\nबिल नंबर: ${res.data.data?.bill?.billNumber || 'नया बिल'}`);
+                    navigate('/billing');
+                  }
+                } catch (e) {
+                  alert("बिल में बदलने में विफल: " + (e.response?.data?.message || e.message));
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black shadow-xs transition cursor-pointer"
+            >
+              <span>🧾 बिल में बदलें</span>
+            </button>
+          ) : (
+            <span className="px-3 py-1.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1">
+              ✅ बिल बन चुका है
+            </span>
+          )}
           <button
             onClick={handleShareWhatsApp}
             title="WhatsApp शेयर"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
           >
             <MessageCircle size={15} /> <span>WhatsApp</span>
           </button>
@@ -117,6 +140,12 @@ export default function QuotationDetailPage() {
           <div className="text-right">
             <p><b>दिनांक:</b> {quotation.date ? new Date(quotation.date).toLocaleDateString('en-IN') : '-'}</p>
             <p><b>वैधता:</b> {quotation.validUntil ? new Date(quotation.validUntil).toLocaleDateString('en-IN') : 'लागू नहीं'}</p>
+            {quotation.expectedPurchaseDate && (
+              <p><b>संभावित खरीद:</b> <span className="font-bold text-blue-700">{new Date(quotation.expectedPurchaseDate).toLocaleDateString('hi-IN')}</span></p>
+            )}
+            {quotation.followUpDate && (
+              <p><b>फॉलो-अप कॉल:</b> <span className="font-bold text-amber-700">{new Date(quotation.followUpDate).toLocaleDateString('hi-IN')}</span></p>
+            )}
             <p><b>स्थिति:</b> <span className="uppercase font-bold text-blue-600">{quotation.status || 'pending'}</span></p>
           </div>
         </div>

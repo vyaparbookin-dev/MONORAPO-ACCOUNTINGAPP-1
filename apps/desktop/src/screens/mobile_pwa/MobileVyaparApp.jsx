@@ -385,6 +385,8 @@ function MobileVyaparAppContent() {
   const [showQuickBillModal, setShowQuickBillModal] = useState(false);
   const [billCustomer, setBillCustomer] = useState(""); // Optional, defaults to "नकद ग्राहक"
   const [billCustomerPhone, setBillCustomerPhone] = useState("");
+  const [billBookNo, setBillBookNo] = useState("");
+  const [billPageNo, setBillPageNo] = useState("");
   const [billPaymentMode, setBillPaymentMode] = useState("CASH"); // CASH, UDHAR, UPI
   const [billCart, setBillCart] = useState([]);
   const [itemSearchTerm, setItemSearchTerm] = useState("");
@@ -894,12 +896,12 @@ function MobileVyaparAppContent() {
     try {
       const res = await api.get('/api/whatsapp/status');
       if (res.data?.success) {
-        setWaStatus({
+        setWaStatus(prev => ({
           isConnected: Boolean(res.data.isConnected),
           status: res.data.status || 'DISCONNECTED',
-          qrDataUrl: res.data.qrDataUrl || null,
-          userPhone: res.data.userPhone || null
-        });
+          qrDataUrl: res.data.qrDataUrl || prev.qrDataUrl || null,
+          userPhone: res.data.userPhone || prev.userPhone || null
+        }));
       }
     } catch (e) {}
   };
@@ -3031,6 +3033,8 @@ function MobileVyaparAppContent() {
     const billPayload = {
       companyId: currentCoId,
       billNumber: genBillNo,
+      bookNo: (billBookNo || "").trim(),
+      pageNo: (billPageNo || "").trim(),
       partyName: finalCustomer,
       customerName: finalCustomer,
       customerPhone: finalPhone,
@@ -3234,6 +3238,8 @@ function MobileVyaparAppContent() {
     setBillCart([]);
     setBillCustomer("");
     setBillCustomerPhone("");
+    setBillBookNo("");
+    setBillPageNo("");
     setDirectBillAmount("");
     setDirectBillSite("");
     setDirectBillNotes("");
@@ -9370,6 +9376,29 @@ function MobileVyaparAppContent() {
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
                 />
 
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div>
+                    <label className="text-[10px] font-bold text-amber-900 block mb-0.5">📖 बुक नं. (Book #)</label>
+                    <input
+                      type="text"
+                      placeholder="उदा. 87"
+                      value={billBookNo}
+                      onChange={(e) => setBillBookNo(e.target.value)}
+                      className="w-full p-2 bg-amber-50/50 border border-amber-300 rounded-xl text-xs font-bold text-amber-950 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-amber-900 block mb-0.5">📄 पेज नं. (Page #)</label>
+                    <input
+                      type="text"
+                      placeholder="उदा. 25"
+                      value={billPageNo}
+                      onChange={(e) => setBillPageNo(e.target.value)}
+                      className="w-full p-2 bg-amber-50/50 border border-amber-300 rounded-xl text-xs font-bold text-amber-950 outline-none"
+                    />
+                  </div>
+                </div>
+
                 {/* 💡 SMART PENDING QUOTATION DETECTION */}
                 {(() => {
                   const cName = String(billCustomer || "").trim().toLowerCase();
@@ -13200,6 +13229,11 @@ function MobileVyaparAppContent() {
                                         )
                                     }
                                   </span>
+                                  {(tx.bookNo || tx.pageNo) && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-900 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded-md ml-1 shadow-xs">
+                                      📖 बुक #{tx.bookNo || '-'}{tx.pageNo ? `, पेज #${tx.pageNo}` : ''}
+                                    </span>
+                                  )}
                                 </div>
 
                                 {/* Bill Items & Breakdown (if available) */}
@@ -15391,6 +15425,29 @@ function MobileVyaparAppContent() {
                   onChange={(e) => setActionNotes(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#0F172A] outline-none"
                 />
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div>
+                    <label className="text-[10px] font-bold text-amber-900 block mb-0.5">📖 बुक नं. (Book #)</label>
+                    <input
+                      type="text"
+                      placeholder="उदा. 87"
+                      value={billBookNo}
+                      onChange={(e) => setBillBookNo(e.target.value)}
+                      className="w-full p-2 bg-amber-50/50 border border-amber-300 rounded-xl text-xs font-bold text-amber-950 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-amber-900 block mb-0.5">📄 पेज नं. (Page #)</label>
+                    <input
+                      type="text"
+                      placeholder="उदा. 25"
+                      value={billPageNo}
+                      onChange={(e) => setBillPageNo(e.target.value)}
+                      className="w-full p-2 bg-amber-50/50 border border-amber-300 rounded-xl text-xs font-bold text-amber-950 outline-none"
+                    />
+                  </div>
+                </div>
               </div>
 
               <button

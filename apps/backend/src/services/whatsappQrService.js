@@ -113,8 +113,9 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
         isConnected: true
       };
     }
-    // If socket is actively alive and has a fresh QR ready, return current state
-    if (existing.sock && existing.status === "QR_READY" && existing.qrDataUrl) {
+    // If socket is actively alive and has a fresh QR ready or is initializing, return current state
+    if (existing.sock && (existing.status === "QR_READY" || existing.status === "INITIALIZING") && existing.qrDataUrl) {
+      console.log(`♻️ [WhatsApp Engine][${normChan}] Keeping existing active QR session alive for ${sessKey}`);
       return {
         channel: normChan,
         status: existing.status,
@@ -436,6 +437,29 @@ export async function sendDirectWhatsAppMessage(companyId, toMobile, messageText
       console.log(`ℹ️ [WhatsApp Engine] Channel '${normChan}' not linked. Falling back to primary 'billing' channel (${billingSession.userPhone}).`);
       session = billingSession;
       usedChannel = 'billing';
+    }
+  }
+
+  // 3. Global Single-Engine Fallback: Check ANY connected WhatsApp channel for this company!
+  if (!session || session.status !== "CONNECTED" || !session.sock) {
+    for (const altChan of ['billing', 'recovery', 'marketing']) {
+      const altKey = getSessionKey(companyId, altChan);
+      let altSess = sessions.get(altKey);
+      if (!altSess || altSess.status !== "CONNECTED" || !altSess.sock) {
+        const altDir = getAuthDir(companyId, altChan);
+        if (fs.existsSync(altDir) && fs.readdirSync(altDir).length > 0) {
+          try {
+            await initWhatsAppSession(companyId, altChan, false);
+            altSess = sessions.get(altKey);
+          } catch (e) {}
+        }
+      }
+      if (altSess && altSess.status === "CONNECTED" && altSess.sock) {
+        console.log(`ℹ️ [WhatsApp Engine] Unified Engine: Falling back from '${normChan}' to active channel '${altChan}' (${altSess.userPhone}).`);
+        session = altSess;
+        usedChannel = altChan;
+        break;
+      }
     }
   }
 

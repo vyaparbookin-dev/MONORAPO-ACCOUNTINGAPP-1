@@ -75,6 +75,8 @@ export default function BillingPage() {
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({
     billNumber: "",
+    bookNo: "",
+    pageNo: "",
     date: new Date().toISOString().slice(0, 10),
     partyId: "",
     salesmanId: "",
@@ -578,6 +580,8 @@ export default function BillingPage() {
     setEditingId(bill._id);
     setFormData({
       billNumber: bill.billNumber,
+      bookNo: bill.bookNo || "",
+      pageNo: bill.pageNo || "",
       date: bill.date ? new Date(bill.date).toISOString().split("T")[0] : (bill.createdAt ? new Date(bill.createdAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]),
       partyId: bill.partyId,
       salesmanId: bill.salesmanId || "",
@@ -1132,7 +1136,7 @@ export default function BillingPage() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Number</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Number (बिल नं.)</label>
                 <input
                   type="text"
                   placeholder="Auto-generated"
@@ -1143,6 +1147,32 @@ export default function BillingPage() {
                   }
                   required
                 />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-sm font-medium text-amber-900 mb-1">📖 बुक नं. (Book #)</label>
+                  <input
+                    type="text"
+                    placeholder="उदा. 87"
+                    className="w-full px-3 py-2 border border-amber-300 rounded-lg bg-amber-50/50 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    value={formData.bookNo || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, bookNo: e.target.value })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-amber-900 mb-1">📄 पेज नं. (Page #)</label>
+                  <input
+                    type="text"
+                    placeholder="उदा. 25"
+                    className="w-full px-3 py-2 border border-amber-300 rounded-lg bg-amber-50/50 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    value={formData.pageNo || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, pageNo: e.target.value })
+                    }
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">📅 Invoice Date (बिल दिनांक) *</label>

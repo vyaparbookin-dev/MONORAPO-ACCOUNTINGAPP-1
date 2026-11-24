@@ -74,6 +74,29 @@ const quotationSchema = new mongoose.Schema({
     ref: 'Bill',
     default: null,
   },
+  // 📞 CRM Follow-up & Expected Purchase Tracking
+  expectedPurchaseDate: { type: Date }, // ग्राहक कब माल खरीदेगा (Expected Purchase Date)
+  followUpDate: { type: Date }, // कब फोन / संपर्क करना है (Next Follow-up Date)
+  followUpStatus: {
+    type: String,
+    enum: ['PENDING', 'CALL_DONE', 'INTERESTED', 'NEEDS_DISCOUNT', 'CONVERTED', 'LOST'],
+    default: 'PENDING'
+  },
+  followUpNotes: { type: String, default: '' }, // ग्राहक से क्या बात हुई (Call details/notes)
+  followUpLogs: [{
+    calledAt: { type: Date, default: Date.now },
+    calledBy: { type: String, default: 'Shop Owner' },
+    callType: { type: String, enum: ['MANUAL', 'AI_VOICE'], default: 'MANUAL' },
+    summary: { type: String, default: '' },
+    customerResponse: { type: String, default: '' },
+    nextFollowUpDate: { type: Date }
+  }],
+  aiCallStatus: {
+    type: String,
+    enum: ['NOT_SCHEDULED', 'SCHEDULED', 'COMPLETED', 'FAILED'],
+    default: 'NOT_SCHEDULED'
+  },
+  aiCallSummary: { type: String, default: '' },
   isDeleted: {
     type: Boolean,
     default: false,

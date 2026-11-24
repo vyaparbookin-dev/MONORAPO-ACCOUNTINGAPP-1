@@ -272,14 +272,14 @@ export default function PartiesPage() {
           ? res.data.channels?.recovery?.userPhone
           : (res.data.channels?.billing?.userPhone || res.data.userPhone);
 
-        setWaStatus({
+        setWaStatus(prev => ({
           isConnected: effectiveConn,
           status: effectiveConn ? 'CONNECTED' : (res.data.status || 'DISCONNECTED'),
-          qrDataUrl: res.data.qrDataUrl || null,
-          userPhone: effectivePhone || null,
+          qrDataUrl: res.data.qrDataUrl || prev.qrDataUrl || null,
+          userPhone: effectivePhone || prev.userPhone || null,
           isDedicated: recoveryConn,
           isInherited: !recoveryConn && billingConn
-        });
+        }));
       }
     } catch (e) {}
   };
@@ -2542,8 +2542,13 @@ export default function PartiesPage() {
                             return <span className="text-slate-400 text-[10px]">{daysAgo} दिन</span>;
                           })()}
                         </td>
-                        <td className="px-3 py-2.5 text-slate-600 max-w-[180px] lg:max-w-[260px] truncate" title={tx.details || ''}>
-                          {tx.details || '-'}
+                        <td className="px-3 py-2.5 text-slate-600 max-w-[180px] lg:max-w-[260px]" title={tx.details || ''}>
+                          <div className="truncate font-medium">{tx.details || '-'}</div>
+                          {(tx.bookNo || tx.pageNo) && (
+                            <div className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">
+                              📖 बुक #{tx.bookNo || '-'}{tx.pageNo ? `, पेज #${tx.pageNo}` : ''}
+                            </div>
+                          )}
                         </td>
                         <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                           {siteStr ? (

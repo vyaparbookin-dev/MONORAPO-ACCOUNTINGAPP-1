@@ -11,6 +11,8 @@ const partyTransactionSchema = new mongoose.Schema({
   billImageUrl: { type: String, default: '' }, // Attached photo of bill / receipt (primary)
   billImageUrls: [{ type: String }], // Attached multiple photos (up to 5 slips)
   billNumber: { type: String, default: '' },
+  bookNo: { type: String, default: '' }, // Physical Bill Book Number
+  pageNo: { type: String, default: '' }, // Physical Bill Book Page Number
   siteName: { type: String, default: '' }, // Site tracking (PWD, COMPLEX, PAINT, etc.)
   referenceBillId: { type: mongoose.Schema.Types.Mixed },
   isDeleted: { type: Boolean, default: false }
