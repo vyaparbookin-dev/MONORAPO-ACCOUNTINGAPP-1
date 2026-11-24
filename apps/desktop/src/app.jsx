@@ -455,6 +455,7 @@ const App = () => {
                     {/* Quotations */}
                     <Route path="/quotations" element={<QuotationListPage />} />
                     <Route path="/quotations/create" element={<CreateQuotationPage />} />
+                    <Route path="/quotations/edit/:id" element={<CreateQuotationPage />} />
                     <Route path="/quotations/:id" element={<QuotationDetailPage />} />
                     <Route path="/billing/quotations" element={<QuotationListPage />} />
                     <Route path="/billing/quotations/create" element={<CreateQuotationPage />} />

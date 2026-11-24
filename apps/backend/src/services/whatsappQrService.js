@@ -101,23 +101,38 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
   const existing = sessions.get(sessKey);
 
   // 1. If session exists and forceNew is false:
-  // If socket is already alive (CONNECTED, QR_READY, or INITIALIZING), do NOT create duplicate socket!
+  // If socket is actively CONNECTED, return current connected state immediately
   if (existing && !forceNew) {
-    if (existing.sock) {
+    if (existing.status === "CONNECTED" && existing.sock) {
+      return {
+        channel: normChan,
+        status: existing.status,
+        qrDataUrl: null,
+        userPhone: existing.userPhone,
+        userName: existing.userName,
+        isConnected: true
+      };
+    }
+    // If socket is actively alive and has a fresh QR ready, return current state
+    if (existing.sock && existing.status === "QR_READY" && existing.qrDataUrl) {
       return {
         channel: normChan,
         status: existing.status,
         qrDataUrl: existing.qrDataUrl,
         userPhone: existing.userPhone,
         userName: existing.userName,
-        isConnected: existing.status === "CONNECTED"
+        isConnected: false
       };
     }
   }
 
   const authDir = getAuthDir(companyId, normChan);
 
-  // 2. If forceNew is requested, cleanly teardown old socket before starting fresh
+  // Preserve previous QR image in memory during reconnect so screen doesn't flicker or go blank
+  const preservedQrDataUrl = existing?.qrDataUrl || null;
+  const preservedQr = existing?.qr || null;
+
+  // 2. Cleanly teardown any existing socket before opening a fresh one
   if (existing) {
     if (existing.reconnectTimer) {
       clearTimeout(existing.reconnectTimer);
@@ -131,7 +146,6 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
       existing.sock = null;
     }
     if (forceNew) {
-      sessions.delete(sessKey);
       if (fs.existsSync(authDir)) {
         try {
           fs.rmSync(authDir, { recursive: true, force: true });
@@ -149,9 +163,9 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
   const sessionObj = {
     channel: normChan,
     sock: null,
-    status: "INITIALIZING",
-    qr: existing?.qr || null,
-    qrDataUrl: existing?.qrDataUrl || null, // Preserve existing QR if available
+    status: preservedQrDataUrl ? "QR_READY" : "INITIALIZING",
+    qr: preservedQr,
+    qrDataUrl: preservedQrDataUrl,
     userPhone: null,
     userName: null,
     reconnectTimer: null
@@ -167,7 +181,7 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
       printQRInTerminal: false,
       connectTimeoutMs: 60000,
       defaultQueryTimeoutMs: 60000,
-      keepAliveIntervalMs: 30000,
+      keepAliveIntervalMs: 25000,
       emitOwnEvents: false,
       browser: [`Vyapar-${normChan}`, "Chrome", "1.0.0"]
     });
@@ -196,7 +210,7 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
         } catch (qrErr) {
           console.warn(`[WhatsApp Engine][${normChan}] QR to DataURL error:`, qrErr.message);
         }
-        console.log(`📲 [WhatsApp Engine][${normChan}] Active QR code available for ${sessKey}`);
+        console.log(`📲 [WhatsApp Engine][${normChan}] Active QR code refreshed for ${sessKey}`);
       }
 
       if (connection === "open") {
@@ -227,9 +241,11 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
 
         console.log(`⚠️ [WhatsApp Engine][${normChan}] Connection closed for ${sessKey}. Code: ${statusCode}, LoggedOut: ${isLoggedOut}`);
 
+        // Mark socket as closed
+        sessionObj.sock = null;
+
         if (isLoggedOut) {
           sessionObj.status = "DISCONNECTED";
-          sessionObj.sock = null;
           sessionObj.qr = null;
           sessionObj.qrDataUrl = null;
           sessionObj.userPhone = null;
@@ -237,14 +253,15 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
             fs.rmSync(authDir, { recursive: true, force: true });
           } catch (e) {}
         } else if (statusCode !== DisconnectReason.connectionReplaced) {
-          // Reconnect with a controlled backoff only if socket is not replaced
-          sessionObj.status = "INITIALIZING";
+          // Keep QR visible on screen while reconnecting in background
+          sessionObj.status = sessionObj.qrDataUrl ? "QR_READY" : "INITIALIZING";
           if (sessionObj.reconnectTimer) clearTimeout(sessionObj.reconnectTimer);
           sessionObj.reconnectTimer = setTimeout(() => {
-            if (sessions.get(sessKey)?.sock === sock) {
-              initWhatsAppSession(companyId, normChan, false).catch(() => {});
-            }
-          }, 5000);
+            // Re-initialize cleanly without clashing
+            initWhatsAppSession(companyId, normChan, false).catch((err) => {
+              console.warn(`[WhatsApp Engine][${normChan}] Auto-reconnect notice:`, err.message);
+            });
+          }, 2000);
         }
       }
     });
@@ -260,10 +277,11 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
   } catch (initErr) {
     console.error(`[WhatsApp Engine][${normChan}] Init error for ${sessKey}:`, initErr.message);
     sessionObj.status = "DISCONNECTED";
+    sessionObj.sock = null;
     return {
       channel: normChan,
       status: "DISCONNECTED",
-      qrDataUrl: null,
+      qrDataUrl: sessionObj.qrDataUrl || null,
       userPhone: null,
       userName: null,
       isConnected: false,

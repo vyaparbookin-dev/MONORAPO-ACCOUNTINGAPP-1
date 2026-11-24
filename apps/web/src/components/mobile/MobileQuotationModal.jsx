@@ -299,18 +299,29 @@ export default function MobileQuotationModal({
         }
 
         const qty = Number(p.quantity || p.qty || 1);
-        const rate = Number(p.price || p.rate || (catItem ? catItem.sellingPrice || catItem.salePrice : 0));
+        const rateA = Number(catItem ? catItem.sellingPrice || catItem.salePrice || 0 : p.price || p.rate || 0);
+        const rateB = Number(catItem ? catItem.wholesalePrice || Math.round(rateA * 0.95) : rateA);
+        const rateC = Number(catItem ? catItem.dealerPrice || catItem.p3Rate || Math.round(rateA * 0.90) : rateA);
+        const rate = rateA;
         const total = +(qty * rate).toFixed(2);
+        const isUnknown = !catItem && rateA === 0;
 
         return {
           id: `scanned_${Date.now()}_${idx}`,
           productId: catItem?._id || catItem?.id || null,
           name: catItem ? catItem.name : (p.name || `सामान ${idx + 1}`),
+          category: catItem?.category || '',
+          brand: catItem?.brand || '',
           quantity: qty,
           unit: p.unit || catItem?.unit || "Pcs",
+          rateTier: 'A',
+          rateA,
+          rateB,
+          rateC,
           rate,
           taxRate: Number(catItem?.gstRate || 0),
-          total
+          total,
+          isUnknown
         };
       });
 

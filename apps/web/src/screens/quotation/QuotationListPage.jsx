@@ -87,15 +87,20 @@ export default function QuotationListPage() {
             <tbody>
               {filteredQuotations.map((q) => (
                 <tr key={q._id} className="border-b hover:bg-gray-50">
-                  <td className="p-4 font-medium">{q.quotationNumber}</td>
+                  <td className="p-4 font-medium">
+                    <Link to={`/quotations/${q._id}`} className="text-blue-600 hover:underline font-bold">
+                      {q.quotationNumber}
+                    </Link>
+                  </td>
                   <td className="p-4 font-semibold text-gray-800">{q.customerName || q.partyId?.name || 'अनाम ग्राहक'}</td>
                   <td className="p-4">{q.date ? new Date(q.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</td>
                   <td className="p-4 text-right">₹{Number(q?.totalAmount || 0).toFixed(2)}</td>
                   <td className="p-4 text-center"><span className={`px-2 py-1 rounded-full text-xs font-bold ${q.status === 'accepted' ? 'bg-green-100 text-green-800' : q.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{q.status.toUpperCase()}</span></td>
                   <td className="p-4 text-center flex justify-center gap-2">
-                    <Link to={`/quotations/edit/${q._id}`} className="text-blue-600 hover:text-blue-800"><Edit size={18} /></Link>
-                    <button onClick={() => updateStatus(q._id, 'sent')} className="text-green-600 hover:text-green-800"><Send size={18} /></button>
-                    <button onClick={() => updateStatus(q._id, 'rejected')} className="text-red-600 hover:text-red-800"><Trash2 size={18} /></button>
+                    <Link to={`/quotations/${q._id}`} title="देखें" className="text-slate-600 hover:text-slate-800"><FileText size={18} /></Link>
+                    <Link to={`/quotations/edit/${q._id}`} title="एडिट करें" className="text-blue-600 hover:text-blue-800"><Edit size={18} /></Link>
+                    <button onClick={() => updateStatus(q._id, 'sent')} title="भेजा गया मार्क करें" className="text-green-600 hover:text-green-800"><Send size={18} /></button>
+                    <button onClick={() => updateStatus(q._id, 'rejected')} title="रद्द करें" className="text-red-600 hover:text-red-800"><Trash2 size={18} /></button>
                   </td>
                 </tr>
               ))}
