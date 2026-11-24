@@ -1167,15 +1167,21 @@ export default function BillingPage() {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-sm font-medium text-amber-900 mb-1">📖 बुक नं. (Book #)</label>
+                  <label className="block text-sm font-medium text-amber-900 mb-1">📖 बुक नं. (उदा. 87 या 87/37)</label>
                   <input
                     type="text"
-                    placeholder="उदा. 87"
+                    placeholder="उदा. 87 या 87/37"
                     className="w-full px-3 py-2 border border-amber-300 rounded-lg bg-amber-50/50 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
                     value={formData.bookNo || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, bookNo: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.includes('/')) {
+                        const parts = val.split('/');
+                        setFormData({ ...formData, bookNo: parts[0]?.trim() || '', pageNo: parts[1]?.trim() || '' });
+                      } else {
+                        setFormData({ ...formData, bookNo: val });
+                      }
+                    }}
                   />
                 </div>
                 <div>

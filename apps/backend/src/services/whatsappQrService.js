@@ -513,6 +513,24 @@ export async function sendDirectWhatsAppMessage(companyId, toMobile, messageText
     };
   }
 
+  // 🔍 1. Verify if the recipient number is registered and active on WhatsApp
+  try {
+    const onWaResults = await session.sock.onWhatsApp(jid);
+    const targetOnWa = Array.isArray(onWaResults) && onWaResults.length > 0 ? onWaResults[0] : null;
+    if (targetOnWa && targetOnWa.exists === false) {
+      console.warn(`⚠️ [WhatsApp Engine][${usedChannel}] Recipient ${jid} is NOT registered on WhatsApp!`);
+      return {
+        success: false,
+        notOnWhatsApp: true,
+        channel: usedChannel,
+        senderPhone: session.userPhone,
+        message: `⚠️ मोबाइल नंबर (+${toMobile.slice(-10)}) WhatsApp पर पंजीकृत (Active) नहीं है! हो सकता है ग्राहक का नंबर बदल चुका हो या WhatsApp बंद हो।`
+      };
+    }
+  } catch (waCheckErr) {
+    console.warn(`[WhatsApp Engine][${usedChannel}] onWhatsApp check notice:`, waCheckErr.message);
+  }
+
   try {
     const sentMsg = await session.sock.sendMessage(jid, { text: messageText });
     console.log(`📤 [WhatsApp Engine][${usedChannel}] Message sent successfully to ${jid} (Msg ID: ${sentMsg?.key?.id}) via ${session.userPhone}`);
@@ -525,10 +543,17 @@ export async function sendDirectWhatsAppMessage(companyId, toMobile, messageText
     };
   } catch (sendErr) {
     console.error(`[WhatsApp Engine][${usedChannel}] Send error to ${jid}:`, sendErr.message);
+    const rawMsg = String(sendErr.message || '').toLowerCase();
+    let userReason = "संदेश भेजने में विफल: " + sendErr.message;
+    if (rawMsg.includes('not-authorized') || rawMsg.includes('connection closed') || rawMsg.includes('logged out') || rawMsg.includes('515') || rawMsg.includes('restart required')) {
+      userReason = "⚠️ WhatsApp सॉकेट डिस्कनेक्ट या लॉगआउट हो चुका है। कृपया बिज़नेस प्रोफाइल से दोबारा QR कोड स्कैन करें।";
+    } else if (rawMsg.includes('timed out') || rawMsg.includes('timeout') || rawMsg.includes('econnreset') || rawMsg.includes('enotfound') || rawMsg.includes('network')) {
+      userReason = "⚠️ नेटवर्क समस्या या इंटरनेट रुकावट के कारण WhatsApp संदेश नहीं भेजा जा सका। कृपया इंटरनेट जांचें।";
+    }
     return {
       success: false,
       channel: usedChannel,
-      message: "संदेश भेजने में विफल: " + sendErr.message
+      message: userReason
     };
   }
 }

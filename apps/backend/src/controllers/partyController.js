@@ -1398,7 +1398,14 @@ export const updatePartyTransaction = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company ID is missing" });
     }
 
-    const { amount, type, details, date, paymentMethod, siteName, site, partyId: targetPartyId } = req.body;
+    const { amount, type, details, date, paymentMethod, siteName, site, partyId: targetPartyId, bookNo, pageNo, billCode } = req.body;
+    let resolvedBookNo = bookNo;
+    let resolvedPageNo = pageNo;
+    if (billCode && typeof billCode === 'string' && billCode.trim()) {
+      const parts = billCode.trim().split('/');
+      resolvedBookNo = parts[0]?.trim() || '';
+      resolvedPageNo = parts[1]?.trim() || '';
+    }
     const cleanId = String(id).replace(/^(pay_|tx_|ptx_)/, '').trim();
     const isMongoId = /^[0-9a-fA-F]{24}$/.test(id) || /^[0-9a-fA-F]{24}$/.test(cleanId);
     const targetId = /^[0-9a-fA-F]{24}$/.test(id) ? id : cleanId;
@@ -1506,6 +1513,8 @@ export const updatePartyTransaction = async (req, res) => {
         if (date) updateDoc.date = new Date(date);
         if (paymentMethod) updateDoc.paymentMethod = paymentMethod;
         if (siteName !== undefined || site !== undefined) updateDoc.siteName = (siteName ?? site ?? '').trim();
+        if (resolvedBookNo !== undefined) updateDoc.bookNo = resolvedBookNo;
+        if (resolvedPageNo !== undefined) updateDoc.pageNo = resolvedPageNo;
 
         await PartyTransaction.updateOne({ _id: tx._id }, { $set: updateDoc });
         Object.assign(tx, updateDoc);
@@ -1519,6 +1528,8 @@ export const updatePartyTransaction = async (req, res) => {
             updateBillDoc.finalAmount = newDeb;
             updateBillDoc.total = newDeb;
           }
+          if (resolvedBookNo !== undefined) updateBillDoc.bookNo = resolvedBookNo;
+          if (resolvedPageNo !== undefined) updateBillDoc.pageNo = resolvedPageNo;
           await Bill.updateMany(
             { companyId: req.companyId, $or: [{ billNumber: linkedBillNum }, { refBillNo: linkedBillNum }, { invoiceNumber: linkedBillNum }] },
             { $set: updateBillDoc }
@@ -1572,6 +1583,8 @@ export const updatePartyTransaction = async (req, res) => {
         bill.total = newAmt;
         if (details) bill.notes = details;
         if (date) bill.date = new Date(date);
+        if (resolvedBookNo !== undefined) bill.bookNo = resolvedBookNo;
+        if (resolvedPageNo !== undefined) bill.pageNo = resolvedPageNo;
         bill.updatedAt = new Date();
         await bill.save();
 
@@ -1582,6 +1595,8 @@ export const updatePartyTransaction = async (req, res) => {
           if (date) updateTxDoc.date = new Date(date);
           if (newAmt > 0) updateTxDoc.debit = newAmt;
           if (details) updateTxDoc.details = details;
+          if (resolvedBookNo !== undefined) updateTxDoc.bookNo = resolvedBookNo;
+          if (resolvedPageNo !== undefined) updateTxDoc.pageNo = resolvedPageNo;
           await PartyTransaction.updateMany(
             { companyId: req.companyId, $or: [{ referenceBillId: bNum }, { billNumber: bNum }, { refNo: bNum }] },
             { $set: updateTxDoc }
@@ -1617,6 +1632,23 @@ export const updatePartyTransaction = async (req, res) => {
           message: "बिल सफलतापूर्वक अपडेट हो गया!",
           bill,
           transaction: bill
+        });
+      }
+
+      // Check if it's a Purchase
+      const purchase = await Purchase.findOne({ _id: targetId, companyId: req.companyId });
+      if (purchase) {
+        if (details) purchase.notes = details;
+        if (date) purchase.date = new Date(date);
+        if (resolvedBookNo !== undefined) purchase.bookNo = resolvedBookNo;
+        if (resolvedPageNo !== undefined) purchase.pageNo = resolvedPageNo;
+        purchase.updatedAt = new Date();
+        await purchase.save();
+        return res.json({
+          success: true,
+          message: "खरीद बिल सफलतापूर्वक अपडेट हो गया!",
+          purchase,
+          transaction: purchase
         });
       }
     }

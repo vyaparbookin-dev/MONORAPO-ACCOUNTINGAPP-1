@@ -580,12 +580,14 @@ export default function PartiesPage() {
   const [editingTxType, setEditingTxType] = useState('received');
   const [editingTxDetails, setEditingTxDetails] = useState('');
   const [editingTxSite, setEditingTxSite] = useState('');
+  const [editingTxBookCode, setEditingTxBookCode] = useState(''); // e.g. "87/37"
   const [savingTx, setSavingTx] = useState(false);
 
   // 🛒 Add Missing Bill Modal State (Directly inside Statement)
   const [showAddBillModal, setShowAddBillModal] = useState(false);
   const [addBillDate, setAddBillDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [addBillNumber, setAddBillNumber] = useState('');
+  const [addBillBookCode, setAddBillBookCode] = useState(''); // e.g. "87/37"
   const [addBillAmount, setAddBillAmount] = useState('');
   const [addBillPaymentMode, setAddBillPaymentMode] = useState('UDHAR');
   const [addBillItemsSummary, setAddBillItemsSummary] = useState('');
@@ -1485,6 +1487,8 @@ export default function PartiesPage() {
     setEditingTxType(Number(tx.debit || 0) > 0 ? 'paid' : 'received');
     setEditingTxDetails(tx.details || '');
     setEditingTxSite(tx.siteName || '');
+    const bCode = tx.bookNo && tx.pageNo ? `${tx.bookNo}/${tx.pageNo}` : (tx.bookNo || tx.pageNo || '');
+    setEditingTxBookCode(bCode);
   };
 
   // Save Edited Transaction
@@ -1525,7 +1529,8 @@ export default function PartiesPage() {
         amount: amt,
         type: editingTxType,
         details: editingTxDetails.trim(),
-        siteName: editingTxSite.trim()
+        siteName: editingTxSite.trim(),
+        billCode: editingTxBookCode.trim()
       };
       const res = await api.put(`/api/party/transaction/${txId}`, payload);
       alert(res?.data?.message || "लेनदेन सफलतापूर्वक अपडेट हो गया!");
@@ -1687,6 +1692,7 @@ export default function PartiesPage() {
 
     setAddBillNumber(nextNum);
     setAddBillAmount('');
+    setAddBillBookCode('');
     setAddBillPaymentMode(p.partyType === 'supplier' ? 'CASH' : 'UDHAR');
     setAddBillItemsSummary('');
     setAddBillSite(statementSiteFilter !== 'all' ? statementSiteFilter : '');
@@ -1713,6 +1719,14 @@ export default function PartiesPage() {
       const isUdhar = addBillPaymentMode === 'UDHAR';
       const pId = p._id || p.id;
 
+      let bNo = '';
+      let pNo = '';
+      if (addBillBookCode.trim()) {
+        const parts = addBillBookCode.trim().split('/');
+        bNo = parts[0]?.trim() || '';
+        pNo = parts[1]?.trim() || '';
+      }
+
       let uploadedImageUrl = '';
       if (addBillImage) {
         try {
@@ -1735,6 +1749,8 @@ export default function PartiesPage() {
           partyId: pId,
           billNumber: bNum,
           invoiceNo: bNum,
+          bookNo: bNo,
+          pageNo: pNo,
           date: addBillDate,
           totalAmount: amt,
           total: amt,
@@ -1761,6 +1777,8 @@ export default function PartiesPage() {
           partyName: p.name,
           customerMobile: p.mobileNumber || '',
           billNumber: bNum,
+          bookNo: bNo,
+          pageNo: pNo,
           date: addBillDate,
           finalAmount: amt,
           total: amt,
@@ -2034,6 +2052,7 @@ export default function PartiesPage() {
         `👤 पार्टी: *${p.name}*\n` +
         `📅 दिनांक: *${dStr}*\n` +
         `🏷️ बिल नं.: *${tx.refNo || '-'}*\n`;
+      if (tx.bookNo || tx.pageNo) text += `📖 बिल बुक/पेज: *${tx.bookNo && tx.pageNo ? `${tx.bookNo}/${tx.pageNo}` : (tx.bookNo ? `बुक #${tx.bookNo}` : `पेज #${tx.pageNo}`)}*\n`;
       if (tx.details) text += `📝 विवरण: ${tx.details}\n`;
       if (tx.siteName) text += `🏗️ साइट: *${tx.siteName}*\n`;
       text += `💰 बिल रकम: *₹${amt.toLocaleString('en-IN')}*\n` +
@@ -2047,11 +2066,16 @@ export default function PartiesPage() {
 
     if (waStatus.isConnected && cleanPhone && cleanPhone.length >= 10) {
       try {
-        await api.post('/api/whatsapp/send-direct', { toMobile: cleanPhone, messageText: text, channel: 'recovery' });
-        alert(`✅ ${p.name} को WhatsApp पर ${!isDeb ? 'भुगतान पावती (Receipt)' : 'बिल विवरण'} 1-क्लिक बैकग्राउंड में भेज दिया गया!`);
-        return;
+        const res = await api.post('/api/whatsapp/send-direct', { toMobile: cleanPhone, messageText: text, channel: 'recovery' });
+        if (res?.data?.success) {
+          alert(`✅ ${p.name} को WhatsApp पर ${!isDeb ? 'भुगतान पावती (Receipt)' : 'बिल विवरण'} 1-क्लिक बैकग्राउंड में भेज दिया गया!`);
+          return;
+        }
       } catch (e) {
-        console.warn("Direct send failed, fallback to web", e);
+        const errData = e.response?.data;
+        const msg = errData?.message || e.message;
+        alert(`⚠️ WhatsApp संदेश नहीं जा सका!\n\nकारण: ${msg}\n\n💡 सलाह: यदि ग्राहक का यह WhatsApp नंबर बंद है या बदल गया है, तो पार्टी विवरण में जाकर नया नंबर दर्ज करें।`);
+        return;
       }
     } else {
       if (window.confirm("⚠️ दुकान का WhatsApp QR अभी कनेक्ट नहीं है!\n\nसीधे दुकान के नंबर से बिना Chrome खोले भेजने के लिए पहले बिज़नेस प्रोफाइल से QR स्कैन करें।\n\nक्या आप अभी Chrome ब्राउज़र में खोलना चाहते हैं? (ध्यान दें: Chrome में जो भी WhatsApp लॉगिन होगा उससे संदेश जाएगा)")) {
@@ -2558,8 +2582,21 @@ export default function PartiesPage() {
                             {isSale ? '🛒 बिक्री' : isPurchase ? '🏢 खरीद' : isReceipt ? '🟢 मिले' : '🔴 दिए'}
                           </span>
                         </td>
-                        <td className="px-2.5 py-2.5 font-bold text-slate-800 whitespace-nowrap font-mono">
-                          {tx.refNo || '-'}
+                        <td className="px-2.5 py-2.5 font-bold text-slate-800 whitespace-nowrap">
+                          <div className="font-mono text-xs">{tx.refNo || '-'}</div>
+                          {(tx.bookNo || tx.pageNo) ? (
+                            <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-black text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded shadow-2xs font-mono">
+                              📖 {tx.bookNo && tx.pageNo ? `${tx.bookNo}/${tx.pageNo}` : (tx.bookNo ? `बुक #${tx.bookNo}` : `पेज #${tx.pageNo}`)}
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleOpenEditTx(tx)}
+                              className="text-[10px] text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded mt-0.5 inline-block cursor-pointer transition font-sans font-bold"
+                              title="इस बिल में बुक/पेज कोड डालें (जैसे 87/37)"
+                            >
+                              + कोड (87/37)
+                            </button>
+                          )}
                         </td>
                         <td className="px-2.5 py-2.5 whitespace-nowrap">
                           {(() => {
@@ -2835,6 +2872,20 @@ export default function PartiesPage() {
                   </div>
                 </div>
 
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">📖 बिल बुक व पेज कोड (उदा. 87/37)</label>
+                  <input
+                    type="text"
+                    placeholder="उदा. 87/37 (बुक 87, पेज 37)"
+                    value={addBillBookCode}
+                    onChange={(e) => setAddBillBookCode(e.target.value)}
+                    className="w-full border border-amber-300 bg-amber-50/50 rounded-xl px-3 py-2 text-xs font-bold font-mono focus:ring-2 focus:ring-amber-500 outline-none"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">
+                    💡 भौतिक बिल बुक हेतु यहाँ <b>87/37</b> दर्ज करें (बुक #87, पेज #37)।
+                  </span>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-700 font-bold mb-1">💰 कुल बिल राशि (₹) *</label>
@@ -2999,6 +3050,20 @@ export default function PartiesPage() {
                     <option value="received">🟢 मुझे मिले (Payment Received / Credit)</option>
                     <option value="paid">🔴 मैंने दिए (Payment Given / Debit)</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">📖 बिल बुक व पेज कोड (उदा. 87/37)</label>
+                  <input
+                    type="text"
+                    placeholder="उदा. 87/37 (बुक 87, पेज 37)"
+                    value={editingTxBookCode}
+                    onChange={(e) => setEditingTxBookCode(e.target.value)}
+                    className="w-full border border-amber-300 bg-amber-50/50 rounded-xl px-3 py-2 text-xs font-bold font-mono focus:ring-2 focus:ring-amber-500 outline-none"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">
+                    💡 भौतिक बिल बुक संदर्भ हेतु यहाँ <b>87/37</b> दर्ज करें।
+                  </span>
                 </div>
 
                 <div>
@@ -4742,7 +4807,11 @@ export default function PartiesPage() {
                           }
                         } catch (err) {
                           console.warn("Background WA error:", err);
-                          alert("बैकग्राउंड सेंड विफल: " + (err.response?.data?.message || err.message));
+                          const errData = err.response?.data;
+                          const reasonMsg = errData?.message || err.message;
+                          alert(`⚠️ WhatsApp संदेश नहीं जा सका!\n\nकारण: ${reasonMsg}\n\n💡 सलाह: यदि ग्राहक का WhatsApp नंबर बदल चुका है या बंद है, तो नंबर जांचें या नीचे 'Chrome में खोलें' दबाकर भेजें।`);
+                          setQuickShareToast(`⚠️ सेंड विफल: ${reasonMsg}`);
+                          setTimeout(() => setQuickShareToast(''), 6000);
                         }
                       }}
                       className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50 active:scale-95 cursor-pointer"
