@@ -1,5 +1,5 @@
 import axios from "axios";
-// GoogleGenerativeAI removed — pure OpenAI architecture (uses OPENAI_API_KEY from Render)
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import Bill from "../model/bill.js";
 import PartyTransaction from "../model/PartyTransaction.js";
 import mongoose from "mongoose";
@@ -1520,18 +1520,76 @@ Extract all visible fields according to the schema.`;
             const itemsList = (parsed.items || [])
               .filter(it => it && it.name && typeof it.name === "string" && it.name.trim().length > 1)
               .map(it => {
-                const qty = (it.quantity !== null && it.quantity !== undefined && !isNaN(it.quantity)) ? Number(it.quantity) : null;
-                const price = (it.price !== null && it.price !== undefined && !isNaN(it.price)) ? Number(it.price) : null;
-                const total = (it.total !== null && it.total !== undefined && !isNaN(it.total))
+                const qty = (it.quantity !== null && it.quantity !== undefined && !isNaN(it.quantity)) ? Number(it.quantity) : 1;
+                const price = (it.price !== null && it.price !== undefined && !isNaN(it.price)) ? Number(it.price) : 0;
+                const rawItemName = it.name.trim();
+                const cleanRawName = rawItemName.toLowerCase();
+
+                // Match against store productCatalog
+                let matchedProd = null;
+                if (productCatalog && productCatalog.length > 0) {
+                  // 1. Exact match or alias
+                  matchedProd = productCatalog.find(p => {
+                    const pName = (p.name || '').toLowerCase().trim();
+                    if (pName === cleanRawName) return true;
+                    if (Array.isArray(p.aliases) && p.aliases.some(a => String(a).toLowerCase().trim() === cleanRawName)) return true;
+                    return false;
+                  });
+
+                  // 2. Token overlap matching (>= 50% tokens)
+                  if (!matchedProd) {
+                    const tokens = cleanRawName.split(/[\s,._\-/]+/).filter(t => t.length >= 2);
+                    if (tokens.length > 0) {
+                      let bestScore = 0;
+                      let bestProd = null;
+                      for (const p of productCatalog) {
+                        const pName = (p.name || '').toLowerCase();
+                        let matches = 0;
+                        for (const t of tokens) {
+                          if (pName.includes(t)) matches++;
+                        }
+                        const score = matches / tokens.length;
+                        if (score >= 0.5 && score > bestScore) {
+                          bestScore = score;
+                          bestProd = p;
+                        }
+                      }
+                      if (bestProd) matchedProd = bestProd;
+                    }
+                  }
+                }
+
+                const finalPrice = (price > 0)
+                  ? price
+                  : (matchedProd ? Number(matchedProd.sellingPrice || matchedProd.salePrice || matchedProd.costPrice || 0) : 0);
+
+                const total = (it.total !== null && it.total !== undefined && !isNaN(it.total) && Number(it.total) > 0)
                   ? Number(it.total)
-                  : (qty !== null && price !== null ? +(qty * price).toFixed(2) : null);
+                  : +(qty * finalPrice).toFixed(2);
+
                 return {
-                  name: it.name.trim(),
-                  hsn: it.hsn ? String(it.hsn).trim() : (metaFromOcr.hsn || ""),
+                  productId: matchedProd?._id || undefined,
+                  name: matchedProd ? matchedProd.name : rawItemName,
+                  rawName: rawItemName,
+                  category: matchedProd?.category || "",
+                  brand: matchedProd?.brand || "",
+                  hsn: it.hsn ? String(it.hsn).trim() : (matchedProd?.hsnCode || metaFromOcr.hsn || ""),
                   quantity: qty,
-                  unit: it.unit || "Pcs",
-                  price: price,
+                  unit: it.unit || matchedProd?.unit || "Pcs",
+                  price: finalPrice,
+                  rate: finalPrice,
                   total: total,
+                  matchedCatalogItem: matchedProd ? {
+                    id: matchedProd._id,
+                    _id: matchedProd._id,
+                    name: matchedProd.name,
+                    category: matchedProd.category || "",
+                    brand: matchedProd.brand || "",
+                    sellingPrice: matchedProd.sellingPrice || 0,
+                    wholesalePrice: matchedProd.wholesalePrice || 0,
+                    unit: matchedProd.unit || "Pcs",
+                    currentStock: matchedProd.currentStock || 0
+                  } : null,
                   source: "extracted"
                 };
               });
@@ -1578,6 +1636,179 @@ Extract all visible fields according to the schema.`;
         } catch (oErr) {
           const openAiErrMsg = oErr.response?.data?.error?.message || oErr.message;
           console.warn("[parseBillImage] OpenAI GPT-4o-mini warning:", openAiErrMsg);
+        }
+      }
+
+      // 2. Try Google Gemini Vision Fallback (gemini-2.5-flash / gemini-2.0-flash / gemini-1.5-flash)
+      const geminiKey = req.body?.geminiApiKey || process.env.GEMINI_API_KEY;
+      if (geminiKey && pureB64) {
+        try {
+          const genAI = new GoogleGenerativeAI(geminiKey);
+          const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+          let geminiResText = null;
+
+          for (const mName of candidateModels) {
+            try {
+              const model = genAI.getGenerativeModel({
+                model: mName,
+                generationConfig: { responseMimeType: "application/json" }
+              });
+
+              const promptPayload = [
+                promptSystem + "\n\n" + userPromptText,
+                {
+                  inlineData: {
+                    data: pureB64,
+                    mimeType: mimeType || "image/jpeg"
+                  }
+                }
+              ];
+
+              const gResult = await model.generateContent(promptPayload);
+              const txt = gResult?.response?.text();
+              if (txt && txt.trim().length > 10) {
+                geminiResText = txt;
+                break;
+              }
+            } catch (mErr) {
+              console.warn(`[parseBillImage] Gemini model ${mName} note:`, mErr.message);
+            }
+          }
+
+          if (geminiResText) {
+            const parsed = JSON.parse(geminiResText);
+            const isStatementResult = isStatementMode || parsed.documentType === 'statement' || (Array.isArray(parsed.transactions) && parsed.transactions.length > 0);
+
+            if (isStatementResult) {
+              let rawTxList = Array.isArray(parsed.transactions) && parsed.transactions.length > 0 ? parsed.transactions : [];
+              const cleanedTxs = rawTxList.map((t, idx) => ({
+                id: t.id || `tx_${Date.now()}_${idx}`,
+                date: t.date || metaFromOcr.billDate || '',
+                details: (t.details || t.particulars || t.description || 'खाता प्रविष्टि').trim(),
+                debit: parseAmountClean(t.debit || t.dr || 0),
+                credit: parseAmountClean(t.credit || t.cr || 0),
+                balance: parseAmountClean(t.balance || t.bal || 0)
+              }));
+
+              const totalDebit = cleanedTxs.reduce((s, t) => s + (t.debit || 0), 0);
+              const totalCredit = cleanedTxs.reduce((s, t) => s + (t.credit || 0), 0);
+              const calcStatementTotal = parsed.totalAmount ? parseAmountClean(parsed.totalAmount) : (totalDebit || totalCredit || parseAmountClean(parsed.closingBalance));
+
+              return {
+                success: true,
+                documentType: 'statement',
+                source: 'google-gemini-vision',
+                partyName: (parsed.partyName || parsed.accountName || parsed.customerName || metaFromOcr.partyName || '').trim(),
+                openingBalance: parseAmountClean(parsed.openingBalance),
+                closingBalance: parseAmountClean(parsed.closingBalance),
+                totalAmount: calcStatementTotal,
+                transactions: cleanedTxs,
+                rawText: rawOcrText || geminiResText,
+                needsReview: true,
+                reviewReasons: ['खाता विवरण Gemini AI द्वारा पढ़ा गया।']
+              };
+            }
+
+            const itemsList = (parsed.items || [])
+              .filter(it => it && it.name && typeof it.name === "string" && it.name.trim().length > 1)
+              .map(it => {
+                const qty = Number(it.quantity || 1);
+                const price = Number(it.price || 0);
+                const rawItemName = it.name.trim();
+                const cleanRawName = rawItemName.toLowerCase();
+
+                let matchedProd = null;
+                if (productCatalog && productCatalog.length > 0) {
+                  matchedProd = productCatalog.find(p => {
+                    const pName = (p.name || '').toLowerCase().trim();
+                    if (pName === cleanRawName) return true;
+                    if (Array.isArray(p.aliases) && p.aliases.some(a => String(a).toLowerCase().trim() === cleanRawName)) return true;
+                    return false;
+                  });
+
+                  if (!matchedProd) {
+                    const tokens = cleanRawName.split(/[\s,._\-/]+/).filter(t => t.length >= 2);
+                    if (tokens.length > 0) {
+                      let bestScore = 0;
+                      let bestProd = null;
+                      for (const p of productCatalog) {
+                        const pName = (p.name || '').toLowerCase();
+                        let matches = 0;
+                        for (const t of tokens) {
+                          if (pName.includes(t)) matches++;
+                        }
+                        const score = matches / tokens.length;
+                        if (score >= 0.5 && score > bestScore) {
+                          bestScore = score;
+                          bestProd = p;
+                        }
+                      }
+                      if (bestProd) matchedProd = bestProd;
+                    }
+                  }
+                }
+
+                const finalPrice = price > 0 ? price : (matchedProd ? Number(matchedProd.sellingPrice || 0) : 0);
+                const total = (it.total && Number(it.total) > 0) ? Number(it.total) : +(qty * finalPrice).toFixed(2);
+
+                return {
+                  productId: matchedProd?._id || undefined,
+                  name: matchedProd ? matchedProd.name : rawItemName,
+                  rawName: rawItemName,
+                  category: matchedProd?.category || "",
+                  brand: matchedProd?.brand || "",
+                  hsn: it.hsn ? String(it.hsn).trim() : (matchedProd?.hsnCode || ""),
+                  quantity: qty,
+                  unit: it.unit || matchedProd?.unit || "Pcs",
+                  price: finalPrice,
+                  rate: finalPrice,
+                  total: total,
+                  matchedCatalogItem: matchedProd ? {
+                    id: matchedProd._id,
+                    _id: matchedProd._id,
+                    name: matchedProd.name,
+                    category: matchedProd.category || "",
+                    brand: matchedProd.brand || "",
+                    sellingPrice: matchedProd.sellingPrice || 0,
+                    wholesalePrice: matchedProd.wholesalePrice || 0,
+                    unit: matchedProd.unit || "Pcs"
+                  } : null,
+                  source: "extracted"
+                };
+              });
+
+            const extractedObj = {
+              success: true,
+              source: "google-gemini-vision",
+              partyName: (parsed.partyName || metaFromOcr.partyName || "").trim(),
+              partyType: parsed.partyType || "customer",
+              billType: parsed.billType || "sale",
+              date: parsed.date || metaFromOcr.billDate || "",
+              billDate: parsed.date || metaFromOcr.billDate || "",
+              invoiceNumber: parsed.invoiceNumber || metaFromOcr.invoiceNumber || "",
+              gstin: parsed.gstin || metaFromOcr.gstin || "",
+              sellerGst: parsed.sellerGst || metaFromOcr.sellerGst || "",
+              buyerGst: parsed.buyerGst || metaFromOcr.buyerGst || "",
+              notes: parsed.notes || metaFromOcr.notes || "",
+              roundOff: Number(parsed.roundOff || 0),
+              bankDetails: parsed.bankDetails || {},
+              additionalCharges: parsed.additionalCharges || [],
+              parsedItems: itemsList,
+              totalAmount: parsed.totalAmount ? Number(parsed.totalAmount) : itemsList.reduce((s, it) => s + it.total, 0),
+              rawText: rawOcrText || geminiResText
+            };
+
+            const validation = validateExtractedBill(extractedObj);
+            return {
+              ...extractedObj,
+              fieldSources: validation.fieldSources,
+              validation,
+              needsReview: validation.needsReview,
+              reviewReasons: validation.reviewReasons
+            };
+          }
+        } catch (gemErr) {
+          console.warn("[parseBillImage] Google Gemini Vision warning:", gemErr.message);
         }
       }
 

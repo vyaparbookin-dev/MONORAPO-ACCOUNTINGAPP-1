@@ -6507,11 +6507,12 @@ function MobileVyaparAppContent() {
       setOcrProgress(35);
       setOcrStatusText(`🤖 AI पढ़ रहा है (${files.length} दस्तावेज़)...`);
 
-      // Call Backend Multi-Image Scanner Endpoint (Powered by OpenAI GPT-4o-mini Vision)
+      // Call Backend Multi-Image Scanner Endpoint (Powered by OpenAI GPT-4o-mini & Google Gemini Vision)
       const res = await api.post("/api/billing/parse-image", {
         images: base64List,
         scannerType: ocrScannerMode,
-        openaiApiKey: openaiApiKey.trim() || undefined
+        openaiApiKey: openaiApiKey.trim() || undefined,
+        geminiApiKey: geminiApiKey.trim() || undefined
       }).catch(err => {
         console.warn("Backend batch OCR error:", err);
         return null;
@@ -6598,7 +6599,7 @@ function MobileVyaparAppContent() {
             matchedItem = items.find(ci => String(ci._id || ci.id) === String(it.productId));
           }
 
-          // 2. Strict Exact or Saved Alias match from local catalog ONLY (NO loose 3-letter token guessing)
+          // 2. Exact or Saved Alias match from local catalog
           if (!matchedItem && rawName) {
             matchedItem = items.find(catItem => {
               const catName = (catItem.name || '').toLowerCase().trim();
@@ -6607,6 +6608,28 @@ function MobileVyaparAppContent() {
               if (Array.isArray(catItem.aliases) && catItem.aliases.some(a => String(a).toLowerCase().trim() === pName)) return true;
               return false;
             });
+          }
+
+          // 3. Smart Token Overlap Match (>= 50% matching word tokens)
+          if (!matchedItem && rawName) {
+            const tokens = rawName.toLowerCase().split(/[\s,._\-/]+/).filter(t => t.length >= 2);
+            if (tokens.length > 0) {
+              let bestScore = 0;
+              let bestItem = null;
+              for (const catItem of items) {
+                const catName = (catItem.name || '').toLowerCase();
+                let matches = 0;
+                for (const t of tokens) {
+                  if (catName.includes(t)) matches++;
+                }
+                const score = matches / tokens.length;
+                if (score >= 0.5 && score > bestScore) {
+                  bestScore = score;
+                  bestItem = catItem;
+                }
+              }
+              if (bestItem) matchedItem = bestItem;
+            }
           }
 
           // STRICT ZERO-GUESSING: Never fabricate 100 as price! If price not in bill, leave 0 or catalog price
@@ -14815,6 +14838,7 @@ function MobileVyaparAppContent() {
           isOpen={showQuotationModal}
           onClose={() => setShowQuotationModal(false)}
           inventoryItems={items}
+          parties={parties}
           onConvertToBill={handleConvertQuotationToBill}
           currentCompany={selectedCompany}
         />
