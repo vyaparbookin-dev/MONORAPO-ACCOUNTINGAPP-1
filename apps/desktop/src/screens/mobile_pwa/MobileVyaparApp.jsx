@@ -52,7 +52,10 @@ import {
   LogOut,
   UserCheck,
   MessageSquare,
-  CheckCircle2
+  CheckCircle2,
+  Check,
+  Zap,
+  Copy
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useNavigate } from "react-router-dom";
@@ -770,6 +773,160 @@ function MobileVyaparAppContent() {
   const galleryInputRef = useRef(null);
   const pdfInputRef = useRef(null);
 
+  // 📷 100% In-App Live Camera Viewfinder & Preview States (Direct Mobile Capture with ❌ Retake & ✅ Confirm)
+  const [showInAppCamera, setShowInAppCamera] = useState(false);
+  const [cameraTarget, setCameraTarget] = useState("direct_bill"); // "direct_bill", "ai_ocr", "vendor_bill", "missing_bill"
+  const [cameraFacingMode, setCameraFacingMode] = useState("environment");
+  const [cameraStream, setCameraStream] = useState(null);
+  const [capturedImagePreview, setCapturedImagePreview] = useState("");
+  const [cameraError, setCameraError] = useState("");
+  const [cameraTorchOn, setCameraTorchOn] = useState(false);
+  const inAppVideoRef = useRef(null);
+  const inAppCanvasRef = useRef(null);
+  const cameraFallbackFileInputRef = useRef(null);
+
+  const startCameraStream = async (facing = "environment") => {
+    try {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setCameraError("आपके ब्राउज़र में डायरेक्ट कैमरा सपोर्ट नहीं है। आप नीचे दिए गए गैलरी/फाइल बटन से फोटो चुन या ले सकते हैं।");
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: facing },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
+        audio: false
+      });
+      setCameraStream(stream);
+      setCameraFacingMode(facing);
+      setCameraError("");
+      if (inAppVideoRef.current) {
+        inAppVideoRef.current.srcObject = stream;
+        inAppVideoRef.current.play().catch(e => console.warn("Video play error:", e));
+      }
+    } catch (err) {
+      console.warn("Camera stream error:", err);
+      setCameraError("कैमरा एक्सेस नहीं मिल पाया (अनुमति अस्वीकृत या कैमरा व्यस्त है)। कृपया नीचे गैलरी/फाइल बटन का उपयोग करें।");
+    }
+  };
+
+  const openInAppCamera = async (target = "direct_bill") => {
+    setCameraTarget(target);
+    setCapturedImagePreview("");
+    setCameraError("");
+    setShowInAppCamera(true);
+    await startCameraStream("environment");
+  };
+
+  const closeInAppCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(t => t.stop());
+      setCameraStream(null);
+    }
+    setCapturedImagePreview("");
+    setShowInAppCamera(false);
+    setCameraTorchOn(false);
+  };
+
+  const toggleCameraFacing = async () => {
+    const nextFacing = cameraFacingMode === "environment" ? "user" : "environment";
+    await startCameraStream(nextFacing);
+  };
+
+  const toggleTorch = async () => {
+    if (!cameraStream) return;
+    const track = cameraStream.getVideoTracks()[0];
+    if (track && track.applyConstraints) {
+      try {
+        const nextTorch = !cameraTorchOn;
+        await track.applyConstraints({
+          advanced: [{ torch: nextTorch }]
+        });
+        setCameraTorchOn(nextTorch);
+      } catch (e) {
+        console.warn("Torch not supported:", e);
+      }
+    }
+  };
+
+  const capturePhotoFromStream = () => {
+    const video = inAppVideoRef.current;
+    const canvas = inAppCanvasRef.current;
+    if (!video || !canvas) return;
+    const w = video.videoWidth || 1280;
+    const h = video.videoHeight || 720;
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+    setCapturedImagePreview(dataUrl);
+  };
+
+  const handleRetakePhoto = () => {
+    setCapturedImagePreview("");
+    if (inAppVideoRef.current && cameraStream) {
+      inAppVideoRef.current.srcObject = cameraStream;
+      inAppVideoRef.current.play().catch(() => {});
+    }
+  };
+
+  const handleConfirmPhoto = async () => {
+    if (!capturedImagePreview) return;
+    const imgData = capturedImagePreview;
+    closeInAppCamera();
+
+    if (cameraTarget === "direct_bill") {
+      setDirectBillImage(imgData);
+    } else if (cameraTarget === "ai_ocr") {
+      setShowOcrModal(false);
+      handleProcessBillImages(null, [imgData]);
+    } else if (cameraTarget === "vendor_bill") {
+      setVendorBillImage(imgData);
+    } else if (cameraTarget === "missing_bill") {
+      setAddBillImage(imgData);
+      setAddBillImagePreview(imgData);
+    }
+  };
+
+  const handleFallbackFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const comp = await compressImageFile(file, 1600, 0.85);
+      if (comp) {
+        setCapturedImagePreview(comp);
+        return;
+      }
+    } catch (e) {}
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (reader.result) setCapturedImagePreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  useEffect(() => {
+    if (showInAppCamera && inAppVideoRef.current && cameraStream && !capturedImagePreview) {
+      inAppVideoRef.current.srcObject = cameraStream;
+      inAppVideoRef.current.play().catch(e => console.warn("Video play error:", e));
+    }
+  }, [showInAppCamera, cameraStream, capturedImagePreview]);
+
+  useEffect(() => {
+    return () => {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, [cameraStream]);
+
   // Quick Party Modal
   const [showAddPartyModal, setShowAddPartyModal] = useState(false);
   const [newPartyName, setNewPartyName] = useState("");
@@ -944,6 +1101,120 @@ function MobileVyaparAppContent() {
       console.warn("Start WA session error:", err);
     } finally {
       setLoadingWaAction(false);
+    }
+  };
+
+  // 📲 Mobile WhatsApp Share Smart Sheet States & Helpers
+  const [showWaShareModal, setShowWaShareModal] = useState(false);
+  const [waShareConfig, setWaShareConfig] = useState({
+    title: "",
+    recipientName: "",
+    phone: "",
+    partyId: null,
+    messageText: "",
+    billId: null
+  });
+  const [waInputPhone, setWaInputPhone] = useState("");
+  const [waSavePhoneToParty, setWaSavePhoneToParty] = useState(true);
+  const [waBackgroundSending, setWaBackgroundSending] = useState(false);
+  const [waSendResult, setWaSendResult] = useState(null);
+
+  const openWhatsAppShareModal = ({ title, recipientName, phone, partyId, messageText, billId }) => {
+    const cleanP = String(phone || "").replace(/[^0-9]/g, "");
+    const formattedP = cleanP.length >= 10 ? cleanP.slice(-10) : cleanP;
+    setWaShareConfig({
+      title: title || "WhatsApp शेयर",
+      recipientName: recipientName || "ग्राहक",
+      phone: formattedP,
+      partyId: partyId || null,
+      messageText: messageText || "",
+      billId: billId || null
+    });
+    setWaInputPhone(formattedP);
+    setWaSavePhoneToParty(true);
+    setWaBackgroundSending(false);
+    setWaSendResult(null);
+    setShowWaShareModal(true);
+  };
+
+  const savePhoneToPartyDb = async (partyId, phone) => {
+    if (!partyId || !phone) return;
+    try {
+      await api.put(`/api/party/${partyId}`, { phone: phone.trim() });
+      setParties(prev => prev.map(p => (p._id === partyId || p.id === partyId) ? { ...p, phone: phone.trim(), mobileNumber: phone.trim() } : p));
+    } catch (e) {
+      console.warn("Failed to auto-save party phone:", e);
+    }
+  };
+
+  const handleOpenMobileWhatsApp = () => {
+    const phoneToSend = (waInputPhone || waShareConfig.phone || "").trim();
+    const text = encodeURIComponent(waShareConfig.messageText);
+
+    if (phoneToSend.length >= 10 && waSavePhoneToParty && waShareConfig.partyId) {
+      savePhoneToPartyDb(waShareConfig.partyId, phoneToSend);
+    }
+
+    if (phoneToSend && phoneToSend.length >= 10) {
+      const waUrl = `https://api.whatsapp.com/send?phone=91${phoneToSend.slice(-10)}&text=${text}`;
+      window.open(waUrl, "_blank");
+    } else {
+      // No phone number: opens WhatsApp contact chooser directly!
+      const waPickerUrl = `https://api.whatsapp.com/send?text=${text}`;
+      window.open(waPickerUrl, "_blank");
+    }
+    setShowWaShareModal(false);
+  };
+
+  const handleSendViaBackgroundWa = async () => {
+    const phoneToSend = (waInputPhone || waShareConfig.phone || "").trim();
+    if (!phoneToSend || phoneToSend.length < 10) {
+      alert("⚠️ कृपया 10 अंकों का मान्य मोबाइल नंबर दर्ज करें!");
+      return;
+    }
+
+    setWaBackgroundSending(true);
+    setWaSendResult(null);
+
+    try {
+      if (waSavePhoneToParty && waShareConfig.partyId) {
+        savePhoneToPartyDb(waShareConfig.partyId, phoneToSend);
+      }
+
+      const res = await api.post('/api/whatsapp/send-direct', {
+        toMobile: phoneToSend.slice(-10),
+        messageText: waShareConfig.messageText
+      });
+
+      if (res.data?.success) {
+        setWaSendResult({
+          success: true,
+          message: `संदेश ग्राहक (+91 ${phoneToSend.slice(-10)}) के WhatsApp पर बैकग्राउंड में सफलतापूर्वक भेज दिया गया!`
+        });
+        fetchWhatsAppStatus();
+      } else {
+        setWaSendResult({
+          success: false,
+          message: res.data?.message || "मैसेज भेजने में समस्या आई।"
+        });
+      }
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || "नेटवर्क या सर्वर त्रुटि";
+      setWaSendResult({
+        success: false,
+        message: errMsg
+      });
+    } finally {
+      setWaBackgroundSending(false);
+    }
+  };
+
+  const handleCopyWaMessage = () => {
+    try {
+      navigator.clipboard.writeText(waShareConfig.messageText);
+      alert("📋 बिल/हिसाब का संदेश कॉपी हो गया! अब आप इसे किसी भी चैट में पेस्ट कर सकते हैं।");
+    } catch (e) {
+      alert("कॉपी नहीं हो पाया");
     }
   };
 
@@ -2880,25 +3151,16 @@ function MobileVyaparAppContent() {
     const rawText = `*🧾 इनवॉइस बिल नं: ${bill.id || '001'}*\n*दुकान:* ${companyDisplayName}\n*ग्राहक:* ${bill.customerName || 'नकद ग्राहक'}\n*तारीख:* ${bill.date || 'आज'}\n\n*सामान विवरण:*\n${itemsList || 'बिल उत्पाद'}\n\n*कुल राशि:* ₹${Number(bill.amount || bill.finalAmount || 0).toLocaleString('en-IN')}\n*भुगतान प्रकार:* ${bill.type || 'CASH'}\n\n*धन्यवाद! फिर पधारें।*`;
 
     const targetPhone = bill.phone || bill.customerMobile || bill.customerPhone;
+    const partyId = bill.partyId || bill.customerId || (parties || []).find(p => p.name === bill.customerName)?._id;
 
-    // 🚀 If Background WhatsApp QR engine is connected, send directly without opening any chat!
-    if (waStatus.isConnected && targetPhone) {
-      try {
-        const res = await api.post('/api/whatsapp/send-direct', {
-          toMobile: targetPhone,
-          messageText: rawText
-        });
-        if (res.data?.success) {
-          alert(`✅ ग्राहक (${targetPhone}) को बैकग्राउंड में WhatsApp बिल सफलतापूर्वक भेज दिया गया!`);
-          return;
-        }
-      } catch (err) {
-        console.warn("Direct WA send failed, falling back to manual link:", err.message);
-      }
-    }
-
-    const text = encodeURIComponent(rawText);
-    window.open(`https://wa.me/${targetPhone || ''}?text=${text}`, "_blank");
+    openWhatsAppShareModal({
+      title: `🧾 बिल #${bill.id || '001'} WhatsApp शेयर`,
+      recipientName: bill.customerName || 'ग्राहक',
+      phone: targetPhone,
+      partyId: partyId,
+      messageText: rawText,
+      billId: bill.id
+    });
   };
 
   // ==================== FAST BILLING CART ACTIONS ====================
@@ -6052,37 +6314,15 @@ function MobileVyaparAppContent() {
       `━━━━━━━━━━━━━━━━━━━━━\n` +
       `कृपया हिसाब का मिलान कर लें। धन्यवाद!\n-${companyDisplayName}`;
 
-    let cleanPhone = String(party.phone || party.mobileNumber || '').replace(/[^0-9]/g, '');
-    if (!cleanPhone || cleanPhone.length < 10) {
-      const inputPhone = window.prompt(`'${party.name}' का मोबाइल नंबर दर्ज नहीं है।\nकृपया भेजने के लिए 10 अंकों का WhatsApp मोबाइल नंबर दर्ज करें (या खाली छोड़ें):`, "");
-      if (inputPhone && inputPhone.trim()) {
-        cleanPhone = inputPhone.replace(/[^0-9]/g, '');
-      }
-    }
+    const cleanPhone = String(party.phone || party.mobileNumber || '').replace(/[^0-9]/g, '');
 
-    // 🚀 Background WhatsApp Direct Send if connected!
-    if (waStatus.isConnected && cleanPhone && cleanPhone.length >= 10) {
-      try {
-        const res = await api.post('/api/whatsapp/send-direct', {
-          toMobile: cleanPhone,
-          messageText: msg
-        });
-        if (res.data?.success) {
-          alert(`✅ ${party.name} (${cleanPhone}) को बैकग्राउंड में WhatsApp पर हिसाब भेज दिया गया!`);
-          return;
-        }
-      } catch (err) {
-        console.warn("Direct WA send failed:", err.message);
-      }
-    }
-
-    if (cleanPhone && cleanPhone.length >= 10) {
-      window.open(`https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(msg)}`, '_blank');
-    } else {
-      try { navigator.clipboard?.writeText(msg); } catch (e) {}
-      alert(`📋 '${party.name}' का हिसाब कॉपी कर लिया गया है! आप किसी भी WhatsApp चैट पर पेस्ट कर सकते हैं।`);
-      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-    }
+    openWhatsAppShareModal({
+      title: `📜 खाता हिसाब WhatsApp शेयर`,
+      recipientName: party.name,
+      phone: cleanPhone,
+      partyId: party._id || party.id,
+      messageText: msg
+    });
   };
 
   const handleShareFullDetailedStatementWhatsApp = (party, txs = []) => {
@@ -6178,25 +6418,14 @@ function MobileVyaparAppContent() {
     text += `\n_धन्यवाद! - ${companyDisplayName}_`;
 
     const cleanPhone = String(party.phone || party.mobileNumber || '').replace(/[^0-9]/g, '');
-    if (waStatus.isConnected && cleanPhone && cleanPhone.length >= 10) {
-      api.post('/api/whatsapp/send-direct', {
-        toMobile: cleanPhone,
-        messageText: text
-      }).then(res => {
-        if (res.data?.success) {
-          alert(`✅ ${party.name} को WhatsApp पर पूरा खाता विवरण भेज दिया गया!`);
-        } else {
-          window.open(`https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(text)}`, '_blank');
-        }
-      }).catch(() => {
-        window.open(`https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(text)}`, '_blank');
-      });
-    } else if (cleanPhone) {
-      window.open(`https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(text)}`, '_blank');
-    } else {
-      try { navigator.clipboard?.writeText(text); } catch (e) {}
-      alert("📋 स्टेटमेंट टेक्स्ट कॉपी हो गया! आप सीधे WhatsApp चैट में पेस्ट कर सकते हैं।");
-    }
+
+    openWhatsAppShareModal({
+      title: `📜 विस्तृत खाता विवरण WhatsApp शेयर`,
+      recipientName: party.name,
+      phone: cleanPhone,
+      partyId: party._id || party.id,
+      messageText: text
+    });
   };
 
   // ==================== FAST MANUAL DAILY SALE HANDLER ====================
@@ -6485,8 +6714,13 @@ function MobileVyaparAppContent() {
   };
 
   // ==================== AI VISION MULTI-BILL PHOTO SCANNER & REVIEW ====================
-  const handleProcessBillImages = async (e) => {
-    const files = Array.from(e.target.files || []);
+  const handleProcessBillImages = async (e, directImages = null) => {
+    let files = [];
+    if (directImages && Array.isArray(directImages)) {
+      files = directImages;
+    } else if (e?.target?.files) {
+      files = Array.from(e.target.files);
+    }
     if (files.length === 0) return;
 
     setOcrLoading(true);
@@ -6497,6 +6731,9 @@ function MobileVyaparAppContent() {
       // Read and compress all files to keep payload small and avoid Vercel 4.5MB limit
       const base64List = await Promise.all(
         files.map(async file => {
+          if (typeof file === 'string' && file.startsWith('data:image')) {
+            return file;
+          }
           try {
             const comp = await compressImageFile(file, 1200, 0.75);
             if (comp) return comp;
@@ -9812,51 +10049,25 @@ function MobileVyaparAppContent() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <label className="flex-1 py-1.5 px-2 bg-amber-100/70 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-bold cursor-pointer flex items-center justify-center gap-1.5 transition">
-                        <Camera size={13} />
-                        <span>कैमरा से लें</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              try {
-                                const compressed = await compressImageFile(file);
-                                setDirectBillImage(compressed);
-                              } catch (err) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => setDirectBillImage(reader.result);
-                                reader.readAsDataURL(file);
-                              }
-                            }
-                          }}
-                          className="hidden"
-                        />
-                      </label>
-                      <label className="flex-1 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-bold cursor-pointer flex items-center justify-center gap-1.5 transition">
+                      <button
+                        type="button"
+                        onClick={() => openInAppCamera("direct_bill")}
+                        className="flex-1 py-2 px-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl text-[11px] font-black cursor-pointer flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition"
+                      >
+                        <Camera size={14} />
+                        <span>📸 कैमरा से खींचें</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCameraTarget("direct_bill");
+                          cameraFallbackFileInputRef.current?.click();
+                        }}
+                        className="flex-1 py-2 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-[11px] font-extrabold cursor-pointer flex items-center justify-center gap-1.5 transition active:scale-95"
+                      >
                         <Upload size={13} />
-                        <span>गैलरी से चुनें</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              try {
-                                const compressed = await compressImageFile(file);
-                                setDirectBillImage(compressed);
-                              } catch (err) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => setDirectBillImage(reader.result);
-                                reader.readAsDataURL(file);
-                              }
-                            }
-                          }}
-                          className="hidden"
-                        />
-                      </label>
+                        <span>🖼️ गैलरी से चुनें</span>
+                      </button>
                     </div>
                   )}
                   <p className="text-[10px] text-slate-400">
@@ -10206,7 +10417,7 @@ function MobileVyaparAppContent() {
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => cameraInputRef.current?.click()}
+                  onClick={() => openInAppCamera("ai_ocr")}
                   disabled={ocrLoading}
                   className="py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 transition"
                 >
@@ -12161,18 +12372,15 @@ function MobileVyaparAppContent() {
                           <p className="text-[10px] text-indigo-200 mt-0.5">कंप्यूटर बिल या कच्चा पर्चा तुरंत पढ़ें</p>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <label className="px-2.5 py-1.5 rounded-xl text-[11px] font-black cursor-pointer shadow-md flex items-center gap-1 transition active:scale-95 bg-amber-400 hover:bg-amber-300 text-slate-900">
+                          <button
+                            type="button"
+                            onClick={() => openInAppCamera("ai_ocr")}
+                            disabled={isAiScanningBill}
+                            className="px-2.5 py-1.5 rounded-xl text-[11px] font-black cursor-pointer shadow-md flex items-center gap-1 transition active:scale-95 bg-amber-400 hover:bg-amber-300 text-slate-900"
+                          >
                             {isAiScanningBill ? <RefreshCw size={12} className="animate-spin" /> : <Camera size={12} />}
                             <span>📸 कैमरा</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              capture="environment"
-                              disabled={isAiScanningBill}
-                              onChange={handleVendorAiScanBill}
-                              className="hidden"
-                            />
-                          </label>
+                          </button>
                           <label className="px-2.5 py-1.5 rounded-xl text-[11px] font-black cursor-pointer shadow-md flex items-center gap-1 transition active:scale-95 bg-white hover:bg-slate-100 text-indigo-900 border border-indigo-200">
                             <Upload size={12} />
                             <span>🖼️ गैलरी</span>
@@ -12603,17 +12811,14 @@ function MobileVyaparAppContent() {
                           )}
                         </label>
                         <div className="flex items-center gap-2">
-                          <label className="flex-1 py-2 px-2 bg-white border border-dashed border-indigo-300 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer hover:bg-indigo-50 transition text-xs font-bold text-indigo-700 shadow-2xs">
+                          <button
+                            type="button"
+                            onClick={() => openInAppCamera("vendor_bill")}
+                            className="flex-1 py-2 px-2 bg-white border border-dashed border-indigo-300 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer hover:bg-indigo-50 transition text-xs font-bold text-indigo-700 shadow-2xs"
+                          >
                             <Camera size={14} />
                             <span>{vendorBillImage ? "✓ बदलें (कैमरा)" : "📸 कैमरा खोलें"}</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              capture="environment"
-                              onChange={handleVendorImageCapture}
-                              className="hidden"
-                            />
-                          </label>
+                          </button>
                           <label className="flex-1 py-2 px-2 bg-white border border-dashed border-indigo-300 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer hover:bg-indigo-50 transition text-xs font-bold text-indigo-700 shadow-2xs">
                             <Upload size={14} />
                             <span>{vendorBillImage ? "✓ बदलें (गैलरी)" : "🖼️ गैलरी से चुनें"}</span>
@@ -13534,6 +13739,330 @@ function MobileVyaparAppContent() {
         </div>
       )}
 
+      {/* 📷 9.1.6 100% IN-APP LIVE CAMERA VIEWFINDER & PREVIEW MODAL (With ❌ Retake & ✅ Confirm) */}
+      {showInAppCamera && (
+        <div className="fixed inset-0 z-[110] bg-black/95 flex flex-col justify-between p-3 sm:p-5 select-none animate-in fade-in">
+          {/* Top Bar: Title, Torch, Switch Camera, Close */}
+          <div className="flex items-center justify-between text-white z-10 py-1">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+              <span className="font-extrabold text-xs sm:text-sm tracking-wide">
+                {capturedImagePreview ? "📸 फोटो की समीक्षा (Review Photo)" : "📷 लाइव बिल कैमरा (Live Viewfinder)"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {!capturedImagePreview && (
+                <>
+                  <button
+                    type="button"
+                    onClick={toggleTorch}
+                    className={`p-2 rounded-full border transition cursor-pointer ${cameraTorchOn ? 'bg-amber-400 text-black border-amber-400' : 'bg-white/10 text-white border-white/20'}`}
+                    title="फ्लैशलाइट चालू/बंद करें"
+                  >
+                    <Zap size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleCameraFacing}
+                    className="p-2 rounded-full bg-white/10 text-white border border-white/20 hover:bg-white/20 transition cursor-pointer"
+                    title="कैमरा बदलें (आगे / पीछे)"
+                  >
+                    <RefreshCw size={16} />
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={closeInAppCamera}
+                className="p-2 rounded-full bg-rose-600/80 hover:bg-rose-600 text-white border border-rose-500 transition cursor-pointer"
+                title="बंद करें"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+
+          {/* Center Viewfinder / Preview Area */}
+          <div className="relative flex-1 flex items-center justify-center my-2 overflow-hidden rounded-2xl bg-black border border-white/10 shadow-2xl">
+            {cameraError ? (
+              <div className="text-center p-6 space-y-4 max-w-sm">
+                <div className="w-14 h-14 mx-auto rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                  <Camera size={28} />
+                </div>
+                <p className="text-xs text-amber-200 font-medium leading-relaxed">{cameraError}</p>
+                <button
+                  type="button"
+                  onClick={() => cameraFallbackFileInputRef.current?.click()}
+                  className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black text-xs rounded-xl shadow-lg flex items-center justify-center gap-2 active:scale-95 transition cursor-pointer"
+                >
+                  <Upload size={16} /> 📁 फोन गैलरी / कैमरा से चुनें
+                </button>
+              </div>
+            ) : capturedImagePreview ? (
+              /* 📸 FROZEN CAPTURED IMAGE PREVIEW */
+              <div className="relative w-full h-full flex flex-col items-center justify-center bg-black">
+                <img
+                  src={capturedImagePreview}
+                  alt="Captured Bill Preview"
+                  className="max-h-[68vh] max-w-full object-contain rounded-xl shadow-2xl border border-white/20"
+                />
+                <div className="absolute top-2 left-2 px-2.5 py-1 bg-black/70 backdrop-blur-md rounded-lg text-[10px] text-emerald-400 font-bold border border-emerald-500/30">
+                  ✓ फोटो कैप्चर हो गई है • गुणवत्ता जांचें
+                </div>
+              </div>
+            ) : (
+              /* 🎥 LIVE VIDEO STREAM WITH BILL ALIGNMENT GUIDES */
+              <div className="relative w-full h-full flex items-center justify-center">
+                <video
+                  ref={inAppVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover rounded-xl"
+                />
+                {/* Document Framing Overlay */}
+                <div className="absolute inset-4 sm:inset-8 border-2 border-dashed border-emerald-400/60 rounded-xl pointer-events-none flex flex-col justify-between p-3">
+                  <div className="flex justify-between">
+                    <div className="w-6 h-6 border-t-4 border-l-4 border-emerald-400 -mt-1 -ml-1 rounded-tl-sm" />
+                    <div className="w-6 h-6 border-t-4 border-r-4 border-emerald-400 -mt-1 -mr-1 rounded-tr-sm" />
+                  </div>
+                  <div className="text-center">
+                    <span className="px-3 py-1 bg-black/60 backdrop-blur-md text-emerald-300 rounded-full text-[10px] font-extrabold shadow-sm border border-emerald-500/30">
+                      📄 बिल / पर्ची को फ्रेम के अंदर रखें
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <div className="w-6 h-6 border-b-4 border-l-4 border-emerald-400 -mb-1 -ml-1 rounded-bl-sm" />
+                    <div className="w-6 h-6 border-b-4 border-r-4 border-emerald-400 -mb-1 -mr-1 rounded-br-sm" />
+                  </div>
+                </div>
+              </div>
+            )}
+            <canvas ref={inAppCanvasRef} className="hidden" />
+            <input
+              type="file"
+              accept="image/*"
+              ref={cameraFallbackFileInputRef}
+              onChange={handleFallbackFileSelect}
+              className="hidden"
+            />
+          </div>
+
+          {/* Bottom Controls Bar */}
+          <div className="py-2 z-10">
+            {capturedImagePreview ? (
+              /* ❌ CROSS AND ✅ RIGHT ACTION BUTTONS AS REQUESTED BY USER */
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={handleRetakePhoto}
+                    className="py-3.5 px-4 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-xl flex items-center justify-center gap-2 active:scale-95 transition cursor-pointer"
+                  >
+                    <X size={20} className="stroke-[3]" />
+                    <span>❌ दोबारा खींचें (Retake)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmPhoto}
+                    className="py-3.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-xl flex items-center justify-center gap-2 active:scale-95 transition cursor-pointer"
+                  >
+                    <Check size={20} className="stroke-[3]" />
+                    <span>✅ सही है, इस्तेमाल करें</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-center text-slate-400">
+                  अगर बिल धुंधला या कटा आया हो तो ❌ दबाकर दोबारा लें, अगर साफ है तो ✅ दबाएं।
+                </p>
+              </div>
+            ) : (
+              /* SHUTTER & GALLERY BUTTONS */
+              <div className="flex items-center justify-around px-4">
+                <button
+                  type="button"
+                  onClick={() => cameraFallbackFileInputRef.current?.click()}
+                  className="flex flex-col items-center gap-1 text-slate-300 hover:text-white cursor-pointer"
+                >
+                  <div className="w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 flex items-center justify-center">
+                    <Upload size={18} />
+                  </div>
+                  <span className="text-[10px] font-bold">🖼️ गैलरी</span>
+                </button>
+
+                {/* Big Shutter Button */}
+                <button
+                  type="button"
+                  onClick={capturePhotoFromStream}
+                  className="relative w-20 h-20 rounded-full border-4 border-white flex items-center justify-center active:scale-90 transition p-1 shadow-2xl cursor-pointer"
+                >
+                  <div className="w-full h-full rounded-full bg-emerald-500 hover:bg-emerald-400 flex items-center justify-center text-white shadow-inner">
+                    <Camera size={32} />
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={closeInAppCamera}
+                  className="flex flex-col items-center gap-1 text-slate-300 hover:text-white cursor-pointer"
+                >
+                  <div className="w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 flex items-center justify-center">
+                    <X size={18} />
+                  </div>
+                  <span className="text-[10px] font-bold">रद्द करें</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 📲 9.1.7 SMART MOBILE WHATSAPP SHARE SHEET (Direct WhatsApp App / Background Engine / Contact Chooser) */}
+      {showWaShareModal && (
+        <div className="fixed inset-0 z-[105] bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full p-5 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                  <MessageSquare size={20} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">{waShareConfig.title}</h3>
+                  <p className="text-[10px] text-slate-400">सीधे फोन के WhatsApp या ऑटोमैटिक इंजन से भेजें</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowWaShareModal(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-lg hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Recipient Details Card */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500 font-bold">👤 प्राप्तकर्ता (Party / Customer):</span>
+                <span className="font-extrabold text-slate-900">{waShareConfig.recipientName}</span>
+              </div>
+
+              {/* Phone input / display */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                  📱 WhatsApp मोबाइल नंबर:
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-2 bg-slate-200 text-slate-700 font-black text-xs rounded-xl border border-slate-300">
+                    +91
+                  </span>
+                  <input
+                    type="tel"
+                    maxLength={10}
+                    value={waInputPhone}
+                    onChange={(e) => setWaInputPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                    placeholder="10 अंकों का मोबाइल नंबर डालें..."
+                    className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {!waInputPhone && (
+                  <p className="text-[10px] text-amber-700 bg-amber-50 p-2 rounded-xl border border-amber-200 font-bold mt-2">
+                    ⚠️ इस ग्राहक का मोबाइल नंबर दर्ज नहीं है। आप ऊपर 10 अंकों का नंबर लिख सकते हैं, या नीचे <b>'WhatsApp में संपर्क चुनें'</b> दबाकर सीधे अपने WhatsApp में ग्राहक की चैट चुन सकते हैं!
+                  </p>
+                )}
+
+                {waShareConfig.partyId && waInputPhone.length === 10 && (
+                  <label className="flex items-center gap-2 mt-2 cursor-pointer text-[11px] text-slate-700 font-bold bg-white p-2 rounded-xl border border-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={waSavePhoneToParty}
+                      onChange={(e) => setWaSavePhoneToParty(e.target.checked)}
+                      className="w-4 h-4 text-emerald-600 rounded border-slate-300 cursor-pointer"
+                    />
+                    <span>इस नंबर को ग्राहक की प्रोफाइल में हमेशा के लिए सहेजें</span>
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {/* Live Status / Result Feedback Banner */}
+            {waBackgroundSending && (
+              <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center gap-2.5 text-indigo-800 text-xs font-bold animate-pulse">
+                <RefreshCw size={16} className="animate-spin text-indigo-600 shrink-0" />
+                <span>⚡ बैकग्राउंड इंजन से WhatsApp संदेश भेजा जा रहा है...</span>
+              </div>
+            )}
+
+            {waSendResult && (
+              <div className={`p-3 rounded-xl border text-xs font-bold flex items-start gap-2 ${
+                waSendResult.success
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-rose-50 border-rose-200 text-rose-800'
+              }`}>
+                {waSendResult.success ? (
+                  <CheckCircle size={18} className="text-emerald-600 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertTriangle size={18} className="text-rose-600 shrink-0 mt-0.5" />
+                )}
+                <div className="flex-1">
+                  <p>{waSendResult.message}</p>
+                  {!waSendResult.success && (
+                    <p className="text-[10px] font-normal mt-1 text-slate-600">
+                      सुझाव: नीचे दिए गए हरे बटन 'मोबाइल WhatsApp ऐप से भेजें' का उपयोग करें।
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-1">
+              {/* Button 1: Open native phone WhatsApp / WhatsApp Business */}
+              <button
+                type="button"
+                onClick={handleOpenMobileWhatsApp}
+                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-lg flex items-center justify-center gap-2 active:scale-95 transition cursor-pointer"
+              >
+                <Send size={16} />
+                <span>
+                  {waInputPhone.length >= 10
+                    ? "🟢 मोबाइल WhatsApp ऐप से भेजें (1-क्लिक)"
+                    : "👥 WhatsApp में संपर्क चुनें (Contact Chooser)"}
+                </span>
+              </button>
+
+              {/* Button 2: Send via background Baileys Engine (if connected and number present) */}
+              {waStatus.isConnected && (
+                <button
+                  type="button"
+                  onClick={handleSendViaBackgroundWa}
+                  disabled={waBackgroundSending || waInputPhone.length < 10}
+                  className={`w-full py-2.5 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 border transition ${
+                    waInputPhone.length >= 10 && !waBackgroundSending
+                      ? 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white border-indigo-600 shadow-md cursor-pointer active:scale-95'
+                      : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                  }`}
+                >
+                  <Sparkles size={14} />
+                  <span>⚡ ऑटोमैटिक बैकग्राउंड इंजन से भेजें (बिना ऐप खोले)</span>
+                </button>
+              )}
+
+              {/* Button 3: Copy Text Backup */}
+              <button
+                type="button"
+                onClick={handleCopyWaMessage}
+                className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 flex items-center justify-center gap-1.5 transition cursor-pointer"
+              >
+                <Copy size={13} />
+                <span>📋 संदेश टेक्स्ट कॉपी करें</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 📱 9.2 PARTY OLD HISAB (OPENING BALANCE) MODAL */}
       {showOldHisabModal && selectedPartyDetail && (
         <div className="fixed inset-0 z-[95] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
@@ -14131,23 +14660,14 @@ function MobileVyaparAppContent() {
               <div>
                 <label className="block text-[11px] text-slate-600 font-extrabold mb-1">📷 पर्ची / फोटो (वैकल्पिक)</label>
                 <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-1 px-3 py-1.5 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl border border-dashed border-slate-300 cursor-pointer transition text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => openInAppCamera("missing_bill")}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl border border-dashed border-slate-300 cursor-pointer transition text-xs font-bold"
+                  >
                     <Camera size={14} />
-                    <span>{addBillImage ? 'फोटो बदलें' : '+ फोटो लें'}</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files && e.target.files[0];
-                        if (file) {
-                          setAddBillImage(file);
-                          setAddBillImagePreview(URL.createObjectURL(file));
-                        }
-                      }}
-                    />
-                  </label>
+                    <span>{addBillImage ? 'फोटो बदलें (कैमरा)' : '+ कैमरा से फोटो लें'}</span>
+                  </button>
                   {addBillImagePreview && (
                     <div className="flex items-center gap-1.5">
                       <img src={addBillImagePreview} alt="Preview" className="w-9 h-9 object-cover rounded-lg border border-slate-200" />
