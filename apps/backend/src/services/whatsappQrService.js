@@ -158,13 +158,12 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
     }
   }
 
-  // 🛡️ If forcing new, or if credentials exist but were NEVER successfully registered/paired:
-  // Wipe stale unauthenticated keys so WhatsApp handshake doesn't fail with "Try again"!
-  if (forceNew || !hasRegisteredCreds) {
+  // 🛡️ Wipe credentials ONLY if explicitly forced (e.g. user clicked "🔄 नया QR कोड बनाएं" or explicit reset)
+  if (forceNew) {
     if (fs.existsSync(authDir)) {
       try {
         fs.rmSync(authDir, { recursive: true, force: true });
-        console.log(`🧹 [WhatsApp Engine][${normChan}] Cleared unauthenticated pairing cache for fresh scan in ${sessKey}`);
+        console.log(`🧹 [WhatsApp Engine][${normChan}] Cleared credentials for fresh scan (forceNew=true) in ${sessKey}`);
       } catch (e) {}
     }
   }
@@ -257,8 +256,9 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
 
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+        const isRestartRequired = statusCode === DisconnectReason.restartRequired || statusCode === 515;
 
-        console.log(`⚠️ [WhatsApp Engine][${normChan}] Connection closed for ${sessKey}. Code: ${statusCode}, LoggedOut: ${isLoggedOut}`);
+        console.log(`⚠️ [WhatsApp Engine][${normChan}] Connection closed for ${sessKey}. Code: ${statusCode}, LoggedOut: ${isLoggedOut}, RestartRequired: ${isRestartRequired}`);
 
         // Mark socket as closed
         sessionObj.sock = null;
@@ -272,15 +272,18 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
           try {
             fs.rmSync(authDir, { recursive: true, force: true });
           } catch (e) {}
+        } else if (isRestartRequired) {
+          // 🔄 CRITICAL FIX: Baileys emits 515 (restartRequired) right after the phone scans the QR code!
+          // The newly saved credentials in authDir MUST be kept intact to complete the login handshake.
+          console.log(`🔄 [WhatsApp Engine][${normChan}] Code 515 (restartRequired): Phone scanned QR! Finalizing handshake for ${sessKey}...`);
+          sessionObj.status = "INITIALIZING";
+          if (sessionObj.reconnectTimer) clearTimeout(sessionObj.reconnectTimer);
+          sessionObj.reconnectTimer = setTimeout(() => {
+            initWhatsAppSession(companyId, normChan, false).catch((err) => {
+              console.warn(`[WhatsApp Engine][${normChan}] 515 Reconnect notice:`, err.message);
+            });
+          }, 400);
         } else if (statusCode !== DisconnectReason.connectionReplaced) {
-          // If connection closed before ever completing registration (e.g. 408 timeout or handshake failure):
-          // Wipe unauthenticated keys so next pairing attempt starts with fresh keys and doesn't say "Try again"!
-          if (!sessionObj.isRegistered && fs.existsSync(authDir)) {
-            try {
-              fs.rmSync(authDir, { recursive: true, force: true });
-            } catch (e) {}
-          }
-
           // Keep QR visible on screen while reconnecting in background
           sessionObj.status = sessionObj.qrDataUrl ? "QR_READY" : "INITIALIZING";
           if (sessionObj.reconnectTimer) clearTimeout(sessionObj.reconnectTimer);
@@ -376,10 +379,13 @@ export function getWhatsAppStatus(companyId, requestedChannel = null) {
   const activeChannel = requestedChannel ? normalizeChannel(requestedChannel) : 'billing';
   const target = channels[activeChannel] || billing;
 
+  // Fallback QR: If requested target has no QR, provide active QR from billing or recovery
+  const effectiveQrDataUrl = target.qrDataUrl || channels.billing?.qrDataUrl || channels.recovery?.qrDataUrl || null;
+
   return {
     channel: activeChannel,
     status: target.status,
-    qrDataUrl: target.qrDataUrl,
+    qrDataUrl: effectiveQrDataUrl,
     userPhone: target.userPhone,
     userName: target.userName,
     isConnected: target.isConnected,

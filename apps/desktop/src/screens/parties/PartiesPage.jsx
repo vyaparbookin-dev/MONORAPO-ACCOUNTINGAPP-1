@@ -275,7 +275,7 @@ export default function PartiesPage() {
         setWaStatus(prev => ({
           isConnected: effectiveConn,
           status: effectiveConn ? 'CONNECTED' : (res.data.status || 'DISCONNECTED'),
-          qrDataUrl: res.data.qrDataUrl || prev.qrDataUrl || null,
+          qrDataUrl: res.data.qrDataUrl || res.data.channels?.billing?.qrDataUrl || prev.qrDataUrl || null,
           userPhone: effectivePhone || prev.userPhone || null,
           isDedicated: recoveryConn,
           isInherited: !recoveryConn && billingConn
@@ -4402,7 +4402,7 @@ export default function PartiesPage() {
                       </div>
                       <div className="flex items-center justify-center gap-1.5 text-[11px] text-emerald-600 font-bold mt-2">
                         <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" />
-                        स्कैन होने की प्रतीक्षा कर रहा है...
+                        {waStatus.status === 'INITIALIZING' ? '⏳ लॉगिन हो रहा है... फ़ोन चालू रखें' : 'स्कैन होने की प्रतीक्षा कर रहा है...'}
                       </div>
                     </div>
                   ) : (
