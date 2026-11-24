@@ -4395,7 +4395,10 @@ export default function PartiesPage() {
                         <p className="font-extrabold text-slate-900">📲 कैसे कनेक्ट करें:</p>
                         <p>1. फोन में अपना <b>WhatsApp</b> खोलें</p>
                         <p>2. ऊपर 3 डॉट्स (⋮) या Settings ➔ <b>Linked Devices</b> दबाएं</p>
-                        <p>3. <b>Link a Device</b> दबाकर इस QR कोड को स्कैन करें</p>
+                        <p>3. <b>Link a Device</b> दबाकर कैमरे को सीधे इस QR कोड पर रखें</p>
+                        <p className="text-amber-800 bg-amber-50 p-1.5 rounded-lg border border-amber-200 font-bold mt-1">
+                          💡 यदि फोन में "Try again" दिखे, तो नीचे <b>"🔄 नया QR कोड बनाएं"</b> दबाएं और तुरंत फ्रेश कोड स्कैन करें।
+                        </p>
                       </div>
                       <div className="flex items-center justify-center gap-1.5 text-[11px] text-emerald-600 font-bold mt-2">
                         <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" />

@@ -1,4 +1,4 @@
-import makeWASocket, { useMultiFileAuthState, DisconnectReason } from "@whiskeysockets/baileys";
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, Browsers } from "@whiskeysockets/baileys";
 import pino from "pino";
 import qrcode from "qrcode";
 import fs from "fs";
@@ -128,6 +128,16 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
   }
 
   const authDir = getAuthDir(companyId, normChan);
+  const credsFile = path.join(authDir, "creds.json");
+  let hasRegisteredCreds = false;
+  if (fs.existsSync(credsFile)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(credsFile, "utf-8"));
+      hasRegisteredCreds = Boolean(parsed && parsed.registered);
+    } catch (e) {
+      hasRegisteredCreds = false;
+    }
+  }
 
   // Preserve previous QR image in memory during reconnect so screen doesn't flicker or go blank
   const preservedQrDataUrl = existing?.qrDataUrl || null;
@@ -146,12 +156,16 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
       } catch (e) {}
       existing.sock = null;
     }
-    if (forceNew) {
-      if (fs.existsSync(authDir)) {
-        try {
-          fs.rmSync(authDir, { recursive: true, force: true });
-        } catch (e) {}
-      }
+  }
+
+  // 🛡️ If forcing new, or if credentials exist but were NEVER successfully registered/paired:
+  // Wipe stale unauthenticated keys so WhatsApp handshake doesn't fail with "Try again"!
+  if (forceNew || !hasRegisteredCreds) {
+    if (fs.existsSync(authDir)) {
+      try {
+        fs.rmSync(authDir, { recursive: true, force: true });
+        console.log(`🧹 [WhatsApp Engine][${normChan}] Cleared unauthenticated pairing cache for fresh scan in ${sessKey}`);
+      } catch (e) {}
     }
   }
 
@@ -169,6 +183,7 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
     qrDataUrl: preservedQrDataUrl,
     userPhone: null,
     userName: null,
+    isRegistered: hasRegisteredCreds,
     reconnectTimer: null
   };
   sessions.set(sessKey, sessionObj);
@@ -184,7 +199,9 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
       defaultQueryTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       emitOwnEvents: false,
-      browser: [`Vyapar-${normChan}`, "Chrome", "1.0.0"]
+      browser: Browsers.ubuntu("Chrome"),
+      syncFullHistory: false,
+      markOnlineOnConnect: false
     });
 
     sessionObj.sock = sock;
@@ -218,6 +235,7 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
         sessionObj.status = "CONNECTED";
         sessionObj.qr = null;
         sessionObj.qrDataUrl = null;
+        sessionObj.isRegistered = true;
         if (sessionObj.reconnectTimer) {
           clearTimeout(sessionObj.reconnectTimer);
           sessionObj.reconnectTimer = null;
@@ -250,10 +268,19 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
           sessionObj.qr = null;
           sessionObj.qrDataUrl = null;
           sessionObj.userPhone = null;
+          sessionObj.isRegistered = false;
           try {
             fs.rmSync(authDir, { recursive: true, force: true });
           } catch (e) {}
         } else if (statusCode !== DisconnectReason.connectionReplaced) {
+          // If connection closed before ever completing registration (e.g. 408 timeout or handshake failure):
+          // Wipe unauthenticated keys so next pairing attempt starts with fresh keys and doesn't say "Try again"!
+          if (!sessionObj.isRegistered && fs.existsSync(authDir)) {
+            try {
+              fs.rmSync(authDir, { recursive: true, force: true });
+            } catch (e) {}
+          }
+
           // Keep QR visible on screen while reconnecting in background
           sessionObj.status = sessionObj.qrDataUrl ? "QR_READY" : "INITIALIZING";
           if (sessionObj.reconnectTimer) clearTimeout(sessionObj.reconnectTimer);
