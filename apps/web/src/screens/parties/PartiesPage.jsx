@@ -571,7 +571,7 @@ export default function PartiesPage() {
   const [statementStartDate, setStatementStartDate] = useState('');
   const [statementEndDate, setStatementEndDate] = useState('');
   const [statementSearch, setStatementSearch] = useState('');
-  const [statementSortOrder, setStatementSortOrder] = useState('desc'); // 'desc' (नया ऊपर) | 'asc' (पुराना ऊपर)
+  const [statementSortOrder, setStatementSortOrder] = useState('asc'); // 'asc' (पारंपरिक खाता बही क्रम: पुराना ऊपर) | 'desc' (नया ऊपर)
 
   // Transaction Edit inside Statement
   const [editingTx, setEditingTx] = useState(null);

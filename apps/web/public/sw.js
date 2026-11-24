@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vyaparbook-offline-v3';
+const CACHE_NAME = 'vyaparbook-offline-v4';
 
 // Core shell assets to precache on installation
 const PRECACHE_ASSETS = [

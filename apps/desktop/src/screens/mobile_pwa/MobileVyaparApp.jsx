@@ -783,7 +783,8 @@ function MobileVyaparAppContent() {
   const [cameraTorchOn, setCameraTorchOn] = useState(false);
   const inAppVideoRef = useRef(null);
   const inAppCanvasRef = useRef(null);
-  const cameraFallbackFileInputRef = useRef(null);
+  const cameraDirectNativeInputRef = useRef(null);
+  const galleryFallbackFileInputRef = useRef(null);
 
   const startCameraStream = async (facing = "environment") => {
     try {
@@ -791,17 +792,25 @@ function MobileVyaparAppContent() {
         cameraStream.getTracks().forEach(t => t.stop());
       }
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setCameraError("आपके ब्राउज़र में डायरेक्ट कैमरा सपोर्ट नहीं है। आप नीचे दिए गए गैलरी/फाइल बटन से फोटो चुन या ले सकते हैं।");
+        setCameraError("ब्राउज़र में डायरेक्ट कैमरा सपोर्ट नहीं है। कृपया नीचे '📸 फोन कैमरा से फोटो लें' बटन दबाएं।");
         return;
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: facing },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        },
-        audio: false
-      });
+      let stream = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: facing } },
+          audio: false
+        });
+      } catch (e1) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false
+          });
+        } catch (e2) {
+          throw e2;
+        }
+      }
       setCameraStream(stream);
       setCameraFacingMode(facing);
       setCameraError("");
@@ -811,7 +820,7 @@ function MobileVyaparAppContent() {
       }
     } catch (err) {
       console.warn("Camera stream error:", err);
-      setCameraError("कैमरा एक्सेस नहीं मिल पाया (अनुमति अस्वीकृत या कैमरा व्यस्त है)। कृपया नीचे गैलरी/फाइल बटन का उपयोग करें।");
+      setCameraError("कैमरा एक्सेस नहीं मिल पाया। नीचे दिए गए '📸 फोन कैमरा से फोटो लें' बटन को दबाकर सीधे फोन कैमरे से खींचें।");
     }
   };
 
@@ -892,6 +901,9 @@ function MobileVyaparAppContent() {
     } else if (cameraTarget === "missing_bill") {
       setAddBillImage(imgData);
       setAddBillImagePreview(imgData);
+    } else if (cameraTarget.startsWith("party_tx_")) {
+      const txId = cameraTarget.replace("party_tx_", "");
+      handleAttachPartyImage(txId, [imgData]);
     }
   };
 
@@ -1036,7 +1048,7 @@ function MobileVyaparAppContent() {
   const [partyPassbookFilter, setPartyPassbookFilter] = useState('all'); // 'all', 'received' (मुझे मिले / जमा), 'given' (मैंने दिए / बिक्री)
   const [partyMonthFilter, setPartyMonthFilter] = useState('all'); // 'all', 'YYYY-MM'
   const [partySiteFilter, setPartySiteFilter] = useState('all'); // 'all', site name
-  const [partyStatementOrder, setPartyStatementOrder] = useState('desc'); // 'desc' (नया पहले) or 'asc' (स्टेटमेंट क्रम: पुराना ऊपर)
+  const [partyStatementOrder, setPartyStatementOrder] = useState('asc'); // 'asc' (पारंपरिक खाता क्रम: पुराना ऊपर) or 'desc' (नया पहले)
   const [showPartyStatementModal, setShowPartyStatementModal] = useState(false);
 
   // 📲 WhatsApp Background QR Engine States
@@ -8884,11 +8896,10 @@ function MobileVyaparAppContent() {
                   )}
                 </div>
                 <button
-                  onClick={() => {
-                    if (cameraInputRef.current) cameraInputRef.current.click();
-                  }}
+                  type="button"
+                  onClick={() => openInAppCamera("ai_ocr")}
                   title="Scan Barcode / Bill"
-                  className="p-2.5 bg-[#4338CA] hover:bg-indigo-700 text-white rounded-xl shadow-sm cursor-pointer flex items-center justify-center"
+                  className="p-2.5 bg-[#4338CA] hover:bg-indigo-700 text-white rounded-xl shadow-sm cursor-pointer flex items-center justify-center active:scale-95 transition"
                 >
                   <Camera size={16} />
                 </button>
@@ -10061,7 +10072,7 @@ function MobileVyaparAppContent() {
                         type="button"
                         onClick={() => {
                           setCameraTarget("direct_bill");
-                          cameraFallbackFileInputRef.current?.click();
+                          galleryFallbackFileInputRef.current?.click();
                         }}
                         className="flex-1 py-2 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-[11px] font-extrabold cursor-pointer flex items-center justify-center gap-1.5 transition active:scale-95"
                       >
@@ -13581,16 +13592,27 @@ function MobileVyaparAppContent() {
                                     )}
 
                                     {canAddMore && (
-                                      <label className="text-[10px] font-bold text-slate-600 hover:text-indigo-600 flex items-center gap-1 cursor-pointer bg-slate-100 hover:bg-indigo-50 px-2 py-1 rounded-lg border border-dashed border-slate-300 transition">
-                                        <span>📷 + {uniqueImages.length > 0 ? "और फोटो" : "बिल फोटो"} ({uniqueImages.length}/5)</span>
-                                        <input
-                                          type="file"
-                                          multiple
-                                          accept="image/*"
-                                          className="hidden"
-                                          onChange={(e) => handleAttachPartyImage(targetTxId, e.target.files)}
-                                        />
-                                      </label>
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => openInAppCamera(`party_tx_${targetTxId}`)}
+                                          className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 cursor-pointer bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded-lg border border-emerald-300 transition"
+                                          title="सीधे कैमरा से पर्ची खींचें"
+                                        >
+                                          <Camera size={11} className="text-emerald-600" />
+                                          <span>📸 कैमरा</span>
+                                        </button>
+                                        <label className="text-[10px] font-bold text-slate-600 hover:text-indigo-600 flex items-center gap-1 cursor-pointer bg-slate-100 hover:bg-indigo-50 px-2 py-1 rounded-lg border border-dashed border-slate-300 transition" title="गैलरी से पर्ची चुनें">
+                                          <span>🖼️ गैलरी</span>
+                                          <input
+                                            type="file"
+                                            multiple
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => handleAttachPartyImage(targetTxId, e.target.files)}
+                                          />
+                                        </label>
+                                      </div>
                                     )}
                                   </div>
                                 );
@@ -13790,13 +13812,22 @@ function MobileVyaparAppContent() {
                   <Camera size={28} />
                 </div>
                 <p className="text-xs text-amber-200 font-medium leading-relaxed">{cameraError}</p>
-                <button
-                  type="button"
-                  onClick={() => cameraFallbackFileInputRef.current?.click()}
-                  className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black text-xs rounded-xl shadow-lg flex items-center justify-center gap-2 active:scale-95 transition cursor-pointer"
-                >
-                  <Upload size={16} /> 📁 फोन गैलरी / कैमरा से चुनें
-                </button>
+                <div className="space-y-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => cameraDirectNativeInputRef.current?.click()}
+                    className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black text-xs rounded-xl shadow-lg flex items-center justify-center gap-2 active:scale-95 transition cursor-pointer"
+                  >
+                    <Camera size={16} /> 📸 फोन कैमरा से फोटो लें
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => galleryFallbackFileInputRef.current?.click()}
+                    className="w-full py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl border border-white/20 flex items-center justify-center gap-2 active:scale-95 transition cursor-pointer"
+                  >
+                    <Upload size={15} /> 🖼️ गैलरी से चुनें
+                  </button>
+                </div>
               </div>
             ) : capturedImagePreview ? (
               /* 📸 FROZEN CAPTURED IMAGE PREVIEW */
@@ -13842,7 +13873,15 @@ function MobileVyaparAppContent() {
             <input
               type="file"
               accept="image/*"
-              ref={cameraFallbackFileInputRef}
+              capture="environment"
+              ref={cameraDirectNativeInputRef}
+              onChange={handleFallbackFileSelect}
+              className="hidden"
+            />
+            <input
+              type="file"
+              accept="image/*"
+              ref={galleryFallbackFileInputRef}
               onChange={handleFallbackFileSelect}
               className="hidden"
             />
@@ -13880,7 +13919,7 @@ function MobileVyaparAppContent() {
               <div className="flex items-center justify-around px-4">
                 <button
                   type="button"
-                  onClick={() => cameraFallbackFileInputRef.current?.click()}
+                  onClick={() => galleryFallbackFileInputRef.current?.click()}
                   className="flex flex-col items-center gap-1 text-slate-300 hover:text-white cursor-pointer"
                 >
                   <div className="w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 flex items-center justify-center">
@@ -14489,20 +14528,30 @@ function MobileVyaparAppContent() {
                                           <span>📷 पर्ची देखें ({validImgs.length})</span>
                                         </button>
                                       ) : (
-                                        <label className="px-1.5 py-0.5 bg-slate-50 hover:bg-slate-100 text-slate-500 border border-dashed border-slate-300 rounded text-[9px] font-bold inline-flex items-center gap-1 cursor-pointer transition" title="इस बिल की पर्ची/फोटो अपलोड करें">
-                                          <Camera size={9} />
-                                          <span>+ पर्ची जोड़ें</span>
-                                          <input
-                                            type="file"
-                                            accept="image/*"
-                                            onChange={(e) => {
-                                              if (e.target.files && e.target.files.length > 0) {
-                                                handleAttachPartyImage(targetTxId, e.target.files);
-                                              }
-                                            }}
-                                            className="hidden"
-                                          />
-                                        </label>
+                                        <div className="inline-flex items-center gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => openInAppCamera(`party_tx_${targetTxId}`)}
+                                            className="px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded text-[9px] font-bold inline-flex items-center gap-1 cursor-pointer transition active:scale-95"
+                                            title="सीधे कैमरा से पर्ची खींचें"
+                                          >
+                                            <Camera size={9} />
+                                            <span>📸 कैमरा</span>
+                                          </button>
+                                          <label className="px-1.5 py-0.5 bg-slate-50 hover:bg-slate-100 text-slate-500 border border-dashed border-slate-300 rounded text-[9px] font-bold inline-flex items-center gap-1 cursor-pointer transition" title="गैलरी से पर्ची चुनें">
+                                            <span>🖼️ गैलरी</span>
+                                            <input
+                                              type="file"
+                                              accept="image/*"
+                                              onChange={(e) => {
+                                                if (e.target.files && e.target.files.length > 0) {
+                                                  handleAttachPartyImage(targetTxId, e.target.files);
+                                                }
+                                              }}
+                                              className="hidden"
+                                            />
+                                          </label>
+                                        </div>
                                       )}
                                     </div>
                                   </div>
