@@ -571,6 +571,7 @@ export default function PartiesPage() {
   const [statementStartDate, setStatementStartDate] = useState('');
   const [statementEndDate, setStatementEndDate] = useState('');
   const [statementSearch, setStatementSearch] = useState('');
+  const [statementSortOrder, setStatementSortOrder] = useState('desc'); // 'desc' (नया ऊपर) | 'asc' (पुराना ऊपर)
 
   // Transaction Edit inside Statement
   const [editingTx, setEditingTx] = useState(null);
@@ -1306,6 +1307,7 @@ export default function PartiesPage() {
     setStatementStartDate('');
     setStatementEndDate('');
     setStatementSearch('');
+    setStatementSortOrder('desc');
     setShowStatementModal(true);
     setStatementLoading(true);
     setStatementData(null);
@@ -1426,16 +1428,25 @@ export default function PartiesPage() {
 
   const filteredNet = filteredDebit - filteredCredit;
 
-  // ⏳ Comprehensive Aging & Bill Delay Metrics
+  // ⏳ Comprehensive Aging & Bill Delay Metrics (Supports Customers & Suppliers)
   const agingStats = useMemo(() => {
     let oldestOverdueDays = 0;
     let lastBillDate = null;
     let lastBillOverdueDays = 0;
     let lastBillAmount = 0;
 
-    const debitTxs = filteredStatementTransactions.filter(t => Number(t.debit) > 0 && t.date);
-    if (debitTxs.length > 0) {
-      const sorted = [...debitTxs].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const isSupplier = statementParty?.partyType === 'supplier' || statementParty?.type === 'supplier';
+    const billTxs = filteredStatementTransactions.filter(t => {
+      if (!t.date) return false;
+      if (isSupplier) {
+        return Number(t.credit) > 0 || t.type === 'purchase' || (t.source === 'OpeningBalance' && Number(t.credit) > 0);
+      } else {
+        return Number(t.debit) > 0 || t.type === 'sale' || (t.source === 'OpeningBalance' && Number(t.debit) > 0);
+      }
+    });
+
+    if (billTxs.length > 0) {
+      const sorted = [...billTxs].sort((a, b) => new Date(a.date) - new Date(b.date));
       const oldest = sorted[0];
       const newest = sorted[sorted.length - 1];
       if (oldest?.date) {
@@ -1443,12 +1454,26 @@ export default function PartiesPage() {
       }
       if (newest?.date) {
         lastBillDate = newest.date;
-        lastBillAmount = Number(newest.debit || 0);
+        lastBillAmount = isSupplier ? Number(newest.credit || 0) : Number(newest.debit || 0);
         lastBillOverdueDays = Math.max(0, Math.floor((new Date() - new Date(newest.date)) / (1000 * 60 * 60 * 24)));
       }
+    } else if (statementParty?.openingBalanceDate || statementParty?.createdAt) {
+      const fallbackDate = statementParty.openingBalanceDate || statementParty.createdAt;
+      lastBillDate = fallbackDate;
+      lastBillAmount = Math.abs(Number(statementParty.openingBalance || statementParty.currentBalance || 0));
+      lastBillOverdueDays = Math.max(0, Math.floor((new Date() - new Date(fallbackDate)) / (1000 * 60 * 60 * 24)));
+      oldestOverdueDays = lastBillOverdueDays;
     }
     return { oldestOverdueDays, lastBillDate, lastBillOverdueDays, lastBillAmount };
-  }, [filteredStatementTransactions]);
+  }, [filteredStatementTransactions, statementParty]);
+
+  // Display transactions ordered by statementSortOrder ('desc' = latest first, 'asc' = oldest first)
+  const displayStatementTransactions = useMemo(() => {
+    if (statementSortOrder === 'asc') {
+      return [...filteredStatementTransactions].reverse();
+    }
+    return filteredStatementTransactions;
+  }, [filteredStatementTransactions, statementSortOrder]);
 
   // Open Edit Transaction Dialog
   const handleOpenEditTx = (tx) => {
@@ -2265,30 +2290,48 @@ export default function PartiesPage() {
             )}
           </div>
           <div className="p-3.5 bg-white rounded-2xl border border-rose-200 shadow-xs col-span-2 md:col-span-1">
-            <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider block">
-              ⏳ बिल देरी (Aging / Delay)
-            </span>
-            <div className="mt-1 flex items-baseline justify-between gap-1">
-              <div>
-                <p className="text-base font-black text-rose-600">
-                  {agingStats.lastBillOverdueDays > 0 
-                    ? `${agingStats.lastBillOverdueDays} दिन लेट` 
-                    : (agingStats.lastBillDate ? "आज का बिल" : "कोई देरी नहीं")}
-                </p>
-                <span className="text-[10px] text-slate-500 block">
-                  पिछला बिल: {agingStats.lastBillOverdueDays} दिन पुराना
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider block">
+                ⏳ बिल देरी व अवधि (Aging / Delay)
+              </span>
+              {agingStats.lastBillDate && (
+                <span className="text-[10px] bg-rose-50 border border-rose-200 text-rose-800 font-bold px-2 py-0.5 rounded-full">
+                  {agingStats.lastBillOverdueDays > 0 ? `${agingStats.lastBillOverdueDays} दिन पुराना` : 'आज का बिल'}
                 </span>
-              </div>
-              {agingStats.oldestOverdueDays > agingStats.lastBillOverdueDays && (
-                <div className="text-right">
-                  <span className="text-[10px] font-bold text-rose-700 block">पुराना बिल:</span>
-                  <span className="text-xs font-black text-rose-800 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
-                    {agingStats.oldestOverdueDays} दिन
-                  </span>
-                </div>
               )}
             </div>
-            <span className="text-[10px] text-slate-400 block mt-0.5">
+            <div className="mt-1.5 space-y-1">
+              <div className="flex items-baseline justify-between gap-1">
+                <div>
+                  <p className="text-base font-black text-rose-600">
+                    {agingStats.lastBillOverdueDays > 0 
+                      ? `${agingStats.lastBillOverdueDays} दिन लेट` 
+                      : (agingStats.lastBillDate ? "आज का बिल" : "कोई पेंडिंग बिल नहीं")}
+                  </p>
+                </div>
+                {agingStats.oldestOverdueDays > agingStats.lastBillOverdueDays && (
+                  <div className="text-right">
+                    <span className="text-[10px] font-bold text-rose-700 block">सबसे पुराना:</span>
+                    <span className="text-xs font-black text-rose-800 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                      {agingStats.oldestOverdueDays} दिन
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="text-[11px] text-slate-700 font-medium pt-1 border-t border-slate-100 flex items-center justify-between flex-wrap gap-1">
+                <span>
+                  📅 <b>आखिरी बिल तारीख:</b> {agingStats.lastBillDate 
+                    ? new Date(agingStats.lastBillDate).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' }) 
+                    : (statementParty?.openingBalanceDate ? new Date(statementParty.openingBalanceDate).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'उपलब्ध नहीं')}
+                </span>
+                {agingStats.lastBillAmount > 0 && (
+                  <span className="font-bold text-slate-800">
+                    (₹{agingStats.lastBillAmount.toLocaleString('en-IN')})
+                  </span>
+                )}
+              </div>
+            </div>
+            <span className="text-[10px] text-slate-400 block mt-1">
               {statementParty.partyType === 'supplier' ? 'सप्लायर भुगतान देय' : 'ग्राहक से वसूली लंबित'}
             </span>
           </div>
@@ -2456,7 +2499,18 @@ export default function PartiesPage() {
                 <thead className="bg-slate-100 text-slate-700 font-black uppercase text-[11px] border-b border-slate-200 sticky top-0 z-10 shadow-xs">
                   <tr>
                     <th className="px-2.5 py-3 text-center w-10 shrink-0">#</th>
-                    <th className="px-3 py-3 whitespace-nowrap">दिनांक (Date)</th>
+                    <th 
+                      className="px-3 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-200 transition select-none group/sort"
+                      onClick={() => setStatementSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                      title="क्रम बदलें: नया ऊपर या पुराना ऊपर"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>दिनांक (Date)</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-extrabold group-hover/sort:bg-indigo-600 group-hover/sort:text-white transition">
+                          {statementSortOrder === 'desc' ? '🔽 नया ऊपर' : '🔼 पुराना ऊपर'}
+                        </span>
+                      </div>
+                    </th>
                     <th className="px-2.5 py-3 whitespace-nowrap">प्रकार</th>
                     <th className="px-2.5 py-3 whitespace-nowrap">रेफरेंस / बिल #</th>
                     <th className="px-2.5 py-3 whitespace-nowrap">अवधि / देरी</th>
@@ -2470,7 +2524,7 @@ export default function PartiesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredStatementTransactions.map((tx, idx) => {
+                  {displayStatementTransactions.map((tx, idx) => {
                     const isSale = tx.type === 'sale';
                     const isPurchase = tx.type === 'purchase';
                     const isReceipt = tx.type === 'receipt' || tx.credit > 0;
@@ -3254,6 +3308,15 @@ export default function PartiesPage() {
                           <span className={`text-[10px] font-bold block ${bal > 0 ? 'text-emerald-700' : bal < 0 ? (isSupplier ? 'text-rose-700' : 'text-teal-700') : 'text-gray-400'}`}>
                             {bal > 0 ? (isSupplier ? '🟢 एडवांस दिया' : '🟢 लेने हैं') : bal < 0 ? (isSupplier ? '🔴 देने हैं' : '🔵 एडवांस जमा (ग्राहक)') : '⚪ हिसाब चुकता'}
                           </span>
+                          {bal !== 0 && (p.updatedAt || p.openingBalanceDate || p.createdAt) && (() => {
+                            const actDate = p.openingBalanceDate || p.updatedAt || p.createdAt;
+                            const daysOld = actDate ? Math.max(0, Math.floor((new Date() - new Date(actDate)) / (1000 * 60 * 60 * 24))) : 0;
+                            return (
+                              <span className="text-[10px] text-slate-500 block mt-0.5 font-medium">
+                                ⏳ {daysOld > 0 ? `${daysOld} दिन पुराना` : 'आज का हिसाब'} ({new Date(actDate).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' })})
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="px-4 py-3.5 text-center">
                           <div className="flex items-center justify-center gap-1.5">

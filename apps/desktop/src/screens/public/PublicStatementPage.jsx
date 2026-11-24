@@ -208,9 +208,18 @@ export default function PublicStatementPage() {
   let lastBillOverdueDays = 0;
   let lastBillAmount = 0;
 
-  const debitTxs = transactions.filter((t) => Number(t.debit) > 0 && t.date);
-  if (debitTxs.length > 0) {
-    const sorted = [...debitTxs].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const isSupplier = party?.partyType === "supplier" || party?.type === "supplier";
+  const billTxs = transactions.filter((t) => {
+    if (!t.date) return false;
+    if (isSupplier) {
+      return Number(t.credit) > 0 || t.type === "purchase" || (t.source === "OpeningBalance" && Number(t.credit) > 0);
+    } else {
+      return Number(t.debit) > 0 || t.type === "sale" || (t.source === "OpeningBalance" && Number(t.debit) > 0);
+    }
+  });
+
+  if (billTxs.length > 0) {
+    const sorted = [...billTxs].sort((a, b) => new Date(a.date) - new Date(b.date));
     const oldest = sorted[0];
     const newest = sorted[sorted.length - 1];
     if (oldest?.date) {
@@ -218,9 +227,15 @@ export default function PublicStatementPage() {
     }
     if (newest?.date) {
       lastBillDate = newest.date;
-      lastBillAmount = Number(newest.debit || 0);
+      lastBillAmount = isSupplier ? Number(newest.credit || 0) : Number(newest.debit || 0);
       lastBillOverdueDays = Math.max(0, Math.floor((new Date() - new Date(newest.date)) / (1000 * 60 * 60 * 24)));
     }
+  } else if (party?.openingBalanceDate || party?.createdAt) {
+    const fallbackDate = party.openingBalanceDate || party.createdAt;
+    lastBillDate = fallbackDate;
+    lastBillAmount = Math.abs(Number(party.openingBalance || party.currentBalance || 0));
+    lastBillOverdueDays = Math.max(0, Math.floor((new Date() - new Date(fallbackDate)) / (1000 * 60 * 60 * 24)));
+    oldestOverdueDays = lastBillOverdueDays;
   }
 
   // Filter transactions with photos
@@ -339,7 +354,7 @@ export default function PublicStatementPage() {
               {isDue && lastBillOverdueDays > 0 && (
                 <div className="mt-1.5 flex flex-col items-end gap-0.5">
                   <span className="text-[10px] font-black bg-rose-200/90 text-rose-900 px-2 py-0.5 rounded-md inline-block">
-                    ⏳ पिछला बिल: {lastBillOverdueDays} दिन से पेंडिंग
+                    ⏳ पिछला बिल: {lastBillOverdueDays} दिन से पेंडिंग {lastBillDate ? `(${new Date(lastBillDate).toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' })})` : ''}
                   </span>
                   {oldestOverdueDays > lastBillOverdueDays && (
                     <span className="text-[9px] font-bold text-rose-700">
