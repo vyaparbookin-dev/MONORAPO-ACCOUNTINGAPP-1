@@ -325,13 +325,30 @@ export default function BillingPage() {
 
     if (searchTerm) {
       const q = String(searchTerm || '').toLowerCase().trim();
-      filtered = filtered.filter(
-        (bill) =>
+      filtered = filtered.filter((bill) => {
+        const dStr = bill.date ? new Date(bill.date).toLocaleDateString('hi-IN') : '';
+        const dIso = bill.date ? new Date(bill.date).toISOString().slice(0, 10) : '';
+        const cAddr = String(bill?.customerAddress || bill?.partyId?.address || '').toLowerCase();
+        const cCity = String(bill?.partyId?.city || '').toLowerCase();
+        const bookInfo = `बुक ${bill?.bookNo || ''} पेज ${bill?.pageNo || ''}`.toLowerCase();
+        const hasItem = (bill?.items || []).some(it => String(it.name || '').toLowerCase().includes(q));
+
+        return (
           String(bill?.billNumber || '').toLowerCase().includes(q) ||
           String(bill?.customerName || '').toLowerCase().includes(q) ||
+          cAddr.includes(q) ||
+          cCity.includes(q) ||
+          String(bill?.siteName || '').toLowerCase().includes(q) ||
+          bookInfo.includes(q) ||
+          String(bill?.bookNo || '').toLowerCase() === q ||
+          String(bill?.pageNo || '').toLowerCase() === q ||
           String(bill?.finalAmount ?? bill?.total ?? '').includes(q) ||
-          String(bill?.customerMobile || bill?.customerPhone || bill?.phone || '').includes(q)
-      );
+          String(bill?.customerMobile || bill?.customerPhone || bill?.phone || '').includes(q) ||
+          dStr.includes(q) ||
+          dIso.includes(q) ||
+          hasItem
+        );
+      });
     }
 
     if (statusFilter !== "all") {

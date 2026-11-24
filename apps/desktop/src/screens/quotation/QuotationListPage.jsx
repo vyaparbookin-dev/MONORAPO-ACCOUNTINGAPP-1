@@ -46,11 +46,27 @@ export default function QuotationListPage() {
 
   // Filtered quotations
   const filteredQuotations = quotations.filter(q => {
+    const sTerm = String(searchTerm || '').toLowerCase().trim();
     const qNum = String(q?.quotationNumber || '').toLowerCase();
     const cName = String(q?.customerName || q?.partyId?.name || '').toLowerCase();
     const cPhone = String(q?.customerPhone || q?.partyId?.mobileNumber || '').toLowerCase();
-    const sTerm = String(searchTerm || '').toLowerCase();
-    const matchesSearch = qNum.includes(sTerm) || cName.includes(sTerm) || cPhone.includes(sTerm);
+    const cAddr = String(q?.customerAddress || q?.partyId?.address || q?.partyId?.city || '').toLowerCase();
+    const dStr = q?.date ? new Date(q.date).toLocaleDateString('hi-IN') : '';
+    const dIso = q?.date ? new Date(q.date).toISOString().slice(0, 10) : '';
+    const expStr = q?.expectedPurchaseDate ? new Date(q.expectedPurchaseDate).toLocaleDateString('hi-IN') : '';
+    const expIso = q?.expectedPurchaseDate ? new Date(q.expectedPurchaseDate).toISOString().slice(0, 10) : '';
+    const hasItem = (q?.items || []).some(it => String(it.name || '').toLowerCase().includes(sTerm));
+
+    const matchesSearch = !sTerm ||
+      qNum.includes(sTerm) ||
+      cName.includes(sTerm) ||
+      cPhone.includes(sTerm) ||
+      cAddr.includes(sTerm) ||
+      dStr.includes(sTerm) ||
+      dIso.includes(sTerm) ||
+      expStr.includes(sTerm) ||
+      expIso.includes(sTerm) ||
+      hasItem;
 
     if (!matchesSearch) return false;
     if (statusFilter !== 'all') {

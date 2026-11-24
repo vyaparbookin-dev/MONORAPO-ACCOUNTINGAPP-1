@@ -154,10 +154,22 @@ export default function MobileQuotationModal({
       const cName = String(q.customerName || q.partyId?.name || "").toLowerCase();
       const cPhone = String(q.customerPhone || q.partyId?.mobileNumber || "");
       const qNum = String(q.quotationNumber || "").toLowerCase();
-      const cAddr = String(q.customerAddress || q.partyId?.address || "").toLowerCase();
+      const cAddr = String(q.customerAddress || q.partyId?.address || q.partyId?.city || "").toLowerCase();
+      const dStr = q.date ? new Date(q.date).toLocaleDateString("hi-IN") : "";
+      const dIso = q.date ? new Date(q.date).toISOString().slice(0, 10) : "";
+      const expStr = q.expectedPurchaseDate ? new Date(q.expectedPurchaseDate).toLocaleDateString("hi-IN") : "";
       const hasItem = (q.items || []).some((it) => String(it.name || "").toLowerCase().includes(qText));
 
-      return cName.includes(qText) || cPhone.includes(qText) || qNum.includes(qText) || cAddr.includes(qText) || hasItem;
+      return (
+        cName.includes(qText) ||
+        cPhone.includes(qText) ||
+        qNum.includes(qText) ||
+        cAddr.includes(qText) ||
+        dStr.includes(qText) ||
+        dIso.includes(qText) ||
+        expStr.includes(qText) ||
+        hasItem
+      );
     });
   }, [quotations, statusFilter, searchQuery]);
 
