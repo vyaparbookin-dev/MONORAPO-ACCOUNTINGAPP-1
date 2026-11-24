@@ -7939,6 +7939,23 @@ function MobileVyaparAppContent() {
               <ChevronRight size={16} className="text-blue-700" />
             </div>
 
+            {/* 📢 WHATSAPP MARKETING & MULTI-CONTACT BROADCAST OFFERS STRIP */}
+            <div 
+              onClick={() => navigate('/marketing')}
+              className="p-3.5 bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-rose-500/10 border border-purple-500/30 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm hover:border-purple-400 transition active:scale-95"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shadow">
+                  📢
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-xs text-purple-950">📢 WhatsApp ऑफर्स व त्योहार ब्रॉडकास्ट</h4>
+                  <p className="text-[10px] text-purple-800">मल्टीपल ग्राहकों को 1-साथ डिस्काउंट कूपन, सेल व बधाई संदेश भेजें</p>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-purple-700" />
+            </div>
+
             {/* PagarBook Staff Strip */}
             <div 
               onClick={() => {
@@ -9298,6 +9315,20 @@ function MobileVyaparAppContent() {
                   </div>
                 </div>
                 <ChevronRight size={16} className="text-slate-400" />
+              </div>
+
+              <div 
+                onClick={() => navigate("/marketing")} 
+                className="p-3.5 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-100 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm hover:bg-purple-100 transition"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="text-base">📢</span>
+                  <div>
+                    <span className="text-[#0F172A] block font-extrabold">WhatsApp ऑफर्स व ब्रॉडकास्ट हब</span>
+                    <span className="text-[10px] text-purple-700 font-medium">मल्टीपल संपर्कों को एक साथ सेल, कूपन व त्योहार विशेज भेजें</span>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-purple-600" />
               </div>
 
               <div 

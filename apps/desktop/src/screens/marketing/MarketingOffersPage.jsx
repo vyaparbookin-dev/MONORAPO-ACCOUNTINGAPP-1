@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import api from '../../services/api';
 import { useCompany } from '../../contexts/CompanyContext';
 import { 
   MessageSquare, Send, Gift, Sparkles, Tag, Check, Copy, 
   RefreshCw, QrCode, Phone, MapPin, ExternalLink, Calendar, 
   Users, ShoppingBag, ShieldCheck, Flame, Percent, CheckCircle2,
-  X, AlertCircle, ArrowRight, Clock
+  X, AlertCircle, ArrowRight, Clock, Search, Filter, User
 } from 'lucide-react';
 import { openWhatsAppDirectly } from '../parties/PartiesPage';
 
@@ -85,6 +85,17 @@ const PRESET_TEMPLATES = [
   }
 ];
 
+
+// 📱 Helper to validate 10-digit Indian Mobile Numbers
+const isValidPhone = (ph) => {
+  if (!ph) return false;
+  const digits = String(ph).replace(/\D/g, '');
+  if (digits.length < 10) return false;
+  const last10 = digits.slice(-10);
+  if (/^0+$/.test(last10) || /^9{10}$/.test(last10) || /^1{10}$/.test(last10)) return false;
+  return true;
+};
+
 export default function MarketingOffersPage() {
   const { selectedCompany, updateCompany } = useCompany() || {};
   const [parties, setParties] = useState([]);
@@ -105,11 +116,30 @@ export default function MarketingOffersPage() {
   const [includeContact, setIncludeContact] = useState(true);
   const [includeAddress, setIncludeAddress] = useState(true);
 
-  // Recipient State
-  const [recipientType, setRecipientType] = useState('party'); // 'party' | 'custom'
+  // Recipient State: 'multiple' (मल्टीपल संपर्क / ब्रॉडकास्ट) | 'party' (सिंगल पार्टी) | 'custom' (सीधा नंबर)
+  const [recipientType, setRecipientType] = useState('multiple');
   const [selectedPartyId, setSelectedPartyId] = useState('');
   const [customPhone, setCustomPhone] = useState('');
   const [customRecipientName, setCustomRecipientName] = useState('');
+
+  // 👥 Multi-Select & Broadcast States
+  const [selectedPartyIds, setSelectedPartyIds] = useState(new Set());
+  const [multiFilter, setMultiFilter] = useState('all'); // 'all' | 'customer' | 'due' | 'supplier'
+  const [multiSearch, setMultiSearch] = useState('');
+  const [personalizeName, setPersonalizeName] = useState(true);
+
+  // ⚡ Live Broadcast Engine States
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+  const broadcastStoppedRef = useRef(false);
+  const [broadcastProgress, setBroadcastProgress] = useState({
+    total: 0,
+    sent: 0,
+    failed: 0,
+    currentContact: '',
+    statusText: ''
+  });
+  const [broadcastLogs, setBroadcastLogs] = useState([]);
 
   // Editable Message State
   const [customizedMessage, setCustomizedMessage] = useState('');
@@ -160,6 +190,11 @@ export default function MarketingOffersPage() {
         setParties(list);
         if (list.length > 0) {
           setSelectedPartyId(list[0]._id || list[0].id || '');
+          // Pre-select all parties with valid mobile numbers
+          const validIds = new Set(
+            list.filter(p => isValidPhone(p.mobileNumber || p.phone)).map(p => p._id || p.id)
+          );
+          setSelectedPartyIds(validIds);
         }
       } catch (e) {}
       finally {
@@ -181,6 +216,54 @@ export default function MarketingOffersPage() {
   const activeParty = useMemo(() => {
     return parties.find(p => (p._id || p.id) === selectedPartyId) || null;
   }, [parties, selectedPartyId]);
+
+  // 🔍 Filtered Parties for Multi-Select List
+  const filteredParties = useMemo(() => {
+    return parties.filter(p => {
+      if (multiFilter === 'customer' && p.type && p.type.toLowerCase() === 'supplier') return false;
+      if (multiFilter === 'supplier' && (!p.type || p.type.toLowerCase() !== 'supplier')) return false;
+      if (multiFilter === 'due') {
+        const bal = Number(p.currentBalance || p.balance || 0);
+        if (bal <= 0) return false;
+      }
+      if (multiSearch.trim()) {
+        const q = multiSearch.toLowerCase().trim();
+        const nameMatch = (p.name || '').toLowerCase().includes(q);
+        const phoneMatch = (p.mobileNumber || p.phone || '').includes(q);
+        if (!nameMatch && !phoneMatch) return false;
+      }
+      return true;
+    });
+  }, [parties, multiFilter, multiSearch]);
+
+  const validFilteredParties = useMemo(() => {
+    return filteredParties.filter(p => isValidPhone(p.mobileNumber || p.phone));
+  }, [filteredParties]);
+
+  const selectedValidTargets = useMemo(() => {
+    return parties.filter(p => selectedPartyIds.has(p._id || p.id) && isValidPhone(p.mobileNumber || p.phone));
+  }, [parties, selectedPartyIds]);
+
+  const handleToggleParty = (id) => {
+    setSelectedPartyIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAllFiltered = () => {
+    setSelectedPartyIds(prev => {
+      const next = new Set(prev);
+      validFilteredParties.forEach(p => next.add(p._id || p.id));
+      return next;
+    });
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedPartyIds(new Set());
+  };
 
   // Auto-fill target phone
   const targetPhone = useMemo(() => {
@@ -221,9 +304,11 @@ export default function MarketingOffersPage() {
     const shopAddress = comp.address || '';
     const upiId = comp.upiId ? String(comp.upiId).trim() : '';
 
-    const recName = recipientType === 'party' 
-      ? (activeParty?.name || 'सम्मानित ग्राहक') 
-      : (customRecipientName.trim() || 'सम्मानित ग्राहक');
+    const recName = recipientType === 'multiple'
+      ? (selectedValidTargets[0]?.name || 'सम्मानित ग्राहक')
+      : (recipientType === 'party' 
+          ? (activeParty?.name || 'सम्मानित ग्राहक') 
+          : (customRecipientName.trim() || 'सम्मानित ग्राहक'));
 
     let text = `नमस्ते *${recName}* जी,\n\n`;
     text += `${offerTitle}\n`;
@@ -297,6 +382,127 @@ export default function MarketingOffersPage() {
     } finally {
       setSavingQuickSetting(false);
     }
+  };
+
+  // ⚡ 1-Click Multi-Contact WhatsApp Broadcast Engine
+  const handleStartBroadcast = async () => {
+    if (!waStatus.isConnected) {
+      alert("⚠️ ऑटो-सेंड WhatsApp इंजन कनेक्ट नहीं है!\n\nमल्टीपल संपर्कों को 1-क्लिक में ब्रॉडकास्ट भेजने के लिए कृपया ऊपर दिए गए 'QR चेक करें' बटन से WhatsApp लिंक करें।");
+      return;
+    }
+    const targets = selectedValidTargets;
+    if (targets.length === 0) {
+      alert("कृपया सूची में से कम से कम एक मान्य मोबाइल नंबर वाले संपर्क का चयन करें!");
+      return;
+    }
+
+    if (!window.confirm(`📢 क्या आप वाकई चुने गए ${targets.length} ग्राहकों को WhatsApp ब्रॉडकास्ट संदेश भेजना चाहते हैं?`)) {
+      return;
+    }
+
+    setIsBroadcasting(true);
+    setShowBroadcastModal(true);
+    broadcastStoppedRef.current = false;
+    setBroadcastProgress({
+      total: targets.length,
+      sent: 0,
+      failed: 0,
+      currentContact: '',
+      statusText: 'ब्रॉडकास्ट शुरू हो रहा है...'
+    });
+    setBroadcastLogs([]);
+
+    let sentCount = 0;
+    let failCount = 0;
+    const logs = [];
+
+    for (let i = 0; i < targets.length; i++) {
+      if (broadcastStoppedRef.current) {
+        setBroadcastProgress(prev => ({
+          ...prev,
+          statusText: '🛑 उपयोगकर्ता द्वारा ब्रॉडकास्ट बीच में रोक दिया गया।'
+        }));
+        break;
+      }
+
+      const party = targets[i];
+      const rawPhone = (party.mobileNumber || party.phone || '').replace(/\D/g, '');
+      const phone = rawPhone.slice(-10);
+      const partyName = party.name || 'सम्मानित ग्राहक';
+
+      setBroadcastProgress(prev => ({
+        ...prev,
+        currentContact: `${partyName} (+91 ${phone})`,
+        statusText: `भेजा जा रहा है (${i + 1}/${targets.length}): ${partyName}...`
+      }));
+
+      // Personalize message with customer's name if enabled
+      let msgToSend = customizedMessage;
+      if (personalizeName) {
+        if (/नमस्ते \*.*?\* जी,/i.test(msgToSend)) {
+          msgToSend = msgToSend.replace(/नमस्ते \*.*?\* जी,/i, `नमस्ते *${partyName}* जी,`);
+        } else {
+          msgToSend = `नमस्ते *${partyName}* जी,\n\n` + msgToSend;
+        }
+      }
+
+      try {
+        const res = await api.post('/api/whatsapp/send-direct', {
+          toMobile: phone,
+          messageText: msgToSend,
+          channel: 'marketing'
+        });
+
+        if (res?.data?.success) {
+          sentCount++;
+          logs.unshift({
+            name: partyName,
+            phone,
+            status: 'success',
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          });
+        } else {
+          failCount++;
+          logs.unshift({
+            name: partyName,
+            phone,
+            status: 'failed',
+            error: res?.data?.message || 'विफल',
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          });
+        }
+      } catch (err) {
+        failCount++;
+        logs.unshift({
+          name: partyName,
+          phone,
+          status: 'failed',
+          error: err.response?.data?.message || err.message,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        });
+      }
+
+      setBroadcastProgress(prev => ({
+        ...prev,
+        sent: sentCount,
+        failed: failCount
+      }));
+      setBroadcastLogs([...logs]);
+
+      // Anti-spam delay between messages (1.5 to 2.5 seconds random interval)
+      if (i < targets.length - 1 && !broadcastStoppedRef.current) {
+        const delayMs = Math.floor(Math.random() * 1000) + 1500;
+        await new Promise(r => setTimeout(r, delayMs));
+      }
+    }
+
+    setIsBroadcasting(false);
+    setBroadcastProgress(prev => ({
+      ...prev,
+      statusText: broadcastStoppedRef.current 
+        ? `🛑 ब्रॉडकास्ट रोक दिया गया (${sentCount} सफल, ${failCount} विफल)` 
+        : `🎉 ब्रॉडकास्ट संपन्न! कुल ${sentCount} संदेश सफलतापूर्वक भेजे गए (${failCount} विफल)।`
+    }));
   };
 
   // ⚡ 1-Click Background Send (via server Baileys engine)
@@ -651,36 +857,240 @@ export default function MarketingOffersPage() {
 
           {/* Recipient Picker */}
           <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4">
-            <h3 className="text-sm font-black text-slate-800 flex items-center gap-2 border-b pb-3">
-              <span>👤 3. किसे भेजना है? (Target Recipient)</span>
-            </h3>
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                <span>👤 3. किसे भेजना है? (Target Recipient)</span>
+              </h3>
+              {recipientType === 'multiple' && (
+                <span className="text-[11px] font-black bg-indigo-100 text-indigo-800 px-2.5 py-0.5 rounded-full">
+                  चुने गए: {selectedValidTargets.length} संपर्क
+                </span>
+              )}
+            </div>
 
             <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl">
+              {/* 3 Tabs: Multiple Broadcast vs Single Party vs Custom Number */}
+              <div className="grid grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setRecipientType('multiple')}
+                  className={`py-2 text-xs font-black rounded-xl transition cursor-pointer flex items-center justify-center gap-1 ${
+                    recipientType === 'multiple' ? 'bg-white text-indigo-700 shadow-xs border border-indigo-200' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Users size={14} className="shrink-0" />
+                  <span className="truncate">👥 मल्टीपल ब्रॉडकास्ट</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setRecipientType('party')}
-                  className={`py-2 text-xs font-black rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                    recipientType === 'party' ? 'bg-white text-indigo-700 shadow-xs border border-indigo-200' : 'text-slate-600'
+                  className={`py-2 text-xs font-black rounded-xl transition cursor-pointer flex items-center justify-center gap-1 ${
+                    recipientType === 'party' ? 'bg-white text-indigo-700 shadow-xs border border-indigo-200' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  <Users size={14} />
-                  <span>पार्टी सूची से चुनें</span>
+                  <User size={14} className="shrink-0" />
+                  <span className="truncate">👤 एकल पार्टी</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setRecipientType('custom')}
-                  className={`py-2 text-xs font-black rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                    recipientType === 'custom' ? 'bg-white text-indigo-700 shadow-xs border border-indigo-200' : 'text-slate-600'
+                  className={`py-2 text-xs font-black rounded-xl transition cursor-pointer flex items-center justify-center gap-1 ${
+                    recipientType === 'custom' ? 'bg-white text-indigo-700 shadow-xs border border-indigo-200' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  <Phone size={14} />
-                  <span>सीधा मोबाइल नंबर</span>
+                  <Phone size={14} className="shrink-0" />
+                  <span className="truncate">📞 सीधा नंबर</span>
                 </button>
               </div>
 
-              {recipientType === 'party' ? (
-                <div>
+              {/* 👥 TAB 1: MULTIPLE RECIPIENTS / BROADCAST */}
+              {recipientType === 'multiple' && (
+                <div className="space-y-3 animate-in fade-in">
+                  {/* Search and Filters */}
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="नाम या मोबाइल नंबर से खोजें..."
+                        value={multiSearch}
+                        onChange={(e) => setMultiSearch(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-8 pr-8 py-2 text-xs outline-none focus:border-indigo-500 font-medium"
+                      />
+                      {multiSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setMultiSearch('')}
+                          className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          <X size={13} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Filter Pills */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setMultiFilter('all')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                          multiFilter === 'all'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        सभी ({parties.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMultiFilter('customer')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                          multiFilter === 'customer'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        केवल ग्राहक ({parties.filter(p => !p.type || p.type.toLowerCase() !== 'supplier').length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMultiFilter('due')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                          multiFilter === 'due'
+                            ? 'bg-emerald-700 text-white shadow-2xs'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
+                        }`}
+                      >
+                        उधारी वाले ({parties.filter(p => Number(p.currentBalance || p.balance || 0) > 0).length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMultiFilter('supplier')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                          multiFilter === 'supplier'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        सप्लायर ({parties.filter(p => p.type && p.type.toLowerCase() === 'supplier').length})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Select All / Deselect All Bar */}
+                  <div className="flex items-center justify-between text-xs bg-indigo-50/70 p-2 rounded-xl border border-indigo-100">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSelectAllFiltered}
+                        className="px-2.5 py-1 bg-white hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold border border-indigo-200 cursor-pointer shadow-2xs active:scale-95 transition"
+                      >
+                        ☑️ सभी {validFilteredParties.length} चुनें
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDeselectAll}
+                        className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-600 rounded-lg font-bold border border-slate-200 cursor-pointer shadow-2xs active:scale-95 transition"
+                      >
+                        ⬜ सब हटाएं
+                      </button>
+                    </div>
+                    <div className="font-extrabold text-indigo-900 text-xs">
+                      चयनित: <span className="bg-indigo-600 text-white px-2 py-0.5 rounded-full text-[11px] font-mono">{selectedValidTargets.length}</span>
+                    </div>
+                  </div>
+
+                  {/* Scrollable Checkbox List */}
+                  <div className="max-h-64 overflow-y-auto border border-slate-200 rounded-2xl divide-y divide-slate-100 bg-white shadow-inner">
+                    {filteredParties.length === 0 ? (
+                      <div className="p-6 text-center text-slate-400 text-xs font-bold">
+                        कोई पार्टी नहीं मिली
+                      </div>
+                    ) : (
+                      filteredParties.map(p => {
+                        const pid = p._id || p.id;
+                        const hasPhone = isValidPhone(p.mobileNumber || p.phone);
+                        const isSelected = selectedPartyIds.has(pid);
+                        const rawPhone = (p.mobileNumber || p.phone || '').replace(/\D/g, '');
+                        const displayPhone = rawPhone.slice(-10);
+                        const balance = Number(p.currentBalance || p.balance || 0);
+
+                        return (
+                          <div
+                            key={pid}
+                            onClick={() => hasPhone && handleToggleParty(pid)}
+                            className={`p-2.5 flex items-center justify-between gap-2 text-xs transition select-none ${
+                              !hasPhone 
+                                ? 'opacity-40 bg-slate-50 cursor-not-allowed' 
+                                : isSelected 
+                                  ? 'bg-indigo-50/70 hover:bg-indigo-50 cursor-pointer' 
+                                  : 'hover:bg-slate-50 cursor-pointer'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={isSelected && hasPhone}
+                                disabled={!hasPhone}
+                                onChange={() => {}}
+                                className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer"
+                              />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 truncate">
+                                  <span className="font-black text-slate-900 truncate">{p.name}</span>
+                                  {p.type && p.type.toLowerCase() === 'supplier' ? (
+                                    <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1 rounded shrink-0">सप्लायर</span>
+                                  ) : (
+                                    <span className="text-[9px] font-bold bg-blue-100 text-blue-800 px-1 rounded shrink-0">ग्राहक</span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  {hasPhone ? `+91 ${displayPhone}` : '⚠️ मोबाइल नंबर नहीं है'}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <span className={`font-mono font-bold text-[11px] block ${balance > 0 ? 'text-rose-600' : 'text-slate-600'}`}>
+                                {balance > 0 ? `₹${balance.toLocaleString('en-IN')} लेना` : balance < 0 ? `₹${Math.abs(balance).toLocaleString('en-IN')} देना` : '₹0'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Personalization Toggle */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-2">
+                    <div>
+                      <span className="font-black text-slate-800 block text-xs">
+                        👤 प्रत्येक ग्राहक को उनके नाम से संदेश भेजें
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        हर ग्राहक को उनके नाम के साथ 'नमस्ते *[पार्टी नाम]* जी' लिखा हुआ संदेश जाएगा
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPersonalizeName(!personalizeName)}
+                      className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 ${
+                        personalizeName ? 'bg-emerald-600' : 'bg-slate-300'
+                      }`}
+                    >
+                      <span
+                        className={`block w-4 h-4 rounded-full bg-white shadow transform transition-transform absolute top-1 ${
+                          personalizeName ? 'left-7' : 'left-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 👤 TAB 2: SINGLE PARTY SELECTOR */}
+              {recipientType === 'party' && (
+                <div className="space-y-2 animate-in fade-in">
                   <label className="block font-bold text-slate-700 mb-1">ग्राहक / पार्टी चुनें</label>
                   <select
                     value={selectedPartyId}
@@ -694,8 +1104,11 @@ export default function MarketingOffersPage() {
                     ))}
                   </select>
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              )}
+
+              {/* 📞 TAB 3: CUSTOM MOBILE NUMBER */}
+              {recipientType === 'custom' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-in fade-in">
                   <div>
                     <label className="block font-bold text-slate-700 mb-1">ग्राहक का नाम (वैकल्पिक)</label>
                     <input
@@ -823,30 +1236,69 @@ export default function MarketingOffersPage() {
 
             {/* Action Send Buttons */}
             <div className="space-y-2 pt-2">
-              {/* PRIMARY HERO BUTTON */}
-              {waStatus.isConnected ? (
-                <button
-                  type="button"
-                  disabled={sendingDirect}
-                  onClick={handleSendBackground}
-                  className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm rounded-2xl transition cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 disabled:opacity-60"
-                  title="बिना WhatsApp खोले सीधे सर्वर से 1-क्लिक में भेजें"
-                >
-                  <Send size={16} />
-                  <span>
-                    {sendingDirect ? 'भेजा जा रहा है...' : `⚡ 1-क्लिक ऑटो-सेंड (+${waStatus.userPhone})`}
-                  </span>
-                </button>
+              {recipientType === 'multiple' ? (
+                <>
+                  {/* BROADCAST HERO BUTTON */}
+                  {waStatus.isConnected ? (
+                    <button
+                      type="button"
+                      disabled={isBroadcasting || selectedValidTargets.length === 0}
+                      onClick={handleStartBroadcast}
+                      className="w-full py-3.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-sm rounded-2xl transition cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 disabled:opacity-50"
+                      title="चुने गए सभी संपर्कों को WhatsApp ब्रॉडकास्ट भेजें"
+                    >
+                      <Send size={16} />
+                      <span>
+                        {isBroadcasting
+                          ? 'ब्रॉडकास्ट भेजा जा रहा है...'
+                          : `⚡ ${selectedValidTargets.length} संपर्कों को ब्रॉडकास्ट भेजें`}
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        alert("⚠️ ऑटो-सेंड WhatsApp इंजन कनेक्ट नहीं है!\n\nमल्टीपल संपर्कों को 1-क्लिक में बैकग्राउंड ब्रॉडकास्ट भेजने के लिए ऊपर 'QR चेक करें' दबाकर अपना WhatsApp QR कोड स्कैन करें।");
+                      }}
+                      className="w-full py-3.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-sm rounded-2xl transition cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95"
+                    >
+                      <QrCode size={16} />
+                      <span>⚠️ ब्रॉडकास्ट के लिए WhatsApp QR लिंक करें</span>
+                    </button>
+                  )}
+
+                  <div className="p-2.5 bg-indigo-50/70 border border-indigo-200 rounded-xl text-[11px] text-indigo-900 leading-relaxed">
+                    💡 <strong>ब्रॉडकास्ट सुरक्षा:</strong> प्रत्येक ग्राहक को बिना आपका फोन खोले सीधे सर्वर से सुरक्षित अंतराल (Anti-Spam Delay 1.5-2.5 सेकंड) के साथ भेजा जाएगा ताकि आपका WhatsApp नंबर सुरक्षित रहे।
+                  </div>
+                </>
               ) : (
-                <button
-                  type="button"
-                  onClick={handleOpenWeb}
-                  className="w-full py-3.5 bg-[#25D366] hover:bg-green-600 text-white font-black text-sm rounded-2xl transition cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95"
-                  title="WhatsApp Web या Desktop App में खोलें"
-                >
-                  <MessageSquare size={16} />
-                  <span>🟢 WhatsApp पर खोलें व भेजें</span>
-                </button>
+                <>
+                  {/* SINGLE HERO BUTTON */}
+                  {waStatus.isConnected ? (
+                    <button
+                      type="button"
+                      disabled={sendingDirect}
+                      onClick={handleSendBackground}
+                      className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm rounded-2xl transition cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95 disabled:opacity-60"
+                      title="बिना WhatsApp खोले सीधे सर्वर से 1-क्लिक में भेजें"
+                    >
+                      <Send size={16} />
+                      <span>
+                        {sendingDirect ? 'भेजा जा रहा है...' : `⚡ 1-क्लिक ऑटो-सेंड (+${waStatus.userPhone})`}
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleOpenWeb}
+                      className="w-full py-3.5 bg-[#25D366] hover:bg-green-600 text-white font-black text-sm rounded-2xl transition cursor-pointer flex items-center justify-center gap-2 shadow-lg active:scale-95"
+                      title="WhatsApp Web या Desktop App में खोलें"
+                    >
+                      <MessageSquare size={16} />
+                      <span>🟢 WhatsApp पर खोलें व भेजें</span>
+                    </button>
+                  )}
+                </>
               )}
 
               {/* SECONDARY BUTTONS */}
@@ -884,6 +1336,119 @@ export default function MarketingOffersPage() {
           </div>
         </div>
       </div>
+
+      {/* 📢 LIVE BROADCAST PROGRESS & REPORT MODAL */}
+      {showBroadcastModal && (
+        <div className="fixed inset-0 z-[150] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-100">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2">
+                <span className={`w-3 h-3 rounded-full ${isBroadcasting ? 'bg-emerald-500 animate-ping' : 'bg-emerald-600'}`} />
+                <h3 className="font-black text-base text-slate-800">
+                  {isBroadcasting ? "📢 WhatsApp ब्रॉडकास्ट प्रगति..." : "🎉 ब्रॉडकास्ट संपन्न"}
+                </h3>
+              </div>
+              {!isBroadcasting && (
+                <button
+                  type="button"
+                  onClick={() => setShowBroadcastModal(false)}
+                  className="p-1 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              )}
+            </div>
+
+            {/* Progress Bar & Percentage */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs font-black text-slate-700">
+                <span className="truncate pr-2">{broadcastProgress.statusText}</span>
+                <span className="font-mono text-indigo-700 shrink-0">
+                  {broadcastProgress.total > 0
+                    ? `${Math.round(((broadcastProgress.sent + broadcastProgress.failed) / broadcastProgress.total) * 100)}%`
+                    : '0%'}
+                </span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-emerald-500 to-teal-600 h-full transition-all duration-300 rounded-full font-bold text-[9px] text-white flex items-center justify-center"
+                  style={{
+                    width: `${broadcastProgress.total > 0
+                      ? Math.round(((broadcastProgress.sent + broadcastProgress.failed) / broadcastProgress.total) * 100)
+                      : 0}%`
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Live Stats Counters */}
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                <span className="text-[10px] text-slate-500 block font-bold">कुल संपर्क</span>
+                <strong className="text-base font-black text-slate-800 font-mono">{broadcastProgress.total}</strong>
+              </div>
+              <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200">
+                <span className="text-[10px] text-emerald-700 block font-bold">सफल भेजे</span>
+                <strong className="text-base font-black text-emerald-700 font-mono">{broadcastProgress.sent}</strong>
+              </div>
+              <div className="p-2.5 bg-rose-50 rounded-xl border border-rose-200">
+                <span className="text-[10px] text-rose-700 block font-bold">विफल</span>
+                <strong className="text-base font-black text-rose-700 font-mono">{broadcastProgress.failed}</strong>
+              </div>
+            </div>
+
+            {/* Activity Log */}
+            <div className="space-y-1">
+              <span className="text-[11px] font-bold text-slate-600 block">गतिविधि विवरण (Delivery Log):</span>
+              <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 bg-slate-50/50 p-1 text-[11px] font-sans">
+                {broadcastLogs.length === 0 ? (
+                  <div className="p-4 text-center text-slate-400">शुरू होने की प्रतीक्षा...</div>
+                ) : (
+                  broadcastLogs.map((log, idx) => (
+                    <div key={idx} className="p-2 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 truncate">
+                        {log.status === 'success' ? (
+                          <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertCircle size={14} className="text-rose-600 shrink-0" />
+                        )}
+                        <span className="font-bold text-slate-800 truncate">{log.name}</span>
+                        <span className="text-slate-400 font-mono text-[10px] shrink-0">(+91 {log.phone})</span>
+                      </div>
+                      <span className={`text-[10px] font-mono shrink-0 ${log.status === 'success' ? 'text-emerald-700 font-bold' : 'text-rose-600'}`}>
+                        {log.status === 'success' ? `सफल (${log.time})` : `विफल: ${log.error || ''}`}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer Controls */}
+            <div className="pt-2">
+              {isBroadcasting ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    broadcastStoppedRef.current = true;
+                  }}
+                  className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                >
+                  <X size={15} /> 🛑 ब्रॉडकास्ट रोकें (Stop Broadcast)
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowBroadcastModal(false)}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                >
+                  <Check size={15} /> ✓ संपन्न • विंडो बंद करें
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
