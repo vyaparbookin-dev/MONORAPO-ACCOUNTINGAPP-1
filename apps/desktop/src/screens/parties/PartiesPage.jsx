@@ -4,7 +4,7 @@ import api from '../../services/api';
 import { Plus, Search, User, Phone, Edit, Trash2, Calendar, DollarSign, X, CreditCard, FileText, Printer, Share2, Image as ImageIcon, Eye, UploadCloud, CheckCircle2, Download, FileSpreadsheet, Upload, AlertCircle, MapPin, RotateCcw, Filter, ArrowLeft, Copy, Check, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, DownloadCloud, Layers, Camera, QrCode, Send } from 'lucide-react';
 import { syncQueue } from "@repo/shared";
 import CreditLimitHubModal from '../../components/modals/CreditLimitHubModal';
-import { getWebSafeImageUrl, compressImageFile } from '../../utils/photoStorage';
+import { getWebSafeImageUrl, compressImageFile, isPdfUrl } from '../../utils/photoStorage';
 import { storageManager, normalizePartyKey } from '../../services/storageManager';
 import { useCompany } from '../../contexts/CompanyContext';
 
@@ -459,13 +459,32 @@ export default function PartiesPage() {
             </button>
           </div>
 
-          {/* Main Photo with Carousel Arrows */}
+          {/* Main Photo / PDF Document with Carousel Arrows */}
           <div className="relative max-h-[62vh] overflow-hidden flex justify-center items-center bg-black/60 rounded-2xl p-2 border border-slate-800">
-            <img
-              src={safeActive}
-              alt="Original Bill"
-              className="max-h-[58vh] w-auto rounded-xl object-contain shadow-lg"
-            />
+            {isPdfUrl(safeActive) ? (
+              <div className="w-full py-8 flex flex-col items-center justify-center gap-3 bg-slate-800 rounded-xl text-center p-4">
+                <FileText size={48} className="text-red-400" />
+                <div>
+                  <div className="text-white font-bold text-sm">PDF दस्तावेज संलग्न है</div>
+                  <div className="text-slate-400 text-xs">इस दस्तावेज को देखने या डाउनलोड करने के लिए नीचे क्लिक करें</div>
+                </div>
+                <a
+                  href={safeActive}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-xs flex items-center gap-2 shadow-lg transition"
+                >
+                  <FileText size={15} />
+                  <span>PDF खोलें / डाउनलोड करें</span>
+                </a>
+              </div>
+            ) : (
+              <img
+                src={safeActive}
+                alt="Original Bill"
+                className="max-h-[58vh] w-auto rounded-xl object-contain shadow-lg"
+              />
+            )}
 
             {list.length > 1 && (
               <>
@@ -2731,15 +2750,15 @@ export default function PartiesPage() {
                                         }}
                                       />
                                     </label>
-                                    {/* 📁 Gallery Pick Button */}
+                                    {/* 📁 Gallery / Document Pick Button */}
                                     <label
                                       className="inline-flex items-center gap-0.5 text-[10px] font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 px-1.5 py-1 rounded-lg border border-slate-300 cursor-pointer transition"
-                                      title="गैलरी या फ़ाइल से फोटो चुनें"
+                                      title="गैलरी या PDF फ़ाइल से चुनें"
                                     >
                                       <UploadCloud size={11} className="text-slate-500" />
                                       <input
                                         type="file"
-                                        accept="image/*"
+                                        accept="image/*,application/pdf"
                                         className="hidden"
                                         onChange={(e) => {
                                           if (e.target.files && e.target.files.length > 0) handleAttachImage(tx._id, e.target.files);
@@ -2758,12 +2777,19 @@ export default function PartiesPage() {
                                     className="relative cursor-pointer group"
                                     onClick={() => handleOpenPhotoPreview(tx, 0)}
                                   >
-                                    <img
-                                      src={safeImg}
-                                      alt="Bill"
-                                      className="w-8 h-8 rounded-lg object-cover border border-indigo-200 group-hover:scale-110 shadow-xs transition"
-                                      title="बिल फोटो बड़ी देखें"
-                                    />
+                                    {isPdfUrl(safeImg) ? (
+                                      <div className="w-8 h-8 rounded-lg bg-red-50 border border-red-200 flex flex-col items-center justify-center text-red-600 font-bold group-hover:scale-110 shadow-xs transition" title="PDF दस्तावेज देखें">
+                                        <FileText size={14} />
+                                        <span className="text-[7px] font-black uppercase">PDF</span>
+                                      </div>
+                                    ) : (
+                                      <img
+                                        src={safeImg}
+                                        alt="Bill"
+                                        className="w-8 h-8 rounded-lg object-cover border border-indigo-200 group-hover:scale-110 shadow-xs transition"
+                                        title="बिल फोटो बड़ी देखें"
+                                      />
+                                    )}
                                     {pList.length > 1 && (
                                       <span className="absolute -bottom-1 -right-1 bg-indigo-600 text-white font-black text-[9px] px-1 rounded-full shadow-xs">
                                         +{pList.length - 1}
@@ -2957,14 +2983,14 @@ export default function PartiesPage() {
 
                 {/* Optional Bill Photo Attachment */}
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">📷 बिल / पर्ची फोटो (वैकल्पिक)</label>
+                  <label className="block text-slate-700 font-bold mb-1">📷 बिल / पर्ची फोटो या 📄 PDF (वैकल्पिक)</label>
                   <div className="flex items-center gap-3">
                     <label className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl border border-dashed border-slate-300 cursor-pointer transition text-xs font-bold">
                       <UploadCloud size={14} />
-                      <span>{addBillImage ? 'फोटो बदलें' : '+ फोटो जोड़ें'}</span>
+                      <span>{addBillImage ? 'दस्तावेज बदलें' : '+ फोटो / PDF जोड़ें'}</span>
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/*,application/pdf"
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files[0];

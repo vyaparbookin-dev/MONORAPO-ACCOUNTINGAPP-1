@@ -78,7 +78,7 @@ import { deduplicateBills } from "../../utils/deduplicateBills";
 import { speakUpiPayment, playPaymentChime } from "../../utils/soundBox";
 import { storageManager, normalizePartyKey } from "../../services/storageManager";
 import SmartPdfBillModal from "../../components/SmartPdfBillModal";
-import { compressImageFile, persistPhotoToLocalCache, savePhotosToIndexedDB, getPhotosFromIndexedDB, removePhotoFromIndexedDB, getWebSafeImageUrl, getPersistedPhotos } from "../../utils/photoStorage";
+import { compressImageFile, persistPhotoToLocalCache, savePhotosToIndexedDB, getPhotosFromIndexedDB, removePhotoFromIndexedDB, getWebSafeImageUrl, getPersistedPhotos, isPdfUrl } from "../../utils/photoStorage";
 
 
 class MobileErrorBoundary extends React.Component {
@@ -903,6 +903,8 @@ function MobileVyaparAppContent() {
     } else if (cameraTarget === "missing_bill") {
       setAddBillImage(imgData);
       setAddBillImagePreview(imgData);
+    } else if (cameraTarget === "party_tx_new") {
+      setPartyTxImages(prev => Array.from(new Set([...(prev || []), imgData])).slice(0, 5));
     } else if (cameraTarget.startsWith("party_tx_")) {
       const txId = cameraTarget.replace("party_tx_", "");
       handleAttachPartyImage(txId, [imgData]);
@@ -982,6 +984,7 @@ function MobileVyaparAppContent() {
   const [partyTxPaymentMode, setPartyTxPaymentMode] = useState('CASH');
   const [partyTxBankAccountId, setPartyTxBankAccountId] = useState('');
   const [savingPartyTx, setSavingPartyTx] = useState(false);
+  const [partyTxImages, setPartyTxImages] = useState([]);
 
   // 🛒 Add Missing Bill Modal State (Directly inside Statement)
   const [showAddMissingBillModal, setShowAddMissingBillModal] = useState(false);
@@ -1838,8 +1841,14 @@ function MobileVyaparAppContent() {
   const backPressTimeRef = useRef(0);
   const modalStatesRef = useRef({});
   modalStatesRef.current = {
+    previewBillImage,
     showSmartPdfModal,
+    editingPartyTx,
+    showAddMissingBillModal,
+    showOldHisabModal,
+    showPartyTxForm,
     selectedBillDetail,
+    showPartyStatementModal,
     selectedPartyDetail,
     showQuickBillModal,
     showManualSaleModal,
@@ -1870,16 +1879,54 @@ function MobileVyaparAppContent() {
 
       const s = modalStatesRef.current;
 
-      if (s.showSmartPdfModal) {
-        setShowSmartPdfModal(false);
+      // 1. Photo / Document Preview Modal (Topmost)
+      if (s.previewBillImage) {
+        setPreviewBillImage(null);
+        setPreviewImageList([]);
+        setPreviewTargetTxId(null);
         return;
       }
+
+      // 2. Editing Transaction Form Modal
+      if (s.editingPartyTx) {
+        setEditingPartyTx(null);
+        return;
+      }
+
+      // 3. Sub-Modals inside Party Detail (Add Bill / Old Hisab / Inline Form)
+      if (s.showAddMissingBillModal) {
+        setShowAddMissingBillModal(false);
+        return;
+      }
+      if (s.showOldHisabModal) {
+        setShowOldHisabModal(false);
+        return;
+      }
+      if (s.showPartyTxForm) {
+        setShowPartyTxForm(false);
+        return;
+      }
+
+      // 4. Bill Detail Modal (if open)
       if (s.selectedBillDetail) {
         setSelectedBillDetail(null);
         return;
       }
+
+      // 5. Full Party Passbook / Statement Modal -> Go back to Party Detail Screen (NOT exit!)
+      if (s.showPartyStatementModal) {
+        setShowPartyStatementModal(false);
+        return;
+      }
+
+      // 6. Party Detail Screen -> Go back to Party List / Dashboard
       if (s.selectedPartyDetail) {
         setSelectedPartyDetail(null);
+        return;
+      }
+
+      if (s.showSmartPdfModal) {
+        setShowSmartPdfModal(false);
         return;
       }
       if (s.showQuickBillModal) {
@@ -3931,7 +3978,24 @@ function MobileVyaparAppContent() {
 
   const fetchPartyStatement = async (partyId) => {
     if (!partyId) return;
-    setPartyStatementLoading(true);
+
+    // 🚀 STEP 1: INSTANT LOCAL RENDER (0ms latency)
+    // Instantly show cached statement from previous session or offline store
+    let hasLocalRender = false;
+    try {
+      const cached = localStorage.getItem(`vb_stmt_cache_${partyId}`);
+      if (cached) {
+        const parsedTxs = JSON.parse(cached);
+        if (Array.isArray(parsedTxs) && parsedTxs.length > 0) {
+          setPartyTransactions(parsedTxs);
+          hasLocalRender = true;
+        }
+      }
+    } catch (e) {}
+
+    if (!hasLocalRender) {
+      setPartyStatementLoading(true);
+    }
     try {
       let serverTxs = [];
       try {
@@ -4474,6 +4538,15 @@ function MobileVyaparAppContent() {
         }
         return updated;
       });
+
+      // 🚀 STEP 2: PERSIST COMPLETE STATEMENT TO LOCAL CACHE (instant offline passbook)
+      try {
+        const leanTxs = combinedTxs.map(t => ({
+          ...t,
+          billImageUrls: (t.billImageUrls || []).filter(u => typeof u === "string" && (u.startsWith("http") || u.length < 500))
+        }));
+        localStorage.setItem(`vb_stmt_cache_${partyId}`, JSON.stringify(leanTxs));
+      } catch (cacheErr) {}
     } catch (e) {
       console.error("fetchPartyStatement error:", e);
       setPartyTransactions([]);
@@ -5086,6 +5159,26 @@ function MobileVyaparAppContent() {
     setEditPartyTxCarrierPhone(tx.carrierPhone || tx.receiverPhone || '');
     setEditPartyTxDate(getLocalYmd(tx.date || tx.createdAt));
     setEditPartyTxPaymentMode(tx.paymentMethod || tx.paymentMode || 'CASH');
+  };
+
+  const handleConvertToDigitalBill = (tx) => {
+    if (!tx) return;
+    const isSupplier = (selectedPartyDetail?.type === 'supplier' || selectedPartyDetail?.partyType === 'supplier');
+    const pName = selectedPartyDetail?.name || tx.partyName || '';
+    const pPhone = selectedPartyDetail?.phone || selectedPartyDetail?.mobileNumber || tx.partyPhone || '';
+
+    setBillCustomer(pName);
+    setBillCustomerPhone(pPhone);
+    setBillCustomerAddress(selectedPartyDetail?.address || '');
+    setSelectedPartyObject(selectedPartyDetail);
+    setOcrBillType(isSupplier ? 'purchase' : 'sale');
+
+    const photos = tx.billImageUrls || (tx.billImageUrl ? [tx.billImageUrl] : []);
+    if (photos.length > 0) {
+      handleProcessBillImages(null, photos);
+    } else {
+      setShowOcrModal(true);
+    }
   };
 
   const handleSaveEditPartyTx = async (e) => {
@@ -5835,7 +5928,9 @@ function MobileVyaparAppContent() {
         amount: amt,
         type: type === 'paid' ? 'payment' : 'receipt',
         source: 'PartyTransaction',
-        paymentMethod: partyTxPaymentMode || 'CASH'
+        paymentMethod: partyTxPaymentMode || 'CASH',
+        billImageUrl: partyTxImages[0] || "",
+        billImageUrls: partyTxImages
       };
       setAllPartyTransactions(prev => [newTxDoc, ...(prev || [])]);
       try {
@@ -5843,8 +5938,21 @@ function MobileVyaparAppContent() {
         localStorage.setItem("vb_local_party_txs", JSON.stringify([newTxDoc, ...storedTxs]));
       } catch (e) {}
 
+      // Persist attached photos/PDFs to IndexedDB & server
+      if (partyTxImages.length > 0) {
+        persistPhotoToLocalCache(actualTxId, partyTxImages);
+        for (const img of partyTxImages) {
+          api.post('/api/upload/bill-image', {
+            fileData: img,
+            fileName: `tx_${actualTxId}_${Date.now()}.jpg`,
+            targetId: actualTxId
+          }).catch(() => {});
+        }
+      }
+
       setPartyTxAmount('');
       setPartyTxNotes('');
+      setPartyTxImages([]);
       setPartyTxDate(getLocalYmd());
       setShowPartyTxForm(false);
       fetchPartyStatement(partyId);
@@ -13281,6 +13389,82 @@ function MobileVyaparAppContent() {
                     />
                   </div>
 
+                  {/* 📎 Bill Photo & PDF Document Attachment Section */}
+                  <div className="space-y-1.5 pt-1 border-t border-slate-200/60">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1">
+                        <span>📎 बिल / रसीद संलग्न करें (Photo / PDF Bill)</span>
+                      </label>
+                      {partyTxImages.length > 0 && (
+                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full">
+                          {partyTxImages.length} फाइल संलग्न
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Attached files strip */}
+                    {partyTxImages.length > 0 && (
+                      <div className="flex items-center gap-2 overflow-x-auto py-1">
+                        {partyTxImages.map((fileData, fIdx) => (
+                          <div key={fIdx} className="relative shrink-0">
+                            {isPdfUrl(fileData) ? (
+                              <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-300 flex flex-col items-center justify-center p-1">
+                                <span className="text-lg">📄</span>
+                                <span className="text-[7px] font-black text-rose-700 uppercase">PDF #{fIdx + 1}</span>
+                              </div>
+                            ) : (
+                              <img
+                                src={getWebSafeImageUrl(fileData)}
+                                alt={`Bill ${fIdx + 1}`}
+                                className="w-12 h-12 rounded-xl object-cover border border-indigo-300 shadow-2xs"
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setPartyTxImages(prev => prev.filter((_, i) => i !== fIdx))}
+                              className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-rose-600 text-white rounded-full text-[10px] font-black flex items-center justify-center cursor-pointer shadow hover:bg-rose-700"
+                              title="यह फाइल हटाएं"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Buttons to attach camera / gallery / pdf */}
+                    {partyTxImages.length < 5 && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openInAppCamera("party_tx_new")}
+                          className="py-2 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95"
+                        >
+                          <Camera size={13} className="text-emerald-600" />
+                          <span>📸 {partyTxImages.length > 0 ? "+ और फोटो" : "कैमरा से खींचें"}</span>
+                        </button>
+
+                        <label className="py-2 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95 text-center">
+                          <span>📁 गैलरी / 📄 PDF</span>
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*,application/pdf"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const files = Array.from(e.target.files || []).slice(0, 5 - partyTxImages.length);
+                              for (const f of files) {
+                                const comp = await compressImageFile(f, 1200, 0.75, true);
+                                if (comp) setPartyTxImages(prev => [...prev, comp]);
+                              }
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Save Button */}
                   <button
                     type="button"
@@ -13656,8 +13840,16 @@ function MobileVyaparAppContent() {
                                     </span>
                                   </div>
 
-                                  {/* ✏️ Edit & 🗑️ Delete Action Buttons */}
+                                  {/* ✏️ Edit, 🤖 AI Digital Bill & 🗑️ Delete Action Buttons */}
                                   <div className="flex items-center gap-1 ml-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleConvertToDigitalBill(tx)}
+                                      className="px-2 py-0.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-[10px] font-bold rounded-lg border border-purple-200 flex items-center gap-0.5 transition active:scale-95 cursor-pointer shadow-2xs"
+                                      title="इस साधारण राशि को पूरे डिजिटल बिल में बदलें (AI बिल स्कैनर)"
+                                    >
+                                      <span>🤖</span> <span>डिजिटल बिल</span>
+                                    </button>
                                     <button
                                       type="button"
                                       onClick={() => handleOpenEditPartyTx(tx)}
@@ -13717,21 +13909,37 @@ function MobileVyaparAppContent() {
                                   <div className="flex flex-wrap items-center gap-1.5">
                                     {uniqueImages.map((imgUrl, imgIdx) => (
                                       <div key={imgIdx} className="relative group shrink-0">
-                                        <img
-                                          src={getWebSafeImageUrl(imgUrl)}
-                                          alt={`Bill ${imgIdx + 1}`}
-                                          onClick={() => {
-                                            setPreviewBillImage(imgUrl);
-                                            setPreviewImageList(uniqueImages);
-                                            setPreviewImageIndex(imgIdx);
-                                            setPreviewTargetTxId(targetTxId);
-                                          }}
-                                          className="w-9 h-9 rounded-lg object-cover border border-indigo-300 cursor-pointer shadow-xs active:scale-95 hover:opacity-90 transition"
-                                        />
+                                        {isPdfUrl(imgUrl) ? (
+                                          <div
+                                            onClick={() => {
+                                              setPreviewBillImage(imgUrl);
+                                              setPreviewImageList(uniqueImages);
+                                              setPreviewImageIndex(imgIdx);
+                                              setPreviewTargetTxId(targetTxId);
+                                            }}
+                                            className="w-10 h-10 rounded-lg bg-rose-50 border border-rose-300 flex flex-col items-center justify-center cursor-pointer shadow-xs active:scale-95 hover:bg-rose-100 transition"
+                                            title="PDF बिल देखें"
+                                          >
+                                            <span className="text-sm">📄</span>
+                                            <span className="text-[7px] font-black text-rose-700 uppercase">PDF</span>
+                                          </div>
+                                        ) : (
+                                          <img
+                                            src={getWebSafeImageUrl(imgUrl)}
+                                            alt={`Bill ${imgIdx + 1}`}
+                                            onClick={() => {
+                                              setPreviewBillImage(imgUrl);
+                                              setPreviewImageList(uniqueImages);
+                                              setPreviewImageIndex(imgIdx);
+                                              setPreviewTargetTxId(targetTxId);
+                                            }}
+                                            className="w-9 h-9 rounded-lg object-cover border border-indigo-300 cursor-pointer shadow-xs active:scale-95 hover:opacity-90 transition"
+                                          />
+                                        )}
                                         {/* Direct Delete button on thumbnail */}
                                         <button
                                           type="button"
-                                          title="यह फोटो हटाएं"
+                                          title="यह फाइल हटाएं"
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             handleDeletePartyImage(targetTxId, imgUrl);
@@ -13757,7 +13965,7 @@ function MobileVyaparAppContent() {
                                         }}
                                         className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer underline mr-1"
                                       >
-                                        📷 {uniqueImages.length} फोटो देखें
+                                        📷 {uniqueImages.length} फाइलें देखें
                                       </button>
                                     )}
 
@@ -13772,12 +13980,12 @@ function MobileVyaparAppContent() {
                                           <Camera size={11} className="text-emerald-600" />
                                           <span>📸 कैमरा</span>
                                         </button>
-                                        <label className="text-[10px] font-bold text-slate-600 hover:text-indigo-600 flex items-center gap-1 cursor-pointer bg-slate-100 hover:bg-indigo-50 px-2 py-1 rounded-lg border border-dashed border-slate-300 transition" title="गैलरी से पर्ची चुनें">
-                                          <span>🖼️ गैलरी</span>
+                                        <label className="text-[10px] font-bold text-slate-600 hover:text-indigo-600 flex items-center gap-1 cursor-pointer bg-slate-100 hover:bg-indigo-50 px-2 py-1 rounded-lg border border-dashed border-slate-300 transition" title="गैलरी या PDF बिल चुनें">
+                                          <span>🖼️ / 📄 PDF</span>
                                           <input
                                             type="file"
                                             multiple
-                                            accept="image/*"
+                                            accept="image/*,application/pdf"
                                             className="hidden"
                                             onChange={(e) => handleAttachPartyImage(targetTxId, e.target.files)}
                                           />
@@ -15123,11 +15331,28 @@ function MobileVyaparAppContent() {
 
             {/* Main Preview Image with Prev/Next buttons */}
             <div className="relative max-h-[65vh] overflow-hidden flex items-center justify-center bg-slate-900 rounded-2xl p-2 border border-slate-200">
-              <img
-                src={getWebSafeImageUrl(previewBillImage)}
-                alt="Full Bill"
-                className="max-h-[60vh] w-auto object-contain rounded-xl shadow-md"
-              />
+              {isPdfUrl(previewBillImage) ? (
+                <div className="w-full min-h-[45vh] flex flex-col items-center justify-center p-6 text-white text-center space-y-3">
+                  <span className="text-6xl">📄</span>
+                  <h4 className="font-extrabold text-base">PDF बिल दस्तावेज़ (PDF Document)</h4>
+                  <p className="text-xs text-slate-300">यह एक PDF फाइल है। इसे नीचे दिए गए बटन से तुरंत खोलें या डाउनलोड करें।</p>
+                  <a
+                    href={getWebSafeImageUrl(previewBillImage)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download="Bill_Document.pdf"
+                    className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow flex items-center gap-2 cursor-pointer transition active:scale-95"
+                  >
+                    <Download size={16} /> <span>PDF खोलें / डाउनलोड करें</span>
+                  </a>
+                </div>
+              ) : (
+                <img
+                  src={getWebSafeImageUrl(previewBillImage)}
+                  alt="Full Bill"
+                  className="max-h-[60vh] w-auto object-contain rounded-xl shadow-md"
+                />
+              )}
 
               {previewImageList.length > 1 && (
                 <>
@@ -15161,18 +15386,34 @@ function MobileVyaparAppContent() {
             {previewImageList.length > 1 && (
               <div className="flex items-center gap-2 mt-2.5 overflow-x-auto py-1">
                 {previewImageList.map((url, i) => (
-                  <img
-                    key={i}
-                    src={getWebSafeImageUrl(url)}
-                    alt={`Thumb ${i + 1}`}
-                    onClick={() => {
-                      setPreviewImageIndex(i);
-                      setPreviewBillImage(url);
-                    }}
-                    className={`w-11 h-11 rounded-lg object-cover cursor-pointer shrink-0 border-2 transition ${
-                      i === previewImageIndex ? "border-indigo-600 scale-105 shadow-md" : "border-slate-200 opacity-60 hover:opacity-100"
-                    }`}
-                  />
+                  isPdfUrl(url) ? (
+                    <div
+                      key={i}
+                      onClick={() => {
+                        setPreviewImageIndex(i);
+                        setPreviewBillImage(url);
+                      }}
+                      className={`w-11 h-11 rounded-lg bg-rose-50 border-2 flex flex-col items-center justify-center cursor-pointer shrink-0 transition ${
+                        i === previewImageIndex ? "border-indigo-600 scale-105 shadow-md" : "border-slate-200 opacity-70 hover:opacity-100"
+                      }`}
+                    >
+                      <span className="text-sm">📄</span>
+                      <span className="text-[7px] font-black text-rose-700 uppercase">PDF</span>
+                    </div>
+                  ) : (
+                    <img
+                      key={i}
+                      src={getWebSafeImageUrl(url)}
+                      alt={`Thumb ${i + 1}`}
+                      onClick={() => {
+                        setPreviewImageIndex(i);
+                        setPreviewBillImage(url);
+                      }}
+                      className={`w-11 h-11 rounded-lg object-cover cursor-pointer shrink-0 border-2 transition ${
+                        i === previewImageIndex ? "border-indigo-600 scale-105 shadow-md" : "border-slate-200 opacity-60 hover:opacity-100"
+                      }`}
+                    />
+                  )
                 ))}
               </div>
             )}

@@ -89,9 +89,9 @@ export const uploadBillImage = async ({ fileData, fileName = "bill.jpg", company
     try {
       const supabase = createClient(supabaseUrl, supabaseKey);
       const cleanName = `${companyId}_${Date.now()}_${fileName.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
-      const base64Data = fileData.replace(/^data:image\/\w+;base64,/, "");
+      const base64Data = fileData.replace(/^data:[^;]+;base64,/, "");
       const buffer = Buffer.from(base64Data, "base64");
-      const contentType = fileData.match(/^data:(image\/\w+);base64,/)?.[1] || "image/jpeg";
+      const contentType = fileData.match(/^data:([^;]+);base64,/)?.[1] || "image/jpeg";
 
       let { data, error } = await supabase.storage
         .from("bills")

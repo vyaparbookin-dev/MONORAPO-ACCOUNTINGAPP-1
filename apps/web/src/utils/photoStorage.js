@@ -29,6 +29,14 @@ export const getWebSafeImageUrl = (url) => {
 };
 
 /**
+ * Checks if a file or URL is a PDF document
+ */
+export const isPdfUrl = (url) => {
+  if (!url || typeof url !== "string") return false;
+  return url.startsWith("data:application/pdf") || url.toLowerCase().includes(".pdf");
+};
+
+/**
  * Open or initialize IndexedDB for photos
  */
 const openPhotosDB = () => {
