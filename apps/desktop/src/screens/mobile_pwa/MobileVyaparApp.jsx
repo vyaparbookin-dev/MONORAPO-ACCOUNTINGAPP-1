@@ -625,6 +625,8 @@ function MobileVyaparAppContent() {
           try {
             if (action.type === 'CREATE_BILL') {
               await api.post("/api/billing", action.payload);
+            } else if (action.type === 'CREATE_PURCHASE') {
+              await api.post("/api/purchase", action.payload);
             } else if (action.type === 'CREATE_PARTY') {
               await api.post("/api/party", action.payload).catch(() => api.post("/api/parties", action.payload));
             } else if (action.type === 'CREATE_ITEM') {
@@ -652,10 +654,15 @@ function MobileVyaparAppContent() {
   // 🔄 FULL TWO-WAY AUTOMATIC SYNC ENGINE (दोतरफ़ा स्वतः सिंक प्रणाली)
   // Reconciles both ways automatically: Local -> Server (missing offline entries) & Server -> Local (fresh cloud data)
   const isSyncInProgressRef = useRef(false);
-  const runBidirectionalAutoSync = async () => {
+  const lastAutoSyncTimeRef = useRef(0);
+  const runBidirectionalAutoSync = async (force = false) => {
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     if (isSyncInProgressRef.current) return;
+    const now = Date.now();
+    if (!force && (now - lastAutoSyncTimeRef.current < 45000)) return;
     isSyncInProgressRef.current = true;
+    lastAutoSyncTimeRef.current = now;
+    let didPushAnyRecord = false;
     try {
       const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
 
@@ -666,7 +673,7 @@ function MobileVyaparAppContent() {
           const localParties = storageManager.getParties(currentCoId) || [];
           const unsyncedParties = localParties.filter(p => {
             const pId = String(p._id || p.id || "");
-            return p.isOfflineCreated || pId.startsWith("party_") || pId.startsWith("party-");
+            return p.isOfflineCreated && (pId.startsWith("party_") || pId.startsWith("party-"));
           });
           for (const up of unsyncedParties) {
             try {
@@ -680,7 +687,12 @@ function MobileVyaparAppContent() {
               });
               const serverParty = res?.party || res?.data?.party || res?.data;
               if (serverParty?._id) {
-                storageManager.saveParty(currentCoId, { ...up, ...serverParty, isOfflineCreated: false });
+                didPushAnyRecord = true;
+                const oldOfflineId = up._id || up.id;
+                if (oldOfflineId && oldOfflineId !== serverParty._id) {
+                  storageManager.deleteParty(currentCoId, oldOfflineId);
+                }
+                storageManager.saveParty(currentCoId, { ...up, ...serverParty, isOfflineCreated: false, synced: true });
               }
             } catch (pe) {
               console.warn("[AutoSync] Party push defer:", pe.message);
@@ -690,19 +702,30 @@ function MobileVyaparAppContent() {
       }
 
       // 1. Unsynced manual party transactions (vb_local_party_txs)
-      await syncLocalPartyTransactionsToServer();
+      const ptxRes = await syncLocalPartyTransactionsToServer();
+      if (ptxRes?.synced > 0) didPushAnyRecord = true;
 
-      // 2. Unsynced offline bills (bills where isOfflineCreated is true or ID starts with bill_)
+      // 2. Unsynced offline bills
       if (currentCoId) {
         try {
           const localBills = storageManager.getBills(currentCoId) || [];
-          const unsyncedBills = localBills.filter(b => b.isOfflineCreated || String(b._id || b.id || '').startsWith("bill_"));
+          const unsyncedBills = localBills.filter(b => 
+            b && b.isOfflineCreated === true && 
+            b.synced !== true && 
+            !b.isDeleted &&
+            (String(b._id || b.id || '').startsWith("bill_offline_") || String(b._id || b.id || '').startsWith("temp_"))
+          );
           for (const ub of unsyncedBills) {
             try {
               const res = await api.post("/api/billing", ub);
               const serverBill = res?.data?.bill || res?.data?.data || res?.data;
               if (serverBill?._id) {
-                storageManager.saveBill(currentCoId, { ...serverBill, isOfflineCreated: false });
+                didPushAnyRecord = true;
+                const oldOfflineId = ub._id || ub.id;
+                if (oldOfflineId && oldOfflineId !== serverBill._id) {
+                  storageManager.deleteBill(currentCoId, oldOfflineId);
+                }
+                storageManager.saveBill(currentCoId, { ...serverBill, isOfflineCreated: false, synced: true });
               }
             } catch (be) {
               console.warn("[AutoSync] Bill push defer:", be.message);
@@ -716,8 +739,8 @@ function MobileVyaparAppContent() {
       // 3. Process queued actions (vb_offline_sync_queue)
       await processOfflineSyncQueue();
 
-      // --- PHASE 2: SERVER -> LOCAL (Pull fresh cloud data & reconcile cache silently in background) ---
-      if (typeof fetchLiveDashboardData === 'function') {
+      // --- PHASE 2: SERVER -> LOCAL (Pull fresh cloud data only if records were pushed or forced) ---
+      if ((didPushAnyRecord || force) && typeof fetchLiveDashboardData === 'function') {
         await fetchLiveDashboardData(true);
       }
     } catch (autoSyncErr) {
@@ -730,45 +753,44 @@ function MobileVyaparAppContent() {
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      runBidirectionalAutoSync();
+      runBidirectionalAutoSync(true);
     };
     const handleOffline = () => {
       setIsOnline(false);
     };
 
-    // ⚡ INSTANT RESUME SYNC: Whenever user unlocks phone, opens PWA, or switches back to tab (SILENT)
-    const handleVisibilityOrFocus = () => {
+    // ⚡ INSTANT RESUME SYNC: Whenever user unlocks phone or switches back to tab (SILENT & THROTTLED)
+    const handleVisibility = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        runBidirectionalAutoSync();
-        if (typeof fetchLiveDashboardData === 'function') fetchLiveDashboardData(true);
-        if (typeof fetchGharKharchData === 'function') fetchGharKharchData(true);
+        const now = Date.now();
+        if (now - lastAutoSyncTimeRef.current >= 45000) {
+          runBidirectionalAutoSync();
+        }
       }
     };
 
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     if (typeof document !== 'undefined') {
-      document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+      document.addEventListener("visibilitychange", handleVisibility);
     }
-    window.addEventListener("focus", handleVisibilityOrFocus);
 
     // Initial sync on app open
-    runBidirectionalAutoSync();
+    runBidirectionalAutoSync(true);
 
-    // Fast periodic background check every 15 seconds when active
+    // Periodic gentle background check every 60 seconds when active
     const syncInterval = setInterval(() => {
       if (typeof navigator === 'undefined' || navigator.onLine) {
         runBidirectionalAutoSync();
       }
-    }, 15000);
+    }, 60000);
 
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
       if (typeof document !== 'undefined') {
-        document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+        document.removeEventListener("visibilitychange", handleVisibility);
       }
-      window.removeEventListener("focus", handleVisibilityOrFocus);
       clearInterval(syncInterval);
     };
   }, [selectedCompany]);
@@ -5986,6 +6008,7 @@ function MobileVyaparAppContent() {
     }
     setSavingPartyTx(true);
     try {
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
       const partyId = selectedPartyDetail.id || selectedPartyDetail._id;
       const type = partyTxType === 'paid' ? 'paid' : 'received';
       const notes = partyTxNotes.trim() || (type === 'paid' ? 'मैंने दिए' : 'मुझे मिले');
@@ -6047,7 +6070,6 @@ function MobileVyaparAppContent() {
         currentBalance: updatedBalance
       }));
 
-      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
       setParties(prev => {
         const updated = prev.map(p => {
           const id = p.id || p._id;
@@ -6284,6 +6306,7 @@ function MobileVyaparAppContent() {
 
     setSavingVendorAction(true);
     try {
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem('companyId') || '').trim();
       const partyId = selectedPartyDetail.id || selectedPartyDetail._id;
       const pName = selectedPartyDetail.name || 'वेंडर';
       const genPurNo = vendorBillNo.trim() || `PUR-${Date.now().toString().slice(-6)}`;
@@ -6362,7 +6385,6 @@ function MobileVyaparAppContent() {
         currentBalance: updatedBalance
       }));
 
-      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem('companyId') || '').trim();
       setParties(prev => {
         const updated = prev.map(p => {
           const id = p.id || p._id;
@@ -6515,6 +6537,7 @@ function MobileVyaparAppContent() {
 
     setSavingVendorAction(true);
     try {
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem('companyId') || '').trim();
       const partyId = selectedPartyDetail.id || selectedPartyDetail._id;
       const pName = selectedPartyDetail.name || "वेंडर";
       const txDate = vendorBillDate ? new Date(vendorBillDate) : new Date();
@@ -6554,7 +6577,6 @@ function MobileVyaparAppContent() {
         currentBalance: updatedBalance
       }));
 
-      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
       setParties(prev => {
         const updated = prev.map(p => {
           const id = p.id || p._id;

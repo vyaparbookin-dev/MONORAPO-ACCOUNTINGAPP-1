@@ -33,6 +33,7 @@ export function normalizePartyKey(p) {
 class StorageManager {
   constructor() {
     this.migratedCompanies = new Set();
+    this.memoryCache = new Map();
     this.purgeBloatedLocalStorage();
   }
 
@@ -165,6 +166,11 @@ class StorageManager {
     const cid = String(companyId || localStorage.getItem("companyId") || "default").trim();
     const primaryKey = this.getKey("parties", cid);
 
+    const cached = this.memoryCache.get(primaryKey);
+    if (cached && (Date.now() - cached.ts < 3500)) {
+      return cached.data;
+    }
+
     const candidateKeys = [
       primaryKey,
       cid && cid !== "default" ? `vb_local_parties_${cid}` : null,
@@ -193,11 +199,13 @@ class StorageManager {
             if (k !== primaryKey) {
               try { this.safeSetItem(primaryKey, JSON.stringify(deduped)); } catch (e) {}
             }
+            this.memoryCache.set(primaryKey, { ts: Date.now(), data: deduped });
             return deduped;
           }
         }
       } catch (e) {}
     }
+    this.memoryCache.set(primaryKey, { ts: Date.now(), data: [] });
     return [];
   }
 
@@ -229,6 +237,7 @@ class StorageManager {
     }
     this.safeSetItem("vb_local_parties", serialized);
     this.safeSetItem("parties", serialized);
+    this.memoryCache.set(primaryKey, { ts: Date.now(), data: normList });
     return normList;
   }
 
@@ -489,6 +498,12 @@ class StorageManager {
 
     const cid = String(companyId || localStorage.getItem("companyId") || "default").trim();
     const key = this.getKey("bills", cid);
+
+    const cached = this.memoryCache.get(key);
+    if (cached && (Date.now() - cached.ts < 3500)) {
+      return cached.data;
+    }
+
     const collected = [];
 
     // 1. Read primary v2 key
@@ -528,8 +543,9 @@ class StorageManager {
       deletedSet = new Set(JSON.parse(localStorage.getItem("vb_deleted_entry_ids") || "[]"));
     } catch (e) {}
 
+    let finalBills = deduped;
     if (deletedSet.size > 0) {
-      return deduped.filter(b => {
+      finalBills = deduped.filter(b => {
         const bId = String(b._id || b.id || '').trim();
         const bNum = String(b.billNumber || b.invoiceNumber || '').trim();
         const cleanNum = bNum.replace(/^#/, '');
@@ -540,7 +556,8 @@ class StorageManager {
       });
     }
 
-    return deduped;
+    this.memoryCache.set(key, { ts: Date.now(), data: finalBills });
+    return finalBills;
   }
 
   saveBills(companyId, billsList = []) {
@@ -569,6 +586,7 @@ class StorageManager {
     }
     this.safeSetItem("vb_local_manual_bills", serialized);
     this.safeSetItem("bills", serialized);
+    this.memoryCache.set(primaryKey, { ts: Date.now(), data: deduped });
     return deduped;
   }
 

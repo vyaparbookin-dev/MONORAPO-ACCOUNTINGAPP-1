@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Purchase from "../model/purchase.js";
 import Product from "../model/product.js";
 import Party from "../model/party.js";
@@ -16,27 +17,89 @@ export const createPurchase = async (req, res) => {
 
     const { partyId, items = [], finalAmount, amountPaid = 0, paymentMethod } = req.body;
 
-    let supplierName = req.body.supplierName;
-    if (!supplierName && partyId) {
-      const pObj = await Party.findById(partyId).select("name");
-      supplierName = pObj?.name || "Supplier";
+    // Resilient party resolution: handle Mongo ObjectId, Supabase UUID, or local offline party ID
+    let matchedParty = null;
+    const isMongoId = partyId && mongoose.Types.ObjectId.isValid(partyId);
+    if (isMongoId) {
+      matchedParty = await Party.findOne({ _id: partyId, companyId });
     }
+    if (!matchedParty && partyId && supabase) {
+      try {
+        const pUuid = mongoIdToUuid(partyId);
+        const { data: sbParty } = await supabase
+          .from("parties")
+          .select("*")
+          .or(`id.eq.${pUuid},mongo_id.eq.${partyId}`)
+          .maybeSingle();
+        if (sbParty) {
+          matchedParty = await Party.findOne({
+            companyId,
+            $or: [
+              { name: new RegExp(`^${sbParty.name?.trim()}$`, "i") },
+              ...(sbParty.phone ? [{ mobileNumber: sbParty.phone }] : [])
+            ]
+          });
+        }
+      } catch (e) {}
+    }
+    if (!matchedParty && (req.body.supplierName || req.body.supplier)) {
+      const sName = (req.body.supplierName || req.body.supplier || "").trim();
+      const escapedName = sName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      matchedParty = await Party.findOne({ companyId, name: { $regex: new RegExp("^" + escapedName + "$", "i") } });
+    }
+    if (!matchedParty) {
+      const sName = (req.body.supplierName || req.body.supplier || "Supplier").trim();
+      matchedParty = await Party.create({
+        companyId,
+        name: sName,
+        mobileNumber: req.body.phone || req.body.mobileNumber || "9999999999",
+        partyType: "supplier",
+        currentBalance: 0,
+        openingBalance: 0
+      });
+    }
+
+    const resolvedPartyId = matchedParty._id;
+    const supplierName = matchedParty.name || req.body.supplierName || req.body.supplier || "Supplier";
+    const purNum = (req.body.purchaseNumber || req.body.billNumber || req.body.invoiceNo || req.body.invoiceNumber || `PUR-${Date.now().toString().slice(-6)}`).trim();
+    const finalAmt = Number(finalAmount ?? req.body.totalAmount ?? req.body.total ?? 0);
+    const amtPaid = Number(amountPaid ?? 0);
+    const pendingAmount = finalAmt - amtPaid;
+
+    const cleanItems = (Array.isArray(items) ? items : []).map(it => {
+      const qty = Number(it.quantity || it.qty || 1);
+      const rate = Number(it.rate || it.price || it.unitPrice || 0);
+      const tot = Number(it.total || it.totalPrice || (qty * rate));
+      return {
+        productId: it.productId && mongoose.Types.ObjectId.isValid(it.productId) ? it.productId : undefined,
+        name: it.name || "माल",
+        quantity: qty,
+        rate: rate,
+        unit: it.unit || "Pcs",
+        total: tot
+      };
+    });
 
     // 1. Create Purchase Bill Record
     const purchase = new Purchase({
       ...req.body,
       companyId,
-      supplierName: supplierName || "Supplier",
-      purchaseNumber: req.body.purchaseNumber || `PUR-${Date.now()}`,
-      paymentStatus: amountPaid >= finalAmount ? "paid" : amountPaid > 0 ? "partial" : "unpaid",
-      paymentMethod: paymentMethod || "credit"
+      partyId: resolvedPartyId,
+      supplierName,
+      purchaseNumber: purNum,
+      items: cleanItems,
+      finalAmount: finalAmt,
+      totalAmount: Number(req.body.totalAmount ?? finalAmt),
+      amountPaid: amtPaid,
+      paymentStatus: amtPaid >= finalAmt ? "paid" : amtPaid > 0 ? "partial" : "unpaid",
+      paymentMethod: paymentMethod || (amtPaid > 0 ? "cash" : "credit")
     });
 
     await purchase.save();
 
     // 2. UPDATE INVENTORY (Increase Stock & update latest purchase cost price)
-    for (const item of items) {
-      const itemRate = Number(item.rate || item.price || 0);
+    for (const item of cleanItems) {
+      const itemRate = Number(item.rate || 0);
       const qty = Number(item.quantity || 1);
       if (item.productId) {
         const updateFields = { $inc: { currentStock: qty } };
@@ -55,44 +118,42 @@ export const createPurchase = async (req, res) => {
     }
 
     // 3. UPDATE SUPPLIER LEDGER (Accounts Payable)
-    const pendingAmount = finalAmount - amountPaid;
-    
-    // Supplier ka current balance ghatayenge
     await Party.findByIdAndUpdate(
-      partyId,
+      resolvedPartyId,
       { $inc: { currentBalance: -pendingAmount } } 
     );
 
-    // Transaction ki entry karenge (Credit means hume supplier ko paise dene hain)
+    // Transaction entry for full purchase
     await PartyTransaction.create({
-      partyId,
+      partyId: resolvedPartyId,
       companyId,
       date: req.body.date || new Date(),
       details: `Purchase Bill #${purchase.purchaseNumber}`,
       debit: 0,
-      credit: finalAmount, // Full purchase credit
+      credit: finalAmt,
       type: 'bill',
       billImageUrl: req.body.billImageUrl || "",
+      billNumber: purchase.purchaseNumber,
       referenceBillId: purchase._id
     });
 
-    // Agar turant kuch amount pay kiya hai, uska record alag se transaction me dalna ho toh:
-    if (amountPaid > 0) {
-        await PartyTransaction.create({
-            partyId,
-            companyId,
-            date: req.body.date || new Date(),
-            details: `Advance Payment for Purchase Bill #${purchase.purchaseNumber}`,
-            debit: amountPaid, // Humne paise de diye
-            credit: 0,
-            type: 'manual',
-            billImageUrl: req.body.billImageUrl || "",
-            referenceBillId: purchase._id
-          });
+    // If immediate partial/full payment was made at time of purchase
+    if (amtPaid > 0) {
+      await PartyTransaction.create({
+        partyId: resolvedPartyId,
+        companyId,
+        date: req.body.date || new Date(),
+        details: `Advance Payment for Purchase Bill #${purchase.purchaseNumber}`,
+        debit: amtPaid,
+        credit: 0,
+        type: 'manual',
+        billImageUrl: req.body.billImageUrl || "",
+        referenceBillId: purchase._id
+      });
     }
 
     // Audit Trail: Log this action
-    await logActivity(req, `Recorded new Purchase #${purchase.purchaseNumber || purchase._id} for amount ₹${finalAmount}`);
+    await logActivity(req, `Recorded new Purchase #${purchase.purchaseNumber || purchase._id} for amount ₹${finalAmt}`);
 
     // Async Supabase Dual-Write
     syncPurchaseToSupabase(purchase).catch(sbErr => console.warn("[Supabase Dual-Write] Purchase sync note:", sbErr.message));
