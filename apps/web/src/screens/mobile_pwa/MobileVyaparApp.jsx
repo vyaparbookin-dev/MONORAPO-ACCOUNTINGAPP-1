@@ -55,7 +55,8 @@ import {
   CheckCircle2,
   Check,
   Zap,
-  Copy
+  Copy,
+  History
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useNavigate } from "react-router-dom";
@@ -1195,6 +1196,30 @@ function MobileVyaparAppContent() {
   const [waBackgroundSending, setWaBackgroundSending] = useState(false);
   const [waSendResult, setWaSendResult] = useState(null);
 
+  // 📜 WhatsApp Sent History / Audit Log Modal
+  const [showWaHistoryModal, setShowWaHistoryModal] = useState(false);
+  const [waLogs, setWaLogs] = useState([]);
+  const [loadingWaLogs, setLoadingWaLogs] = useState(false);
+
+  const fetchWhatsAppLogs = async () => {
+    setLoadingWaLogs(true);
+    try {
+      const res = await api.get('/api/whatsapp/logs?limit=40');
+      if (res.data?.success && Array.isArray(res.data.logs)) {
+        setWaLogs(res.data.logs);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch WhatsApp logs:", e);
+    } finally {
+      setLoadingWaLogs(false);
+    }
+  };
+
+  const handleOpenWaHistory = () => {
+    setShowWaHistoryModal(true);
+    fetchWhatsAppLogs();
+  };
+
   const openWhatsAppShareModal = ({ title, recipientName, phone, partyId, messageText, billId }) => {
     fetchWhatsAppStatus();
     const cleanP = String(phone || "").replace(/[^0-9]/g, "");
@@ -1289,6 +1314,7 @@ function MobileVyaparAppContent() {
           message: `संदेश ग्राहक (+91 ${phoneToSend.slice(-10)}) के WhatsApp पर बैकग्राउंड में सफलतापूर्वक भेज दिया गया!`
         });
         fetchWhatsAppStatus();
+        fetchWhatsAppLogs();
       } else {
         setWaSendResult({
           success: false,
@@ -6665,30 +6691,138 @@ function MobileVyaparAppContent() {
 
   const handleSharePartyStatementWhatsApp = async (party) => {
     if (!party) return;
+    const pId = String(party._id || party.id || '').trim();
     const isSupplier = (party.type === 'supplier' || party.partyType === 'supplier');
     const bal = Number(party.balance ?? party.currentBalance ?? 0);
-    const balText = isSupplier
-      ? (bal < 0 ? `देने हैं: ₹${Math.abs(bal).toLocaleString('en-IN')}` : bal > 0 ? `लेने हैं: ₹${bal.toLocaleString('en-IN')}` : `हिसाब चुकता (₹0)`)
-      : (bal > 0 ? `लेने हैं: ₹${bal.toLocaleString('en-IN')}` : bal < 0 ? `देने हैं: ₹${Math.abs(bal).toLocaleString('en-IN')}` : `हिसाब चुकता (₹0)`);
-    
-    const pTypeTag = (party.type || party.partyType) === 'personal' ? 'पर्सनल खाता' : isSupplier ? 'सप्लायर खाता' : 'ग्राहक खाता';
-    let msg = `📜 *खाता हिसाब विवरण*\n` +
-      `🏢 *दुकान:* ${companyDisplayName}\n` +
-      `👤 *पार्टी:* ${party.name} (${pTypeTag})\n` +
-      `📅 *दिनांक:* ${new Date().toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' })}\n` +
-      `━━━━━━━━━━━━━━━━━━━━━\n` +
-      `⚖️ *वर्तमान कुल बकाया:* *${balText}*\n` +
-      `━━━━━━━━━━━━━━━━━━━━━\n` +
-      `कृपया हिसाब का मिलान कर लें। धन्यवाद!\n-${companyDisplayName}`;
+    const absBal = Math.abs(bal);
+    const isDue = bal > 0;
+    const isAdvance = bal < 0;
+
+    let stData = null;
+    try {
+      const res = await api.get(`/api/parties/public/${pId}/statement`);
+      if (res?.data?.success) stData = res.data;
+    } catch (e) {
+      try {
+        const res = await api.get(`/api/party/${pId}/statement`);
+        if (res?.data) stData = res.data;
+      } catch (e2) {}
+    }
+
+    const rawTxs = (stData?.transactions && stData.transactions.length > 0)
+      ? stData.transactions
+      : (selectedPartyDetail?._id === pId ? (statementRows || []) : []) || (allPartyTransactions || []).filter(t => t.partyId === pId);
+
+    const shopName = stData?.company?.name || companyDisplayName || "VyaparBook";
+    const shopPhone = stData?.company?.whatsappBusinessNumber || stData?.company?.phone || selectedCompany?.phone || "";
+    const callingPhone = stData?.company?.callingContactNumber || selectedCompany?.callingContactNumber || "";
+    const shopAddress = stData?.company?.address || selectedCompany?.address || "";
+    const mapLocationUrl = stData?.company?.mapLocationUrl || selectedCompany?.mapLocationUrl || "";
+    const upiId = String(stData?.company?.upiId || selectedCompany?.upiId || "").trim();
+
+    const dateStr = new Date().toLocaleDateString('hi-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const publicStatementUrl = `https://monorapo-accountingapp-1-web.vercel.app/statement/${pId}`;
+
+    let billEntriesText = "";
+    let oldestOverdueDays = 0;
+
+    if (rawTxs && rawTxs.length > 0) {
+      const sortedTxs = [...rawTxs].sort((a, b) => new Date(b.date || b.createdAt || 0) - new Date(a.date || a.createdAt || 0));
+      const displayTxs = sortedTxs.slice(0, 8);
+      displayTxs.forEach((t, i) => {
+        const isDebit = Number(t.debit) > 0;
+        const isCredit = Number(t.credit) > 0;
+        const tDate = t.date ? new Date(t.date) : (t.createdAt ? new Date(t.createdAt) : null);
+        const tDateStr = tDate ? tDate.toLocaleDateString('hi-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : "-";
+        const daysAgo = tDate ? Math.max(0, Math.floor((new Date() - tDate) / (1000 * 60 * 60 * 24))) : 0;
+
+        const numIcon = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣"][i] || `🔹`;
+        const title = t.details || t.refNo || (isSupplier ? (isCredit ? "सामान खरीदी (Purchase)" : "भुगतान दिया (Payment)") : (isDebit ? "बिल / बिक्री" : "जमा / भुगतान"));
+        const amtStr = isDebit ? `₹${Number(t.debit).toLocaleString('en-IN')}` : `₹${Number(t.credit).toLocaleString('en-IN')}`;
+
+        if (!isSupplier) {
+          if (isDebit) {
+            if (daysAgo > oldestOverdueDays) oldestOverdueDays = daysAgo;
+            billEntriesText += `${numIcon} ${tDateStr}: ${title} — *${amtStr}*\n   ⏳ *स्थिति: ${daysAgo} दिन से बकाया*\n`;
+          } else if (isCredit) {
+            billEntriesText += `${numIcon} ${tDateStr}: जमा (Credit) — *${amtStr}*\n   ✅ *भुगतान प्राप्त*\n`;
+          }
+        } else {
+          if (isCredit) {
+            billEntriesText += `${numIcon} ${tDateStr}: ${title} — *${amtStr}*\n   📦 *सामान बिल (Inward)*\n`;
+          } else if (isDebit) {
+            billEntriesText += `${numIcon} ${tDateStr}: ${title} — *${amtStr}*\n   ✅ *भुगतान किया गया*\n`;
+          }
+        }
+      });
+
+      if (rawTxs.length > 8) {
+        billEntriesText += `...और ${rawTxs.length - 8} अन्य पुराने बिल/प्रविष्टियाँ\n`;
+      }
+    }
+
+    let text = `नमस्ते *${party.name || 'पार्टी'}* जी,\n\n`;
+    if (shopName) text += `🏢 *${shopName}*\n`;
+    if (shopAddress) text += `📍 पता: ${shopAddress}\n`;
+    if (mapLocationUrl) text += `🗺️ दुकान लोकेशन (Google Maps): ${mapLocationUrl}\n`;
+    if (shopPhone) text += `💬 WhatsApp: *${shopPhone}*\n`;
+    if (callingPhone && callingPhone !== shopPhone) text += `📞 संपर्क हेतु: *${callingPhone}*\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📋 *खाता विवरण (Statement of Account)*\n`;
+
+    if (isSupplier) {
+      text += `⚖️ *कुल देय राशि:* *₹${absBal.toLocaleString('en-IN')} ${bal < 0 ? '(देने हैं / Payable)' : '(एडवांस जमा)'}*\n`;
+    } else {
+      text += `⚖️ *वर्तमान कुल बकाया:* *₹${absBal.toLocaleString('en-IN')} ${isDue ? '(लेने हैं / Debit)' : isAdvance ? '(एडवांस जमा)' : '(चुकता)'}*\n`;
+    }
+
+    text += `📅 *विवरण दिनांक:* ${dateStr}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n`;
+
+    if (billEntriesText) {
+      text += `📜 *बिल व बकाया विवरण:*\n` +
+        `${billEntriesText}` +
+        `━━━━━━━━━━━━━━━━━━━━━\n`;
+    }
+
+    if (isDue && !isSupplier) {
+      text += `🔴 *कुल बकाया राशि:* *₹${absBal.toLocaleString('en-IN')}*\n`;
+      if (oldestOverdueDays > 0) {
+        text += `⚠️ *विनम्र निवेदन:* आपका बिल पिछले *${oldestOverdueDays} दिनों से बकाया* चल रहा है। कृपया व्यापारिक संबंध बनाए रखने हेतु इसका जल्द से जल्द भुगतान करने का कष्ट करें। 🙏\n\n`;
+      } else {
+        text += `⚠️ *निवेदन:* कृपया उपरोक्त शेष राशि का शीघ्र भुगतान करने का कष्ट करें। 🙏\n\n`;
+      }
+
+      if (upiId) {
+        text += `📱 *ऑनलाइन भुगतान (Google Pay / PhonePe / Paytm / BHIM):*\n` +
+          `UPI ID: *${upiId}*\n` +
+          `👉 *1-क्लिक भुगतान लिंक:* upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(shopName)}&am=${absBal}&cu=INR\n\n`;
+      }
+    } else if (isSupplier && bal < 0) {
+      text += `🔴 *कुल भुगतान देय:* *₹${absBal.toLocaleString('en-IN')}*\n` +
+        `कृपया बिल व हिसाब का मिलान कर लें।\n\n`;
+    } else if (isAdvance) {
+      text += `🟢 आपका अग्रिम जमा हमारे पास सुरक्षित है। धन्यवाद!\n\n`;
+    } else {
+      text += `🟢 आपका हिसाब पूर्णतः चुकता (₹0.00) है। समय पर भुगतान हेतु धन्यवाद!\n\n`;
+    }
+
+    if (publicStatementUrl) {
+      text += `🌐 *पूरा लेजर देखने, बिल पर्ची व PDF डाउनलोड करने के लिए यहाँ क्लिक करें:*\n` +
+        `${publicStatementUrl}\n\n`;
+    }
+
+    text += `धन्यवाद! 🙏\n` +
+      `*- ${shopName}${shopAddress ? `, ${shopAddress}` : ""}*`;
 
     const cleanPhone = String(party.phone || party.mobileNumber || '').replace(/[^0-9]/g, '');
 
     openWhatsAppShareModal({
-      title: `📜 खाता हिसाब WhatsApp शेयर`,
+      title: isSupplier ? `📦 सप्लायर हिसाब WhatsApp शेयर` : `📜 ग्राहक हिसाब WhatsApp शेयर`,
       recipientName: party.name,
       phone: cleanPhone,
       partyId: party._id || party.id,
-      messageText: msg
+      messageText: text
     });
   };
 
@@ -6778,6 +6912,27 @@ function MobileVyaparAppContent() {
           : '';
         text += `${i + 1}. 📅 [${dStr}] ${desc}${siteLine}${carrierLine}\n   💰 ${amtStr}${runningLabel}\n`;
       });
+    }
+
+    if (!isSupplier && bal > 0) {
+      let oldestDays = 0;
+      sorted.forEach(t => {
+        if (Number(t.debit) > 0) {
+          const d = parseAnyDate(t.date || t.createdAt);
+          if (d) {
+            const days = Math.max(0, Math.floor((new Date() - d) / (1000 * 60 * 60 * 24)));
+            if (days > oldestDays) oldestDays = days;
+          }
+        }
+      });
+      if (oldestDays > 0) {
+        text += `\n⚠️ *विनम्र निवेदन:* आपका बिल पिछले *${oldestDays} दिनों से बकाया* चल रहा है। कृपया व्यापारिक संबंध बनाए रखने हेतु इसका जल्द से जल्द भुगतान करने का कष्ट करें। 🙏\n`;
+      }
+    }
+
+    const pId = party._id || party.id;
+    if (pId) {
+      text += `\n🌐 *पूरा ऑनलाइन खाता, बिल पर्ची व PDF डाउनलोड लिंक:*\nhttps://monorapo-accountingapp-1-web.vercel.app/statement/${pId}\n`;
     }
 
     text += `━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -14358,14 +14513,24 @@ function MobileVyaparAppContent() {
                   अब जब भी आप बिल बनाएंगे या पार्टी का हिसाब शेयर करेंगे, मैसेज सीधे ग्राहक के नंबर पर बैकग्राउंड में चला जाएगा। आपको WhatsApp ऐप में जाकर 'Enter' नहीं दबाना पड़ेगा।
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleDisconnectWhatsApp}
-                  disabled={loadingWaAction}
-                  className="w-full py-2.5 rounded-2xl border border-rose-300 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer"
-                >
-                  {loadingWaAction ? "डिस्कनेक्ट हो रहा है..." : "डिस्कनेक्ट करें (Disconnect)"}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleOpenWaHistory}
+                    className="flex-1 py-2 rounded-2xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-800 text-xs font-black flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <History size={14} />
+                    <span>📜 रिकॉर्ड (History)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDisconnectWhatsApp}
+                    disabled={loadingWaAction}
+                    className="flex-1 py-2 rounded-2xl border border-rose-300 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer"
+                  >
+                    {loadingWaAction ? "डिस्कनेक्ट..." : "डिस्कनेक्ट करें"}
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="text-center space-y-3">
@@ -14827,13 +14992,143 @@ function MobileVyaparAppContent() {
               )}
 
               {/* Copy Text Backup */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyWaMessage}
+                  className="py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 flex items-center justify-center gap-1.5 transition cursor-pointer"
+                >
+                  <Copy size={13} />
+                  <span>📋 टेक्स्ट कॉपी</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenWaHistory}
+                  className="py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-200 flex items-center justify-center gap-1.5 transition cursor-pointer"
+                >
+                  <History size={13} />
+                  <span>📜 रिकॉर्ड (History)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📜 9.1.8 WHATSAPP SENT MESSAGE HISTORY / AUDIT TRAIL MODAL */}
+      {showWaHistoryModal && (
+        <div className="fixed inset-0 z-[110] bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  <History size={20} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#0F172A]">WhatsApp संदेश रिकॉर्ड (Audit History)</h3>
+                  <p className="text-[10px] text-slate-400">सिस्टम से भेजे गए सभी संदेशों का लाइव रिकॉर्ड</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={fetchWhatsAppLogs}
+                  disabled={loadingWaLogs}
+                  className="p-1.5 text-slate-500 hover:text-indigo-600 rounded-lg hover:bg-slate-100 cursor-pointer"
+                  title="ताज़ा करें"
+                >
+                  <RefreshCw size={16} className={loadingWaLogs ? "animate-spin text-indigo-600" : ""} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowWaHistoryModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Content List */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {loadingWaLogs ? (
+                <div className="py-12 text-center space-y-2">
+                  <RefreshCw size={24} className="animate-spin text-indigo-600 mx-auto" />
+                  <p className="text-xs font-bold text-slate-600">संदेश रिकॉर्ड लोड हो रहा है...</p>
+                </div>
+              ) : waLogs.length === 0 ? (
+                <div className="py-12 text-center space-y-2 bg-slate-50 rounded-2xl border border-dashed border-slate-200 p-6">
+                  <MessageSquare size={32} className="text-slate-300 mx-auto" />
+                  <p className="text-xs font-bold text-slate-600">अभी तक कोई संदेश रिकॉर्ड नहीं मिला है।</p>
+                  <p className="text-[10px] text-slate-400">जब भी आप 1-क्लिक बैकग्राउंड से WhatsApp भेजेंगे, वह यहाँ दर्ज होगा।</p>
+                </div>
+              ) : (
+                waLogs.map((log) => {
+                  const isSent = log.status === 'SENT';
+                  const sentDate = log.sentAt || log.createdAt;
+                  const dateFormatted = sentDate
+                    ? new Date(sentDate).toLocaleDateString('hi-IN', {
+                        day: '2-digit',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })
+                    : '-';
+                  return (
+                    <div
+                      key={log._id || log.id}
+                      className="p-3 bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-2xl space-y-2 transition"
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-extrabold text-xs text-slate-900">
+                              {log.recipientName || 'ग्राहक'}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-bold">
+                              +91 {log.recipientPhone}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 block mt-0.5">
+                            📅 {dateFormatted} {log.channel ? `• चैनल: ${log.channel}` : ''}
+                          </span>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 text-[10px] font-black rounded-lg shrink-0 ${
+                            isSent
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              : 'bg-rose-100 text-rose-800 border border-rose-300'
+                          }`}
+                        >
+                          {isSent ? '✅ भेजा गया' : '⚠️ विफल'}
+                        </span>
+                      </div>
+
+                      {/* Message preview snippet */}
+                      <div className="p-2 bg-white rounded-xl border border-slate-200 text-[11px] text-slate-700 font-mono whitespace-pre-wrap max-h-24 overflow-y-auto leading-relaxed">
+                        {log.messageText || '(कोई संदेश सामग्री नहीं)'}
+                      </div>
+
+                      {log.statusReason && !isSent && (
+                        <p className="text-[10px] text-rose-600 font-bold">
+                          कारण: {log.statusReason}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="pt-2 border-t border-slate-100 shrink-0">
               <button
                 type="button"
-                onClick={handleCopyWaMessage}
-                className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 flex items-center justify-center gap-1.5 transition cursor-pointer"
+                onClick={() => setShowWaHistoryModal(false)}
+                className="w-full py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer"
               >
-                <Copy size={13} />
-                <span>📋 संदेश टेक्स्ट कॉपी करें</span>
+                बंद करें
               </button>
             </div>
           </div>
