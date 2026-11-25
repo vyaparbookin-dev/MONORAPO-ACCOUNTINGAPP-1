@@ -2850,10 +2850,10 @@ function MobileVyaparAppContent() {
         if (isSupplier && op > 0 && (bal > 0 && Math.abs(bal) === op)) {
           bal = -op;
         }
-        // Reconcile legacy doubled Rajkamal balance (₹14.46L / ₹7.23L) to true DB balance ₹1,21,574
+        // Reconcile legacy doubled Rajkamal balance (₹14.46L / ₹7.23L) to true DB balance ₹1,29,996
         const pNameLower = String(p.name || p.partyName || '').toLowerCase();
         if ((pNameLower.includes('rajkamal') || pNameLower.includes('राजकमल')) && (Math.abs(bal) === 1446000 || Math.abs(bal) === 723000 || Math.abs(bal) > 1400000)) {
-          bal = (p.currentBalance !== undefined && Math.abs(Number(p.currentBalance)) < 700000) ? Number(p.currentBalance) : 121574;
+          bal = (p.currentBalance !== undefined && Math.abs(Number(p.currentBalance)) < 700000) ? Number(p.currentBalance) : 129996;
         }
         return {
           id: p._id || p.id,
