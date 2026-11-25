@@ -465,12 +465,14 @@ export const getPartyStatement = async (req, res) => {
       validMongoPartyIds.push(new mongoose.Types.ObjectId(pIdStr));
     } else {
       try {
+        const phoneCand = String(party.mobileNumber || party.phone || "").trim();
+        const orClauses = [{ name: nameRegex }];
+        if (phoneCand && phoneCand.length >= 6 && phoneCand !== "---") {
+          orClauses.push({ mobileNumber: phoneCand });
+        }
         const mParty = await Party.findOne({
           companyId: { $in: validMongoCoIds },
-          $or: [
-            { name: party.name },
-            { mobileNumber: party.mobileNumber || party.phone || "---" }
-          ]
+          $or: orClauses
         }).lean();
         if (mParty?._id) {
           validMongoPartyIds.push(mParty._id);
@@ -2137,6 +2139,36 @@ export const listParties = async (req, res) => {
           pDoc.balance = curBal;
           return pDoc;
         });
+
+        // 🛡️ ENRICHMENT: Reconcile with MongoDB balances so if MongoDB has more recent or non-zero balances, they are never wiped
+        try {
+          const mParties = await Party.find({ companyId: req.companyId, isActive: true }, { _id: 1, name: 1, currentBalance: 1, balance: 1, mobileNumber: 1 }).lean();
+          const mMap = new Map();
+          mParties.forEach(mp => {
+            const mNorm = String(mp.name || '').trim().toLowerCase();
+            if (mNorm) mMap.set(mNorm, mp);
+            if (mp._id) mMap.set(String(mp._id), mp);
+          });
+          normalizedSbParties.forEach(sp => {
+            const spNorm = String(sp.name || '').trim().toLowerCase();
+            const mp = mMap.get(String(sp._id || sp.id)) || mMap.get(spNorm);
+            if (mp) {
+              sp.mongoId = String(mp._id);
+              const mBal = Number(mp.currentBalance ?? mp.balance ?? 0);
+              const sBal = Number(sp.currentBalance ?? sp.balance ?? 0);
+              if (mBal !== 0 && sBal === 0) {
+                sp.currentBalance = mBal;
+                sp.balance = mBal;
+                if (supabase) {
+                  supabase.from("parties").update({ current_balance: mBal }).eq("id", sp.id).then(() => {}, () => {});
+                }
+              }
+            }
+          });
+        } catch (mErr) {
+          console.warn("[listParties] Mongo enrichment note:", mErr.message);
+        }
+
         return res.json({ success: true, parties: normalizedSbParties, source: "supabase" });
       }
     } catch (sbErr) {

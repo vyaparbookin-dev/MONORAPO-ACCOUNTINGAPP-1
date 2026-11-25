@@ -4507,11 +4507,21 @@ function MobileVyaparAppContent() {
       // Authoritative ledger closing balance: when transactions exist, the chronological sum is the true ledger balance!
       const trueBalance = (combinedTxs.length > 0) ? running : (serverCurrentBal !== null ? serverCurrentBal : 0);
 
-      setSelectedPartyDetail(prev => prev ? ({
-        ...prev,
-        balance: trueBalance,
-        currentBalance: trueBalance
-      }) : prev);
+      setSelectedPartyDetail(prev => {
+        if (!prev) return prev;
+        const prevId = String(prev._id || prev.id || prev.mongoId || '').trim();
+        const prevName = String(prev.name || '').trim().toLowerCase();
+        const fetchedId = String(partyId || pObj?._id || pObj?.id || pObj?.mongoId || '').trim();
+        const fetchedName = String(pObj?.name || '').trim().toLowerCase();
+        const isMatch = (prevId && fetchedId && (prevId === fetchedId || prev.mongoId === fetchedId || prev._id === fetchedId || prev.id === fetchedId)) ||
+                        (prevName && fetchedName && prevName === fetchedName);
+        if (!isMatch) return prev;
+        return {
+          ...prev,
+          balance: trueBalance,
+          currentBalance: trueBalance
+        };
+      });
 
       // Clean up stale deleted party txs from localStorage so client cache does not remain bloated
       if (Array.isArray(serverTxs) && serverTxs.length > 0) {
@@ -5949,13 +5959,15 @@ function MobileVyaparAppContent() {
   };
 
   const handleOpenPartyDetail = (party) => {
-    setSelectedPartyDetail(party);
+    if (!party) return;
+    const cloned = { ...party };
+    setSelectedPartyDetail(cloned);
     setShowPartyTxForm(false);
     setPartyTxAmount('');
     setPartyTxNotes('');
     setPartyTxDate(getLocalYmd());
     setPartyTxPaymentMode('CASH');
-    const pId = party.id || party._id;
+    const pId = cloned._id || cloned.id || cloned.mongoId;
     if (pId) {
       fetchPartyStatement(pId);
       // Auto-sync any stranded offline transactions in background
@@ -8765,10 +8777,16 @@ function MobileVyaparAppContent() {
                             setSelectedBillDetail(tx.original);
                           } else if (tx.isPartyTx) {
                             // Directly open Party Transaction edit modal (just like Ghar Kharch!)
-                            const pId = tx.original.partyId?._id || tx.original.partyId?.id || tx.original.partyId;
-                            const matched = (parties || []).find(p => (p._id || p.id) === pId);
+                            const pId = String(tx.original.partyId?._id || tx.original.partyId?.id || tx.original.partyId || '').trim();
+                            const pName = String(tx.original.partyName || tx.original.partyId?.name || tx.partyName || tx.title || '').trim().toLowerCase();
+                            const matched = (parties || []).find(p => {
+                              const curId = String(p._id || p.id || p.mongoId || '').trim();
+                              const curName = String(p.name || '').trim().toLowerCase();
+                              return (pId && curId && (curId === pId || p.mongoId === pId)) ||
+                                     (pName && curName && curName === pName);
+                            });
                             if (matched) {
-                              setSelectedPartyDetail(matched);
+                              setSelectedPartyDetail({ ...matched });
                             }
                             handleOpenEditPartyTx(tx.original);
                           } else {
@@ -8836,9 +8854,15 @@ function MobileVyaparAppContent() {
                                 <button 
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    const pId = tx.original.partyId?._id || tx.original.partyId?.id || tx.original.partyId;
-                                    const matched = (parties || []).find(p => (p._id || p.id) === pId);
-                                    if (matched) setSelectedPartyDetail(matched);
+                                    const pId = String(tx.original.partyId?._id || tx.original.partyId?.id || tx.original.partyId || '').trim();
+                                    const pName = String(tx.original.partyName || tx.original.partyId?.name || tx.partyName || tx.title || '').trim().toLowerCase();
+                                    const matched = (parties || []).find(p => {
+                                      const curId = String(p._id || p.id || p.mongoId || '').trim();
+                                      const curName = String(p.name || '').trim().toLowerCase();
+                                      return (pId && curId && (curId === pId || p.mongoId === pId)) ||
+                                             (pName && curName && curName === pName);
+                                    });
+                                    if (matched) setSelectedPartyDetail({ ...matched });
                                     handleOpenEditPartyTx(tx.original);
                                   }}
                                   className="w-7 h-7 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-600 flex items-center justify-center transition cursor-pointer"
@@ -8849,14 +8873,30 @@ function MobileVyaparAppContent() {
                                 <button 
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    const pId = tx.original.partyId?._id || tx.original.partyId?.id || tx.original.partyId;
-                                    const matched = (parties || []).find(p => (p._id || p.id) === pId);
+                                    const pId = String(tx.original.partyId?._id || tx.original.partyId?.id || tx.original.partyId || '').trim();
+                                    const pName = String(tx.original.partyName || tx.original.partyId?.name || tx.partyName || tx.title || '').trim().toLowerCase();
+                                    const matched = (parties || []).find(p => {
+                                      const curId = String(p._id || p.id || p.mongoId || '').trim();
+                                      const curName = String(p.name || '').trim().toLowerCase();
+                                      return (pId && curId && (curId === pId || p.mongoId === pId)) ||
+                                             (pName && curName && curName === pName);
+                                    });
                                     if (matched) {
-                                      setSelectedPartyDetail(matched);
-                                      fetchPartyStatement(matched._id || matched.id);
+                                      setSelectedPartyDetail({ ...matched });
+                                      fetchPartyStatement(matched._id || matched.id || pId);
                                       setShowPartyDetailModal(true);
-                                    } else if (pId) {
-                                      fetchPartyStatement(pId);
+                                    } else if (pId || pName) {
+                                      const fallbackParty = {
+                                        _id: pId || `party_${Date.now()}`,
+                                        id: pId || `party_${Date.now()}`,
+                                        name: tx.original.partyName || tx.partyName || tx.title || "व्यापारी खाता",
+                                        phone: tx.original.partyPhone || tx.partyPhone || "",
+                                        balance: Number(tx.amount || 0),
+                                        currentBalance: Number(tx.amount || 0),
+                                        partyType: tx.partyType || "customer"
+                                      };
+                                      setSelectedPartyDetail(fallbackParty);
+                                      if (pId) fetchPartyStatement(pId);
                                       setShowPartyDetailModal(true);
                                     }
                                   }}
@@ -9106,7 +9146,7 @@ function MobileVyaparAppContent() {
                     const bal = getPartyDisplayBalance(p);
                     return (
                       <div 
-                        key={p.id || p._id}
+                        key={String(p._id || p.id || p.mongoId || normalizePartyKey(p))}
                         onClick={() => handleOpenPartyDetail(p)}
                         className={`p-3.5 bg-white border rounded-2xl shadow-xs transition cursor-pointer active:scale-[0.99] flex justify-between items-center gap-2 ${
                           isPersonal ? "border-amber-200 hover:border-amber-400 hover:bg-amber-50/20" : "border-slate-200 hover:border-indigo-300"
