@@ -1,4 +1,6 @@
 import makeWASocket, { useMultiFileAuthState, DisconnectReason, Browsers } from "@whiskeysockets/baileys";
+import WhatsAppSessionAuth from "../model/whatsappSessionAuth.js";
+import WhatsAppMessageLog from "../model/whatsappMessageLog.js";
 import pino from "pino";
 import qrcode from "qrcode";
 import fs from "fs";
@@ -32,6 +34,119 @@ export function normalizeChannel(channel) {
 
 // Active WhatsApp Sessions per company and channel: Map<"${companyId}__${channel}", sessionObj>
 const sessions = new Map();
+
+
+/**
+ * ☁️ MongoDB Cloud Persistence Helpers for WhatsApp Auth Sessions
+ * Ensures credentials survive Render / Cloud container restarts, redeployments & sleep!
+ */
+export async function hydrateAuthDirFromDb(companyId, channel, authDir) {
+  try {
+    const coKey = getCompanyKey(companyId);
+    const normChan = normalizeChannel(channel);
+    const records = await WhatsAppSessionAuth.find({ companyId: coKey, channel: normChan }).lean();
+    if (records && records.length > 0) {
+      if (!fs.existsSync(authDir)) {
+        fs.mkdirSync(authDir, { recursive: true });
+      }
+      for (const rec of records) {
+        const filePath = path.join(authDir, rec.fileName);
+        try {
+          const buf = Buffer.from(rec.data, 'base64');
+          fs.writeFileSync(filePath, buf);
+        } catch (e) {
+          fs.writeFileSync(filePath, rec.data, 'utf-8');
+        }
+      }
+      console.log(`💾 [WhatsApp Cloud Sync] Hydrated ${records.length} auth files from MongoDB for ${coKey}__${normChan}`);
+      return true;
+    }
+  } catch (err) {
+    console.warn(`[WhatsApp Cloud Sync] Failed to hydrate auth from DB for ${companyId}__${channel}:`, err.message);
+  }
+  return false;
+}
+
+export async function syncAuthDirToDb(companyId, channel, authDir) {
+  try {
+    if (!fs.existsSync(authDir)) return;
+    const files = fs.readdirSync(authDir);
+    const coKey = getCompanyKey(companyId);
+    const normChan = normalizeChannel(channel);
+
+    for (const f of files) {
+      const fullP = path.join(authDir, f);
+      if (!fs.statSync(fullP).isFile()) continue;
+      const buf = fs.readFileSync(fullP);
+      const base64Data = buf.toString('base64');
+
+      await WhatsAppSessionAuth.updateOne(
+        { companyId: coKey, channel: normChan, fileName: f },
+        { $set: { data: base64Data, updatedAt: new Date() } },
+        { upsert: true }
+      );
+    }
+    console.log(`☁️ [WhatsApp Cloud Sync] Synced ${files.length} auth files to MongoDB for ${coKey}__${normChan}`);
+  } catch (err) {
+    console.warn(`[WhatsApp Cloud Sync] Failed to sync auth to DB for ${companyId}__${channel}:`, err.message);
+  }
+}
+
+export async function wipeAuthDb(companyId, channel) {
+  try {
+    const coKey = getCompanyKey(companyId);
+    const normChan = normalizeChannel(channel);
+    await WhatsAppSessionAuth.deleteMany({ companyId: coKey, channel: normChan });
+    console.log(`🧹 [WhatsApp Cloud Sync] Deleted DB auth records for ${coKey}__${normChan}`);
+  } catch (err) {
+    console.warn(`[WhatsApp Cloud Sync] Failed to wipe auth DB for ${companyId}__${channel}:`, err.message);
+  }
+}
+
+/**
+ * 📜 Audit Trail: Record every outgoing WhatsApp message to MongoDB
+ */
+export async function recordWhatsAppMessageLog({
+  companyId,
+  channel = 'billing',
+  senderPhone = '',
+  recipientName = 'ग्राहक',
+  recipientPhone = '',
+  messageType = 'direct',
+  documentId = '',
+  documentNumber = '',
+  messageText = '',
+  status = 'SENT',
+  statusReason = '',
+  messageId = '',
+  sentByUserId = '',
+  sentByUserName = 'व्यापारी'
+}) {
+  try {
+    const cleanRecipient = String(recipientPhone || "").replace(/\D/g, "").slice(-10);
+    const log = await WhatsAppMessageLog.create({
+      companyId: getCompanyKey(companyId),
+      channel: normalizeChannel(channel),
+      senderPhone: String(senderPhone || "").replace(/\D/g, ""),
+      recipientName: recipientName || "ग्राहक",
+      recipientPhone: cleanRecipient,
+      messageType: messageType || "direct",
+      documentId: String(documentId || ""),
+      documentNumber: String(documentNumber || ""),
+      messageText: messageText || "",
+      status: status || "SENT",
+      statusReason: statusReason || "",
+      messageId: messageId || "",
+      sentByUserId: String(sentByUserId || ""),
+      sentByUserName: sentByUserName || "व्यापारी",
+      sentAt: new Date()
+    });
+    return log;
+  } catch (err) {
+    console.warn("[WhatsApp Message Log] Failed to save message audit log:", err.message);
+    return null;
+  }
+}
 
 /**
  * Get or normalize company identifier
@@ -128,6 +243,12 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
   }
 
   const authDir = getAuthDir(companyId, normChan);
+
+  // ☁️ Hydrate from MongoDB cloud store if local folder is empty (e.g. Render redeploy/restart)
+  if (!forceNew) {
+    await hydrateAuthDirFromDb(companyId, normChan, authDir);
+  }
+
   const credsFile = path.join(authDir, "creds.json");
   let hasRegisteredCreds = false;
   if (fs.existsSync(credsFile)) {
@@ -166,6 +287,7 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
         console.log(`🧹 [WhatsApp Engine][${normChan}] Cleared credentials for fresh scan (forceNew=true) in ${sessKey}`);
       } catch (e) {}
     }
+    await wipeAuthDb(companyId, normChan);
   }
 
   if (!fs.existsSync(authDir)) {
@@ -205,7 +327,11 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
 
     sessionObj.sock = sock;
 
-    sock.ev.on("creds.update", saveCreds);
+    sock.ev.on("creds.update", async () => {
+      await saveCreds();
+      // ☁️ Persist updated auth to MongoDB immediately
+      syncAuthDirToDb(companyId, normChan, authDir).catch(() => {});
+    });
 
     sock.ev.on("connection.update", async (update) => {
       // 🛡️ Guard: If this socket has been replaced by a newer one, ignore events
@@ -246,6 +372,8 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
         sessionObj.userName = sock.user?.name || "व्यापारी";
 
         console.log(`✅ [WhatsApp Engine][${normChan}] Connected successfully for ${sessKey}! Phone: ${uPhone}`);
+        // ☁️ Backup connected auth credentials to MongoDB
+        syncAuthDirToDb(companyId, normChan, authDir).catch(() => {});
       }
 
       if (connection === "close") {
@@ -272,9 +400,9 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
           try {
             fs.rmSync(authDir, { recursive: true, force: true });
           } catch (e) {}
+          wipeAuthDb(companyId, normChan).catch(() => {});
         } else if (isRestartRequired) {
           // 🔄 CRITICAL FIX: Baileys emits 515 (restartRequired) right after the phone scans the QR code!
-          // The newly saved credentials in authDir MUST be kept intact to complete the login handshake.
           console.log(`🔄 [WhatsApp Engine][${normChan}] Code 515 (restartRequired): Phone scanned QR! Finalizing handshake for ${sessKey}...`);
           sessionObj.status = "INITIALIZING";
           if (sessionObj.reconnectTimer) clearTimeout(sessionObj.reconnectTimer);
@@ -284,8 +412,16 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
             });
           }, 400);
         } else if (statusCode !== DisconnectReason.connectionReplaced) {
-          // Keep QR visible on screen while reconnecting in background
-          sessionObj.status = sessionObj.qrDataUrl ? "QR_READY" : "INITIALIZING";
+          // 🛡️ CRITICAL FIX FOR 408 & TRANSIENT TIMEOUTS:
+          // If session is already registered/authenticated, DO NOT revert status to QR_READY!
+          // Keep status as "INITIALIZING" (Reconnecting...) so user is NOT prompted to re-scan QR.
+          const hasSaved = sessionObj.isRegistered || hasRegisteredCreds;
+          sessionObj.status = hasSaved ? "INITIALIZING" : (sessionObj.qrDataUrl ? "QR_READY" : "INITIALIZING");
+          if (hasSaved) {
+            sessionObj.qr = null;
+            sessionObj.qrDataUrl = null;
+          }
+
           if (sessionObj.reconnectTimer) clearTimeout(sessionObj.reconnectTimer);
           sessionObj.reconnectTimer = setTimeout(() => {
             // Re-initialize cleanly without clashing
@@ -426,6 +562,7 @@ export async function disconnectWhatsApp(companyId, channel = 'billing') {
       fs.rmSync(authDir, { recursive: true, force: true });
     } catch (e) {}
   }
+  await wipeAuthDb(companyId, normChan);
 
   const chanNameHindi = normChan === 'recovery' ? 'उधारी वसूली' : normChan === 'marketing' ? 'मार्केटिंग' : 'बिलिंग';
   console.log(`🔌 [WhatsApp Engine] ${chanNameHindi} (${normChan}) session disconnected & wiped for ${companyId}`);
@@ -439,7 +576,7 @@ export async function disconnectWhatsApp(companyId, channel = 'billing') {
 /**
  * Send WhatsApp text message in the background with Smart Fallback
  */
-export async function sendDirectWhatsAppMessage(companyId, toMobile, messageText, targetChannel = 'billing') {
+export async function sendDirectWhatsAppMessage(companyId, toMobile, messageText, targetChannel = 'billing', metadata = {}) {
   const normChan = normalizeChannel(targetChannel);
   let sessKey = getSessionKey(companyId, normChan);
   let session = sessions.get(sessKey);
@@ -534,6 +671,25 @@ export async function sendDirectWhatsAppMessage(companyId, toMobile, messageText
   try {
     const sentMsg = await session.sock.sendMessage(jid, { text: messageText });
     console.log(`📤 [WhatsApp Engine][${usedChannel}] Message sent successfully to ${jid} (Msg ID: ${sentMsg?.key?.id}) via ${session.userPhone}`);
+    
+    // 📜 Record Successful Message Log
+    await recordWhatsAppMessageLog({
+      companyId,
+      channel: usedChannel,
+      senderPhone: session.userPhone,
+      recipientName: metadata.recipientName || 'ग्राहक',
+      recipientPhone: toMobile,
+      messageType: metadata.messageType || 'direct',
+      documentId: metadata.documentId || '',
+      documentNumber: metadata.documentNumber || '',
+      messageText,
+      status: 'SENT',
+      statusReason: 'सफलतापूर्वक भेजा गया',
+      messageId: sentMsg?.key?.id,
+      sentByUserId: metadata.sentByUserId || '',
+      sentByUserName: metadata.sentByUserName || 'व्यापारी'
+    });
+
     return {
       success: true,
       messageId: sentMsg?.key?.id,
@@ -550,6 +706,22 @@ export async function sendDirectWhatsAppMessage(companyId, toMobile, messageText
     } else if (rawMsg.includes('timed out') || rawMsg.includes('timeout') || rawMsg.includes('econnreset') || rawMsg.includes('enotfound') || rawMsg.includes('network')) {
       userReason = "⚠️ नेटवर्क समस्या या इंटरनेट रुकावट के कारण WhatsApp संदेश नहीं भेजा जा सका। कृपया इंटरनेट जांचें।";
     }
+    await recordWhatsAppMessageLog({
+      companyId,
+      channel: usedChannel,
+      senderPhone: session?.userPhone || '',
+      recipientName: metadata.recipientName || 'ग्राहक',
+      recipientPhone: toMobile,
+      messageType: metadata.messageType || 'direct',
+      documentId: metadata.documentId || '',
+      documentNumber: metadata.documentNumber || '',
+      messageText,
+      status: 'FAILED',
+      statusReason: userReason,
+      sentByUserId: metadata.sentByUserId || '',
+      sentByUserName: metadata.sentByUserName || 'व्यापारी'
+    });
+
     return {
       success: false,
       channel: usedChannel,
@@ -561,33 +733,48 @@ export async function sendDirectWhatsAppMessage(companyId, toMobile, messageText
 /**
  * Auto-restore saved sessions across all channels on server boot
  */
-export function autoRestoreWhatsAppSessions() {
-  if (!fs.existsSync(AUTH_BASE_DIR)) return;
+export async function autoRestoreWhatsAppSessions() {
   try {
-    const subDirs = fs.readdirSync(AUTH_BASE_DIR);
-    for (const d of subDirs) {
-      const fullP = path.join(AUTH_BASE_DIR, d);
-      if (fs.statSync(fullP).isDirectory() && fs.readdirSync(fullP).length > 0) {
-        let companyId = d;
-        let channel = 'billing';
-        if (d.includes('__')) {
-          const parts = d.split('__');
-          companyId = parts[0];
-          channel = parts[1] || 'billing';
-        } else {
-          // migrate legacy dir to companyId__billing
-          const newDir = path.join(AUTH_BASE_DIR, `${d}__billing`);
-          if (!fs.existsSync(newDir)) {
-            try {
-              fs.renameSync(fullP, newDir);
-              channel = 'billing';
-            } catch (e) {}
+    // 1. ☁️ Discover and hydrate all active sessions from MongoDB Cloud Database!
+    try {
+      const dbSessions = await WhatsAppSessionAuth.aggregate([
+        { $group: { _id: { companyId: "$companyId", channel: "$channel" }, count: { $sum: 1 } } }
+      ]);
+
+      if (dbSessions && dbSessions.length > 0) {
+        console.log(`☁️ [WhatsApp Cloud Engine] Discovered ${dbSessions.length} active WhatsApp sessions in MongoDB!`);
+        for (const s of dbSessions) {
+          const { companyId, channel } = s._id;
+          const authDir = getAuthDir(companyId, channel);
+          await hydrateAuthDirFromDb(companyId, channel, authDir);
+          console.log(`🔄 [WhatsApp Engine] Restoring cloud session for ${companyId} [${channel}]...`);
+          initWhatsAppSession(companyId, channel, false).catch(e =>
+            console.warn(`Failed to restore WA cloud session for ${companyId} [${channel}]:`, e.message)
+          );
+        }
+      }
+    } catch (dbErr) {
+      console.warn("[WhatsApp Cloud Engine] DB session discovery note:", dbErr.message);
+    }
+
+    // 2. Also restore any legacy local files on disk if present
+    if (fs.existsSync(AUTH_BASE_DIR)) {
+      const subDirs = fs.readdirSync(AUTH_BASE_DIR);
+      for (const d of subDirs) {
+        const fullP = path.join(AUTH_BASE_DIR, d);
+        if (fs.statSync(fullP).isDirectory() && fs.readdirSync(fullP).length > 0) {
+          let companyId = d;
+          let channel = 'billing';
+          if (d.includes('__')) {
+            const parts = d.split('__');
+            companyId = parts[0];
+            channel = parts[1] || 'billing';
+          }
+          const sKey = getSessionKey(companyId, channel);
+          if (!sessions.has(sKey)) {
+            initWhatsAppSession(companyId, channel, false).catch(() => {});
           }
         }
-        console.log(`🔄 [WhatsApp Engine] Restoring saved session for ${companyId} [${channel}]...`);
-        initWhatsAppSession(companyId, channel, false).catch(e =>
-          console.warn(`Failed to restore WA session for ${companyId} [${channel}]:`, e.message)
-        );
       }
     }
   } catch (err) {

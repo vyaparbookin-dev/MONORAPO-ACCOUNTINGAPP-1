@@ -1195,7 +1195,10 @@ function MobileVyaparAppContent() {
 
       const res = await api.post('/api/whatsapp/send-direct', {
         toMobile: phoneToSend.slice(-10),
-        messageText: waShareConfig.messageText
+        messageText: waShareConfig.messageText,
+        channel: 'billing',
+        recipientName: waShareConfig.partyName || 'ग्राहक',
+        messageType: waShareConfig.mode === 'bill' ? 'invoice' : 'recovery'
       });
 
       if (res.data?.success) {

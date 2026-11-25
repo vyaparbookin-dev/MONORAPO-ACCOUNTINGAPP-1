@@ -367,7 +367,9 @@ export default function PartiesPage() {
       const res = await api.post('/api/whatsapp/send-direct', {
         toMobile: targetPhone,
         messageText: text,
-        channel: 'recovery'
+        channel: 'recovery',
+        recipientName: statementParty?.name || 'ग्राहक',
+        messageType: 'recovery'
       });
       if (res?.data?.success) {
         setDirectWaSuccessMsg(`✅ ${statementParty.name} के WhatsApp (${targetPhone}) पर खाता विवरण सफलतापूर्वक भेज दिया गया!`);
@@ -2066,7 +2068,13 @@ export default function PartiesPage() {
 
     if (waStatus.isConnected && cleanPhone && cleanPhone.length >= 10) {
       try {
-        const res = await api.post('/api/whatsapp/send-direct', { toMobile: cleanPhone, messageText: text, channel: 'recovery' });
+        const res = await api.post('/api/whatsapp/send-direct', { 
+          toMobile: cleanPhone, 
+          messageText: text, 
+          channel: 'recovery',
+          recipientName: p.name || 'ग्राहक',
+          messageType: !isDeb ? 'receipt' : 'recovery'
+        });
         if (res?.data?.success) {
           alert(`✅ ${p.name} को WhatsApp पर ${!isDeb ? 'भुगतान पावती (Receipt)' : 'बिल विवरण'} 1-क्लिक बैकग्राउंड में भेज दिया गया!`);
           return;
@@ -4796,7 +4804,9 @@ export default function PartiesPage() {
                           const res = await api.post('/api/whatsapp/send-direct', {
                             toMobile: quickSharePhone,
                             messageText: quickShareMessageText,
-                            channel: 'recovery'
+                            channel: 'recovery',
+                            recipientName: quickShareParty?.name || 'ग्राहक',
+                            messageType: 'recovery'
                           });
                           if (res?.data?.success) {
                             setShowQuickSharePhoneModal(false);

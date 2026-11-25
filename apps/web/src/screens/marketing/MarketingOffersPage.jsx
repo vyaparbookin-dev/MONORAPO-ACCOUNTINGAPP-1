@@ -5,7 +5,7 @@ import {
   MessageSquare, Send, Gift, Sparkles, Tag, Check, Copy, 
   RefreshCw, QrCode, Phone, MapPin, ExternalLink, Calendar, 
   Users, ShoppingBag, ShieldCheck, Flame, Percent, CheckCircle2,
-  X, AlertCircle, ArrowRight, Clock, Search, Filter, User
+  X, AlertCircle, ArrowRight, Clock, Search, Filter, User, FileText, Eye, History
 } from 'lucide-react';
 import { openWhatsAppDirectly } from '../parties/PartiesPage';
 
@@ -100,6 +100,57 @@ export default function MarketingOffersPage() {
   const { selectedCompany, updateCompany } = useCompany() || {};
   const [parties, setParties] = useState([]);
   const [loadingParties, setLoadingParties] = useState(false);
+
+  // 📜 Main Page Navigation Tab: 'campaign' (ऑफर बनाएं) | 'outbox' (संदेश इतिहास)
+  const [activeMainTab, setActiveMainTab] = useState('campaign');
+
+  // 📜 WhatsApp Outbox & Audit Trail States
+  const [outboxLogs, setOutboxLogs] = useState([]);
+  const [outboxLoading, setOutboxLoading] = useState(false);
+  const [outboxStats, setOutboxStats] = useState({ totalSent: 0, totalFailed: 0, todaySent: 0, byType: {} });
+  const [outboxSearch, setOutboxSearch] = useState('');
+  const [outboxTypeFilter, setOutboxTypeFilter] = useState('all');
+  const [outboxStatusFilter, setOutboxStatusFilter] = useState('all');
+  const [outboxPage, setOutboxPage] = useState(1);
+  const [outboxTotalPages, setOutboxTotalPages] = useState(1);
+  const [outboxTotalCount, setOutboxTotalCount] = useState(0);
+  const [viewingLogMessage, setViewingLogMessage] = useState(null);
+
+  const fetchOutboxLogs = async (page = 1) => {
+    setOutboxLoading(true);
+    try {
+      const params = {
+        page,
+        limit: 30,
+        search: outboxSearch,
+        messageType: outboxTypeFilter,
+        status: outboxStatusFilter
+      };
+      const [resLogs, resStats] = await Promise.all([
+        api.get('/api/whatsapp/logs', { params }),
+        api.get('/api/whatsapp/logs/stats')
+      ]);
+      if (resLogs.data?.success) {
+        setOutboxLogs(resLogs.data.logs || []);
+        setOutboxTotalPages(resLogs.data.totalPages || 1);
+        setOutboxTotalCount(resLogs.data.totalCount || 0);
+        setOutboxPage(resLogs.data.currentPage || 1);
+      }
+      if (resStats.data?.success) {
+        setOutboxStats(resStats.data.stats || {});
+      }
+    } catch (err) {
+      console.warn("Error fetching WhatsApp logs:", err.message);
+    } finally {
+      setOutboxLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeMainTab === 'outbox') {
+      fetchOutboxLogs(1);
+    }
+  }, [activeMainTab, outboxTypeFilter, outboxStatusFilter]);
 
   // Template State
   const [selectedTemplateId, setSelectedTemplateId] = useState('discount_sale');
@@ -450,7 +501,9 @@ export default function MarketingOffersPage() {
         const res = await api.post('/api/whatsapp/send-direct', {
           toMobile: phone,
           messageText: msgToSend,
-          channel: 'marketing'
+          channel: 'marketing',
+          recipientName: partyName,
+          messageType: 'marketing'
         });
 
         if (res?.data?.success) {
@@ -522,7 +575,9 @@ export default function MarketingOffersPage() {
       const res = await api.post('/api/whatsapp/send-direct', {
         toMobile: targetPhone,
         messageText: customizedMessage,
-        channel: 'marketing'
+        channel: 'marketing',
+        recipientName: recipientType === 'party' ? (activeParty?.name || 'ग्राहक') : (customRecipientName || 'ग्राहक'),
+        messageType: 'marketing'
       });
       if (res?.data?.success) {
         setStatusMsg(`✅ ऑफर संदेश WhatsApp (${targetPhone}) पर बैकग्राउंड में सफलतापूर्वक भेज दिया गया!`);
@@ -569,11 +624,42 @@ export default function MarketingOffersPage() {
             <span>WhatsApp मार्केटिंग व प्रमोशन हब</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-slate-800">
-            📢 प्रमोशनल ऑफर्स व त्योहार संदेश (Campaign Hub)
+            📢 WhatsApp मार्केटिंग, ऑफर्स व संदेश ऑडिट हब
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            ग्राहकों को त्योहार विश, डिस्काउंट कूपन, नया स्टॉक व स्पेशल ऑफर्स सीधे 1-क्लिक में WhatsApp पर भेजें
+            ग्राहकों को त्योहार विश, डिस्काउंट कूपन, नया स्टॉक व स्पेशल ऑफर्स भेजें और सभी भेजे गए संदेशों का पूरा इतिहास ट्रैक करें
           </p>
+
+          {/* 🌟 MAIN NAVIGATION TABS */}
+          <div className="flex items-center gap-2 pt-3">
+            <button
+              type="button"
+              onClick={() => setActiveMainTab('campaign')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-2 shadow-2xs ${
+                activeMainTab === 'campaign'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+              }`}
+            >
+              <Gift size={15} />
+              <span>1. ऑफर व त्योहार संदेश बनाएं</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMainTab('outbox');
+                fetchOutboxLogs(1);
+              }}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-2 shadow-2xs ${
+                activeMainTab === 'outbox'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+              }`}
+            >
+              <History size={15} />
+              <span>2. भेजे गए संदेश इतिहास (Outbox Audit Log)</span>
+            </button>
+          </div>
         </div>
 
         {/* WhatsApp Session Status Pill */}
@@ -602,6 +688,9 @@ export default function MarketingOffersPage() {
         </div>
       </div>
 
+      {/* TAB 1: CAMPAIGN BUILDER VIEW */}
+      {activeMainTab === 'campaign' && (
+        <div className="space-y-5 animate-in fade-in">
       {/* ⚡ Quick Profile Settings Sync Bar */}
       <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-200 space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1336,6 +1425,365 @@ export default function MarketingOffersPage() {
           </div>
         </div>
       </div>
+      </div>
+      )}
+
+      {/* TAB 2: WHATSAPP OUTBOX & AUDIT TRAIL VIEW */}
+      {activeMainTab === 'outbox' && (
+        <div className="space-y-5 animate-in fade-in">
+          {/* Live Stats Overview Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-slate-500 text-xs font-bold block">कुल संदेश भेजे</span>
+                <strong className="text-2xl font-black text-slate-900 font-mono">{outboxStats.totalSent || 0}</strong>
+              </div>
+              <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <Send size={18} />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-emerald-700 text-xs font-bold block">आज भेजे गए (Today)</span>
+                <strong className="text-2xl font-black text-emerald-700 font-mono">{outboxStats.todaySent || 0}</strong>
+              </div>
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <Calendar size={18} />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-rose-700 text-xs font-bold block">विफल संदेश (Failed)</span>
+                <strong className="text-2xl font-black text-rose-700 font-mono">{outboxStats.totalFailed || 0}</strong>
+              </div>
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                <AlertCircle size={18} />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-blue-700 text-xs font-bold block">सफलता दर (Success)</span>
+                <strong className="text-2xl font-black text-blue-700 font-mono">
+                  {outboxStats.totalSent + outboxStats.totalFailed > 0
+                    ? Math.round((outboxStats.totalSent / (outboxStats.totalSent + outboxStats.totalFailed)) * 100)
+                    : 100}%
+                </strong>
+              </div>
+              <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                <ShieldCheck size={18} />
+              </div>
+            </div>
+          </div>
+
+          {/* Filter, Search & Refresh Toolbar */}
+          <div className="bg-white rounded-3xl p-4 sm:p-5 shadow-sm border border-slate-200 space-y-3">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+              {/* Search Box */}
+              <div className="relative w-full sm:w-80">
+                <Search size={15} className="absolute left-3.5 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="ग्राहक का नाम, मोबाइल नंबर, इनवॉइस # या संदेश..."
+                  value={outboxSearch}
+                  onChange={(e) => setOutboxSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && fetchOutboxLogs(1)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-9 pr-9 py-2 text-xs font-medium outline-none focus:border-indigo-500"
+                />
+                {outboxSearch && (
+                  <button
+                    type="button"
+                    onClick={() => { setOutboxSearch(''); fetchOutboxLogs(1); }}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={() => fetchOutboxLogs(1)}
+                  className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold border border-indigo-200 flex items-center gap-1.5 transition cursor-pointer active:scale-95 shadow-2xs"
+                >
+                  <RefreshCw size={13} className={outboxLoading ? 'animate-spin' : ''} />
+                  <span>रिफ्रेश</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Type & Status Filters */}
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-xs">
+              <span className="font-bold text-slate-500 text-[11px]">प्रकार:</span>
+              {[
+                { id: 'all', label: 'सभी प्रकार' },
+                { id: 'marketing', label: '📢 ऑफर्स / त्योहार' },
+                { id: 'invoice', label: '🧾 बिल इनवॉइस' },
+                { id: 'recovery', label: '⏳ उधारी तकादा' },
+                { id: 'receipt', label: '💵 भुगतान पावती' },
+                { id: 'direct', label: '💬 सीधा संदेश' }
+              ].map(f => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setOutboxTypeFilter(f.id)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                    outboxTypeFilter === f.id
+                      ? 'bg-indigo-600 text-white shadow-2xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+
+              <span className="font-bold text-slate-500 text-[11px] ml-auto">स्थिति:</span>
+              {[
+                { id: 'all', label: 'सभी' },
+                { id: 'sent', label: '✅ सफल' },
+                { id: 'failed', label: '❌ विफल' }
+              ].map(s => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setOutboxStatusFilter(s.id)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                    outboxStatusFilter === s.id
+                      ? 'bg-slate-800 text-white shadow-2xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Outbox Data Table */}
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-black text-[11px]">
+                    <th className="p-3.5">तारीख व समय</th>
+                    <th className="p-3.5">प्राप्तकर्ता (ग्राहक)</th>
+                    <th className="p-3.5">संदेश प्रकार</th>
+                    <th className="p-3.5">सेंडर WhatsApp</th>
+                    <th className="p-3.5">भेजने वाला यूजर</th>
+                    <th className="p-3.5">डिलीवरी स्थिति</th>
+                    <th className="p-3.5 text-center">कार्रवाई</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-sans">
+                  {outboxLoading ? (
+                    <tr>
+                      <td colSpan="7" className="p-10 text-center text-slate-400">
+                        <RefreshCw size={24} className="animate-spin mx-auto mb-2 text-indigo-600" />
+                        <span>संदेश इतिहास लोड हो रहा है...</span>
+                      </td>
+                    </tr>
+                  ) : outboxLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" className="p-12 text-center text-slate-400">
+                        <MessageSquare size={32} className="mx-auto mb-2 text-slate-300" />
+                        <span className="font-bold block text-sm text-slate-600">कोई WhatsApp संदेश रिकॉर्ड नहीं मिला</span>
+                        <span className="text-xs text-slate-400">जब आप बिल, कोटेशन, तकादा या ऑफर भेजेंगे, वे यहाँ अपने आप दर्ज होंगे।</span>
+                      </td>
+                    </tr>
+                  ) : (
+                    outboxLogs.map((log) => {
+                      const dateStr = new Date(log.sentAt).toLocaleString('hi-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      });
+
+                      const typeBadge = {
+                        marketing: { bg: 'bg-purple-100 text-purple-800 border-purple-200', label: '📢 ऑफर / त्योहार' },
+                        invoice: { bg: 'bg-blue-100 text-blue-800 border-blue-200', label: '🧾 बिल इनवॉइस' },
+                        recovery: { bg: 'bg-amber-100 text-amber-900 border-amber-200', label: '⏳ उधारी तकादा' },
+                        receipt: { bg: 'bg-emerald-100 text-emerald-800 border-emerald-200', label: '💵 भुगतान पावती' },
+                        quotation: { bg: 'bg-teal-100 text-teal-800 border-teal-200', label: '📝 कोटेशन' },
+                        direct: { bg: 'bg-slate-100 text-slate-700 border-slate-200', label: '💬 सीधा संदेश' }
+                      }[log.messageType] || { bg: 'bg-slate-100 text-slate-700', label: log.messageType };
+
+                      return (
+                        <tr key={log._id || log.id} className="hover:bg-slate-50/80 transition">
+                          <td className="p-3.5 whitespace-nowrap text-slate-600 font-mono text-[11px]">
+                            {dateStr}
+                          </td>
+                          <td className="p-3.5">
+                            <div className="font-bold text-slate-900">{log.recipientName || 'ग्राहक'}</div>
+                            <div className="font-mono text-slate-500 text-[10px]">+91 {log.recipientPhone}</div>
+                          </td>
+                          <td className="p-3.5">
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${typeBadge.bg}`}>
+                              {typeBadge.label}
+                            </span>
+                            {log.documentNumber && (
+                              <span className="text-[10px] text-slate-400 block font-mono mt-0.5">
+                                #{log.documentNumber}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-slate-700">
+                            {log.senderPhone ? `+91 ${log.senderPhone.slice(-10)}` : '—'}
+                            <span className="text-[9px] text-slate-400 block uppercase">[{log.channel || 'billing'}]</span>
+                          </td>
+                          <td className="p-3.5">
+                            <span className="font-bold text-slate-800 block text-[11px]">
+                              {log.sentByUserName || 'व्यापारी'}
+                            </span>
+                            {log.sentByUserId && (
+                              <span className="text-[9px] text-slate-400 font-mono block">
+                                ID: {log.sentByUserId.slice(-6)}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3.5 whitespace-nowrap">
+                            {log.status === 'SENT' ? (
+                              <span className="inline-flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 text-[10px]">
+                                <CheckCircle2 size={12} className="text-emerald-600" />
+                                <span>सफल (Sent)</span>
+                              </span>
+                            ) : (
+                              <div className="leading-tight">
+                                <span className="inline-flex items-center gap-1 text-rose-700 font-bold bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200 text-[10px]">
+                                  <AlertCircle size={12} className="text-rose-600" />
+                                  <span>विफल</span>
+                                </span>
+                                {log.statusReason && (
+                                  <span className="text-[9px] text-rose-500 block max-w-xs truncate mt-0.5" title={log.statusReason}>
+                                    {log.statusReason}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3.5 text-center whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => setViewingLogMessage(log)}
+                              className="px-2.5 py-1 bg-white hover:bg-indigo-50 text-indigo-700 font-bold rounded-lg border border-indigo-200 text-[11px] transition cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                              title="भेजा गया पूरा संदेश देखें"
+                            >
+                              <Eye size={12} />
+                              <span>देखें</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            {outboxTotalPages > 1 && (
+              <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs">
+                <span className="text-slate-500">
+                  कुल <strong>{outboxTotalCount}</strong> संदेशों में से पृष्ठ <strong>{outboxPage}</strong> of <strong>{outboxTotalPages}</strong>
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={outboxPage <= 1}
+                    onClick={() => fetchOutboxLogs(outboxPage - 1)}
+                    className="px-3 py-1 bg-white border border-slate-300 rounded-lg font-bold disabled:opacity-40 cursor-pointer"
+                  >
+                    ◀ पिछला
+                  </button>
+                  <button
+                    type="button"
+                    disabled={outboxPage >= outboxTotalPages}
+                    onClick={() => fetchOutboxLogs(outboxPage + 1)}
+                    className="px-3 py-1 bg-white border border-slate-300 rounded-lg font-bold disabled:opacity-40 cursor-pointer"
+                  >
+                    अगला ▶
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 📜 MODAL: VIEW SENT MESSAGE DETAILS */}
+      {viewingLogMessage && (
+        <div className="fixed inset-0 z-[160] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 space-y-4 shadow-2xl border border-slate-100">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h3 className="font-black text-sm text-slate-800">
+                  💬 भेजा गया WhatsApp संदेश
+                </h3>
+                <span className="text-[10px] text-slate-500 font-mono">
+                  {new Date(viewingLogMessage.sentAt).toLocaleString('hi-IN')}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingLogMessage(null)}
+                className="p-1 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Recipient & Sender Pill */}
+            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-bold">प्राप्तकर्ता:</span>
+                <span className="font-black text-slate-900">{viewingLogMessage.recipientName} (+91 {viewingLogMessage.recipientPhone})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-bold">सेंडर नंबर:</span>
+                <span className="font-mono text-slate-700">{viewingLogMessage.senderPhone ? `+91 ${viewingLogMessage.senderPhone.slice(-10)}` : 'डिफ़ॉल्ट'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-bold">भेजने वाला यूजर:</span>
+                <span className="font-bold text-indigo-700">{viewingLogMessage.sentByUserName || 'व्यापारी'}</span>
+              </div>
+            </div>
+
+            {/* Message Bubble */}
+            <div className="bg-[#E5DDD5] p-3 rounded-2xl shadow-inner max-h-72 overflow-y-auto">
+              <div className="bg-white p-3 rounded-xl rounded-tl-none text-xs text-slate-800 whitespace-pre-wrap font-sans leading-relaxed shadow-xs">
+                {viewingLogMessage.messageText}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(viewingLogMessage.messageText);
+                  alert("संदेश कॉपी कर लिया गया!");
+                }}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 flex items-center gap-1 cursor-pointer"
+              >
+                <Copy size={13} />
+                <span>कॉपी करें</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewingLogMessage(null)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer"
+              >
+                बंद करें
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 📢 LIVE BROADCAST PROGRESS & REPORT MODAL */}
       {showBroadcastModal && (

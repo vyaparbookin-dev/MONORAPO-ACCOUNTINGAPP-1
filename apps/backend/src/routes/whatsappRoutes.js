@@ -1,6 +1,7 @@
 import express from "express";
 import Bill from "../model/bill.js";
 import Company from "../model/company.js";
+import WhatsAppMessageLog from "../model/whatsappMessageLog.js";
 import {
   initWhatsAppSession,
   getWhatsAppStatus,
@@ -67,17 +68,37 @@ router.post("/disconnect", async (req, res) => {
 
 /**
  * POST /api/whatsapp/send-direct
- * Send any custom message directly to customer's WhatsApp in background
- * Body: { toMobile, messageText, channel?: 'billing'|'recovery'|'marketing' }
+ * Send any custom message directly to customer's WhatsApp in background with complete audit trail
+ * Body: { toMobile, messageText, channel, recipientName, messageType, documentId, documentNumber, sentByUserId, sentByUserName }
  */
 router.post("/send-direct", async (req, res) => {
   try {
-    const { toMobile, messageText, channel = 'billing' } = req.body;
+    const { 
+      toMobile, 
+      messageText, 
+      channel = 'billing',
+      recipientName,
+      messageType,
+      documentId,
+      documentNumber,
+      sentByUserId,
+      sentByUserName
+    } = req.body;
+
     if (!toMobile || !messageText) {
       return res.status(400).json({ success: false, message: "मोबाइल नंबर और संदेश आवश्यक हैं!" });
     }
 
-    const sendRes = await sendDirectWhatsAppMessage(req.companyId, toMobile, messageText, channel);
+    const metadata = {
+      recipientName: recipientName || req.body.customerName || 'ग्राहक',
+      messageType: messageType || (channel === 'marketing' ? 'marketing' : channel === 'recovery' ? 'recovery' : 'direct'),
+      documentId: documentId || '',
+      documentNumber: documentNumber || '',
+      sentByUserId: sentByUserId || req.user?._id || '',
+      sentByUserName: sentByUserName || req.user?.name || req.user?.email || 'व्यापारी'
+    };
+
+    const sendRes = await sendDirectWhatsAppMessage(req.companyId, toMobile, messageText, channel, metadata);
     if (!sendRes.success) {
       return res.status(sendRes.isQrRequired ? 428 : 400).json(sendRes);
     }
@@ -138,7 +159,15 @@ router.post("/send-invoice", async (req, res) => {
     let sentDirectly = false;
 
     if (status.isConnected && targetMobile) {
-      const sendRes = await sendDirectWhatsAppMessage(req.companyId, targetMobile, message, 'billing');
+      const invoiceMetadata = {
+        recipientName: bill.customerName || 'ग्राहक',
+        messageType: 'invoice',
+        documentId: String(bill._id || bill.id || ''),
+        documentNumber: String(bill.billNumber || bill.invoiceNumber || ''),
+        sentByUserId: req.user?._id || '',
+        sentByUserName: req.user?.name || req.user?.email || 'व्यापारी'
+      };
+      const sendRes = await sendDirectWhatsAppMessage(req.companyId, targetMobile, message, 'billing', invoiceMetadata);
       if (sendRes.success) {
         sentDirectly = true;
       }
@@ -152,6 +181,119 @@ router.post("/send-invoice", async (req, res) => {
         : "WhatsApp संदेश तैयार है!",
       preview: message,
       targetMobile
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
+/**
+ * GET /api/whatsapp/logs
+ * Retrieve paginated WhatsApp audit trail & message history for company
+ */
+router.get("/logs", async (req, res) => {
+  try {
+    const { 
+      channel, 
+      messageType, 
+      status, 
+      search, 
+      phone, 
+      page = 1, 
+      limit = 50,
+      startDate,
+      endDate
+    } = req.query;
+
+    const query = { companyId: String(req.companyId || "default_shop").trim() };
+
+    if (channel && channel !== 'all') {
+      query.channel = channel.toLowerCase();
+    }
+    if (messageType && messageType !== 'all') {
+      query.messageType = messageType.toLowerCase();
+    }
+    if (status && status !== 'all') {
+      query.status = status.toUpperCase();
+    }
+    if (phone) {
+      const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+      if (cleanPhone) query.recipientPhone = cleanPhone;
+    }
+    if (search && search.trim()) {
+      const s = search.trim();
+      query.$or = [
+        { recipientName: { $regex: s, $options: 'i' } },
+        { recipientPhone: { $regex: s, $options: 'i' } },
+        { documentNumber: { $regex: s, $options: 'i' } },
+        { sentByUserName: { $regex: s, $options: 'i' } },
+        { messageText: { $regex: s, $options: 'i' } }
+      ];
+    }
+    if (startDate || endDate) {
+      query.sentAt = {};
+      if (startDate) query.sentAt.$gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        query.sentAt.$lte = end;
+      }
+    }
+
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.min(200, Math.max(1, Number(limit) || 50));
+    const skip = (pageNum - 1) * limitNum;
+
+    const [totalCount, logs] = await Promise.all([
+      WhatsAppMessageLog.countDocuments(query),
+      WhatsAppMessageLog.find(query)
+        .sort({ sentAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean()
+    ]);
+
+    res.json({
+      success: true,
+      logs,
+      totalCount,
+      currentPage: pageNum,
+      totalPages: Math.ceil(totalCount / limitNum)
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/whatsapp/logs/stats
+ * Aggregate overview of messages sent, failure rate, and category distribution
+ */
+router.get("/logs/stats", async (req, res) => {
+  try {
+    const coId = String(req.companyId || "default_shop").trim();
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const [totalSent, totalFailed, todaySent, typeStats] = await Promise.all([
+      WhatsAppMessageLog.countDocuments({ companyId: coId, status: 'SENT' }),
+      WhatsAppMessageLog.countDocuments({ companyId: coId, status: 'FAILED' }),
+      WhatsAppMessageLog.countDocuments({ companyId: coId, status: 'SENT', sentAt: { $gte: todayStart } }),
+      WhatsAppMessageLog.aggregate([
+        { $match: { companyId: coId } },
+        { $group: { _id: "$messageType", count: { $sum: 1 } } }
+      ])
+    ]);
+
+    res.json({
+      success: true,
+      stats: {
+        totalSent,
+        totalFailed,
+        todaySent,
+        byType: typeStats.reduce((acc, curr) => ({ ...acc, [curr._id]: curr.count }), {})
+      }
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
