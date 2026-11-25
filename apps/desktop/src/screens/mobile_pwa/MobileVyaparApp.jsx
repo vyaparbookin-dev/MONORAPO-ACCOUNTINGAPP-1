@@ -379,6 +379,8 @@ function MobileVyaparAppContent() {
   const [editBillAmount, setEditBillAmount] = useState("");
   const [editBillPaymentMode, setEditBillPaymentMode] = useState("CASH");
   const [editBillNotes, setEditBillNotes] = useState("");
+  const [editBillBookNo, setEditBillBookNo] = useState("");
+  const [editBillPageNo, setEditBillPageNo] = useState("");
   const [savingEditBill, setSavingEditBill] = useState(false);
 
   // Calculator State
@@ -980,6 +982,8 @@ function MobileVyaparAppContent() {
   const [partyTxType, setPartyTxType] = useState('paid'); // 'paid' (मैंने दिए) or 'received' (मुझे मिले)
   const [partyTxAmount, setPartyTxAmount] = useState('');
   const [partyTxNotes, setPartyTxNotes] = useState('');
+  const [partyTxBookNo, setPartyTxBookNo] = useState('');
+  const [partyTxPageNo, setPartyTxPageNo] = useState('');
   const [partyTxDate, setPartyTxDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [partyTxPaymentMode, setPartyTxPaymentMode] = useState('CASH');
   const [partyTxBankAccountId, setPartyTxBankAccountId] = useState('');
@@ -992,6 +996,8 @@ function MobileVyaparAppContent() {
   const [addBillNumber, setAddBillNumber] = useState('');
   const [addBillAmount, setAddBillAmount] = useState('');
   const [addBillPaymentMode, setAddBillPaymentMode] = useState('UDHAR');
+  const [addBillBookNo, setAddBillBookNo] = useState('');
+  const [addBillPageNo, setAddBillPageNo] = useState('');
   const [addBillItemsSummary, setAddBillItemsSummary] = useState('');
   const [addBillSite, setAddBillSite] = useState('');
   const [addBillImage, setAddBillImage] = useState(null);
@@ -1003,6 +1009,8 @@ function MobileVyaparAppContent() {
   const [editPartyTxAmount, setEditPartyTxAmount] = useState('');
   const [editPartyTxType, setEditPartyTxType] = useState('paid');
   const [editPartyTxNotes, setEditPartyTxNotes] = useState('');
+  const [editPartyTxBookNo, setEditPartyTxBookNo] = useState('');
+  const [editPartyTxPageNo, setEditPartyTxPageNo] = useState('');
   const [editPartyTxDate, setEditPartyTxDate] = useState('');
   const [editPartyTxPaymentMode, setEditPartyTxPaymentMode] = useState('CASH');
   const [editPartyTxSite, setEditPartyTxSite] = useState('');
@@ -1137,6 +1145,7 @@ function MobileVyaparAppContent() {
   const [waSendResult, setWaSendResult] = useState(null);
 
   const openWhatsAppShareModal = ({ title, recipientName, phone, partyId, messageText, billId }) => {
+    fetchWhatsAppStatus();
     const cleanP = String(phone || "").replace(/[^0-9]/g, "");
     const formattedP = cleanP.length >= 10 ? cleanP.slice(-10) : cleanP;
     setWaShareConfig({
@@ -1202,8 +1211,9 @@ function MobileVyaparAppContent() {
         toMobile: phoneToSend.slice(-10),
         messageText: waShareConfig.messageText,
         channel: 'billing',
-        recipientName: waShareConfig.partyName || 'ग्राहक',
-        messageType: waShareConfig.mode === 'bill' ? 'invoice' : 'recovery'
+        recipientName: waShareConfig.recipientName || 'ग्राहक',
+        messageType: waShareConfig.billId ? 'invoice' : 'recovery',
+        documentId: waShareConfig.billId || ''
       });
 
       if (res.data?.success) {
@@ -5154,6 +5164,8 @@ function MobileVyaparAppContent() {
     setEditPartyTxAmount(String(amt));
     setEditPartyTxType(isDebit ? 'paid' : 'received');
     setEditPartyTxNotes(tx.details || '');
+    setEditPartyTxBookNo(tx.bookNo || tx.billBook || tx.billBookNo || '');
+    setEditPartyTxPageNo(tx.pageNo || tx.billPage || tx.billPageNo || '');
     setEditPartyTxSite(tx.siteName || tx.site || '');
     setEditPartyTxCarrierName(tx.carrierName || tx.receiverName || '');
     setEditPartyTxCarrierPhone(tx.carrierPhone || tx.receiverPhone || '');
@@ -5207,6 +5219,8 @@ function MobileVyaparAppContent() {
         details: editPartyTxNotes.trim(),
         date: isoDate,
         paymentMethod: editPartyTxPaymentMode,
+        bookNo: editPartyTxBookNo.trim(),
+        pageNo: editPartyTxPageNo.trim(),
         siteName: editPartyTxSite.trim(),
         site: editPartyTxSite.trim(),
         carrierName: editPartyTxCarrierName.trim(),
@@ -5296,6 +5310,8 @@ function MobileVyaparAppContent() {
             debit: editPartyTxType === 'paid' ? amt : 0,
             credit: editPartyTxType === 'received' ? amt : 0,
             details: editPartyTxNotes.trim(),
+            bookNo: editPartyTxBookNo.trim(),
+            pageNo: editPartyTxPageNo.trim(),
             date: isoDate,
             createdAt: isoDate,
             siteName: editPartyTxSite.trim(),
@@ -5332,6 +5348,8 @@ function MobileVyaparAppContent() {
               storedBills[billIdx].total = amt;
               storedBills[billIdx].totalAmount = amt;
               storedBills[billIdx].hasLocalEdits = true;
+              storedBills[billIdx].bookNo = payload.bookNo;
+              storedBills[billIdx].pageNo = payload.pageNo;
               storedBills[billIdx].siteName = payload.siteName;
               storedBills[billIdx].site = payload.site;
               storedBills[billIdx].carrierName = payload.carrierName;
@@ -5343,14 +5361,38 @@ function MobileVyaparAppContent() {
               // Update bills state as well
               setBills(prev => (prev || []).map(b => {
                 if (String(b.billNumber || b.invoiceNumber || b._id || b.id).toLowerCase() === billRef.toLowerCase() || String(b._id || b.id).toLowerCase() === String(txId).toLowerCase()) {
-                  return { ...b, amount: amt, finalAmount: amt, total: amt, totalAmount: amt, date: isoDate, rawDate: isoDate, createdAt: isoDate, hasLocalEdits: true, siteName: payload.siteName, site: payload.site, carrierName: payload.carrierName, carrierPhone: payload.carrierPhone };
+                  return {
+                    ...b,
+                    amount: amt,
+                    finalAmount: amt,
+                    total: amt,
+                    totalAmount: amt,
+                    date: isoDate,
+                    rawDate: isoDate,
+                    createdAt: isoDate,
+                    hasLocalEdits: true,
+                    bookNo: payload.bookNo,
+                    pageNo: payload.pageNo,
+                    siteName: payload.siteName,
+                    site: payload.site,
+                    carrierName: payload.carrierName,
+                    carrierPhone: payload.carrierPhone
+                  };
                 }
                 return b;
               }));
 
               const sId = storedBills[billIdx]._id || storedBills[billIdx].id;
               if (sId && !String(sId).startsWith("bill_")) {
-                api.put(`/api/billing/${sId}`, { date: isoDate, finalAmount: amt, total: amt, siteName: payload.siteName, notes: payload.details }).catch(() => {});
+                api.put(`/api/billing/${sId}`, {
+                  date: isoDate,
+                  finalAmount: amt,
+                  total: amt,
+                  bookNo: payload.bookNo,
+                  pageNo: payload.pageNo,
+                  siteName: payload.siteName,
+                  notes: payload.details
+                }).catch(() => {});
               }
             }
           }
@@ -5559,6 +5601,8 @@ function MobileVyaparAppContent() {
           amountPaid: isUdhar ? 0 : amt,
           paymentStatus: isUdhar ? 'unpaid' : 'paid',
           paymentMethod: isUdhar ? 'credit' : 'cash',
+          bookNo: (addBillBookNo || "").trim(),
+          pageNo: (addBillPageNo || "").trim(),
           siteName: addBillSite.trim(),
           billImageUrl: uploadedImageUrl,
           notes: addBillItemsSummary.trim() || `खरीद बिल #${bNum}`,
@@ -5587,6 +5631,8 @@ function MobileVyaparAppContent() {
           finalAmount: amt,
           paymentMode: addBillPaymentMode,
           status: isUdhar ? 'unpaid' : 'paid',
+          bookNo: (addBillBookNo || "").trim(),
+          pageNo: (addBillPageNo || "").trim(),
           siteName: addBillSite.trim(),
           billImageUrl: uploadedImageUrl,
           billImageUrls: uploadedImageUrl ? [uploadedImageUrl] : [],
@@ -5596,6 +5642,8 @@ function MobileVyaparAppContent() {
 
       setShowAddMissingBillModal(false);
       setAddBillAmount('');
+      setAddBillBookNo('');
+      setAddBillPageNo('');
       setAddBillItemsSummary('');
       setAddBillImage(null);
       setAddBillImagePreview('');
@@ -5861,6 +5909,8 @@ function MobileVyaparAppContent() {
           date: isoDate,
           paymentMethod: partyTxPaymentMode || 'CASH',
           bankAccountId: partyTxBankAccountId || undefined,
+          bookNo: (partyTxBookNo || "").trim(),
+          pageNo: (partyTxPageNo || "").trim(),
           notes
         });
         if (res?.data?.bankAccount) {
@@ -5887,6 +5937,8 @@ function MobileVyaparAppContent() {
             date: isoDate,
             paymentMethod: partyTxPaymentMode || 'CASH',
             bankAccountId: partyTxBankAccountId || undefined,
+            bookNo: (partyTxBookNo || "").trim(),
+            pageNo: (partyTxPageNo || "").trim(),
             notes
           },
           localId: actualTxId
@@ -5923,6 +5975,8 @@ function MobileVyaparAppContent() {
         date: isoDate,
         createdAt: isoDate,
         details: notes,
+        bookNo: (partyTxBookNo || "").trim(),
+        pageNo: (partyTxPageNo || "").trim(),
         debit: type === 'paid' ? amt : 0,
         credit: type === 'received' ? amt : 0,
         amount: amt,
@@ -5952,6 +6006,8 @@ function MobileVyaparAppContent() {
 
       setPartyTxAmount('');
       setPartyTxNotes('');
+      setPartyTxBookNo('');
+      setPartyTxPageNo('');
       setPartyTxImages([]);
       setPartyTxDate(getLocalYmd());
       setShowPartyTxForm(false);
@@ -6741,6 +6797,8 @@ function MobileVyaparAppContent() {
     setEditBillPaymentMode(pMode === 'CREDIT' ? 'UDHAR' : pMode);
     const itemTitle = Array.isArray(bill.items) && bill.items.length > 0 ? (bill.items[0].name || "") : (bill.notes || "");
     setEditBillNotes(itemTitle);
+    setEditBillBookNo(bill.bookNo || bill.billBook || bill.billBookNo || "");
+    setEditBillPageNo(bill.pageNo || bill.billPage || bill.billPageNo || "");
     setIsEditingBill(true);
   };
 
@@ -6782,6 +6840,8 @@ function MobileVyaparAppContent() {
         date: billDateDisplay,
         rawDate: billRawDate,
         createdAt: billRawDate,
+        bookNo: (editBillBookNo || "").trim(),
+        pageNo: (editBillPageNo || "").trim(),
         items: [{
           name: editBillNotes.trim() || `बिक्री (${pMode})`,
           quantity: 1,
@@ -6798,17 +6858,33 @@ function MobileVyaparAppContent() {
       setSelectedBillDetail(updatedBill);
       setIsEditingBill(false);
 
-      // Also update any matching ledger transaction so passbook reflects new date immediately
+      // Also update any matching ledger transaction so passbook reflects new date, book and page immediately
       const bRef = String(selectedBillDetail.billNumber || selectedBillDetail.invoiceNumber || selectedBillDetail._id || selectedBillDetail.id || '').trim();
       setAllPartyTransactions(prev => (prev || []).map(tx => {
         if (String(tx.billNumber || tx.refNo || tx._id || tx.id).trim() === bRef) {
-          return { ...tx, date: billRawDate, createdAt: billRawDate, amount: amt, debit: isUdhar ? amt : tx.debit };
+          return {
+            ...tx,
+            date: billRawDate,
+            createdAt: billRawDate,
+            amount: amt,
+            debit: isUdhar ? amt : tx.debit,
+            bookNo: (editBillBookNo || "").trim(),
+            pageNo: (editBillPageNo || "").trim()
+          };
         }
         return tx;
       }));
       setPartyTransactions(prev => (prev || []).map(tx => {
         if (String(tx.billNumber || tx.refNo || tx._id || tx.id).trim() === bRef) {
-          return { ...tx, date: billRawDate, createdAt: billRawDate, amount: amt, debit: isUdhar ? amt : tx.debit };
+          return {
+            ...tx,
+            date: billRawDate,
+            createdAt: billRawDate,
+            amount: amt,
+            debit: isUdhar ? amt : tx.debit,
+            bookNo: (editBillBookNo || "").trim(),
+            pageNo: (editBillPageNo || "").trim()
+          };
         }
         return tx;
       }));
@@ -6816,7 +6892,15 @@ function MobileVyaparAppContent() {
         const storedTxs = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
         const nextStored = storedTxs.map(tx => {
           if (String(tx.billNumber || tx.refNo || tx._id || tx.id).trim() === bRef) {
-            return { ...tx, date: billRawDate, createdAt: billRawDate, amount: amt, debit: isUdhar ? amt : tx.debit };
+            return {
+              ...tx,
+              date: billRawDate,
+              createdAt: billRawDate,
+              amount: amt,
+              debit: isUdhar ? amt : tx.debit,
+              bookNo: (editBillBookNo || "").trim(),
+              pageNo: (editBillPageNo || "").trim()
+            };
           }
           return tx;
         });
@@ -6837,6 +6921,8 @@ function MobileVyaparAppContent() {
             paymentMethod: isUdhar ? "credit" : (pMode === "UPI" ? "online" : "cash"),
             paymentStatus: isUdhar ? "unpaid" : "paid",
             status: isUdhar ? "issued" : "paid",
+            bookNo: (editBillBookNo || "").trim(),
+            pageNo: (editBillPageNo || "").trim(),
             notes: editBillNotes.trim(),
             items: updatedBill.items
           });
@@ -13389,6 +13475,34 @@ function MobileVyaparAppContent() {
                     />
                   </div>
 
+                  {/* Optional Book No & Page No */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                        📖 बिल बुक नं (Book No)
+                      </label>
+                      <input 
+                        type="text"
+                        placeholder="उदा. B-1..."
+                        value={partyTxBookNo}
+                        onChange={(e) => setPartyTxBookNo(e.target.value)}
+                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-indigo-500 shadow-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                        📄 बिल पेज नं (Page No)
+                      </label>
+                      <input 
+                        type="text"
+                        placeholder="उदा. 45..."
+                        value={partyTxPageNo}
+                        onChange={(e) => setPartyTxPageNo(e.target.value)}
+                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:border-indigo-500 shadow-xs"
+                      />
+                    </div>
+                  </div>
+
                   {/* 📎 Bill Photo & PDF Document Attachment Section */}
                   <div className="space-y-1.5 pt-1 border-t border-slate-200/60">
                     <div className="flex items-center justify-between">
@@ -14433,40 +14547,96 @@ function MobileVyaparAppContent() {
               </div>
             )}
 
-            {/* Action Buttons */}
-            <div className="space-y-2 pt-1">
-              {/* Button 1: Open native phone WhatsApp / WhatsApp Business */}
-              <button
-                type="button"
-                onClick={handleOpenMobileWhatsApp}
-                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-lg flex items-center justify-center gap-2 active:scale-95 transition cursor-pointer"
-              >
-                <Send size={16} />
-                <span>
-                  {waInputPhone.length >= 10
-                    ? "🟢 मोबाइल WhatsApp ऐप से भेजें (1-क्लिक)"
-                    : "👥 WhatsApp में संपर्क चुनें (Contact Chooser)"}
-                </span>
-              </button>
-
-              {/* Button 2: Send via background Baileys Engine (if connected and number present) */}
-              {waStatus.isConnected && (
+            {/* WhatsApp Connection Status Badge */}
+            {waStatus.isConnected ? (
+              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-2xl flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                  <div>
+                    <span className="text-xs font-black text-emerald-950 block">
+                      पर्सनल WhatsApp लिंक्ड है {waStatus.userPhone ? `(+91 ${waStatus.userPhone})` : ''}
+                    </span>
+                    <span className="text-[10px] text-emerald-800 font-bold block">
+                      मैसेज सीधे आपके पर्सनल नंबर से बैकग्राउंड में जाएगा, कोई अन्य ऐप नहीं खुलेगा।
+                    </span>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-black rounded-lg shrink-0">सक्रिय</span>
+              </div>
+            ) : (
+              <div className="p-3 bg-amber-50 border border-amber-300 rounded-2xl flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-black text-amber-950">पर्सनल WhatsApp अभी कनेक्टेड नहीं है</div>
+                  <div className="text-[10px] text-amber-800 font-bold">QR कोड स्कैन करके लिंक करें ताकि मैसेज ऑटोमैटिक पर्सनल नंबर से जाए</div>
+                </div>
                 <button
                   type="button"
-                  onClick={handleSendViaBackgroundWa}
-                  disabled={waBackgroundSending || waInputPhone.length < 10}
-                  className={`w-full py-2.5 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 border transition ${
-                    waInputPhone.length >= 10 && !waBackgroundSending
-                      ? 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white border-indigo-600 shadow-md cursor-pointer active:scale-95'
-                      : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-                  }`}
+                  onClick={() => {
+                    setShowWaShareModal(false);
+                    handleOpenWhatsAppModal();
+                  }}
+                  className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black rounded-xl shadow-xs shrink-0 cursor-pointer"
                 >
-                  <Sparkles size={14} />
-                  <span>⚡ ऑटोमैटिक बैकग्राउंड इंजन से भेजें (बिना ऐप खोले)</span>
+                  QR लिंक करें
+                </button>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-1">
+              {/* If connected, Button 1 is Background Auto Send from Personal WhatsApp */}
+              {waStatus.isConnected ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleSendViaBackgroundWa}
+                    disabled={waBackgroundSending || waInputPhone.length < 10}
+                    className={`w-full py-3.5 rounded-2xl text-xs sm:text-sm font-black flex items-center justify-center gap-2 shadow-lg transition active:scale-95 ${
+                      waInputPhone.length >= 10 && !waBackgroundSending
+                        ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white cursor-pointer shadow-emerald-500/25'
+                        : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {waBackgroundSending ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                    <span>
+                      {waBackgroundSending
+                        ? "⚡ बैकग्राउंड में संदेश भेजा जा रहा है..."
+                        : "⚡ लिंक्ड पर्सनल WhatsApp से तुरंत भेजें (Auto 1-Click)"}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleOpenMobileWhatsApp}
+                    className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl border border-slate-200 flex items-center justify-center gap-2 transition cursor-pointer"
+                  >
+                    <Send size={14} className="text-slate-500" />
+                    <span>
+                      {waInputPhone.length >= 10
+                        ? "📱 फोन के WhatsApp / Business ऐप में खोलें (Manual)"
+                        : "👥 WhatsApp में संपर्क चुनें (Contact Chooser)"}
+                    </span>
+                  </button>
+                  <p className="text-[10px] text-slate-500 text-center font-bold">
+                    💡 नोट: फोन का ऐप खोलने पर Android आपके डिफॉल्ट ऐप (जैसे WhatsApp Business) को खोल सकता है। सीधे पर्सनल नंबर से भेजने हेतु ऊपर हरे बटन (⚡ लिंक्ड पर्सनल WhatsApp) का उपयोग करें।
+                  </p>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleOpenMobileWhatsApp}
+                  className="w-full py-3 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-lg flex items-center justify-center gap-2 active:scale-95 transition cursor-pointer"
+                >
+                  <Send size={16} />
+                  <span>
+                    {waInputPhone.length >= 10
+                      ? "🟢 मोबाइल WhatsApp ऐप से भेजें (1-क्लिक)"
+                      : "👥 WhatsApp में संपर्क चुनें (Contact Chooser)"}
+                  </span>
                 </button>
               )}
 
-              {/* Button 3: Copy Text Backup */}
+              {/* Copy Text Backup */}
               <button
                 type="button"
                 onClick={handleCopyWaMessage}
@@ -15072,6 +15242,30 @@ function MobileVyaparAppContent() {
                 />
               </div>
 
+              {/* Bill Book & Page No */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] text-slate-600 font-extrabold mb-1">📖 बिल बुक नं (Book #)</label>
+                  <input
+                    type="text"
+                    placeholder="उदा. B-1, बुक 2..."
+                    value={addBillBookNo}
+                    onChange={(e) => setAddBillBookNo(e.target.value)}
+                    className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-600 font-extrabold mb-1">📄 बिल पेज नं (Page #)</label>
+                  <input
+                    type="text"
+                    placeholder="उदा. 45, पन्ना 12..."
+                    value={addBillPageNo}
+                    onChange={(e) => setAddBillPageNo(e.target.value)}
+                    className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-[11px] text-slate-600 font-extrabold mb-1">📦 सामान विवरण / नोट्स</label>
                 <input
@@ -15221,6 +15415,30 @@ function MobileVyaparAppContent() {
                   placeholder="उदा. नकद भुगतान, फोनपे ट्रांसफर..."
                   className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
                 />
+              </div>
+
+              {/* Book No & Page No */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 block mb-1">📖 बिल बुक नं (Book #):</label>
+                  <input
+                    type="text"
+                    value={editPartyTxBookNo}
+                    onChange={(e) => setEditPartyTxBookNo(e.target.value)}
+                    placeholder="उदा. B-1, बुक 2..."
+                    className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 block mb-1">📄 बिल पेज नं (Page #):</label>
+                  <input
+                    type="text"
+                    value={editPartyTxPageNo}
+                    onChange={(e) => setEditPartyTxPageNo(e.target.value)}
+                    placeholder="उदा. 45, पन्ना 12..."
+                    className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
               </div>
 
               {/* Site / Project Name */}
@@ -16991,6 +17209,34 @@ function MobileVyaparAppContent() {
                   />
                 </div>
 
+                {/* 5.1 Bill Book & Page No */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                      📖 बिल बुक नं (Book No)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="उदा. B-1, बुक 2..."
+                      value={editBillBookNo}
+                      onChange={(e) => setEditBillBookNo(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
+                      📄 बिल पेज नं (Page No)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="उदा. 45, पन्ना 12..."
+                      value={editBillPageNo}
+                      onChange={(e) => setEditBillPageNo(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F172A] outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
                 {/* 6. Notes / Items summary */}
                 <div>
                   <label className="text-[11px] font-extrabold text-slate-700 block mb-1">
@@ -17085,6 +17331,16 @@ function MobileVyaparAppContent() {
                     <span className="text-slate-500 font-bold">भुगतान प्रकार:</span>
                     <span className="font-extrabold text-indigo-700">{selectedBillDetail.paymentMode || selectedBillDetail.type || "CASH"}</span>
                   </div>
+                  {(selectedBillDetail.bookNo || selectedBillDetail.pageNo) && (
+                    <div className="flex justify-between items-center py-1 border-b border-slate-200/60 bg-indigo-50/70 -mx-1 px-2 rounded-lg">
+                      <span className="text-indigo-900 font-bold">बही / बिल बुक विवरण:</span>
+                      <span className="font-black text-indigo-700">
+                        {selectedBillDetail.bookNo ? `📖 बुक #${selectedBillDetail.bookNo}` : ''}
+                        {selectedBillDetail.bookNo && selectedBillDetail.pageNo ? ' | ' : ''}
+                        {selectedBillDetail.pageNo ? `📄 पेज #${selectedBillDetail.pageNo}` : ''}
+                      </span>
+                    </div>
+                  )}
                   {selectedBillDetail.notes && (
                     <div className="py-1">
                       <span className="text-slate-500 font-bold block mb-0.5">टिप्पणी / विवरण:</span>
