@@ -2947,7 +2947,15 @@ function MobileVyaparAppContent() {
         map.set(key, hasMongoId ? { ...existing, ...enrichedP } : { ...enrichedP, ...existing });
       }
     });
-    return Array.from(map.values());
+    const list = Array.from(map.values());
+    // 🛡️ Deterministic, stable sort: recently updated/created active parties first, then alphabetical tie-breaker
+    list.sort((a, b) => {
+      const timeA = new Date(a.updatedAt || a.updated_at || a.createdAt || a.created_at || a.openingBalanceDate || 0).getTime();
+      const timeB = new Date(b.updatedAt || b.updated_at || b.createdAt || b.created_at || b.openingBalanceDate || 0).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return (a.name || '').localeCompare(b.name || '', 'hi', { sensitivity: 'base' });
+    });
+    return list;
   }, [parties, getPartyDisplayBalance]);
 
   const toCollect = deduplicatedParties.filter(p => getPartyDisplayBalance(p) > 0).reduce((sum, p) => sum + getPartyDisplayBalance(p), 0);
@@ -4409,13 +4417,6 @@ function MobileVyaparAppContent() {
           continue;
         }
 
-        // If serverTxs were successfully loaded, only accept local bills that are genuinely offline/un-synced drafts!
-        // Stale local copies of server bills must never resurrect or create duplicate ledger entries!
-        const isServerDoc = /^[0-9a-fA-F]{24}$/.test(bId) || (!bId.startsWith('bill_') && !bId.startsWith('scan_local_') && !b.isOfflineCreated);
-        if (Array.isArray(serverTxs) && serverTxs.length > 0 && isServerDoc && !b.isOfflineCreated && !b.hasLocalEdits) {
-          continue;
-        }
-
         if (existingRefNos.has(bNum) || (bRef && existingRefNos.has(bRef)) || existingRefNos.has(bId) || existingTxFingerprints.has(`${bDate}_${finalAmt}`)) {
           continue;
         }
@@ -4490,11 +4491,11 @@ function MobileVyaparAppContent() {
       sortedChronological.forEach(tx => {
         running += (Number(tx.debit || 0) - Number(tx.credit || 0));
       });
-      const hasPendingOffline = matchingLocalTxs.some(t => t.synced === false || t.isLocalOnly === true);
       const serverCurrentBal = (pObj?.currentBalance !== undefined && pObj?.currentBalance !== null)
         ? Number(pObj.currentBalance)
         : (pObj?.balance !== undefined && pObj?.balance !== null ? Number(pObj.balance) : null);
-      const trueBalance = (!hasPendingOffline && serverCurrentBal !== null && Array.isArray(serverTxs) && serverTxs.length > 0) ? serverCurrentBal : running;
+      // Authoritative ledger closing balance: when transactions exist, the chronological sum is the true ledger balance!
+      const trueBalance = (combinedTxs.length > 0) ? running : (serverCurrentBal !== null ? serverCurrentBal : 0);
 
       setSelectedPartyDetail(prev => prev ? ({
         ...prev,
@@ -5571,6 +5572,7 @@ function MobileVyaparAppContent() {
       const isSupplier = p.partyType === 'supplier' || p.type === 'supplier';
       const isUdhar = addBillPaymentMode === 'UDHAR';
       const pId = p._id || p.id;
+      const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
 
       let uploadedImageUrl = '';
       if (addBillImage) {
@@ -5587,58 +5589,118 @@ function MobileVyaparAppContent() {
         }
       }
 
-      if (isSupplier) {
-        await api.post('/api/purchase', {
-          supplierName: p.name,
-          supplier: p.name,
-          partyId: pId,
-          billNumber: bNum,
-          invoiceNo: bNum,
-          date: addBillDate,
-          totalAmount: amt,
-          total: amt,
-          finalAmount: amt,
-          amountPaid: isUdhar ? 0 : amt,
-          paymentStatus: isUdhar ? 'unpaid' : 'paid',
-          paymentMethod: isUdhar ? 'credit' : 'cash',
-          bookNo: (addBillBookNo || "").trim(),
-          pageNo: (addBillPageNo || "").trim(),
-          siteName: addBillSite.trim(),
-          billImageUrl: uploadedImageUrl,
-          notes: addBillItemsSummary.trim() || `खरीद बिल #${bNum}`,
-          items: [{
-            name: addBillItemsSummary.trim() || 'सामान खरीद',
-            quantity: 1,
-            unitPrice: amt,
-            totalPrice: amt
-          }]
-        });
-      } else {
-        await api.post('/api/billing/create', {
-          customerName: p.name,
-          customerPhone: p.phone || p.mobileNumber || '',
-          partyId: pId,
-          billNumber: bNum,
-          date: addBillDate,
-          items: [{
-            name: addBillItemsSummary.trim() || 'सामान',
-            quantity: 1,
-            price: amt,
-            total: amt
-          }],
-          subtotal: amt,
-          total: amt,
-          finalAmount: amt,
-          paymentMode: addBillPaymentMode,
-          status: isUdhar ? 'unpaid' : 'paid',
-          bookNo: (addBillBookNo || "").trim(),
-          pageNo: (addBillPageNo || "").trim(),
-          siteName: addBillSite.trim(),
-          billImageUrl: uploadedImageUrl,
-          billImageUrls: uploadedImageUrl ? [uploadedImageUrl] : [],
-          notes: addBillItemsSummary.trim() || `बिल #${bNum}`
-        });
+      let res = null;
+      let isSavedOffline = false;
+      const billPayload = isSupplier ? {
+        supplierName: p.name,
+        supplier: p.name,
+        partyId: pId,
+        billNumber: bNum,
+        invoiceNo: bNum,
+        date: addBillDate,
+        totalAmount: amt,
+        total: amt,
+        finalAmount: amt,
+        amountPaid: isUdhar ? 0 : amt,
+        paymentStatus: isUdhar ? 'unpaid' : 'paid',
+        paymentMethod: isUdhar ? 'credit' : 'cash',
+        bookNo: (addBillBookNo || "").trim(),
+        pageNo: (addBillPageNo || "").trim(),
+        siteName: addBillSite.trim(),
+        billImageUrl: uploadedImageUrl,
+        notes: addBillItemsSummary.trim() || `खरीद बिल #${bNum}`,
+        items: [{
+          name: addBillItemsSummary.trim() || 'सामान खरीद',
+          quantity: 1,
+          unitPrice: amt,
+          totalPrice: amt
+        }]
+      } : {
+        customerName: p.name,
+        customerPhone: p.phone || p.mobileNumber || '',
+        partyId: pId,
+        billNumber: bNum,
+        date: addBillDate,
+        items: [{
+          name: addBillItemsSummary.trim() || 'सामान',
+          quantity: 1,
+          price: amt,
+          total: amt
+        }],
+        subtotal: amt,
+        total: amt,
+        finalAmount: amt,
+        paymentMode: addBillPaymentMode,
+        status: isUdhar ? 'unpaid' : 'paid',
+        bookNo: (addBillBookNo || "").trim(),
+        pageNo: (addBillPageNo || "").trim(),
+        siteName: addBillSite.trim(),
+        billImageUrl: uploadedImageUrl,
+        billImageUrls: uploadedImageUrl ? [uploadedImageUrl] : [],
+        notes: addBillItemsSummary.trim() || `बिल #${bNum}`
+      };
+
+      try {
+        if (isSupplier) {
+          res = await api.post('/api/purchase', billPayload);
+        } else {
+          res = await api.post('/api/billing', billPayload).catch(() => api.post('/api/billing/create', billPayload));
+        }
+      } catch (apiErr) {
+        const isNetErr = !navigator.onLine || apiErr?.message === 'Network Error' || apiErr?.code === 'ERR_NETWORK' || !apiErr?.response;
+        if (isNetErr) {
+          isSavedOffline = true;
+          enqueueOfflineSync({ type: isSupplier ? 'CREATE_PURCHASE' : 'CREATE_BILL', payload: billPayload });
+        } else {
+          throw apiErr;
+        }
       }
+
+      // Authoritative local bill object
+      const serverBill = res?.data?.bill || res?.data?.purchase || res?.data;
+      const finalBillId = serverBill?._id || serverBill?.id || `bill_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const createdBill = {
+        ...billPayload,
+        _id: finalBillId,
+        id: finalBillId,
+        billNumber: bNum,
+        date: addBillDate || new Date().toISOString(),
+        createdAt: addBillDate || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        isOfflineCreated: isSavedOffline,
+        synced: !isSavedOffline
+      };
+
+      // 1. Immediately persist bill locally
+      if (currentCoId) {
+        storageManager.saveBill(currentCoId, createdBill);
+      }
+      setBills(prev => [createdBill, ...(prev || []).filter(b => (b._id || b.id) !== finalBillId)]);
+
+      // 2. Immediately update party balance
+      const prevBal = Number(p.balance ?? p.currentBalance ?? 0);
+      let updatedBal = prevBal;
+      if (isUdhar) {
+        updatedBal = isSupplier ? (prevBal - amt) : (prevBal + amt);
+      }
+      const updatedParty = {
+        ...p,
+        balance: updatedBal,
+        currentBalance: updatedBal,
+        updatedAt: new Date().toISOString()
+      };
+      if (currentCoId) {
+        storageManager.saveParty(currentCoId, updatedParty);
+      }
+      setSelectedPartyDetail(updatedParty);
+      setParties(prev => (prev || []).map(pty => {
+        const ptyId = pty._id || pty.id;
+        const ptyName = (pty.name || '').trim().toLowerCase();
+        if ((pId && (ptyId === pId || pty._id === pId || pty.id === pId)) || (ptyName === (p.name || '').trim().toLowerCase())) {
+          return updatedParty;
+        }
+        return pty;
+      }));
 
       setShowAddMissingBillModal(false);
       setAddBillAmount('');
@@ -5648,14 +5710,19 @@ function MobileVyaparAppContent() {
       setAddBillImage(null);
       setAddBillImagePreview('');
 
-      // Refresh Party Statement immediately
+      // Refresh Party Statement immediately with the new bill
       if (pId) {
         await fetchPartyStatement(pId);
       }
       if (typeof fetchLiveDashboardData === 'function') {
         fetchLiveDashboardData();
       }
-      alert("✅ नया बिल सफलतापूर्वक खाते में जुड़ गया!");
+
+      if (isSavedOffline) {
+        alert("✅ बिल सुरक्षित हो गया है (ऑफ़लाइन)! इंटरनेट आने पर सर्वर से सिंक हो जाएगा।");
+      } else {
+        alert("✅ नया बिल सफलतापूर्वक खाते में जुड़ गया!");
+      }
     } catch (err) {
       console.error("Error creating missing bill:", err);
       alert("बिल सेव करने में त्रुटि: " + (err.response?.data?.message || err.message));

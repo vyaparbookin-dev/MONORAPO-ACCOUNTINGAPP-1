@@ -2138,7 +2138,15 @@ export default function PartiesPage() {
         map.set(key, hasMongoId ? { ...existing, ...p } : { ...p, ...existing });
       }
     });
-    return Array.from(map.values());
+    const list = Array.from(map.values());
+    // 🛡️ Deterministic, stable sort: recently updated/created active parties first, then alphabetical tie-breaker
+    list.sort((a, b) => {
+      const timeA = new Date(a.updatedAt || a.updated_at || a.createdAt || a.created_at || a.openingBalanceDate || 0).getTime();
+      const timeB = new Date(b.updatedAt || b.updated_at || b.createdAt || b.created_at || b.openingBalanceDate || 0).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return (a.name || '').localeCompare(b.name || '', 'hi', { sensitivity: 'base' });
+    });
+    return list;
   }, [parties]);
 
   const toCollectParties = deduplicatedParties.filter(p => Number(p?.currentBalance ?? p?.balance ?? 0) > 0.01);

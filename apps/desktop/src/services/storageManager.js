@@ -354,18 +354,49 @@ class StorageManager {
           }
         } catch (e) {}
 
+        // Also check local pending/unsynced bills for this party
+        try {
+          const localBills = this.getBills(companyId);
+          if (Array.isArray(localBills)) {
+            const pId = String(localP._id || localP.id || '').trim();
+            const pName = String(localP.name || localP.partyName || '').trim().toLowerCase();
+            localBills.forEach(b => {
+              if (!b || b.isDeleted) return;
+              const isPending = b.synced === false || b.isOfflineCreated === true || b.hasLocalEdits === true || String(b._id || b.id || '').startsWith('bill_');
+              if (!isPending) return;
+              const bPartyId = String(b.partyId || '').trim();
+              const bCust = String(b.customerName || b.partyName || b.customer || '').trim().toLowerCase();
+              if ((pId && bPartyId && pId === bPartyId) || (pName && bCust && pName === bCust)) {
+                const amt = Number(b.finalAmount ?? b.total ?? b.amount ?? 0);
+                const isPaid = String(b.paymentStatus || b.status || '').toLowerCase() === 'paid';
+                const paidAmt = isPaid ? amt : Number(b.amountPaid || 0);
+                const unpaidAmt = Math.max(0, amt - paidAmt);
+                if (unpaidAmt > 0) {
+                  const isSupplier = (localP.partyType === 'supplier' || localP.type === 'supplier');
+                  pendingOfflineDelta += isSupplier ? -unpaidAmt : unpaidAmt;
+                }
+              }
+            });
+          }
+        } catch (e) {}
+
         const serverBal = Number(normServer.currentBalance ?? normServer.balance ?? 0);
         const hasServerBal = (normServer.currentBalance !== undefined && normServer.currentBalance !== null) ||
                              (normServer.balance !== undefined && normServer.balance !== null);
-        const hasUnsyncedLocalEdits = Boolean(localP.hasLocalEdits && localUpdated > serverUpdated && pendingOfflineDelta !== 0);
+        const localBal = Number(localP.balance ?? localP.currentBalance ?? 0);
+        const hasUnsyncedLocalEdits = Boolean(
+          (localP.hasLocalEdits && localUpdated > serverUpdated) ||
+          (localUpdated > serverUpdated && Math.abs(localBal) > 0 && Math.abs(serverBal) <= 0.01) ||
+          pendingOfflineDelta !== 0
+        );
 
         let finalBal;
         if (hasUnsyncedLocalEdits) {
-          finalBal = (localP.balance ?? localP.currentBalance ?? serverBal);
+          finalBal = pendingOfflineDelta !== 0 ? (serverBal + pendingOfflineDelta) : (localBal || serverBal);
         } else if (hasServerBal) {
           finalBal = serverBal + pendingOfflineDelta;
         } else {
-          finalBal = (localP.balance ?? localP.currentBalance ?? 0) + pendingOfflineDelta;
+          finalBal = localBal + pendingOfflineDelta;
         }
 
         // Reconcile legacy doubled Rajkamal balance (₹14.46L / ₹7.23L) to true DB balance ₹1,21,574

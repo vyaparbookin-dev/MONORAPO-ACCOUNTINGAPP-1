@@ -27,6 +27,7 @@ router.use(protect);
 router.use(requireCompany);
 
 router.route("/").post(validateRequest(createBillSchema), createBill).get(listBills);
+router.post("/create", validateRequest(createBillSchema), createBill);
 
 // 🛡️ LEGAL UDHAR OTP & HANDOVER ROUTES
 router.post("/:id/verify-udhar-otp", verifyUdharOtp);
