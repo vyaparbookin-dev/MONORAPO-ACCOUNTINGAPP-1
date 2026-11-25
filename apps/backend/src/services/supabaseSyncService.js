@@ -168,7 +168,9 @@ export const syncPartyToSupabase = async (party) => {
 export const syncPartyTxToSupabase = async (tx, explicitPartyUuid, previousDate, previousDebit, previousCredit) => {
   if (!supabase || !tx) return;
   try {
-    const pUuid = explicitPartyUuid || mongoIdToUuid(tx.partyId);
+    const rawPartyId = explicitPartyUuid || tx.partyId;
+    const isPartyUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(rawPartyId));
+    const pUuid = isPartyUuid ? String(rawPartyId) : mongoIdToUuid(rawPartyId);
     const coUuid = mongoIdToUuid(tx.companyId);
     const txDate = tx.date ? new Date(tx.date).toISOString() : new Date().toISOString();
     const deb = Number(tx.debit || 0);

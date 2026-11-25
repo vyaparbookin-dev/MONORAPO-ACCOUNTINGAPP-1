@@ -5,7 +5,7 @@ import Party from "../model/party.js";
 import PartyTransaction from "../model/PartyTransaction.js";
 import { Parser } from "json2csv";
 import { logActivity } from "../utils/logger.js";
-import { syncPurchaseToSupabase, syncPurchaseDeleteToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
+import { syncPurchaseToSupabase, syncPurchaseDeleteToSupabase, syncPartyToSupabase, syncPartyTxToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
 import { supabase } from "../config/supabase.js";
 import { getPurchasesFromSupabase, getPurchaseByIdFromSupabase } from "../services/supabaseReadService.js";
 
@@ -118,13 +118,14 @@ export const createPurchase = async (req, res) => {
     }
 
     // 3. UPDATE SUPPLIER LEDGER (Accounts Payable)
-    await Party.findByIdAndUpdate(
+    const updatedParty = await Party.findByIdAndUpdate(
       resolvedPartyId,
-      { $inc: { currentBalance: -pendingAmount } } 
+      { $inc: { currentBalance: -pendingAmount } },
+      { new: true }
     );
 
     // Transaction entry for full purchase
-    await PartyTransaction.create({
+    const purchaseTx = await PartyTransaction.create({
       partyId: resolvedPartyId,
       companyId,
       date: req.body.date || new Date(),
@@ -138,8 +139,9 @@ export const createPurchase = async (req, res) => {
     });
 
     // If immediate partial/full payment was made at time of purchase
+    let advanceTx = null;
     if (amtPaid > 0) {
-      await PartyTransaction.create({
+      advanceTx = await PartyTransaction.create({
         partyId: resolvedPartyId,
         companyId,
         date: req.body.date || new Date(),
@@ -157,6 +159,15 @@ export const createPurchase = async (req, res) => {
 
     // Async Supabase Dual-Write
     syncPurchaseToSupabase(purchase).catch(sbErr => console.warn("[Supabase Dual-Write] Purchase sync note:", sbErr.message));
+    if (updatedParty) {
+      syncPartyToSupabase(updatedParty).catch(sbErr => console.warn("[Supabase Dual-Write] Party sync note:", sbErr.message));
+    }
+    if (purchaseTx) {
+      syncPartyTxToSupabase(purchaseTx, resolvedPartyId).catch(sbErr => console.warn("[Supabase Dual-Write] PurchaseTx sync note:", sbErr.message));
+    }
+    if (advanceTx) {
+      syncPartyTxToSupabase(advanceTx, resolvedPartyId).catch(sbErr => console.warn("[Supabase Dual-Write] AdvanceTx sync note:", sbErr.message));
+    }
 
     res.status(201).json({ success: true, message: "Purchase recorded and stock updated successfully!", purchase });
   } catch (error) {
@@ -247,16 +258,24 @@ export const deletePurchase = async (req, res) => {
       const pendingAmt = finalAmt - paidAmt;
 
       if (pendingAmt !== 0) {
-        await Party.findByIdAndUpdate(
+        const updatedParty = await Party.findByIdAndUpdate(
           oldPurchase.partyId,
-          { $inc: { currentBalance: pendingAmt } }
+          { $inc: { currentBalance: pendingAmt } },
+          { new: true }
         );
+        if (updatedParty) {
+          syncPartyToSupabase(updatedParty).catch(sbErr => console.warn("[Supabase Dual-Write] Party sync note on purchase delete:", sbErr.message));
+        }
       }
 
       await PartyTransaction.updateMany(
         { referenceBillId: oldPurchase._id, companyId: req.companyId },
         { $set: { isDeleted: true } }
       );
+      if (supabase) {
+        const bUuid = mongoIdToUuid(oldPurchase._id);
+        supabase.from('party_transactions').update({ is_deleted: true }).eq('reference_bill_id', bUuid).then(() => {}).catch(() => {});
+      }
     }
 
     // Supabase Dual-Write Deletion

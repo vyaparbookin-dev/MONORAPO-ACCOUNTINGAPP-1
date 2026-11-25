@@ -1119,12 +1119,21 @@ function MobileVyaparAppContent() {
   const fetchWhatsAppStatus = async () => {
     try {
       const res = await api.get('/api/whatsapp/status');
-      if (res.data?.success) {
+      if (res.data?.success || res.data?.isConnected !== undefined) {
+        const isConn = Boolean(
+          res.data.isConnected ||
+          res.data.channels?.recovery?.isConnected ||
+          res.data.channels?.billing?.isConnected ||
+          res.data.channels?.marketing?.isConnected
+        );
+        const effPhone = res.data.effectivePhone || res.data.userPhone ||
+          res.data.channels?.recovery?.userPhone ||
+          res.data.channels?.billing?.userPhone || null;
         setWaStatus(prev => ({
-          isConnected: Boolean(res.data.isConnected),
-          status: res.data.status || 'DISCONNECTED',
+          isConnected: isConn,
+          status: isConn ? 'CONNECTED' : (res.data.status || 'DISCONNECTED'),
           qrDataUrl: res.data.qrDataUrl || prev.qrDataUrl || null,
-          userPhone: res.data.userPhone || prev.userPhone || null
+          userPhone: effPhone || prev.userPhone || null
         }));
       }
     } catch (e) {}
@@ -1215,7 +1224,7 @@ function MobileVyaparAppContent() {
     }
   };
 
-  const handleOpenMobileWhatsApp = () => {
+  const handleOpenMobileWhatsApp = (targetApp = 'personal') => {
     const phoneToSend = (waInputPhone || waShareConfig.phone || "").trim();
     const text = encodeURIComponent(waShareConfig.messageText);
 
@@ -1223,13 +1232,29 @@ function MobileVyaparAppContent() {
       savePhoneToPartyDb(waShareConfig.partyId, phoneToSend);
     }
 
-    if (phoneToSend && phoneToSend.length >= 10) {
-      const waUrl = `https://api.whatsapp.com/send?phone=91${phoneToSend.slice(-10)}&text=${text}`;
-      window.open(waUrl, "_blank");
+    const cleanPhone = phoneToSend && phoneToSend.length >= 10 ? `91${phoneToSend.slice(-10)}` : '';
+
+    if (targetApp === 'personal') {
+      // 🟢 Explicitly target regular Personal WhatsApp (com.whatsapp)
+      if (cleanPhone) {
+        window.location.href = `whatsapp://send?phone=${cleanPhone}&text=${text}`;
+      } else {
+        window.location.href = `whatsapp://send?text=${text}`;
+      }
+    } else if (targetApp === 'business') {
+      // 🏢 Explicitly target WhatsApp Business (com.whatsapp.w4b)
+      if (cleanPhone) {
+        window.location.href = `intent://send?phone=${cleanPhone}&text=${text}#Intent;package=com.whatsapp.w4b;scheme=whatsapp;end;`;
+      } else {
+        window.location.href = `intent://send?text=${text}#Intent;package=com.whatsapp.w4b;scheme=whatsapp;end;`;
+      }
     } else {
-      // No phone number: opens WhatsApp contact chooser directly!
-      const waPickerUrl = `https://api.whatsapp.com/send?text=${text}`;
-      window.open(waPickerUrl, "_blank");
+      // 🌐 Default Universal Web Handler
+      if (cleanPhone) {
+        window.open(`https://api.whatsapp.com/send?phone=${cleanPhone}&text=${text}`, "_blank");
+      } else {
+        window.open(`https://api.whatsapp.com/send?text=${text}`, "_blank");
+      }
     }
     setShowWaShareModal(false);
   };
@@ -1252,7 +1277,7 @@ function MobileVyaparAppContent() {
       const res = await api.post('/api/whatsapp/send-direct', {
         toMobile: phoneToSend.slice(-10),
         messageText: waShareConfig.messageText,
-        channel: 'billing',
+        channel: 'recovery',
         recipientName: waShareConfig.recipientName || 'ग्राहक',
         messageType: waShareConfig.billId ? 'invoice' : 'recovery',
         documentId: waShareConfig.billId || ''
@@ -14357,7 +14382,10 @@ function MobileVyaparAppContent() {
                       <p className="font-extrabold text-slate-900">📲 कैसे कनेक्ट करें:</p>
                       <p>1. फोन में अपना <b>WhatsApp</b> खोलें</p>
                       <p>2. ऊपर 3 डॉट्स (⋮) या Settings ➔ <b>Linked Devices</b> दबाएं</p>
-                      <p>3. <b>Link a Device</b> दबाकर कैमरे को सीधे इस QR कोड पर रखें</p>
+                      <p>3. <b>Link a Device</b> दबाकर कैमरे को सीधे QR कोड पर रखें</p>
+                      <p className="text-blue-800 bg-blue-50 p-2 rounded-xl border border-blue-200 font-bold mt-1">
+                        💡 <b>यदि आप इसी फ़ोन पर ऐप चला रहे हैं:</b> फोन का कैमरा उसी स्क्रीन को स्कैन नहीं कर सकता। इसलिए कंप्यूटर/वेब पर दिख रहा QR कोड अपने फोन से स्कैन करें—वेब पर कनेक्ट होते ही यह मोबाइल ऐप भी ऑटोमैटिक लिंक हो जाएगा!
+                      </p>
                       <p className="text-amber-800 bg-amber-50 p-1.5 rounded-lg border border-amber-200 font-bold mt-1">
                         💡 यदि फोन में "Try again" दिखे, तो नीचे <b>"🔄 नया QR कोड बनाएं"</b> दबाएं और तुरंत फ्रेश कोड स्कैन करें।
                       </p>
@@ -14750,35 +14778,52 @@ function MobileVyaparAppContent() {
                     </span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={handleOpenMobileWhatsApp}
-                    className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl border border-slate-200 flex items-center justify-center gap-2 transition cursor-pointer"
-                  >
-                    <Send size={14} className="text-slate-500" />
-                    <span>
-                      {waInputPhone.length >= 10
-                        ? "📱 फोन के WhatsApp / Business ऐप में खोलें (Manual)"
-                        : "👥 WhatsApp में संपर्क चुनें (Contact Chooser)"}
-                    </span>
-                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenMobileWhatsApp('personal')}
+                      className="py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-xs rounded-xl border border-emerald-200 flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Send size={13} className="text-emerald-600" />
+                      <span>🟢 पर्सनल WhatsApp</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenMobileWhatsApp('business')}
+                      className="py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl border border-slate-200 flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Send size={13} className="text-slate-500" />
+                      <span>🏢 Business WA</span>
+                    </button>
+                  </div>
                   <p className="text-[10px] text-slate-500 text-center font-bold">
-                    💡 नोट: फोन का ऐप खोलने पर Android आपके डिफॉल्ट ऐप (जैसे WhatsApp Business) को खोल सकता है। सीधे पर्सनल नंबर से भेजने हेतु ऊपर हरे बटन (⚡ लिंक्ड पर्सनल WhatsApp) का उपयोग करें।
+                    💡 नोट: बैकग्राउंड सेंडिंग चालू है। यदि फोन में खोलना चाहें, तो 🟢 पर्सनल या 🏢 Business चुन सकते हैं।
                   </p>
                 </>
               ) : (
-                <button
-                  type="button"
-                  onClick={handleOpenMobileWhatsApp}
-                  className="w-full py-3 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-lg flex items-center justify-center gap-2 active:scale-95 transition cursor-pointer"
-                >
-                  <Send size={16} />
-                  <span>
-                    {waInputPhone.length >= 10
-                      ? "🟢 मोबाइल WhatsApp ऐप से भेजें (1-क्लिक)"
-                      : "👥 WhatsApp में संपर्क चुनें (Contact Chooser)"}
-                  </span>
-                </button>
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenMobileWhatsApp('personal')}
+                      className="py-3 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition cursor-pointer"
+                    >
+                      <Send size={14} />
+                      <span>🟢 पर्सनल WhatsApp</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenMobileWhatsApp('business')}
+                      className="py-3 bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition cursor-pointer"
+                    >
+                      <Send size={14} />
+                      <span>🏢 Business WA</span>
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500 text-center font-bold">
+                    💡 🟢 <b>पर्सनल WhatsApp</b> दबाने पर सीधे पर्सनल WhatsApp खुलेगा, Business नहीं खुलेगा।
+                  </p>
+                </div>
               )}
 
               {/* Copy Text Backup */}

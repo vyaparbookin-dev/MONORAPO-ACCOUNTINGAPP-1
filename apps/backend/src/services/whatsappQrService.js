@@ -215,6 +215,27 @@ export async function initWhatsAppSession(companyId, channel = 'billing', forceN
   const sessKey = getSessionKey(companyId, normChan);
   const existing = sessions.get(sessKey);
 
+  // 0. Unified Channel Check: If ANY channel is actively CONNECTED and forceNew is false, reuse it!
+  if (!forceNew) {
+    const coKey = getCompanyKey(companyId);
+    for (const ch of ['recovery', 'billing', 'marketing']) {
+      const altKey = `${coKey}__${ch}`;
+      const altSess = sessions.get(altKey);
+      if (altSess && altSess.status === "CONNECTED" && altSess.sock) {
+        console.log(`♻️ [WhatsApp Engine] Channel '${normChan}' reusing already CONNECTED channel '${ch}' (${altSess.userPhone})`);
+        return {
+          channel: normChan,
+          status: "CONNECTED",
+          qrDataUrl: null,
+          userPhone: altSess.userPhone,
+          userName: altSess.userName,
+          isConnected: true,
+          activeChannel: ch
+        };
+      }
+    }
+  }
+
   // 1. If session exists and forceNew is false:
   // If socket is actively CONNECTED, return current connected state immediately
   if (existing && !forceNew) {
@@ -495,38 +516,54 @@ export function getWhatsAppStatus(companyId, requestedChannel = null) {
   const recoveryRaw = getSingleChannelStatus('recovery');
   const marketingRaw = getSingleChannelStatus('marketing');
 
-  // Smart fallback indicator: if recovery or marketing is unlinked, it can inherit billing
+  // Unified Multi-Channel Cross-Inheritance:
+  // If ANY channel (billing, recovery, marketing) is connected, all channels can reuse it!
+  const anyConnected = billing.isConnected || recoveryRaw.isConnected || marketingRaw.isConnected;
+  const anySavedSession = billing.hasSavedSession || recoveryRaw.hasSavedSession || marketingRaw.hasSavedSession;
+  const anyActive = recoveryRaw.isConnected ? recoveryRaw : (billing.isConnected ? billing : (marketingRaw.isConnected ? marketingRaw : null));
+  const fallbackPhone = anyActive ? anyActive.userPhone : null;
+  const fallbackName = anyActive ? anyActive.userName : null;
+
   const recovery = {
     ...recoveryRaw,
-    isInherited: !recoveryRaw.isConnected && billing.isConnected,
-    effectivePhone: recoveryRaw.isConnected ? recoveryRaw.userPhone : (billing.isConnected ? billing.userPhone : null),
-    effectiveStatus: recoveryRaw.isConnected ? recoveryRaw.status : (billing.isConnected ? 'INHERITED_BILLING' : recoveryRaw.status)
+    isInherited: !recoveryRaw.isConnected && anyConnected,
+    effectivePhone: recoveryRaw.isConnected ? recoveryRaw.userPhone : fallbackPhone,
+    effectiveStatus: recoveryRaw.isConnected ? recoveryRaw.status : (anyConnected ? 'INHERITED_ACTIVE' : recoveryRaw.status)
+  };
+
+  const billingUnified = {
+    ...billing,
+    isInherited: !billing.isConnected && anyConnected,
+    effectivePhone: billing.isConnected ? billing.userPhone : fallbackPhone,
+    effectiveStatus: billing.isConnected ? billing.status : (anyConnected ? 'INHERITED_ACTIVE' : billing.status)
   };
 
   const marketing = {
     ...marketingRaw,
-    isInherited: !marketingRaw.isConnected && billing.isConnected,
-    effectivePhone: marketingRaw.isConnected ? marketingRaw.userPhone : (billing.isConnected ? billing.userPhone : null),
-    effectiveStatus: marketingRaw.isConnected ? marketingRaw.status : (billing.isConnected ? 'INHERITED_BILLING' : marketingRaw.status)
+    isInherited: !marketingRaw.isConnected && anyConnected,
+    effectivePhone: marketingRaw.isConnected ? marketingRaw.userPhone : fallbackPhone,
+    effectiveStatus: marketingRaw.isConnected ? marketingRaw.status : (anyConnected ? 'INHERITED_ACTIVE' : marketingRaw.status)
   };
 
-  const channels = { billing, recovery, marketing };
+  const channels = { billing: billingUnified, recovery, marketing };
 
-  const activeChannel = requestedChannel ? normalizeChannel(requestedChannel) : 'billing';
-  const target = channels[activeChannel] || billing;
+  const activeChannel = requestedChannel ? normalizeChannel(requestedChannel) : (anyActive ? anyActive.channel : 'billing');
+  const target = channels[activeChannel] || billingUnified;
 
-  // Fallback QR: If requested target has no QR, provide active QR from billing or recovery
-  const effectiveQrDataUrl = target.qrDataUrl || channels.billing?.qrDataUrl || channels.recovery?.qrDataUrl || null;
+  // Fallback QR: If requested target has no QR, provide active QR from any active channel
+  const effectiveQrDataUrl = target.qrDataUrl || channels.billing?.qrDataUrl || channels.recovery?.qrDataUrl || channels.marketing?.qrDataUrl || null;
 
   return {
     channel: activeChannel,
-    status: target.status,
+    status: (target.isConnected || anyConnected) ? 'CONNECTED' : target.status,
     qrDataUrl: effectiveQrDataUrl,
-    userPhone: target.userPhone,
-    userName: target.userName,
-    isConnected: target.isConnected,
-    effectivePhone: target.effectivePhone || target.userPhone,
-    isInherited: Boolean(target.isInherited),
+    userPhone: target.effectivePhone || fallbackPhone || target.userPhone,
+    userName: target.userName || fallbackName,
+    isConnected: Boolean(target.isConnected || anyConnected),
+    effectivePhone: target.effectivePhone || fallbackPhone || target.userPhone,
+    isInherited: Boolean(target.isInherited || (!target.isConnected && anyConnected)),
+    activeConnectedChannel: anyActive ? anyActive.channel : null,
+    hasSavedSession: Boolean(target.hasSavedSession || anySavedSession),
     channels
   };
 }
