@@ -78,7 +78,7 @@ import { deduplicateBills } from "../../utils/deduplicateBills";
 import { speakUpiPayment, playPaymentChime } from "../../utils/soundBox";
 import { storageManager, normalizePartyKey } from "../../services/storageManager";
 import SmartPdfBillModal from "../../components/SmartPdfBillModal";
-import { compressImageFile, persistPhotoToLocalCache, savePhotosToIndexedDB, getPhotosFromIndexedDB, getWebSafeImageUrl, getPersistedPhotos } from "../../utils/photoStorage";
+import { compressImageFile, persistPhotoToLocalCache, savePhotosToIndexedDB, getPhotosFromIndexedDB, removePhotoFromIndexedDB, getWebSafeImageUrl, getPersistedPhotos } from "../../utils/photoStorage";
 
 
 class MobileErrorBoundary extends React.Component {
@@ -4721,16 +4721,20 @@ function MobileVyaparAppContent() {
         }
       }
 
-      // Clean from persistent photo cache
+      // Clean from IndexedDB & persistent photo cache
+      const cleanTId = String(txId).replace(/^(pay_|open_|tx_|ptx_)/, '').trim();
+      await removePhotoFromIndexedDB(txId, imageUrl);
+      if (cleanTId && cleanTId !== String(txId)) {
+        await removePhotoFromIndexedDB(cleanTId, imageUrl);
+      }
       try {
         const photosCache = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
-        const cleanTId = String(txId).replace(/^(pay_|open_|tx_|ptx_)/, '').trim();
-        if (Array.isArray(photosCache[txId])) {
-          photosCache[txId] = photosCache[txId].filter(u => u !== imageUrl);
-        }
-        if (cleanTId && Array.isArray(photosCache[cleanTId])) {
-          photosCache[cleanTId] = photosCache[cleanTId].filter(u => u !== imageUrl);
-        }
+        [String(txId), cleanTId].filter(Boolean).forEach(k => {
+          if (Array.isArray(photosCache[k])) {
+            photosCache[k] = photosCache[k].filter(u => u !== imageUrl);
+            if (photosCache[k].length === 0) delete photosCache[k];
+          }
+        });
         localStorage.setItem("vb_tx_photos_cache", JSON.stringify(photosCache));
       } catch (e) {}
 
@@ -4925,18 +4929,28 @@ function MobileVyaparAppContent() {
         }
       }
 
-      // Clean from persistent photo cache
+      // Clean from IndexedDB & persistent photo cache
+      const cleanTId = String(targetId).replace(/^(pay_|open_|tx_|ptx_)/, '').trim();
+      await removePhotoFromIndexedDB(targetId, imageUrl);
+      if (cleanTId && cleanTId !== String(targetId)) {
+        await removePhotoFromIndexedDB(cleanTId, imageUrl);
+      }
       try {
         const photosCache = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
-        const cleanTId = String(targetId).replace(/^(pay_|open_|tx_|ptx_)/, '').trim();
-        if (Array.isArray(photosCache[targetId])) {
-          photosCache[targetId] = photosCache[targetId].filter(u => u !== imageUrl);
-        }
-        if (cleanTId && Array.isArray(photosCache[cleanTId])) {
-          photosCache[cleanTId] = photosCache[cleanTId].filter(u => u !== imageUrl);
-        }
+        [String(targetId), cleanTId].filter(Boolean).forEach(k => {
+          if (Array.isArray(photosCache[k])) {
+            photosCache[k] = photosCache[k].filter(u => u !== imageUrl);
+            if (photosCache[k].length === 0) delete photosCache[k];
+          }
+        });
         localStorage.setItem("vb_tx_photos_cache", JSON.stringify(photosCache));
       } catch (e) {}
+
+      // If viewing a party ledger, refresh party statement so thumbnails update immediately
+      const pId = selectedPartyDetail?._id || selectedPartyDetail?.id || bill?.partyId;
+      if (pId) {
+        fetchPartyStatement(pId);
+      }
 
       alert("🗑️ बिल फोटो हटा दी गई!");
     } catch (err) {
@@ -6742,18 +6756,62 @@ function MobileVyaparAppContent() {
     try {
       const currentCoId = String(selectedCompany?._id || selectedCompany?.id || localStorage.getItem("companyId") || "").trim();
       const targetId = bill._id || bill.id || bill.billNumber;
+      const cleanBNum = String(bNum).replace(/^#/, '').trim();
+      const serverId = bill._id || bill.id;
+
+      // 1. Blacklist in vb_deleted_entry_ids so it NEVER resurrects from local cache or background sync
+      try {
+        const deletedSet = JSON.parse(localStorage.getItem("vb_deleted_entry_ids") || "[]");
+        const newDeleted = Array.from(new Set([
+          ...deletedSet,
+          String(targetId || ''),
+          String(serverId || ''),
+          String(bill._id || ''),
+          String(bill.id || ''),
+          String(bill.billNumber || ''),
+          String(bill.invoiceNumber || ''),
+          String(bNum || ''),
+          cleanBNum
+        ].filter(Boolean)));
+        localStorage.setItem("vb_deleted_entry_ids", JSON.stringify(newDeleted));
+      } catch (e) {}
+
+      // 2. Remove from storageManager
       const updatedBills = storageManager.deleteBill(currentCoId, targetId);
+      if (cleanBNum) storageManager.deleteBill(currentCoId, cleanBNum);
       setBills(updatedBills);
       setSelectedBillDetail(null);
       setIsEditingBill(false);
 
-      const serverId = bill._id || bill.id;
+      // 3. Remove from partyTransactions & allPartyTransactions & local cache
+      setPartyTransactions(prev => (prev || []).filter(t => !matchesTx(t, targetId) && !matchesTx(t, bNum) && !matchesTx(t, cleanBNum)));
+      setAllPartyTransactions(prev => (prev || []).filter(t => !matchesTx(t, targetId) && !matchesTx(t, bNum) && !matchesTx(t, cleanBNum)));
+      try {
+        const stored = JSON.parse(localStorage.getItem("vb_local_party_txs") || "[]");
+        const filtered = stored.filter(t => !matchesTx(t, targetId) && !matchesTx(t, bNum) && !matchesTx(t, cleanBNum));
+        localStorage.setItem("vb_local_party_txs", JSON.stringify(filtered));
+      } catch (e) {}
+
+      // 4. Clean associated photos from IndexedDB & photo cache
+      const billPhotos = bill.billImageUrls || (bill.billImageUrl ? [bill.billImageUrl] : []);
+      for (const ph of billPhotos) {
+        removePhotoFromIndexedDB(targetId, ph).catch(() => {});
+        if (cleanBNum) removePhotoFromIndexedDB(cleanBNum, ph).catch(() => {});
+      }
+
+      // 5. Delete on backend server (cascades to MongoDB and Supabase sales + party_transactions)
       if (serverId && !String(serverId).startsWith("bill_")) {
         try {
           await api.delete(`/api/billing/${serverId}`);
         } catch (apiErr) {
           console.warn("Server bill delete sync warning:", apiErr);
         }
+      }
+
+      // 6. If currently viewing a party ledger, refresh statement to update ledger & running balance
+      const pId = selectedPartyDetail?._id || selectedPartyDetail?.id || bill.partyId;
+      if (pId) {
+        fetchPartyStatement(pId);
       }
 
       alert("🗑️ बिल सफलता पूर्वक हटा दिया गया!");

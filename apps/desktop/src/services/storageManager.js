@@ -538,6 +538,23 @@ class StorageManager {
     }
 
     const deduped = deduplicateBills(collected.map(b => this.normalizeBill(b)).filter(Boolean));
+    let deletedSet = new Set();
+    try {
+      deletedSet = new Set(JSON.parse(localStorage.getItem("vb_deleted_entry_ids") || "[]"));
+    } catch (e) {}
+
+    if (deletedSet.size > 0) {
+      return deduped.filter(b => {
+        const bId = String(b._id || b.id || '').trim();
+        const bNum = String(b.billNumber || b.invoiceNumber || '').trim();
+        const cleanNum = bNum.replace(/^#/, '');
+        if (bId && deletedSet.has(bId)) return false;
+        if (bNum && deletedSet.has(bNum)) return false;
+        if (cleanNum && deletedSet.has(cleanNum)) return false;
+        return true;
+      });
+    }
+
     return deduped;
   }
 
@@ -610,18 +627,44 @@ class StorageManager {
     if (!billId) return this.getBills(companyId);
     const current = this.getBills(companyId);
     const targetId = String(billId).trim();
+    const cleanTgt = targetId.replace(/^#/, '');
+
+    // 1. Blacklist in vb_deleted_entry_ids so it NEVER resurrects from old cache
+    try {
+      const deletedSet = JSON.parse(localStorage.getItem("vb_deleted_entry_ids") || "[]");
+      const newDeleted = Array.from(new Set([...deletedSet, targetId, cleanTgt].filter(Boolean)));
+      localStorage.setItem("vb_deleted_entry_ids", JSON.stringify(newDeleted));
+    } catch (e) {}
+
     const nextList = current.filter(b => {
       const bId = String(b._id || b.id || b.billNumber || "").trim();
       const bNum = String(b.billNumber || b.invoiceNumber || "").trim();
-      return bId !== targetId && bNum !== targetId;
+      const cleanNum = bNum.replace(/^#/, '');
+      return bId !== targetId && bNum !== targetId && cleanNum !== cleanTgt;
     });
     this.saveBills(companyId, nextList);
     return nextList;
   }
 
   mergeBills(companyId, serverBills = []) {
+    let deletedSet = new Set();
+    try {
+      deletedSet = new Set(JSON.parse(localStorage.getItem("vb_deleted_entry_ids") || "[]"));
+    } catch (e) {}
+
     const localBills = this.getBills(companyId);
-    const normServer = (Array.isArray(serverBills) ? serverBills : []).map(b => this.normalizeBill(b)).filter(Boolean);
+    const normServer = (Array.isArray(serverBills) ? serverBills : [])
+      .map(b => this.normalizeBill(b))
+      .filter(b => {
+        if (!b) return false;
+        const bId = String(b._id || b.id || '').trim();
+        const bNum = String(b.billNumber || b.invoiceNumber || '').trim();
+        const cleanNum = bNum.replace(/^#/, '');
+        if (bId && deletedSet.has(bId)) return false;
+        if (bNum && deletedSet.has(bNum)) return false;
+        if (cleanNum && deletedSet.has(cleanNum)) return false;
+        return true;
+      });
 
     // CRITICAL: Deduplicate with authoritative server priority without wiping local offline bills
     const merged = deduplicateBills([...normServer, ...localBills]);

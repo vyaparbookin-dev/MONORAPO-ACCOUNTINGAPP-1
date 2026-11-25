@@ -5,7 +5,7 @@ import Purchase from "../model/purchase.js";
 import PartyTransaction from "../model/PartyTransaction.js";
 import Product from "../model/product.js";
 import mongoose from "mongoose";
-import { syncPartyToSupabase, syncPartyTxToSupabase, syncPartyDeleteToSupabase, syncBillPhotoToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
+import { syncPartyToSupabase, syncPartyTxToSupabase, syncPartyDeleteToSupabase, syncBillPhotoToSupabase, syncBillDeleteToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
 import { uploadBillImage } from "../services/storageService.js";
 import { getPartiesFromSupabase, getPartyByIdFromSupabase, getPartyTransactionsFromSupabase, getBillsFromSupabase, getPurchasesFromSupabase, mapSupabaseSalesToBill, mapSupabasePurchaseToPurchase } from "../services/supabaseReadService.js";
 export { getPartyByIdFromSupabase };
@@ -604,7 +604,8 @@ export const getPartyStatement = async (req, res) => {
         let q = supabase
           .from("sales")
           .select("*")
-          .eq("company_id", sbCoUuid);
+          .eq("company_id", sbCoUuid)
+          .eq("is_deleted", false);
 
         if (party.name) {
           q = q.or(`party_id.eq.${sbPartyUuid},customer_name.ilike.%${party.name}%`);
@@ -661,7 +662,8 @@ export const getPartyStatement = async (req, res) => {
         let pq = supabase
           .from("purchases")
           .select("*")
-          .eq("company_id", sbCoUuid);
+          .eq("company_id", sbCoUuid)
+          .eq("is_deleted", false);
 
         if (party.name) {
           pq = pq.or(`supplier_name.ilike.%${party.name}%,party_id.eq.${sbPartyUuid}`);
@@ -1264,6 +1266,31 @@ export const deletePartyTransaction = async (req, res) => {
             }
           } catch (cascadeErr) {
             console.warn("Purchase cascade deletion warning:", cascadeErr.message);
+          }
+        }
+
+        // CASCADE: If this transaction was linked to a Sale/Bill, mark bill deleted too
+        const bRef = tx.referenceBillId || tx.billNumber || tx.sale_id;
+        if (bRef) {
+          try {
+            const bQuery = {
+              companyId: req.companyId,
+              isDeleted: { $ne: true },
+              $or: [
+                { billNumber: bRef },
+                { invoiceNumber: bRef },
+                ...(mongoose.Types.ObjectId.isValid(bRef) && String(bRef).length === 24 ? [{ _id: bRef }] : [])
+              ]
+            };
+            const linkedBill = await Bill.findOne(bQuery);
+            if (linkedBill) {
+              linkedBill.isDeleted = true;
+              linkedBill.updatedAt = new Date();
+              await linkedBill.save();
+              syncBillDeleteToSupabase(linkedBill.billNumber, linkedBill._id).catch(() => {});
+            }
+          } catch (bCascErr) {
+            console.warn("[deletePartyTransaction] Bill cascade deletion warning:", bCascErr.message);
           }
         }
       }

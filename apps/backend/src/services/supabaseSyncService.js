@@ -81,9 +81,17 @@ export const syncBillDeleteToSupabase = async (billNumber, billId) => {
   try {
     if (billId) {
       const bUuid = mongoIdToUuid(billId);
-      await supabase.from("sales").update({ is_deleted: true }).eq("id", bUuid);
-    } else {
-      await supabase.from("sales").update({ is_deleted: true }).eq("bill_number", String(billNumber));
+      if (bUuid) {
+        await supabase.from("sales").update({ is_deleted: true }).eq("id", bUuid);
+      }
+    }
+    if (billNumber) {
+      const rawNum = String(billNumber).trim();
+      const cleanNum = rawNum.replace(/^#/, "").trim();
+      await supabase.from("sales").update({ is_deleted: true }).eq("bill_number", rawNum);
+      if (cleanNum && cleanNum !== rawNum) {
+        await supabase.from("sales").update({ is_deleted: true }).eq("bill_number", cleanNum);
+      }
     }
   } catch (err) {
     console.warn("[Supabase Sync] Sales delete note:", err.message);

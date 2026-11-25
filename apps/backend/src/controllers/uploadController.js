@@ -190,45 +190,59 @@ export const deleteBillPhoto = async (req, res) => {
 
     const query = { $or: orConditions };
 
-    // Remove photo from ALL matching collections so none retain deleted photo
+    // Clean and remove photo from ALL matching collections so none retain deleted photo
+    let updatedRecord = null;
+
+    const cleanModelPhoto = async (ModelClass) => {
+      try {
+        const doc = await ModelClass.findOne(query);
+        if (!doc) return null;
+        doc.billImageUrls = (doc.billImageUrls || []).filter(u => u !== imageUrl);
+        if (doc.billImageUrl === imageUrl) {
+          doc.billImageUrl = doc.billImageUrls[0] || "";
+        }
+        await doc.save();
+        return doc;
+      } catch (err) {
+        console.warn(`[deleteBillPhoto] Clean error for ${ModelClass.modelName}:`, err.message);
+        return null;
+      }
+    };
+
     const [delBill, delTx, delPur] = await Promise.all([
-      Bill.findOneAndUpdate(query, { $pull: { billImageUrls: imageUrl } }, { new: true }),
-      PartyTransaction.findOneAndUpdate(query, { $pull: { billImageUrls: imageUrl } }, { new: true }),
-      Purchase.findOneAndUpdate(query, { $pull: { billImageUrls: imageUrl } }, { new: true })
+      cleanModelPhoto(Bill),
+      cleanModelPhoto(PartyTransaction),
+      cleanModelPhoto(Purchase)
     ]);
     updatedRecord = delBill || delTx || delPur;
+
     if (!updatedRecord && (String(targetId).startsWith("open_") || isValidOid)) {
       try {
         const pQuery = isValidOid ? { _id: cleanId } : { id: cleanId };
-        updatedRecord = await Party.findOneAndUpdate(
-          pQuery,
-          { $pull: { billImageUrls: imageUrl } },
-          { new: true }
-        );
+        const pDoc = await Party.findOne(pQuery);
+        if (pDoc) {
+          pDoc.billImageUrls = (pDoc.billImageUrls || []).filter(u => u !== imageUrl);
+          if (pDoc.billImageUrl === imageUrl) {
+            pDoc.billImageUrl = pDoc.billImageUrls[0] || "";
+          }
+          await pDoc.save();
+          updatedRecord = pDoc;
+        }
       } catch (pe) {}
     }
 
-    if (updatedRecord) {
-      // If the primary billImageUrl was the deleted one, fallback to remaining or empty
-      if (updatedRecord.billImageUrl === imageUrl) {
-        const remainingUrl = (updatedRecord.billImageUrls && updatedRecord.billImageUrls.length > 0) ? updatedRecord.billImageUrls[0] : "";
-        updatedRecord.billImageUrl = remainingUrl;
-        await updatedRecord.save();
-      }
+    const remainingUrls = updatedRecord?.billImageUrls || [];
+    const primUrl = updatedRecord?.billImageUrl || remainingUrls[0] || "";
+    const refToSync = updatedRecord?.billNumber || updatedRecord?.invoiceNumber || updatedRecord?.purchaseNumber || cleanId;
 
-      const remainingUrls = updatedRecord.billImageUrls || [];
-      const primUrl = updatedRecord.billImageUrl || (remainingUrls[0] || "");
-      const refToSync = updatedRecord.billNumber || updatedRecord.invoiceNumber || updatedRecord.purchaseNumber || cleanId;
+    if (refToSync) {
       syncBillPhotoToSupabase(refToSync, primUrl).catch(() => {});
-      if (cleanId !== refToSync) {
-        syncBillPhotoToSupabase(cleanId, primUrl).catch(() => {});
-      }
-
-      if (targetType === "party_tx" || updatedRecord.partyId) {
-        syncPartyTxToSupabase(updatedRecord).catch(() => {});
-      }
-    } else {
-      syncBillPhotoToSupabase(cleanId, "").catch(() => {});
+    }
+    if (cleanId && cleanId !== refToSync) {
+      syncBillPhotoToSupabase(cleanId, primUrl).catch(() => {});
+    }
+    if (targetType === "party_tx" || updatedRecord?.partyId) {
+      syncPartyTxToSupabase(updatedRecord).catch(() => {});
     }
 
     res.status(200).json({

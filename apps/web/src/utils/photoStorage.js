@@ -90,7 +90,7 @@ export const getPhotosFromIndexedDB = async (targetId) => {
     try {
       const tx = db.transaction(STORE_NAME, "readonly");
       const store = tx.objectStore(STORE_NAME);
-      const cleanId = String(targetId).replace(/^(pay_|open_)/, "").trim().toLowerCase();
+      const cleanId = String(targetId).replace(/^(pay_|open_|tx_|ptx_)/, "").trim().toLowerCase();
 
       const req1 = store.get(String(targetId));
       req1.onsuccess = () => {
@@ -108,6 +108,47 @@ export const getPhotosFromIndexedDB = async (targetId) => {
       req1.onerror = () => resolve([]);
     } catch (e) {
       resolve([]);
+    }
+  });
+};
+
+/**
+ * Permanently remove a specific photo from IndexedDB for targetId
+ */
+export const removePhotoFromIndexedDB = async (targetId, imageUrl) => {
+  if (!targetId || !imageUrl) return false;
+  const db = await openPhotosDB();
+  if (!db) return false;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const cleanId = String(targetId).replace(/^(pay_|open_|tx_|ptx_)/, "").trim().toLowerCase();
+      const keysToClean = Array.from(new Set([
+        String(targetId),
+        String(targetId).toLowerCase(),
+        cleanId
+      ].filter(Boolean)));
+
+      keysToClean.forEach(k => {
+        const req = store.get(k);
+        req.onsuccess = () => {
+          if (Array.isArray(req.result)) {
+            const next = req.result.filter(u => u !== imageUrl);
+            if (next.length > 0) {
+              store.put(next, k);
+            } else {
+              store.delete(k);
+            }
+          }
+        };
+      });
+
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
     }
   });
 };
