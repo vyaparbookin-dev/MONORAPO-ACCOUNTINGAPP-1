@@ -113,10 +113,24 @@ export const getPhotosFromIndexedDB = async (targetId) => {
 };
 
 /**
- * Compresses an image (File, Blob, or base64 data URL) to ~80-120KB JPEG
+ * Compresses an image (File, Blob, or base64 data URL) to ~80-120KB JPEG with auto-contrast filtering
  */
-export const compressImageFile = async (fileOrDataUrl, maxWidth = 1200, quality = 0.75) => {
+export const compressImageFile = async (fileOrDataUrl, maxWidth = 1200, quality = 0.75, autoEnhance = true) => {
   if (!fileOrDataUrl) return null;
+
+  // For PDF files, do not try to render into an <img>/canvas; read directly as DataURL
+  if (
+    (typeof fileOrDataUrl === "object" && (fileOrDataUrl.type === "application/pdf" || (fileOrDataUrl.name && fileOrDataUrl.name.toLowerCase().endsWith(".pdf")))) ||
+    (typeof fileOrDataUrl === "string" && (fileOrDataUrl.startsWith("data:application/pdf") || fileOrDataUrl.toLowerCase().endsWith(".pdf")))
+  ) {
+    if (typeof fileOrDataUrl === "string") return fileOrDataUrl;
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(fileOrDataUrl);
+    });
+  }
 
   return new Promise((resolve) => {
     try {
@@ -139,6 +153,10 @@ export const compressImageFile = async (fileOrDataUrl, maxWidth = 1200, quality 
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext("2d");
+        if (autoEnhance && ctx && ctx.filter !== undefined) {
+          // Bill Clarity & Contrast Enhancement: Makes faint pencil/pen text sharp and background clean white
+          ctx.filter = "contrast(1.08) brightness(1.02)";
+        }
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
@@ -173,16 +191,38 @@ export const compressImageFile = async (fileOrDataUrl, maxWidth = 1200, quality 
 };
 
 /**
+ * Retrieve persisted photos (IndexedDB high capacity store first, localStorage fallback)
+ */
+export const getPersistedPhotos = async (targetId) => {
+  if (!targetId) return [];
+  try {
+    const idbPhotos = await getPhotosFromIndexedDB(targetId);
+    if (Array.isArray(idbPhotos) && idbPhotos.length > 0) return idbPhotos;
+  } catch (e) {}
+  try {
+    const c = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
+    const cleanId = String(targetId).replace(/^(pay_|open_)/, "").trim().toLowerCase();
+    const photos = c[targetId] || c[cleanId] || [];
+    if (Array.isArray(photos) && photos.length > 0) return photos;
+    if (typeof photos === "string" && photos) return [photos];
+  } catch (e) {}
+  return [];
+};
+
+/**
  * Safe local photo cache update without exceeding localStorage 5MB quota
  */
 export const persistPhotoToLocalCache = (targetId, urls = []) => {
   if (!targetId || !Array.isArray(urls) || urls.length === 0) return;
   const cleanId = String(targetId).replace(/^(pay_|open_)/, "").trim();
 
-  // 1. Save to IndexedDB (unlimited storage)
+  // 1. Save to IndexedDB (unlimited storage, permanent)
   savePhotosToIndexedDB(targetId, urls).catch(() => {});
+  if (cleanId && cleanId !== String(targetId)) {
+    savePhotosToIndexedDB(cleanId, urls).catch(() => {});
+  }
 
-  // 2. Save to localStorage with quota-safe pruning
+  // 2. Save only lightweight URLs to localStorage (HTTP/Cloudinary links, never multi-megabyte base64 strings)
   try {
     let photosCache = {};
     try {
@@ -191,30 +231,23 @@ export const persistPhotoToLocalCache = (targetId, urls = []) => {
       photosCache = {};
     }
 
-    const existing = Array.isArray(photosCache[targetId]) ? photosCache[targetId] : [];
-    const merged = Array.from(new Set([...existing, ...urls].filter(Boolean)));
-    photosCache[targetId] = merged;
-    if (cleanId) photosCache[cleanId] = merged;
+    const leanUrls = urls.filter(u => typeof u === "string" && (u.startsWith("http") || u.length < 500));
+    if (leanUrls.length > 0) {
+      const existing = Array.isArray(photosCache[targetId]) ? photosCache[targetId] : [];
+      const merged = Array.from(new Set([...existing, ...leanUrls].filter(Boolean)));
+      photosCache[targetId] = merged;
+      if (cleanId) photosCache[cleanId] = merged;
 
-    // Prune cache if it exceeds 30 items or contains heavy base64 strings
-    const keys = Object.keys(photosCache);
-    if (keys.length > 50) {
-      const keysToDrop = keys.slice(0, keys.length - 35);
-      for (const k of keysToDrop) delete photosCache[k];
-    }
-
-    try {
-      localStorage.setItem("vb_tx_photos_cache", JSON.stringify(photosCache));
-    } catch (quotaErr) {
-      // If quota exceeded, retain only cloud URLs (http/https) in localStorage
-      const leanCache = {};
-      for (const k of Object.keys(photosCache).slice(-20)) {
-        const filtered = (photosCache[k] || []).filter(u => typeof u === "string" && (u.startsWith("http") || u.length < 500));
-        if (filtered.length > 0) leanCache[k] = filtered;
+      // Keep only last 25 items in localStorage to stay well under quota
+      const keys = Object.keys(photosCache);
+      if (keys.length > 25) {
+        const keysToDrop = keys.slice(0, keys.length - 20);
+        for (const k of keysToDrop) delete photosCache[k];
       }
+
       try {
-        localStorage.setItem("vb_tx_photos_cache", JSON.stringify(leanCache));
-      } catch (e) {}
+        localStorage.setItem("vb_tx_photos_cache", JSON.stringify(photosCache));
+      } catch (quotaErr) {}
     }
   } catch (e) {}
 };

@@ -784,7 +784,14 @@ export const getPartyStatement = async (req, res) => {
         if (b.pageNo) matchedEntry.pageNo = b.pageNo;
         if (b.items && b.items.length > 0 && (!matchedEntry.items || matchedEntry.items.length === 0)) matchedEntry.items = b.items;
         if (b.siteName && !matchedEntry.siteName) matchedEntry.siteName = b.siteName;
-        if (b.billImageUrl && !matchedEntry.billImageUrl) matchedEntry.billImageUrl = b.billImageUrl;
+        // 📷 Merge multiple bill photos cleanly so they never disappear on statement reload
+        const bImgs = (b.billImageUrls && b.billImageUrls.length > 0) ? b.billImageUrls : (b.billImageUrl ? [b.billImageUrl] : []);
+        const mImgs = (matchedEntry.billImageUrls && matchedEntry.billImageUrls.length > 0) ? matchedEntry.billImageUrls : (matchedEntry.billImageUrl ? [matchedEntry.billImageUrl] : []);
+        const mergedImgs = Array.from(new Set([...mImgs, ...bImgs].filter(Boolean)));
+        if (mergedImgs.length > 0) {
+          matchedEntry.billImageUrls = mergedImgs;
+          matchedEntry.billImageUrl = mergedImgs[0];
+        }
       }
 
       const itemsSummary = (b.items && b.items.length > 0)

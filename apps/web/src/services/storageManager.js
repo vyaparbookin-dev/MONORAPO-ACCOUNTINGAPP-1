@@ -33,6 +33,57 @@ export function normalizePartyKey(p) {
 class StorageManager {
   constructor() {
     this.migratedCompanies = new Set();
+    this.purgeBloatedLocalStorage();
+  }
+
+  /**
+   * Safe localStorage.setItem with automatic quota-exhaustion recovery
+   */
+  safeSetItem(key, val) {
+    if (typeof localStorage === "undefined") return false;
+    try {
+      localStorage.setItem(key, val);
+      return true;
+    } catch (quotaErr) {
+      console.warn(`[StorageManager] Quota exceeded on key "${key}", auto-purging bloated keys...`);
+      this.purgeBloatedLocalStorage();
+      try {
+        localStorage.setItem(key, val);
+        return true;
+      } catch (retryErr) {
+        console.error(`[StorageManager] Failed to save key "${key}" after purge:`, retryErr);
+        return false;
+      }
+    }
+  }
+
+  /**
+   * Cleans bloated base64 strings and redundant debug keys to guarantee 100% free quota
+   */
+  purgeBloatedLocalStorage() {
+    if (typeof localStorage === "undefined") return;
+    try {
+      // 1. Prune vb_tx_photos_cache of any raw base64 strings (full photos are safely in IndexedDB)
+      const rawPhotos = localStorage.getItem("vb_tx_photos_cache");
+      if (rawPhotos) {
+        try {
+          const cache = JSON.parse(rawPhotos);
+          const clean = {};
+          for (const k of Object.keys(cache)) {
+            const arr = Array.isArray(cache[k]) ? cache[k] : [cache[k]];
+            const httpUrls = arr.filter(u => typeof u === "string" && (u.startsWith("http") || u.length < 500));
+            if (httpUrls.length > 0) clean[k] = httpUrls;
+          }
+          localStorage.setItem("vb_tx_photos_cache", JSON.stringify(clean));
+        } catch (e) {
+          localStorage.removeItem("vb_tx_photos_cache");
+        }
+      }
+
+      // 2. Remove redundant debug or heavy log keys
+      const bloatKeys = ["vb_debug_logs", "vb_last_sync_error", "vb_render_trace", "vb_tx_photos_cache_legacy"];
+      bloatKeys.forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+    } catch (e) {}
   }
 
   /**
@@ -111,32 +162,41 @@ class StorageManager {
     this.runAutoMigration(companyId);
     if (typeof localStorage === "undefined") return [];
 
-    const key = this.getKey("parties", companyId);
-    try {
-      const stored = localStorage.getItem(key);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          const map = new Map();
-          parsed.map(p => this.normalizeParty(p)).filter(Boolean).forEach(p => {
-            const k = normalizePartyKey(p);
-            if (!map.has(k)) {
-              map.set(k, p);
-            } else {
-              const existing = map.get(k);
-              const hasMongoId = p._id && String(p._id).length === 24 && !String(p._id).includes('-');
-              map.set(k, hasMongoId ? { ...existing, ...p } : { ...p, ...existing });
+    const cid = String(companyId || localStorage.getItem("companyId") || "default").trim();
+    const primaryKey = this.getKey("parties", cid);
+
+    const candidateKeys = [
+      primaryKey,
+      cid && cid !== "default" ? `vb_local_parties_${cid}` : null,
+      "vb_local_parties",
+      "parties"
+    ].filter(Boolean);
+
+    for (const k of candidateKeys) {
+      try {
+        const stored = localStorage.getItem(k);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const map = new Map();
+            parsed.map(p => this.normalizeParty(p)).filter(Boolean).forEach(p => {
+              const uKey = normalizePartyKey(p);
+              if (!map.has(uKey)) {
+                map.set(uKey, p);
+              } else {
+                const existing = map.get(uKey);
+                const hasMongoId = p._id && String(p._id).length === 24 && !String(p._id).includes('-');
+                map.set(uKey, hasMongoId ? { ...existing, ...p } : { ...p, ...existing });
+              }
+            });
+            const deduped = Array.from(map.values());
+            if (k !== primaryKey) {
+              try { this.safeSetItem(primaryKey, JSON.stringify(deduped)); } catch (e) {}
             }
-          });
-          const deduped = Array.from(map.values());
-          if (deduped.length !== parsed.length) {
-            try { localStorage.setItem(key, JSON.stringify(deduped)); } catch (e) {}
+            return deduped;
           }
-          return deduped;
         }
-      }
-    } catch (e) {
-      console.warn("[StorageManager] getParties error:", e);
+      } catch (e) {}
     }
     return [];
   }
@@ -160,18 +220,15 @@ class StorageManager {
 
     // Save to primary v2 key
     const primaryKey = this.getKey("parties", cid);
-    try {
-      localStorage.setItem(primaryKey, JSON.stringify(normList));
+    const serialized = JSON.stringify(normList);
+    this.safeSetItem(primaryKey, serialized);
 
-      // Mirror to legacy keys for 100% backwards compatibility
-      if (cid && cid !== "default") {
-        localStorage.setItem(`vb_local_parties_${cid}`, JSON.stringify(normList));
-      }
-      localStorage.setItem("vb_local_parties", JSON.stringify(normList));
-      localStorage.setItem("parties", JSON.stringify(normList));
-    } catch (e) {
-      console.warn("[StorageManager] saveParties storage quota warning:", e);
+    // Mirror to legacy keys for 100% backwards compatibility
+    if (cid && cid !== "default") {
+      this.safeSetItem(`vb_local_parties_${cid}`, serialized);
     }
+    this.safeSetItem("vb_local_parties", serialized);
+    this.safeSetItem("parties", serialized);
     return normList;
   }
 
@@ -491,18 +548,25 @@ class StorageManager {
     const deduped = deduplicateBills(billsList.map(b => this.normalizeBill(b)).filter(Boolean));
 
     const primaryKey = this.getKey("bills", cid);
-    try {
-      localStorage.setItem(primaryKey, JSON.stringify(deduped));
+    // Lightweight bill serialization for localStorage: strip huge base64 strings (full photos are in IndexedDB)
+    const leanBills = deduped.map(b => {
+      const bImgs = Array.isArray(b.billImageUrls) ? b.billImageUrls : [];
+      const cleanImgs = bImgs.filter(u => typeof u === "string" && (u.startsWith("http") || u.length < 500));
+      return {
+        ...b,
+        billImageUrls: cleanImgs,
+        billImageUrl: b.billImageUrl && (b.billImageUrl.startsWith("http") || b.billImageUrl.length < 500) ? b.billImageUrl : (cleanImgs[0] || "")
+      };
+    });
+    const serialized = JSON.stringify(leanBills);
+    this.safeSetItem(primaryKey, serialized);
 
-      // Mirror to legacy keys
-      if (cid && cid !== "default") {
-        localStorage.setItem(`vb_local_manual_bills_${cid}`, JSON.stringify(deduped));
-      }
-      localStorage.setItem("vb_local_manual_bills", JSON.stringify(deduped));
-      localStorage.setItem("bills", JSON.stringify(deduped));
-    } catch (e) {
-      console.warn("[StorageManager] saveBills storage quota warning:", e);
+    // Mirror to legacy keys
+    if (cid && cid !== "default") {
+      this.safeSetItem(`vb_local_manual_bills_${cid}`, serialized);
     }
+    this.safeSetItem("vb_local_manual_bills", serialized);
+    this.safeSetItem("bills", serialized);
     return deduped;
   }
 
@@ -612,13 +676,12 @@ class StorageManager {
     const deduped = deduplicateExpenses(expensesList.map(e => this.normalizeExpense(e)).filter(Boolean));
 
     const primaryKey = this.getKey("expenses", cid);
-    try {
-      localStorage.setItem(primaryKey, JSON.stringify(deduped));
-      if (cid && cid !== "default") {
-        localStorage.setItem(`vb_local_expenses_${cid}`, JSON.stringify(deduped));
-      }
-      localStorage.setItem("vb_local_expenses", JSON.stringify(deduped));
-    } catch (e) {}
+    const serialized = JSON.stringify(deduped);
+    this.safeSetItem(primaryKey, serialized);
+    if (cid && cid !== "default") {
+      this.safeSetItem(`vb_local_expenses_${cid}`, serialized);
+    }
+    this.safeSetItem("vb_local_expenses", serialized);
     return deduped;
   }
 

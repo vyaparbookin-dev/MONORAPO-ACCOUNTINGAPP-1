@@ -88,24 +88,13 @@ export const uploadBillPhoto = async (req, res) => {
         $addToSet: { billImageUrls: imageUrl }
       };
 
-      if (targetType === "purchase") {
-        updatedRecord = await Purchase.findOneAndUpdate(query, updateData, { new: true });
-        if (!updatedRecord) updatedRecord = await Bill.findOneAndUpdate(query, updateData, { new: true });
-        if (!updatedRecord) updatedRecord = await PartyTransaction.findOneAndUpdate(query, updateData, { new: true });
-      } else if (targetType === "party_tx" || targetType === "payment" || targetType === "receipt") {
-        updatedRecord = await PartyTransaction.findOneAndUpdate(query, updateData, { new: true });
-        if (!updatedRecord) updatedRecord = await Bill.findOneAndUpdate(query, updateData, { new: true });
-        if (!updatedRecord) updatedRecord = await Purchase.findOneAndUpdate(query, updateData, { new: true });
-      } else {
-        // Default: try Bill first, then PartyTransaction, then Purchase
-        updatedRecord = await Bill.findOneAndUpdate(query, updateData, { new: true });
-        if (!updatedRecord) {
-          updatedRecord = await PartyTransaction.findOneAndUpdate(query, updateData, { new: true });
-        }
-        if (!updatedRecord) {
-          updatedRecord = await Purchase.findOneAndUpdate(query, updateData, { new: true });
-        }
-      }
+      // Link to ALL matching documents (Bill, PartyTransaction, and Purchase) so they stay 100% in sync!
+      const [billRec, partyTxRec, purchaseRec] = await Promise.all([
+        Bill.findOneAndUpdate(query, updateData, { new: true }),
+        PartyTransaction.findOneAndUpdate(query, updateData, { new: true }),
+        Purchase.findOneAndUpdate(query, updateData, { new: true })
+      ]);
+      updatedRecord = billRec || partyTxRec || purchaseRec;
 
       // Check Party if opening balance (open_...) or matching party ID
       if (!updatedRecord && (String(targetId).startsWith("open_") || isValidOid)) {
@@ -201,30 +190,13 @@ export const deleteBillPhoto = async (req, res) => {
 
     const query = { $or: orConditions };
 
-    let updatedRecord = null;
-    const ModelToUse = targetType === "purchase" ? Purchase : (targetType === "bill" ? Bill : PartyTransaction);
-
-    updatedRecord = await ModelToUse.findOneAndUpdate(
-      query,
-      { $pull: { billImageUrls: imageUrl } },
-      { new: true }
-    );
-
-    if (!updatedRecord && targetType !== "purchase") {
-      // Try Bill if PartyTransaction didn't match
-      updatedRecord = await Bill.findOneAndUpdate(
-        query,
-        { $pull: { billImageUrls: imageUrl } },
-        { new: true }
-      );
-    }
-    if (!updatedRecord) {
-      updatedRecord = await Purchase.findOneAndUpdate(
-        query,
-        { $pull: { billImageUrls: imageUrl } },
-        { new: true }
-      );
-    }
+    // Remove photo from ALL matching collections so none retain deleted photo
+    const [delBill, delTx, delPur] = await Promise.all([
+      Bill.findOneAndUpdate(query, { $pull: { billImageUrls: imageUrl } }, { new: true }),
+      PartyTransaction.findOneAndUpdate(query, { $pull: { billImageUrls: imageUrl } }, { new: true }),
+      Purchase.findOneAndUpdate(query, { $pull: { billImageUrls: imageUrl } }, { new: true })
+    ]);
+    updatedRecord = delBill || delTx || delPur;
     if (!updatedRecord && (String(targetId).startsWith("open_") || isValidOid)) {
       try {
         const pQuery = isValidOid ? { _id: cleanId } : { id: cleanId };

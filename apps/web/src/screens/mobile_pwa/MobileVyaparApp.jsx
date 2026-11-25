@@ -78,7 +78,7 @@ import { deduplicateBills } from "../../utils/deduplicateBills";
 import { speakUpiPayment, playPaymentChime } from "../../utils/soundBox";
 import { storageManager, normalizePartyKey } from "../../services/storageManager";
 import SmartPdfBillModal from "../../components/SmartPdfBillModal";
-import { compressImageFile, persistPhotoToLocalCache, savePhotosToIndexedDB, getPhotosFromIndexedDB, getWebSafeImageUrl } from "../../utils/photoStorage";
+import { compressImageFile, persistPhotoToLocalCache, savePhotosToIndexedDB, getPhotosFromIndexedDB, getWebSafeImageUrl, getPersistedPhotos } from "../../utils/photoStorage";
 
 
 class MobileErrorBoundary extends React.Component {
@@ -421,6 +421,7 @@ function MobileVyaparAppContent() {
   const [directBillNotes, setDirectBillNotes] = useState("");
   const [directBillDate, setDirectBillDate] = useState(getLocalYmd);
   const [directBillImage, setDirectBillImage] = useState("");
+  const [directBillImages, setDirectBillImages] = useState([]);
   const [directBillCarrierName, setDirectBillCarrierName] = useState(""); // सामान ले जाने वाले का नाम
   const [directBillCarrierPhone, setDirectBillCarrierPhone] = useState(""); // सामान ले जाने वाले का मोबाइल
 
@@ -893,6 +894,7 @@ function MobileVyaparAppContent() {
 
     if (cameraTarget === "direct_bill") {
       setDirectBillImage(imgData);
+      setDirectBillImages(prev => Array.from(new Set([...(prev || []), imgData])).slice(0, 5));
     } else if (cameraTarget === "ai_ocr") {
       setShowOcrModal(false);
       handleProcessBillImages(null, [imgData]);
@@ -3286,7 +3288,10 @@ function MobileVyaparAppContent() {
     const effectiveAmount = isDirectEffective ? directAmt : (totalBillAmount || directAmt);
     const effectiveSite = directBillSite.trim();
     const effectiveNotes = directBillNotes.trim();
-    const effectiveImage = isDirectEffective ? (directBillImage || "") : "";
+    const effectiveImages = isDirectEffective
+      ? (directBillImages.length > 0 ? directBillImages : (directBillImage ? [directBillImage] : []))
+      : (directBillImages.length > 0 ? directBillImages : (directBillImage ? [directBillImage] : []));
+    const effectiveImage = effectiveImages[0] || "";
     const billIsoDate = toSafeIsoDate(directBillDate || getLocalYmd());
     const effectiveDate = new Date(billIsoDate);
 
@@ -3338,7 +3343,7 @@ function MobileVyaparAppContent() {
       receiverPhone: directBillCarrierPhone.trim(),
       notes: effectiveNotes,
       billImageUrl: effectiveImage || undefined,
-      billImageUrls: effectiveImage ? [effectiveImage] : [],
+      billImageUrls: effectiveImages,
       date: billIsoDate
     };
 
@@ -3502,13 +3507,10 @@ function MobileVyaparAppContent() {
         localStorage.setItem("vb_local_party_txs", JSON.stringify([txDoc, ...storedTxs]));
       } catch (e) {}
 
-      if (effectiveImage) {
-        try {
-          const c = JSON.parse(localStorage.getItem("vb_tx_photos_cache") || "{}");
-          c[genBillNo] = [effectiveImage];
-          c[txDoc._id] = [effectiveImage];
-          localStorage.setItem("vb_tx_photos_cache", JSON.stringify(c));
-        } catch (e) {}
+      if (effectiveImages.length > 0) {
+        savePhotosToIndexedDB(genBillNo, effectiveImages).catch(() => {});
+        if (txDoc._id) savePhotosToIndexedDB(txDoc._id, effectiveImages).catch(() => {});
+        persistPhotoToLocalCache(genBillNo, effectiveImages);
       }
     }
 
@@ -3521,6 +3523,7 @@ function MobileVyaparAppContent() {
     setDirectBillSite("");
     setDirectBillNotes("");
     setDirectBillImage("");
+    setDirectBillImages([]);
     setDirectBillCarrierName("");
     setDirectBillCarrierPhone("");
     setBillAppliedReward(null);
@@ -4055,6 +4058,30 @@ function MobileVyaparAppContent() {
         }
       } catch(e) {}
 
+      // Asynchronously fetch persistent photos from IndexedDB for all entries
+      const idbPhotoMap = new Map();
+      try {
+        const idbPromises = combinedTxs.map(async (st) => {
+          const keysToTry = [
+            st._id,
+            st.id,
+            String(st._id || '').replace(/^pay_/, ''),
+            st.refNo,
+            st.billNumber
+          ].filter(Boolean);
+          for (const k of keysToTry) {
+            try {
+              const resImgs = await getPhotosFromIndexedDB(k);
+              if (Array.isArray(resImgs) && resImgs.length > 0) {
+                idbPhotoMap.set(String(k).toLowerCase(), resImgs);
+                break;
+              }
+            } catch (e) {}
+          }
+        });
+        await Promise.allSettled(idbPromises);
+      } catch (e) {}
+
       // Merge attached photos from persistent photo cache, local transactions, and bills
       let photosCache = {};
       try {
@@ -4067,6 +4094,13 @@ function MobileVyaparAppContent() {
 
         const stId = String(st._id || st.id || '').replace(/^pay_/, '').trim();
         const stRef = String(st.refNo || st.billNumber || '').trim().toLowerCase();
+
+        // 0. Check IndexedDB persistent photo store (prevents photos from disappearing)
+        const idbImgs = idbPhotoMap.get(stId.toLowerCase()) || idbPhotoMap.get(String(st._id || '').toLowerCase()) || idbPhotoMap.get(stRef);
+        if (idbImgs && Array.isArray(idbImgs) && idbImgs.length > 0) {
+          imgUrls = Array.from(new Set([...imgUrls, ...idbImgs].filter(Boolean)));
+          if (!imgUrl && idbImgs[0]) imgUrl = idbImgs[0];
+        }
 
         // 1. Check persistent photo cache by ID or refNo
         const cached = photosCache[stId] || photosCache[st._id] || photosCache[stRef] || photosCache[st.refNo] || photosCache[st.billNumber];
@@ -4485,7 +4519,7 @@ function MobileVyaparAppContent() {
 
       for (let i = 0; i < validFiles.length; i++) {
         const file = validFiles[i];
-        const base64Data = await compressImageFile(file, 1200, 0.75);
+        const base64Data = await compressImageFile(file, 1200, 0.75, true);
         if (!base64Data) continue;
 
         let returnedUrl = "";
@@ -4583,8 +4617,9 @@ function MobileVyaparAppContent() {
           return prev;
         });
 
-        // Persist to safe photo storage (Pruned LocalStorage + IndexedDB)
+        // Persist to safe photo storage (IndexedDB permanent store + Pruned LocalStorage)
         const allNewUrls = Array.from(new Set([...latestUrls, latestPrimaryUrl].filter(Boolean)));
+        await savePhotosToIndexedDB(txId, allNewUrls).catch(() => {});
         await persistPhotoToLocalCache(txId, allNewUrls);
       }
 
@@ -4727,7 +4762,7 @@ function MobileVyaparAppContent() {
 
       for (let i = 0; i < validFiles.length; i++) {
         const file = validFiles[i];
-        const base64Data = await compressImageFile(file, 1200, 0.75);
+        const base64Data = await compressImageFile(file, 1200, 0.75, true);
         if (!base64Data) continue;
 
         let returnedUrl = "";
@@ -10061,38 +10096,65 @@ function MobileVyaparAppContent() {
                   </div>
                 </div>
 
-                {/* Optional Bill Photo */}
+                {/* Optional Bill Photo - Multi-Image Support */}
                 <div className="p-2.5 bg-white rounded-xl border border-dashed border-amber-300 space-y-1.5">
                   <div className="flex justify-between items-center">
                     <span className="text-[11px] font-black text-slate-700 flex items-center gap-1">
                       <span>📷 बिल या पर्ची का फोटो</span>
-                      <span className="text-[10px] text-emerald-700 font-bold">(वैकल्पिक / Optional)</span>
+                      {directBillImages.length > 0 ? (
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full">
+                          ({directBillImages.length} पर्चियां संलग्न)
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-emerald-700 font-bold">(वैकल्पिक / Optional)</span>
+                      )}
                     </span>
-                    {directBillImage && (
+                    {directBillImages.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => setDirectBillImage("")}
+                        onClick={() => {
+                          setDirectBillImages([]);
+                          setDirectBillImage("");
+                        }}
                         className="text-[10px] text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
                       >
-                        ✕ फोटो हटाएं
+                        ✕ सभी हटाएं
                       </button>
                     )}
                   </div>
 
-                  {directBillImage ? (
-                    <div className="flex items-center gap-2 p-1 bg-amber-50 rounded-lg">
-                      <img
-                        src={getWebSafeImageUrl(directBillImage)}
-                        alt="Bill Preview"
-                        onClick={() => setPreviewBillImage(directBillImage)}
-                        className="w-12 h-12 rounded-lg object-cover border border-amber-300 cursor-pointer shadow-xs"
-                      />
-                      <div className="text-[10px] text-slate-600">
-                        <span className="font-bold text-emerald-700 block">✓ पर्ची फोटो संलग्न है</span>
-                        <span className="text-slate-400">टैप करके बड़ा देखें</span>
-                      </div>
+                  {directBillImages.length > 0 && (
+                    <div className="flex items-center gap-2 p-1.5 bg-amber-50 rounded-xl overflow-x-auto no-scrollbar">
+                      {directBillImages.map((img, idx) => (
+                        <div key={idx} className="relative shrink-0">
+                          <img
+                            src={getWebSafeImageUrl(img)}
+                            alt={`Bill Photo ${idx + 1}`}
+                            onClick={() => setPreviewBillImage(img)}
+                            className="w-14 h-14 rounded-lg object-cover border border-amber-300 cursor-pointer shadow-xs hover:opacity-90 transition"
+                          />
+                          <span className="absolute bottom-0.5 left-0.5 bg-black/60 text-white text-[8px] font-bold px-1 rounded">
+                            #{idx + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const updated = directBillImages.filter((_, i) => i !== idx);
+                              setDirectBillImages(updated);
+                              setDirectBillImage(updated[0] || "");
+                            }}
+                            className="absolute -top-1 -right-1 w-4 h-4 bg-rose-600 text-white rounded-full text-[10px] flex items-center justify-center font-black cursor-pointer shadow-sm hover:bg-rose-700"
+                            title="यह फोटो हटाएं"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  ) : (
+                  )}
+
+                  {directBillImages.length < 5 && (
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -10100,19 +10162,34 @@ function MobileVyaparAppContent() {
                         className="flex-1 py-2 px-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl text-[11px] font-black cursor-pointer flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition"
                       >
                         <Camera size={14} />
-                        <span>📸 कैमरा से खींचें</span>
+                        <span>📸 {directBillImages.length > 0 ? "+ और फोटो खींचें" : "कैमरा से खींचें"}</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCameraTarget("direct_bill");
-                          galleryFallbackFileInputRef.current?.click();
-                        }}
-                        className="flex-1 py-2 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-[11px] font-extrabold cursor-pointer flex items-center justify-center gap-1.5 transition active:scale-95"
+                      <label
+                        className="flex-1 py-2 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-[11px] font-extrabold cursor-pointer flex items-center justify-center gap-1.5 transition active:scale-95 text-center"
                       >
                         <Upload size={13} />
-                        <span>🖼️ गैलरी से चुनें</span>
-                      </button>
+                        <span>🖼️ {directBillImages.length > 0 ? "+ गैलरी से जोड़ें" : "गैलरी से चुनें"}</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            if (!e.target.files || e.target.files.length === 0) return;
+                            const files = Array.from(e.target.files).slice(0, 5 - directBillImages.length);
+                            const compressedList = [];
+                            for (const f of files) {
+                              const c = await compressImageFile(f, 1200, 0.75, true);
+                              if (c) compressedList.push(c);
+                            }
+                            if (compressedList.length > 0) {
+                              setDirectBillImages(prev => Array.from(new Set([...(prev || []), ...compressedList])).slice(0, 5));
+                              setDirectBillImage(prev => prev || compressedList[0]);
+                            }
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
                     </div>
                   )}
                   <p className="text-[10px] text-slate-400">
@@ -12309,6 +12386,7 @@ function MobileVyaparAppContent() {
                       setDirectBillCarrierPhone("");
                       setDirectBillDate(getLocalYmd());
                       setDirectBillImage("");
+                      setDirectBillImages([]);
                       setShowQuickBillModal(true);
                     }
                   }}

@@ -73,7 +73,16 @@ export const mapSupabaseSalesToBill = (row) => ({
   status: row.status || "complete",
   notes: row.notes || "",
   billImageUrl: row.bill_image_url || null,
-  billImageUrls: row.bill_image_url ? [row.bill_image_url] : [],
+  billImageUrls: (() => {
+    if (!row.bill_image_url) return [];
+    try {
+      if (row.bill_image_url.startsWith("[")) {
+        const p = JSON.parse(row.bill_image_url);
+        if (Array.isArray(p)) return p;
+      }
+    } catch (e) {}
+    return [row.bill_image_url];
+  })(),
   isDeleted: Boolean(row.is_deleted),
   createdAt: row.created_at,
   updatedAt: row.updated_at
@@ -113,7 +122,16 @@ export const mapSupabasePartyTxToTx = (row) => ({
   amount: Number(row.debit || row.credit || 0),
   type: row.type || "manual",
   billImageUrl: row.bill_image_url || null,
-  billImageUrls: row.bill_image_url ? [row.bill_image_url] : [],
+  billImageUrls: (() => {
+    if (!row.bill_image_url) return [];
+    try {
+      if (row.bill_image_url.startsWith("[")) {
+        const p = JSON.parse(row.bill_image_url);
+        if (Array.isArray(p)) return p;
+      }
+    } catch (e) {}
+    return [row.bill_image_url];
+  })(),
   createdAt: row.created_at
 });
 
@@ -239,7 +257,16 @@ export const mapSupabasePurchaseToPurchase = (row) => ({
   paymentMethod: row.payment_method || "cash",
   supplierName: row.supplier_name || "सप्लायर",
   billImageUrl: row.bill_image_url || null,
-  billImageUrls: row.bill_image_url ? [row.bill_image_url] : [],
+  billImageUrls: (() => {
+    if (!row.bill_image_url) return [];
+    try {
+      if (row.bill_image_url.startsWith("[")) {
+        const p = JSON.parse(row.bill_image_url);
+        if (Array.isArray(p)) return p;
+      }
+    } catch (e) {}
+    return [row.bill_image_url];
+  })(),
   isDeleted: Boolean(row.is_deleted),
   createdAt: row.created_at,
   updatedAt: row.updated_at

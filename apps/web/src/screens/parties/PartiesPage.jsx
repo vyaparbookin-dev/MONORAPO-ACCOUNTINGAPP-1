@@ -1612,32 +1612,44 @@ export default function PartiesPage() {
     }
   };
 
-  // Attach Bill Photo / Receipt Image to Transaction
-  const handleAttachImage = async (txId, file) => {
-    if (!file) return;
+  // Attach Bill Photo / Receipt Image to Transaction (Multi-file & Auto-contrast support)
+  const handleAttachImage = async (txId, fileOrFiles) => {
+    if (!fileOrFiles) return;
+    const files = fileOrFiles instanceof FileList || Array.isArray(fileOrFiles)
+      ? Array.from(fileOrFiles)
+      : [fileOrFiles];
+    if (files.length === 0) return;
     setUploadingTxId(txId);
     try {
-      // 1. Client-side compress before upload for snappy performance
-      const compressedDataUrl = await compressImageFile(file, 1280, 0.75);
-      
-      let finalUrl = compressedDataUrl;
-      try {
-        const uploadRes = await api.post('/api/upload/bill-image', {
-          fileData: compressedDataUrl,
-          targetId: txId,
-          targetType: String(txId).startsWith("open_") ? "party" : "party_tx"
-        });
-        if (uploadRes?.data?.imageUrl) {
-          finalUrl = uploadRes.data.imageUrl;
+      const validFiles = files.slice(0, 5);
+      const newUrls = [];
+      for (const file of validFiles) {
+        // 1. Client-side compress with auto-contrast filtering
+        const compressedDataUrl = await compressImageFile(file, 1280, 0.75, true);
+        if (!compressedDataUrl) continue;
+        
+        let finalUrl = compressedDataUrl;
+        try {
+          const uploadRes = await api.post('/api/upload/bill-image', {
+            fileData: compressedDataUrl,
+            targetId: txId,
+            targetType: String(txId).startsWith("open_") ? "party" : "party_tx"
+          });
+          if (uploadRes?.data?.imageUrl || uploadRes?.data?.url || uploadRes?.url) {
+            finalUrl = uploadRes?.data?.imageUrl || uploadRes?.data?.url || uploadRes?.url;
+          }
+        } catch (upErr) {
+          try {
+            const attachRes = await api.post('/api/party/attach-image', { txId, imageUrl: compressedDataUrl });
+            if (attachRes?.data?.url || attachRes?.url) {
+              finalUrl = attachRes.data?.url || attachRes.url;
+            }
+          } catch (e2) {}
         }
-      } catch (upErr) {
-        const attachRes = await api.post('/api/party/attach-image', { txId, imageUrl: compressedDataUrl });
-        if (attachRes?.data?.url) {
-          finalUrl = attachRes.data.url;
-        }
+        newUrls.push(finalUrl);
       }
 
-      alert("✅ बिल/रसीद फोटो सफलतापूर्वक सेव हो गया!");
+      alert(`✅ ${validFiles.length} बिल/रसीद फोटो सफलतापूर्वक सुरक्षित हो गईं!`);
       if (statementParty) {
         handleOpenStatement(statementParty);
       }
@@ -2714,7 +2726,7 @@ export default function PartiesPage() {
                                         capture="environment"
                                         className="hidden"
                                         onChange={(e) => {
-                                          if (e.target.files?.[0]) handleAttachImage(tx._id, e.target.files[0]);
+                                          if (e.target.files && e.target.files.length > 0) handleAttachImage(tx._id, e.target.files);
                                           e.target.value = '';
                                         }}
                                       />
@@ -2730,7 +2742,7 @@ export default function PartiesPage() {
                                         accept="image/*"
                                         className="hidden"
                                         onChange={(e) => {
-                                          if (e.target.files?.[0]) handleAttachImage(tx._id, e.target.files[0]);
+                                          if (e.target.files && e.target.files.length > 0) handleAttachImage(tx._id, e.target.files);
                                           e.target.value = '';
                                         }}
                                       />
@@ -2779,7 +2791,7 @@ export default function PartiesPage() {
                                       capture="environment"
                                       className="hidden"
                                       onChange={(e) => {
-                                        if (e.target.files?.[0]) handleAttachImage(tx._id, e.target.files[0]);
+                                        if (e.target.files && e.target.files.length > 0) handleAttachImage(tx._id, e.target.files);
                                         e.target.value = '';
                                       }}
                                     />
