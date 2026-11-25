@@ -80,6 +80,26 @@ import { storageManager, normalizePartyKey } from "../../services/storageManager
 import SmartPdfBillModal from "../../components/SmartPdfBillModal";
 import { compressImageFile, persistPhotoToLocalCache, savePhotosToIndexedDB, getPhotosFromIndexedDB, removePhotoFromIndexedDB, getWebSafeImageUrl, getPersistedPhotos, isPdfUrl } from "../../utils/photoStorage";
 
+// 🛡️ Blacklist of generic tokens that must NEVER be used to suppress transactions
+const GENERIC_BLACKLIST_WORDS = new Set(["pay", "rec", "pur", "pay-entry", "rec-entry", "opening", "bill", "null", "undefined", "undefined_undefined", "nan", "0", ""]);
+
+const getCleanDeletedIdsSet = () => {
+  try {
+    const delArr = JSON.parse(localStorage.getItem("vb_deleted_entry_ids") || "[]");
+    if (Array.isArray(delArr)) {
+      const cleanArr = delArr.filter(x => {
+        const s = String(x || '').toLowerCase().trim();
+        return s && !GENERIC_BLACKLIST_WORDS.has(s);
+      });
+      if (cleanArr.length !== delArr.length) {
+        localStorage.setItem("vb_deleted_entry_ids", JSON.stringify(cleanArr));
+      }
+      return new Set(cleanArr.map(x => String(x).toLowerCase().trim()));
+    }
+  } catch (e) {}
+  return new Set();
+};
+
 
 class MobileErrorBoundary extends React.Component {
   constructor(props) {
@@ -2643,13 +2663,7 @@ function MobileVyaparAppContent() {
         api.get("/api/daybook?period=all&limit=500").catch(() => null)
       ]);
 
-      let deletedIdsSet = new Set();
-      try {
-        const delArr = JSON.parse(localStorage.getItem("vb_deleted_entry_ids") || "[]");
-        if (Array.isArray(delArr)) {
-          deletedIdsSet = new Set(delArr.map(x => String(x).toLowerCase().trim()));
-        }
-      } catch (e) {}
+      let deletedIdsSet = getCleanDeletedIdsSet();
 
       let rawBills = [];
       if (billsRes.status === "fulfilled" && billsRes.value) {
@@ -2729,7 +2743,9 @@ function MobileVyaparAppContent() {
             mergedLocalTxs = mergedLocalTxs.filter(t => {
               const tid = String(t?._id || t?.id || t?.transactionId || '').toLowerCase().trim();
               const tRef = String(t?.refNo || t?.billNumber || '').toLowerCase().trim();
-              return (!tid || !deletedIdsSet.has(tid)) && (!tRef || !deletedIdsSet.has(tRef));
+              const isIdDel = tid && !GENERIC_BLACKLIST_WORDS.has(tid) && deletedIdsSet.has(tid);
+              const isRefDel = tRef && !GENERIC_BLACKLIST_WORDS.has(tRef) && deletedIdsSet.has(tRef);
+              return !isIdDel && !isRefDel;
             });
           }
           // Filter out any explicitly deleted records
@@ -4034,13 +4050,7 @@ function MobileVyaparAppContent() {
       const opBal = Number(pObj?.openingBalance ?? 0);
       const isSupplier = (pObj?.type === "supplier" || pObj?.partyType === "supplier");
 
-      let deletedIdsSet = new Set();
-      try {
-        const delArr = JSON.parse(localStorage.getItem("vb_deleted_entry_ids") || "[]");
-        if (Array.isArray(delArr)) {
-          deletedIdsSet = new Set(delArr.map(x => String(x).toLowerCase().trim()));
-        }
-      } catch (e) {}
+      let deletedIdsSet = getCleanDeletedIdsSet();
 
       let combinedTxs = Array.isArray(serverTxs) ? [...serverTxs] : [];
       if (deletedIdsSet.size > 0) {
@@ -4048,9 +4058,9 @@ function MobileVyaparAppContent() {
           const tid = String(t._id || t.id || '').toLowerCase().trim();
           const tClean = tid.replace(/^(pay_|open_|tx_|ptx_)/, '').trim();
           const tRef = String(t.refNo || t.billNumber || '').toLowerCase().trim();
-          if (tid && deletedIdsSet.has(tid)) return false;
-          if (tClean && deletedIdsSet.has(tClean)) return false;
-          if (tRef && deletedIdsSet.has(tRef)) return false;
+          if (tid && !GENERIC_BLACKLIST_WORDS.has(tid) && deletedIdsSet.has(tid)) return false;
+          if (tClean && !GENERIC_BLACKLIST_WORDS.has(tClean) && deletedIdsSet.has(tClean)) return false;
+          if (tRef && !GENERIC_BLACKLIST_WORDS.has(tRef) && deletedIdsSet.has(tRef)) return false;
           return true;
         });
       }
@@ -4115,9 +4125,9 @@ function MobileVyaparAppContent() {
         const tid = String(t._id || t.id || '').toLowerCase().trim();
         const tClean = tid.replace(/^(pay_|open_|tx_|ptx_)/, '').trim();
         const tRef = String(t.refNo || t.billNumber || '').toLowerCase().trim();
-        if (tid && deletedIdsSet.has(tid)) return false;
-        if (tClean && deletedIdsSet.has(tClean)) return false;
-        if (tRef && deletedIdsSet.has(tRef)) return false;
+        if (tid && !GENERIC_BLACKLIST_WORDS.has(tid) && deletedIdsSet.has(tid)) return false;
+        if (tClean && !GENERIC_BLACKLIST_WORDS.has(tClean) && deletedIdsSet.has(tClean)) return false;
+        if (tRef && !GENERIC_BLACKLIST_WORDS.has(tRef) && deletedIdsSet.has(tRef)) return false;
         const tPartyId = String(t.partyId?._id || t.partyId?.id || t.partyId || "");
         return tPartyId && tPartyId === String(partyId);
       });
@@ -5060,15 +5070,18 @@ function MobileVyaparAppContent() {
       try {
         const deletedSet = JSON.parse(localStorage.getItem("vb_deleted_entry_ids") || "[]");
         const pIdStr = selectedPartyDetail?._id || selectedPartyDetail?.id || '';
-        const newDeleted = Array.from(new Set([
-          ...deletedSet,
-          String(txId),
+        const itemsToBlacklist = [
+          String(txId || ''),
           String(tx._id || ''),
           String(tx.id || ''),
           String(tx.billNumber || ''),
           String(tx.refNo || ''),
           isOpeningEntry && pIdStr ? `open_${pIdStr}` : ''
-        ].filter(Boolean)));
+        ].filter(x => {
+          const s = String(x || '').toLowerCase().trim();
+          return s && !GENERIC_BLACKLIST_WORDS.has(s);
+        });
+        const newDeleted = Array.from(new Set([...deletedSet, ...itemsToBlacklist]));
         localStorage.setItem("vb_deleted_entry_ids", JSON.stringify(newDeleted));
       } catch (e) {}
 
@@ -7023,8 +7036,7 @@ function MobileVyaparAppContent() {
       // 1. Blacklist in vb_deleted_entry_ids so it NEVER resurrects from local cache or background sync
       try {
         const deletedSet = JSON.parse(localStorage.getItem("vb_deleted_entry_ids") || "[]");
-        const newDeleted = Array.from(new Set([
-          ...deletedSet,
+        const itemsToBlacklist = [
           String(targetId || ''),
           String(serverId || ''),
           String(bill._id || ''),
@@ -7033,7 +7045,11 @@ function MobileVyaparAppContent() {
           String(bill.invoiceNumber || ''),
           String(bNum || ''),
           cleanBNum
-        ].filter(Boolean)));
+        ].filter(x => {
+          const s = String(x || '').toLowerCase().trim();
+          return s && !GENERIC_BLACKLIST_WORDS.has(s);
+        });
+        const newDeleted = Array.from(new Set([...deletedSet, ...itemsToBlacklist]));
         localStorage.setItem("vb_deleted_entry_ids", JSON.stringify(newDeleted));
       } catch (e) {}
 

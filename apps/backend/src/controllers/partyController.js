@@ -715,7 +715,7 @@ export const getPartyStatement = async (req, res) => {
         _id: tx._id,
         date: tx.date || tx.createdAt,
         type: tx.type || (isDebit ? "payment" : (isSupplier ? "purchase" : "receipt")),
-        refNo: tx.refNo || tx.billNumber || (isDebit ? "PAY" : (isSupplier ? "PUR" : "REC")),
+        refNo: tx.refNo || tx.billNumber || (isDebit ? `PAY-${String(tx._id).slice(-4)}` : (isSupplier ? `PUR-${String(tx._id).slice(-4)}` : `REC-${String(tx._id).slice(-4)}`)),
         billNumber: derivedBillNum,
         bookNo: tx.bookNo || "",
         pageNo: tx.pageNo || "",
@@ -1234,12 +1234,21 @@ export const deletePartyTransaction = async (req, res) => {
         }
 
         // CASCADE: If this transaction was linked to a Purchase, revert stock too
-        if (tx.referenceBillId) {
+        if (tx.referenceBillId || tx.purchase_id) {
           try {
+            const refVal = tx.referenceBillId || tx.purchase_id;
+            const pOr = [
+              { billNumber: refVal },
+              { invoiceNo: refVal },
+              { purchaseNumber: refVal }
+            ];
+            if (mongoose.Types.ObjectId.isValid(refVal)) {
+              pOr.push({ _id: refVal });
+            }
             const linkedPurchase = await Purchase.findOne({ 
-              _id: tx.referenceBillId, 
               companyId: req.companyId,
-              isDeleted: { $ne: true }
+              isDeleted: { $ne: true },
+              $or: pOr
             });
             if (linkedPurchase) {
               if (Array.isArray(linkedPurchase.items)) {

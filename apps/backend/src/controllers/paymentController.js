@@ -12,7 +12,7 @@ import os from "os";
 import { createWorker } from "tesseract.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { parseStatementRows } from "../bill-scanner/ocrExtractor.js";
-import { syncPartyTxToSupabase, syncPartyToSupabase } from "../services/supabaseSyncService.js";
+import { syncPartyTxToSupabase, syncPartyToSupabase, mongoIdToUuid } from "../services/supabaseSyncService.js";
 import { getPartyByIdFromSupabase } from "../services/supabaseReadService.js";
 
 let razorpay;
@@ -313,6 +313,9 @@ export const addPaymentEntry = async (req, res) => {
       date: date ? new Date(date) : new Date(),
       details: notes || (type === 'received' ? 'Payment Received' : 'Payment Given'),
       siteName: (siteName || site || '').trim(),
+      bookNo: (req.body.bookNo || "").trim(),
+      pageNo: (req.body.pageNo || "").trim(),
+      refNo: req.body.refNo || (debit > 0 ? `PAY-${Date.now().toString().slice(-4)}` : `REC-${Date.now().toString().slice(-4)}`),
       debit,
       credit,
       type: 'manual',
