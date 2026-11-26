@@ -33,8 +33,6 @@ jobs:
 
       - name: 📱 Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: 'cmdline-tools;latest platform-tools platforms;android-34 build-tools;34.0.0'
 
       - name: 🔑 Make Gradlew Executable
         run: |
@@ -44,9 +42,8 @@ jobs:
       - name: 📝 Accept Android SDK Licenses
         run: |
           mkdir -p "$ANDROID_HOME/licenses" || true
-          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license"
-          echo "84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license"
+          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
 
       - name: 🏗️ Build Native APK
         working-directory: apps/pwa-android
@@ -57,9 +54,12 @@ jobs:
       - name: 📁 Verify and Prepare APK File
         run: |
           ls -la apps/pwa-android/app/build/outputs/apk/release/
-          test -f apps/pwa-android/app/build/outputs/apk/release/app-release.apk
-          cp apps/pwa-android/app/build/outputs/apk/release/app-release.apk VyaparBook.apk
-          echo "✅ Successfully created VyaparBook.apk"
+          APK_FILE=$(find apps/pwa-android/app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            echo "❌ No APK found!" && exit 1
+          fi
+          cp "$APK_FILE" VyaparBook.apk
+          echo "✅ Successfully created VyaparBook.apk from $APK_FILE"
 
       - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4

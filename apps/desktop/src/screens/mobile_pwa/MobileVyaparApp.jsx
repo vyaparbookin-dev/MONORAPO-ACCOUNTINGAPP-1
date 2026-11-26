@@ -71,6 +71,9 @@ import { readLocalJson, writeLocalJson } from "@repo/shared";
 import PagarBookHub from "../../components/PagarBookHub";
 import MobileDayBookModal from "../../components/mobile/MobileDayBookModal";
 import MobileProfitLossModal from "../../components/mobile/MobileProfitLossModal";
+import MobileGraphicalAnalyticsModal from "../../components/mobile/MobileGraphicalAnalyticsModal";
+import MobileBalanceSheetModal from "../../components/mobile/MobileBalanceSheetModal";
+import MobileTrialBalanceModal from "../../components/mobile/MobileTrialBalanceModal";
 import MobileReportViewerModal from "../../components/mobile/MobileReportViewerModal";
 import MobileFamilyExpenseModal from "../../components/mobile/MobileFamilyExpenseModal";
 import WealthTrackerExportModal from "../../components/wealth_tracker/WealthTrackerExportModal";
@@ -1439,6 +1442,9 @@ function MobileVyaparAppContent() {
   // ==================== NATIVE MOBILE REPORTS MODALS ====================
   const [showDayBookModal, setShowDayBookModal] = useState(false);
   const [showProfitLossModal, setShowProfitLossModal] = useState(false);
+  const [showGraphicalAnalyticsModal, setShowGraphicalAnalyticsModal] = useState(false);
+  const [showBalanceSheetModal, setShowBalanceSheetModal] = useState(false);
+  const [showTrialBalanceModal, setShowTrialBalanceModal] = useState(false);
   const [showFamilyExpenseModal, setShowFamilyExpenseModal] = useState(false);
   const [showSavingsModal, setShowSavingsModal] = useState(false);
   const [showBankCCModal, setShowBankCCModal] = useState(false);
@@ -7940,8 +7946,11 @@ function MobileVyaparAppContent() {
     }
   };
 
-  // 20+ Comprehensive Reports Catalog
+  // 25+ Comprehensive Reports Catalog
   const allReportsList = [
+    { id: "graphical_analytics", title: "📊 बिक्री, खर्च व लाभ ग्राफ (Charts)", desc: "माह-दर-माह बिक्री, खर्च व मुनाफ़ा ट्रेंड एरिया चार्ट", path: "graphical_analytics_modal", category: "Core", color: "text-blue-600 bg-blue-50" },
+    { id: "balancesheet", title: "⚖️ तुलन पत्र / बैलेंस शीट (Balance Sheet)", desc: "दुकान कुल संपत्ति (Assets) व देनदारियां (Liabilities)", path: "balancesheet_modal", category: "Core", color: "text-indigo-600 bg-indigo-50" },
+    { id: "trialbalance", title: "📋 तलपट / ट्रायल बैलेंस (Trial Balance)", desc: "सभी खातों का डेबिट व क्रेडिट मिलान (Double Entry)", path: "trialbalance_modal", category: "Core", color: "text-emerald-600 bg-emerald-50" },
     { id: "daybook", title: "📖 DayBook (रोकड़ बही)", desc: "Daily Cash In/Out & Ledger", path: "daybook_modal", category: "Core", color: "text-emerald-600 bg-emerald-50" },
     { id: "profitloss", title: "📊 Profit & Loss Report", desc: "Gross & Net Business Profit", path: "profitloss_modal", category: "Core", color: "text-indigo-600 bg-indigo-50" },
     { id: "gst", title: "📑 GST Summary & Tax", desc: "Output & Input Tax Breakdown", path: "/reports/gst", category: "GST", color: "text-purple-600 bg-purple-50" },
@@ -8328,6 +8337,95 @@ function MobileVyaparAppContent() {
                     ₹ {activePeriodNetCash.toLocaleString('en-IN')}
                   </span>
                 </div>
+              </div>
+            </div>
+
+            {/* 📊 BUSINESS GROWTH, CHARTS & FINANCIAL STATEMENTS HUB */}
+            <div className="p-4 bg-white rounded-3xl border border-slate-200/90 shadow-sm space-y-3">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black shadow-xs">
+                    <BarChart2 size={16} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-xs text-slate-900">व्यापार ग्राफिक्स व वित्तीय रिपोर्ट</h3>
+                    <p className="text-[10px] text-slate-400 font-medium">बैलेंस शीट, तलपट (Trial Balance) व ट्रेंड ग्राफ</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowGraphicalAnalyticsModal(true)}
+                  className="text-[11px] font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-xl transition cursor-pointer active:scale-95 flex items-center gap-1"
+                >
+                  <span>📊 पूरा ग्राफ</span>
+                  <ChevronRight size={13} />
+                </button>
+              </div>
+
+              {/* 3 Main Action Tiles: Graphical Trends, Balance Sheet, Trial Balance */}
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowGraphicalAnalyticsModal(true)}
+                  className="p-2.5 bg-gradient-to-br from-blue-50 to-indigo-50/60 hover:from-blue-100/70 hover:to-indigo-100 border border-blue-200/80 rounded-2xl flex flex-col items-center justify-center gap-1 transition cursor-pointer active:scale-95 text-center shadow-xs"
+                >
+                  <span className="text-xl">📊</span>
+                  <span className="text-[11px] font-black text-blue-950 block">बिक्री-खर्च ग्राफ</span>
+                  <span className="text-[9px] text-blue-700 font-semibold block">Area Trend Chart</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowBalanceSheetModal(true)}
+                  className="p-2.5 bg-gradient-to-br from-indigo-50 to-purple-50/60 hover:from-indigo-100/70 hover:to-purple-100 border border-indigo-200/80 rounded-2xl flex flex-col items-center justify-center gap-1 transition cursor-pointer active:scale-95 text-center shadow-xs"
+                >
+                  <span className="text-xl">⚖️</span>
+                  <span className="text-[11px] font-black text-indigo-950 block">बैलेंस शीट</span>
+                  <span className="text-[9px] text-indigo-700 font-semibold block">Assets vs Liabilities</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowTrialBalanceModal(true)}
+                  className="p-2.5 bg-gradient-to-br from-emerald-50 to-teal-50/60 hover:from-emerald-100/70 hover:to-teal-100 border border-emerald-200/80 rounded-2xl flex flex-col items-center justify-center gap-1 transition cursor-pointer active:scale-95 text-center shadow-xs"
+                >
+                  <span className="text-xl">📋</span>
+                  <span className="text-[11px] font-black text-emerald-950 block">ट्रायल बैलेंस</span>
+                  <span className="text-[9px] text-emerald-700 font-semibold block">Double Entry Tally</span>
+                </button>
+              </div>
+
+              {/* 2 Supporting Strips: Profit & Loss + DayBook */}
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowProfitLossModal(true)}
+                  className="p-2 bg-slate-50 hover:bg-indigo-50/50 border border-slate-200 rounded-xl flex items-center justify-between text-left transition cursor-pointer active:scale-98"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm">📈</span>
+                    <div>
+                      <span className="text-[10px] font-black text-slate-800 block">नफा-नुकसान (P&L)</span>
+                      <span className="text-[8px] text-slate-500 font-semibold">Gross & Net Profit</span>
+                    </div>
+                  </div>
+                  <ChevronRight size={13} className="text-slate-400" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowDayBookModal(true)}
+                  className="p-2 bg-slate-50 hover:bg-emerald-50/50 border border-slate-200 rounded-xl flex items-center justify-between text-left transition cursor-pointer active:scale-98"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm">📖</span>
+                    <div>
+                      <span className="text-[10px] font-black text-slate-800 block">रोकड़ बही (DayBook)</span>
+                      <span className="text-[8px] text-slate-500 font-semibold">दैनिक कैश इन/आउट</span>
+                    </div>
+                  </div>
+                  <ChevronRight size={13} className="text-slate-400" />
+                </button>
               </div>
             </div>
 
@@ -9852,6 +9950,12 @@ function MobileVyaparAppContent() {
                       setShowDayBookModal(true);
                     } else if (r.path === 'profitloss_modal') {
                       setShowProfitLossModal(true);
+                    } else if (r.path === 'graphical_analytics_modal' || r.id === 'graphical_analytics') {
+                      setShowGraphicalAnalyticsModal(true);
+                    } else if (r.path === 'balancesheet_modal' || r.id === 'balancesheet') {
+                      setShowBalanceSheetModal(true);
+                    } else if (r.path === 'trialbalance_modal' || r.id === 'trialbalance') {
+                      setShowTrialBalanceModal(true);
                     } else {
                       // Open native mobile report viewer modal
                       setActiveMobileReport({ type: r.id, title: r.title });
@@ -16916,6 +17020,27 @@ function MobileVyaparAppContent() {
         <MobileProfitLossModal
           isOpen={showProfitLossModal}
           onClose={() => setShowProfitLossModal(false)}
+        />
+      )}
+
+      {showGraphicalAnalyticsModal && (
+        <MobileGraphicalAnalyticsModal
+          isOpen={showGraphicalAnalyticsModal}
+          onClose={() => setShowGraphicalAnalyticsModal(false)}
+        />
+      )}
+
+      {showBalanceSheetModal && (
+        <MobileBalanceSheetModal
+          isOpen={showBalanceSheetModal}
+          onClose={() => setShowBalanceSheetModal(false)}
+        />
+      )}
+
+      {showTrialBalanceModal && (
+        <MobileTrialBalanceModal
+          isOpen={showTrialBalanceModal}
+          onClose={() => setShowTrialBalanceModal(false)}
         />
       )}
 
