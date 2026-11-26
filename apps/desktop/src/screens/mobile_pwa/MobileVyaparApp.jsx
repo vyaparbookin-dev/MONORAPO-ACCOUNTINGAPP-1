@@ -1874,10 +1874,7 @@ function MobileVyaparAppContent() {
     return [];
   });
   const [gharKharchMemberFilter, setGharKharchMemberFilter] = useState("all");
-  const [gharKharchMonthFilter, setGharKharchMonthFilter] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  }); // defaults to current month 'YYYY-MM' or 'all'
+  const [gharKharchMonthFilter, setGharKharchMonthFilter] = useState("all"); // 'all' or 'YYYY-MM'
   const [ledgerViewTab, setLedgerViewTab] = useState("all"); // 'all', 'drawings' (Ghar Kharch), 'operating' (Shop Kharch)
   const [loadingGharKharch, setLoadingGharKharch] = useState(false);
   const [showWealthTrackerModal, setShowWealthTrackerModal] = useState(false);
@@ -1889,27 +1886,34 @@ function MobileVyaparAppContent() {
     const c = String(e.category || '').toLowerCase();
     const tit = String(e.title || '').toLowerCase();
     const desc = String(e.description || e.notes || '').toLowerCase();
+    const mem = String(e.familyMember || e.member || '').trim();
 
-    // 🛑 Vendor / Supplier / Shop payments must NEVER be treated as personal / house expense!
+    // 🛑 If assigned to a family member (not Admin/Shop), it is ALWAYS Personal / Drawings!
+    if (mem && mem.toLowerCase() !== 'admin' && mem.toLowerCase() !== 'shop') {
+      return true;
+    }
+
+    // Explicit drawings / personal
+    if (t === 'drawings' || t === 'ghar_kharch' || t === 'personal') {
+      return true;
+    }
+
+    // 🛑 Vendor / Supplier / Wholesale payments must NEVER be treated as personal / house expense!
     if (tit.includes('vendor') || tit.includes('vender') || tit.includes('सप्लायर') || tit.includes('वेंडर') || tit.includes('व्यापारी') ||
         desc.includes('vendor') || desc.includes('vender') || desc.includes('सप्लायर') || desc.includes('वेंडर') || desc.includes('व्यापारी') ||
         c.includes('सप्लायर') || c.includes('वेंडर') || c.includes('व्यापारी') ||
-        c.includes('बिजनेस') || tit.includes('बिजनेस') || tit.includes('shop') || c.includes('मजदूरी')) {
+        c.includes('बिजनेस') || tit.includes('बिजनेस') || c.includes('मजदूरी') ||
+        /\b(dukan|shop|store)\b/i.test(tit) || /\b(dukan|shop|store)\b/i.test(desc)) {
       return false;
     }
 
     if (t === 'operating' || t === 'business') {
-      // If marked operating but specifically a household category and has a family member, respect family member
-      const mem = String(e.familyMember || e.member || '').trim();
-      if (!mem || mem === 'Admin' || mem === 'Shop') return false;
+      return false;
     }
 
-    const mem = String(e.familyMember || e.member || '').trim();
-    return t === 'drawings' || t === 'ghar_kharch' || t === 'personal' ||
-           c.includes('घर खर्च') || c.includes('family') || c.includes('personal') ||
+    return c.includes('घर खर्च') || c.includes('family') || c.includes('personal') ||
            c.includes('घरेलू') || c.includes('पेट्रोल') || c.includes('वाहन') || c.includes('दवाई') || c.includes('राशन') || c.includes('स्कूल') || c.includes('कपड़े') ||
-           tit.includes('घर खर्च') || tit.includes('servicing') || tit.includes('सर्विसिंग') ||
-           (mem !== '' && mem !== 'Admin' && mem !== 'Shop');
+           tit.includes('घर खर्च') || tit.includes('servicing') || tit.includes('सर्विसिंग');
   };
 
   const shopExpensesOnly = (gharKharchList || []).filter(e => !isPersonalExpense(e));
@@ -8323,7 +8327,12 @@ function MobileVyaparAppContent() {
                   <span className="text-[9px] text-rose-200/70 block">आज का उधार</span>
                 </div>
                 <div 
-                  onClick={() => handleToggleGharKharchLedger(true)}
+                  onClick={() => {
+                    fetchGharKharchData();
+                    setLedgerViewTab("all");
+                    setGharKharchMonthFilter("all");
+                    handleToggleGharKharchLedger(true);
+                  }}
                   className="bg-amber-500/20 p-2 rounded-xl backdrop-blur-xs cursor-pointer hover:bg-amber-500/30 transition border border-amber-400/30"
                   title="दुकान, घर खर्च व व्यापारी भुगतान विवरण देखें"
                 >
@@ -8739,7 +8748,7 @@ function MobileVyaparAppContent() {
                     onClick={() => {
                       fetchGharKharchData();
                       setLedgerViewTab("operating");
-                      setGharKharchMonthFilter(curYm);
+                      setGharKharchMonthFilter("all");
                       handleToggleGharKharchLedger(true);
                     }}
                     className="flex items-center gap-2.5 flex-1 cursor-pointer"
@@ -8768,7 +8777,7 @@ function MobileVyaparAppContent() {
                       onClick={() => {
                         fetchGharKharchData();
                         setLedgerViewTab("operating");
-                        setGharKharchMonthFilter(curYm);
+                        setGharKharchMonthFilter("all");
                         handleToggleGharKharchLedger(true);
                       }}
                       className="px-2.5 py-1.5 bg-white border border-indigo-200 text-indigo-900 font-bold text-[11px] rounded-xl shadow-xs hover:bg-indigo-50 transition cursor-pointer"
@@ -8802,13 +8811,14 @@ function MobileVyaparAppContent() {
               });
               const thisMonthVal = thisMonthDrawings.reduce((s, it) => s + (Number(it.amount) || 0), 0);
               const totalFamilyVal = (familyDrawingsOnly || []).reduce((s, it) => s + (Number(it.amount) || 0), 0);
+              const totalAllExpensesVal = (gharKharchList || []).reduce((s, it) => s + (Number(it.amount) || 0), 0);
               return (
                 <div className="p-3.5 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border border-amber-500/30 rounded-2xl flex justify-between items-center shadow-xs hover:border-amber-400 transition">
                   <div 
                     onClick={() => {
                       fetchGharKharchData();
-                      setLedgerViewTab("drawings");
-                      setGharKharchMonthFilter(curYm);
+                      setLedgerViewTab("all");
+                      setGharKharchMonthFilter("all");
                       handleToggleGharKharchLedger(true);
                     }}
                     className="flex items-center gap-2.5 flex-1 cursor-pointer"
@@ -8819,16 +8829,14 @@ function MobileVyaparAppContent() {
                     <div>
                       <div className="flex items-center gap-2">
                         <h4 className="font-extrabold text-xs text-amber-950">घर खर्च व फैमिली लेजर</h4>
-                        <span className="px-1.5 py-0.5 bg-amber-600 text-white font-black text-[9px] rounded-md" title={`ऑल-टाइम कुल: ₹ ${totalFamilyVal.toLocaleString('en-IN')}`}>
-                          इस माह ({curMonthName}): ₹ {thisMonthVal.toLocaleString('en-IN')}
+                        <span className="px-1.5 py-0.5 bg-amber-600 text-white font-black text-[9px] rounded-md" title={`कुल ऑल-टाइम खर्च: ₹ ${totalAllExpensesVal.toLocaleString('en-IN')}`}>
+                          कुल: ₹ {totalAllExpensesVal.toLocaleString('en-IN')}
                         </span>
                       </div>
                       <p className="text-[10px] text-amber-800 font-medium">
-                        {thisMonthDrawings.length > 0 
-                          ? `इस माह ${thisMonthDrawings.length} खर्चे • कुल ऑल-टाइम: ₹ ${totalFamilyVal.toLocaleString('en-IN')}`
-                          : (familyDrawingsOnly || []).length > 0
-                            ? `इस माह 0 खर्चे • ऑल-टाइम: ₹ ${totalFamilyVal.toLocaleString('en-IN')} (${(familyDrawingsOnly || []).length} खर्चे)`
-                            : 'राशन, दवाई, बिजली, स्कूल फीस व फैमिली खर्च'}
+                        {(gharKharchList || []).length > 0 
+                          ? `कुल ${(gharKharchList || []).length} खर्चे दर्ज • घर खर्च: ₹ ${totalFamilyVal.toLocaleString('en-IN')} (${(familyDrawingsOnly || []).length}) • दुकान: ₹ ${(totalAllExpensesVal - totalFamilyVal).toLocaleString('en-IN')}`
+                          : 'राशन, दवाई, बिजली, स्कूल फीस व फैमिली खर्च'}
                       </p>
                     </div>
                   </div>
@@ -8846,8 +8854,8 @@ function MobileVyaparAppContent() {
                     <button
                       onClick={() => {
                         fetchGharKharchData();
-                        setLedgerViewTab("drawings");
-                        setGharKharchMonthFilter(curYm);
+                        setLedgerViewTab("all");
+                        setGharKharchMonthFilter("all");
                         handleToggleGharKharchLedger(true);
                       }}
                       className="px-2.5 py-1.5 bg-white border border-amber-300 text-amber-900 font-bold text-[11px] rounded-xl shadow-xs hover:bg-amber-50 transition cursor-pointer"
@@ -8935,7 +8943,12 @@ function MobileVyaparAppContent() {
                   <div className="text-[9px] text-rose-600/80 mt-0.5">आज उधार दिया</div>
                 </div>
                 <div 
-                  onClick={() => handleToggleGharKharchLedger(true)}
+                  onClick={() => {
+                    fetchGharKharchData();
+                    setLedgerViewTab("all");
+                    setGharKharchMonthFilter("all");
+                    handleToggleGharKharchLedger(true);
+                  }}
                   className="bg-amber-50/70 p-2.5 rounded-xl border border-amber-200 cursor-pointer hover:bg-amber-100/60 transition active:scale-95"
                   title="दुकान व घर खर्च विवरण देखें"
                 >

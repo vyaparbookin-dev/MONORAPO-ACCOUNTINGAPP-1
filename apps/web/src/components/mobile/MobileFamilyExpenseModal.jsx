@@ -50,11 +50,9 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
   if (!isOpen) return null;
 
   const { selectedCompany } = useCompany() || {};
-  const [period, setPeriod] = useState("month");
-  const [startDate, setStartDate] = useState(
-    new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0]
-  );
-  const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
+  const [period, setPeriod] = useState("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [selectedMember, setSelectedMember] = useState("ALL");
   const [loading, setLoading] = useState(false);
   const [expenses, setExpenses] = useState([]);
@@ -77,13 +75,14 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
     fetchExpenses();
   }, [startDate, endDate]);
 
-  const [selectedMonthStr, setSelectedMonthStr] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  });
+  const [selectedMonthStr, setSelectedMonthStr] = useState("all");
 
   const availableMonths = (() => {
     const list = [];
+    list.push({
+      value: "all",
+      label: "🔄 सभी महीने (All Time)"
+    });
     const curr = new Date();
     for (let i = -11; i <= 2; i++) {
       const d = new Date(curr.getFullYear(), curr.getMonth() + i, 1);

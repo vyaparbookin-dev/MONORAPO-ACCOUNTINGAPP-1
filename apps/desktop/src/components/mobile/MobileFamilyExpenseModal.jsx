@@ -15,11 +15,14 @@ import {
   DollarSign,
   Heart,
   CheckCircle2,
-  X
+  Building2,
+  X,
+  Sparkles
 } from "lucide-react";
 import api from "../../services/api";
 import { useCompany } from "../../contexts/CompanyContext";
 import { deduplicateExpenses } from "../../utils/deduplicateExpenses";
+import WealthTrackerExportModal from "../wealth_tracker/WealthTrackerExportModal";
 
 const DEFAULT_MEMBERS = [
   "खुद (Self)",
@@ -47,14 +50,13 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
   if (!isOpen) return null;
 
   const { selectedCompany } = useCompany() || {};
-  const [period, setPeriod] = useState("month");
-  const [startDate, setStartDate] = useState(
-    new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0]
-  );
-  const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
+  const [period, setPeriod] = useState("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [selectedMember, setSelectedMember] = useState("ALL");
   const [loading, setLoading] = useState(false);
   const [expenses, setExpenses] = useState([]);
+  const [isWealthTrackerOpen, setIsWealthTrackerOpen] = useState(false);
 
   // Add Expense Dialog state
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -72,6 +74,43 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
   useEffect(() => {
     fetchExpenses();
   }, [startDate, endDate]);
+
+  const [selectedMonthStr, setSelectedMonthStr] = useState("all");
+
+  const availableMonths = (() => {
+    const list = [];
+    list.push({
+      value: "all",
+      label: "🔄 सभी महीने (All Time)"
+    });
+    const curr = new Date();
+    for (let i = -11; i <= 2; i++) {
+      const d = new Date(curr.getFullYear(), curr.getMonth() + i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const hindiMonth = [
+        "जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून",
+        "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"
+      ][d.getMonth()];
+      list.push({
+        value: ym,
+        label: `${hindiMonth} ${d.getFullYear()}`
+      });
+    }
+    return list.reverse();
+  })();
+
+  const handleMonthSelect = (ym) => {
+    setSelectedMonthStr(ym);
+    if (ym === "all") {
+      handlePeriodChange("all");
+      return;
+    }
+    setPeriod("month");
+    const [y, m] = ym.split("-").map(Number);
+    const daysInM = new Date(y, m, 0).getDate();
+    setStartDate(`${ym}-01`);
+    setEndDate(`${ym}-${String(daysInM).padStart(2, "0")}`);
+  };
 
   const handlePeriodChange = (p) => {
     setPeriod(p);
@@ -105,11 +144,12 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
 
   const isFamilyExpense = (e) => {
     const type = String(e.expenseType || e.type || "").toLowerCase();
+    if (type === "operating") return false; // Strict separation: shop expense is NOT family expense
     const cat = String(e.category || "").toLowerCase();
     const title = String(e.title || e.description || "").toLowerCase();
     const member = String(e.familyMember || "").trim();
 
-    if (member) return true;
+    if (member && member !== "Shop") return true;
     if (type.includes("drawing") || type.includes("ghar") || type.includes("personal") || type.includes("family")) return true;
     if (cat.includes("ghar") || cat.includes("home") || cat.includes("family") || cat.includes("personal") || cat.includes("drawing") || cat.includes("राशन") || cat.includes("किराना") || cat.includes("दवाई") || cat.includes("दूध") || cat.includes("फीस")) return true;
     if (title.includes("ghar") || title.includes("घर") || title.includes("personal") || title.includes("राशन") || title.includes("मम्मी") || title.includes("पापा") || title.includes("बच्चे")) return true;
@@ -244,7 +284,7 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
   const handleDeleteExpense = (id) => {
     if (!confirm("क्या आप इस फैमिली खर्च को हटाना चाहते हैं?")) return;
     try {
-      api.delete(`/api/expense/${id}`).catch(() => {});
+      api.delete(`/api/expenses/${id}`).catch(() => api.delete(`/api/expense/${id}`)).catch(() => {});
       let localList = [];
       const stored = localStorage.getItem("vb_local_expenses") || localStorage.getItem("expenses");
       if (stored) localList = JSON.parse(stored) || [];
@@ -253,6 +293,52 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
       setExpenses((prev) => prev.filter((x) => (x.id || x._id) !== id));
     } catch (err) {
       console.error("Delete error:", err);
+    }
+  };
+
+  const handleConvertToShopExpense = async (expense) => {
+    const id = expense._id || expense.id;
+    if (!id) return;
+    const confirmMsg = `क्या आप "${expense.title || 'बिल'}" (₹${Number(expense.amount || 0).toLocaleString('en-IN')}) को घर खर्च से हटाकर "🏢 दुकान खर्च (Shop Business Expense)" में बदलना चाहते हैं?`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      // 1. Update on backend API
+      const updatedPayload = {
+        title: expense.title || "दुकान बिजली बिल",
+        amount: Number(expense.amount),
+        expenseType: "operating", // Converts from drawings to operating
+        category: expense.category?.includes("बिजली") ? "बिजली बिल" : (expense.category || "बिजली व पावर"),
+        familyMember: "",
+        description: expense.description ? `${expense.description} (घर खर्च से दुकान खर्च में बदला गया)` : "दुकान संचालन खर्च",
+        date: expense.date || new Date()
+      };
+
+      await api.put(`/api/expenses/${id}`, updatedPayload).catch(() => {
+        return api.put(`/api/expense/${id}`, updatedPayload).catch(() => null);
+      });
+
+      // 2. Update localStorage
+      let localList = [];
+      const stored = localStorage.getItem("vb_local_expenses") || localStorage.getItem("expenses");
+      if (stored) localList = JSON.parse(stored) || [];
+      const updatedList = localList.map(item => {
+        if ((item._id || item.id) === id) {
+          return {
+            ...item,
+            ...updatedPayload
+          };
+        }
+        return item;
+      });
+      localStorage.setItem("vb_local_expenses", JSON.stringify(updatedList));
+
+      // 3. Remove from active family expense list
+      setExpenses((prev) => prev.filter((x) => (x.id || x._id) !== id));
+      alert(`✅ "${expense.title || 'बिल'}" (₹${expense.amount}) सफलतापूर्वक दुकान खर्च (Shop Business Expense) में बदल दिया गया!\n\nअब यह P&L रिपोर्ट में दुकान संचालन खर्च में जुड़ेगा।`);
+    } catch (err) {
+      console.error("Convert error:", err);
+      alert("खर्च बदलने में समस्या आई: " + err.message);
     }
   };
 
@@ -323,6 +409,14 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
 
         <div className="flex items-center gap-1.5">
           <button
+            onClick={() => setIsWealthTrackerOpen(true)}
+            className="p-2 rounded-xl bg-violet-600 hover:bg-violet-700 active:scale-95 text-white transition flex items-center gap-1.5 text-xs font-bold shadow-xs cursor-pointer"
+            title="Export for Wealth Tracker"
+          >
+            <Sparkles size={16} />
+            <span className="hidden sm:inline">Wealth Tracker</span>
+          </button>
+          <button
             onClick={shareWhatsApp}
             className="p-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white transition flex items-center gap-1 text-xs font-bold shadow-xs cursor-pointer"
             title="WhatsApp Share"
@@ -340,26 +434,42 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
         </div>
       </div>
 
-      {/* Period Selector Tabs */}
-      <div className="bg-white border-b border-slate-200 px-3 py-2 flex items-center gap-2 overflow-x-auto shrink-0 scrollbar-none">
-        {[
-          { id: "today", label: "📅 आज" },
-          { id: "month", label: "🗓️ इस महीने" },
-          { id: "year", label: "📈 इस वर्ष" },
-          { id: "all", label: "📊 कुल (All Time)" }
-        ].map((p) => (
-          <button
-            key={p.id}
-            onClick={() => handlePeriodChange(p.id)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition cursor-pointer ${
-              period === p.id
-                ? "bg-rose-700 text-white shadow-xs"
-                : "bg-slate-100 text-slate-700 active:bg-slate-200"
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
+      {/* Period Selector Tabs & Month Dropdown */}
+      <div className="bg-white border-b border-slate-200 px-3 py-2 flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none flex-1 min-w-0">
+          {[
+            { id: "today", label: "📅 आज" },
+            { id: "month", label: "🗓️ इस महीने" },
+            { id: "year", label: "📈 इस वर्ष" },
+            { id: "all", label: "📊 सभी (All)" }
+          ].map((p) => (
+            <button
+              key={p.id}
+              onClick={() => handlePeriodChange(p.id)}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition cursor-pointer ${
+                period === p.id
+                  ? "bg-rose-700 text-white shadow-xs"
+                  : "bg-slate-100 text-slate-700 active:bg-slate-200"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Specific Month Selector */}
+        <select
+          value={selectedMonthStr}
+          onChange={(e) => handleMonthSelect(e.target.value)}
+          className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl px-2 py-1.5 border border-slate-200 outline-none cursor-pointer shrink-0 max-w-[145px] truncate"
+        >
+          <option value="all">माह चुनें (All)</option>
+          {availableMonths.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Main Content Area */}
@@ -562,19 +672,29 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1.5 shrink-0">
                       <div className="text-right">
                         <div className="text-sm font-black text-rose-600">
                           ₹{Number(e.amount || 0).toLocaleString("en-IN")}
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleDeleteExpense(id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
-                        title="हटाएं"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleConvertToShopExpense(e)}
+                          className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-200 flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                          title="दुकान खर्च में बदलें"
+                        >
+                          <Building2 size={12} />
+                          <span>दुकान खर्च बनाएं</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteExpense(id)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
+                          title="हटाएं"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -740,6 +860,15 @@ export default function MobileFamilyExpenseModal({ isOpen, onClose, onOpenSaving
           </div>
         </div>
       )}
+
+      {/* 📊 Wealth Tracker Export Modal */}
+      <WealthTrackerExportModal
+        isOpen={isWealthTrackerOpen}
+        onClose={() => setIsWealthTrackerOpen(false)}
+        expenses={expenses}
+        companyName={selectedCompany?.name || "VyaparBook"}
+        defaultType="drawings"
+      />
     </div>
   );
 }
