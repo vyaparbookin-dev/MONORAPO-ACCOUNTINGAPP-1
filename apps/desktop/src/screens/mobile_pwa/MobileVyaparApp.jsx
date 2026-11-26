@@ -462,6 +462,7 @@ function MobileVyaparAppContent() {
 
   // 🏢 5-Data Business Profile Completion Tracker State
   const [showBusinessProfileModal, setShowBusinessProfileModal] = useState(false);
+  const [profileFormLogo, setProfileFormLogo] = useState("");
   const [profileFormName, setProfileFormName] = useState("");
   const [profileFormPhone, setProfileFormPhone] = useState("");
   const [profileFormAddress, setProfileFormAddress] = useState("");
@@ -1644,6 +1645,7 @@ function MobileVyaparAppContent() {
     try {
       const co = (selectedCompany && typeof selectedCompany === "object") ? selectedCompany : {};
       const uBank = (Array.isArray(bankAccounts) && bankAccounts[0]) || {};
+      setProfileFormLogo(String(co.logo || co.logoUrl || ""));
       setProfileFormName(String(co.name || co.companyName || co.businessName || ""));
       setProfileFormPhone(String(co.phone || co.mobileNumber || user?.phone || ""));
       setProfileFormAddress(String(co.address || co.city || ""));
@@ -1676,6 +1678,8 @@ function MobileVyaparAppContent() {
         name: profileFormName.trim(),
         companyName: profileFormName.trim(),
         businessName: profileFormName.trim(),
+        logo: profileFormLogo.trim(),
+        logoUrl: profileFormLogo.trim(),
         phone: profileFormPhone.trim(),
         mobileNumber: profileFormPhone.trim(),
         address: profileFormAddress.trim(),
@@ -7985,6 +7989,15 @@ function MobileVyaparAppContent() {
       {/* 📱 1. TOP WHITE HEADER */}
       <header className="sticky top-0 z-30 bg-white border-b border-slate-100 px-4 py-3 flex justify-between items-center shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
         <div className="flex items-center gap-2">
+          {selectedCompany?.logo && (
+            <img 
+              src={selectedCompany.logo} 
+              alt="Shop Logo" 
+              onClick={handleOpenBusinessProfileModal}
+              className="w-7 h-7 rounded-lg object-contain bg-white border border-slate-200 shadow-xs cursor-pointer shrink-0" 
+              title="दुकान प्रोफाइल देखें/बदलें"
+            />
+          )}
           <div className="flex items-center gap-1.5 cursor-pointer" onClick={() => setShowCompanySelectModal(true)}>
             <h1 className="font-extrabold text-[15px] tracking-wide text-[#1E293B]">
               {companyDisplayName.toUpperCase()}
@@ -17957,6 +17970,54 @@ function MobileVyaparAppContent() {
 
             {/* Profile Form */}
             <form onSubmit={handleSaveBusinessProfile} className="space-y-3">
+              {/* 🖼️ SHOP / BUSINESS LOGO */}
+              <div className="p-3 bg-indigo-50/60 border border-indigo-100 rounded-2xl flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-14 h-14 rounded-2xl bg-white border border-indigo-200 flex items-center justify-center overflow-hidden shadow-xs relative shrink-0">
+                    {profileFormLogo ? (
+                      <img src={profileFormLogo} alt="Shop Logo" className="w-full h-full object-contain" />
+                    ) : (
+                      <span className="text-2xl">🏢</span>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="font-extrabold text-xs text-indigo-950 flex items-center gap-1">
+                      <span>दुकान का लोगो (Shop Logo)</span>
+                      {profileFormLogo && <span className="text-emerald-600 text-[10px]">✓</span>}
+                    </h4>
+                    <p className="text-[10px] text-indigo-800 truncate">बिल व हेडर पर आपकी दुकान का लोगो दिखेगा</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <label className="py-1.5 px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[11px] font-black cursor-pointer shadow-xs transition active:scale-95">
+                    <span>{profileFormLogo ? "बदलें" : "+ लोगो चुनें"}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const comp = await compressImageFile(file, 400, 0.85);
+                        if (comp) setProfileFormLogo(comp);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {profileFormLogo && (
+                    <button
+                      type="button"
+                      onClick={() => setProfileFormLogo("")}
+                      className="p-1.5 bg-rose-100 text-rose-700 hover:bg-rose-200 rounded-xl transition cursor-pointer"
+                      title="लोगो हटाएं"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {/* 1. Business Name */}
               <div className="space-y-1">
                 <label className="text-[11px] font-black text-slate-700 flex items-center justify-between">

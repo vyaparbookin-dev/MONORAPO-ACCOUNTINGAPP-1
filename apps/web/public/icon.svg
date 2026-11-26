@@ -1,5 +1,81 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <rect width="512" height="512" rx="128" fill="#7c3aed"/>
-  <path d="M120 160 L256 380 L392 160 Z" fill="#ffffff"/>
-  <circle cx="256" cy="190" r="40" fill="#facc15"/>
+  <defs>
+    <!-- Background Gradient: Rich Royal Indigo to Deep Blue -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E1B4B"/>
+      <stop offset="45%" stop-color="#312E81"/>
+      <stop offset="100%" stop-color="#4338CA"/>
+    </linearGradient>
+
+    <!-- Gold Metallic Gradient for Rupee & Accents -->
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="40%" stop-color="#EAB308"/>
+      <stop offset="100%" stop-color="#CA8A04"/>
+    </linearGradient>
+
+    <!-- Emerald Glow Gradient -->
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34D399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+
+    <!-- Drop Shadow Filter -->
+    <filter id="shadow" x="-20%" y="-20%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#0F172A" flood-opacity="0.55"/>
+    </filter>
+
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Squircle Base with 3D Bevel -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bgGrad)"/>
+  <rect x="18" y="18" width="476" height="476" rx="110" fill="none" stroke="#6366F1" stroke-width="4" stroke-opacity="0.4"/>
+
+  <!-- Subtle Accounting Grid lines in background -->
+  <line x1="80" y1="120" x2="432" y2="120" stroke="#6366F1" stroke-width="2" stroke-opacity="0.15" stroke-dasharray="6 6"/>
+  <line x1="80" y1="200" x2="432" y2="200" stroke="#6366F1" stroke-width="2" stroke-opacity="0.15" stroke-dasharray="6 6"/>
+  <line x1="80" y1="280" x2="432" y2="280" stroke="#6366F1" stroke-width="2" stroke-opacity="0.15" stroke-dasharray="6 6"/>
+  <line x1="80" y1="360" x2="432" y2="360" stroke="#6366F1" stroke-width="2" stroke-opacity="0.15" stroke-dasharray="6 6"/>
+
+  <!-- 3D Khata Book / Ledger Symbol with Shadow -->
+  <g filter="url(#shadow)">
+    <!-- Ledger Book Cover (Emerald Teal) -->
+    <path d="M120 108 C120 96, 132 88, 144 88 L360 88 C384 88, 400 104, 400 128 L400 384 C400 408, 384 424, 360 424 L144 424 C132 424, 120 416, 120 404 Z" fill="#0F766E"/>
+    
+    <!-- Ledger Pages edge (White & Gold stacked paper) -->
+    <path d="M136 100 L356 100 C374 100, 388 114, 388 132 L388 380 C388 398, 374 412, 356 412 L136 412 Z" fill="#F8FAFC"/>
+    <path d="M142 106 L352 106 C368 106, 380 118, 380 134 L380 374 C380 390, 368 402, 352 402 L142 402 Z" fill="#E2E8F0"/>
+    
+    <!-- Book Front Cover -->
+    <path d="M146 110 L346 110 C364 110, 376 122, 376 140 L376 368 C376 386, 364 398, 346 398 L146 398 Z" fill="url(#emeraldGrad)"/>
+
+    <!-- Spine Binding -->
+    <rect x="120" y="88" width="34" height="336" rx="8" fill="#134E4A"/>
+    <line x1="137" y1="96" x2="137" y2="416" stroke="#2DD4BF" stroke-width="3" stroke-opacity="0.4"/>
+
+    <!-- Golden Bookmark Ribbon Hanging Down -->
+    <polygon points="310,110 338,110 338,200 324,186 310,200" fill="url(#goldGrad)" filter="url(#glow)"/>
+
+    <!-- Embossed Golden Indian Rupee Symbol (₹) -->
+    <g transform="translate(186, 168) scale(1.1)" filter="url(#glow)">
+      <!-- Top Horizontal Bar 1 -->
+      <rect x="16" y="16" width="96" height="18" rx="9" fill="url(#goldGrad)"/>
+      <!-- Top Horizontal Bar 2 -->
+      <rect x="16" y="46" width="76" height="18" rx="9" fill="url(#goldGrad)"/>
+      <!-- Upper Curve -->
+      <path d="M16 46 L58 46 C76 46, 92 56, 92 76 C92 96, 76 108, 56 108 L16 108" fill="none" stroke="url(#goldGrad)" stroke-width="18" stroke-linecap="round"/>
+      <!-- Downward Slanted Leg -->
+      <line x1="48" y1="102" x2="98" y2="164" stroke="url(#goldGrad)" stroke-width="20" stroke-linecap="round"/>
+    </g>
+
+    <!-- Upward Growth Sparkle Arrow -->
+    <g transform="translate(320, 320)">
+      <circle cx="16" cy="16" r="28" fill="#1E1B4B" fill-opacity="0.6"/>
+      <path d="M6 24 L26 8 M26 8 L14 8 M26 8 L26 20" fill="none" stroke="#FDE047" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
 </svg>
