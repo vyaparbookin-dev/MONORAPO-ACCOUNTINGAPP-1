@@ -335,6 +335,12 @@ class StorageManager {
 
     // 2. Authoritative server merge: When server parties are available, SERVER BALANCES ARE CANONICAL!
     const hasServerParties = Array.isArray(serverParties) && serverParties.length > 0;
+    const serverIdSet = new Set(
+      (hasServerParties ? serverParties : [])
+        .map(sp => String(sp._id || sp.id || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+
     (hasServerParties ? serverParties : []).forEach(sp => {
       const normServer = this.normalizeParty(sp);
       if (!normServer || normServer.isActive === false || normServer.isDeleted === true) return;
@@ -388,8 +394,26 @@ class StorageManager {
       }
     });
 
-    this.saveParties(companyId, partyList);
-    return partyList;
+    // 3. Purge stale local parties that were deleted on server
+    const finalPartyList = hasServerParties
+      ? partyList.filter(p => {
+          if (!p || p.isActive === false || p.isDeleted === true) return false;
+          const pid = String(p._id || p.id || '').trim().toLowerCase();
+          const isExplicitLocalOffline = Boolean(
+            (p.isOfflineCreated || p.isOffline || p.isLocalOnly || pid.startsWith('pty_') || pid.startsWith('temp_') || pid.startsWith('party_')) &&
+            p.isSynced !== true
+          );
+          if (isExplicitLocalOffline) return true;
+          const isServerFormatId = (pid.length === 24 && /^[0-9a-f]{24}$/i.test(pid)) || /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(pid);
+          if (isServerFormatId) {
+            return serverIdSet.has(pid);
+          }
+          return true;
+        })
+      : partyList;
+
+    this.saveParties(companyId, finalPartyList);
+    return finalPartyList;
   }
 
   // ==========================================

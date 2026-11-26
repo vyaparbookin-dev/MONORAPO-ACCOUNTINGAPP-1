@@ -1373,17 +1373,34 @@ function MobileVyaparAppContent() {
 
   const handleToggleGharKharchEntry = (show) => {
     setShowGharKharchModal(show);
-    sessionStorage.setItem("mobile_show_gharkharch_entry", show ? "true" : "false");
+    if (!show) {
+      sessionStorage.removeItem("mobile_show_gharkharch_entry");
+    } else {
+      sessionStorage.setItem("mobile_show_gharkharch_entry", "true");
+    }
   };
 
   const handleToggleGharKharchLedger = (show) => {
     setShowGharKharchLedgerModal(show);
-    sessionStorage.setItem("mobile_show_gharkharch_ledger", show ? "true" : "false");
+    if (!show) {
+      sessionStorage.removeItem("mobile_show_gharkharch_ledger");
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has("view") || url.searchParams.has("tab") || url.hash.includes("ghar-kharch")) {
+          url.searchParams.delete("view");
+          url.searchParams.delete("tab");
+          if (url.hash.includes("ghar-kharch")) url.hash = "";
+          window.history.replaceState({}, "", url.toString());
+        }
+      }
+    } else {
+      sessionStorage.setItem("mobile_show_gharkharch_ledger", "true");
+    }
   };
 
 
   // ==================== GHAR KHARCH (HOUSEHOLD & FAMILY EXPENSE) STATE ====================
-  const [showGharKharchModal, setShowGharKharchModal] = useState(() => sessionStorage.getItem("mobile_show_gharkharch_entry") === "true");
+  const [showGharKharchModal, setShowGharKharchModal] = useState(false);
   const [showGharKharchLedgerModal, setShowGharKharchLedgerModal] = useState(() => {
     if (typeof window !== "undefined") {
       const sp = new URLSearchParams(window.location.search);
@@ -1391,7 +1408,7 @@ function MobileVyaparAppContent() {
         return true;
       }
     }
-    return sessionStorage.getItem("mobile_show_gharkharch_ledger") === "true";
+    return false;
   });
   const [gharKharchType, setGharKharchType] = useState("drawings"); // 'drawings' (Ghar Kharch) or 'operating' (Dukaan Kharch)
   const [gharKharchFlow, setGharKharchFlow] = useState("given"); // 'given' (पैसा दिया / खर्च) or 'received' (पैसा लिया / उधार/कैपिटल)
@@ -1410,12 +1427,12 @@ function MobileVyaparAppContent() {
   const [showCustomerAddressInput, setShowCustomerAddressInput] = useState(false);
 
   // ==================== NATIVE MOBILE REPORTS MODALS ====================
-  const [showDayBookModal, setShowDayBookModal] = useState(() => sessionStorage.getItem("mobile_show_daybook") === "true");
-  const [showProfitLossModal, setShowProfitLossModal] = useState(() => sessionStorage.getItem("mobile_show_profitloss") === "true");
-  const [showFamilyExpenseModal, setShowFamilyExpenseModal] = useState(() => sessionStorage.getItem("mobile_show_family_expense") === "true");
-  const [showSavingsModal, setShowSavingsModal] = useState(() => sessionStorage.getItem("mobile_show_savings") === "true");
-  const [showBankCCModal, setShowBankCCModal] = useState(() => sessionStorage.getItem("mobile_show_bank_cc") === "true");
-  const [showQuotationModal, setShowQuotationModal] = useState(() => sessionStorage.getItem("mobile_show_quotations") === "true");
+  const [showDayBookModal, setShowDayBookModal] = useState(false);
+  const [showProfitLossModal, setShowProfitLossModal] = useState(false);
+  const [showFamilyExpenseModal, setShowFamilyExpenseModal] = useState(false);
+  const [showSavingsModal, setShowSavingsModal] = useState(false);
+  const [showBankCCModal, setShowBankCCModal] = useState(false);
+  const [showQuotationModal, setShowQuotationModal] = useState(false);
   const [quotationsList, setQuotationsList] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("vb_local_quotations") || "[]");
@@ -1726,7 +1743,7 @@ function MobileVyaparAppContent() {
   }, [activeMobileReport]);
 
   // ==================== PAGARBOOK STAFF & SALARY STATE ====================
-  const [showPagarBookModal, setShowPagarBookModal] = useState(() => sessionStorage.getItem("mobile_show_pagarbook") === "true");
+  const [showPagarBookModal, setShowPagarBookModal] = useState(false);
   const [pagarBookMonth, setPagarBookMonth] = useState(new Date().getMonth() + 1);
   const [pagarBookYear, setPagarBookYear] = useState(new Date().getFullYear());
   const defaultPagarBookData = {
@@ -1891,6 +1908,15 @@ function MobileVyaparAppContent() {
     if (typeof window !== "undefined") {
       const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
       setIsPwaInstalled(!!isStandalone);
+      sessionStorage.removeItem("mobile_show_gharkharch_ledger");
+      sessionStorage.removeItem("mobile_show_gharkharch_entry");
+      sessionStorage.removeItem("mobile_show_daybook");
+      sessionStorage.removeItem("mobile_show_profitloss");
+      sessionStorage.removeItem("mobile_show_pagarbook");
+      sessionStorage.removeItem("mobile_show_family_expense");
+      sessionStorage.removeItem("mobile_show_savings");
+      sessionStorage.removeItem("mobile_show_bank_cc");
+      sessionStorage.removeItem("mobile_show_quotations");
     }
     processOfflineSyncQueue();
     fetchLiveDashboardData();
@@ -2730,6 +2756,7 @@ function MobileVyaparAppContent() {
   const fetchLiveDashboardData = async (isSilent = false) => {
     if (!isSilent) setLoading(true);
     try {
+      fetchGharKharchData(true);
       const [billsRes, partiesRes, invRes, catRes, brandRes, daybookRes] = await Promise.allSettled([
         api.get("/api/billing?limit=500"),
         api.get("/api/party").catch(() => api.get("/api/parties")),
