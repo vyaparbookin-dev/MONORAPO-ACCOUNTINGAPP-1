@@ -1826,7 +1826,7 @@ export const setPartyOpeningBalance = async (req, res) => {
     }
     if (!party) return res.status(404).json({ success: false, error: "पार्टी नहीं मिली" });
 
-    const { amount, direction, date, notes } = req.body;
+    const { amount, direction, date, notes, billImageUrl, billImageUrls } = req.body;
     const isSupplier = (party.partyType === "supplier" || party.type === "supplier");
 
     // Old opening balance previously recorded
@@ -1858,7 +1858,20 @@ export const setPartyOpeningBalance = async (req, res) => {
       party.openingBalanceDate = new Date(date);
       party.createdAt = new Date(date);
     }
+    if (billImageUrl) {
+      party.billImageUrl = billImageUrl;
+      if (!party.billImageUrls) party.billImageUrls = [];
+      if (!party.billImageUrls.includes(billImageUrl)) party.billImageUrls.push(billImageUrl);
+    }
+    if (Array.isArray(billImageUrls) && billImageUrls.length > 0) {
+      party.billImageUrls = Array.from(new Set([...(party.billImageUrls || []), ...billImageUrls]));
+      if (!party.billImageUrl) party.billImageUrl = party.billImageUrls[0];
+    }
     party.updatedAt = new Date();
+
+    const photoUpdates = {};
+    if (billImageUrl) photoUpdates.billImageUrl = billImageUrl;
+    if (Array.isArray(billImageUrls) && billImageUrls.length > 0) photoUpdates.billImageUrls = billImageUrls;
 
     if (isMongoId && typeof party.save === 'function') {
       await party.save();
@@ -1870,6 +1883,7 @@ export const setPartyOpeningBalance = async (req, res) => {
           currentBalance: updatedBalance, 
           balance: updatedBalance, 
           ...(date ? { openingBalanceDate: new Date(date), createdAt: new Date(date) } : {}),
+          ...photoUpdates,
           updatedAt: new Date() 
         }
       );
@@ -1884,6 +1898,15 @@ export const setPartyOpeningBalance = async (req, res) => {
           mP.openingBalanceDate = new Date(date);
           mP.createdAt = new Date(date);
         }
+        if (billImageUrl) {
+          mP.billImageUrl = billImageUrl;
+          if (!mP.billImageUrls) mP.billImageUrls = [];
+          if (!mP.billImageUrls.includes(billImageUrl)) mP.billImageUrls.push(billImageUrl);
+        }
+        if (Array.isArray(billImageUrls) && billImageUrls.length > 0) {
+          mP.billImageUrls = Array.from(new Set([...(mP.billImageUrls || []), ...billImageUrls]));
+          if (!mP.billImageUrl) mP.billImageUrl = mP.billImageUrls[0];
+        }
         mP.updatedAt = new Date();
         await mP.save();
       }
@@ -1896,6 +1919,7 @@ export const setPartyOpeningBalance = async (req, res) => {
         opening_balance: Math.abs(newOpeningVal),
         current_balance: updatedBalance,
         ...(date ? { created_at: new Date(date).toISOString() } : {}),
+        ...(billImageUrl ? { bill_image_url: billImageUrl } : {}),
         updated_at: new Date().toISOString()
       }).eq("id", sbId);
     }

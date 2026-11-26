@@ -56,7 +56,12 @@ import {
   Check,
   Zap,
   Copy,
-  History
+  History,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  ExternalLink,
+  Paperclip
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useNavigate } from "react-router-dom";
@@ -948,6 +953,8 @@ function MobileVyaparAppContent() {
     } else if (cameraTarget === "missing_bill") {
       setAddBillImage(imgData);
       setAddBillImagePreview(imgData);
+    } else if (cameraTarget === "old_hisab") {
+      setOldHisabImage(imgData);
     } else if (cameraTarget === "party_tx_new") {
       setPartyTxImages(prev => Array.from(new Set([...(prev || []), imgData])).slice(0, 5));
     } else if (cameraTarget.startsWith("party_tx_")) {
@@ -1067,12 +1074,15 @@ function MobileVyaparAppContent() {
   const [oldHisabDirection, setOldHisabDirection] = useState('positive'); // 'positive' = लेने हैं, 'negative' = देने हैं
   const [oldHisabDate, setOldHisabDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [oldHisabNotes, setOldHisabNotes] = useState('');
+  const [oldHisabImage, setOldHisabImage] = useState('');
   const [savingOldHisab, setSavingOldHisab] = useState(false);
 
   const [previewBillImage, setPreviewBillImage] = useState(null);
   const [previewImageList, setPreviewImageList] = useState([]);
   const [previewImageIndex, setPreviewImageIndex] = useState(0);
   const [previewTargetTxId, setPreviewTargetTxId] = useState(null);
+  const [previewZoom, setPreviewZoom] = useState(1.0);
+  const [previewRotation, setPreviewRotation] = useState(0);
 
   // 🏭 Dedicated Vendor / Supplier Workflow States
   const [showVendorForm, setShowVendorForm] = useState(false);
@@ -5922,6 +5932,8 @@ function MobileVyaparAppContent() {
     const opDate = party.openingBalanceDate || party.openingDate || party.createdAt;
     setOldHisabDate(getLocalYmd(opDate));
     setOldHisabNotes(party.notes || 'प्रारंभिक पुराना हिसाब / बहीखाता बकाया');
+    const existingImg = party.billImageUrl || (party.billImageUrls && party.billImageUrls[0]) || '';
+    setOldHisabImage(existingImg);
     setShowOldHisabModal(true);
   };
 
@@ -5942,7 +5954,8 @@ function MobileVyaparAppContent() {
         amount: amt,
         direction: oldHisabDirection,
         date: isoDate,
-        notes: oldHisabNotes.trim()
+        notes: oldHisabNotes.trim(),
+        billImageUrl: oldHisabImage || undefined
       };
 
       await api.post(`/api/party/${pId}/opening-balance`, payload).catch(() =>
@@ -5955,7 +5968,8 @@ function MobileVyaparAppContent() {
         ...prev,
         openingBalance: amt,
         openingBalanceDate: isoDate,
-        notes: payload.notes
+        notes: payload.notes,
+        billImageUrl: oldHisabImage || undefined
       }) : prev);
 
       setParties(prev => {
@@ -5966,7 +5980,8 @@ function MobileVyaparAppContent() {
               ...p,
               openingBalance: amt,
               openingBalanceDate: isoDate,
-              notes: payload.notes
+              notes: payload.notes,
+              billImageUrl: oldHisabImage || undefined
             };
           }
           return p;
@@ -5995,6 +6010,7 @@ function MobileVyaparAppContent() {
     if (!selectedPartyDetail) return;
     if (!window.confirm("क्या आप इस पार्टी का पुराना हिसाब हटाकर ₹0 करना चाहते हैं?")) return;
     setOldHisabAmount('0');
+    setOldHisabImage('');
     setSavingOldHisab(true);
     try {
       const pId = selectedPartyDetail._id || selectedPartyDetail.id;
@@ -13914,48 +13930,82 @@ function MobileVyaparAppContent() {
 
                     {/* Attached files strip */}
                     {partyTxImages.length > 0 && (
-                      <div className="flex items-center gap-2 overflow-x-auto py-1">
-                        {partyTxImages.map((fileData, fIdx) => (
-                          <div key={fIdx} className="relative shrink-0">
-                            {isPdfUrl(fileData) ? (
-                              <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-300 flex flex-col items-center justify-center p-1">
-                                <span className="text-lg">📄</span>
-                                <span className="text-[7px] font-black text-rose-700 uppercase">PDF #{fIdx + 1}</span>
-                              </div>
-                            ) : (
-                              <img
-                                src={getWebSafeImageUrl(fileData)}
-                                alt={`Bill ${fIdx + 1}`}
-                                className="w-12 h-12 rounded-xl object-cover border border-indigo-300 shadow-2xs"
-                              />
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => setPartyTxImages(prev => prev.filter((_, i) => i !== fIdx))}
-                              className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-rose-600 text-white rounded-full text-[10px] font-black flex items-center justify-center cursor-pointer shadow hover:bg-rose-700"
-                              title="यह फाइल हटाएं"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ))}
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 overflow-x-auto py-1">
+                          {partyTxImages.map((fileData, fIdx) => (
+                            <div key={fIdx} className="relative shrink-0">
+                              {isPdfUrl(fileData) ? (
+                                <div 
+                                  onClick={() => {
+                                    setPreviewBillImage(fileData);
+                                    setPreviewImageList(partyTxImages);
+                                    setPreviewImageIndex(fIdx);
+                                    setPreviewZoom(1.0);
+                                    setPreviewRotation(0);
+                                  }}
+                                  className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-300 flex flex-col items-center justify-center p-1 cursor-pointer hover:bg-rose-100 transition shadow-2xs"
+                                  title="बड़ा देखने व ज़ूम करने के लिए क्लिक करें"
+                                >
+                                  <span className="text-lg">📄</span>
+                                  <span className="text-[7px] font-black text-rose-700 uppercase">PDF #{fIdx + 1}</span>
+                                </div>
+                              ) : (
+                                <img
+                                  src={getWebSafeImageUrl(fileData)}
+                                  alt={`Bill ${fIdx + 1}`}
+                                  onClick={() => {
+                                    setPreviewBillImage(fileData);
+                                    setPreviewImageList(partyTxImages);
+                                    setPreviewImageIndex(fIdx);
+                                    setPreviewZoom(1.0);
+                                    setPreviewRotation(0);
+                                  }}
+                                  className="w-12 h-12 rounded-xl object-cover border border-indigo-300 shadow-2xs cursor-pointer hover:opacity-90 hover:scale-105 transition"
+                                  title="बड़ा देखने व ज़ूम करने के लिए क्लिक करें"
+                                />
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setPartyTxImages(prev => prev.filter((_, i) => i !== fIdx))}
+                                className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-rose-600 text-white rounded-full text-[10px] font-black flex items-center justify-center cursor-pointer shadow hover:bg-rose-700"
+                                title="यह फाइल हटाएं"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* AI auto-digitize trigger from attached files */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOcrBillType(partyTxType === 'paid' ? 'purchase' : 'sale');
+                            handleProcessBillImages(null, partyTxImages);
+                          }}
+                          className="w-full py-1.5 px-3 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 text-white rounded-xl text-xs font-black shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95"
+                          title="इस बिल/पर्ची से सामान व रकम निकाल कर पक्का डिजिटल बिल बनाएं"
+                        >
+                          <Sparkles size={13} />
+                          <span>🤖 इस संलग्न फाइल से डिजिटल बिल बनाएं (AI Vision)</span>
+                        </button>
                       </div>
                     )}
 
                     {/* Buttons to attach camera / gallery / pdf */}
                     {partyTxImages.length < 5 && (
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-3 gap-1.5">
                         <button
                           type="button"
                           onClick={() => openInAppCamera("party_tx_new")}
-                          className="py-2 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95"
+                          className="py-2 px-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-[11px] font-bold flex flex-col items-center justify-center gap-1 cursor-pointer transition active:scale-95 text-center"
                         >
-                          <Camera size={13} className="text-emerald-600" />
-                          <span>📸 {partyTxImages.length > 0 ? "+ और फोटो" : "कैमरा से खींचें"}</span>
+                          <Camera size={14} className="text-emerald-600" />
+                          <span>📸 {partyTxImages.length > 0 ? "+ फोटो" : "कैमरा"}</span>
                         </button>
 
-                        <label className="py-2 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95 text-center">
-                          <span>📁 गैलरी / 📄 PDF</span>
+                        <label className="py-2 px-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl text-[11px] font-bold flex flex-col items-center justify-center gap-1 cursor-pointer transition active:scale-95 text-center">
+                          <span>📁 गैलरी/PDF</span>
                           <input
                             type="file"
                             multiple
@@ -13971,6 +14021,18 @@ function MobileVyaparAppContent() {
                             }}
                           />
                         </label>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOcrBillType(partyTxType === 'paid' ? 'purchase' : 'sale');
+                            openInAppCamera("ai_ocr");
+                          }}
+                          className="py-2 px-1.5 bg-gradient-to-br from-violet-50 to-indigo-50 hover:from-violet-100 text-indigo-900 border border-indigo-300 rounded-xl text-[11px] font-black flex flex-col items-center justify-center gap-1 cursor-pointer transition active:scale-95 shadow-2xs text-center"
+                        >
+                          <Sparkles size={14} className="text-indigo-600 animate-pulse" />
+                          <span>✨ AI स्कैनर</span>
+                        </button>
                       </div>
                     )}
                   </div>
@@ -15314,6 +15376,105 @@ function MobileVyaparAppContent() {
               />
             </div>
 
+            {/* 📎 Attached Bill / Receipt / Old Diary Photo or PDF */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                  <Paperclip size={12} className="text-indigo-600" />
+                  <span>बिल / डायरी पर्ची / PDF संलग्न करें (वैकल्पिक)</span>
+                </label>
+                {oldHisabImage && (
+                  <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-md">
+                    {oldHisabImage.startsWith('data:application/pdf') || oldHisabImage.toLowerCase().endsWith('.pdf') ? '📄 PDF' : '📸 फोटो'} सुरक्षित
+                  </span>
+                )}
+              </div>
+
+              {oldHisabImage ? (
+                <div className="relative group bg-slate-50 border border-slate-200 rounded-2xl p-2.5 flex items-center gap-3">
+                  <div 
+                    onClick={() => {
+                      setPreviewBillImage(oldHisabImage);
+                      setPreviewImageList([oldHisabImage]);
+                      setPreviewImageIndex(0);
+                      setPreviewZoom(1.0);
+                      setPreviewRotation(0);
+                    }}
+                    className="w-16 h-16 rounded-xl bg-slate-100 border border-slate-300 flex items-center justify-center overflow-hidden cursor-pointer hover:opacity-80 transition shrink-0 relative shadow-xs"
+                    title="बड़ा देखने के लिए क्लिक करें (Zoom / Fullscreen)"
+                  >
+                    {oldHisabImage.startsWith('data:application/pdf') || oldHisabImage.toLowerCase().endsWith('.pdf') ? (
+                      <div className="flex flex-col items-center justify-center p-1 text-center">
+                        <span className="text-xl">📄</span>
+                        <span className="text-[9px] font-black text-rose-600">PDF</span>
+                      </div>
+                    ) : (
+                      <img src={oldHisabImage} alt="Old Hisab Bill" className="w-full h-full object-cover" />
+                    )}
+                    <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[8px] font-black text-center py-0.5 flex items-center justify-center gap-0.5">
+                      <ZoomIn size={8} /> ज़ूम
+                    </span>
+                  </div>
+
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800 truncate">
+                        {oldHisabImage.startsWith('data:application/pdf') || oldHisabImage.toLowerCase().endsWith('.pdf') ? '📄 पुराना बिल / हिसाब (PDF)' : '📸 पुराना बिल / पर्ची'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setOldHisabImage('')}
+                        className="w-6 h-6 rounded-full bg-rose-100 text-rose-700 hover:bg-rose-200 flex items-center justify-center cursor-pointer transition"
+                        title="संलग्न फाइल हटाएं"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleProcessBillImages(null, [oldHisabImage]);
+                      }}
+                      className="w-full py-1.5 px-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-[10px] font-black shadow-xs flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
+                      title="AI Vision से इस बिल के सभी आइटम और कुल राशि निकालें"
+                    >
+                      <Sparkles size={11} className="text-amber-300 animate-pulse" />
+                      <span>🤖 AI स्कैनर से डिजिटल बिल बनाएं</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openInAppCamera("old_hisab")}
+                    className="py-2.5 px-2 bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95 shadow-xs"
+                  >
+                    <Camera size={14} className="text-emerald-600" />
+                    <span>📸 कैमरा से लें</span>
+                  </button>
+
+                  <label className="py-2.5 px-2 bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-800 border border-slate-200 hover:border-indigo-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95 shadow-xs text-center">
+                    <span className="text-sm">📁</span>
+                    <span>गैलरी / PDF</span>
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const comp = await compressImageFile(file, 1400, 0.85, true);
+                        if (comp) setOldHisabImage(comp);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+
             {/* Action Buttons */}
             <div className="pt-2 flex items-center gap-2">
               {Number(selectedPartyDetail.openingBalance || 0) > 0 && (
@@ -15833,32 +15994,103 @@ function MobileVyaparAppContent() {
                 />
               </div>
 
-              {/* Optional Bill Photo */}
-              <div>
-                <label className="block text-[11px] text-slate-600 font-extrabold mb-1">📷 पर्ची / फोटो (वैकल्पिक)</label>
-                <div className="flex items-center gap-2">
+              {/* Optional Bill Photo / PDF with AI Extraction */}
+              <div className="space-y-2 p-2.5 bg-slate-50 rounded-2xl border border-slate-200">
+                <div className="flex justify-between items-center">
+                  <label className="text-[11px] text-slate-700 font-extrabold flex items-center gap-1">
+                    <span>📷 पर्ची / फोटो या 📄 PDF</span>
+                  </label>
+                  {addBillImagePreview && (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      ✓ फाइल संलग्न
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => openInAppCamera("missing_bill")}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl border border-dashed border-slate-300 cursor-pointer transition text-xs font-bold"
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-300 cursor-pointer transition text-xs font-bold active:scale-95"
                   >
-                    <Camera size={14} />
-                    <span>{addBillImage ? 'फोटो बदलें (कैमरा)' : '+ कैमरा से फोटो लें'}</span>
+                    <Camera size={14} className="text-emerald-600" />
+                    <span>{addBillImage ? '📸 फोटो बदलें' : '📸 कैमरा फोटो'}</span>
                   </button>
-                  {addBillImagePreview && (
+
+                  <label className="flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-xl border border-indigo-200 cursor-pointer transition text-xs font-bold active:scale-95 text-center">
+                    <span>📁 गैलरी / 📄 PDF</span>
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const comp = await compressImageFile(file, 1200, 0.75, true);
+                          if (comp) {
+                            setAddBillImage(comp);
+                            setAddBillImagePreview(comp);
+                          }
+                        } catch (err) {}
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
+
+                {addBillImagePreview && (
+                  <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                    <div 
+                      onClick={() => {
+                        setPreviewBillImage(addBillImagePreview);
+                        setPreviewImageList([addBillImagePreview]);
+                        setPreviewImageIndex(0);
+                        setPreviewZoom(1.0);
+                        setPreviewRotation(0);
+                      }}
+                      className="flex items-center gap-2 cursor-pointer hover:opacity-80"
+                      title="ज़ूम करके बड़ा देखने के लिए क्लिक करें"
+                    >
+                      {isPdfUrl(addBillImagePreview) ? (
+                        <div className="w-10 h-10 rounded-lg bg-rose-50 border border-rose-300 flex flex-col items-center justify-center">
+                          <span className="text-base">📄</span>
+                          <span className="text-[7px] font-black text-rose-700 uppercase">PDF</span>
+                        </div>
+                      ) : (
+                        <img src={getWebSafeImageUrl(addBillImagePreview)} alt="Preview" className="w-10 h-10 object-cover rounded-lg border border-slate-200" />
+                      )}
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 block">दस्तावेज़ संलग्न है</span>
+                        <span className="text-[10px] text-indigo-600 font-medium">🔍 बड़ा व ज़ूम देखने हेतु क्लिक करें</span>
+                      </div>
+                    </div>
+
                     <div className="flex items-center gap-1.5">
-                      <img src={addBillImagePreview} alt="Preview" className="w-9 h-9 object-cover rounded-lg border border-slate-200" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const img = addBillImagePreview;
+                          setShowAddMissingBillModal(false);
+                          handleProcessBillImages(null, [img]);
+                        }}
+                        className="px-2.5 py-1 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-lg text-[11px] font-black shadow-xs flex items-center gap-1 cursor-pointer active:scale-95"
+                        title="AI द्वारा बिल से राशि व सामान निकालें"
+                      >
+                        <Sparkles size={11} />
+                        <span>🤖 AI स्कैन</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => { setAddBillImage(null); setAddBillImagePreview(''); }}
-                        className="text-rose-500 hover:text-rose-700 p-1"
+                        className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
                         title="हटाएं"
                       >
-                        <X size={14} />
+                        <X size={16} />
                       </button>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
@@ -16078,54 +16310,144 @@ function MobileVyaparAppContent() {
 
       {/* 📱 BILL PHOTO ZOOM & GALLERY MODAL */}
       {previewBillImage && (
-        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl p-4 max-w-md w-full shadow-2xl relative">
-            <div className="flex justify-between items-center pb-2 border-b mb-3">
+        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 animate-in fade-in">
+          <div className="bg-white rounded-3xl p-4 max-w-lg w-full shadow-2xl relative flex flex-col max-h-[95vh]">
+            <div className="flex justify-between items-center pb-2 border-b mb-2 shrink-0">
               <div className="flex items-center gap-2">
-                <span className="text-base">📷</span>
+                <span className="text-base">{isPdfUrl(previewBillImage) ? "📄" : "📷"}</span>
                 <div>
                   <h3 className="font-black text-sm text-slate-800">
-                    बिल / रसीद फोटो (Bill Image)
+                    {isPdfUrl(previewBillImage) ? "PDF बिल दस्तावेज़ (PDF Document)" : "बिल / रसीद फोटो (Bill Image)"}
                   </h3>
                   {previewImageList.length > 1 && (
                     <span className="text-[11px] font-bold text-indigo-600">
-                      फोटो {previewImageIndex + 1} / {previewImageList.length}
+                      दस्तावेज़ {previewImageIndex + 1} / {previewImageList.length}
                     </span>
                   )}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setPreviewBillImage(null)}
-                className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const img = previewBillImage;
+                    setPreviewBillImage(null);
+                    handleProcessBillImages(null, [img]);
+                  }}
+                  className="px-2.5 py-1 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 text-white rounded-xl text-[11px] font-black shadow-xs flex items-center gap-1 cursor-pointer active:scale-95"
+                  title="इस फोटो/PDF से AI द्वारा डिजिटल बिल बनाएं"
+                >
+                  <Sparkles size={12} />
+                  <span>🤖 AI डिजिटल बिल</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPreviewBillImage(null);
+                    setPreviewZoom(1.0);
+                    setPreviewRotation(0);
+                  }}
+                  className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer rounded-lg hover:bg-slate-100"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
-            {/* Main Preview Image with Prev/Next buttons */}
-            <div className="relative max-h-[65vh] overflow-hidden flex items-center justify-center bg-slate-900 rounded-2xl p-2 border border-slate-200">
-              {isPdfUrl(previewBillImage) ? (
-                <div className="w-full min-h-[45vh] flex flex-col items-center justify-center p-6 text-white text-center space-y-3">
-                  <span className="text-6xl">📄</span>
-                  <h4 className="font-extrabold text-base">PDF बिल दस्तावेज़ (PDF Document)</h4>
-                  <p className="text-xs text-slate-300">यह एक PDF फाइल है। इसे नीचे दिए गए बटन से तुरंत खोलें या डाउनलोड करें।</p>
-                  <a
-                    href={getWebSafeImageUrl(previewBillImage)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download="Bill_Document.pdf"
-                    className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow flex items-center gap-2 cursor-pointer transition active:scale-95"
+            {/* Zoom / Rotate Controls Bar (For Images) */}
+            {!isPdfUrl(previewBillImage) && (
+              <div className="flex items-center justify-between bg-slate-100 px-3 py-1.5 rounded-2xl border border-slate-200 text-xs font-bold mb-2 shrink-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-500 font-extrabold uppercase mr-1">🔍 ज़ूम:</span>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewZoom(z => Math.max(Math.round((z - 0.3) * 10) / 10, 1.0))}
+                    disabled={previewZoom <= 1.0}
+                    className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-800 disabled:opacity-40 flex items-center justify-center border border-slate-300 shadow-2xs cursor-pointer font-black text-sm"
+                    title="ज़ूम आउट (Zoom Out)"
                   >
-                    <Download size={16} /> <span>PDF खोलें / डाउनलोड करें</span>
-                  </a>
+                    <ZoomOut size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPreviewZoom(1.0); setPreviewRotation(0); }}
+                    className="px-2 py-0.5 rounded-lg bg-white text-indigo-700 border border-indigo-200 text-[11px] font-black shadow-2xs cursor-pointer hover:bg-indigo-50"
+                    title="ज़ूम रीसेट (100%)"
+                  >
+                    {Math.round(previewZoom * 100)}%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewZoom(z => Math.min(Math.round((z + 0.3) * 10) / 10, 4.0))}
+                    disabled={previewZoom >= 4.0}
+                    className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-800 disabled:opacity-40 flex items-center justify-center border border-slate-300 shadow-2xs cursor-pointer font-black text-sm"
+                    title="ज़ूम इन (Zoom In)"
+                  >
+                    <ZoomIn size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewRotation(r => (r + 90) % 360)}
+                    className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-800 flex items-center justify-center border border-slate-300 shadow-2xs cursor-pointer"
+                    title="घुमाएं (Rotate 90°)"
+                  >
+                    <RotateCw size={13} />
+                  </button>
+                </div>
+                <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">
+                  {previewZoom > 1 ? "स्क्रॉल करके सामान विवरण देखें" : "ज़ूम करके बारिकी देखें"}
+                </span>
+              </div>
+            )}
+
+            {/* Main Preview Container with Prev/Next buttons */}
+            <div className="relative flex-1 min-h-[48vh] max-h-[65vh] overflow-auto flex items-center justify-center bg-slate-900 rounded-2xl p-2 border border-slate-200 select-none">
+              {isPdfUrl(previewBillImage) ? (
+                <div className="w-full h-full flex flex-col items-center justify-center space-y-2 py-1">
+                  <iframe
+                    src={getWebSafeImageUrl(previewBillImage)}
+                    className="w-full h-[52vh] rounded-xl bg-white border-0 shadow-inner"
+                    title="PDF Document Viewer"
+                  />
+                  <div className="flex items-center gap-2 pt-1">
+                    <a
+                      href={getWebSafeImageUrl(previewBillImage)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow flex items-center gap-1.5 cursor-pointer active:scale-95 transition"
+                    >
+                      <ExternalLink size={13} /> <span>फुल स्क्रीन PDF खोलें</span>
+                    </a>
+                    <a
+                      href={getWebSafeImageUrl(previewBillImage)}
+                      download="Bill_Document.pdf"
+                      className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xs font-bold shadow flex items-center gap-1.5 cursor-pointer transition"
+                    >
+                      <Download size={13} /> <span>डाउनलोड</span>
+                    </a>
+                  </div>
                 </div>
               ) : (
-                <img
-                  src={getWebSafeImageUrl(previewBillImage)}
-                  alt="Full Bill"
-                  className="max-h-[60vh] w-auto object-contain rounded-xl shadow-md"
-                />
+                <div 
+                  className="w-full h-full flex items-center justify-center overflow-auto p-1"
+                  style={{ minHeight: '45vh' }}
+                >
+                  <img
+                    src={getWebSafeImageUrl(previewBillImage)}
+                    alt="Full Bill"
+                    className="max-h-[58vh] max-w-none object-contain rounded-xl shadow-lg transition-transform duration-150 ease-out origin-center cursor-zoom-in active:cursor-move"
+                    style={{
+                      transform: `scale(${previewZoom}) rotate(${previewRotation}deg)`,
+                      transformOrigin: 'center center'
+                    }}
+                    draggable={false}
+                    onClick={() => {
+                      if (previewZoom === 1) setPreviewZoom(1.8);
+                      else if (previewZoom < 3) setPreviewZoom(z => Math.round((z + 0.6) * 10) / 10);
+                      else setPreviewZoom(1.0);
+                    }}
+                  />
+                </div>
               )}
 
               {previewImageList.length > 1 && (
@@ -16136,6 +16458,8 @@ function MobileVyaparAppContent() {
                       const prevIdx = (previewImageIndex - 1 + previewImageList.length) % previewImageList.length;
                       setPreviewImageIndex(prevIdx);
                       setPreviewBillImage(previewImageList[prevIdx]);
+                      setPreviewZoom(1.0);
+                      setPreviewRotation(0);
                     }}
                     className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center cursor-pointer shadow transition"
                   >
@@ -16147,6 +16471,8 @@ function MobileVyaparAppContent() {
                       const nextIdx = (previewImageIndex + 1) % previewImageList.length;
                       setPreviewImageIndex(nextIdx);
                       setPreviewBillImage(previewImageList[nextIdx]);
+                      setPreviewZoom(1.0);
+                      setPreviewRotation(0);
                     }}
                     className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center cursor-pointer shadow transition"
                   >
@@ -16158,7 +16484,7 @@ function MobileVyaparAppContent() {
 
             {/* Thumbnail carousel strip if multiple images */}
             {previewImageList.length > 1 && (
-              <div className="flex items-center gap-2 mt-2.5 overflow-x-auto py-1">
+              <div className="flex items-center gap-2 mt-2 overflow-x-auto py-1 shrink-0">
                 {previewImageList.map((url, i) => (
                   isPdfUrl(url) ? (
                     <div
@@ -16166,6 +16492,8 @@ function MobileVyaparAppContent() {
                       onClick={() => {
                         setPreviewImageIndex(i);
                         setPreviewBillImage(url);
+                        setPreviewZoom(1.0);
+                        setPreviewRotation(0);
                       }}
                       className={`w-11 h-11 rounded-lg bg-rose-50 border-2 flex flex-col items-center justify-center cursor-pointer shrink-0 transition ${
                         i === previewImageIndex ? "border-indigo-600 scale-105 shadow-md" : "border-slate-200 opacity-70 hover:opacity-100"
@@ -16182,6 +16510,8 @@ function MobileVyaparAppContent() {
                       onClick={() => {
                         setPreviewImageIndex(i);
                         setPreviewBillImage(url);
+                        setPreviewZoom(1.0);
+                        setPreviewRotation(0);
                       }}
                       className={`w-11 h-11 rounded-lg object-cover cursor-pointer shrink-0 border-2 transition ${
                         i === previewImageIndex ? "border-indigo-600 scale-105 shadow-md" : "border-slate-200 opacity-60 hover:opacity-100"
@@ -16193,12 +16523,12 @@ function MobileVyaparAppContent() {
             )}
 
             {/* Actions: Delete photo, Close, Download */}
-            <div className="mt-3.5 flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-100">
+            <div className="mt-3 flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-100 shrink-0">
               {previewTargetTxId && (
                 <button
                   type="button"
                   onClick={() => handleDeletePartyImage(previewTargetTxId, previewBillImage)}
-                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95"
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95"
                 >
                   <Trash2 size={13} /> यह फोटो हटाएं
                 </button>
@@ -16207,19 +16537,23 @@ function MobileVyaparAppContent() {
               <div className="flex items-center gap-2 ml-auto">
                 <button
                   type="button"
-                  onClick={() => setPreviewBillImage(null)}
-                  className="px-3.5 py-2 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50 cursor-pointer"
+                  onClick={() => {
+                    setPreviewBillImage(null);
+                    setPreviewZoom(1.0);
+                    setPreviewRotation(0);
+                  }}
+                  className="px-3.5 py-1.5 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-50 cursor-pointer"
                 >
                   बंद करें
                 </button>
                 <a
                   href={getWebSafeImageUrl(previewBillImage)}
-                  download="bill_photo.jpg"
+                  download={isPdfUrl(previewBillImage) ? "bill_document.pdf" : "bill_photo.jpg"}
                   target="_blank"
                   rel="noreferrer"
-                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1 cursor-pointer"
+                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1 cursor-pointer"
                 >
-                  <Download size={13} /> डाउनलोड करें
+                  <Download size={13} /> डाउनलोड
                 </a>
               </div>
             </div>
