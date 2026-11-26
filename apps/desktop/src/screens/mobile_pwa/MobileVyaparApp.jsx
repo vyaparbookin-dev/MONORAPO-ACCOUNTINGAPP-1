@@ -1837,7 +1837,10 @@ function MobileVyaparAppContent() {
     return [];
   });
   const [gharKharchMemberFilter, setGharKharchMemberFilter] = useState("all");
-  const [gharKharchMonthFilter, setGharKharchMonthFilter] = useState("all"); // 'all' or 'YYYY-MM'
+  const [gharKharchMonthFilter, setGharKharchMonthFilter] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }); // defaults to current month 'YYYY-MM' or 'all'
   const [ledgerViewTab, setLedgerViewTab] = useState("all"); // 'all', 'drawings' (Ghar Kharch), 'operating' (Shop Kharch)
   const [loadingGharKharch, setLoadingGharKharch] = useState(false);
   const [showWealthTrackerModal, setShowWealthTrackerModal] = useState(false);
@@ -8565,6 +8568,16 @@ function MobileVyaparAppContent() {
 
             {/* 🏢 DUKAAN KHARCH (OPERATING EXPENSES) DASHBOARD STRIP */}
             {(() => {
+              const now = new Date();
+              const curYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+              const curMonthName = now.toLocaleDateString("hi-IN", { month: "short" });
+
+              const thisMonthShop = (shopExpensesOnly || []).filter(it => {
+                const d = parseAnyDate(it.date || it.createdAt);
+                if (!d) return false;
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === curYm;
+              });
+              const thisMonthShopVal = thisMonthShop.reduce((s, it) => s + (Number(it.amount) || 0), 0);
               const shopExpVal = (shopExpensesOnly || []).reduce((s, it) => s + (Number(it.amount) || 0), 0);
               return (
                 <div className="p-3.5 bg-gradient-to-r from-indigo-500/10 via-blue-500/10 to-indigo-500/10 border border-indigo-500/20 rounded-2xl flex justify-between items-center shadow-xs hover:border-indigo-400 transition">
@@ -8572,6 +8585,7 @@ function MobileVyaparAppContent() {
                     onClick={() => {
                       fetchGharKharchData();
                       setLedgerViewTab("operating");
+                      setGharKharchMonthFilter(curYm);
                       handleToggleGharKharchLedger(true);
                     }}
                     className="flex items-center gap-2.5 flex-1 cursor-pointer"
@@ -8582,12 +8596,16 @@ function MobileVyaparAppContent() {
                     <div>
                       <div className="flex items-center gap-2">
                         <h4 className="font-extrabold text-xs text-indigo-950">दुकान खर्च (Shop Expenses)</h4>
-                        <span className="px-1.5 py-0.2 bg-indigo-600 text-white font-black text-[9px] rounded-md">
-                          ₹ {shopExpVal.toLocaleString('en-IN')}
+                        <span className="px-1.5 py-0.5 bg-indigo-600 text-white font-black text-[9px] rounded-md" title={`ऑल-टाइम कुल: ₹ ${shopExpVal.toLocaleString('en-IN')}`}>
+                          इस माह ({curMonthName}): ₹ {thisMonthShopVal.toLocaleString('en-IN')}
                         </span>
                       </div>
                       <p className="text-[10px] text-indigo-800 font-medium">
-                        {(shopExpensesOnly || []).length > 0 ? `${(shopExpensesOnly || []).length} खर्च दर्ज • स्टाफ एडवांस, किराया, बिजली, चाय-नाश्ता` : 'स्टाफ सैलरी, एडवांस, दुकान किराया व अन्य खर्च'}
+                        {thisMonthShop.length > 0 
+                          ? `इस माह ${thisMonthShop.length} खर्च • कुल ऑल-टाइम: ₹ ${shopExpVal.toLocaleString('en-IN')}`
+                          : (shopExpensesOnly || []).length > 0
+                            ? `इस माह 0 खर्च • ऑल-टाइम: ₹ ${shopExpVal.toLocaleString('en-IN')} (${(shopExpensesOnly || []).length} खर्च)`
+                            : 'स्टाफ सैलरी, एडवांस, दुकान किराया व अन्य खर्च'}
                       </p>
                     </div>
                   </div>
@@ -8596,6 +8614,7 @@ function MobileVyaparAppContent() {
                       onClick={() => {
                         fetchGharKharchData();
                         setLedgerViewTab("operating");
+                        setGharKharchMonthFilter(curYm);
                         handleToggleGharKharchLedger(true);
                       }}
                       className="px-2.5 py-1.5 bg-white border border-indigo-200 text-indigo-900 font-bold text-[11px] rounded-xl shadow-xs hover:bg-indigo-50 transition cursor-pointer"
@@ -8618,6 +8637,16 @@ function MobileVyaparAppContent() {
 
             {/* 🏡 GHAR KHARCH (FAMILY & HOUSEHOLD EXPENSE) DASHBOARD STRIP */}
             {(() => {
+              const now = new Date();
+              const curYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+              const curMonthName = now.toLocaleDateString("hi-IN", { month: "short" });
+
+              const thisMonthDrawings = (familyDrawingsOnly || []).filter(it => {
+                const d = parseAnyDate(it.date || it.createdAt);
+                if (!d) return false;
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === curYm;
+              });
+              const thisMonthVal = thisMonthDrawings.reduce((s, it) => s + (Number(it.amount) || 0), 0);
               const totalFamilyVal = (familyDrawingsOnly || []).reduce((s, it) => s + (Number(it.amount) || 0), 0);
               return (
                 <div className="p-3.5 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border border-amber-500/30 rounded-2xl flex justify-between items-center shadow-xs hover:border-amber-400 transition">
@@ -8625,6 +8654,7 @@ function MobileVyaparAppContent() {
                     onClick={() => {
                       fetchGharKharchData();
                       setLedgerViewTab("drawings");
+                      setGharKharchMonthFilter(curYm);
                       handleToggleGharKharchLedger(true);
                     }}
                     className="flex items-center gap-2.5 flex-1 cursor-pointer"
@@ -8635,12 +8665,16 @@ function MobileVyaparAppContent() {
                     <div>
                       <div className="flex items-center gap-2">
                         <h4 className="font-extrabold text-xs text-amber-950">घर खर्च व फैमिली लेजर</h4>
-                        <span className="px-1.5 py-0.2 bg-amber-600 text-white font-black text-[9px] rounded-md">
-                          ₹ {totalFamilyVal.toLocaleString('en-IN')}
+                        <span className="px-1.5 py-0.5 bg-amber-600 text-white font-black text-[9px] rounded-md" title={`ऑल-टाइम कुल: ₹ ${totalFamilyVal.toLocaleString('en-IN')}`}>
+                          इस माह ({curMonthName}): ₹ {thisMonthVal.toLocaleString('en-IN')}
                         </span>
                       </div>
                       <p className="text-[10px] text-amber-800 font-medium">
-                        {(familyDrawingsOnly || []).length > 0 ? `${(familyDrawingsOnly || []).length} खर्चे दर्ज हैं • पापा, मम्मी, राशन हिसाब` : 'राशन, दवाई, बिजली, स्कूल फीस व फैमिली खर्च'}
+                        {thisMonthDrawings.length > 0 
+                          ? `इस माह ${thisMonthDrawings.length} खर्चे • कुल ऑल-टाइम: ₹ ${totalFamilyVal.toLocaleString('en-IN')}`
+                          : (familyDrawingsOnly || []).length > 0
+                            ? `इस माह 0 खर्चे • ऑल-टाइम: ₹ ${totalFamilyVal.toLocaleString('en-IN')} (${(familyDrawingsOnly || []).length} खर्चे)`
+                            : 'राशन, दवाई, बिजली, स्कूल फीस व फैमिली खर्च'}
                       </p>
                     </div>
                   </div>
@@ -8659,6 +8693,7 @@ function MobileVyaparAppContent() {
                       onClick={() => {
                         fetchGharKharchData();
                         setLedgerViewTab("drawings");
+                        setGharKharchMonthFilter(curYm);
                         handleToggleGharKharchLedger(true);
                       }}
                       className="px-2.5 py-1.5 bg-white border border-amber-300 text-amber-900 font-bold text-[11px] rounded-xl shadow-xs hover:bg-amber-50 transition cursor-pointer"
@@ -12424,9 +12459,18 @@ function MobileVyaparAppContent() {
                     {loadingGharKharch ? (
                       <div className="p-8 text-center text-xs text-slate-400">खर्च लोड हो रहा है...</div>
                     ) : filteredItems.length === 0 ? (
-                      <div className="p-8 bg-slate-50 border border-dashed border-slate-200 rounded-2xl text-center text-xs text-slate-400 space-y-1">
-                        <p className="font-bold text-slate-600">कोई खर्च नहीं मिला</p>
-                        <p className="text-[10px]">ऊपर "+ नया खर्च" बटन से पहला खर्च दर्ज करें</p>
+                      <div className="p-8 bg-slate-50 border border-dashed border-slate-200 rounded-2xl text-center text-xs text-slate-400 space-y-2">
+                        <p className="font-bold text-slate-600">इस फ़िल्टर ({activeMonthLabel}) में कोई खर्च नहीं मिला</p>
+                        {gharKharchMonthFilter !== "all" && tabItems.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setGharKharchMonthFilter("all")}
+                            className="px-3 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold rounded-xl text-xs transition cursor-pointer"
+                          >
+                            🔄 सभी महीने देखें (कुल {tabItems.length} खर्चे)
+                          </button>
+                        )}
+                        <p className="text-[10px]">ऊपर "+ नया खर्च" बटन से नया खर्च दर्ज करें</p>
                       </div>
                     ) : (
                       filteredItems.map(exp => {
